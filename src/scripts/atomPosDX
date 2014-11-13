@@ -1,0 +1,263 @@
+#!/usr/bin/perl
+
+# This program will read a standard olcao skeleton input file and will then
+#   create an openDX file as output that contains the positions of the atoms,
+#   their sizes, and colors (pulled from the ElementData.pm perl module).  The
+#   output units are Angstroms.
+
+# USAGE:   atomPosODX [-atom $shownElement] [-scale $scaleFactor] [-grey]
+#                     [-i $inputFile]
+
+# The -scale option will allow the user to scale the size of the spheres that
+#   will be created by openDX.
+# The -atom option will take the name of an element as its parameter and will
+#   include that element in the list of atoms that are written out.  If an
+#   atom is not in the list, then it will not be shown.  If this option is not
+#   used, then all elements will be shown.
+# The -grey option will assign colors for the elements along a greyscale
+#   instead of color.
+# The -i option will let the user request a specific input file.  If this
+#   option is not given then the default value of "olcao.skl" will be used.
+
+##########################################################
+# BEGIN PROGRAM EXECUTION ################################
+##########################################################
+
+# Set pragmas and load modules and data.
+use strict;
+use warnings;
+use Env;
+use lib "$OLCAO_BIN/perl5";
+use ElementData;
+use StructureControl;
+
+# Define global variables.
+my $scaleFactor;
+my $greyScale;
+my $inputFile;
+my $numShownElements;
+my @shownElements;
+my $atomElementName_ref;
+my $colorDX_ref;
+my $greyDX_ref;
+my $covalRadii_ref;
+my $realLattice_ref;
+my $directXYZ_ref;
+my $atomicZ_ref;
+my $numAtoms;
+my $numShownAtoms;
+my @shownAtomFlags;
+
+# Initialize the program environment.
+&initEnvironment;
+
+# Read the command line parameters.
+&readCommandLine;
+
+# Read the necessary data from the structure file.
+StructureControl::readInputFile($inputFile,1);
+
+# Get the elemental name for each atom in the system.
+$atomElementName_ref = StructureControl::getAtomElementNameRef;
+
+# Get a reference to the lattice parameters and atomic coordinates.
+$realLattice_ref = StructureControl::getRealLatticeRef;
+$directXYZ_ref   = StructureControl::getDirectXYZRef;
+$numAtoms        = StructureControl::getNumAtoms;
+
+# Determine the atomic number of each atom in the system.
+StructureControl::mapElementNumber;
+$atomicZ_ref = StructureControl::getAtomicZRef;
+
+# Obtain the color information from the database.
+$greyDX_ref     = ElementData::getGreyDXRef;
+$colorDX_ref    = ElementData::getColorDXRef;
+
+# Adjust the covalent radii according to the scaling factor and then obtain a
+#   reference to the data.
+ElementData::applyBondFactor($scaleFactor);
+$covalRadii_ref = ElementData::getCovalRadiiRef;
+
+# Determine which atoms to actually print.
+&selectShownAtoms;
+
+# Create the openDX file.
+&writeOpenDX;
+
+##########################################################
+# END PROGRAM EXECUTION ##################################
+##########################################################
+
+
+
+sub initEnvironment
+{
+   # Define the default filename to be used as input.
+   $inputFile = "olcao.skl";
+
+   # Assume that the graphics will be in color.
+   $greyScale = 0;
+
+   # Assume that the atom sizes are not modified.
+   $scaleFactor = 1.0;
+
+   # Initialize the number of elements to show to 0.  This means that all
+   #   elements will be shown.
+   $numShownElements = 0;
+
+   # Initialize the element data from the database.
+   ElementData::initElementData;
+}
+
+
+
+sub readCommandLine
+{
+   # Define local variables.
+   my $number = 0;
+   my $argument;
+   my $commandLine = "command";
+
+   while ($number < scalar(@ARGV))
+   {
+      if ($ARGV[$number] eq "-scale")
+         {$scaleFactor = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-atom")
+         {$shownElements[++$numShownElements] = lc($ARGV[++$number]);}
+      elsif ($ARGV[$number] eq "-grey")
+         {$greyScale = 1;}
+      else
+      {
+         print STDOUT "UNKNOWN COMMAND LINE PARAMETER $ARGV[$number].";
+         print " ABORTING.\n";
+         exit;
+      }
+      $number++;
+   }
+
+   #Record the command line used to create this set of input files.
+   open (COMMANDLINE,">>$commandLine");
+   print COMMANDLINE "atomPosDX ";
+   foreach $argument (0..$#ARGV)
+      {print COMMANDLINE "$ARGV[$argument] ";}
+   print COMMANDLINE "\n";
+   close (COMMANDLINE);
+}
+
+sub selectShownAtoms
+{
+   # Define local variables.
+   my $atom;
+   my $element;
+
+   # If we will show all the atoms then initialize the flag for each atom to 1.
+   if ($numShownElements == 0)
+   {
+      foreach $atom (1..$numAtoms)
+         {$shownAtomFlags[$atom] = 1;}
+      $numShownAtoms = $numAtoms;
+      return;
+   }
+
+   # If we will show some select atoms only, then we need to check each atom
+   #   against the list of atoms to show and mark those that will be shown.
+   #   Also, increment the number of atoms to show along the way.
+
+   # Initialize the count of the number of atoms to show.
+   $numShownAtoms = 0;
+
+   foreach $atom (1..$numAtoms)
+   {
+      foreach $element (1..$numShownElements)
+      {
+         if ($atomElementName_ref->[$atom] eq $shownElements[$element])
+         {
+            $numShownAtoms++;
+            $shownAtomFlags[$atom] = 1;
+            last;
+         }
+         else
+            {$shownAtomFlags[$atom] = 0;}
+      }
+   }
+}
+
+
+sub writeOpenDX
+{
+   # Define local variables.
+   my $atom;
+
+   # Open and print the lattice box frame first.
+   open (LATTICE,">lattice.dx") || die "Cannot open lattice.dx for writing.\n";
+
+   print LATTICE <<ENDLATTICE;
+object 1 class gridpositions counts 2 2 2
+origin 0 0 0
+delta @{$realLattice_ref->[1]}
+delta @{$realLattice_ref->[2]}
+delta @{$realLattice_ref->[3]}
+
+object 2 class gridconnections counts 2 2 2
+
+object 3 class array type float rank 0 items 8 data follows
+1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0
+attribute "dep" string "positions"
+
+object "lattice" class field
+component "positions" value 1
+component "connections" value 2
+component "data" value 3
+end
+
+ENDLATTICE
+   close (LATTICE);
+
+
+
+   # Now open and print the atomic positions.
+   open (ATOMPOS,">atomPos.dx") || die "Cannot open atomPos.dx for writing.\n";
+
+   # Now we need to print the glyph data beginning with the atom positions.
+   print ATOMPOS "object 1 class array type float rank 1 shape 3 items";
+   print ATOMPOS " $numShownAtoms data follows\n";
+   foreach $atom (1..$numAtoms)
+   {
+      if ($shownAtomFlags[$atom] == 1)
+         {print ATOMPOS "@{$directXYZ_ref->[$atom]}[1..3]\n";}
+   }
+   print ATOMPOS "\n";
+   
+   # Now we add the color values data.
+   print ATOMPOS "object 2 class array type float rank 0 items $numShownAtoms";
+   print ATOMPOS " data follows\n";
+   foreach $atom (1..$numAtoms)
+   {
+      if ($shownAtomFlags[$atom] == 1)
+         {print ATOMPOS "$colorDX_ref->[$atomicZ_ref->[$atom]]\n";}
+   }
+   print ATOMPOS "attribute \"dep\" string \"positions\"\n";
+   print ATOMPOS "\n";
+   
+   # Now we add the atom sphere size information.  Same as above
+   print ATOMPOS "object 3 class array type float rank 0 items $numShownAtoms";
+   print ATOMPOS " data follows\n";
+   foreach $atom (1..$numAtoms)
+   {
+      if ($shownAtomFlags[$atom] == 1)
+         {print ATOMPOS "$covalRadii_ref->[$atomicZ_ref->[$atom]]\n";}
+   }
+   print ATOMPOS "attribute \"dep\" string \"positions\"\n";
+   print ATOMPOS "\n";
+
+   #Finally, we combine the above three objects into the spheres field.
+   print ATOMPOS <<ENDATOMPOS;
+object "atoms" class field
+component "positions" value 1
+component "data" value 2
+component "sizes" value 3
+end
+
+ENDATOMPOS
+   close (ATOMPOS);
+}

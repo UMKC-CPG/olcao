@@ -1,0 +1,352 @@
+#!/usr/bin/perl
+sub printHelp
+{
+   print <<ENDHELP;
+#PROGRAM:  makePotDB
+#PURPOSE:  This program will create a default potential database using
+#          information about each element stored in the ElementData.pm module.
+#          This program will also create an initial set of potential
+#          coefficients based on the numerical potential created when the
+#          atomic wave function basis set was created (makeBDB).  The program
+#          that acutally created the numerical potential is the atomSCF program.
+#
+#USAGE:    makePotDB [-element \$targetZ] [-fork \$numForks] [-help]
+#
+#OPTIONS:
+#
+# The -element option takes one atomic Z number as an argument and will create
+#   the atomic potential files for that element only.
+# The -fork will allow the user to request that the Gaussian fitting of the
+#   numerical potential be performed in parallel with \$numForks number of
+#   processes.  (The fitting can take a little while, but not forever.)
+# The -help option prints this useful information.
+ENDHELP
+   exit;
+}
+
+######################################################################
+#Use necessary modules
+######################################################################
+use strict;
+use warnings;
+use Env;
+use lib "$OLCAO_BIN/perl5";
+use POSIX qw(ceil floor);
+use ElementData;
+use StructureControl;
+
+######################################################################
+# Define global variables.  (Yes, I know this is ugly.)
+######################################################################
+
+my $numElements;
+my $elementNames_ref;
+my $atomicPDB;
+my $atomicBDB;
+my $potData;
+
+my $currNumPotAlphas;
+my $currMinAlpha;
+my $currMaxAlpha;
+
+my $targetZ;
+my $numForks;
+
+######################################################################
+# Begin execution of the script here
+######################################################################
+
+# Initialize the execution environment.
+&initEnv;
+
+# Parse the command line.
+&parseCommandLine;
+
+# For each element, create the directory.
+&makeDirs;
+
+# Enter each directory and create the pot files for the potential definiton.
+&makePotDefinition;
+
+# Enter each directory and create an initial set of coefficients.
+&makePotCoeffs;
+
+######################################################################
+# End execution of the script here
+######################################################################
+
+sub initEnv
+{
+   # Initialize the element data from the database.
+   ElementData::initElementData;
+
+   # Obtain references to all necessary data in the ElementData.pm file.
+   $numElements      = ElementData::getNumElements();
+   $elementNames_ref = ElementData::getElementNamesRef();
+
+   # Get the database locations.
+   $atomicPDB = StructureControl::getAtomicPDB();
+   $atomicBDB = StructureControl::getAtomicBDB();
+
+   # Define certain file names.
+   $potData = "numericalPot.dat";
+
+   # Assume that we will have only 1 process.
+   $numForks = 1;
+
+   # Assume that we will act on all elements.
+   $targetZ = 0;
+}
+
+sub parseCommandLine
+{
+   # Define local variables.
+   my $number;
+   my $argument;
+   my $command = "command";
+
+   $number = 0;
+
+   while ($number < scalar(@ARGV))
+   {
+      if ($ARGV[$number] eq "-element")
+         {$targetZ = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-fork")
+         {$numForks = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-help")
+         {&printHelp;}
+
+      $number++;
+   }
+
+   #Record the command line used to create this set of input files.
+   open (COMMANDLINE,">>$command");
+   print COMMANDLINE "makePotDB ";
+   foreach $argument (0..$#ARGV)
+      {print COMMANDLINE "$ARGV[$argument] ";}
+   print COMMANDLINE "\n";
+   close (COMMANDLINE);
+}
+
+
+sub makeDirs
+{
+   # Define local variables.
+   my $elementInit;
+   my $elementFin;
+   my $element;
+
+
+   # Determine if all or one element should be done.  Initialize the loop
+   #   range accordingly.
+   if ($targetZ == 0)
+      {$elementInit = 1; $elementFin = $numElements;}
+   else
+      {$elementInit = $targetZ; $elementFin = $targetZ;}
+
+
+   # Create the database directory if it does not already exist.
+   if (! -e $atomicPDB)
+      {mkdir $atomicPDB;}
+
+   # Go to the atomic potential function database location.
+   chdir $atomicPDB || die "Can not change directories to $atomicPDB\n";
+
+   # Make the directory for each element only if it does not already exist.
+   foreach $element ($elementInit..$elementFin)
+   {
+      if (! -e $elementNames_ref->[$element])
+         {system("mkdir $elementNames_ref->[$element]");}
+   }
+}
+
+
+sub makePotDefinition
+{
+   # Define local variables.
+   my $elementInit;
+   my $elementFin;
+   my $element;
+
+   # Determine if all or only one element should be done.  Initialize the loop
+   #   range accordingly.
+   if ($targetZ == 0)
+      {$elementInit = 1; $elementFin = $numElements;}
+   else
+      {$elementInit = $targetZ; $elementFin = $targetZ;}
+
+
+   # Print the potential definition file for the requested elements.
+   foreach $element ($elementInit..$elementFin)
+   {
+      # Do not touch this element if it already is done.
+      if (-e "$elementNames_ref->[$element]/pot1")
+         {next;}
+
+      # Go into the directory for this element.
+      chdir $elementNames_ref->[$element];
+
+      # Extract information needed for this element.
+      &getElementData ($element);
+
+      # Open the potential definition file.
+      open (POT,">pot1") ||
+            die "Can not open pot in $elementNames_ref->[$element]\n";
+
+      # Write the potential definition.
+      print  POT "NUCLEAR_CHARGE__ALPHA\n";
+      printf POT "%f %f\n",$element,20.0;
+      print  POT "COVALENT_RADIUS\n";
+      printf POT "%f\n",1.0;
+      print  POT "NUM_ALPHAS\n";
+      printf POT "%d\n",$currNumPotAlphas;
+      print  POT "ALPHAS\n";
+      printf POT "%e %e\n",$currMinAlpha,$currMaxAlpha;
+
+      # Close the potential definition file.
+      close (POT);
+
+      # Exit this directory.
+      chdir ("..");
+   }
+}
+
+
+sub makePotCoeffs
+{
+   # Define local variables.
+   my $elementInit;
+   my $elementFin;
+   my $element;
+   my $line;
+   my $numProcesses;
+   my $pid;
+   my @coeffData;
+
+   # Determine if all or one element should be done.  Initialize the loop
+   #   range accordingly.
+   if ($targetZ == 0)
+      {$elementInit = 1; $elementFin = $numElements;}
+   else
+      {$elementInit = $targetZ; $elementFin = $targetZ;}
+
+   # Initialize the current number of processes.
+   $numProcesses = 0;
+
+   # Fit the isolated atom potential for the requested elements.
+   foreach $element ($elementInit..$elementFin)
+   {
+      # Do not touch this element if it already is done.
+      if (-e "$elementNames_ref->[$element]/coeff1")
+         {next;}
+
+      $numProcesses++;
+
+      $pid = fork();
+
+      if ($pid == 0)
+      {
+
+         # Go into the directory for this element.
+         chdir $elementNames_ref->[$element];
+
+         # Extract information needed for this element.
+         &getElementData ($element);
+
+         # Modify the parameters in the numerical potential file to reflect the
+         #   the definition of the potential for this atom.
+
+         # Open the numerical potential file that was fitted non-linearly for
+         #   the contracting process.  (READING)  Note that this potential file
+         #   is from the atomic contraction.
+         open (NUMPOT,"<$atomicBDB/$elementNames_ref->[$element]/$potData") ||
+               die "Can not read $potData in $elementNames_ref->[$element]\n";
+
+         # Open the numerical potential file to be fitted linearly to create the
+         #   initial potential coefficients.
+         open (FITPOT,">$potData") ||
+               die "Can not write $potData in $elementNames_ref->[$element]\n";
+
+         # Read and modify the header information.
+         $line = <NUMPOT>;
+         print FITPOT $line;
+         $line = <NUMPOT>;
+         print FITPOT "0\n";
+         $line = <NUMPOT>;
+         print FITPOT $line;
+         $line = <NUMPOT>;
+         print FITPOT "$currNumPotAlphas\n";
+         $line = <NUMPOT>;
+         print FITPOT $line;
+         $line = <NUMPOT>;
+         print FITPOT "$currMinAlpha\n";
+         $line = <NUMPOT>;
+         print FITPOT $line;
+         $line = <NUMPOT>;
+         print FITPOT "$currMaxAlpha\n";
+         while ($line = <NUMPOT>)
+            {print FITPOT $line;}
+
+         # Close the potential data files.
+         close (NUMPOT);
+         close (FITPOT);
+
+         # Execute the fitting program.
+         system("gaussFit < numericalPot.dat > progress.fit");
+
+         # Append some zeros to each row representing the known total and
+         #   valence charge, and the known spin polarization.  These values
+         #   are read by OLCAO, but not used.
+
+         # Open the file, read the data to memory and chomp it.  Then close
+         #   the file.
+         open (COEFF, "<gauss.fit") ||
+               die "Cannot open gauss.fit for reading.\n";
+         @coeffData = <COEFF>;
+         chomp @coeffData;
+         close (COEFF);
+
+         # Re-open the file for writing now.  Print each line with a set of
+         #   3 zero values appended (except the first).  Then close the file.
+         open (COEFF, ">gauss.fit") ||
+               die "Cannot open gauss.fit for reading.\n";
+         print COEFF "$coeffData[0]\n";
+         foreach $line (@coeffData[1..$#coeffData])
+            {print COEFF "$line 0.0 0.0 0.0\n";}
+         close (COEFF);
+
+         # Move the result to the correct file name and clean up.
+         system("mv gauss.fit coeff1");
+         system("rm -f gaussFit.out progress.fit numericalPot.dat");
+
+         exit;
+      }
+      else
+      {
+         if ($numProcesses >= $numForks)
+         {
+            wait();
+            $numProcesses--;
+         }
+      }
+   }
+
+   # Wait for any remaining child processes to finish.
+   while ($numProcesses != 0)
+   {
+      wait();
+      $numProcesses--;
+   }
+}
+
+
+sub getElementData
+{
+   # Define passed parameters.
+   my $element = $_[0];
+
+   # Get the potential definition information for this element.
+   $currNumPotAlphas = ElementData::getNumTermsPot($element);
+   $currMinAlpha     = ElementData::getMinTermPot($element);
+   $currMaxAlpha     = ElementData::getMaxTermPot($element);
+}

@@ -1,0 +1,469 @@
+#!/usr/bin/perl
+#PROGRAM:  makeSGDB
+#PURPOSE:  This program is used to create a data base of space groups and their
+#          symmetry operations for use in reading the olcao.dat input files.
+#UPDATED:  Feb. 2, 2009
+#
+#USAGE:  makeSGDB -i $spaceGroupInFile
+#
+#The -i option is used to specify which data file should be read and converted
+#   into the form readable by the applySpaceGroup program.  This is a required
+#   argument and has no default value.
+#
+
+###############################################
+# Begin program execution #####################
+###############################################
+
+# Use necessary modules.
+use strict;
+use warnings;
+use Env;
+use lib "$OLCAO_BIN/perl5";
+use StructureControl;
+
+# Declare global variables.
+my $spaceGroupInFile;
+my $numSymmetryOps;
+my @symmetryOps;    # Invert or do not invert [axisPrime][axisContrib][numOps].
+                    #   Note that although the files contain x,y,z the meaning
+                    #   is understood to be possibly non-orthogonal a,b,c axes.
+                    #   This was the convention used by "A Hypertext Book of
+                    #   Crystallographic Space Group Diagrams and Tables" by
+                    #   Birkbeck College, University of London.  Which was used
+                    #   as the source for the definition of the space groups.
+my @symmetryShifts; # Shift by how much [axis][numOps].
+my $numShifts;      # Number of shifted repetitions of original symmetry ops.
+my $outputFile;     # Name for each space group.
+my $subGroupName;   # Name for the current sub group of the current space group.
+my $spaceLattice;   # Character ID for the type of lattice.
+my $spaceGroupTag;  # String identifying the space group and its subgroup.
+
+# Initialize the environment.
+&initEnv;
+
+# Parse the command line.
+&parseCommandLine;
+
+# Read the data file and create the database.
+&makeDB;
+
+###############################################
+# End program execution #######################
+###############################################
+
+sub initEnv
+{
+   # Initialize the spaceGroupInFile to the empty state so it must be filled
+   #   with a command line parameter.
+   $spaceGroupInFile = "";
+}
+
+sub parseCommandLine
+{
+   # Define and initialize local variables.
+   my $number = 0;
+   my $argument;
+   my $commandLine = "command";
+
+   # Loop through the command line parameters.
+   while ($number < scalar(@ARGV))
+   {
+      if ($ARGV[$number] eq "-i")
+         {$spaceGroupInFile = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-help")
+         {&printHelp;}
+      else
+      {
+         print STDOUT "UNKNOWN COMMAND LINE PARAMETER $ARGV[$number].\n";
+         exit;
+      }
+      $number++;
+   }
+
+   #Record the command line used to create this set of input files.
+   open (COMMANDLINE,">>$commandLine");
+   print COMMANDLINE "makeSGDB ";
+   foreach $argument (0..$#ARGV)
+      {print COMMANDLINE "$ARGV[$argument] ";}
+   print COMMANDLINE "\n";
+   close (COMMANDLINE);
+}
+
+sub makeDB
+{
+   # Define local variables.
+   my $line;
+   my @values;
+   my $axis;
+   my $groupNumber;
+   my $subGroup;
+   my $numSubGroups;
+
+   # Open the data file for reading.
+   open (INDATA,"<$spaceGroupInFile") || die "Can not open file for reading.\n";
+
+   while ($line = <INDATA>)
+   {
+      # Prepare the line components for modification.
+      @values = StructureControl::prepLine("",$line,'\s+');
+
+      # Determine the space group number and how many variations there are for
+      #   this space group.
+      $groupNumber  = $values[0];
+      $numSubGroups = $values[1];
+
+      # Read the empty line that follows the space group number and number of
+      #   subgroups line.
+      <INDATA>;
+
+      # Read each of the subgroups and convert them.
+      foreach $subGroup (1..$numSubGroups)
+      {
+         # Obtain all naming information.
+         &getSubGroupName($subGroup);
+
+         # Open the file for this space group subgroup for writing.
+         open (OUTDATA,">$outputFile") ||
+            die "Can not open $outputFile for writing.\n";
+
+         # Write the title for this space group.
+         print OUTDATA $spaceGroupTag;
+
+         # Write the root space group number for this space group.
+         print OUTDATA "$groupNumber\n";
+
+         # Read all the symmetry operations.
+         &readSymmetryComponents;
+
+         # Record the symmetry operations.
+         &writeSymmetryComponents;
+
+         # Create a few links for easy reference in the olcao.skl files.  Note
+         #   that this will modify the subGroupName to include escaped chars.
+         &makeSoftLinks($groupNumber,$numSubGroups,$subGroup);
+      }
+
+      # Read the empty line that follows the space group symmetry operations.
+      <INDATA>;
+   }
+}
+
+sub getSubGroupName
+{
+   # Define passed parameters.
+   my $subGroup = $_[0];
+
+   # Define local variables.
+   my $currentGroupName;
+   my $currentExtName;
+   my $subNameComment;
+   my $line;
+   my @values;
+
+   # Read the subgroup title.
+   $line = <INDATA>;
+   $spaceGroupTag = $line;
+   @values = StructureControl::prepLine("",$line,'\s+');
+
+   # Extract the name.
+   $currentGroupName = $values[0];
+
+   # Extract the subName and the reason for it if the subname exists.
+   #   Prepend a "_" for the filename for convenience.
+   if ($#values > 0)
+   {
+      $currentExtName = "_" . $values[1];
+      $subNameComment = $values[2];
+   }
+   else
+      {$currentExtName = "";}
+
+   # Extract the status of the cell lattice (primitive or non-primitive) and if
+   #   it is non-primitive, then what type is it?
+   @values = StructureControl::prepLine("",$values[0],'');
+   $spaceLattice = $values[0];  # P, A, B, C, I, F, R, H
+
+   # Prepend the lattice info to the space group tag so that the FORTRAN
+   #   program that uses this later can know if it can reduce this cell
+   #   to a primitive cell.
+   $spaceGroupTag = $spaceLattice . " " . $spaceGroupTag;
+
+   # Record the name of this group for reference when creating a link to it.
+   $subGroupName = "$currentGroupName" . "$currentExtName";
+
+   # Create the output file name.
+   $outputFile   = "$currentGroupName" . "$currentExtName";
+}
+
+sub readSymmetryComponents
+{
+   # Define local variables.
+   my $line;
+   my $currentNumSymmetryOps;
+
+   # Initialize the number of symmetry ops currently read in, and the number
+   #   that is the total for this space group.  These two numbers are the same
+   #   except when there are shifted repititions.  Then the
+   #   currenNumSymmetryOps represents the initial group, and the
+   #   numSymmetryOps represents the total number (original + shifted as they
+   #   are applied).
+   $currentNumSymmetryOps = 0;
+   $numSymmetryOps = 0;
+
+   # Read symmetry components and save each one until we find either the end
+   #   (signified by a blank line) or we find and call for shifted repitition.
+   #   This takes the form of a line with something like +(1/2 0 1/2) on it.
+   #   This means to repeat all the symmetry operations with the shifts given
+   #   on the line applied to each of them.
+   while ($line = <INDATA>)
+   {
+      if ($line eq "\n")
+         {last;}
+      elsif ($line =~ /\(/)
+         {&applyShiftedRepitition($line,$currentNumSymmetryOps);}
+      else
+      {
+         $currentNumSymmetryOps++;
+         $numSymmetryOps++;
+
+         &saveSymmetryOperation($line,$numSymmetryOps);
+      }
+   }
+
+   # Compute the number of shifted sets of symmetry operations that exist for
+   #   this space group.
+   $numShifts = $numSymmetryOps / $currentNumSymmetryOps;
+}
+
+sub saveSymmetryOperation
+{
+   # Define passed parameters.
+   my $line = $_[0];
+   my $numSymmetryOps = $_[1];
+
+   # Define local variables.
+   my @values;
+   my $axis;
+   my @componentList;
+
+   @values = StructureControl::prepLine("",$line,'\s+');
+
+   # Deal with each axis separately.
+   foreach $axis (0..2)
+   {
+      # Get the list of components to the current axis operation.
+      @componentList = &getAxisOpComponents($values[$axis]);
+
+      $symmetryOps[$axis][0][$numSymmetryOps] = $componentList[0];
+      $symmetryOps[$axis][1][$numSymmetryOps] = $componentList[1];
+      $symmetryOps[$axis][2][$numSymmetryOps] = $componentList[2];
+      $symmetryShifts[$axis][$numSymmetryOps] = $componentList[3];
+   }
+}
+
+sub getAxisOpComponents
+{
+   # Define passed parameters.
+   my $components = $_[0];
+
+   # Define local variables.
+   my @values;
+   my $numirator=0;
+   my $denominator=0;
+   my $sign;
+   my $axisIndex;
+   my $charIndex;
+   my $signFactor;
+   my @componentList;
+
+   # Get every character in the current axis operation.
+   @values = StructureControl::prepLine("",$components,'');
+
+   # Assume a positive sign for the first term.
+   $signFactor = 1.0;
+
+   # Initialize the component list to be returned.
+   @componentList = (0,0,0,0);
+
+   # Consider each character in this axis operation.
+   $charIndex = 0;
+   while ($charIndex <= $#values)
+   {
+      if ($values[$charIndex] =~ /\+/)
+      {
+         $signFactor =  1.0;  # Positive sign for next component.
+         $charIndex++;
+      }
+      elsif ($values[$charIndex] =~ /\-/)
+      {
+         $signFactor = -1.0;  # Negative sign for next component.
+         $charIndex++;
+      }
+      elsif ($values[$charIndex] =~/x/)
+      {
+         $componentList[0] = $signFactor;
+         $charIndex++;
+      }
+      elsif ($values[$charIndex] =~/y/)
+      {
+         $componentList[1] = $signFactor;
+         $charIndex++;
+      }
+      elsif ($values[$charIndex] =~/z/)
+      {
+         $componentList[2] = $signFactor;
+         $charIndex++;
+      }
+      elsif ($values[$charIndex] =~ /[0-9]/)
+      {
+         $numirator   = $values[$charIndex];
+         $denominator = $values[$charIndex+2];
+         $componentList[3] = ($signFactor*$numirator)/$denominator;
+         $charIndex += 3;
+      }
+   }
+
+   return @componentList;
+}
+
+sub applyShiftedRepitition
+{
+   # Define passed parameters.
+   my $line = $_[0];;
+   my $currentNumSymmetryOps = $_[1];
+
+   # Define local variables.
+   my @values;
+   my @values2;
+   my $axis;
+   my $axis2;
+   my $fraction;
+   my @shiftVector;
+   my $symmetryOp;
+
+   # Prepare the shift vector.
+   @values = StructureControl::prepLine("",$line,'\+\(|\)|\s');
+   foreach $axis (0..2)
+   {
+      @values2 = StructureControl::prepLine("",$values[$axis],'\/');
+      if ($values2[0] =~ /[1-9]/)
+         {$shiftVector[$axis] = ($values2[0]*1.0)/$values2[1];}
+      else
+         {$shiftVector[$axis] = 0;}
+   }
+
+   # Copy all the symmetry operations recorded so far and apply the shiftVector
+   #   to the symmetryShifts as they are copied.
+   foreach $symmetryOp (1..$currentNumSymmetryOps)
+   {
+      $numSymmetryOps++;
+      foreach $axis (0..2)
+      {
+         foreach $axis2 (0..2)
+         {
+            # Copy the old operation to the new one.
+            $symmetryOps[$axis][$axis2][$numSymmetryOps] =
+                  $symmetryOps[$axis][$axis2][$symmetryOp];
+         }
+
+         # Copy the old shift to the new one and apply the shiftVector.
+         $symmetryShifts[$axis][$numSymmetryOps] =
+               $symmetryShifts[$axis][$symmetryOp] + $shiftVector[$axis];
+      }
+   }
+}
+
+sub writeSymmetryComponents
+{
+   # Define local variables.
+   my $op;
+   my $axis;
+   my $axis2;
+
+   # Write the total number of symmetry operations and the number of shifted
+   #   repetitions that exist in this data.
+   print OUTDATA "$numSymmetryOps $numShifts\n";
+
+   # Each symmetry operation is actually a set of four triplets.  The first
+   #   defines the contributions to the a component, the second to the b, and
+   #   the third to the c.  The last triplet defines the amount of fractional
+   #   shift to apply to each axis (a,b,c).
+   foreach $op (1..$numSymmetryOps)
+   {
+      print OUTDATA "\n";
+      foreach $axis (0..2)
+      {
+            printf OUTDATA "%12.8f %12.8f %12.8f\n",
+                  $symmetryOps[$axis][0][$op],
+                  $symmetryOps[$axis][1][$op],
+                  $symmetryOps[$axis][2][$op];
+      }
+
+      # Print the shift triplet.
+      printf OUTDATA "%12.8f %12.8f %12.8f\n",
+            $symmetryShifts[0][$op],
+            $symmetryShifts[1][$op],
+            $symmetryShifts[2][$op];
+   }
+}
+
+sub makeSoftLinks
+{
+   # Define passed parameters.
+   my $groupNumber  = $_[0];  # The current group number.
+   my $numSubGroups = $_[1];  # The number of sub groups.
+   my $subGroup = $_[2];      # The current sub group number.
+
+   # Define local variables.
+   my @values;
+   my $ord_a;               # Ordinal value of the character "a".
+   my $groupNumberWithExt;  # A space group number with "_a" or "_b" etc. on it.
+
+   # Obtain the ordinal value of the character "a" (typically in the ASCII set).
+   $ord_a = ord("a");
+
+   # Modify the default name to include characters that need to be
+   #   escaped when making a soft link to the file.
+   $subGroupName =~ s/\\/\\\\/g; # Insert an escaped backslash.
+   $subGroupName =~ s/\'/\\\'/g; # Insert an escaped apostrophe.
+
+   # In the case that there is only one subgroup, then life is easy.  We then
+   #   simply make a link to it with the associated group number.  If there
+   #   are multiple subgroups, we make a link to this one where the link name
+   #   is the associated group number including the "_a" or "_b" etc extension.
+   if ($numSubGroups == 1)
+   {
+      # Create a soft link to the first subgroup using the space group number.
+      if (-e $groupNumber)
+         {system("rm -f $groupNumber");}
+      system("ln -s $subGroupName $groupNumber");
+   }
+   else
+   {
+      # Create a link name that is the group number plus a char extension.
+      $groupNumberWithExt = $groupNumber . "_" . chr($subGroup-1+$ord_a);
+
+      # Remove the old link if it exists and then create the new link.
+      if (-e $groupNumberWithExt)
+         {system("rm -f $groupNumberWithExt");}
+      system("ln -s $subGroupName $groupNumberWithExt");
+   }
+}
+
+sub printHelp
+{
+   print <<ENDHELP;
+#PROGRAM:  makeSGDB
+#PURPOSE:  This program is used to create a data base of space groups and their
+#          symmetry operations for use in reading the olcao.dat input files.
+#
+#USAGE:  makeSGDB -i \$spaceGroupInFile
+#
+#The -i option is used to specify which data file should be read and converted
+#   into the form readable by the applySpaceGroup program.  This is a required
+#   argument and has no default value.
+#
+ENDHELP
+exit;
+}

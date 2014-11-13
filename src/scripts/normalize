@@ -1,0 +1,282 @@
+#!/usr/bin/perl
+###############################################################################
+#PROGRAM normalize
+#LAST UPDATED:  Sept. 3, 2008.
+#USAGE:  normalize -range $start $end [-file $filename] [-help]
+#
+#This program is designed to normalize a set of spectra over a data range given
+#  on the command line.  All spectral files must end with either ".raw" or
+#  ".plot".  Optionally, this script will act on a specified file only.
+#
+#The normalization will make the area under each spectra equal to 1.  This is
+#  done by a simple summation.  Just add up each datapoint and multiply by the
+#  distance between each point.  Then invert that sum to obtain a scaling
+#  factor.  Then multiply each element of the y axis data by that factor.
+#
+#The -range option specifies the range of data over which the final output file
+#  should cover with $start and $end defining the boundaries.
+#The -file option allows normalization over a specific file instead of the set
+#  present in the current directory.
+###############################################################################
+
+##################################################
+# BEGIN EXECUTION ################################
+##################################################
+
+# Use necessary modules.
+use strict;
+use warnings;
+use Env;
+use lib "$OLCAO_BIN/perl5";
+use StructureControl;
+
+# Declare global variables.
+my $beginning; # Beginning value of the range over which the data is normalized.
+my $ending;    # Ending value of the range over which the data is normalized.
+my $givenFile; # Flag to normalize only the file given on the command line.
+my @files;     # List of files to be normalized.
+my @newFiles;  # New files to be created that contain the normalized data.
+
+# Initialize the execution environment.
+&initEnv;
+
+# Parse the command line.
+&parseCommandLine;
+
+# Get a list of the files to normalize if ncessary.
+if ($givenFile == 0)
+   {&getFileList;}
+
+# Perform the normalization on all spectra over the requested range.
+&norm;
+
+##################################################
+# END EXECUTION ##################################
+##################################################
+
+
+# Initialize the script variables.
+sub initEnv
+{
+   $beginning=0;
+   $ending=0;
+   $givenFile=0;
+}
+
+
+sub parseCommandLine
+{
+   # Declare local variables.
+   my $number=0;
+   my $commandLine = "command";
+   my $argument;
+   my @values;
+
+   # Initialize the index counter for the command line parameters.
+   while ($number < scalar(@ARGV))
+   {
+      if ($ARGV[$number] eq "-range")
+      {
+         #Get the energy range to normalize over.
+         $beginning = $ARGV[++$number];
+         $ending = $ARGV[++$number];
+      }
+      elsif ($ARGV[$number] eq "-file")
+      {
+         $givenFile = 1;
+         $files[1] = $ARGV[++$number];
+         @values = split(/\./,"$files[1]");
+         $newFiles[1] = $values[0].".norm";
+      }
+      elsif ($ARGV[$number] eq "-help")
+         {&printHelp;}
+      else
+      {
+         print STDOUT "UNKNOWN PARAMETER $ARGV[$number]. ABORTING.\n";
+         exit;
+      }
+      $number++;
+   }
+
+   #Record the command line used to create this set of input files.
+   open (COMMANDLINE,">>$commandLine");
+   print COMMANDLINE "normalize ";
+   foreach $argument (@ARGV)
+      {print COMMANDLINE "$argument ";}
+   print COMMANDLINE "\n";
+   close (COMMANDLINE);
+}
+
+sub getFileList
+{
+   # Declare local variables.
+   my @allFiles;      # List of all files in the directory.
+   my $spectraCount;  # Number of spectra to be normalized.
+   my $i; # Loop index.
+   my $j; # Loop index.
+   my @values;  # Temp array.
+
+   #Obtain a list of the files in the current directory.  From this list, the
+   #   filename ending with either "plot" or "raw" are included in the list of
+   #   files to be normalized.
+#   $fileList = `ls -1`;
+#   @allFiles=split(/\s+/,"$fileList");
+   @allFiles = `ls -1`;
+   chomp @allFiles;
+
+   #Collect files that have either "plot" or "raw" at the end of their names.
+   #  This will also create an array containing the new file names of the
+   #  normalized spectra.
+   $spectraCount=0;
+   for ($i=0;$i<=$#allFiles;$i++)
+   {
+      if (($allFiles[$i] =~ /plot$/) || ($allFiles[$i] =~ /raw$/))
+      {
+         $spectraCount++;
+         $files[$spectraCount] = $allFiles[$i];
+
+         #Determine the names of the new normalized spectra by replacing the
+         #  previous extension with ".norm".
+         @values = split(/\./,"$files[$spectraCount]");
+         $newFiles[$spectraCount] = "$values[0]";
+         for ($j=1;$j<=$#values-1;$j++)
+         {
+            $newFiles[$spectraCount] = $newFiles[$spectraCount] .
+                  ".$values[$j]";
+         }
+         $newFiles[$spectraCount] = $newFiles[$spectraCount] . ".norm";
+      }
+   }
+}
+
+
+sub norm
+{
+   # Declare local variables.
+   my $i; # Loop index.
+   my $spectra;
+   my @values; # Temp array.
+   my @spectralData;  # Temp storage of the spectral data.
+   my $energyDelta;   # Difference between energy values in the data.
+   my $sum;           # Sum of all included intensity values.
+   my $scaleFactor;   # Factor multiiplied on intensity values to make sum=1;
+   my @energy;        # Energy scale for all output data.
+   my $energyPoint;   # Index for counting energy points.
+   my $currentEnergy;
+   my $includedEnergyIndex; # Points from the given data file that are within
+                      #   the energy range of the requested normalization.
+   my @totalSpectra;
+   my @otherSpectra;
+   my $numOtherSpectra;
+
+   # Read in each file compute the normalization coefficient and then write
+   #   out the new spectra mutliplied by that coefficient.
+   for ($i=1;$i<=$#files;$i++)
+   {
+      open (SPECTRA,"<$files[$i]");
+      <SPECTRA>;
+      @spectralData = <SPECTRA>;
+      close (SPECTRA);
+      chomp @spectralData;
+
+      # Sum up and save all the values between the beginning and ending points.
+      $includedEnergyIndex = 0;
+      $sum = 0.0;
+      foreach $energyPoint (0..$#spectralData)
+      {
+         @values = StructureControl::prepLine
+               ("",$spectralData[$energyPoint],'\s+');
+         $numOtherSpectra = $#values-1;
+         if (($values[0] >= $beginning) && ($values[0] <= $ending))
+         {
+            $includedEnergyIndex++;
+            $energy[$includedEnergyIndex] = $values[0];
+            $totalSpectra[$includedEnergyIndex] = $values[1];
+            foreach $spectra (1..$numOtherSpectra)
+            {
+               $otherSpectra[$spectra][$includedEnergyIndex] =
+                     $values[$spectra+1];
+            }
+            $sum += $totalSpectra[$includedEnergyIndex];
+         }
+         elsif ($values[0] > $ending)
+            {last;}
+      }
+
+      # Determine the size of the delta between data points.
+      $energyDelta = $energy[2] - $energy[1];
+
+      # Compute the scaling factor.
+      $sum = $sum * $energyDelta;
+      $scaleFactor = 1.0/$sum;
+
+      # Prepare to write the results.
+      $sum = 0; #Reinitialize the sum to double check the spectral area.
+      open (NORM,">$newFiles[$i]");
+
+      # Write all necessary leading zeros.
+      $currentEnergy = $beginning;
+      while (($energy[1] - $currentEnergy) > 0.00000001)
+      {
+         printf NORM " %13.10f %13.10f %13.10f %13.10f %13.10f\n",
+               $currentEnergy, 0.0, 0.0, 0.0, 0.0;
+         $currentEnergy += $energyDelta;
+      }
+
+      # Write the scaled data.
+      foreach $energyPoint (1..$includedEnergyIndex)
+      {
+         printf NORM " %13.10f %13.10f ",$energy[$energyPoint],
+               $totalSpectra[$energyPoint] * $scaleFactor;
+         foreach $spectra (1..$numOtherSpectra)
+         {
+            printf NORM "%13.10f ", $otherSpectra[$spectra][$energyPoint] *
+                  $scaleFactor;
+         }
+         print NORM "\n";
+         $sum += $totalSpectra[$energyPoint] * $scaleFactor;
+      }
+
+      # Write all necessary trailing zeros.
+      $currentEnergy = $energy[$includedEnergyIndex];
+      while ($ending - $currentEnergy > 0.00000001)
+      {
+         $currentEnergy += $energyDelta;
+         printf NORM " %13.10f %13.10f %13.10f %13.10f %13.10f\n",
+               $currentEnergy, 0.0, 0.0, 0.0, 0.0;
+      }
+
+      # Close the output file.
+      close (NORM);
+
+      # Compute the total area of the normalized curve.
+      $sum = $sum * $energyDelta;  #For double checking the spectral area.
+      #print STDOUT "Area under spectra = $sum\n";
+   }
+}
+
+sub printHelp
+{
+   print <<ENDHELP;
+###############################################################################
+#PROGRAM normalize
+#LAST UPDATED:  Sept. 3, 2008.
+#USAGE:  normalize -range \$start \$end [-file \$filename] [-help]
+#
+#This program is designed to normalize a set of spectra over a data range given
+#  on the command line.  All spectral files must end with either ".raw" or
+#  ".plot".  Optionally, this script will act on a specified file only.
+#
+#The normalization will make the area under each spectra equal to 1.  This is
+#  done by a simple summation.  Just add up each datapoint and multiply by the
+#  distance between each point.  Then invert that sum to obtain a scaling
+#  factor.  Then multiply each element of the y axis data by that factor.
+#
+#The -range option specifies the range of data over which the final output file
+#  should cover with \$start and \$end defining the boundaries.
+#The -file option allows normalization over a specific file instead of the set
+#  present in the current directory.
+###############################################################################
+ENDHELP
+   exit;
+}

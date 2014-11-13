@@ -1,0 +1,577 @@
+#!/usr/bin/perl
+
+###############################################################################
+#PROGRAM scanSpectra
+#
+# The purpose of this program is to compute a series of average XANES spectra,
+#   where each term in the series is associated with a specific a,b,c point in
+#   a model.  A key assumption is that this program is run from the directory
+#   that contains all the computed spectra for a particular element/edge
+#   combination (e.g. pwd = $HOME/xas/somesystem/norms/o-k and all the o-k
+#   spectra for the whole model are in that directory).
+#
+#USAGE:  scanSpectra -elem $element -edge $edge
+#                    [-s $startx $starty $startz -e $endx $endy $endz]
+#                    [-mesh $numA $numB $numC [-g $gaussianFWHM]]
+#                    [-n $numSpacePoints] [-l $limitDist] [-o $outFile] | -help
+#
+# The -elem option is required and it specifies which element we seek to scan.
+# The -edge option is required and it specifies which edge of the given element
+#   we seek to scan.
+# The -s switch defines the x, y, z location of the starting position for the
+#   scan of XANES spectra.
+# The -e switch defines the x, y, z location of the ending position for the
+#   scan of XANES spectra.
+# The -mesh switch defines the number of points along each a,b,c direction
+#   that should be sampled.  This is mutually exclusive with the -s and -e
+#   switches.
+# The -g suboption defines the full width at half the maximum height of the
+#   gaussian that is used to weight the spectral averaging on the mesh points.
+#   If not given then the default value of 3.0 A is used.
+# The -n option will define the number of points between the start and end
+#   that will be collected.  If this option is not given, then the default
+#   value of 101 will be used.  Only necessary for line scans, not mesh scans.
+# The -l option is used to define the radius of the sphere within which atoms
+#   can contribute to the total XANES spectra for that point.  If not given,
+#   then the default value of 4 A is used.
+# The -o option defines the name for the output file.  If not specified, then
+#   the default name of "output.dat" will be used.
+# The -help option prints this friendly message.
+###############################################################################
+
+
+##################################################
+# BEGIN EXECUTION ################################
+##################################################
+
+
+# Use necessary modules.
+use strict;
+use warnings;
+use Env;
+use lib "$OLCAO_BIN/perl5";
+use StructureControl;
+
+# Declare global variables.
+my $doMesh;
+my $element;
+my $edge;
+my $numAtoms;
+my $numAtomsExt;
+my $ext2CentralAtomMap_ref;
+my $atomElementName_ref;
+my $atomSpeciesID_ref;
+my $extScanDist_ref;
+my $spectraDir;
+my $numSpacePoints;
+my $numEnergyPoints;
+my $initialEnergy;
+my $finalEnergy;
+my $energyDelta;
+my $limitDist;
+my @numMeshPoints;
+my @start;
+my @end;
+#my $negBit_ref;
+#my $posBit_ref;
+my @lineSpectra;
+my $outFile;
+my $gaussianFWHM;
+
+# Initialize the program environment variables.
+&initEnv;
+
+# Parse the command line.
+&parseCommandLine;
+
+# Read the input file.
+StructureControl::readInputFile("olcao.skl", 0);
+
+# Read the OLCAO species from the gulp.mi file.
+StructureControl::readOLCAOSpecies;
+
+# Set the limit for atom interaction.  (Radius of inclusion)
+StructureControl::setLimitDist($limitDist);
+
+# Define the element of interest.
+StructureControl::setScanElement($element);
+
+# Set up the sampling points.
+StructureControl::setScanPoints($doMesh,@numMeshPoints[1,2,3],$numSpacePoints,
+      @start[1,2,3],@end[1,2,3]);
+
+# Compute the distance between each extended atom position of the element of
+#   interest and every point on the line or mesh.
+StructureControl::computeAtomMeshDist;
+
+# Obtain a reference to the data structure that holds the distance information.
+$extScanDist_ref = StructureControl::getExtScanDistRef;
+
+# Obtain a reference to the elemental names of each atom in the system.
+$atomElementName_ref = StructureControl::getAtomElementNameRef;
+
+# Obtain a reference to the species number of each atom in the system.
+$atomSpeciesID_ref = StructureControl::getAtomSpeciesIDRef;
+
+# Obtain a reference to the mapping between extended and original cell numbers.
+$ext2CentralAtomMap_ref = StructureControl::getExt2CentralItemMapRef;
+
+# Obtain references to the neg and pos bits indicating periodic cells used.
+#$negBit_ref = StructureControl::getNegBitRef;
+#$posBit_ref = StructureControl::getPosBitRef;
+
+# Obtain the number of atoms and extended atoms in the system.
+$numAtoms    = StructureControl::getNumAtoms;
+$numAtomsExt = StructureControl::getNumAtomsExt;
+
+# Form and print the spectral data for each point.
+&formAndPrintSpectra($doMesh);
+
+##################################################
+# END EXECUTION ##################################
+##################################################
+
+
+sub initEnv
+{
+   my $i;
+   my $commandLine = "command";
+
+   # Assume the default name for the output.
+   $outFile = "output.dat";
+
+   # Assume that we will use 101 points between the start and end for non-mesh
+   #   types of calculations.
+   $numSpacePoints = 101.0;
+
+   # Assume that the search sphere has a radius of 4 A.
+   $limitDist = 4.0;
+
+   # Assume that we are doing neither a mesh nor a line.  We will make the
+   #   determination about what we are doing from the command line.
+   $doMesh = 0;
+
+
+   # Initialize the element and edge to empty strings so that we can check
+   #   for their absence on the command line.
+   $element = "";
+   $edge = "";
+
+
+   # Initialize the value for the gaussian FWHM that is used to weight the
+   #   spectra when averaging at the mesh points.
+   $gaussianFWHM = 3.0;
+
+
+   #Record the command line used to create this set of input files.
+   open (COMMANDLINE,">>$commandLine");
+   print COMMANDLINE "scanSpectra ";
+   for ($i = 0; $i <= $#ARGV; $i++)
+      {print COMMANDLINE "$ARGV[$i] ";}
+   print COMMANDLINE "\n";
+   close (COMMANDLINE);
+}
+
+
+sub parseCommandLine
+{
+   # Declare local variables.
+   my $number = 0;
+
+   while ($number < scalar(@ARGV))
+   {
+      if ($ARGV[$number] eq "-mesh")
+      {
+         $numMeshPoints[1] = $ARGV[++$number];
+         $numMeshPoints[2] = $ARGV[++$number];
+         $numMeshPoints[3] = $ARGV[++$number];
+         $numSpacePoints=$numMeshPoints[1]*$numMeshPoints[2]*$numMeshPoints[3];
+         $doMesh = 1;
+      }
+      elsif ($ARGV[$number] eq "-g")
+         {$gaussianFWHM = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-s")
+      {
+         $start[1] = $ARGV[++$number];
+         $start[2] = $ARGV[++$number];
+         $start[3] = $ARGV[++$number];
+      }
+      elsif ($ARGV[$number] eq "-e")
+      {
+         $end[1] = $ARGV[++$number];
+         $end[2] = $ARGV[++$number];
+         $end[3] = $ARGV[++$number];
+      }
+      elsif ($ARGV[$number] eq "-elem")
+         {$element = lc($ARGV[++$number]);}
+      elsif ($ARGV[$number] eq "-edge")
+         {$edge = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-n")
+         {$numSpacePoints = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-l")
+         {$limitDist = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-o")
+         {$outFile = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-help")
+         {&printHelp;}
+      else
+      {
+         print STDOUT "UNKNOWN COMMAND LINE PARAMETER $ARGV[$number].\n";
+         exit;
+      }
+      $number++;
+   }
+
+   # Complain if the $element and $edge variables were not given.
+   if ($element eq "")
+   {
+      print STDOUT "You failed to give the element of interest.\n";
+      exit;
+   }
+   if ($edge eq "")
+   {
+      print STDOUT "You failed to give the edge of interest.\n";
+      exit;
+   }
+}
+
+
+sub printHelp
+{
+   print <<ENDHELP;
+###############################################################################
+#PROGRAM scanSpectra
+#LAST UPDATED: Sept. 24, 2007
+#
+# The purpose of this program is to compute a series of average XANES spectra,
+#   where each term in the series is associated with a specific a,b,c point in
+#   a model.  A key assumption is that this program is run from the directory
+#   that contains all the computed spectra for a particular element/edge
+#   combination (e.g. pwd = \$HOME/xas/somesystem/norms/o-k and all the o-k
+#   spectra for the whole model are in that directory).
+#
+#USAGE:  scanSpectra -elem \$element -edge \$edge
+#                    [-s \$startx \$starty \$startz -e \$endx \$endy \$endz]
+#                    [-mesh \$numA \$numB \$numC [-g \$gaussianFWHM]]
+#                    [-n \$numSpacePoints] [-l \$limitDist] [-o \$outFile] | -help
+#
+# The -elem option is required and it specifies which element we seek to scan.
+# The -edge option is required and it specifies which edge of the given element
+#   we seek to scan.
+# The -s switch defines the x, y, z location of the starting position for the
+#   scan of XANES spectra.
+# The -e switch defines the x, y, z location of the ending position for the
+#   scan of XANES spectra.
+# The -mesh switch defines the number of points along each a,b,c direction
+#   that should be sampled.  This is mutually exclusive with the -s and -e
+#   switches.
+# The -g suboption defines the full width at half the maximum height of the
+#   gaussian that is used to weight the spectral averaging on the mesh points.
+#   If not given then the default value of 3.0 A is used.
+# The -n option will define the number of points between the start and end
+#   that will be collected.  If this option is not given, then the default
+#   value of 101 will be used.  Only necessary for line scans, not mesh scans.
+# The -l option is used to define the radius of the sphere within which atoms
+#   can contribute to the total XANES spectra for that point.  If not given,
+#   then the default value of 4 A is used.
+# The -o option defines the name for the output file.  If not specified, then
+#   the default name of "output.dat" will be used.
+# The -help option prints this friendly message.
+###############################################################################
+ENDHELP
+   exit;
+}
+
+
+
+sub formAndPrintSpectra
+{
+   # Rename passed variables.
+   my $doMesh = $_[0];
+
+   # Declare local variables.
+   my $fileName;
+   my $spacePoint;
+   my $atom;
+   my @spectra;
+   my @totalSpectra;
+   my @allLineSpectra;
+   my @values;
+   my $cellBitA;
+   my $cellBitB;
+   my $cellBitC;
+   my $currentDist;
+   my $energyPoint;
+   my $spectralArea;
+   my $pointCount;
+   my @gaussianDistFactor;
+   my $numContribAtoms;
+   my @contribAtomNumber;
+   my $contribAtom;
+   my $totalWeight;
+   my $alpha;
+   my $sigma;
+
+   open (OUTPUT,">$outFile") || die "Can not open $outFile for writing.\n";
+
+   # Compute the necessary alpha for the gaussian A*exp(-alpha*x^2) to have the
+   #   requested FWHM.  We use alpha = 1/(2*sigma^2) and
+   #   FWHM = 2*sqrt(2 * ln(2)) * sigma.
+   $sigma = 1.0 / (2.0*sqrt(2.0*log(2.0)) / $gaussianFWHM);
+   $alpha = 1/(2.0*$sigma*$sigma);
+
+   # Begin by opening each atom file and obtaining necessary information.
+   foreach $atom (1..$numAtoms)
+   {
+      # Abort this atom if it is not the correct element.
+      if ($atomElementName_ref->[$atom] ne $element)
+         {next;}
+
+      $fileName = "norms/".$element."-".$edge."/".$element.
+            $atomSpeciesID_ref->[$atom]."_".$atom."-".$edge.".norm";
+      open (XAS,"<$fileName") || die "Cannot open $fileName for reading.\n";
+
+      # Read the normalized spectra.  Columns given as 1=energy, 2=total,
+      #   3=x, 4=y, 5=z.
+      @spectra = <XAS>;
+
+      # Get the number of energy points.
+      $numEnergyPoints = scalar @spectra;
+
+      # Get the initial energy value.
+      @values = split(/\s+/,$spectra[0]);
+      if ($values[0] eq "")
+         {shift @values;}
+      $initialEnergy = $values[0];
+
+      # Get the final energy value.
+      @values = split(/\s+/,$spectra[$#spectra]);
+      if ($values[0] eq "")
+         {shift @values;}
+      $finalEnergy = $values[0];
+
+      # Compute the energy delta.
+      $energyDelta = ($finalEnergy - $initialEnergy) / ($numEnergyPoints-1);
+
+      # Extract the total spectra column.
+      foreach $energyPoint (0..$numEnergyPoints-1)
+      {
+         @values = split(/\s+/,$spectra[$energyPoint]);
+         if ($values[0] eq "")
+            {shift @values;}
+         $totalSpectra[$atom][$energyPoint] = $values[1];
+      }
+
+      # Close the file.
+      close (XAS);
+   }
+
+   # Print the header.
+   if ($doMesh == 0)
+      {&printODXHeader(\*OUTPUT);}  # Print the OpenDX header.
+   else
+      {&printHeader(\*OUTPUT);} # Print the non-openDX header.
+
+
+   # Print a progress note.
+   print STDOUT "Accumulating point spectra.\n";
+
+   # Begin accumulating the spectra for each point on the mesh.
+   foreach $spacePoint (1..$numSpacePoints)
+   {
+      if ($spacePoint%10 == 0)
+         {print STDOUT "|";}
+      else
+         {print STDOUT ".";}
+
+      if ($spacePoint%50 == 0)
+         {print STDOUT " $spacePoint\n";}
+
+      # Initialize the array to hold the accumulated spectrum.
+      foreach $energyPoint (0..$numEnergyPoints-1)
+         {$lineSpectra[$energyPoint] = 0.0;}
+
+      # Initialize a counter for the number of atoms that will contribute to
+      #   the spectrum at this point.
+      $numContribAtoms = 0;
+
+      foreach $atom (1..$numAtomsExt)
+      {
+         # Abort this atom if it is not the correct element.
+         if ($atomElementName_ref->[$ext2CentralAtomMap_ref->[$atom]] ne 
+             $element)
+            {next;}
+
+         # Save a convenient name for the current distance.
+         $currentDist = $extScanDist_ref->[$spacePoint][$atom];
+
+         # Abort if the distance is too great.
+         if ($currentDist > $limitDist)
+            {next;}
+
+         # Increment the number of atoms contributing to the spectrum at
+         #   this mesh point.
+         $numContribAtoms++;
+
+         # Determine the distance factor for this spectrum.
+         $gaussianDistFactor[$numContribAtoms] = 
+               exp(-1.0*$alpha*$currentDist**2);
+
+         # Save the associated atom number for this spectrum.
+         $contribAtomNumber[$numContribAtoms] =
+               $ext2CentralAtomMap_ref->[$atom];
+      }
+
+      # Compute the normalized weighting factor.  (The sum of all weighting
+      #   factors should be equal to one.)
+      $totalWeight = 0;
+      foreach $contribAtom (1..$numContribAtoms)
+         {$totalWeight += $gaussianDistFactor[$contribAtom];}
+      foreach $contribAtom (1..$numContribAtoms)
+         {$gaussianDistFactor[$contribAtom] /= $totalWeight;}
+
+      # Accumulate the spectrum for this mesh point using the contributing
+      #   atoms and their associated weighting factors.
+      foreach $contribAtom (1..$numContribAtoms)
+      {
+         foreach $energyPoint (0..$numEnergyPoints-1)
+         {
+            $lineSpectra[$energyPoint] +=
+                 $gaussianDistFactor[$contribAtom] *
+                 $totalSpectra[$contribAtomNumber[$contribAtom]][$energyPoint];
+         }
+      }
+
+      if ($doMesh)
+      {
+         # Loop through the spectrum again to print it.
+         $pointCount = 0;
+         foreach $energyPoint (0..$numEnergyPoints-1)
+         {
+            $pointCount++;
+            printf OUTPUT "%12.8f ",$lineSpectra[$energyPoint];
+
+            if ($pointCount%5 == 0)
+            {
+               print OUTPUT "\n";
+               $pointCount=0;
+            }
+         }
+
+         # Add a final newline if necessary.
+         if ($pointCount != 0)
+            {print OUTPUT "\n";}
+      }
+      else
+      {
+         foreach $energyPoint (0..$numEnergyPoints-1)
+         {
+            $allLineSpectra[$spacePoint][$energyPoint] =
+                  $lineSpectra[$energyPoint];
+         }
+
+      }
+   }
+
+   # Add another newline if necessary.
+   if ($numSpacePoints%50 != 0)
+      {print STDOUT "\n";}
+
+   # Print all the spectra.  For the line case there are not too many points
+   #   and so the memory requirements are not so great.
+   if (! $doMesh)
+   {
+      $pointCount = 0;
+      foreach $energyPoint (0..$numEnergyPoints-1)
+      {
+         foreach $spacePoint (1..$numSpacePoints)
+         {
+            $pointCount++;
+            printf OUTPUT "%12.8f ",$allLineSpectra[$spacePoint][$energyPoint];
+
+            if ($pointCount%5 == 0)
+            {
+               print OUTPUT "\n";
+               $pointCount=0;
+            }
+         }
+      }
+
+      # Add a final newline if necessary.
+      if ($pointCount != 0)
+         {print OUTPUT "\n";}
+
+      # Print the OpenDX header.
+      &printODXTail(\*OUTPUT);
+   }
+
+   # Close the file.
+   close (OUTPUT);
+}
+
+
+
+sub printODXHeader
+{
+   # Define the passed variables.
+   my $fileHandle = $_[0];
+
+   # Declare local variables.
+   my $numDataPoints;
+   my $spaceDelta;
+
+   # Compute the total number of data points.
+   $numDataPoints = $numEnergyPoints * $numSpacePoints;
+
+   # Compute the space point delta.
+   $spaceDelta = sqrt(($start[1]-$end[1])**2 +
+                      ($start[2]-$end[2])**2 +
+                      ($start[3]-$end[3])**2)/($numSpacePoints-1);
+
+   print $fileHandle "object 1 class gridpositions counts $numEnergyPoints $numSpacePoints\n";
+   print $fileHandle "origin $initialEnergy 0\n";
+   print $fileHandle "delta $energyDelta 0.0\n";
+   print $fileHandle "delta 0.0 $spaceDelta\n\n";
+
+   print $fileHandle "object 2 class gridconnections counts $numEnergyPoints $numSpacePoints\n\n";
+   print $fileHandle "object 3 class array type float rank 0 items $numDataPoints data follows\n";
+}
+
+sub printODXTail
+{
+   # Declare passed variables.
+   my $fileHandle = $_[0];
+
+   # Tack on the ending information.
+   print $fileHandle "attribute \"dep\" string \"positions\"\n\n";
+   print $fileHandle "object \"scan\" class field\n";
+   print $fileHandle "component \"positions\" value 1\n";
+   print $fileHandle "component \"connections\" value 2\n";
+   print $fileHandle "component \"data\" value 3\n";
+   print $fileHandle "end\n\n";
+}
+
+
+sub printHeader
+{
+   # Declare passed variables.
+   my $fileHandle = $_[0];
+
+   # Declare local variables.
+   my $realLattice_ref;
+   my $xyz;
+   my $abc;
+
+   print $fileHandle "@numMeshPoints[1,2,3]\n";
+
+   $realLattice_ref = StructureControl::getRealLatticeRef;
+
+   foreach $abc (1..3)
+   {
+      foreach $xyz (1..3)
+         {print $fileHandle "$realLattice_ref->[$abc][$xyz]   ";}
+      print $fileHandle "\n";
+   }
+
+   print $fileHandle "$numEnergyPoints $initialEnergy $finalEnergy\n";
+}

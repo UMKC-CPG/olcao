@@ -1,0 +1,104 @@
+#!/usr/bin/perl
+#PROGRAM:  addAtoms
+#PURPOSE:  This program will read an olcao.skl file and add atoms to it
+#          according to annotations in the file.
+#
+#USAGE:    addAtoms [-i $inFile] [-o $outFile] | -help
+#
+##########################
+# OPTIONS EXPLANATIONS:  #
+##########################
+#
+#The -i option will take the $inFile parameter that defines the name of the
+#   input file.  If this option is not given then the default "olcao.skl" is
+#   used.
+#The -o option will take the $outFile parameter that defines the name of the
+#   output file.  If this option is not given then the default "olcao.new.skl"
+#   is used.
+#The -help option will print this useful message.
+#The annotations in the olcao.skl file are defined as follows:  Each atom in
+#   the file is considered individually.  On the line for each atom, if a tag
+#   exists after the coordinates then that atom will have other atoms added to
+#   it (in the form of covalent bonds).  The tag defines which elements to add.
+#   The tag is a colon separated list of the element names to be added.
+#Example:  If you want to add 2 H atoms to an O in order to make water then
+#   the tag "H:H" would be added at the end of the line.  (Separate the tag
+#   from the coordinates by at least one space of course.)  The first atom to
+#   be added will have a random orientation and a bond length equal to the sum
+#   of the covalent radii of the two atoms.  (e.g. The first H to be added to
+#   the water would have a random orientaion and a bond length of 0.32+0.77=
+#   1.09 A.)  The second atom to be added would have the bond length computed
+#   in the same way, and a bond angle of 109.5 degrees.  All other atoms would
+#   follow the same pattern up to a maximum of 4 new atoms.
+#
+######################################################################
+#Use necessary modules
+######################################################################
+use strict;
+use warnings;
+use Env;
+use lib "$OLCAO_BIN/perl5";
+
+######################################################################
+# Define global variables.  (Yes, I know this is ugly.)
+######################################################################
+
+# Define file names.
+my $inFile;
+my $outFile;
+
+######################################################################
+# Begin execution of the script here
+######################################################################
+
+# Set default values for various variables.
+&setDefaults;
+
+# Read the command line for requested options.
+&parseCommandLine;
+
+# Read olcao skeleton file.
+
+
+######################################################################
+# End execution of the script here
+######################################################################
+
+sub setDefaults
+{
+   # Assume the default values for the file names.
+   $inFile  = "olcao.skl";
+   $outFile = "olcao.new.skl";
+}
+
+sub parseCommandLine
+{
+   # Define local variables.
+   my $number=0;
+   my $argument;
+   my $commandLine = "command";
+
+   while ($number < scalar(@ARGV))
+   {
+      if ($ARGV[$number] eq "-i")
+         {$inFile = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-o")
+         {$outFile = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-help")
+         {&printHelp;}
+      else
+         {die "Unknown command line parameter.  Aborting\n";}
+
+      $number++;
+   }
+
+   #Record the command line used to create this set of input files.
+   open (COMMANDLINE,">>$commandLine");
+   print COMMANDLINE "addAtoms ";
+   foreach $argument (0..$#ARGV)
+      {print COMMANDLINE "$ARGV[$argument] ";}
+   print COMMANDLINE "\n";
+   close (COMMANDLINE);
+}
+
+

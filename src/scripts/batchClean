@@ -1,0 +1,170 @@
+#!/usr/bin/perl
+
+###############################################################################
+# PROGRAM:  batchClean
+# PURPOSE:  This program will clean up the intermediate directories after a
+#           batch job submission.
+#
+# USAGE:    batchClean [-b $batchFile] [-t $targetTag] | -help
+#
+# The -b option specifies the name of the batch list file to use.  If not given
+#   then the default value of "batchList" is used.
+# The -t option specifies which tag number to check for intermediate deletion.
+#   (e.g. If the value given is a 1, then all the directories with a tag of "1"
+#   will have their intermediate directories purged.  If not given, then the
+#   default value of 1 is used.
+# The -help option prints this friendly message.
+###############################################################################
+
+
+##################################################
+# BEGIN EXECUTION ################################
+##################################################
+
+
+# Use necessary modules.
+use strict;
+use warnings;
+use Env;
+use lib "$OLCAO_BIN/perl5";
+use StructureControl;
+
+# Declare global variables.
+my $batchFile;
+my $targetTag;
+my @batchList;
+my @dirName;
+my @tagNumber;
+
+# Initialize the environment.
+&initEnv;
+
+# Parse the command line.
+&parseCommandLine;
+
+# Read the current batch list.
+&readBatchList;
+
+# Issue submission commands in requested directories.
+&issueSubmission;
+
+##################################################
+# END EXECUTION ##################################
+##################################################
+
+
+sub initEnv
+{
+   $batchFile = "batchList";
+   $targetTag = 0;
+}
+
+
+sub parseCommandLine
+{
+   # Define local variables.
+   my $number = 0;
+   my $argument;
+   my $commandLine = "command";
+
+   while ($number < scalar(@ARGV))
+   {
+      if ($ARGV[$number] eq "-b")
+         {$batchFile = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-t")
+         {$targetTag = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-help")
+         {&printHelp;}
+      else
+      {
+         print STDOUT "UNKNOWN COMMAND LINE PARAMETER $ARGV[$number].\n";
+         exit;
+      }
+      $number++;
+   }
+
+   #Record the command line used to create this set of input files.
+   open (COMMANDLINE,">>$commandLine");
+   print COMMANDLINE "batchClean ";
+   foreach $argument (0..$#ARGV)
+      {print COMMANDLINE "$ARGV[$argument] ";}
+   print COMMANDLINE "\n";
+   close (COMMANDLINE);
+}
+
+
+sub printHelp
+{
+   print <<ENDHELP;
+###############################################################################
+# PROGRAM:  batchSub
+# PURPOSE:  This program will submit a requested sequence of jobs.
+#
+# USAGE:    batchSub [-b \$batchFile] [-t \$targetTag] | -help
+#
+# The -b option specifies the name of the batch list file to use.  If not given
+#   then the default value of "batchList" is used.
+# The -t option specifies which tag number to check for intermediate deletion.
+#   (e.g. If the value given is a 1, then all the directories with a tag of "1"
+#   will have their intermediate directories purged.  If not given, then the
+#   default value of 1 is used.
+# The -help option prints this friendly message.
+###############################################################################
+ENDHELP
+   exit;
+}
+
+
+
+sub readBatchList
+{
+   # Define local variables.
+   my $submission;
+   my @values;
+
+   # Open the batch submission list.
+   open (LIST,"<$batchFile") || die "Can not open $batchFile for reading.\n";
+
+   # Read the whole list of directories.
+   @batchList = <LIST>;
+
+   # Extract out the directory names and tag ID numbers.
+   foreach $submission (0..$#batchList)
+   {
+      @values = StructureControl::prepLine("",$batchList[$submission],'\s+');
+      $dirName[$submission] = $values[0];
+      $tagNumber[$submission] = $values[1];
+   }
+
+   # Close the batch submission list.
+   close (LIST);
+}
+
+
+
+sub issueSubmission
+{
+   # Define local variables.
+   my $currJob;
+
+   # Look through the list of tag numbers to find the next $numJobs jobs.  When
+   #   each job is found, then purge the intermediate.
+   foreach $currJob (0..$#tagNumber)
+   {
+      if ($tagNumber[$currJob] == $targetTag)
+         {&delete($currJob);}
+   }
+}
+
+
+sub delete
+{
+   # Define passed parameters.
+   my $currJob = $_[0];
+
+   # Perform actual deletion.
+   system ("rm -f $dirName[$currJob]/intermediate/*");
+
+   # Perform dry run only.
+#   print STDOUT "rm -f $dirName[$currJob]/intermediate/*\n";
+}

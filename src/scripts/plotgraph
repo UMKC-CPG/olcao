@@ -1,0 +1,826 @@
+#!/usr/bin/perl
+#plotdata script v0.3  Paul Rulis
+#Last update Jan 03, 2007
+######################################################################
+#This perl script will execute the necessary steps to plot a graph to
+#	the screen using gnuplot and reflection.
+#
+#---------------------------------------------------------------------
+#
+#USAGE:  plotgraph [-x n] [-y m1 [m2..m3] ... ] [-xrange xmin xmax]
+#		   [-yrange ymin ymax] [-c] [-total] [-noef] [-eos] [-sybd]
+#		   [-li] [-iter] [-pdos] [-title "TITLE"] [-mxtics x]
+#		   [-mytics y] [-points] [-shift $shift] $filename1 [$filename2]
+#OR:     plotgraph -help
+#
+#$filename1 is the name of the file in the current directory to be
+#	plotted.  If $filename2 is given then it is assumed you are
+#	plotting a spin-polarized PDOS.  In this case $filename1 is
+#	taken to be the UP-SPIN and $filename2 is the DOWN-SPIN.  They
+#	will be plotted on the top/bottom respectivly.  Whatever
+#	settings you provide in terms of range and data columns to
+#	plot will be applied to both files.
+#If the "-x" option is given then n is the column number to be used as
+#	the x-axis in the graph.  If the "-y" option is given then m
+#	is the column number to be used as the y-axis in the graph.
+#	You can optionally give an "m2" or an "m2..m3" which will cause
+#	the program to also plot these columns or range of columns.  It
+#	is assumed that the data is formatted in space seperated columns
+#	of data.  If nether "-x" or "-y" are given then it is assumed
+#	that the first column will be the x-axis and that the second
+#	column will be the y-axis.
+#The -xrange parameter is pretty self explanitory.  If provided it will
+#       override the default behavior for deciding the range of the x axis to
+#       plot.  In the case of pdos and localization index plots the default is
+#       -25 to 25.  In the case of EOS plots the default is the maximum and
+#       minimum x values in the eos file with some added breathing room.  The
+#       default behavior otherwise is to use gnuplot autoscaling.
+#The -yrange is also pretty self explanitory.
+#	If it isn't given then the data files will be searched for
+#	the highest y value and the y-range will be 10% greater than
+#	that.  The exception is if the -EOS option is given.  In that
+#	case the y range is computed from the 2nd input file.  The other
+#       exception is for sybd plots.  In that case the default is -20 to 20.
+#If the -total command is given then it assumed that you have also
+#	given a second filename.  This will cause the plot to be
+#	the sum of the Up/Down Spin plotted above the axis.  (This is
+#	as opposed to having the UP-SPIN plotted above the x-axis
+#	and the DOWN-SPIN plotted below the x-axis).  Maybe this
+#	option doesn't have to be here.  It seems to make it look
+#	a bit messier, but I havn't thought of a better way yet.
+#	This option is not yet implemented.
+#The plotting program will assume that you wish to have a vertical
+#	line at the 0 mark.  This represents the Fermi Energy.  If
+#	you give the -noEf switch, then this line will not be
+#	there.  This line will not be there for the -EOS plots too.
+#The -EOS command tells the script that you want to plot energy
+#	vs. volume.  This requires two filenames.  One contains
+#	the data points for the curve made by the eos program, and
+#	the other contains the data points given to the eos program.
+#	They must be given in that order.  If no filenames are given
+#	then the following files are assumed:  eos.plot eos.points.
+#The -title switch followed by a quoted string will be printed as a graph
+#       title in place of the usual "Printed by $USER"
+#The -c switch will prevent the command used to call plotgraph from being
+#       printed as a part of the title.
+#The -mxtics switch followed by an integer number will produce minor tic
+#	marks on the x axis.  The number integer number is the number of
+#	divisions, NOT the number of tics.  The default value is 10.  To
+#	not have any minor tic marks just give a value of 1.
+#The -mytics behaves exactly the same as -mxtics except it applies to the
+#	y axis instead.
+#The -points option will make the printout use little dots for each data
+#       point instead of connecting the data points with lines.
+#The -shift option takes one argument which is the amount to shift each line
+#       by in a multi-line plot.
+#If the "-help" switch is given then the program will print some
+#	(hopefully) useful information about how to use it and
+#	then exit.
+#
+#
+#---------------------------------------------------------------------
+#
+#REQUIREMENTS
+#
+#You need to be in the same directory as the file you wish to graph.
+#	Maybe in the future it will also accept the data to be stored
+#	in a subdirectory such as DOS for pdos plots.
+#
+#
+######################################################################
+#
+#Step One:  Set up execution environment.
+#
+######################################################################
+#Import current user environment variables.
+use Env;
+#Make some useful default variable assignments.  Many of these can be
+#	overridden by command line parameters.  Pay special attention
+#	to the defaults for $xmax, $xmin and $ymax, $ymin.  These are
+#	the axis ranges that the data will be graphed on.  More
+#	comments are made on this topic later on.
+$title="Plotted by $USER";
+$printcommand=0;
+$xcol=1;
+@ycol=(2);
+$xmin=0;
+$xmax=0;
+$ymin=0;
+$ymax=0;
+$minorXTics=10;
+$minorYTics=10;
+$totalpdos=0;
+$EOS=0;
+$POINTS=0;
+$LI=0;
+$ITER=0;
+$PDOS=0;
+$SYBD=0;
+$XRANGE=0;  #This RANGE variable is set to true (1) as soon as it is defined.
+$YRANGE=0;  #This RANGE variable is set to true (1) as soon as it is defined.
+$shiftSet=0;
+$shift=0;
+$filename1="";
+$filename2="";
+$noEf=0;  #The default setting is to plot a fermi energy line.
+$command=join(" ",@ARGV);
+$location=`pwd`;
+chomp($location);
+
+#Here we parse the command line string for the necessary parameters.
+#	After this while loop the xcol, ycol parameters
+#	should be set.  Then we explicitly assign the $filename2
+#	parameter to be the last parameter in the command line list
+#	if it is given.  $filename1 is either the second to last or
+#	the last parameter in the list depending on whether or not
+#	$filename2 was given. 
+#This section is a little awkward so if whoever is working on it is
+#	more capable at perl then be my guest and fix it up ;)
+#Check if the user just wants help first.
+if ($ARGV[$#ARGV] eq "-help")
+   {&printhelp;}
+$number=0;
+while ( $ARGV[$number] ne "")
+{
+   if ($ARGV[$number] eq "-x")
+   {
+      $xcol=$ARGV[$number+1];
+      $number++;
+   }
+   elsif ($ARGV[$number] eq "-y")
+   {
+      $number=$number+1;
+      $ynumber=0;
+      while (($ARGV[$number] =~ /^[0-9]+$/) || ($ARGV[$number] =~ /\.\./))
+      {
+         if ($ARGV[$number] =~ /\.\./)
+         {
+            @numberPair = split (/\.\./,"$ARGV[$number]");
+            for ($i=$numberPair[0];$i<=$numberPair[1];$i++)
+            {
+               $ycol[$ynumber]=$i;
+               $ynumber++;
+            }
+         }
+         else
+         {
+            $ycol[$ynumber]=$ARGV[$number];
+            $ynumber++;
+         }
+         $number=$number+1;
+      }
+      # Adjust the number back by one or else we overshoot the next parameter.
+      $number=$number-1;
+   }
+   elsif ($ARGV[$number] eq "-xrange")
+   {
+      $xmin=$ARGV[$number+1];
+      $xmax=$ARGV[$number+2];
+      $XRANGE=1;
+      $number=$number+2;
+   }
+   elsif ($ARGV[$number] eq "-yrange")
+   {
+      $ymin=$ARGV[$number+1];
+      $ymax=$ARGV[$number+2];
+      $YRANGE=1;
+      $number=$number+2;
+   }
+   elsif ($ARGV[$number] eq "-total")
+      {$totalpdos=1;}
+   elsif ($ARGV[$number] eq "-noef")
+      {$noEf=1;}
+   elsif ($ARGV[$number] eq "-eos")
+   {
+      $EOS=1;
+      $filename1="eos.plot";
+      $filename2="eos.points";
+   }
+   elsif ($ARGV[$number] eq "-points")
+      {$POINTS=1;}
+   elsif ($ARGV[$number] eq "-li")
+      {$LI=1;}
+   elsif ($ARGV[$number] eq "-iter")
+      {$ITER=1;}
+   elsif ($ARGV[$number] eq "-pdos")
+      {$PDOS=1;}
+   elsif ($ARGV[$number] eq "-sybd")
+      {$SYBD=1;}
+   elsif ($ARGV[$number] eq "-title")
+   {
+      $title="$ARGV[$number+1]";
+      $number++;
+   }
+   elsif ($ARGV[$number] eq "-c")
+      {$printcommand=1;}
+   elsif ($ARGV[$number] eq "-mxtics")
+   {
+      $minorXTics=$ARGV[$number+1];
+      $number++;
+   }
+   elsif ($ARGV[$number] eq "-mytics")
+   {
+      $minorYTics=$ARGV[$number+1];
+      $number++;
+   }
+   elsif ($ARGV[$number] eq "-shift")
+   {
+      $shift = $ARGV[$number+1];
+      $number++;
+      $shiftSet=1;
+   }
+   else
+   {
+      if ($number < $#ARGV-2)
+      {
+         print STDOUT "UNKNOWN COMMAND LINE PARAMETER $ARGV[$number]. ABORTING.\n";
+         exit;
+      }
+   }
+   $number++;
+}
+#This just checks to see if the second to last parameter is an existing
+#	file or just some other parameter.  It also makes sure
+#	that there isn't just one argument.
+if ($#ARGV > 0)
+{
+   if ( -e $ARGV[$#ARGV-1] )
+   {
+      $filename1=$ARGV[$#ARGV-1];
+      $filename2=$ARGV[$#ARGV];
+   }
+   else
+      {$filename1=$ARGV[$#ARGV];}
+}
+elsif ($EOS != 1)
+   {$filename1=$ARGV[$#ARGV];}
+
+#This next step is painful.  Essentially we need to calculate what the
+#	ranges for x and y axis of the graph need to be.  For the case
+#	that we plot iteration data we need:
+#
+#	   x-axis:  0 to the final calculated iteration.  This is
+#	   tricky because the last line of the data file contain
+#	   the total requested iteration number which is usually
+#	   much larger than we need.  The solution is to ignore the
+#	   last line of data.
+#
+#	   y-axis:  Centered on the action.  This is a bit easier
+#	   than it sounds from that requirement.  The first data
+#	   line gives a y position of 0 but the next jumps down
+#	   quite a bit.  If we just ignore the first line and
+#	   let gnuplot autoscale it should not be problem.
+#
+#	   So in general when we plot iteration data we can safely
+#	   ignore the first and last line of data to get our plot.
+#	   To do this I think I may just copy the iteration data
+#	   to another file omitting the first and last lines and
+#	   then let gnuplot just do the work by autoscaling.
+#
+#	Now for the case we are plotting data for an energy
+#	vs. volume graph.  We look at the second filename.  This should
+#	contain the points that were given to the eos program.  Then
+#	we find the highest and lowest x and y values in its columns.
+#	These numbers are increased by 50% of the difference between
+#	the max and min values of the x and y columns.  I think that
+#	the code it probably easier to read than this explaination.
+#       The idea is to provide for a buffer area to easily visualize the
+#       plot.
+#
+#	Now for the case where we are plotting PDOS data.  This can
+#	actually involve three type of plots.  The most important one
+#	has the up-spin and down-spin plotted as magnitudes on each
+#	side of the y=0 line.  In this case we need:
+#
+#	   y-axis:  From the -max possible magnitude to max possible
+#	   magnitude.  Essentially we just have to look through the
+#	   data files in question and find the largest value to be
+#	   plotted on the y-axis.  This is the top y-axis value and
+#	   the bottom y-axis value is the negative of the top.
+#
+#	   x-axis:  Default is -20 to 10.  If the user wants something
+#	   else then they can specify it on the command line.
+#
+#	In the case we do the second type of plot where there is only
+#	a total summed DOS we need:
+#
+#	   y-axis:  From the min magnitude to the max magnitude.  This
+#	   can be achieved by letting gnuplot autoscale.  The data file
+#	   it uses will have to be constructed because gnuplot wont
+#	   add columns from different files.
+#
+#	   x-axis:  Default is -20 to 10.  If the user wants something
+#          else then they can specify it on the command line.
+#
+#       The third case is rather trivial.  It is just a plain PDOS
+#       plot.  There is no summing of up and down, or anything.
+#
+#          y-axis:  Just let gnuplot autoscale.
+#
+#          x-axis:  Default is -20 to 10 as before.
+#
+#	If we know we have an iteration plot we skip the first line,
+#	copy all but the last to another file and then send that
+#	through the rest of the script.  No problem.  ;)  The -ITER
+#       flag must be given on the command line.
+#
+#	If we see we have a PDOS plot we already know which type of
+#	PDOS plot we have.  If it is a summed spin polarized PDOS
+#       then two filenames will be given and the -total flag will
+#       be given.  If it is a spin polarized split graph PDOS then
+#       just the two filenames will be given.  If it is a plain PDOS
+#       plot then just one filename will be given.  In all cases the
+#       -PDOS flag must be given, since that is how we know we are
+#       doing a PDOS plot in the first place.
+#
+#THEN! To find the y-axis range here is what we will do:
+#	1)  Only do anything if the -yrange switch was not given
+#	    on the command line.
+#	2)  If -ITER then read the remaining file in and copy each
+#           line to another file skipping the last line.  Don't
+#           set the y-axis range parameter so we let gnuplot do
+#           the autoscaling.
+#	3)  If -PDOS then search all given columns in both files
+#	    (if $filename2 was given).  Find the largest value
+#	    (ymax) and branch.
+#	4)  If two filenames were given and the -total switch was
+#	    not given then set the y-range to be -ymax to ymax.
+#	5)  If one filename was given then set the y-range to be
+#	    autoscaled on the lower end and ymax at the upper end.
+#	6)  If two filenames were given and the -total switch was
+#	    given then set the y-range to be autoscaled on the
+#	    lower end and ymax at the upper end.
+#
+if ($EOS)
+{
+   #We are dealing with an Energy vs. Volume Plot
+   #First we find the x range.
+   if (!$XRANGE)
+   {
+      $xmin=&minofcol($filename2,0);
+      $xmax=&maxofcol($filename2,0);
+
+      #Provide some breathing room.
+      $xmin-=abs($xmax-$xmin)*0.5;
+      $xmax+=abs($xmax-$xmin)*0.5;
+
+      $XRANGE=1;
+   }
+   
+   if (!$YRANGE)
+   {
+      $ymin=&minofcol($filename2,1);
+      $ymax=&maxofcol($filename2,1);
+
+      #Now we give the graph a little breathing room.
+      $ymin-=abs($ymax-$ymin)*0.5;
+      $ymax+=abs($ymax-$ymin)*0.5;
+
+      $YRANGE=1;
+   }
+   $lineStyle = "lines lw 1";
+}
+elsif ($ITER)
+{
+   #We are doing an iteration plot.
+   #Iteration plots are always autoscaled unless explicitly told otherwise.
+   $noEf=1;
+   open (IN, "< $filename1");
+   #This NEW_DATA file will contain the old iteration data minus the first
+   #   and last lines to make autoscaling cleaner looking in gnuplot.
+   #   Usually the first and last iterations are not of major consequence
+   #   when looking at this kind of data because they are far from the action.
+   open (NEW_DATA, "> iteration_plot_data");
+   $dataline=<IN>;
+   #This dataline_old and while loop stuff is odd looking but its purpose
+   #   is to prevent from writing out the last line of the original input
+   #   file to the NEW_DATA file.
+   $dataline_old="";
+   while ($dataline=<IN>)
+   {
+      print NEW_DATA "$dataline_old";
+      $dataline_old=$dataline;
+   }
+   close(NEW_DATA);
+   close(IN);
+   $filename1 = "iteration_plot_data";
+   $lineStyle = "lines lw 1";
+}
+elsif ($PDOS)
+{
+   #We are dealing with a PDOS plot.
+   if (!$XRANGE)
+   {
+      $xmin = -25;
+      $xmax =  25;
+      $XRANGE=1;
+   }
+   if (!$YRANGE)
+   {
+      $ref_to_ycol=\@ycol;
+      $ymax=&maxof($filename1,$ymax,$ref_to_ycol);
+      $ymin=0;
+      if ($filename2 ne "")
+      {
+         $ymax=&maxof($filename2,$ymax,$ref_to_ycol);
+         if (!$totalpdos)
+            {$ymin=-$ymax;}
+         else
+            {$ymin=0;}
+      }
+      #$YRANGE=1;
+      if ($shiftSet == 0)
+         {$shift = $ymax * 0.05;}
+   }
+   $lineStyle = "lines lw 1";
+
+   #Extract the column names requested.
+   open (IN,"<$filename1");
+   $line = <IN>;
+   chomp ($line);
+   close (IN);
+
+   @columnNames = split (/\s+/,"$line");
+   for ($i=0;$i<=$#ycol;$i++)
+      {$titles[$i]=$columnNames[$ycol[$i]];}
+}
+elsif ($LI)
+{
+   if (!$XRANGE)
+   {
+      $xmin = -25;
+      $xmax =  25;
+      $XRANGE=1;
+   }
+   $lineStyle = "points pt 7 ps 1";
+
+   $noEf=1;
+}
+elsif ($POINTS)
+   {$lineStyle = "points pt 7 ps 1";}
+elsif ($SYBD)
+{
+   if (!$YRANGE)
+   {
+      $ymin = -20;
+      $ymax =  20;
+      $YRANGE=1;
+   }
+   open (IN,"< $filename1");
+   $numColumns=0;
+   $numVertLines=0;
+   while ($line = <IN>)
+   {
+      chomp ($line);
+      @values = split(/\s+/,"$line");
+      if ($values[0] eq "")
+         {shift @values;}
+      if ($#values < $numColumns)
+         {last;}
+      $numColumns = $#values;
+      $numVertLines++;
+      $sybdLabel[$numVertLines] = $values[$numColumns];
+      $vertLine[$numVertLines] = $values[$numColumns-1];
+   }
+   $numColumns = $numColumns - 2;
+   close (IN);
+   if (!$XRANGE)
+   {
+      $xmin=$vertLine[1];
+      $xmax=$vertLine[$numVertLines];
+      $XRANGE=1;
+   }
+   $lineStyle = "lines lw 1";
+}
+else
+{
+   #This is a plot of unspecified type.  Autoscaling will be used on the
+   # original data.  There will be no Fermi Energy line.
+   $noEf=1;
+   $lineStyle = "lines lw 1";
+}
+
+
+######################################################################
+#
+#Step Two:  Generate the gnuplot script and run it.
+#
+######################################################################
+#First we create and open the script gnuplot will use.
+open(OUT, "> plotscript") || die "Cannot open output file for writing.\n";
+
+#Write out the script.  The general trend I will try to follow will
+#	be to write the script such that things that can't be modified
+#	on the command line will come first.  Then thing that can be
+#	set via the command line will come second.  I will also try to
+#	put them in the order in which they are given in the USAGE
+#	section at the top.
+if("$TERM" eq "xterm")
+   {print OUT "set term x11\n";}
+else
+   {print OUT "set term kc_tek40xx\n";}
+print OUT "set timestamp \"%d/%m/%y %H:%M\" offset 80,-1 font \"Helvetica\"\n";
+print OUT "set tics out\n";
+print OUT "set mxtics $minorXTics\n";
+print OUT "set mytics $minorYTics\n";
+if ($SYBD)
+{
+   print OUT "set tmargin 8\n";
+   print OUT "set bmargin 5\n";
+   print OUT "set lmargin 22\n";
+   print OUT "set rmargin 22\n";
+   print OUT "set noxtics\n";
+   print OUT "set ytics nomirror\n";
+#   print OUT "set style line 1 lw 0.2\n";
+}
+else
+{
+   print OUT "set tmargin 8\n";
+   print OUT "set bmargin 8\n";
+   print OUT "set lmargin 15\n";
+   print OUT "set rmargin 15\n";
+   print OUT "set xtics nomirror\n";
+   print OUT "set ytics nomirror\n";
+}
+print OUT "set label 1 \"Location: $location\" at screen 0.5 , 0.93 center\n";
+if (!$printcommand)
+   {print OUT "set label 2 \"Command: plotgraph $command\" at screen 0.5,0.85 center\n";}
+print OUT "set title \"$title\"\n";
+if ($XRANGE)
+   {print OUT "set xrange[$xmin:$xmax]\n";}
+else
+   {print OUT "set xrange[:]\n";} 
+if ($YRANGE)
+   {print OUT "set yrange[$ymin:$ymax]\n";}
+else
+   {print OUT "set yrange[:]\n";}
+print OUT "set multiplot\n";
+if (!$noEf && !$EOS && !$SYBD)
+{
+   print OUT "set arrow from 0, graph 0 to 0, graph 1 nohead\n";
+   print OUT "set label \"Ef\" at first 0, graph -0.04 center\n";
+}
+
+if ($SYBD)
+{
+   for ($i=1;$i<=$numVertLines;$i++)
+   {
+      print OUT "set arrow $i from $vertLine[$i], $ymin to $vertLine[$i],";
+      print OUT " $ymax nohead\n";
+      print OUT "set label \"$sybdLabel[$i]\" at $vertLine[$i],";
+      print OUT " graph -0.04 center\n";
+   }
+   print OUT "plot ";
+   for ($i=2;$i<=$numColumns;$i++)
+   {
+      if ($i>2)
+         {print OUT "     ";}
+      print OUT "\"$filename1\" using $xcol:$i";
+      print OUT " notitle with $lineStyle,\\\n";
+   }
+   print OUT "     0 notitle with lines lw 1\n";
+}
+elsif ($PDOS)
+{
+   print OUT "plot ";
+   for ($i=0;$i<=$#ycol;$i++)
+   {
+      if ($i>0)
+         {print OUT "     ";}
+      $currentShift=$shift*$i;
+      $lineID = $i+1;
+      print OUT "\"$filename1\" using (\$$xcol):(\$$ycol[$i]+";
+      print OUT "$currentShift) title \"$titles[$i]\" with";
+      print OUT " $lineStyle,\\\n";
+      print OUT "     $currentShift notitle with $lineStyle";
+      if (($i < $#ycol) || ($filename2 ne ""))
+         {print OUT ", \\\n";}
+      else
+         {print OUT "\n";}
+   }
+}
+else
+{
+   print OUT "plot ";
+   for ($i=0;$i<=$#ycol;$i++)
+   {
+      if ($i>0)
+         {print OUT "     ";}
+      $currentShift=$shift*$i;
+      $lineID = $i+1;
+      print OUT "\"$filename1\" using (\$$xcol):(\$$ycol[$i]+$currentShift)";
+      print OUT " notitle with $lineStyle, \\\n";
+   }
+   if ($filename2 ne "")
+      {print OUT "     0 notitle with lines,\\\n";}
+   else
+      {print OUT "     0 notitle with lines\n";}
+}
+if ($filename2 ne "")
+{
+   print OUT "     \"$filename2\" using (\$$xcol):(";
+   if (!$EOS)
+      {print OUT "-";}
+   print OUT "\$$ycol[0]";
+   foreach $column (@ycol)
+   {
+      if ($column != $ycol[0])
+      {
+         if (!$EOS)
+            {print OUT "-";}
+         print OUT "\$$column";
+      }
+   }
+   print OUT ") notitle with";
+   if ($EOS)
+      {print OUT " points\n";}
+   else
+      {print OUT " lines\n";}
+}
+print OUT "set nomultiplot\n";
+print OUT "pause -1\n";
+
+#Leave perl script execution and run gnuplot.
+system 'gnuplot', 'plotscript';
+if (-e "iteration_plot_data")
+   {exec "rm -f iteration_plot_data";}
+
+######################################################################
+#
+#Step Zero(a):  This is the print help subroutine.
+#
+######################################################################
+#All this does is print out usage information and a helpful hint about
+#	each switch.
+sub printhelp
+{
+print <<ENDHELP;
+#\$filename1 is the name of the file in the current directory to be
+#	plotted.  If \$filename2 is given then it is assumed you are
+#	plotting a spin-polarized PDOS.  In this case \$filename1 is
+#	taken to be the UP-SPIN and \$filename2 is the DOWN-SPIN.  They
+#	will be plotted on the top/bottom respectivly.  Whatever
+#	settings you provide in terms of range and data columns to
+#	plot will be applied to both files.
+#If the "-x" option is given then n is the column number to be used as
+#	the x-axis in the graph.  If the "-y" option is given then m
+#	is the column number to be used as the y-axis in the graph.
+#	You can optionally give an "m2" or an "m2..m3" which will cause
+#	the program to also plot these columns or range of columns.  It
+#	is assumed that the data is formatted in space seperated columns
+#	of data.  If nether "-x" or "-y" are given then it is assumed
+#	that the first column will be the x-axis and that the second
+#	column will be the y-axis.
+#The -xrange parameter is pretty self explanitory.  If provided it will
+#       override the default behavior for deciding the range of the x axis to
+#       plot.  In the case of pdos and localization index plots the default is
+#       -25 to 25.  In the case of EOS plots the default is the maximum and
+#       minimum x values in the eos file with some added breathing room.  The
+#       default behavior otherwise is to use gnuplot autoscaling.
+#The -yrange is also pretty self explanitory.
+#	If it isn't given then the data files will be searched for
+#	the highest y value and the y-range will be 10% greater than
+#	that.  The exception is if the -EOS option is given.  In that
+#	case the y range is computed from the 2nd input file.  The other
+#       exception is for sybd plots.  In that case the default is -20 to 20.
+#If the -total command is given then it assumed that you have also
+#	given a second filename.  This will cause the plot to be
+#	the sum of the Up/Down Spin plotted above the axis.  (This is
+#	as opposed to having the UP-SPIN plotted above the x-axis
+#	and the DOWN-SPIN plotted below the x-axis).  Maybe this
+#	option doesn't have to be here.  It seems to make it look
+#	a bit messier, but I havn't thought of a better way yet.
+#	This option is not yet implemented.
+#The plotting program will assume that you wish to have a vertical
+#	line at the 0 mark.  This represents the Fermi Energy.  If
+#	you give the -noEf switch, then this line will not be
+#	there.  This line will not be there for the -EOS plots too.
+#The -EOS command tells the script that you want to plot energy
+#	vs. volume.  This requires two filenames.  One contains
+#	the data points for the curve made by the eos program, and
+#	the other contains the data points given to the eos program.
+#	They must be given in that order.  If no filenames are given
+#	then the following files are assumed:  eos.plot eos.points.
+#The -title switch followed by a quoted string will be printed as a graph
+#       title in place of the usual "Printed by \$USER"
+#The -c switch will prevent the command used to call plotgraph from being
+#       printed as a part of the title.
+#The -mxtics switch followed by an integer number will produce minor tic
+#	marks on the x axis.  The number integer number is the number of
+#	divisions, NOT the number of tics.  The default value is 10.  To
+#	not have any minor tic marks just give a value of 1.
+#The -mytics behaves exactly the same as -mxtics except it applies to the
+#	y axis instead.
+#The -shift option takes one argument which is the amount to shift each line
+#       by in a multi-line plot.
+#If the "-help" switch is given then the program will print some
+#	(hopefully) useful information about how to use it and
+#	then exit.
+#
+#USAGE:  plotgraph [-x n] [-y m1 [m2..m3] ... ] [-xrange xmin xmax]
+#		   [-yrange ymin ymax] [-c] [-total] [-noef] [-eos] [-sybd]
+#		   [-li] [-iter] [-pdos] [-title "TITLE"] [-mxtics x]
+#		   [-mytics y] [-shift \$shift] \$filename1 [\$filename2]
+#USAGE:  plotgraph [-x n] [-y m1 [m2..m3] ... ] [-xrange xmin xmax]
+#		   [-yrange ymin ymax] [-c] [-total] [-noef] [-eos] [-sybd]
+#		   [-li] [-iter] [-pdos] [-title "TITLE"] [-mxtics x]
+#		   [-mytics y] [-points] [-shift $shift] [-style $lineStyle]
+#		   $filename1 [$filename2]
+#OR:     plotgraph -help
+#
+ENDHELP
+   exit;
+}
+
+######################################################################
+#
+#Step One(a):  This is the maxof subroutine.
+#
+######################################################################
+#This will look through the given data file and find the maximum y value
+#	for a column or set of columns and return it.
+sub maxof
+{
+   open(IN, "< $_[0]");
+   my $maxnum=$_[1];
+   my $col_list=$_[2];
+   while ($dataline = <IN>)
+   {
+      chop $dataline;
+      @values = split / +/, $dataline;
+      my $total=0;
+#Only look at the data in the requested columns.
+      foreach $column (@{$col_list})
+#Sum the values of the requested columns to find the maximum possible
+#	y-axis range value for a given data point.
+         {$total+=$values[$column];}
+#If maxnum is greater than or equal to the total value in the given
+#       row of data then the second half of the 'or' statement isn't
+#       executed.
+      ($maxnum >= $total) || ($maxnum = $total);
+   }
+   close(IN);
+#This just gives the graph a little breathing room.
+   $maxnum+=($maxnum*0.1);
+   return $maxnum;
+}
+
+########################################################
+#This function will return the maximum number in a given
+#column for a given filename.
+########################################################
+
+sub maxofcol
+{
+   open(IN, "< $_[0]");
+   my $col_number=$_[1];
+#First we seed $maxnum with the first value in the datafile.
+   $dataline = <IN>;
+   chomp $dataline;
+   @values = split (/\s+/,"$dataline");
+   if ($values[0] eq "")
+      {shift @values;}
+   $maxnum = $values[$col_number];
+#Then we loop to find the highest number thereafter.
+   while ($dataline = <IN>)
+   {
+      chomp $dataline;
+      @values = split (/\s+/,"$dataline");
+#If maxnum is greater than or eual to the value in the given
+#   row of data then the second half of the 'or' statement isn't
+#   executed.
+      ($maxnum >= $values[$col_number]) || ($maxnum = $values[$col_number]);
+   }
+   close(IN);
+   return $maxnum;
+}
+
+########################################################
+#This function will return the minimum number in a given
+#column for a given filename.
+#########################################################
+sub minofcol
+{
+   open(IN, "< $_[0]");
+   my $col_number=$_[1];
+#First we seed $minnum with the first value in the datafile.
+   $dataline = <IN>;
+   chomp $dataline;
+   @values = split (/\s+/,"$dataline");
+   if ($values[0] eq "")
+      {shift @values;}
+   $minnum = $values[$col_number];
+#Then we loop to find the lowest number thereafter.
+   while ($dataline = <IN>)
+   {
+      chomp $dataline;
+      @values = split (/\s+/,"$dataline");
+#If minnum is less than or eual to the value in the given
+#   row of data then the second half of the 'or' statement isn't
+#   executed.
+      ($minnum <= $values[$col_number]) || ($minnum = $values[$col_number]);
+   }
+   close(IN);
+   return $minnum;
+}
+

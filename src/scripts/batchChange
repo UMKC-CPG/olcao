@@ -1,0 +1,396 @@
+#!/usr/bin/perl
+
+##############################################################################
+# PROGRAM:  batchChange
+# PURPOSE:  This program will attempt to modify each submission file present
+#           in the directories listed in the "batchlist" file. The modification
+#           can be either an addition or a subtraction of a particular command.
+#           In the future it will also accomodate modifications to cpu, memory,
+#           and other possible requests.
+#
+# USAGE:    batchChange [-s $submitMods] [-d $dirMods] | -help
+#
+# The -s option defines the change file that contains a list of template lines
+#   to add or subtract from the submission files.
+# The -d option defines the file name that contains commands to apply to each
+#   directory in the batchlist.
+# Either the -s or -d options MUST be given.  It is ok to give both.
+# The -help option prints this friendly message.
+#
+# The format of the submitMods file is as follows:
+# Each line in the file represents one change.  The line is divided into parts
+#   by a '|'.  The first part is a single character indicating the operation.
+#   The second part contains the information to add or subtract.  The third
+#   part restricts which files should be modified.
+# Concerning part 1:  If the first character is a "-" then the change
+#   represents a subtraction of a command.  If the first character is a "+"
+#   then the change represents an addition of a command.
+# Concerning part 2:  This contains the exact line that will be added to the
+#   file or the line that must be exactly matched to be subtracted from the
+#   file.
+# Concerning part 3:  This contains the element to which this modification
+#   should be applied.
+##############################################################################
+
+
+
+##################################################
+# BEGIN EXECUTION ################################
+##################################################
+
+
+# Use necessary modules.
+use strict;
+use warnings;
+use Env;
+use lib "$OLCAO_BIN/perl5";
+use StructureControl;
+
+# Declare global variables.
+my $doSubmitMods;
+my $doDirMods;
+my $submitMods;
+my $dirMods;
+my $batchList;
+my $submitModCount;
+my $dirModCount;
+my @submitModType;
+my @submitModLine;
+my @modElement;
+my @dirModCommand;
+
+# Initialize the environment.
+&initEnv;
+
+# Parse the command line.
+&parseCommandLine;
+
+# Read the list of changes to attempt to apply.
+&getChangeLists;
+
+# Traverse through each directory to apply the requested changes.
+&traverseDirectories;
+
+##################################################
+# END EXECUTION ##################################
+##################################################
+
+
+sub initEnv
+{
+   # Declare local variables.
+
+   # Assume that no changes will take place.
+   $doSubmitMods = 0;
+   $doDirMods    = 0;
+
+   # Assume a name for the data files.
+   $batchList  = "batchList";
+   $submitMods = "submitMods";
+   $dirMods    = "dirMods";
+}
+
+sub parseCommandLine
+{
+   # Declare local variables.
+   my $number = 0;
+   my $argument;
+   my $commandLine = "command";
+
+   while ($number < scalar(@ARGV))
+   {
+      if ($ARGV[$number] eq "-s")
+      {
+         $doSubmitMods = 1;
+         $submitMods = $ARGV[++$number];
+      }
+      elsif ($ARGV[$number] eq "-d")
+      {
+         $doDirMods = 1;
+         $dirMods = $ARGV[++$number];
+      }
+      elsif ($ARGV[$number] eq "-help")
+         {&printHelp;}
+      else
+      {
+         print STDOUT "UNKNOWN COMMAND LINE PARAMETER $ARGV[$number].\n";
+         exit;
+      }
+      $number++;
+   }
+
+   #Record the command line used to create this set of input files.
+   open (COMMANDLINE,">>$commandLine");
+   print COMMANDLINE "batchChange ";
+   foreach $argument (0..$#ARGV)
+      {print COMMANDLINE "$ARGV[$argument] ";}
+   print COMMANDLINE "\n";
+   close (COMMANDLINE);
+}
+
+
+sub printHelp
+{
+   print <<ENDHELP;
+##############################################################################
+# PROGRAM:  batchChange
+# PURPOSE:  This program will attempt to modify each submission file present
+#           in the directories listed in the "batchlist" file. The modification
+#           can be either an addition or a subtraction of a particular command.
+#           In the future it will also accomodate modifications to cpu, memory,
+#           and other possible requests.
+#
+# USAGE:    batchChange [-s \$submitMods] [-d \$dirMods] | -help
+#
+# The -s option defines the change file that contains a list of template lines
+#   to add or subtract from the submission files.
+# The -d option defines the file name that contains commands to apply to each
+#   directory in the batchlist.
+# Either the -s or -d options MUST be given.  It is ok to give both.
+# The -help option prints this friendly message.
+#
+# The format of the submitMods file is as follows:
+# Each line in the file represents one change.  The line is divided into parts
+#   by a colon.  The first part is a single character indicating the operation.
+#   The second part contains the information to add or subtract.  The third
+#   part restricts which files should be modified.
+# Concerning part 1:  If the first character is a "-" then the change
+#   represents a subtraction of a command.  If the first character is a "+"
+#   then the change represents an addition of a command.
+# Concerning part 2:  This contains the exact line that will be added to the
+#   file or the line that must be exactly matched to be subtracted from the
+#   file.
+# Concerning part 3:  This contains the element to which this modification
+#   should be applied.
+##############################################################################
+ENDHELP
+   exit;
+}
+
+
+sub getChangeLists
+{
+   # Define local variables.
+   my $line;
+   my @values;
+
+   # Get the list of changes to apply to the submission file (pbs,lsf,submit).
+   if ($doSubmitMods == 1)
+   {
+
+      # Open the submission change file.
+      open (SMODS,"<$submitMods")||die "Cannot open $submitMods for reading\n";
+
+      # Initialize a count of the number of modifications to make.
+      $submitModCount = 0;
+
+      while ($line = <SMODS>)
+      {
+         # Prepare the line for usage.
+         @values = StructureControl::prepLine("",$line,'\:');
+
+         # Increment the number of modifications.
+         $submitModCount++;
+
+         # Record the type of operation.
+         $submitModType[$submitModCount] = $values[0];
+
+         # Record the operation line.
+         $submitModLine[$submitModCount] = $values[1];
+
+         # Record the operation restriction.
+         $modElement[$submitModCount] = $values[2];
+      }
+
+      # Close the submission change file.
+      close (SMODS);
+   }
+
+   # Get the list of command changes to apply to each directory.
+   if ($doDirMods == 1)
+   {
+      # Open the directory change file.
+      open (DMODS,"<$dirMods") || die "Cannot open $dirMods for reading\n";
+
+      # Read all the commands.
+      @dirModCommand = <DMODS>;
+
+      # Record a count of the number of commands.
+      $dirModCount = scalar(@dirModCommand);
+
+      # Prep the command lines for execution.
+      chomp @dirModCommand;
+      unshift (@dirModCommand,"");
+
+      # Close the directory change file.
+      close (DMODS);
+   }
+}
+
+sub traverseDirectories
+{
+   # Define local variables.
+   my $line;
+   my @values;
+   my $currentElement;
+   my $currentDir;
+   my $submissionFile;
+
+   # Open the list of batch directories.
+   open (BATCH,"<$batchList") || die "Can not open $batchList for reading.\n";
+
+   # Proceed through the list, applying the changes to each submission file to
+   #   that has been requested.
+   while ($line = <BATCH>)
+   {
+      # Prep the line for analysis.
+      @values = StructureControl::prepLine("",$line,'\s+');
+
+      # Save the current directory.
+      $currentDir = $values[0];
+
+      # Enter this directory.
+      chdir ($currentDir);
+
+      # Apply appropriate batch modifications.
+      if ($doSubmitMods == 1)
+         {&applySubmitMods($currentDir);}
+      if ($doDirMods == 1)
+         {&applyDirMods($currentDir);}
+
+      # Leave this directory.
+      chdir ("..");
+   }
+
+   # Close the list of batch directories.
+   close (BATCH);
+}
+
+
+sub applyDirMods
+{
+   # Define passed parameters.
+   my $currentDir = $_[0];
+
+   # Define local variables.
+   my $currentElement;
+   my $currentMod;
+   my @values;
+
+   # Get the current element.
+   @values = split(/[0-9]/,$currentDir);
+   $currentElement = lc($values[0]);
+
+   # Execute each directory content modification command.
+   foreach $currentMod (1..$dirModCount)
+   {
+# NOT FUNCTIONAL YET.
+#      # Check that this modification should even apply.
+#      if ($currentElement ne $modElement[$currentMod])
+#         {next;}
+
+      # Execute.
+      system ("$dirModCommand[$currentMod]");
+   }
+}
+
+
+sub applySubmitMods
+{
+   # Define passed parameters.
+   my $currentDir = $_[0];
+
+   # Define local variables.
+   my $currentElement;
+   my $submissionFile;
+   my $currentMod;
+   my @submission;
+   my $line;
+   my @values;
+
+   # Get the current element.
+   @values = split(/[0-9]/,$currentDir);
+   $currentElement = lc($values[0]);
+
+   # Open the submission file present here.
+   if (-e "submit")
+      {$submissionFile = "submit";}
+   elsif (-e "pbs")
+      {$submissionFile = "pbs";}
+   elsif (-e "lsf")
+      {$submissionFile = "lsf";}
+   else
+   {
+      print STDOUT "No submission file present in $currentDir.\n";
+      exit;
+   }
+
+   # Open, read, close, and chomp the contents of the submission file.
+   open (SUBMIT,"<$submissionFile") ||
+         die "Can not open $submissionFile for reading.\n";
+   @submission = <SUBMIT>;
+   close (SUBMIT);
+   chomp (@submission);
+
+   foreach $currentMod (1..$submitModCount)
+   {
+      # Check that this modification should even apply.
+      if ($currentElement ne $modElement[$currentMod])
+         {next;}
+
+      # Depending on whether or not the modification is an addition or a
+      #   subtraction, the behavior is different.
+      if ($submitModType[$currentMod] eq '+')
+         {&addLine($submitModLine[$currentMod],\@submission);}
+      elsif ($submitModType[$currentMod] eq '-')
+         {&subLine($submitModLine[$currentMod],\@submission);}
+      else
+      {
+         print STDOUT "Unrecognized operation ($submitModType[$currentMod]) for $currentMod.\n";
+         exit;
+      }
+   }
+
+   open (SUBMIT,">$submissionFile") ||
+         die "Can not open $submissionFile for writing.\n";
+   foreach $line (0..$#submission)
+      {print SUBMIT "$submission[$line]\n";}
+   close (SUBMIT);
+}
+
+
+# This will append a specific line to the submission file.
+sub addLine
+{
+   # Define passed parameters.
+   my $lineToAdd = $_[0];
+   my $submission_ref = $_[1];
+
+   # Stick it on the end of the submission file.
+   push(@{$submission_ref},$lineToAdd);
+}
+
+
+# This will subtract a specific line from the submission file.
+sub subLine
+{
+   # Define passed parameters.
+   my $lineToSub = $_[0];
+   my $submission_ref = $_[1];
+
+   # Define local variables.
+   my $line;
+
+   # Append newline.
+
+   # Search the submission file for a matching line.  If it is found, then
+   #   get rid of it via the splice builtin.
+   foreach $line (0..$#{$submission_ref})
+   {
+      if ($lineToSub eq $submission_ref->[$line])
+      {
+         splice (@{$submission_ref},$line,1);
+         last;
+      }
+   }
+}

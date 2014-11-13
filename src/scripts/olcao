@@ -1,0 +1,1763 @@
+#!/usr/bin/perl
+
+sub printHelp
+{
+   print <<ENDHELP;
+######################################################################
+#
+#---------------------------------------------------------------------
+#
+#USAGE:  olcao [-scf \$basis] [-pscf \$basis] [-nice n] [-test]
+#              [-scfaltkp] [-pscfaltkp] [-serialxyz]
+#              [[-pacs \$edge]  | [
+#              [-bond [\$edge]] [-scfbond [\$edge]]
+#              [-dos  [\$edge]] [-scfdos  [\$edge]]
+#              [-wave [\$edge]] [-scfwave [\$edge]]
+#              [-sige [\$edge]] [-scfsige [\$edge]]
+#              [-optc [\$edge]]
+#              [-sybd [\$edge]]] |
+#              -help
+#
+#\$edge is either "gs", "1s", "2s", "2p", "3s", "3p", ... 
+#-scf option accepts these parameters:  "EB", "FB", "MB", and "NO".  These
+#       will request the type of basis to use for the scf portion of the
+#       calculation.  If NO is given, then the scf portion of the calculation
+#       will be skipped.  The default if this option is not given is FB.
+#-pscf option acts just like the -scf option.  If not given, then the value is
+#       chosen according to the default of the exact post scf operation below.
+#-nice will submit each segment of the total calculation with a nice value equal
+#       to the integer n.  Where n is from -20 to +19.  Higher values equal a
+#       lower priority, and lower values equal a higher priority.
+#-test will make the script use a different set of program executables labeled
+#       as test executables.  This is useful to allow testing of new features
+#       and changes to the program without affecting production runs.
+#-scfaltkp will force the script to use the alternate kpoint set for the scf
+#       portion of the calculation.
+#-pscfaltkp will force the script to use the alternate kpoint set for the
+#       post scf portion of the calculation.
+#-serialxyz will cause any optical properties calculation to conserve
+#       memory at the cost of time by computing the x, y, and z components
+#       in serial fashion instead of the default simultanious treatment.
+#-help prints this information.
+#
+#What follows are the option descriptions for the calculations to perform.  The
+#       goal is to allow a job to be submitted so that all the desired
+#       calculations can be done in one command line, and with the minimal
+#       amount of work possible.  Some jobs need to be done in a certain way.
+#
+#-pacs will do a spectral calculation from an initial state to a final state.
+#       The type of calculation, and the potentials used depends on the case of
+#       the requested edge.  You MUST provide an edge for the -pacs option.
+#       PACS = Photo absorption cross section.
+#-sybd will do a symmetric band calculation using the potential for the
+#       requested edge.  The default basis is the full basis, and it must be
+#       done as a separate post scf calculation because it uses a set of
+#       k-points which were not computed in the scf part.
+#-dos will do a DOS calculation using the potential for the requested edge.  
+#       The default basis is the full basis.  Now, if you want to use the same
+#       kpoint set as was used for the scf convergence then you can use the
+#       -scfdos switch instead and the computation will be shorter but will
+#       use the scf k-points instead.  This will produce a TDOS, PDOS, and
+#       localization index.
+#-bond will do a bond order and Q* calculation using the potential for the
+#       requested edge.  The default basis is the minimal basis, and it must be
+#       done as a separate calculation for now since basis types are not
+#       distinguished within the program and so it cannot extract a minimal
+#       basis result from a full basis result.  Now, if the scf part was done
+#       using a minimal basis, then you can request that the bond be done
+#       directly from the scf computation with the -scfbond switch.
+#-optc will do an optical properties calculation using the potential for the
+#       requested edge.  The default basis is the extended basis and it must be
+#       done as a separate post scf calculation because of the need to compute
+#       momentum matrix elements.  (This may be modified in future versions.)
+#-sige is used to calculate the sigma(E) curve of optical transitions with
+#       energies of transition that are close to the Fermi energy.  It will use
+#       the alternate input parameters for the optical properties calculation.
+#       The range of energies calculated will be smaller than a normal optc
+#       calculation, and the energy mesh will be more fine.  Also, the number
+#       of kpoints needed should be more than a typical optical properties
+#       calculation.  It will default to using a full basis.  The different
+#       kpoint mesh will require a recomputation of the intg and band.  (This
+#       is where the alternate kpoints comes in handy.)
+#-wave will compute the square of the wave function present in the simulation
+#       box.  The control parameters are in the setup input file.  By default
+#       it will use a full basis.
+######################################################################
+ENDHELP
+   exit(0);
+}
+
+######################################################################
+#Use necessary modules
+######################################################################
+use strict;
+use warnings;
+use Env;
+use lib "$OLCAO_BIN/perl5";
+use POSIX qw(ceil floor);
+use IO::Handle;
+use StructureControl;
+
+######################################################################
+# Define global variables.  (Yes, I know this is ugly.)
+######################################################################
+
+# Shortened environment variable names.
+my $bin;
+my $temp;
+my $touch;
+
+# Execution control.
+my $niceValue;
+my $test;
+my $edge;
+my $QN_n;
+my $QN_l;
+my $altSCF;
+my $altPSCF;
+my $spinPol;
+my $serialxyz;
+
+# Information about which job to run.
+my $dosRun;
+my $pacsRun;
+my $sybdRun;
+my $bondRun;
+my $optcRun;
+my $sigeRun;
+my $waveRun;
+my $dosRunSCF;
+my $bondRunSCF;
+my $waveRunSCF;
+
+# Basis information.
+my $scfBasis;
+my $scfBasisSet;
+my $scfBasisCode;
+my $pscfBasis;
+my $pscfBasisSet;
+my $pscfBasisCode;
+
+# Complete file and directory names.
+my $OLCAOlock;
+my $OLCAOkill;
+my $runtime;
+my $intermediate;
+my $proj_home;
+my $inputs;
+my $energy;
+my $iteration;
+my $kp_scf;
+my $kp_pscf;
+my $kp_alt;
+my $moment;
+my $initPot;
+my $structure;
+my $olcao;
+my $atomPos;
+my $lattice;
+
+# File nature components.
+my $setup;
+my $main;
+my $intg;
+my $band;
+my $sybd;
+my $dos;
+my $bond;
+my $optc;
+my $pacs;
+my $sige;
+my $wave;
+
+# Auxiliary suffix components.
+my $loci;
+my $tdos;
+my $pdos;
+my $elf;
+my $eps1;
+my $eps1i;
+my $eps2;
+my $cond;
+my $ref;
+my $pot;
+my $valeRho;
+my $up;
+my $dn; # Down
+my $upPdn; # Up + Down
+my $upMdn; # Up - Down
+my $minusNeut; # minus the neutral atom.  "-N"
+my $profile;
+
+# File name extensions.
+my $plot;
+my $raw;
+my $out;
+my $dat;
+my $alt;
+my $dx;
+my $hdf;
+
+# Eecutable names.
+my @executables;
+my $exeMechanism;
+
+######################################################################
+# Begin execution of the script here
+######################################################################
+
+# Initialize default variable values for those global variables that can be
+#   modified on the command line.
+&setDefaultVars;
+
+# Parse the command line.
+&parseCLP;
+
+# Set up the execution environment.
+&setupExeEnv;
+
+&XC_CodeSpin;
+
+# Run the requested job.
+&runOLCAO;
+
+# Clean up any leftovers and tie up loose ends.
+&cleanUp;
+
+######################################################################
+# End execution of the script here
+######################################################################
+
+
+# Here we define two subroutines to be used to copy and move files.
+# They will die nicely if something bad happens.
+sub copy
+{
+   if ((! -e $_[0]) && (-e $_[1]))
+   {
+      print RUNTIME "$_[0] not found but $_[1] exists.  No copy done.\n";
+      return();
+   }
+   if(system("cp -f $_[0] $_[1]") != 0)
+      {die "Cannot copy $_[0] to $_[1].  Died $!";}
+}
+
+sub move
+{
+   if ((! -e $_[0]) && (-e $_[1]))
+   {
+      print RUNTIME "$_[0] not found but $_[1] exists.  No move done.\n";
+      return();
+   }
+   if(system("mv -f $_[0] $_[1]") != 0)
+      {die "Cannot move $_[0] to $_[1].  Died $!";}
+}
+
+# Define a subroutine for recording a reason for exiting to the RUNTIME file.
+sub olcao_exit
+{
+   print RUNTIME "$_[0]\n";
+   exit;
+}
+
+
+
+
+sub setDefaultVars
+{
+   #Set the initial default conditions of some parameters
+   $edge="gs";
+   $test=0;           #Should the *Test executables be used?
+   $spinPol=1;        #Use 1 for non-spinpol; use 2 for spinpol.
+   $pacsRun=0;        #Should a pacs task be done?
+   $sybdRun=0;        #Should a sybd task be done?
+   $dosRun=0;         #Should a dos task be done?
+   $bondRun=0;        #Should a bond task be done?
+   $optcRun=0;        #Should a optc task be done?
+   $sigeRun=0;        #Should a sige task be done?
+   $waveRun=0;        #Should a wave task be done?
+   $dosRunSCF=0;      #Run PDOS in SCF?
+   $bondRunSCF=0;     #Run bond in SCF?
+   $waveRunSCF=0;     #Run wave in SCF?
+   $scfBasis="fb";    #Code for which scf basis to be use.  (Default is full.)
+   $scfBasisSet=0;    #Will be set to 1 if given explicitly on the command line.
+   $pscfBasis="no";   #Code for which pscf basis to be use.  (Default is none.)
+   $pscfBasisSet=0;   #Will be set to 1 if given explicitly on the command line.
+   $niceValue=100;  #If unchanged, jobs will run at default priority, usually 0.
+   $serialxyz=0;    #If unchanged, optical jobs will compute x,y,z all at once.
+   $altSCF=0;       #Assume we will use the kpoints given for scf (not alt).
+   $altPSCF=0;      #Assume we will use the kpoints given for pscf (not alt).
+}
+
+
+sub parseCLP
+{
+   # Define local variables.
+   my $number;
+   my $argument;
+
+   $number = 0;
+
+   while ($number < scalar(@ARGV))
+   {
+      if ($ARGV[$number] eq "-scf")
+      {
+         $scfBasisSet=1;
+         $scfBasis = lc("$ARGV[++$number]");
+      }
+      elsif ($ARGV[$number] eq "-pscf")
+      {
+         $pscfBasisSet=1;
+         $pscfBasis = lc("$ARGV[++$number]");
+      }
+      elsif ($ARGV[$number] eq "-scfaltkp")
+         {$altSCF = 1;}
+      elsif ($ARGV[$number] eq "-pscfaltkp")
+         {$altPSCF = 1;}
+      elsif ($ARGV[$number] eq "-serialxyz")
+         {$serialxyz = 1;}
+      elsif ($ARGV[$number] eq "-pacs")
+      {
+         $pacsRun=1;
+         $edge=$ARGV[++$number];
+         if ($pscfBasisSet == 0)
+            {$pscfBasis = "eb";}  #Extended basis
+         $pscfBasisSet = 1;
+      }
+      elsif ($ARGV[$number] eq "-sybd")
+      {
+         $sybdRun=1;
+         if (($#ARGV == $number) || ($ARGV[$number+1] =~ /\-/))
+            {$edge = "gs";}
+         else
+            {$edge=$ARGV[++$number];}
+         if ($pscfBasisSet == 0)
+            {$pscfBasis = "fb";}  #Full Basis
+         $pscfBasisSet = 1;
+      }
+      elsif ($ARGV[$number] eq "-dos")
+      {
+         $dosRun=1;
+         if (($#ARGV == $number) || ($ARGV[$number+1] =~ /\-/))
+            {$edge = "gs";}
+         else
+            {$edge=$ARGV[++$number];}
+         if ($pscfBasisSet == 0)
+            {$pscfBasis = "fb";}  #Full Basis
+         $pscfBasisSet = 1;
+      }
+      elsif ($ARGV[$number] eq "-scfdos")
+      {
+         $dosRunSCF=1;
+         if (($#ARGV == $number) || ($ARGV[$number+1] =~ /\-/))
+            {$edge = "gs";}
+         else
+            {$edge=$ARGV[++$number];}
+      }
+      elsif ($ARGV[$number] eq "-bond")
+      {
+         $bondRun=1;
+         if (($#ARGV == $number) || ($ARGV[$number+1] =~ /\-/))
+            {$edge = "gs";}
+         else
+            {$edge=$ARGV[++$number];}
+         if ($pscfBasisSet == 0)
+            {$pscfBasis = "mb";}  #Minimal Basis
+         $pscfBasisSet = 1;
+      }
+      elsif ($ARGV[$number] eq "-scfbond")
+      {
+         $bondRunSCF=1;
+         if (($#ARGV == $number) || ($ARGV[$number+1] =~ /\-/))
+            {$edge = "gs";}
+         else
+            {$edge=$ARGV[++$number];}
+         if ($scfBasisSet == 0)
+            {$scfBasis = "mb";}  #Minimal Basis
+         $scfBasisSet = 1;
+      }
+      elsif ($ARGV[$number] eq "-optc")
+      {
+         $optcRun=1;
+         if (($#ARGV == $number) || ($ARGV[$number+1] =~ /\-/))
+            {$edge = "gs";}
+         else
+            {$edge=$ARGV[++$number];}
+         if ($pscfBasisSet == 0)
+            {$pscfBasis = "eb";}  #Extended Basis
+         $pscfBasisSet = 1;
+      }
+      elsif ($ARGV[$number] eq "-sige")
+      {
+         $sigeRun = 1;
+         if (($#ARGV == $number) || ($ARGV[$number+1] =~ /\-/))
+            {$edge = "gs";}
+         else
+            {$edge=$ARGV[++$number];}
+         if ($pscfBasisSet == 0)
+            {$pscfBasis = "fb";}  #Full Basis
+         $pscfBasisSet = 1;
+      }
+      elsif ($ARGV[$number] eq "-wave")
+      {
+         $waveRun = 1;
+         if (($#ARGV == $number) || ($ARGV[$number+1] =~ /\-/))
+            {$edge = "gs";}
+         else
+            {$edge=$ARGV[++$number];}
+         if ($pscfBasisSet == 0)
+            {$pscfBasis = "fb";}  #Full Basis
+         $pscfBasisSet = 1;
+      }
+      elsif ($ARGV[$number] eq "-wavescf")
+      {
+         $waveRunSCF = 1;
+         if (($#ARGV == $number) || ($ARGV[$number+1] =~ /\-/))
+            {$edge = "gs";}
+         else
+            {$edge=$ARGV[++$number];}
+      }
+      elsif ($ARGV[$number] eq "-help")
+         {&printHelp;}
+      elsif ($ARGV[$number] eq "-nice")
+         {$niceValue=$ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-test")
+         {$test=1;}
+      else
+      {
+         print STDOUT "UNKNOWN COMMAND LINE PARAMETER $ARGV[$number].".
+                      " ABORTING.\n";
+         exit;
+      }
+
+      $number++;
+   }
+
+   # Record the command line used to run this job.
+   open (COMMANDLINE,">>command");
+   print COMMANDLINE "olcao ";
+   foreach $argument (0..$#ARGV)
+      {print COMMANDLINE "$ARGV[$argument] ";}
+   print COMMANDLINE "\n";
+   close (COMMANDLINE);
+}
+
+# This subroutine has the purpose of figuring out what the value for $spinpol
+#   should be based on the XC_CODE inside olcao.dat.
+sub XC_CodeSpin
+{
+	use StructureControl;
+
+	my $XC_Code;
+	my $spinValue;
+	my @olcaodat;
+	my @XC_Database;
+	my $line;
+
+	# Open olcao.dat for reading.
+	open(OLCAODAT, "<$inputs/$olcao$dat" ) ||
+         die "could not open olcao.dat for reading";
+
+	while ($line = <OLCAODAT>)
+	{
+		if ($line =~ /XC_CODE/)
+		{
+			my $nextLine = <OLCAODAT>;
+			@olcaodat = StructureControl::prepLine("","$nextLine",'\s+');
+			$XC_Code = $olcaodat[0];
+			last;	
+		}
+	}
+	
+	# Open XC functional database file for reading.
+	open( DATABASE, "<$OLCAO_DATA/xc_code.dat" ) ||
+         die "Could not open XC functional database file for reading.\n";
+
+	while ($line = <DATABASE>)
+	{
+		if ($line =~ /$XC_Code/)
+		{
+			
+			@XC_Database = StructureControl::prepLine("","$line",'\s+');
+			$spinValue = $XC_Database[2];
+			last;
+		}
+	}
+	
+	# Set spinPol equal to appropriate value.
+	$spinPol = $spinValue;
+	
+	# Close both files.
+	close (OLCAODAT);
+	close (DATABASE);
+
+}
+
+sub setupExeEnv
+{
+   # Define local variables.
+
+   # Set short names for environment variables.
+   $bin = $OLCAO_BIN;
+   $touch = $OLCAO_TOUCH;
+
+   # Initialize file names and file name components.
+   &initFileNames;
+
+   # Initialize the directories to be used.
+   &initDirectories;
+
+   # Initialize the IO for storing results to RUNTIME.
+   &initIO;
+
+   # Initialize the executables and execution method.
+   &initExes;
+
+   # Set a number flag for the edge request.
+   &setEdgeCode;
+
+   # Finally, check that a lock file does not exist blocking execution.  If it
+   #   doesn't, then make one so we can start running the job.
+   if (-e "$temp/$OLCAOlock")
+   {
+      &olcao_exit("Lock file found in $temp.\n".
+                  "Is another olcao script running?\n".
+                  "Did an olcao script die badly?\n");
+   }
+   else
+      {system("touch $temp/$OLCAOlock");}
+}
+
+
+sub initFileNames
+{
+   #Assign the filenames to be used throughout the program.  If they must
+   #   be changed for some reason this will make that task much easier.
+   #   It also provides a quick overview of all the files the program
+   #   uses.  All edge dependent output files will be prefixed with the
+   #   edge name when actually used.
+
+   #MISC.
+   $OLCAOkill      = "OLCAOkill";
+   $OLCAOlock      = "OLCAOlock";
+   $runtime        = "runtime";
+   $intermediate   = "intermediate";
+   $energy         = "enrg";
+   $iteration      = "iter";
+   $kp_scf         = "kp-scf";
+   $kp_pscf        = "kp-pscf";
+   $kp_alt         = "kp-alt";
+   $moment         = "mgmo";  #Magnetic moment.  For spin pol calculations only.
+   $initPot   = "scfV";
+   $structure = "structure";
+   $olcao     = "olcao";
+   $atomPos   = "atomPos";
+   $lattice   = "lattice";
+
+   #DEFINE FILE NATURE COMPONENTS
+   $setup     = "setup";
+   $main      = "main";
+   $intg      = "intg";
+   $band      = "band";
+   $sybd      = "sybd";
+   $dos       = "dos";
+   $bond      = "bond";
+   $optc      = "optc";
+   $pacs      = "pacs";
+   $sige      = "sige";
+   $wave      = "wave";
+
+   #DEFINE AUXILIARY SUFFIX COMPONENTS
+   $loci      = ".loci";
+   $tdos      = ".t";
+   $pdos      = ".p";
+   $elf       = ".elf";
+   $eps1      = ".eps1";
+   $eps1i     = ".eps1i";
+   $eps2      = ".eps2";
+   $cond      = ".cond";
+   $ref       = ".ref";
+   $pot       = ".pot";
+   $valeRho   = ".rhoV";
+   $up        = ".up";
+   $dn        = ".dn";
+   $upPdn     = ".up+dn";
+   $upMdn     = ".up-dn";
+   $minusNeut = "-N"; #A suffix of a suffix.  ARG!
+   $profile   = ".prof";
+
+   #DEFINE FILENAME EXTENSIONS
+   $plot  = ".plot";
+   $raw   = ".raw";
+   $out   = ".out";
+   $dat   = ".dat";
+   $dx    = ".dx";
+   $hdf   = ".hdf5";
+}
+
+
+
+sub initDirectories
+{
+   # Define local variables.
+   my @values;
+   my $intermediateList; # Listing of the intermediate link as given by "ls -l".
+   my $intermediateLoc;  # Location that the intermediate link points as given
+                         #   by "ls -l".
+
+   # Define the project's home directory.
+   $proj_home = `pwd`;
+   chomp($proj_home);
+
+   # Define the location where the input files are kept.
+   $inputs="$proj_home"."/inputs";
+
+   # Determine the location for the temporary storage directory based on the
+   #   name of the current directory.
+   &getTempDir;
+
+   # Create the temp directory if it does not already exist.
+   if (! -e "$temp")
+      {system ("$bin/mkdirhier $temp");}
+
+   # If a link to the temp directory does not yet exist, then create one.  If a
+   #   link already exists, but points to the wrong place, then rename the
+   #   existing link and create a new one.
+   if (! -e "$intermediate")
+      {system ("ln -s $temp $intermediate");}
+   else
+   {
+      $intermediateList = `ls -l $intermediate`;
+      @values = StructureControl::prepLine("",$intermediateList,'\s+');
+      $intermediateLoc = $values[$#values];
+      if ($intermediateLoc ne $temp)
+      {
+         &move("$intermediate","$intermediate"."FIXME");
+         system ("ln -s $temp $intermediate");
+      }
+   }
+}
+
+
+sub getTempDir
+{
+   # Define local variables.
+   my $directory;
+   my @directories;
+   my $found;
+
+   # Get and separate the current directory.
+   $directory=`pwd`;
+   chop ($directory);
+   @directories = split(/\//,"$directory");
+
+   # Look for the directory where the username is specified.  Once it is found,
+   #   append the remaining directories to the temp directory.
+   $found=0;
+   $temp="$OLCAO_TEMP";
+   foreach $directory (0..$#directories)
+   {
+      if ($found == 1)
+         {$temp = "$temp"."/$directories[$directory]";}
+      if ("$directories[$directory]" eq "$USER")
+         {$found = 1;}
+   }
+}
+
+
+sub initIO
+{
+   # Redefine STDERR to be the $runtime log file.
+   close(STDERR);
+   open(STDERR,">> $runtime");
+
+   # Open the RUNTIME file for writing.
+   if (-e "$proj_home/$runtime")
+      {open (RUNTIME,">> $runtime");}
+   else
+      {open (RUNTIME,"> $runtime");}
+}
+
+
+sub initExes
+{
+   # Define local variables.
+   my $exec;
+   my $scfGamma;
+   my $pscfGamma;
+   my $altGamma;
+
+   # Define the base case for the executable name.  This is used for regular
+   #   calculations that do not use the Gamma k-point.
+   $executables[1] = "OLCAOsetup";
+   $executables[2] = "OLCAOmain";
+   $executables[3] = "OLCAOintg";
+   $executables[4] = "OLCAOband";
+   $executables[5] = "OLCAOdos";
+   $executables[6] = "OLCAObond";
+   $executables[7] = "OLCAOoptc";
+   $executables[8] = "OLCAOwave";
+
+   # Open the each kpoint file and check to see if it requests a gamma kpoint.
+   $scfGamma  = &checkGammaKP("$kp_scf$dat");
+   $pscfGamma = &checkGammaKP("$kp_pscf$dat");
+   $altGamma  = &checkGammaKP("$kp_alt$dat");
+
+   # If the altnernate kpoint set is used for either scf or pscf then use the
+   #   altGamma flag for the scf or pscf.
+   if ($altSCF == 1)
+      {$scfGamma = $altGamma;}
+   if ($altPSCF == 1)
+      {$pscfGamma = $altGamma;}
+
+   # Determine if the calculation is going to use the gamma kpoint and prepend
+   #   a "g" for each of those necessary cases.
+   if ($scfGamma == 1)
+   {
+      foreach $exec (1..2)
+         {$executables[$exec] = "g" . $executables[$exec];}
+   }
+   if ($pscfGamma == 1)
+   {
+      foreach $exec (3..8)
+         {$executables[$exec] = "g" . $executables[$exec];}
+   }
+
+   # Determine if the test executables should be used.  If so, then append the
+   #   "Test" string.
+   if ($test == 1)
+   {
+      foreach $exec (1..$#executables)
+         {$executables[$exec] = $executables[$exec] . "Test";}
+   }
+
+   # Determine the command line execution mechanism.
+   if (($niceValue > 19) || ($niceValue <-20))
+      {$exeMechanism = "time";}
+   else
+      {$exeMechanism = "nice -n $niceValue time";}
+}
+
+
+sub checkGammaKP
+{
+   # Define passed parameters.
+   my $kpointFile = $_[0];
+
+   # Define local variables.
+   my $numKP;
+   my $line;
+   my @values;
+
+   open (KP,"<$inputs/$kpointFile") ||
+         die "Can not open $inputs/$kpointFile for reading.\n";
+   @values = StructureControl::prepLine(\*KP,$line,'\s+');
+   @values = StructureControl::prepLine(\*KP,$line,'\s+');
+   $numKP  = $values[0];
+   @values = StructureControl::prepLine(\*KP,$line,'\s+');
+   @values = StructureControl::prepLine(\*KP,$line,'\s+');
+   if (($numKP==1) && ($values[2]==0) && ($values[3]==0) && ($values[4]==0))
+      {return 1;}
+   else
+      {return 0;}
+}
+
+
+sub setEdgeCode
+{
+   if ($edge =~ /gs/)
+      {$QN_n = 0; $QN_l = 0}
+   elsif ($edge =~ /1s/)
+      {$QN_n = 1; $QN_l = 0}
+   elsif ($edge =~ /2s/)
+      {$QN_n = 2; $QN_l = 0}
+   elsif ($edge =~ /2p/)
+      {$QN_n = 2; $QN_l = 1}
+   elsif ($edge =~ /3s/)
+      {$QN_n = 3; $QN_l = 0}
+   elsif ($edge =~ /3p/)
+      {$QN_n = 3; $QN_l = 1}
+   elsif ($edge =~ /3d/)
+      {$QN_n = 3; $QN_l = 2}
+   elsif ($edge =~ /4s/)
+      {$QN_n = 4; $QN_l = 0}
+   elsif ($edge =~ /4p/)
+      {$QN_n = 4; $QN_l = 1}
+   elsif ($edge =~ /4d/)
+      {$QN_n = 4; $QN_l = 2}
+   elsif ($edge =~ /4f/)
+      {$QN_n = 4; $QN_l = 3}
+   elsif ($edge =~ /5s/)
+      {$QN_n = 5; $QN_l = 0}
+   elsif ($edge =~ /5p/)
+      {$QN_n = 5; $QN_l = 1}
+   elsif ($edge =~ /5d/)
+      {$QN_n = 5; $QN_l = 2}
+   elsif ($edge =~ /6s/)
+      {$QN_n = 6; $QN_l = 0}
+   elsif ($edge =~ /6p/)
+      {$QN_n = 6; $QN_l = 1}
+   elsif ($edge =~ /7s/)
+      {$QN_n = 7; $QN_l = 0}
+
+   # Determine the number code for which basis set to use for scf and pscf.
+   if ($scfBasis eq "mb")
+      {$scfBasisCode = 1;}
+   elsif ($scfBasis eq "fb")
+      {$scfBasisCode = 2;}
+   elsif ($scfBasis eq "eb")
+      {$scfBasisCode = 3;}
+
+   if ($pscfBasis eq "mb")
+      {$pscfBasisCode = 1;}
+   elsif ($pscfBasis eq "fb")
+      {$pscfBasisCode = 2;}
+   elsif ($pscfBasis eq "eb")
+      {$pscfBasisCode = 3;}
+}
+
+
+sub runOLCAO
+{
+   # Define local variables.
+   
+
+   # Calculate the setup portion of the program.  This is independent of edge.
+   if ("$scfBasis" ne "no")
+      {&runTask ($setup,$scfBasis,"");}
+
+   if ($pacsRun==1)
+   {
+      # We are running a pacs calculation.
+      &runTask ($main,$scfBasis,"gs");
+      &runTask ($intg,$pscfBasis,"gs");
+      &runTask ($band,$pscfBasis,"gs");
+
+      if ("$edge" ne "gs")
+      {
+         &runTask ($main,$scfBasis,$edge);
+
+         # Now that both main calculations are done for the PACS calculation,
+         #   we can update the pacs input file with the total energy difference 
+         #   and the energy range.
+         &updatePACS ($edge,$scfBasis,$pscfBasis);
+
+         &runTask ($intg,$pscfBasis,$edge);
+         &runTask ($band,$pscfBasis,$edge);
+         &runTask ($pacs,$pscfBasis,$edge);
+      }
+   }
+   else
+   {
+      # We are doing some other calculation (PDOS,SYBD,BOND,OPTC,SIGE,WAVE,etc.)
+      if ("$scfBasis" ne "no")
+         {&runTask ($main,$scfBasis,$edge);}
+      if ("$pscfBasis" ne "no")
+      {
+         &runTask ($intg,$pscfBasis,$edge);
+         if ($sybdRun==1)
+            {&runTask ($sybd,$pscfBasis,$edge);}
+         else
+         {
+            &runTask ($band,$pscfBasis,$edge);
+            if ($dosRun==1)
+               {&runTask ($dos,$pscfBasis,$edge);}
+            elsif ($bondRun==1)
+               {&runTask ($bond,$pscfBasis,$edge);}
+            elsif ($optcRun==1)
+               {&runTask ($optc,$pscfBasis,$edge);}
+            elsif ($sigeRun==1)
+               {&runTask ($sige,$pscfBasis,$edge);}
+            elsif ($waveRun==1)
+               {&runTask ($wave,$pscfBasis,$edge);}
+         }
+      }
+   }
+}
+
+
+# Define a generic run task subroutine.  This subroutine will run a requested
+#   task according to the input code it is given.
+sub runTask
+{
+   # Define the passed parameters.
+   my $taskName  = $_[0];
+   my $taskBasis = "-".$_[1];  #Prepend a hyphen.
+   my $taskEdge  = $_[2]."_";  #Append an underscore.
+
+   # Define local variables.
+   my $taskKP;
+   my $taskCLP;
+   my $output;
+   my $alt;
+
+   # Correct edge name for setup calculations where the edge doesn't matter.
+   if ("$taskName" eq "$setup")
+      {$taskEdge = "";}
+
+   # Change the working directory to the intermediate location.
+   chdir $temp;
+
+   # Mark the date and time of the beginning of this task.
+   $output=`date`;
+   print RUNTIME "$taskEdge$taskName$taskBasis------------------------------\n";
+   print RUNTIME "Start:  $output";
+
+   # Identify the task kpoint file to use.
+   $taskKP = &getTaskKP($taskName);
+
+   # Determine if the alternate KPoints were used and if so assign a value to
+   #   the alt string so that the outputs etc created with it can be kept
+   #   separate.
+   if ($taskKP =~ /kp-alt/)
+      {$alt=".alt";}
+   else
+      {$alt="";}
+
+   # Determine if the output for this task already exists.
+   if (! -e "$proj_home/$taskEdge$taskName$taskBasis$alt$out")
+   {
+      # Mark the lock file with the current executable.
+      system ("echo $taskName$taskBasis | cat > $temp/$OLCAOlock");
+
+      # Check to see if the necessary input files are in the $proj_home
+      #   directory.  If they are not, then try to copy them from the $inputs
+      #   directory into the $proj_home directory.  This is done so that a
+      #   "pure" version of the input exists in the $inputs directory while a
+      #   "user modifiable" version of the input exists in the $proj_home
+      #   directory.
+      &checkInput($taskName,$taskBasis,$taskEdge,$taskKP);
+
+      # Copy the task input files from the $proj_home directory to $temp.
+      &copyInput($taskName,$taskBasis,$taskEdge,$taskKP,$alt);
+
+      # Create the proper command line parameters (CLP) for this task.
+      $taskCLP = &determineCLP($taskName,$taskEdge);
+
+      # Execute the requested task program and save the runtime data.
+      &executeProgram($taskName,$taskCLP);
+
+      # Manage the output files.
+      &manageOutput($taskName,$taskBasis,$taskEdge,$taskKP,$alt);
+   }
+   else
+   {
+      print RUNTIME "\n$taskEdge$taskName$taskBasis$out file already exists.\n";
+      print RUNTIME "Skipping $taskEdge$taskName$taskBasis execution.\n\n";
+   }
+   if ($touch==1)
+      {system("touch $temp/*");}
+
+   # Mark the date and time of the ending of this task.
+   $output=`date`;
+   print RUNTIME "End:  $output";
+
+   if (-e "$OLCAOkill")
+      {exit;}
+}
+
+# Obtain the name of the kpoint file to use for the current task.
+sub getTaskKP
+{
+   my $taskName = $_[0];
+   my $taskKP;
+
+   if (("$taskName" eq "$setup") || ("$taskName" eq "$main"))
+   {
+      if ($altSCF == 0)
+         {$taskKP = $kp_scf;}
+      else
+         {$taskKP = $kp_alt;}
+   }
+   else
+   {
+      if ($altPSCF == 0)
+         {$taskKP = $kp_pscf;}
+      else
+         {$taskKP = $kp_alt;}
+   }
+
+   return $taskKP;
+}
+
+# Define the subroutine to check for the input files needed for each task.
+sub checkInput
+{
+   # Define passed parameters.
+   my $taskName  = $_[0];
+   my $taskBasis = $_[1];
+   my $taskEdge  = $_[2];
+   my $taskKP    = $_[3];
+
+   # Check for the primary "olcao" input file, and the system structure.
+   if (! -e "$proj_home/$olcao$dat")
+      {&copy("$inputs/$olcao$dat","$proj_home/$olcao$dat");}
+   if (! -e "$proj_home/$structure$dat")
+      {&copy("$inputs/$structure$dat","$proj_home/$structure$dat");}
+
+
+   # Check for the set of kpoints needed for this task.
+   if (! -e "$proj_home/$taskKP$dat")
+      {&copy("$inputs/$taskKP$dat","$proj_home/$taskKP$dat");}
+
+
+   # Check for a potential coefficient file for main.
+   if ("$taskName" eq "$main")
+   {
+      if (! -e "$proj_home/$initPot$dat")
+         {&copy("$inputs/$initPot$dat","$proj_home/$initPot$dat");}
+   }
+}
+
+
+#This subroutine will copy all the data files for each type of task.
+sub copyInput
+{
+   # Define passed parameters.
+   my $taskName  = $_[0];
+   my $taskBasis = $_[1];
+   my $taskEdge  = $_[2];
+   my $taskKP    = $_[3];
+   my $alt       = $_[4];
+
+   # Define the temporary basis tag.
+   my $tempBasis = "-temp";
+
+   # Copy in the universally required input.
+   &copy("$proj_home/$olcao$dat","fort.5");
+   &copy("$proj_home/$structure$dat","fort.4");
+   &copy("$proj_home/$taskKP$dat","fort.15");
+
+   # Get the appropriate hdf5 stored intermediate data.
+   if ("$taskName" eq "$main")
+   {
+      &move("$setup$taskBasis$alt$hdf","$setup$tempBasis$hdf");
+      &getPotCoeffs($taskName,$taskBasis,$taskEdge);
+   }
+   elsif ("$taskName" eq "$intg")
+      {&getPotCoeffs($taskName,$taskBasis,$taskEdge);}
+   elsif (("$taskName" eq "$band") || ("$taskName" eq "$sybd"))
+      {&move("$taskEdge$intg$taskBasis$alt$hdf","$intg$tempBasis$hdf");}
+   elsif (("$taskName" eq "$dos") || ("$taskName" eq "$bond"))
+      {&move("$taskEdge$band$taskBasis$alt$hdf","$band$tempBasis$hdf");}
+   elsif (("$taskName" eq "$optc") || ("$taskName" eq "$sige"))
+   {
+      &move("$taskEdge$band$taskBasis$alt$hdf","$band$tempBasis$hdf");
+      &move("$taskEdge$intg$taskBasis$alt$hdf","$intg$tempBasis$hdf");
+   }
+   elsif ("$taskName" eq "$pacs")
+   {
+      &move("gs_$intg$taskBasis$alt$hdf","$intg$tempBasis$hdf");
+      &move("gs_$band$taskBasis$alt$hdf","$band$tempBasis$hdf");
+      &move("$taskEdge$band$taskBasis$alt$hdf","$band$tempBasis.2$hdf");
+   }
+   elsif ("$taskName" eq "$wave")
+   {
+      &move("$taskEdge$band$taskBasis$alt$hdf","$band$tempBasis$hdf");
+      &getPotCoeffs($taskName,$taskBasis,$taskEdge);
+   }
+}
+
+sub getPotCoeffs
+{
+   # Define passed parameters.
+   my $taskName  = $_[0];
+   my $taskBasis = $_[1];
+   my $taskEdge  = $_[2];
+
+   # Define local variables.
+   my $basis;
+   my @altBasisList;
+
+   # Establish the order of alternate basis sets to check for a set of
+   #   potential coefficients.
+   @altBasisList=("-eb","-fb","-mb");
+
+   # Setup does not need any set of potential coefficients.
+   if ("$taskName" eq "$setup")
+      {return;}
+
+   # Check for the potential from the same edge and basis of the current task.
+   if (-e "$proj_home/$taskEdge$initPot$taskBasis$dat")
+   {
+      &copy("$proj_home/$taskEdge$initPot$taskBasis$dat","fort.8");
+      print RUNTIME "Using $taskEdge$initPot$taskBasis$dat\n";
+      return;
+   }
+
+   # Check each of the alternate basis sets for the current edge.
+   foreach $basis (@altBasisList)
+   {
+      if (-e "$proj_home/$taskEdge$initPot$basis$dat")
+      {
+         &copy("$proj_home/$taskEdge$initPot$basis$dat","fort.8");
+         print RUNTIME "Using $taskEdge$initPot$basis$dat\n";
+         return;
+      }
+   }
+
+   # Check the ground state of the current basis.
+   if (-e "$proj_home/gs_$initPot$taskBasis$dat")
+   {
+      &copy("$proj_home/gs_$initPot$taskBasis$dat","fort.8");
+      print RUNTIME "Using gs_$initPot$taskBasis$dat\n";
+      return;
+   }
+
+   # Check each of the alternate basis sets for the ground state.
+   foreach $basis (@altBasisList)
+   {
+      if (-e "$proj_home/gs_$initPot$basis$dat")
+      {
+         &copy("$proj_home/gs_$initPot$basis$dat","fort.8");
+         print RUNTIME "Using gs_$initPot$basis$dat\n";
+         return;
+      }
+   }
+
+   # Check for the initial non-scf potential in the project home directory.
+   if (-e "$proj_home/$initPot$dat")
+   {
+      print RUNTIME "Using $initPot$dat from $proj_home.\n";
+      &copy("$proj_home/$initPot$dat","fort.8");
+      return;
+   }
+
+   # Check for the initial non-scf potential in the inputs directory.
+   if (-e "$inputs/$initPot$dat")
+   {
+      print RUNTIME "Using $initPot$dat from $inputs.\n";
+      &copy("$inputs/$initPot$dat","fort.8");
+      return;
+   }
+}
+
+# This subroutine will determine what the command line parameters for the
+#   task execution should be.
+sub determineCLP
+{
+   # Define passed parameters.
+   my $taskName  = $_[0];
+   my $taskEdge  = $_[1];
+
+   # Define local variables.
+   my $taskCLP;
+
+   if ("$taskName" eq "$setup")
+      {$taskCLP = "$scfBasisCode";}
+   elsif ("$taskName" eq "$main")
+   {
+      # The first CLP indicates which basis to use.
+      $taskCLP = "$scfBasisCode ";
+
+      # The next CLPs signal the edge that should be computed for.  Note that
+      #   in the case of the ground state run we simply make an explicit
+      #   request for no excitation state.
+      if ($taskEdge eq "gs_")
+         {$taskCLP = "$taskCLP" . "0 0 ";}
+      else
+         {$taskCLP = "$taskCLP" . "$QN_n $QN_l ";}
+
+      # The next CLP indicates if a dos calculation should also be done.
+      $taskCLP = "$taskCLP" . "$dosRunSCF ";
+
+      # The next CLP indicates if a bond calculation should also be done.
+      $taskCLP = "$taskCLP" . "$bondRunSCF";
+   }
+   elsif ("$taskName" eq "$intg")
+   {
+      # The first CLP indicates which basis to use.
+      $taskCLP = "$pscfBasisCode ";
+
+      # This CLP indicates whether the momentum matrix should be computed.
+      if ((($pacsRun == 1) && ($taskEdge =~ /gs/)) ||
+           ($optcRun == 1) || ($sigeRun == 1))
+         {$taskCLP = $taskCLP . "1";}
+      else
+         {$taskCLP = $taskCLP . "0";}
+   }
+   elsif ("$taskName" eq "$band")
+   {
+      # Do not do a sybd style calculation.
+      $taskCLP = "$pscfBasisCode 0 ";
+
+      # The next CLPs signal the edge that should be computed for.
+      $taskCLP = "$taskCLP" . "$QN_n $QN_l ";
+   }
+   elsif ("$taskName" eq "$sybd")
+   {
+      # Do a sybd style calculation.
+      $taskCLP = "$pscfBasisCode 1 ";
+
+      # The next CLP signals the edge that should be computed for.
+      $taskCLP = "$taskCLP" . "$QN_n $QN_l ";
+   }
+   elsif ("$taskName" eq "$dos")
+   {
+      # The first CLP indicates which basis to use.
+      $taskCLP = "$pscfBasisCode ";
+
+      # The next CLPs signal the edge that should be computed for.
+      $taskCLP = "$taskCLP" . "$QN_n $QN_l ";
+   }
+   elsif ("$taskName" eq "$bond")
+   {
+      # The first CLP indicates which basis to use.
+      $taskCLP = "$pscfBasisCode ";
+
+      # The next CLPs signal the edge that should be computed for.
+      $taskCLP = "$taskCLP" . "$QN_n $QN_l ";
+   }
+   elsif ("$taskName" eq "$optc")
+   {
+      # The first CLP indicates which basis to use.
+      $taskCLP = "$pscfBasisCode ";
+
+      # The second specifies that we are doing a normal optical properties
+      #   calculation (dielectric function).
+      $taskCLP = "$taskCLP" . "0 ";
+
+      # The next CLPs signal the edge that should be computed for.
+      $taskCLP = "$taskCLP" . "$QN_n $QN_l ";
+
+      # The final value indicates whether or not to compute the x,y,z
+      #   components in serial or all together (the default).
+      $taskCLP = "$taskCLP" . "$serialxyz ";
+   }
+   elsif ("$taskName" eq "$pacs")
+   {
+      # The first CLP indicates which basis to use.
+      $taskCLP = "$pscfBasisCode ";
+
+      # The second specifies that we are doing a XANES/ELNES calculation.
+      $taskCLP = "$taskCLP" . "1 ";
+
+      # The next CLPs signal the edge that should be computed for.
+      $taskCLP = "$taskCLP" . "$QN_n $QN_l ";
+
+      # The final value indicates whether or not to compute the x,y,z
+      #   components in serial or all together (the default).
+      $taskCLP = "$taskCLP" . "$serialxyz ";
+   }
+   elsif ("$taskName" eq "$sige")
+   {
+      # The first CLP indicates which basis to use.
+      $taskCLP = "$pscfBasisCode ";
+
+      # The second specifies that we are doing a sigma(E) calculation.
+      $taskCLP = "$taskCLP" . "2 ";
+
+      # The next CLPs signal the edge that should be computed for.
+      $taskCLP = "$taskCLP" . "$QN_n $QN_l ";
+
+      # The final value indicates whether or not to compute the x,y,z
+      #   components in serial or all together (the default).
+      $taskCLP = "$taskCLP" . "$serialxyz ";
+   }
+   elsif ("$taskName" eq "$wave")
+   {
+      # The first CLP indicates which basis to use.
+      $taskCLP = "$pscfBasisCode ";
+
+      # The next CLPs signal the edge that should be computed for.
+      $taskCLP = "$taskCLP" . "$QN_n $QN_l ";
+   }
+
+   return $taskCLP;
+}
+
+
+# This subroutine will execute the requested fortran program.
+sub executeProgram
+{
+   # Define passed parameters.
+   my $taskName  = $_[0];
+   my $taskCLP   = $_[1];
+
+   # Define local variables.
+   my $executable;
+   my $output;
+   my @values;
+
+   # Get the name of the executable.
+   if ("$taskName" eq "$setup")
+      {$executable = $executables[1];}
+   elsif ("$taskName" eq "$main")
+      {$executable = $executables[2];}
+   elsif ("$taskName" eq "$intg")
+      {$executable = $executables[3];}
+   elsif ("$taskName" eq "$band")
+      {$executable = $executables[4];}
+   elsif ("$taskName" eq "$sybd")
+   {
+      $executable = $executables[4];
+      if ($executable =~ /^g/)
+         {$executable = substr($executable,1,length($executable));}
+   }
+   elsif ("$taskName" eq "$dos")
+      {$executable = $executables[5];}
+   elsif ("$taskName" eq "$bond")
+      {$executable = $executables[6];}
+   elsif (("$taskName" eq "$optc") || ("$taskName" eq "$pacs") ||
+          ("$taskName" eq "$sige"))
+      {$executable = $executables[7];}
+   elsif ("$taskName" eq "$wave")
+      {$executable = $executables[8];}
+
+
+   # Call the executable
+   $output = `($exeMechanism $bin/$executable $taskCLP 2>&1)`;
+   print RUNTIME $output;
+
+
+   # In certain cases a secondary jobs needs to be run immediately afterwards.
+   if ("$taskName" eq "$sybd")
+   {
+      system("$OLCAO_BIN/makeSYBD -dat fort.5 -out fort.20 ".
+             "-raw fort.31 -plot fort.41");
+      if ($spinPol == 2) # Spin polarized case
+         {system("$OLCAO_BIN/makeSYBD -dat fort.5 -out fort.20 ".
+                 "-raw fort.32 -plot fort.42");}
+   }
+   elsif ("$taskName" eq "$optc")
+   {
+      # Define local variables.
+      my $lineCount;
+      my $optcLines;
+
+      # Perform the kramers-kronig conversion of eps2 to eps1 and compute the
+      #   energy loss function (all done in OLCAOkkc).  We need to pass the
+      #   program the number of lines in the input file and which set of file
+      #   numbers to use.  A 1 means use the spin up or default file numbers,
+      #   and a 2 means use the spin down file numbers.
+      $lineCount = `(wc -l fort.50)`;
+      @values = StructureControl::prepLine("",$lineCount,'\s+');
+      $optcLines = $values[0];
+
+      # We always use the #1 file numbers.
+      `($bin/OLCAOkkc $optcLines 1 2>&1)`;
+
+      # We only use the #2 set of file numbers for the spin polarized
+      #   calculations.
+      if ($spinPol == 2)
+         {`($bin/OLCAOkkc $optcLines 2 2>&1)`;}
+   }
+
+   # Check for the existance of the fort.2 file that signals completion of
+   #   the fortran executable without abortive error.
+   if (! -e "fort.2")
+      {&olcao_exit("Fortran success file missing.  Exiting Script.");}
+   else
+      {system ("rm -f fort.2");}
+}
+
+
+
+sub manageOutput
+{
+   # Define passed parameters.
+   my $taskName  = $_[0];
+   my $taskBasis = $_[1];
+   my $taskEdge  = $_[2];
+   my $taskKP    = $_[3];
+   my $alt       = $_[4];
+
+   # Define the temporary basis tag.
+   my $tempBasis = "-temp";
+
+   # Perform these specialized moves and copies for each possible task.
+   if ("$taskName" eq "$setup")
+      {&move("$setup$tempBasis$hdf","$setup$taskBasis$alt$hdf");}
+   elsif ("$taskName" eq "$main")
+   {
+      &copy("fort.7","$taskEdge$main$taskBasis.$iteration$alt.7");
+      &move("fort.7","$proj_home/$taskEdge$iteration$taskBasis$alt$dat");
+      &copy("fort.14","$taskEdge$main$taskBasis.$iteration$alt.14");
+      &move("fort.14","$proj_home/$taskEdge$energy$taskBasis$alt$dat");
+      &copy("fort.8","$taskEdge$main$taskBasis.SCFV$alt.8");
+
+      &move("fort.8","$proj_home/$taskEdge$initPot$taskBasis$alt$dat");
+      if (-e "fort.1000")
+      {
+         &copy("fort.1000","$taskEdge$main$taskBasis.iterTDOS$alt.1000");
+         &move("fort.1000",
+               "$proj_home/$taskEdge$main$taskBasis.iterTDOS$alt$plot");
+      }
+      &move("$setup$tempBasis$hdf","$setup$taskBasis$alt$hdf");
+      &move("$main$tempBasis$hdf","$taskEdge$main$taskBasis$alt$hdf");
+      if ($dosRunSCF == 1)
+      {
+         if ($spinPol == 2)
+         {
+            &copy("fort.60","$taskEdge$dos$taskBasis$tdos$alt$plot.60");
+            &move("fort.60",
+                  "$proj_home/$taskEdge$dos$taskBasis$tdos$alt$up$plot");
+            &copy("fort.70","$taskEdge$dos$taskBasis$pdos$alt$raw.70");
+            &move("fort.70",
+                  "$proj_home/$taskEdge$dos$taskBasis$pdos$alt$up$raw");
+            &copy("fort.80","$taskEdge$dos$taskBasis$loci$alt$plot.80");
+            &move("fort.80",
+                  "$proj_home/$taskEdge$dos$taskBasis$loci$alt$up$plot");
+            &copy("fort.61","$taskEdge$dos$taskBasis$tdos$alt$plot.61");
+            &move("fort.61",
+                  "$proj_home/$taskEdge$dos$taskBasis$tdos$alt$dn$plot");
+            &copy("fort.71","$taskEdge$dos$taskBasis$pdos$alt$raw.71");
+            &move("fort.71",
+                  "$proj_home/$taskEdge$dos$taskBasis$pdos$alt$dn$raw");
+            &copy("fort.81","$taskEdge$dos$taskBasis$loci$alt$plot.81");
+            &move("fort.81",
+                  "$proj_home/$taskEdge$dos$taskBasis$loci$alt$dn$plot");
+         }
+         else
+         {
+            &copy("fort.60","$taskEdge$dos$taskBasis$tdos$alt$plot.60");
+            &move("fort.60","$proj_home/$taskEdge$dos$taskBasis$tdos$alt$plot");
+            &copy("fort.70","$taskEdge$dos$taskBasis$pdos$alt$raw.70");
+            &move("fort.70","$proj_home/$taskEdge$dos$taskBasis$pdos$alt$raw");
+            &copy("fort.80","$taskEdge$dos$taskBasis$loci$alt$plot.80");
+            &move("fort.80","$proj_home/$taskEdge$dos$taskBasis$loci$alt$plot");
+         }
+      }
+      if ($bondRunSCF == 1)
+      {
+         if ($spinPol == 2)
+         {
+            &copy("fort.10","$taskEdge$bond$taskBasis$alt$raw.10");
+            &move("fort.10","$proj_home/$taskEdge$bond$taskBasis$alt$up$raw");
+            &copy("fort.11","$taskEdge$bond$taskBasis$alt$raw.11");
+            &move("fort.11","$proj_home/$taskEdge$bond$taskBasis$alt$dn$raw");
+         }
+         else
+         {
+            &copy("fort.10","$taskEdge$bond$taskBasis$raw.10");
+            &move("fort.10","$proj_home/$taskEdge$bond$taskBasis$raw");
+         }
+      }
+   }
+   elsif ("$taskName" eq "$intg")
+   {
+      &move("$intg$tempBasis$hdf","$taskEdge$intg$taskBasis$alt$hdf");
+      &move("fort.8","$taskEdge$intg$taskBasis.SCFV$alt.8");
+   }
+   elsif ("$taskName" eq "$band")
+   {
+      &move("$intg$tempBasis$hdf","$taskEdge$intg$taskBasis$alt$hdf");
+      &move("$band$tempBasis$hdf","$taskEdge$band$taskBasis$alt$hdf");
+   }
+   elsif ("$taskName" eq "$sybd")
+   {
+      &move("$intg$tempBasis$hdf","$taskEdge$intg$taskBasis$alt$hdf");
+      if ($spinPol == 2)
+      {
+         &move("fort.31","$taskEdge$sybd$taskBasis$alt$raw.31");
+         &move("fort.41","$proj_home/$taskEdge$sybd$taskBasis$alt$up$plot");
+         &move("fort.32","$taskEdge$sybd$taskBasis$alt$raw.32");
+         &move("fort.42","$proj_home/$taskEdge$sybd$taskBasis$alt$dn$plot");
+      }
+      else
+      {
+         &move("fort.31","$taskEdge$sybd$taskBasis$alt$raw.31");
+         &move("fort.41","$proj_home/$taskEdge$sybd$taskBasis$alt$plot");
+      }
+   }
+   elsif ("$taskName" eq "$dos")
+   {
+      &move("$band$tempBasis$hdf","$taskEdge$band$taskBasis$alt$hdf");
+      if ($spinPol == 2)
+      {
+         &copy("fort.60","$taskEdge$dos$taskBasis$tdos$plot$alt.60");
+         &move("fort.60","$proj_home/$taskEdge$dos$taskBasis$tdos$alt$up$plot");
+         &copy("fort.70","$taskEdge$dos$taskBasis$pdos$alt$raw.70");
+         &move("fort.70","$proj_home/$taskEdge$dos$taskBasis$pdos$alt$up$raw");
+         &copy("fort.80","$taskEdge$dos$taskBasis$loci$alt$plot.80");
+         &move("fort.80","$proj_home/$taskEdge$dos$taskBasis$loci$alt$up$plot");
+         &copy("fort.61","$taskEdge$dos$taskBasis$tdos$alt$plot.61");
+         &move("fort.61","$proj_home/$taskEdge$dos$taskBasis$tdos$alt$dn$plot");
+         &copy("fort.71","$taskEdge$dos$taskBasis$pdos$alt$raw.71");
+         &move("fort.71","$proj_home/$taskEdge$dos$taskBasis$pdos$alt$dn$raw");
+         &copy("fort.81","$taskEdge$dos$taskBasis$loci$alt$plot.81");
+         &move("fort.81","$proj_home/$taskEdge$dos$taskBasis$loci$alt$dn$plot");
+      }
+      else
+      {
+         &copy("fort.60","$taskEdge$dos$taskBasis$tdos$plot$alt.60");
+         &move("fort.60","$proj_home/$taskEdge$dos$taskBasis$tdos$alt$plot");
+         &copy("fort.70","$taskEdge$dos$taskBasis$pdos$alt$raw.70");
+         &move("fort.70","$proj_home/$taskEdge$dos$taskBasis$pdos$alt$raw");
+         &copy("fort.80","$taskEdge$dos$taskBasis$loci$alt$plot.80");
+         &move("fort.80","$proj_home/$taskEdge$dos$taskBasis$loci$alt$plot");
+      }
+   }
+   elsif ("$taskName" eq "$bond")
+   {
+      &move("$band$tempBasis$hdf","$taskEdge$band$taskBasis$alt$hdf");
+      if ($spinPol == 2)
+      {
+         &copy("fort.10","$taskEdge$bond$taskBasis$alt$raw.10");
+         &move("fort.10","$proj_home/$taskEdge$bond$taskBasis$alt$up$raw");
+         &copy("fort.11","$taskEdge$bond$taskBasis$alt$raw.11");
+         &move("fort.11","$proj_home/$taskEdge$bond$taskBasis$alt$dn$raw");
+      }
+      else
+      {
+         &copy("fort.10","$taskEdge$bond$taskBasis$alt$raw.10");
+         &move("fort.10","$proj_home/$taskEdge$bond$taskBasis$alt$raw");
+      }
+   }
+   elsif ("$taskName" eq "$optc")
+   {
+      if ($spinPol == 2)
+      {
+         &move("$intg$tempBasis$hdf","$taskEdge$intg$taskBasis$alt$hdf");
+         &move("$band$tempBasis$hdf","$taskEdge$band$taskBasis$alt$hdf");
+         &copy("fort.40","$taskEdge$optc$taskBasis$cond$alt$up.40");
+         &copy("fort.50","$taskEdge$optc$taskBasis$eps2$alt$up.50");
+         &move("fort.40",
+            "$proj_home/$taskEdge$optc$taskBasis$cond$alt$up$plot");
+         &move("fort.50",
+            "$proj_home/$taskEdge$optc$taskBasis$eps2$alt$up$plot");
+         &move("fort.100","$proj_home/$taskEdge$optc$taskBasis$alt$up$plot");
+         &move("fort.110",
+            "$proj_home/$taskEdge$optc$taskBasis$eps1$alt$up$plot");
+         &move("fort.120",
+            "$proj_home/$taskEdge$optc$taskBasis$elf$alt$up$plot");
+         &move("fort.130",
+            "$proj_home/$taskEdge$optc$taskBasis$ref$alt$up$plot");
+         &move("fort.140",
+            "$proj_home/$taskEdge$optc$taskBasis$eps1i$alt$up$plot");
+
+         &copy("fort.41","$taskEdge$optc$taskBasis$cond$alt$dn.41");
+         &copy("fort.51","$taskEdge$optc$taskBasis$eps2$alt$dn.51");
+         &move("fort.41",
+            "$proj_home/$taskEdge$optc$taskBasis$cond$alt$dn$plot");
+         &move("fort.51",
+            "$proj_home/$taskEdge$optc$taskBasis$eps2$alt$dn$plot");
+         &move("fort.101",
+            "$proj_home/$taskEdge$optc$taskBasis$alt$dn$plot");
+         &move("fort.111",
+            "$proj_home/$taskEdge$optc$taskBasis$eps1$alt$dn$plot");
+         &move("fort.121",
+            "$proj_home/$taskEdge$optc$taskBasis$elf$alt$dn$plot");
+         &move("fort.131",
+            "$proj_home/$taskEdge$optc$taskBasis$ref$alt$dn$plot");
+         &move("fort.141",
+            "$proj_home/$taskEdge$optc$taskBasis$eps1i$alt$dn$plot");
+      }
+      else
+      {
+         &move("$intg$tempBasis$hdf","$taskEdge$intg$taskBasis$alt$hdf");
+         &move("$band$tempBasis$hdf","$taskEdge$band$taskBasis$alt$hdf");
+         &copy("fort.40","$taskEdge$optc$taskBasis$cond$alt.40");
+         &copy("fort.50","$taskEdge$optc$taskBasis$eps2$alt.50");
+         &move("fort.40","$proj_home/$taskEdge$optc$taskBasis$cond$alt$plot");
+         &move("fort.50","$proj_home/$taskEdge$optc$taskBasis$eps2$alt$plot");
+         &move("fort.100","$proj_home/$taskEdge$optc$taskBasis$alt$plot");
+         &move("fort.110","$proj_home/$taskEdge$optc$taskBasis$eps1$alt$plot");
+         &move("fort.120","$proj_home/$taskEdge$optc$taskBasis$elf$alt$plot");
+         &move("fort.130","$proj_home/$taskEdge$optc$taskBasis$ref$alt$plot");
+         &move("fort.140","$proj_home/$taskEdge$optc$taskBasis$eps1i$alt$plot");
+      }
+   }
+   elsif ("$taskName" eq "$sige")
+   {
+      &move("$intg$tempBasis$hdf","$taskEdge$intg$taskBasis$alt$hdf");
+      &move("$band$tempBasis$hdf","$taskEdge$band$taskBasis$alt$hdf");
+      if ($spinPol == 2)
+      {
+         &copy("fort.50","$taskEdge$sige$taskBasis$cond$alt$up.50");
+         &move("fort.50",
+            "$proj_home/$taskEdge$sige$taskBasis$cond$alt$up$plot");
+         &copy("fort.51","$taskEdge$sige$taskBasis$cond$alt$dn.51");
+         &move("fort.51",
+            "$proj_home/$taskEdge$sige$taskBasis$cond$alt$dn$plot");
+      }
+      else
+      {
+         &copy("fort.50","$taskEdge$sige$taskBasis$cond$alt.50");
+         &move("fort.50","$proj_home/$taskEdge$sige$taskBasis$cond$alt$plot");
+      }
+   }
+   elsif ("$taskName" eq "$pacs")
+   {
+      &move("$intg$tempBasis$hdf","gs_$intg$taskBasis$alt$hdf");
+      &move("$band$tempBasis$hdf","gs_$band$taskBasis$alt$hdf");
+      &move("$band$tempBasis.2$hdf","$taskEdge$band$taskBasis$alt$hdf");
+      if ($spinPol == 2)
+      {
+         &copy("fort.50","$taskEdge$pacs$taskBasis$alt$plot$up.50");
+         &move("fort.50","$proj_home/$taskEdge$pacs$taskBasis$alt$up$plot");
+         &copy("fort.51","$taskEdge$pacs$taskBasis$alt$plot$dn.51");
+         &move("fort.51","$proj_home/$taskEdge$pacs$taskBasis$alt$dn$plot");
+      }
+      else
+      {
+         &copy("fort.50","$taskEdge$pacs$taskBasis$alt$plot.50");
+         &move("fort.50","$proj_home/$taskEdge$pacs$taskBasis$alt$plot");
+      }
+   }
+   elsif ("$taskName" eq "$wave")
+   {
+      &move("$band$tempBasis$hdf","$taskEdge$band$taskBasis$alt$hdf");
+      &move("fort.8","$taskEdge$intg$taskBasis.SCFV$alt.8");
+
+      # The profile files are always created.
+      &move("fort.30","$proj_home/$taskEdge$wave$taskBasis$alt" .
+                      "$profile-a$dat");
+      &move("fort.31","$proj_home/$taskEdge$wave$taskBasis$alt" .
+                      "$profile-b$dat");
+      &move("fort.32","$proj_home/$taskEdge$wave$taskBasis$alt" .
+                      "$profile-c$dat");
+      if (-e "fort.56") # Only move openDX files if they were created.
+      {
+         &move("fort.56","$proj_home/$atomPos$dx");
+         &move("fort.57","$proj_home/$lattice$dx");
+         if ($spinPol == 2)
+         {
+            &move("fort.58","$proj_home/$taskEdge$wave$taskBasis$alt" .
+                            "$valeRho$upPdn$dx");
+            &move("fort.59","$proj_home/$taskEdge$wave$taskBasis$alt" .
+                            "$valeRho$upMdn$dx");
+            &move("fort.60","$proj_home/$taskEdge$wave$taskBasis$alt" .
+                            "$valeRho$upPdn$minusNeut$dx");
+            &move("fort.61","$proj_home/$taskEdge$wave$taskBasis$alt" .
+                            "$pot$up$dx");
+            &move("fort.62","$proj_home/$taskEdge$wave$taskBasis$alt" .
+                            "$pot$dn$dx");
+         }
+         else
+         {
+            &move("fort.58","$proj_home/$taskEdge$wave$taskBasis$alt" .
+                            "$valeRho$dx");
+            &move("fort.59","$proj_home/$taskEdge$wave$taskBasis$alt" .
+                            "$valeRho$minusNeut$dx");
+            &move("fort.60","$proj_home/$taskEdge$wave$taskBasis$alt" .
+                            "$pot$dx");
+         }
+      }
+   }
+
+   # Perform these moves for all tasks.
+   &move("fort.5", "$taskEdge$taskName$taskBasis$dat.5");
+   &move("fort.15","$taskKP.15");
+   &move("fort.4", "$structure$dat.4");
+   &copy("fort.20","$taskEdge$taskName$taskBasis$alt$out.20");
+   &move("fort.20","$proj_home/$taskEdge$taskName$taskBasis$alt$out");
+}
+
+
+sub updatePACS
+{
+   # This subroutine is run after both main calculations for the XAS 
+   #   total calculation are complete.  Then, we can determine the approximate
+   #   location of the edge onset based on the total energy difference between
+   #   the two states (initial/final).
+
+   # Define passed parameters.
+   my $finMainEdge      = "$_[0]"."_";
+   my $updateSCFBasis   = "-"."$_[1]";
+
+   # Define local variables.
+   my $line;
+   my @values;
+   my $initEnergy;
+   my $finEnergy;
+   my $TEDiff;
+   my $unknownFound;
+   my $numCoreOrbitals;
+   my $orbital;
+
+   chdir $proj_home;
+
+   open (INITMAIN,"<gs_$main$updateSCFBasis$out") ||
+         die "Can not open gs_$main$updateSCFBasis$out for reading.\n";
+   open (FINMAIN,"<$finMainEdge$main$updateSCFBasis$out") ||
+         die "Can not open $finMainEdge$main$updateSCFBasis$out for writing\n";
+
+   # Find the total energy of the initial state.
+   while ($line=<INITMAIN>)
+   {
+      if ($line=~/TOTAL ENERGY/)
+      {
+         chomp $line;
+         @values=split(/\s+/,"$line");
+         $initEnergy=$values[$#values];
+      }
+   }
+   close(INITMAIN);
+
+   # Find the total energy of the final state.
+   while ($line=<FINMAIN>)
+   {
+      if ($line=~/TOTAL ENERGY/)
+      {
+         chomp $line;
+         @values=split(/\s+/,"$line");
+         $finEnergy=$values[$#values];
+      }
+   }
+   close(FINMAIN);
+
+   # Use the collected info to determine the total energy difference (TEdiff).
+   $TEDiff = abs($finEnergy-$initEnergy)*StructureControl::getHartree();
+
+   # It is assumed that the pacs input file already exists at this point.
+   #   We are just going to replace the "UNKNOWN" values.
+
+   open (PACSOLD,"<$olcao$dat") || die "Can not open $olcao$dat for reading.\n";
+   open (PACSNEW,">pacs_temp") || die "Can not open pacs_temp for writing.\n";
+
+   $unknownFound=0;
+   while($line=<PACSOLD>)
+   {
+      if ($line=~/PACS_INPUT_DATA/)
+      {
+         print PACSNEW $line;
+         $line=<PACSOLD>;
+         print PACSNEW $line;
+         $line=<PACSOLD>;
+         print PACSNEW $line;
+         $line=<PACSOLD>;
+         print PACSNEW $line;
+         $line=<PACSOLD>;
+         print PACSNEW $line;
+
+         @values = StructureControl::prepLine("",$line,'\s+');
+         $numCoreOrbitals = $values[0];
+
+         foreach $orbital (1..$numCoreOrbitals)
+         {
+            $line=<PACSOLD>;
+            @values = StructureControl::prepLine("",$line,'\s+');
+            if (($values[4] == -1) && ($values[0] == $QN_n) &&
+                ($values[1] == $QN_l))
+            {
+               print PACSNEW "@values[0..3] $TEDiff $values[5] ".
+                     " # QN_n QN_l Init1 Init2 TEDiff\n";
+               $unknownFound = 1;
+            }
+            else
+               {print PACSNEW $line;}
+         }
+      }
+      else
+         {print PACSNEW "$line";}
+   }
+
+   close (PACSOLD);
+   close (PACSNEW);
+
+   # Update the version of the pacs input file in the inputs directory
+   &move ("pacs_temp","$olcao$dat");
+
+   # Only print a notice if we changed anything.
+   if ($unknownFound==1)
+      {print RUNTIME "$olcao$dat Updated.\n";}
+}
+
+
+sub cleanUp
+{
+   system("rm $temp/$OLCAOlock");
+   print RUNTIME "Program Sequence Complete.\n";
+   close RUNTIME;
+}

@@ -1,0 +1,2147 @@
+#!/usr/bin/perl
+
+sub printHelp
+{
+   print <<ENDHELP;
+#PROGRAM:  bondAnalysis
+#PURPOSE:  This program will take an atomic structure data file in one of many
+#          possible formats and will produce a new file that contains
+#          information about the nearest neighbor relationships between atoms.
+#          This can typically be considered as a bond analysis, but the data
+#          is produced simply based on geometrical considerations, not on any
+#          quantum mechanical calculations such as the OLCAO bond order.
+#
+#USAGE:  bondAnalysis [-o \$outFile] [-i \$inFile] [-dist \$limitDist]
+#                     [-bs | -ba | -bl | -boo [-Ylm_l \$Ylm_l] | -dx | -st | -co
+#                     |-3dfull  [-a \$aScale -b \$bScale -c \$cScale]]
+#                     |-3dparts [-a \$aScale -b \$bScale -c \$cScale
+#                                -vol \$x \$y \$z]]
+#                     [-bf \$bondingFactor] [-xyz | -abc | -fract]
+#                     [-box \$min1 \$max1 \$min2 \$max2 \$min3 \$max3 \$zone]
+#                     [-help]
+#
+#The -o option allows the user to designate a different name for the resultant
+#   output file rather than the default "bondAnalysis.xx" file.  The "xx" in
+#   the output depends on the data requested, for the -bs option, "xx"="bs",
+#   and for -ba "xx"="ba" and so on.
+#The -i option allows the user to designate a different name for the input
+#   file rather than the default expected input file of "olcao.skl".  Other
+#   options include files such as the "structure.dat" OLCAO input file, the
+#   VASP input file "POSCAR".  (At present only the olcao.skl option works.)
+#The -dist option takes one parameter called \$limitDist which is a measure in
+#   angstroms of the cutoff distance beyond which atom-atom distances should
+#   not be considered.  If this option is *not* given, then the program will
+#   assume a default cutoff of 5 angstroms.
+#The -bs -ba -bl -boo -dx -st and -co options are all mutually exclusive.  The
+#   one given last (relatively) on the command line will be the one that is
+#   performed.
+#The -bs option will print a file that can be used to produce a ball and stick
+#   figure through some third party software.  The format is the lattice
+#   parameters given in a,b,c x,y,z format followed by a line with the number
+#   of atoms, followed by a line for each atom.  These lines have the element,
+#   the species number, the atomic coordinates in either x,y,z direct, a,b,c
+#   direct, or a,b,c fractional, and the a list of the atom numbers to which
+#   each atom bonds.
+#The -ba option is a list of the bond angles for each pair of atoms bonded to
+#   each atom.  The output is divided into groups, one group for each atom.
+#   The first line of a group is the number of bond angles in that group.  The
+#   remaining lines are the various bond angles.  Each bond angle line has the
+#   form of two triplets and the bond angle in degrees.  The first triplet is
+#   the element name and species number of each atom in the triplet with the
+#   vertex atom in the middle.  The second triplet contains the atom number in
+#   the same order.  Then, the bond angle is given in degrees.
+#The -bl option is a list of the bond lengths for each atom that is "bonded"
+#   to each other atom.  The output is divided into groups, one group for each
+#   atom.  The first line of a group contains the number of bonds in that
+#   group and the element name and species number of the atom that is common
+#   to all the bonds in that group.  The next lines contain the element name
+#   and species number of each atom bonded to the common atom along with their
+#   bond lengths and atom number.
+#The -boo option will compute the so-called bond orientational order number of
+#   each atom in the model.  The output is simply a list of the element name,
+#   species number, index number, and BOO number of each atom. The -Ylm_l
+#   suboption sets the l order of the Ylm spherical harmonic to use to
+#   distinguish the bond orientational order of different atoms. Currently
+#   only 0, 1, and 6 are allowed values.
+#The -dx option will produce a file that can be used to view the structure in
+#   openDX.  The bonds are based simply on the covalent radii of each atom.
+#   The atom colors and sizes are pulled from the ElementData.pm module.
+#The -st option will compute a set of statistics about each element, species,
+#   and atom and will print them.  The stitistics include average bond lengths,
+#   and the bond length standard deviation, the average bond angle and the bond
+#   angle standard deviation.
+#The -co option will compute (and print) the coordination for each atom and
+#   will also produce and print a summary of the coordinations for each element.
+#The -3dfull option will produce a single OpenScad model file that can be used
+#   to produce data for a 3D printer. This model will contain all atoms and
+#   bonds of the complete system unioned together so that the whole model prints
+#   as one piece. This option has three suboptions: -a will scale the radius
+#   of the atoms where the default is the covalent radius, -b will scale
+#   the diameter of the bond sticks where the default is 10% of the covalent
+#   radius of the largest radius in the model, -c will scale the overall
+#   size of the crystal lattice.  NOTE, bad choices for these values will
+#   result in bad looking models.
+#The -3dparts option will produce a collection of OpenScad model files that
+#   contain descriptions of the individual parts associated with an atomic
+#   scale model. When the parts models are printed on a 3D printer then can be
+#   used to assemble a large complex 3D structural model. The three sub-options
+#   work the same way for this command as they do for the -3dfull option. The
+#   additional -vol option is used to specify the printable volume that the 3D
+#   printer has accessible to it.
+#The -bf option allows the user to define a multiplicative factor for the
+#   determination of which atoms are bonded.  The default value is 1.  Atoms
+#   are considered to be bonded if their interatomic distance is <= (the sum of
+#   their covalent radii) * \$bondingFactor.  Be careful that the largest
+#   expected bond length does not exceed the limit distance set with -dist.
+# The -xyz option will print the atomic positions in x,y,z direct space
+#   (cartesian) instead of the default a,b,c direct space coordinates.  This
+#   option will affect the interpretation of the coordinates specified in the
+#   -box option and it is mutually exclusive with -fract.
+# The -fract option will print the atomic positions in a,b,c fractional
+#   coordinates instead of the default x,y,z direct space (cartesian).  This
+#   option will affect the interpretation of the coordinates specified in the
+#   -box option and it is mutually exclusive with -xyz.
+# The -box option will use only a limited portion of the system to compute
+#   bond length and bond angle statistics.  The min and max values are used to
+#   define the inclusive range over each axis within which atoms are to be
+#   considered as "inside" the box.  You may optionally use the word "max"
+#   instead of a specific number for \$max1,2,3.  This will automatically use
+#   the maximum value so you don't have to look it up or worry about rounding
+#   issues.  The minimum value of 0 is easy to remember and works for all cells
+#   so there is no "min" option.  The \$zone can be either 1 or 2.  If it is 1,
+#   then only atoms inside the box are considered.  If it is 2, then only atoms
+#   outside the box are considered.  The default behavior if this option is not
+#   given is to use abc coordinates and include all atoms inside the entire
+#   cell.
+# The -help option will print this description and usage information.
+#
+ENDHELP
+   exit(0);
+}
+
+###############################################
+# Begin program execution #####################
+###############################################
+
+# Use necessary modules.
+use strict;
+use warnings;
+use Env;
+use sort 'stable';
+use Math::Trig;
+use lib "$OLCAO_BIN/perl5";
+use POSIX qw(ceil floor);
+use StructureControl;
+use ElementData;
+
+# Declare global variables
+# Command line defined options.
+my $outFile;
+my $inFile;
+my $bondingFactor; # Multiplicative factor to elemental covalent bond lengths.
+my $limitDist; # Cut off distance for consideration of any bonds.
+my $operation;
+my $coordType; # 1 = directXYZ; 2 = directABC; 3 = fractABC.
+my $coordLabel;
+my @boxBorders;
+my $zone;
+my $Ylm_l; # Allowed values are 0, 1, 6.
+my $qOrder_ref;
+my $aScale; # Atom scale factor for openscad models.
+my $bScale; # Bond scale factor for openscad models.
+my $cScale; # Cell scale factor for openscad models.
+my $xVol3D; # x dimension for the 3D printer's volume in mm.
+my $yVol3D; # y dimension for the 3D printer's volume in mm.
+my $zVol3D; # z dimension for the 3D printer's volume in mm.
+
+# System defined variables.
+my $numAtoms;         # Number of atoms in the system.
+my $numAtomsExt;      # Number of atoms in the system included extended cells.
+my $numElements;      # Number of unique elements in the system.
+my $realLattice_ref;  # Lattice vectors in abc,xyz
+my $mag_ref;          # Magnitudes of the a,b,c vectors.
+my $coords_ref;       # Coordinates in some form (xyz; abc direct; abc fract)
+my $coordsExt_ref;    # Extended cell coordinates in same form as above.
+my $elementList_ref;  # List of unique elements in the system.
+my $numSpecies_ref;   # Number of species for each element.
+my $speciesList_ref;  # Species tag for each species of each element.
+my $coordination_ref; # String giving the coordination of each atom.
+my $coordinationSummary_ref; # The coordination summary of each element.
+my $bondedList_ref;   # List of bonded central cell atom numbers.
+my $bondedExtList_ref; # List of bonded extended cell atom numbers.
+my $bondLengthExt_ref; # Bond lengths of each bond.
+my $bondAnglesExt_ref; # The actual bond angles.
+my $numBonds_ref;      # The number of bonds for each atom.
+my $numBondAngles_ref; # The number of bond angles for each atom.
+my $atomSpeciesID_ref; # Species ID number of each atom.
+my $atomElementID_ref; # Element ID number of each atom.
+my $atomElementName_ref; # Element name of each atom.
+my $atomCovalRadii_ref;  # Covalent radius each atom.
+my $ext2CentralItemMap_ref; # Mapping between extended and central cell.
+                            #   Index # is extended cell, stored # is central.
+my $central2ExtItemMap_ref; # Mapping between central cell and extended cell.
+                            #   Index # is central cell, stored # is the
+                            #   extended list # for that central cell atom.
+
+# Computed statistics for each element, species, and atom.
+my @avgElemBL;
+my @avgElemBA;
+my @avgSpecBL;
+my @avgSpecBA;
+my @avgAtomBL;
+my @avgAtomBA;
+my @stdElemBL;
+my @stdElemBA;
+my @stdSpecBL;
+my @stdSpecBA;
+my @stdAtomBL;
+my @stdAtomBA;
+
+# Hard coded parameters.
+my $bondRadiusScale; # Used for openscad models. Default ratio of bond cylinder
+                     #    radius to atomic covalent radius.
+$bondRadiusScale = 0.1; # 10%.
+
+# Initialize the environment.
+&initEnv;
+
+# Parse the command line.
+&parseCommandLine;
+
+# Apply the bonding factor to the database.
+ElementData::applyBondFactor($bondingFactor);
+
+# Read the input file.
+StructureControl::readInputFile($inFile,1);
+
+# Obtain a reference to the lattice parameters.
+$realLattice_ref = StructureControl::getRealLatticeRef;
+
+# Obtain a reference to the magnitudes of the lattice vectors.
+$mag_ref = StructureControl::getMagRef;
+
+# Set the limit for atom interaction.  (Maximum bond limit)
+StructureControl::setLimitDist($limitDist);
+
+# Establish the bounding box that constrains which atoms to consider.
+&setBoxBorder;
+
+# Create the list of which atoms are bonded to which atoms.
+StructureControl::createBondingList;
+
+# Compute the bond angles.  For each atom in the central cell, obtain a list of
+#   bond angles between all pairs of bonded atoms.
+StructureControl::computeBondAnglesExt;
+
+# Obtain a reference to the list of atoms bonded to each atom.  "Bonded" in
+#   this case means that the atoms are within the sum of the covalent radii of
+#   each other including the bondFactor effect.  The ID numbers of the atoms
+#   are all with respect to atoms inside the central cell.
+$bondedList_ref = StructureControl::getBondingListRef;
+
+# Obtain a reference to the list of atoms bonded to each atom.  "Bonded" in
+#   this case means that the atoms are within the sum of the covalent radii of
+#   each other including the bondFactor effect.  The ID numbers of the atoms
+#   may be in reference to atoms outside the central cell.
+$bondedExtList_ref = StructureControl::getBondingExtListRef;
+
+# Obtain a reference to the list of bond angles for each central cell atom.
+$bondAnglesExt_ref = StructureControl::getBondAngleExtRef;
+
+# Obtain references to the mappings between the extended cell atom numbers and
+#   the central cell atom numbers.
+$ext2CentralItemMap_ref = StructureControl::getExt2CentralItemMapRef;
+$central2ExtItemMap_ref = StructureControl::getCentral2ExtItemMapRef;
+
+# Obtain the meta-data about the atom list.
+$numBonds_ref = StructureControl::getNumBondsRef;
+$numBondAngles_ref = StructureControl::getNumBondAnglesRef;
+
+# Obtain the number of atoms and elements in the system.
+$numAtoms = StructureControl::getNumAtoms;
+$numAtomsExt = StructureControl::getNumAtomsExt;
+$numElements = StructureControl::getNumElements;
+
+# Obtain a reference to the covalent radii of each atom.
+$atomCovalRadii_ref = StructureControl::getCovalRadiiRef;
+
+# Obtain a reference to the atom names.
+$atomElementName_ref = StructureControl::getAtomElementNameRef;
+
+# Obtain a reference to the unique element names in the system.
+$elementList_ref = StructureControl::getElementListRef;
+
+# Obtain a reference to the number of species for each element.
+$numSpecies_ref = StructureControl::getNumSpeciesRef;
+
+# Obtain a reference to the various atomic species tags for each unique element.
+$speciesList_ref = StructureControl::getSpeciesListRef;
+
+# Obtain a reference to the species ID number of each atom.
+$atomSpeciesID_ref = StructureControl::getAtomSpeciesIDRef;
+
+# Obtain a reference to the element ID number of each atom.
+$atomElementID_ref = StructureControl::getAtomElementIDRef;
+
+# Get the atomic positions in (x,y,z), (a,b,c) direct, or (a,b,c) fractional
+#   coordinates.
+if ($coordType == 1)
+{
+   $coords_ref = StructureControl::getDirectXYZRef;
+   $coordsExt_ref = StructureControl::getDirectXYZExtListRef;
+   $coordLabel = "(x,y,z) direct";
+}
+elsif ($coordType == 2)
+{
+   $coords_ref = StructureControl::getDirectABCRef;
+   $coordLabel = "(a,b,c) direct";
+}
+else
+{
+   $coords_ref = StructureControl::getFractABCRef;
+   $coordLabel = "(a,b,c) fractional";
+}
+
+# Obtain the bond lengths of each bond in the system with reference to atom
+#   numbers including those outside the central cell.
+$bondLengthExt_ref = StructureControl::getBondLengthExtRef;
+
+
+if ($operation == 4) # Set up bond orientational order data.
+{
+   # Set the order of the spherical harmonics to use.
+   StructureControl::setYlm_l($Ylm_l);
+ 
+   # Create the list of which atoms are bonded to which atoms.
+   StructureControl::createQList;
+ 
+   # Obtain a reference to the qOrder.
+   $qOrder_ref = StructureControl::getQOrderRef;
+}
+elsif ($operation == 6) # Compute statistics about bl's and ba's.
+   {&computeStatistics;}
+elsif ($operation == 7) # Create the coordination data.
+{
+   # Create the coordination list and the coordination summary.
+   StructureControl::createCoordinationList;
+   StructureControl::createCoordinationSummary;
+
+   # Obtain a reference to the coordination of each atom.
+   $coordination_ref = StructureControl::getCoordinationRef;
+
+   # Obtain a reference to the coordination summary of each element.
+   $coordinationSummary_ref = StructureControl::getCoordinationSummaryRef;
+}
+
+# Open the output file.
+&openOutput;
+
+# Print the results.
+if ($operation == 1)
+   {&printBallAndStick;}
+elsif ($operation == 2)
+   {&printBondAngles;}
+elsif ($operation == 3)
+   {&printBondLengths;}
+elsif ($operation == 4)
+   {&printBondOO;}
+elsif ($operation == 5)
+   {&printBondDX;}
+elsif ($operation == 6)
+   {&printBondStats;}
+elsif ($operation == 7)
+   {&printCoordinationData;}
+elsif ($operation == 8)
+   {&printOpenScad(0);}
+elsif ($operation == 9)
+   {&printOpenScad(1);}
+
+###############################################
+# End program execution #######################
+###############################################
+
+
+sub initEnv
+{
+   # Assume that we will be using the olcao.skl type of data input.
+   $inFile = "olcao.skl";
+
+   # Assume that the default output file will be ok.  (Assigned automatically).
+   $outFile = "";
+
+   # Assume the default limit distance.
+   $limitDist = 3.0;
+
+   # Assume that we will compute bond lengths.
+   $operation = 3;
+
+   # Assume the default bonding factor.
+   $bondingFactor = 1.0;
+
+   # Assume that we will use x,y,z direct space coordinates for the atomic
+   #   positions.
+   $coordType = 1;
+
+   # Assume that the Ylm for the bond orientational order is l=6.
+   $Ylm_l = 6;
+
+   # Assume a scaling factor of 10.0 for the atom and cell size so that 1.0
+   #   angstrom is equal to 10.0mm.
+   $aScale = 10.0;
+   $cScale = 20.0;
+
+   # The scaling factor for the bond diameter is set equal to 1.0 so that when
+   #   the default bond diameter of 10% of the largest covalent radius is
+   #   computed that is what will be used.
+   $bScale = 2.0;
+
+   # Set the default volume to be 5% less than the max volume of the Prusa
+   #   Mendle model 3D printer (measured in mm).
+   $xVol3D = 150.0;
+   $yVol3D = 150.0;
+   $zVol3D = 150.0;
+
+   # Initialize the bounding box to include the whole cell.
+   $boxBorders[1][1] = 0.0;
+   $boxBorders[1][2] = "max";
+   $boxBorders[2][1] = 0.0;
+   $boxBorders[2][2] = "max";
+   $boxBorders[3][1] = 0.0;
+   $boxBorders[3][2] = "max";
+   $zone = 1; #Inside the box.
+
+   # Initialize the element data from the database.
+   ElementData::initElementData;
+}
+
+
+
+sub parseCommandLine
+{
+   # Initialize the index counter for the command line parameters.
+   my $number=0;
+   my $index=0;
+   my $nextTag;
+
+   # Loop through the command line parameters checking for each option.
+   while ($number < scalar(@ARGV))
+   {
+      if ($ARGV[$number] eq "-o")
+         {$outFile = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-i")
+         {$inFile = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-dist")
+         {$limitDist = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-bs")  #Ball and stick.
+         {$operation = 1;}
+      elsif ($ARGV[$number] eq "-ba")  #Bond angles.
+         {$operation = 2;}
+      elsif ($ARGV[$number] eq "-bl")  #Bond lengths.
+         {$operation = 3;}
+      elsif ($ARGV[$number] eq "-boo") #Bond orientational order.
+      {
+         $operation = 4;
+         if (($number+1<scalar(@ARGV)) && ($ARGV[$number+1] eq "-Ylm_l"))
+            {$Ylm_l = $ARGV[++$number];}
+      }
+      elsif ($ARGV[$number] eq "-dx")  #Open DX.
+         {$operation = 5;}
+      elsif ($ARGV[$number] eq "-st")  #Statistics.
+         {$operation = 6;}
+      elsif ($ARGV[$number] eq "-co")  #Coordination
+         {$operation = 7;}
+      elsif ($ARGV[$number] eq "-3dfull")  #Full OpenScad Model
+      {
+         $operation = 8;
+         foreach $index (1..3)
+         {
+            if ($number+1 > $#ARGV)
+               {last;}
+
+            $nextTag = $ARGV[++$number];
+
+            if ($nextTag eq "-a")
+               {$aScale = $ARGV[++$number];}
+            elsif ($nextTag eq "-b")
+               {$bScale = $ARGV[++$number];}
+            elsif ($nextTag eq "-c")
+               {$cScale = $ARGV[++$number];}
+            else
+               {$number--;last;}
+         }
+      }
+      elsif ($ARGV[$number] eq "-3dparts")  #Component-wise OpenScad Models.
+      {
+         $operation = 9;
+         foreach $index (1..4)
+         {
+            if ($number+1 > $#ARGV)
+               {last;}
+
+            $nextTag = $ARGV[++$number];
+
+            if ($nextTag eq "-a")
+               {$aScale = $ARGV[++$number];}
+            elsif ($nextTag eq "-b")
+               {$bScale = $ARGV[++$number];}
+            elsif ($nextTag eq "-c")
+               {$cScale = $ARGV[++$number];}
+            elsif ($nextTag eq "-vol")
+            {
+               $xVol3D = $ARGV[++$number];
+               $yVol3D = $ARGV[++$number];
+               $zVol3D = $ARGV[++$number];
+            }
+            else
+               {$number--;last;}
+         }
+      }
+      elsif ($ARGV[$number] eq "-bf")
+         {$bondingFactor = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-xyz")
+         {$coordType=1;}
+      elsif ($ARGV[$number] eq "-abc")
+         {$coordType=2;}
+      elsif ($ARGV[$number] eq "-fract")
+         {$coordType=3;}
+      elsif ($ARGV[$number] eq "-box")
+      {
+         $boxBorders[1][1] = $ARGV[++$number];
+         $boxBorders[1][2] = $ARGV[++$number];
+         $boxBorders[2][1] = $ARGV[++$number];
+         $boxBorders[2][2] = $ARGV[++$number];
+         $boxBorders[3][1] = $ARGV[++$number];
+         $boxBorders[3][2] = $ARGV[++$number];
+         $zone = $ARGV[++$number];
+      }
+      elsif ($ARGV[$number] eq "-help")
+         {&printHelp;}
+      else
+      {
+         print STDOUT "UNKNOWN COMMAND LINE PARAMETER $ARGV[$number].";
+         print STDOUT " ABORTING.\n";
+         exit;
+      }
+
+      $number++;
+   }
+
+   # Record the command line used to run this job.
+   open (COMMANDLINE,">>command");
+   print COMMANDLINE "bondAnalysis ";
+   foreach my $argument (0..$#ARGV)
+      {print COMMANDLINE "$ARGV[$argument] ";}
+   print COMMANDLINE "\n";
+   close (COMMANDLINE);
+}
+
+
+sub openOutput
+{
+   # Check if the output file name was not assigned via the command line.
+   if ($outFile eq "")
+   {
+      # Use the default name if it wasn't assigned.
+      if ($operation == 1)
+         {$outFile = "bondAnalysis.bs";}
+      elsif ($operation == 2)
+         {$outFile = "bondAnalysis.ba";}
+      elsif ($operation == 3)
+         {$outFile = "bondAnalysis.bl";}
+      elsif ($operation == 4)
+         {$outFile = "bondAnalysis.boo";}
+      elsif ($operation == 5)
+         {$outFile = "bondAnalysis.dx";}
+      elsif ($operation == 6)
+         {$outFile = "bondAnalysis.st";}
+      elsif ($operation == 7)
+         {$outFile = "bondAnalysis.co";}
+      elsif ($operation == 8)
+         {$outFile = "bondAnalysis.scad";}
+      elsif ($operation == 9)
+         {$outFile = "bondAnalysis.scad";}
+   }
+
+   open (OUT,">$outFile") || die "Can not open $outFile for writing\n";
+}
+
+
+sub printBallAndStick
+{
+   # Declare local variables.
+   my $atom;
+   my $bond;
+
+   # Print the cell parameters.
+   print OUT "Cell parameters:\n";
+   print OUT "@{$realLattice_ref->[1]} ax ay az\n";
+   print OUT "@{$realLattice_ref->[2]} bx by bz\n";
+   print OUT "@{$realLattice_ref->[3]} cx cy cz\n";
+ 
+   # Print the number of atoms in the model.
+   print OUT "Number of atoms:  $numAtoms\n";
+
+   # Print data for each atom.
+   printf OUT "%s%s%s%s"," Atom # ",
+                         " Elem. ",
+                         "            $coordLabel            ",
+                         " Bonded atom #s\n";
+   foreach $atom (1..$numAtoms)
+   {
+      # Print the atom name and coordinate position information.
+      printf OUT "%8d",$atom;
+      printf OUT "%3s%-5d%12.5e %12.5e %12.5e",$atomElementName_ref->[$atom],
+            $atomSpeciesID_ref->[$atom],$coords_ref->[$atom][1],
+            $coords_ref->[$atom][2],$coords_ref->[$atom][3];
+
+      # Print the atom numbers that this atom is bonded to.
+      foreach $bond (1..$numBonds_ref->[$atom])
+         {printf OUT " %5d",$bondedList_ref->[$atom][$bond];}
+
+      # Finish the line.
+      print OUT "\n";
+   }
+}
+
+sub printBondAngles
+{
+   # Declare local variables.
+   my $atom;
+   my $bond1;
+   my $bond2;
+   my $bondedAtom1;
+   my $bondedAtom2;
+   my $currentBA;
+
+   # For each atom print the bond angles between each possible pair of atoms,
+   #   and also print the atom ID numbers for each pair.
+   foreach $atom (1..$numAtoms)
+   {
+      # Compare the position of this atom with the box the user defined (or the
+      #   default).  This also considers if the user wanted only atoms inside
+      #   the box or only outside.  The return value is 1 if the atom is out
+      #   of the desired region and it is 0 if the atom is inside the desired
+      #   region.
+      if (StructureControl::itemOutOfBounds($atom,$coords_ref))
+         {next;}
+
+      # Print the number of bond angles for this atom.
+      print OUT "Num bond angles:  $numBondAngles_ref->[$atom]\n";
+
+      # Initialize a count of the current bond angle.
+      $currentBA = 0;
+
+      foreach $bond1 (1..$numBonds_ref->[$atom]-1)
+      {
+         # Get the central cell atom number of this bonded atom.
+         $bondedAtom1 = $ext2CentralItemMap_ref->
+                        [$bondedExtList_ref->[$atom][$bond1]];
+
+         foreach $bond2 ($bond1+1..$numBonds_ref->[$atom])
+         {
+            # Increment the count of the number of bonds.
+            $currentBA++;
+
+            # Get the central cell atom number of this bonded atom.
+            $bondedAtom2 = $ext2CentralItemMap_ref->
+                           [$bondedExtList_ref->[$atom][$bond2]];
+
+            # Print the element name and species number of each atom in this
+            #   bond set with the middle listed atom being the one at the
+            #   vertex.
+            printf OUT "%s%s %s%s %s%s ",
+                  $atomElementName_ref->[$bondedAtom1],
+                  $atomSpeciesID_ref->[$bondedAtom1],
+                  $atomElementName_ref->[$atom],
+                  $atomSpeciesID_ref->[$atom],
+                  $atomElementName_ref->[$bondedAtom2],
+                  $atomSpeciesID_ref->[$bondedAtom2];
+
+            # Print the index number of the atoms in this bond with the middle
+            #   listed atom being the one at the vertex.  Note that the number
+            #   is in reference to the atoms in the central cell.
+            printf OUT "%7d%7d%7d ",$bondedAtom1,$atom,$bondedAtom2;
+
+            # Finally, print the bond angle.
+            printf OUT "%16.8f\n",$bondAnglesExt_ref->[$atom][$currentBA];
+         }
+      }
+   }
+}
+
+sub printBondLengths
+{
+   # Declare local variables.
+   my $atom;
+   my $element;
+   my $species;
+   my $bond;
+   my $bondedAtom;
+
+   foreach $atom (1..$numAtoms)
+   {
+      # Compare the position of this atom with the box the user defined (or the
+      #   default).  This also considers if the user wanted only atoms inside
+      #   the box or only outside.  The return value is 1 if the atom is out
+      #   of the desired region and it is 0 if the atom is inside the desired
+      #   region.
+      if (StructureControl::itemOutOfBounds($atom,$coords_ref))
+         {next;}
+
+      # Print the ID data, the coordination, and the number of bonds for
+      #   this atom.
+      printf OUT "%s%s%s%s %s%d\n",$atomElementName_ref->[$atom],
+            $atomSpeciesID_ref->[$atom],"_",$atom,
+            "Num_bonds:  ",$numBonds_ref->[$atom];
+
+      # Print each bond for this atom.
+      foreach $bond (1..$numBonds_ref->[$atom])
+      {
+         # Obtain the central cell atom number for the atom at the other end
+         #   of the current bond.
+         $bondedAtom = $ext2CentralItemMap_ref->
+               [$bondedExtList_ref->[$atom][$bond]];
+
+         printf OUT "    %s%s%s%s %8.5f",
+               $atomElementName_ref->[$bondedAtom],
+               $atomSpeciesID_ref->[$bondedAtom],"_",$bondedAtom,
+               $bondLengthExt_ref->[$atom][$bond];
+
+         if ($bond%4 == 0)
+            {print OUT "\n";}
+      }
+      if ($numBonds_ref->[$atom]%4 != 0)
+         {print OUT "\n";}
+   }
+}
+
+sub printCoordinationData
+{
+   # Declare local variables.
+   my $atom;
+   my $element;
+
+   foreach $atom (1..$numAtoms)
+   {
+      # Compare the position of this atom with the box the user defined (or the
+      #   default).  This also considers if the user wanted only atoms inside
+      #   the box or only outside.  The return value is 1 if the atom is out
+      #   of the desired region and it is 0 if the atom is inside the desired
+      #   region.
+      if (StructureControl::itemOutOfBounds($atom,$coords_ref))
+         {next;}
+
+      # Print the ID data, the coordination, and the number of bonds for
+      #   this atom.
+      printf OUT "%s%s%s%s %s\n",$atomElementName_ref->[$atom],
+            $atomSpeciesID_ref->[$atom],"_",$atom,$coordination_ref->[$atom];
+   }
+
+   print OUT "\nELEMENT DATA for $numElements elements\n";
+
+   foreach $element (1..$numElements)
+   {
+      printf OUT "%s %s\n",$elementList_ref->[$element],
+            $coordinationSummary_ref->[$element];
+   }
+}
+
+sub printBondOO
+{
+   #  Declare local variables.
+   my $atom;
+   my $bond;
+
+   open (OUT,">$outFile") || die "Can not open $outFile for writing\n";
+
+   # Print the number of atoms in the model.
+   print OUT "$numAtoms\n";
+
+   # Print the data for each atom.
+   foreach $atom (1..$numAtoms)
+   {
+      # Print the atom number and bond orientational order parameter.
+      printf OUT "%10d %12.8f",$atom,$qOrder_ref->[$atom];
+
+      # Finish the line.
+      print OUT "\n";
+   }
+
+   close (OUT);
+}
+
+sub printBondDX
+{
+   # Declare local variables.
+   my $atom;
+   my $bond;
+   my $reducedBondInfoExt_ref;
+   my $reducedNumBondsExt;
+   my @returnValue;
+
+   # Print the atomic positions of all relevant atoms in the periodic system.
+   print OUT "object 1 class array type float rank 1 shape 3 items ";
+   print OUT "$numAtomsExt data follows\n";
+   foreach $atom (1..$numAtomsExt)
+   {
+      printf OUT "%15.11f ",$coordsExt_ref->[$atom][1];
+      printf OUT "%15.11f ",$coordsExt_ref->[$atom][2];
+      printf OUT "%15.11f ",$coordsExt_ref->[$atom][3];
+      print OUT "\n";
+   }
+   print OUT "\n";
+
+   # Get the list of bonds to show.
+   @returnValue = &getBondsToShow;
+   $reducedBondInfoExt_ref = $returnValue[0];
+   $reducedNumBondsExt = $returnValue[1];
+
+   # Reduce all the atom numbers associated with each bond by 1 because OpenDX
+   #   starts counting everything from 0.
+   foreach $bond (1..$reducedNumBondsExt)
+   {
+      $reducedBondInfoExt_ref->[$bond][1]--;
+      $reducedBondInfoExt_ref->[$bond][2]--;
+   }
+
+   # Print the bond pairs for all the relevant bonds in the periodic system.
+   #   Note that the "- 1" is present because openDX starts counting from 0.
+   #   Additionally, we count up the total number of bonds to be shown.
+   print OUT "object 2 class array type int rank 1 shape 2 items ";
+   print OUT "$reducedNumBondsExt data follows\n";
+   foreach $bond (1..$reducedNumBondsExt)
+   {
+      print OUT "$reducedBondInfoExt_ref->[$bond][1] ";
+      print OUT "$reducedBondInfoExt_ref->[$bond][2]\n";
+   }
+   print OUT "attribute \"ref\" string \"positions\"\n";
+   print OUT "attribute \"element type\" string \"lines\"\n";
+   print OUT "\n";
+
+   # Now we list the values for those connections.  The values are all constant
+   #   so that the bond lines are the same color.
+   print OUT "object 3 class array type float rank 0 items ";
+   print OUT "$reducedNumBondsExt data follows\n";
+   foreach $bond (1..$reducedNumBondsExt)
+      {print OUT "5\n";}  #Arbitrary value.
+   print OUT "attribute \"dep\" string \"connections\"\n";
+   print OUT "\n";
+
+   # Finally we combine the components into a field with the name "bo" so that
+   #   the bond order part of the openDX program can read it.
+   print OUT <<BO;
+object "bo" class field
+component "positions" value 1
+component "connections" value 2
+component "data" value 3
+
+BO
+
+   #The DX file is complete now so we can end it.  It is important to
+   #  note that the DX file format requires a blank line at the end.  So
+   #  the \n\n *must* be there.
+   print OUT "end\n\n";
+}
+
+sub printBondStats
+{
+   # Declare local variables.
+   my $element;
+   my $species;
+   my $atom;
+
+   # Print out statistics.
+   print OUT "Element Statistics:\n";
+   printf OUT "%s%s%s%s%s%s","   Element    ",
+                             "   Avg. BL    ",
+                             "   Avg. BA    ",
+                             "  StdDV. BL   ",
+                             "  StdDV. BA","\n";
+   foreach $element (1..$numElements)
+   {
+      printf OUT "%3s%-10s","",$elementList_ref->[$element];
+      printf OUT "%13.4e ",$avgElemBL[$element];
+      printf OUT "%13.4e" ,$avgElemBA[$element];
+      printf OUT "%13.4e ",$stdElemBL[$element];
+      printf OUT "%13.4e" ,$stdElemBA[$element];
+      print OUT "\n";
+   }
+
+   # Make space for the next data segment.
+   print OUT "\n\n";
+   
+   print OUT "Species Statistics:\n";
+   printf OUT "%s%s%s%s%s%s","   Species    ",
+                             "   Avg. BL    ",
+                             "   Avg. BA    ",
+                             "  StdDV. BL   ",
+                             "  StdDV. BA","\n";
+   foreach $element (1..$numElements)
+   {
+      foreach $species (1..$numSpecies_ref->[$element])
+      {
+         printf OUT "%3s%-10s","",$speciesList_ref->[$element][$species];
+         printf OUT "%13.4e ",$avgSpecBL[$element][$species];
+         printf OUT "%13.4e" ,$avgSpecBA[$element][$species];
+         printf OUT "%13.4e ",$stdSpecBL[$element][$species];
+         printf OUT "%13.4e" ,$stdSpecBA[$element][$species];
+         print OUT "\n";
+      }
+   }
+
+   # Make space for the next data segment.
+   print OUT "\n\n";
+   
+   print OUT "Atom Statistics:\n";
+   printf OUT "%s%s%s%s%s%s","   Atom       ",
+                             "   Avg. BL    ",
+                             "   Avg. BA    ",
+                             "  StdDV. BL   ",
+                             "  StdDV. BA","\n";
+   foreach $atom (1..$numAtoms)
+   {
+      if ($avgAtomBL[$atom] != -1)
+      {
+         printf OUT "%3s%-10s%i","",$atomElementName_ref->[$atom],$atom;
+         printf OUT "%13.4e ",$avgAtomBL[$atom];
+         printf OUT "%13.4e" ,$avgAtomBA[$atom];
+         printf OUT "%13.4e ",$stdAtomBL[$atom];
+         printf OUT "%13.4e" ,$stdAtomBA[$atom];
+         print OUT "\n";
+      }
+   }
+
+   close (OUT);
+}
+
+
+sub printOpenScad
+{
+   # Define passed parameters.
+   my $doParts = $_[0];
+
+   # Define local variables.
+   my $atom;
+   my $bond;
+   my $out;
+   my $sheet;
+   my $numItemSheets;
+   my $minAtomRadius;
+   my $maxAtomRadius;
+   my $maxXItems;
+   my $maxYItems;
+   my $xGridPos;
+   my $yGridPos;
+   my $xStepSize;
+   my $yStepSize;
+   my $startingItemNumber;
+   my $lastItemNumberPrinted;
+   my $bondRadius;
+   my $maxBondLength;
+   my $reducedBondInfoExt_ref;
+   my $reducedNumBondsExt;
+   my @point1XYZ;
+   my @point2XYZ;
+   my @returnValue;
+   my @sheetPos;
+   my @scaledCoords;
+   my @scaledCoordsExt;
+   my @scaledAtomRadius; # Scaled radius of each atom.
+
+   # The basic approach that is used in this subroutine is to simultaneously
+   #   allow for two different model printing methods.  The first is to create
+   #   a complete model (cell, atoms, bonds) that is all conjoined as one
+   #   giant union in one single file.  The second is to create the model in a
+   #   set of files where the components of the model are disassembled and
+   #   printed in bricks and forests for manual assembly.
+
+   # The first approach may not be easy to actually print although it looks
+   #   nice on a computer screen.  The second approach should be easier to
+   #   print but it will require manual assembly.
+
+   # Scale the atomic coordinates.
+   &scaleAtomicCoords(\@scaledCoords,\@scaledCoordsExt);
+
+   # Compute the maximum and minimum atom radius.
+   $minAtomRadius = 10000000;
+   $maxAtomRadius = 0;
+   foreach $atom (1..$numAtoms)
+   {
+      # Compute the scaled radius of the atom.
+      $scaledAtomRadius[$atom] = $atomCovalRadii_ref->[$atom] * $aScale;
+
+      # Determine the minimum radius so far.
+      if ($scaledAtomRadius[$atom] < $minAtomRadius)
+         {$minAtomRadius = $scaledAtomRadius[$atom];}
+
+      # Determine the maximum radius so far.
+      if ($scaledAtomRadius[$atom] > $maxAtomRadius)
+         {$maxAtomRadius = $scaledAtomRadius[$atom];}
+   }
+
+   # Compute the radius of all of the bond cylinders.
+   $bondRadius = 0;
+   foreach $atom (1..$numAtoms)
+   {
+      if ($bondRadiusScale*$atomCovalRadii_ref->[$atom]*$aScale > $bondRadius)
+         {$bondRadius = $bondRadiusScale*$atomCovalRadii_ref->[$atom]*$aScale;}
+   }
+
+   # Compute the final scaled radius.
+   $bondRadius = $bondRadius * $bScale;
+
+   # Get the list of bonds to show.
+   @returnValue = &getBondsToShow;
+   $reducedBondInfoExt_ref = $returnValue[0];
+   $reducedNumBondsExt = $returnValue[1];
+
+   # Compute the maximum bond length.
+   $maxBondLength = 0;
+   foreach $bond (1..$reducedNumBondsExt)
+   {
+      if ($reducedBondInfoExt_ref->[$bond][3] > $maxBondLength)
+         {$maxBondLength = $reducedBondInfoExt_ref->[$bond][3];}
+   }
+
+#   # Scale the size of the cell rods for the system.
+#   foreach $abc (1..3)
+#   {
+#      foreach $xyz (1..3)
+#      {
+#         $scaledRealLattice[$abc][$xyz] =
+#            $realLattice_ref->[$abc][$xyz] * $cScale;
+#      }
+#   }
+
+   # Print out the models in different ways according to whether we want the
+   #   full model or the parts.
+   if ($doParts == 0)
+   {
+      # Everything will be printed in one file (the already open OUT handle).
+
+      # Print the module for making the rods.
+      &printRodModule(\*OUT);
+
+      # Print the module for making spheres.
+      &printSphereModule(\*OUT);
+
+      # Print the module for making the bonds and cell vectors. Note that the
+      #   1 flag on the end is for requesting that corner spheres be included
+      #   in the print.  These should not be included when printing the bonds
+      #   and vectors (BAV) as a skeleton for subtracting holes.
+      &printBAVModule(\*OUT,$minAtomRadius,\@scaledCoords,\@scaledCoordsExt,
+            $bondRadius,$reducedBondInfoExt_ref,$reducedNumBondsExt,1);
+
+      # Print the module for printing all of the atoms as a big union.
+      &printUnionAtomsModule(\@scaledCoords,\@scaledAtomRadius,\*OUT);
+
+      # Print the model.
+      &printFullModel(\*OUT);
+   }
+   else
+   {
+      # Close the originally opened OUT handle.
+      close (OUT);
+
+      # Select the grid step size.
+      $xStepSize = 2.0*$maxAtomRadius+0.1*$maxAtomRadius;
+      $yStepSize = 2.0*$maxAtomRadius+0.1*$maxAtomRadius;
+
+      # Determine the maximum number of atoms in the x and y directions based
+      #   on the maximum atom radius.
+      $maxXItems = floor($xVol3D/$xStepSize);
+      $maxYItems = floor($yVol3D/$yStepSize);
+
+      # Compute the number of sheets to print.
+      $numItemSheets = ceil($numAtoms/($maxXItems*$maxYItems));
+
+      # Initialize the starting atom number for the first sheet.
+      $startingItemNumber = 1;
+
+      # Print the sheets.
+      foreach $sheet (1..$numItemSheets)
+      {
+         # Open the file for this sheet.
+         open (OUT, "> atomSheet$sheet.scad") ||
+               die "Cannot open atomSheet$sheet.scad for writing\n";
+
+         # Initialize the position for the atoms on the sheet in the x-y axis.
+         $sheetPos[1] = $maxAtomRadius;
+         $sheetPos[2] = $maxAtomRadius;
+
+         # Initialize the count of our current position in the x-y grid.
+         $xGridPos = 1;
+         $yGridPos = 1;
+
+         # Print the module for making rods.
+         &printRodModule(\*OUT);
+
+         # Print the module for making spheres.
+         &printSphereModule(\*OUT);
+
+         # Print the module for making the bonds and vectors skeleton.  Note
+         #   that the 0 flag on the end requests that no corner spheres be
+         #   included in the definition of the skeleton.  The corner spheres
+         #   will have to be explicitly requested later.
+         &printBAVModule(\*OUT,$minAtomRadius,\@scaledCoords,\@scaledCoordsExt,
+            $bondRadius,$reducedBondInfoExt_ref,$reducedNumBondsExt,0);
+
+         # Add each atom to the sheet.
+         foreach $atom ($startingItemNumber..$numAtoms)
+         {
+            # Adjust the height of the current atom on the sheet.
+            $sheetPos[3] = $scaledAtomRadius[$atom];
+
+            &addAtomToSheet(\*OUT,$atom,$scaledCoords[$atom],\@sheetPos,
+                  $scaledAtomRadius[$atom]);
+
+            # Record that we have added an atom in the x-axis and update the
+            #   position for the next atom.
+            $xGridPos++;
+            $sheetPos[1] += $xStepSize;
+
+            # If this puts us over the maximum number of cells in the x-axis
+            #   direction of the grid, then reset the x-axis count, reset the
+            #   grid position on the x-axis to the first cell, increment
+            #   the y-axis grid position, and increment the y-axis sheet pos.
+            if ($xGridPos > $maxXItems)
+            {
+               $xGridPos = 1;
+               $sheetPos[1] = $maxAtomRadius;
+               $yGridPos++;
+               $sheetPos[2] += $yStepSize;
+            }
+
+            # If this takes us over the maximum number of cells in the y-axis
+            #   direction of the grid, reset the y-axis count and start a new
+            #   sheet. Then record the last atom printed so that the new sheet
+            #   can start from the next atom.
+            if ($yGridPos > $maxYItems)
+            {
+               $yGridPos = 1;
+               $sheetPos[2] = $maxAtomRadius;
+               $lastItemNumberPrinted = $atom;
+               last;
+            }
+
+            # Record the last atom number printed in case the current sheet
+            #   finishes before it is full.
+            $lastItemNumberPrinted = $atom;
+         }
+
+         # Close the OUT file for this sheet.
+         close (OUT);
+
+         # Set up the starting atom for the next sheet and abort if this sheet
+         #   just happened to perfectly fit the number of atoms.
+         $startingItemNumber = $lastItemNumberPrinted + 1;
+         if ($startingItemNumber > $numAtoms)
+            {last;}
+      }
+
+      # Now we do the bonds.
+
+      # Select the grid step size.
+      $xStepSize = 2.0*$bondRadius + 0.1*$bondRadius;
+      $yStepSize = $maxBondLength + 0.05*$maxBondLength;
+
+      # Determine the maximum number of bonds that can be laid in the x and y
+      #   directions based on the bond radius and the maximum bond length.
+      $maxXItems = floor($xVol3D/$xStepSize);
+      $maxYItems = floor($yVol3D/$yStepSize);
+
+      # Compute the number of sheets to print.
+      $numItemSheets = ceil($numAtoms/($maxXItems*$maxYItems));
+
+      # Initialize the starting item number for the first sheet.
+      $startingItemNumber = 1;
+
+       # Print the sheets.
+      foreach $sheet (1..$numItemSheets)
+      {
+         # Open the file for this sheet.
+         open (OUT, "> bondSheet$sheet.scad") ||
+               die "Cannot open bondSheet$sheet.scad for writing\n";
+
+         # Initialize the position for the bonds on the sheet in the x-y axis.
+         $sheetPos[1] = $bondRadius;
+         $sheetPos[2] = $bondRadius;
+
+         # Initialize the count of our current position in the x-y grid.
+         $xGridPos = 1;
+         $yGridPos = 1;
+
+         # Print the module for making rods.
+         &printRodModule(\*OUT);
+
+         # Add each bond to the sheet.
+         foreach $bond ($startingItemNumber..$reducedNumBondsExt)
+         {
+            # Print a scaled rod between these two cartesian points.
+            &printRod(\@point1XYZ,\@point2XYZ,$bondRadius,0,$out);
+
+            # Record that we have added a bond in the x-axis and update the
+            #   position for the next bond.
+            $xGridPos++;
+            $sheetPos[1] += $xStepSize;
+
+            # If this puts us over the maximum number of cells in the x-axis
+            #   direction of the grid, then reset the x-axis count, reset the
+            #   grid position on the x-axis to the first cell, increment
+            #   the y-axis grid position, and increment the y-axis sheet pos.
+            if ($xGridPos > $maxXItems)
+            {
+               $xGridPos = 1;
+               $sheetPos[1] = $bondRadius;
+               $yGridPos++;
+               $sheetPos[2] += $yStepSize;
+            }
+
+            # If this takes us over the maximum number of cells in the y-axis
+            #   direction of the grid, reset the y-axis count and start a new
+            #   sheet. Then record the last atom printed so that the new sheet
+            #   can start from the next atom.
+            if ($yGridPos > $maxYItems)
+            {
+               $yGridPos = 1;
+               $sheetPos[2] = $bondRadius;
+               $lastItemNumberPrinted = $bond;
+               last;
+            }
+
+            # Record the last bond number printed in case the current sheet
+            #   finishes before it is full.
+            $lastItemNumberPrinted = $bond;
+         }
+      }
+   }
+}
+
+sub printRodModule
+{
+   # Define passed paramters.
+   my $out = $_[0];
+
+   # Print out the modules that will be used to make individual rods.
+   print $out "module rod(xPos,yPos,zPos,angle,xNormal,yNormal,zNormal,shift,";
+   print $out "length,radius)\n";
+   print $out "{\n";
+   print $out "   translate(v=[xPos,yPos,zPos]) {\n";
+   print $out "      rotate(a=angle, v=[xNormal,yNormal,zNormal]) {\n";
+   print $out "         translate(v=[0,0,shift]) {\n";
+   print $out "            cylinder(h=length,r=radius,\$fn=100);}}}\n";
+   print $out "}\n";
+}
+
+sub printSphereModule
+{
+   # Define passed paramters.
+   my $out = $_[0];
+
+   # Print out the modules that will be used to make a translated sphere.
+   print $out "module transSphere(xPos,yPos,zPos,radius)\n";
+   print $out "{\n";
+   print $out "   translate(v=[xPos,yPos,zPos]) {sphere(r=radius,\$fn=100);}\n";
+   print $out "}\n";
+}
+
+sub printBAVModule
+{
+   # Define passed paramters.
+   my $out                    = $_[0];
+   my $minAtomRadius          = $_[1];
+   my $bondRadius             = $_[2];
+   my $scaledCoords_ref       = $_[3];
+   my $scaledCoordsExt_ref    = $_[4];
+   my $reducedBondInfoExt_ref = $_[5];
+   my $reducedNumBondsExt     = $_[6];
+   my $doCornerSpheres        = $_[7];
+
+   # Define local variables.
+   my $i;
+   my $j;
+   my $abc;
+   my $xyz;
+   my $atom;
+   my $bond;
+   my @returnValue;
+   my @point1ABC;
+   my @point2ABC;
+   my @point1XYZ;
+   my @point2XYZ;
+
+   # Print out the module that is used to make the collection of bonds and
+   #   lattice vectors as a single union.
+   print $out "module bondsAndVectors()\n";
+   print $out "{\n";
+   print $out "   union()\n";
+   print $out "   {\n";
+
+   # Create a scaled set of rods that define the cell.
+   foreach $abc (0..2)
+   {
+      foreach $i (0..1)
+      {
+         foreach $j (0..1)
+         {
+            # This will make ABC fractional points:
+            #   Point1 = 0,0,0  0,0,1  0,1,0  0,1,1 for $abc=0
+            #            0,0,0  1,0,0  0,0,1  1,0,1 for $abc=1
+            #            0,0,0  0,1,0  1,0,0  1,1,0 for $abc=2
+            #   Point2 = 1,0,0  1,0,1  1,1,0  1,1,1 for $abc=0
+            #            0,1,0  1,1,0  0,1,1  1,1,1 for $abc=1
+            #            0,0,1  0,1,1  1,0,1  1,1,1 for $abc=2
+            $point1ABC[($abc+0)%3] = 0;
+            $point1ABC[($abc+1)%3] = $i;
+            $point1ABC[($abc+2)%3] = $j;
+            $point2ABC[($abc+0)%3] = 1;
+            $point2ABC[($abc+1)%3] = $i;
+            $point2ABC[($abc+2)%3] = $j;
+
+            # Convert the points from ABC fractional to XYZ cartesian.
+            @point1XYZ = StructureControl::getDirectXYZPoint(@point1ABC);
+            @point2XYZ = StructureControl::getDirectXYZPoint(@point2ABC);
+
+            # Scale the locations of the lattice rod endpoints.
+            foreach $xyz (1..3)
+            {
+               $point1XYZ[$xyz] = $cScale * $point1XYZ[$xyz];
+               $point2XYZ[$xyz] = $cScale * $point2XYZ[$xyz];
+            }
+
+            # Print a scaled rod between these two cartesian points.
+            &printRod(\@point1XYZ,\@point2XYZ,$bondRadius,$minAtomRadius,$out);
+
+            if ($doCornerSpheres == 1)
+            {
+               # Print a scaled sphere at each point. (To ensure connectivity.)
+               &printSphere(\@point1XYZ,$minAtomRadius,$out);
+               &printSphere(\@point2XYZ,$minAtomRadius,$out);
+            }
+         }
+      }
+   }
+
+   # Create a scaled cylinder for each bond and place it.
+   foreach $bond (1..$reducedNumBondsExt)
+   {
+      # Identify the end points of the bond.
+      foreach $xyz (1..3)
+      {
+         $point1XYZ[$xyz] =
+              $scaledCoordsExt_ref->[$reducedBondInfoExt_ref->[$bond][1]][$xyz];
+         $point2XYZ[$xyz] =
+              $scaledCoordsExt_ref->[$reducedBondInfoExt_ref->[$bond][2]][$xyz];
+      }
+
+      # Ask for the bond to be printed.
+      &printRod(\@point1XYZ,\@point2XYZ,$bondRadius,$minAtomRadius,$out);
+   }
+
+   # Close the union of bond and cell vector parts.
+   print $out "   }\n";
+
+   # Close the BAV module.
+   print $out "}\n";
+}
+
+sub printUnionAtomsModule
+{
+   # Define passed parameters.
+   my $scaledCoords_ref = $_[0];
+   my $scaledAtomRadius_ref = $_[1];
+   my $out = $_[2];
+
+   # Define local variables.
+   my $atom;
+
+   print $out "module allAtoms()\n";
+   print $out "{\n";
+   print $out "   union()\n";
+   print $out "   {\n";
+
+   # Print all of the atoms.
+   foreach $atom (1..$numAtoms)
+      {&printSphere($scaledCoords_ref->[$atom],
+       $scaledAtomRadius_ref->[$atom],$out);}
+
+   # Close the union of atoms.
+   print $out "   }\n";
+
+   # Close the atom module.
+   print $out "}\n";
+}
+
+sub printFullModel
+{
+   # Define passed parameters.
+   my $out = $_[0];
+
+   print $out "union()\n";
+   print $out "{\n";
+   print $out "   bondsAndVectors();\n";
+   print $out "   allAtoms();\n";
+   print $out "}\n";
+}
+
+sub scaleAtomicCoords
+{
+   # Define passed parameters.
+   my $scaledCoords_ref = $_[0];
+   my $scaledCoordsExt_ref = $_[1];
+
+   # Define local variables.
+   my $atom;
+   my $xyz;
+
+   # Scale the locations of all the atoms involved in the model.
+   foreach $atom (1..$numAtoms)
+   {
+      foreach $xyz (1..3)
+         {$scaledCoords_ref->[$atom][$xyz] =
+          $cScale*$coords_ref->[$atom][$xyz];}
+   }
+   foreach $atom (1..$numAtomsExt)
+   {
+      foreach $xyz (1..3)
+         {$scaledCoordsExt_ref->[$atom][$xyz] = 
+          $cScale*$coordsExt_ref->[$atom][$xyz];}
+   }
+}
+
+sub printRod
+{
+   # Define passed paramters.
+   my $point1_ref = $_[0];
+   my $point2_ref = $_[1];
+   my $rodRadius  = $_[2];
+   my $minSphereRadius = $_[3];
+   my $out = $_[4]; # File handle
+
+   # Define local variables.
+   my $xyz;
+   my $rodLength;
+   my $angle;
+   my @shiftedPoint1;
+   my @shiftedPoint2;
+   my @normal;
+   my $rodShift;
+
+   # Compute the rod length between defined points.
+   $rodLength = 0.0;
+   foreach $xyz (1..3)
+      {$rodLength += ($point2_ref->[$xyz] - $point1_ref->[$xyz])**2;}
+   $rodLength = sqrt($rodLength);
+
+   # Adjust the rod length so that it penetrates only so far into the sphere.
+   #  Presently this is hard coded to go 1/3 of the way into the two atoms at
+   #  either end of the bond.  This doesn't work perfectly for different sized
+   #  atoms, but making it work perfectly is not easy to do at the moment.
+   $rodLength = $rodLength - $minSphereRadius/3.0*2.0;
+
+   # Compute the shift of the rod position so that the full assembly does not
+   #   have touching rods.
+   $rodShift = $minSphereRadius/3.0;
+
+   # Compute the positions of the rod's endpoints when one endpoint is
+   #   centered at the origin.
+   foreach $xyz (1..3)
+   {
+      $shiftedPoint1[$xyz] = 0.0;
+      $shiftedPoint2[$xyz] = $point2_ref->[$xyz] - $point1_ref->[$xyz];
+   }
+
+   # Compute the angle of rotation for the rod (noting that rotations are
+   #   positive in the counterclockwise direction.
+   if ((abs($shiftedPoint2[1]) < 0.00000001) &&
+       (abs($shiftedPoint2[2]) < 0.00000001))
+      {$angle=0;}
+   else
+   {
+      $angle = -90.0 + atan2($shiftedPoint2[3],
+            sqrt($shiftedPoint2[1]**2 + $shiftedPoint2[2]**2))*180.0/pi;
+   }
+
+   # Obtain the vector that is normal to the plane formed by following three
+   #   points:  (1) The origin; (2) A point on the z-axis at a distance equal
+   #   to the length of the rod; (3) The shifted end point of the rod.
+   @normal = StructureControl::getPlaneNormal([0,0,0,0],\@shiftedPoint2,
+      [0,0,0,$rodLength]);
+
+   # Use the rod module to print this rod.
+   print $out "rod($point1_ref->[1],$point1_ref->[2],$point1_ref->[3],$angle,";
+   print $out "$normal[1],$normal[2],$normal[3],$rodShift,$rodLength,";
+   print $out "$rodRadius);\n";
+}
+
+sub printSphere
+{
+   # Define passed parameters.
+   my $point_ref = $_[0];
+   my $radius    = $_[1];
+   my $out       = $_[2]; # File handle
+
+   print $out "   transSphere($point_ref->[1],$point_ref->[2],$point_ref->[3],";
+   print $out "$radius);\n";
+#   print $out "   translate(v=[$point_ref->[1],$point_ref->[2],".
+#             "$point_ref->[3]]) {sphere($radius, \$fn=100);}\n";
+}
+
+sub addAtomToSheet
+{
+   # Define passed parameters.
+   my $out = $_[0];
+   my $atom = $_[1];
+   my $atomPos_ref = $_[2];
+   my $sheetPos_ref = $_[3];
+   my $radius = $_[4];
+
+   # Define local variables.
+   my $xyz;
+   my @transVect;
+
+   # Compute the translation vector for the atom from its position within the
+   #   cell to its position on the sheet.
+   foreach $xyz (1..3)
+      {$transVect[$xyz] = $sheetPos_ref->[$xyz] - $atomPos_ref->[$xyz];}
+
+   # Now we need to translate the difference object that is taken between the
+   #   atom and the skeleton.  The difference object will have holes in all the
+   #   right places and it will be translated to the correct spot on the sheet.
+   print $out "translate(v=[$transVect[1],$transVect[2],$transVect[3]]) {\n";
+   print $out "   difference() {\n   ";
+   &printSphere($atomPos_ref,$radius,$out);
+   print $out "      bondsAndVectors();\n";
+   print $out "      \n";
+   print $out "   }\n";
+   print $out "}\n";
+}
+
+
+sub printPartsLattice
+{
+   # Define passed parameters.
+   my $vectorRadius = $_[0];
+
+   # Define local variables.
+   my $i;
+   my $j;
+   my $abc;
+   my $xyz;
+   my $rodLength;
+   my $rodLocation;
+   my @point1ABC;
+   my @point2ABC;
+   my @point1XYZ;
+   my @point2XYZ;
+
+   # Initialize the location of the first lattice vector in the model file.
+   #   This rod will be positioned so that it is $vectorRadius from the edge
+   #   and centered $vectorRadius from the base.
+   $rodLocation = $vectorRadius;
+
+   # Create a scaled set of rods that define the cell and place them in a row.
+   foreach $abc (0..2)
+   {
+      foreach $i (0..1)
+      {
+         foreach $j (0..1)
+         {
+            # This will make ABC fractional points:
+            #   Point1 = 0,0,0  0,0,1  0,1,0  0,1,1 for $abc=0
+            #            0,0,0  1,0,0  0,0,1  1,0,1 for $abc=1
+            #            0,0,0  0,1,0  1,0,0  1,1,0 for $abc=2
+            #   Point2 = 1,0,0  1,0,1  1,1,0  1,1,1 for $abc=0
+            #            0,1,0  1,1,0  0,1,1  1,1,1 for $abc=1
+            #            0,0,1  0,1,1  1,0,1  1,1,1 for $abc=2
+            $point1ABC[($abc+0)%3] = 0;
+            $point1ABC[($abc+1)%3] = $i;
+            $point1ABC[($abc+2)%3] = $j;
+            $point2ABC[($abc+0)%3] = 1;
+            $point2ABC[($abc+1)%3] = $i;
+            $point2ABC[($abc+2)%3] = $j;
+
+            # Convert the points from ABC fractional to XYZ cartesian.
+            @point1XYZ = StructureControl::getDirectXYZPoint(@point1ABC);
+            @point2XYZ = StructureControl::getDirectXYZPoint(@point2ABC);
+
+            # Scale the locations of the lattice vectors.
+            foreach $xyz (1..3)
+            {
+               $point1XYZ[$xyz] = $cScale * $point1XYZ[$xyz];
+               $point2XYZ[$xyz] = $cScale * $point2XYZ[$xyz];
+            }
+
+            # Determine the length of the rod.
+            $rodLength = &getRodLength(\@point1XYZ,\@point2XYZ);
+
+            # Define the location of the rod in the model.
+            $point1XYZ[1] = $rodLocation;
+            $point2XYZ[1] = $rodLocation;
+            $point1XYZ[2] = 0.0;
+            $point2XYZ[2] = $rodLength;
+            $point1XYZ[3] = $vectorRadius;
+            $point2XYZ[3] = $vectorRadius;
+
+            # Print a scaled rod between these two cartesian points.
+            #&printRod(\@point1XYZ,\@point2XYZ,$bondRadius,$minAtomRadius,$out);
+
+            # Print a scaled sphere at each point.  (To ensure connectivity.)
+#            &printSphere(\@point1XYZ,$bondRadius);
+#            &printSphere(\@point2XYZ,$bondRadius);
+
+            # Increment the position of the rodLocation for the next vector.
+            $rodLocation += 2.2 * $vectorRadius;
+         }
+      }
+   }
+}
+
+sub getRodLength
+{
+   # Define passed parameters.
+   my $point1XYZ_ref = $_[0];
+   my $point2XYZ_ref = $_[1];
+
+   # Define local variables.
+   my $length;
+
+   # Compute the distance between the points.
+   $length = sqrt(($point2XYZ_ref->[1] - $point1XYZ_ref->[1])**2 +
+                  ($point2XYZ_ref->[2] - $point1XYZ_ref->[2])**2 +
+                  ($point2XYZ_ref->[3] - $point1XYZ_ref->[3])**2);
+
+   # Return the rod length.
+   return ($length);
+}
+
+sub getBondsToShow
+{
+   # Declare local variables.
+   my $atom;
+   my $bond;
+   my $numBondsExt;  # Note: until the end, this is one less than correct num.
+   my $bondedAtom1;
+   my $bondedAtom2;
+   my @bondInfoExt;
+   my @bondInfoExtTemp1;
+   my @bondInfoExtTemp2;
+   my $reducedNumBondsExt;
+   my @reducedBondInfoExt;
+   my $prev;
+
+   # Extract all the bonds to be shown and count them up along the way.
+   $numBondsExt = -1; # Note that we start from -1 to fill array from 0.
+   foreach $atom (1..$numAtoms)
+   {
+      # Get the atom number of the current atom in the extended cell list.
+      $bondedAtom1 = $central2ExtItemMap_ref->[$atom];
+
+      # Consider each bonded atom in turn.
+      foreach $bond (1..$numBonds_ref->[$atom])
+      {
+         # Note that initially this double counts bonds between atoms that
+         #   are both in the central cell.
+         $numBondsExt++; # Note, first bond is number 0.
+
+         # Recall that the value in bondedExtList_ref is in reference to the
+         #   ext cell while the referencing index ($atom) is in reference to
+         #   the central cell.  That is why we don't need the
+         #   central2ExtItemMap here.
+         $bondedAtom2 = $bondedExtList_ref->[$atom][$bond];
+
+         # Demand that the small atom number is listed first for comparison
+         #   later to remove the double counts.
+         if ($bondedAtom1 < $bondedAtom2)
+         {
+            $bondInfoExtTemp1[$numBondsExt][1] = $bondedAtom1;
+            $bondInfoExtTemp1[$numBondsExt][2] = $bondedAtom2;
+         }
+         else
+         {
+            $bondInfoExtTemp1[$numBondsExt][1] = $bondedAtom2;
+            $bondInfoExtTemp1[$numBondsExt][2] = $bondedAtom1;
+         }
+
+         # Record bond length info for this bond pair. (Order doesn't matter)
+         $bondInfoExtTemp1[$numBondsExt][3]=$bondLengthExt_ref->[$atom][$bond];
+      }
+   }
+
+   # Sort the bonds according to the second bonded atom followed by a stable
+   #   sort according to the first bonded atom so that bonds that are between
+   #   identical atom pairs are next door.
+   @bondInfoExtTemp2 = sort{$a->[2] <=> $b->[2]} @bondInfoExtTemp1;
+   @bondInfoExt = sort{$a->[1] <=> $b->[1]} @bondInfoExtTemp2;
+
+   # Now we need to remove duplicate bonds by simply recording any non-dups.
+   $reducedNumBondsExt = 1; # Note that we start numbering from 1 here.
+   $reducedBondInfoExt[1][1] = $bondInfoExt[0][1];
+   $reducedBondInfoExt[1][2] = $bondInfoExt[0][2];
+   $reducedBondInfoExt[1][3] = $bondInfoExt[0][3];
+   foreach $bond (1..$numBondsExt) # Starts with the second bond. (1 vs. 0)
+   {
+      if (($bondInfoExt[$bond][1] ==
+            $reducedBondInfoExt[$reducedNumBondsExt][1]) &&
+           ($bondInfoExt[$bond][2] ==
+            $reducedBondInfoExt[$reducedNumBondsExt][2]))
+         {next;} # We found a match and so will not record this bond.
+      else
+      {
+         # Found a non-duplicate bond. Record it in the reduced list.
+         $reducedNumBondsExt++;
+         $reducedBondInfoExt[$reducedNumBondsExt][1] = $bondInfoExt[$bond][1];
+         $reducedBondInfoExt[$reducedNumBondsExt][2] = $bondInfoExt[$bond][2];
+         $reducedBondInfoExt[$reducedNumBondsExt][3] = $bondInfoExt[$bond][3];
+      }
+   }
+
+   # Return a reference to the reduced bond info list (with numbers references
+   #   the extended lattice).
+   return (\@reducedBondInfoExt, $reducedNumBondsExt);
+}
+
+
+sub computeStatistics
+{
+   # Define local variables.
+   my $atom;
+   my $bond1;
+   my $bond2;
+   my $elemID;
+   my $specID;
+   my $element;
+   my $species;
+   my $warning;
+   my @numTotalElemBonds;
+   my @numTotalSpecBonds;
+   my @numTotalAtomBonds;
+   my @numTotalElemBondAngles;
+   my @numTotalSpecBondAngles;
+   my @numTotalAtomBondAngles;
+   my @accumElemBondLength;
+   my @accumSpecBondLength;
+   my @accumAtomBondLength;
+   my @accumElemBondAngle;
+   my @accumSpecBondAngle;
+   my @accumAtomBondAngle;
+   my $numCurrBondAngle;
+
+   # The goal here is to compute the mean and 1st standard deviation of the
+   #   bond lengths (BLs) and bond angles (BAs) for each element, species, and
+   #   atom.
+
+   # Initialize a few counts to zero. The number of bonds for each element, the
+   #   number of bond angles for each element, the accumulated bond length for
+   #   each element, and the accumulated bond angle for each element.  Also,
+   #   initialize to zero the same variables associated with each species of
+   #   each element.  Initialize all the average values to be computed for each
+   #   element and species to -1.
+   foreach $element (1..$numElements)
+   {
+      $numTotalElemBonds[$element]      = 0;
+      $numTotalElemBondAngles[$element] = 0;
+      $accumElemBondLength[$element]    = 0;
+      $accumElemBondAngle[$element]     = 0;
+      $avgElemBL[$element] = -1;
+      $avgElemBA[$element] = -1;
+
+      foreach $species (1..$numSpecies_ref->[$element])
+      {
+         $numTotalSpecBonds[$element][$species]      = 0;
+         $numTotalSpecBondAngles[$element][$species] = 0;
+         $accumSpecBondLength[$element][$species]    = 0;
+         $accumSpecBondAngle[$element][$species]     = 0;
+         $avgSpecBL[$element][$species] = -1;
+         $avgSpecBA[$element][$species] = -1;
+      }
+   }
+
+   # Perform the same initialization for the data structures for each atom.
+   foreach $atom (1..$numAtoms)
+   {
+      $numTotalAtomBonds[$atom]      = 0;
+      $numTotalAtomBondAngles[$atom] = 0;
+      $accumAtomBondLength[$atom]    = 0;
+      $accumAtomBondAngle[$atom]     = 0;
+      $avgAtomBL[$atom] = -1;
+      $avgAtomBA[$atom] = -1;
+   }
+
+   foreach $atom (1..$numAtoms)
+   {
+      # Compare the position of this atom with the box the user defined (or the
+      #   default).  This also considers if the user wanted only atoms inside
+      #   the box or only outside.  The return value is 1 if the atom is out
+      #   of the desired region and it is 0 if the atom is inside the desired
+      #   region.
+      if (StructureControl::itemOutOfBounds($atom,$coords_ref))
+         {next;}
+
+      # Get the elementID and speciesID numbers for this atom.
+      $elemID = $atomElementID_ref->[$atom];
+      $specID = $atomSpeciesID_ref->[$atom];
+
+      # Consider each bond common to this atom.  Accumulate the number of bonds
+      #   into three different divisions.  (1)  By atom; (2) By element;
+      #   (3)  By species.  Also accumulate the bond length into the same three
+      #   types of divisions.
+      foreach $bond1 (1..$numBonds_ref->[$atom])
+      {
+         $numTotalAtomBonds[$atom]++;
+         $numTotalElemBonds[$elemID]++;
+         $numTotalSpecBonds[$elemID][$specID]++;
+         $accumAtomBondLength[$atom] += $bondLengthExt_ref->[$atom][$bond1];
+         $accumElemBondLength[$elemID] += $bondLengthExt_ref->[$atom][$bond1];
+         $accumSpecBondLength[$elemID][$specID] +=
+               $bondLengthExt_ref->[$atom][$bond1];
+      }
+
+      # Consider each bond pair (no double counting) with the current atom as
+      #   the vertex of the triplet.  Accumulate the number of bond angles into
+      #   three different divisions.  (1)  By atom;  (2) By element;
+      #   (3)  By species.  Also accumulate the bond angles into the same three
+      #   types of divisions.
+      $numCurrBondAngle = 0;  # Reference bond angles in a flat list.
+      foreach $bond1 (1..$numBonds_ref->[$atom]-1)
+      {
+         foreach $bond2 ($bond1+1..$numBonds_ref->[$atom])
+         {
+            $numCurrBondAngle++;
+            $numTotalAtomBondAngles[$atom]++;
+            $numTotalElemBondAngles[$elemID]++;
+            $numTotalSpecBondAngles[$elemID][$specID]++;
+            $accumAtomBondAngle[$atom] +=
+                  $bondAnglesExt_ref->[$atom][$numCurrBondAngle];
+            $accumElemBondAngle[$elemID] +=
+                  $bondAnglesExt_ref->[$atom][$numCurrBondAngle];
+            $accumSpecBondAngle[$elemID][$specID] +=
+                  $bondAnglesExt_ref->[$atom][$numCurrBondAngle];
+         }
+      }
+   }
+
+   # Divide the accumulated bond length and bond angle for each element and
+   #   species by the number of bonds or bond angles for that element or
+   #   species.  This is the average.
+   foreach $element (1..$numElements)
+   {
+      # Ensure that we do not divide by zero when computing the average bond
+      #   length for this element.
+      if ($numTotalElemBonds[$element] == 0)
+         {&elementWarning($element,1);}
+      else
+         {$avgElemBL[$element] = $accumElemBondLength[$element] /
+                                 $numTotalElemBonds[$element];}
+
+      # Ensure that we do not divide by zero when computing the average bond
+      #   angle for this element.
+      if ($numTotalElemBondAngles[$element] == 0)
+         {&elementWarning($element,2);}
+      else
+         {$avgElemBA[$element] = $accumElemBondAngle[$element] /
+                                 $numTotalElemBondAngles[$element];}
+
+
+      foreach $species (1..$numSpecies_ref->[$element])
+      {
+         # Ensure that we do not divide by zero when computing the average bond
+         #   length for this species.
+         if ($numTotalSpecBonds[$element][$species] == 0)
+            {&speciesWarning($element,$species,1);}
+         else
+            {$avgSpecBL[$element][$species] =
+                  $accumSpecBondLength[$element][$species] /
+                  $numTotalSpecBonds[$element][$species];}
+
+
+         # Ensure that we do not divide by zero when computing the average bond
+         #   angle for this species.
+         if ($numTotalSpecBondAngles[$element][$species] == 0)
+            {&speciesWarning($element,$species,2);}
+         else
+            {$avgSpecBA[$element][$species] =
+                  $accumSpecBondAngle[$element][$species] /
+                  $numTotalSpecBondAngles[$element][$species];}
+      }
+   }
+
+   # Do the same thing for each atom.
+   foreach $atom (1..$numAtoms)
+   {
+      # Ensure that we do not divide by zero when computing the average bond
+      #   length for this atom.
+      if ($numTotalAtomBonds[$atom] == 0)
+         {&atomWarning($atom,1);}
+      else
+         {$avgAtomBL[$atom] =
+               $accumAtomBondLength[$atom] / $numTotalAtomBonds[$atom];}
+
+      # Ensure that we do not divide by zero when computing the average bond
+      #   angle for this atom.
+      if ($numTotalAtomBondAngles[$atom] == 0)
+         {&atomWarning($atom,2);}
+      else
+         {$avgAtomBA[$atom] =
+               $accumAtomBondAngle[$atom] / $numTotalAtomBondAngles[$atom];}
+   }
+
+
+   # Compute std deviation.
+
+   # Reinitialize to zero all the bond counts for elements and species.  In
+   #   this case the accumulating arrays are used to accumulate the square of
+   #   the difference between the bond length or bond angle and the just
+   #   computed average value for the same.  This will be used to get the
+   #   standard deviation for each element and species.  Initialize all the
+   #   average values to be computed for each element and species to -1.
+   foreach $element (1..$numElements)
+   {
+      $numTotalElemBonds[$element]      = 0;
+      $numTotalElemBondAngles[$element] = 0;
+      $accumElemBondLength[$element]    = 0;
+      $accumElemBondAngle[$element]     = 0;
+      $stdElemBL[$element] = -1;
+      $stdElemBA[$element] = -1;
+
+      foreach $species (1..$numSpecies_ref->[$element])
+      {
+         $numTotalSpecBonds[$element][$species]      = 0;
+         $numTotalSpecBondAngles[$element][$species] = 0;
+         $accumSpecBondLength[$element][$species]    = 0;
+         $accumSpecBondAngle[$element][$species]     = 0;
+         $stdSpecBL[$element][$species] = -1;
+         $stdSpecBA[$element][$species] = -1;
+      }
+   }
+
+   # Perform the same re-initialization for the data structures for each atom.
+   foreach $atom (1..$numAtoms)
+   {
+      $numTotalAtomBonds[$atom]      = 0;
+      $numTotalAtomBondAngles[$atom] = 0;
+      $accumAtomBondLength[$atom]    = 0;
+      $accumAtomBondAngle[$atom]     = 0;
+      $stdAtomBL[$atom] = -1;
+      $stdAtomBA[$atom] = -1;
+   }
+
+   foreach $atom (1..$numAtoms)
+   {
+      # Compare the position of this atom with the box the user defined (or the
+      #   default).  This also considers if the user wanted only atoms inside
+      #   the box or only outside.  The return value is 1 if the atom is out
+      #   of the desired region and it is 0 if the atom is inside the desired
+      #   region.
+      if (StructureControl::itemOutOfBounds($atom,$coords_ref))
+         {next;}
+
+      # Get short names for the elementID and speciesID numbers for this atom.
+      $elemID = $atomElementID_ref->[$atom];
+      $specID = $atomSpeciesID_ref->[$atom];
+
+      # Consider each bond common to this atom.  Accumulate the number of bonds
+      #   into two different divisions.  (1)  By element;  (2)  By species.
+      #   Also accumulate the square of the difference between the bond length
+      #   and the average just computed above into the same two types of
+      #   divisions.  This is done to distinguish later statistics by element
+      #   and species.
+      foreach $bond1 (1..$numBonds_ref->[$atom])
+      {
+         $numTotalAtomBonds[$atom]++;
+         $numTotalElemBonds[$elemID]++;
+         $numTotalSpecBonds[$elemID][$specID]++;
+         $accumAtomBondLength[$atom] +=
+               ($bondLengthExt_ref->[$atom][$bond1] -
+                $avgAtomBL[$atom])**2;
+         $accumElemBondLength[$elemID] +=
+               ($bondLengthExt_ref->[$atom][$bond1] -
+                $avgElemBL[$elemID])**2;
+         $accumSpecBondLength[$elemID][$specID] +=
+               ($bondLengthExt_ref->[$atom][$bond1] -
+                $avgSpecBL[$elemID][$specID])**2;
+      }
+
+
+      # Consider each bond pair (no double counting) with the current atom as
+      #   the vertex of the triplet.  Accumulate the number of bond angles into
+      #   two different divisions.  (1)  By element;  (2)  By species.  Also
+      #   accumulate the square of the difference between the bond angle and
+      #   the just computed average into the same two types of divisions.
+      $numCurrBondAngle = 0;  # Reference bond angles in a flat list.
+      foreach $bond1 (1..$numBonds_ref->[$atom]-1)
+      {
+         foreach $bond2 ($bond1+1..$numBonds_ref->[$atom])
+         {
+            $numCurrBondAngle++;
+            $numTotalAtomBondAngles[$atom]++;
+            $numTotalElemBondAngles[$elemID]++;
+            $numTotalSpecBondAngles[$elemID][$specID]++;
+            $accumAtomBondAngle[$atom] +=
+                  ($bondAnglesExt_ref->[$atom][$numCurrBondAngle] -
+                   $avgAtomBA[$atom])**2;
+            $accumElemBondAngle[$elemID] +=
+                  ($bondAnglesExt_ref->[$atom][$numCurrBondAngle] -
+                   $avgElemBA[$elemID])**2;
+            $accumSpecBondAngle[$elemID][$specID] +=
+                  ($bondAnglesExt_ref->[$atom][$numCurrBondAngle] -
+                   $avgSpecBA[$elemID][$specID])**2;
+         }
+      }
+   }
+
+   # Divide the accumulated bond length and bond angle differences for each
+   #   element and species by the number of bonds or bond angles for that
+   #   element or species.  Take the square root and that is the first standard
+   #   deviation.
+   foreach $element (1..$numElements)
+   {
+      # Ensure that we do not divide by zero when computing the std.div. bond
+      #   length for this element.
+      if ($numTotalElemBonds[$element] == 0)
+         {&elementWarning($element,1);}
+      else
+         {$stdElemBL[$element] = sqrt($accumElemBondLength[$element] /
+                                      $numTotalElemBonds[$element]);}
+
+      # Ensure that we do not divide by zero when computing the std.div. bond
+      #   angle for this element.
+      if ($numTotalElemBondAngles[$element] == 0)
+         {&elementWarning($element,2);}
+      else
+         {$stdElemBA[$element] = sqrt($accumElemBondAngle[$element] /
+                                      $numTotalElemBondAngles[$element]);}
+
+      foreach $species (1..$numSpecies_ref->[$element])
+      {
+         # Ensure that we do not divide by zero when computing the average bond
+         #   length for this species.
+         if ($numTotalSpecBonds[$element][$species] == 0)
+            {&speciesWarning($element,$species,1);}
+         else
+            {$stdSpecBL[$element][$species] =
+                   sqrt($accumSpecBondLength[$element][$species] /
+                   $numTotalSpecBonds[$element][$species]);}
+
+
+         # Ensure that we do not divide by zero when computing the average bond
+         #   angle for this species.
+         if ($numTotalSpecBondAngles[$element][$species] == 0)
+            {&speciesWarning($element,$species,2);}
+         else
+            {$stdSpecBA[$element][$species] =
+                   sqrt($accumSpecBondAngle[$element][$species] /
+                   $numTotalSpecBondAngles[$element][$species]);}
+      }
+   }
+
+   # Do the same thing for each atom.
+   foreach $atom (1..$numAtoms)
+   {
+      # Ensure that we do not divide by zero when computing the average bond
+      #   length for this atom.
+      if ($numTotalAtomBonds[$atom] == 0)
+         {&atomWarning($atom,1);}
+      else
+         {$stdAtomBL[$atom] =
+               sqrt($accumAtomBondLength[$atom] / $numTotalAtomBonds[$atom]);}
+
+      # Ensure that we do not divide by zero when computing the average bond
+      #   angle for this atom.
+      if ($numTotalAtomBondAngles[$atom] == 0)
+         {&atomWarning($atom,2);}
+      else
+         {$stdAtomBA[$atom] = sqrt($accumAtomBondAngle[$atom] /
+               $numTotalAtomBondAngles[$atom]);}
+   }
+}
+
+sub setBoxBorder
+{
+   # Define local variables.
+   my $axis;
+
+   # For any end points given as "max" values, we must fill them here
+   #   depending on which type of coordinates we are using.
+   foreach $axis (1..3)
+   {
+      if ($boxBorders[$axis][2] eq "max")
+      {
+         if ($coordType == 1) # Direct space xyz for orthorhombic cells only.
+            {$boxBorders[$axis][2] = $mag_ref->[$axis];}
+         elsif ($coordType == 2) # Direct space abc.
+            {$boxBorders[$axis][2] = $mag_ref->[$axis];}
+         else # Fractional abc.
+            {$boxBorders[$axis][2] = 1.0;}
+      }
+   }
+
+   # Set the border so that we include only the requested atoms.
+   StructureControl::setBorder($zone,$coordType,$boxBorders[1][1],
+         $boxBorders[2][1],$boxBorders[3][1],$boxBorders[1][2],
+         $boxBorders[2][2],$boxBorders[3][2]);
+}
+
+sub elementWarning
+{
+   # Define local variables.
+   my $element;
+   my $warnType;
+   my $warning;
+
+   # Define passed parameters.
+   $element  = $_[0];
+   $warnType = $_[1];
+
+   if ($warnType == 1)
+      {$warning = "Element $elementList_ref->[$element] has no bonds for" .
+                  " bondingFactor = $bondingFactor\n";}
+   else
+      {$warning = "Element $elementList_ref->[$element] has no bond angles" .
+                  " for bondFactor = $bondingFactor\n";}
+
+   print STDOUT $warning;
+}
+
+sub speciesWarning
+{
+   # Define local variables.
+   my $element;
+   my $species;
+   my $warnType;
+   my $warning;
+
+   # Define passed parameters.
+   $element  = $_[0];
+   $species  = $_[1];
+   $warnType = $_[2];
+
+   if ($warnType == 1)
+      {$warning = "Species $speciesList_ref->[$element][$species]".
+                  " has no bonds for bondFactor = $bondingFactor\n";}
+   else
+      {$warning = "Species $speciesList_ref->[$element][$species]".
+                  " has no bond angles for bondFactor = $bondingFactor\n";}
+
+   print STDOUT $warning;
+}
+
+sub atomWarning
+{
+   # Define local variables.
+   my $atom;
+   my $warnType;
+   my $warning;
+
+   # Define passed parameters.
+   $atom = $_[0];
+   $warnType = $_[1];
+
+   if ($warnType == 1)
+      {$warning = "Atom $atom has no bonds for bondFactor = $bondingFactor\n";}
+   elsif ($warnType == 2)
+      {$warning = "Atom $atom has no bond angles for bondFactor".
+                  " = $bondingFactor\n";}
+
+   print STDOUT $warning;
+}

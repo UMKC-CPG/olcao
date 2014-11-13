@@ -1,0 +1,49 @@
+#!/bin/bash
+
+###########################################################
+#BEGIN SCRIPT VARIABLES
+###########################################################
+
+#Define the current branch.
+export BRANCH="v28-mirror"
+
+#Root directory of the OLCAO program suite.
+export OLCAO_DIR="$HOME/CPG/cpg-repo/$BRANCH"
+
+#Location of binary executables.
+export OLCAO_BIN="$OLCAO_DIR/bin"
+
+#Location of data files.
+export OLCAO_DATA="$OLCAO_DIR/share"
+
+#Location for all intermediate directories.
+export OLCAO_TEMP="$HOME/scratch/$BRANCH"
+
+export PATH=$OLCAO_BIN:$PATH
+export PERL5LIB=$OLCAO_BIN/perl5:$PERL5LIB
+
+#Type of tar tool available:  Valid values are "linux" or "unix".
+export OLCAO_TAR="linux"
+
+#Do intermediate files need to be touched?  Yes=1, No=0
+export OLCAO_TOUCH=0
+
+#Number of bytes for FORTRAN 90 floating point doubles.
+#This is needed for memory estimation.
+export OLCAO_DOUBLE=16
+
+#Define if the computer uses a pbs batch queueing system.
+export OLCAO_PBS=0
+
+#Define if the computer uses a lsf batch queueing system.
+export OLCAO_LSF=0
+
+#Define if the compute uses a simple bash submit script.
+export OLCAO_BASH=1
+
+#Define the location of the VASP pseudopotential database.
+export VASPPOT_DIR="$HOME/vasp"
+
+###########################################################
+#END SCRIPT VARIABLES
+###########################################################

@@ -1,0 +1,204 @@
+#!/usr/bin/perl
+#PURPOSE:  To write a data file that is usable by origin to plot a symmetric
+#         band diagram using the Origin band script.
+#AUTHOR:  Paul Rulis
+#LAST MODIFIED:  Oct 27, 2004
+#
+#USAGE:  makeSYBD [-dat $datFile] [-out $outFile] [-raw $rawFile]
+#                 [-plot $plotFile] [-basis $basis] [-edge $edge] | [-help]
+#
+#If no file parameters are given then it is assumed that the files to be used
+#   are "gs_sybd-fb.dat", "gs_sybd-fb.out", and "gs_sybd-fb.raw".  The default
+#   basis value is "fb", and the default edge is "gs".
+
+#First we parse the command line.
+
+$number=0;
+$commandLine = "command";
+$basis="-fb";
+$edge="gs";
+$datFile="";
+$outFile="";
+$rawFile="";
+$plotFile="";
+while ($ARGV[$number] ne "")
+{
+   if ($ARGV[$number] eq "-help")
+      {&printHelp;}
+   elsif ($ARGV[$number] eq "-dat")
+   {
+      $datFile = $ARGV[$number+1];
+      $number++;
+   }
+   elsif ($ARGV[$number] eq "-out")
+   {
+      $outFile = $ARGV[$number+1];
+      $number++;
+   }
+   elsif ($ARGV[$number] eq "-raw")
+   {
+      $rawFile = $ARGV[$number+1];
+      $number++;
+   }
+   elsif ($ARGV[$number] eq "-plot")
+   {
+      $plotFile = $ARGV[$number+1];
+      $number++;
+   }
+   elsif ($ARGV[$number] eq "-basis")
+   {
+      $basis="-"."$ARGV[$number+1]";
+      $number++;
+   }
+   elsif ($ARGV[$number] eq "-edge")
+   {
+      $edge="$ARGV[$number+1]";
+      $number++;
+   }
+   else
+   {
+      print STDOUT "UNKNOWN COMMAND LINE PARAMETER $ARGV[$number]. ABORTING.\n";
+      exit;
+   }
+   $number++;
+}
+
+#Record the command line used to create this set of input files.
+open (COMMANDLINE,">>$commandLine");
+print COMMANDLINE "makeSYBD ";
+for ($i = 0; $i <= $#ARGV; $i++)
+   {print COMMANDLINE "$ARGV[$i] ";}
+print COMMANDLINE "\n";
+close (COMMANDLINE);
+
+sub printHelp
+{
+print <<ENDHELP;
+#USAGE:  makeSYBD [-dat \$datFile] [-out \$outFile] [-raw \$rawFile]
+#                   [-plot \$plotFile] [-basis \$basis] [-edge \$edge] |
+#                   [-help]
+#
+#If no file parameters are given then it is assumed that the files to be
+#   used are "gs_sybd-fb.dat", "gs_sybd-fb.out", and "gs_sybd-fb.raw",
+#   "gs_sybd-fb.plot" respectively.  The default basis value is "fb", and the
+#   default edge is "gs".
+ENDHELP
+   exit;
+}
+
+$dat = ".dat";
+$raw = ".raw";
+$out = ".out";
+$plot= ".plot";
+$setup = "setup";
+$sybdName = "_sybd";
+
+if ($datFile eq "")
+   {$datFile = "$setup$basis$dat";}
+if ($outFile eq "")
+   {$outFile = "$edge$sybdName$basis$out";}
+if ($rawFile eq "")
+   {$rawFile = "$edge$sybdName$basis$raw";}
+if ($plotFile eq "")
+   {$plotFile = "$edge$sybdName$basis$plot";}
+
+#Now we determine the number of special K points to use.  This is done by
+#   looking in the $sybd_dat file and pushing each line with a special K
+#   point into an array.  The length of the array is the number of special
+#   k points.
+#During this procedure we will also get the names for the special K points.
+#Open or die.
+open (SYBDDATA, "< $datFile") || die "No such file.\n";
+
+#This loop is a little Kludgy.
+@KNames=();
+while ($line = <SYBDDATA>)
+{
+   if ($line =~ /SYBD/)
+      {last;}
+}
+$line = <SYBDDATA>;
+while ($line = <SYBDDATA>)
+{
+   if ($line =~ /PACS/)
+      {last;}
+   if ($line =~ /GAMMA/)
+      {push (@KNames, ("G"));}
+   if ($line !~ /GAMMA/)
+   {
+      @TempArray1 = split (/=/,$line);
+      @TempArray2 = split (//,$TempArray1[0]);
+      push (@KNames, ($TempArray2[$#TempArray2]));
+   }
+}
+
+close (SYBDDATA);
+
+open (SYBDOUT, "< $outFile") || die "Cannot open $outFile for reading.\n";
+open (SYBDFINAL, "> $plotFile") || die "Cannot open $plotFile for writing.\n";
+
+#Start with an empty array of values for the special K point positions.
+#Then we fill it with the number corresponding to the special k points.
+#Then we find the position values associated with the number and store them.
+@KValues=();
+#KNumberSwitch starts at zero while we get the special k point number.
+#Then it will switch to 1 while we are searching for the positions.
+#When all the positions have been found we set it back to 0.
+$KNumberSwitch=0;
+$current=0;
+while ($line = <SYBDOUT>)
+{
+   #This if block will collect the special k point numbers
+   if (($line =~ /HIGH SYMMETRY K POINT/) && (!$KNumberSwitch))
+   {
+      chomp $line;
+      @TempArray1 = split (/\s+/,$line);
+      push (@KValues, ($TempArray1[$#TempArray1]));
+      if ($#KValues == $#KNames)
+         {$KNumberSwitch=1;}
+   }
+   #This if block will collect the special k point positions using the numbers
+   #   found in the above block.
+   if ($KNumberSwitch)
+   {
+      chomp $line;
+      @TempArray1 = split (/\s+/,$line);
+      #If we found the number, then assign the value over top of it.
+      if ($TempArray1[1] == $KValues[$current])
+      {
+         $KValues[$current] = $TempArray1[2];
+         $current++;
+         if ($current == $#KValues+1)
+         {
+            $KNumberSwitch=0;
+            $current=0;
+         }
+      }
+   }
+}
+close(SYBDOUT);
+open(SYBDRAW,"< $rawFile");
+$line = <SYBDRAW>;
+@TempArray1 = split (/ +/,$line);
+$NumKPoints=$TempArray1[1];
+$NumStates=$TempArray1[2];
+if (int($NumStates/10) < $NumStates/10)
+   {$NumStates=(int($NumStates/10)+1)*10;}
+for ($i=0;$i<$NumKPoints;$i++)
+{
+   $line = <SYBDRAW>;
+   chomp $line;
+   print SYBDFINAL "$line";
+   for ($j=1;$j<=$NumStates/10;$j++)
+   {
+      $line = <SYBDRAW>;
+      chomp ($line);
+      print SYBDFINAL "$line";
+   }
+   if ($current < @KValues)
+   {
+      print SYBDFINAL " $KValues[$current] $KNames[$current]";
+      $current++;
+   }
+   print SYBDFINAL "\n";
+}

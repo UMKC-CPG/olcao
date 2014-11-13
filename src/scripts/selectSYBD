@@ -1,0 +1,194 @@
+#!/usr/bin/perl
+# This script is written to allow you to reduce the number of columns in a
+#   symmetric band structure data file so that it can be more easily displayed
+#   in Origin.  (There is appearantly some column limitation of 2047 in Origin
+#   and so you have to pick the range you want for the SYBD if it contains
+#   this many or more columns.)
+#
+#USAGE:  selectSYBD [-yrange $ymin $ymax] [-i $datafile] [-n $newfile] | [-help]
+#
+# The -yrange option is used to define the boundaries for the range of data to
+#   be retained.  Only values inside the $ymin $ymax range will be kept.  If
+#   this option is not given, then the default values of -5 to +5 will be used.
+# The -i option defines the input data file.  By default it will be
+#   gs_sybd-fb.plot.
+# The -n options defines the output data file with the reduced range.  By
+#   default it will be gs_sybd-fb.select.plot.
+
+##################################################
+# Begin execution of the script.##################
+##################################################
+
+# Require warning and strict.  Also pullin the user's environment and make sure
+#   we have access to the routines in StructureControl.
+use warnings;
+use strict;
+use Env;
+use lib "$OLCAO_BIN/perl5";
+use StructureControl;
+
+# Define global variables.
+my $ymin;
+my $ymax;
+my $datafile;
+my $newfile;
+
+# Define the environment and default parameters.
+&setupEnvironment;
+
+
+# Read the command line parameters
+&readCLP;
+
+
+# Select the data and save it.
+&selectData;
+
+
+sub setupEnvironment
+{
+   # First we establish the default parameters.
+   $ymin = -5;
+   $ymax =  5;
+   $datafile = "gs_sybd-fb.plot";
+   $newfile = "gs_sybd-fb.select.plot";
+}
+
+
+sub readCLP
+{
+   my $number = 0;
+   while ($number < scalar(@ARGV))
+   {
+      if ($ARGV[$number] eq "-yrange")
+      {
+         $ymin = $ARGV[++$number];
+         $ymax = $ARGV[++$number];
+      }
+      elsif ($ARGV[$number] eq "-i")
+         {$datafile = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-n")
+         {$newfile = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-help")
+         {&printHelp;}
+      else
+      {
+         print STDOUT "UNKNOWN COMMAND LINE PARAMETER $ARGV[$number].\n";
+         print STDOUT "ABORTING.\n";
+         exit;
+      }
+      $number++;
+   }
+
+   # Record the command line used.
+   my $commandLine = "command";
+   open (COMMANDLINE,">>$commandLine");
+   print COMMANDLINE "selectSYBD ";
+   for (my $i = 0; $i <= $#ARGV; $i++)
+      {print COMMANDLINE "$ARGV[$i] ";}
+   print COMMANDLINE "\n";
+   close (COMMANDLINE);
+}
+
+
+sub selectData
+{
+   # Define local variables.
+   my $i;
+   my $line;
+   my @values;
+   my $minIndex;
+   my $maxIndex;
+   my $lastColumn;
+
+   # Open the input and output files.
+   open (IN,"<$datafile") || die "Cannot open datafile $datafile\n";
+   open (OUT,">$newfile") || die "Cannot open newfile $newfile\n";
+
+   # Read the first line of the input file to determine the index numbers for
+   #   the min and max cut offs.  It is important that the columns of data
+   #   remain in sync so they must all follow the same index numbers.
+   @values = StructureControl::prepLine(\*IN,"",'\s+');
+
+   # Start the min index at zero and progress through the array to find the
+   #   array value that is greater than the requested minimum.  Then back up
+   #   one to make sure to include all values greater than ymin.
+   $minIndex=1;
+   while ($values[$minIndex] < $ymin)
+      {$minIndex++;}
+   if ($minIndex > 1)
+      {$minIndex--;}
+
+   # Start the max index from where the min index left off and continue the
+   #   search until we come upon a value that is greater than the requested
+   #   ymax.  We use that index to ensure that all values up to the requested
+   #   ymax are included.
+   $maxIndex=$minIndex;
+   while ($values[$maxIndex] < $ymax)
+      {$maxIndex++;}
+
+
+   # Now we reset the position of the file handle to the beginning of the
+   #   file so that we can read each line identically.
+   seek(IN,0,0);
+
+
+
+   # Read the input file line by line.  Go through each element in the
+   #   line and throw out the ones we don't want.  Print the ones we do
+   #   want into the output file.
+   while ($line = <IN>)
+   {
+      @values = StructureControl::prepLine("",$line,'\s+');
+
+      # The first element is always necessary as it is the kpoint position.
+      print OUT "$values[0] ";
+
+      # If the last column contains anything that is not a number then this
+      #   line is one of the special first ones that also contain the markers
+      #   for the special highly symmetric kpoints.
+      if ($values[$#values] !~ /[0-9]/)
+         {$lastColumn = $#values-2;}
+      else
+         {$lastColumn = $#values;}
+
+
+      # Loop through the remaining elements of this line.
+      for ($i=$minIndex;$i<=$maxIndex;$i++)
+         {print OUT "$values[$i] ";}
+
+      # Print out the remaining two values if they exist for the special
+      #   highly symmetric kpoint positions and name.
+      if ($lastColumn != $#values)
+         {print OUT "$values[$lastColumn+1] $values[$lastColumn+2]";}
+
+      # Finish the line.
+      print OUT "\n";
+   }
+
+   # Close the data files.
+   close (IN);
+   close (OUT);
+}
+
+sub printHelp
+{
+print <<ENDHELP;
+# This script is written to allow you to reduce the number of columns in a
+#   symmetric band structure data file so that it can be more easily displayed
+#   in Origin.  (There is appearantly some column limitation of 2047 in Origin
+#   and so you have to pick the range you want for the SYBD if it contains
+#   this many or more columns.)
+#
+#USAGE:  selectSYBD [-yrange \$ymin \$ymax] [-i \$datafile] [-n \$newfile] | [-help]
+#
+# The -yrange option is used to define the boundaries for the range of data to
+#   be retained.  Only values inside the \$ymin \$ymax range will be kept.  If
+#   this option is not given, then the default values of -5 to +5 will be used.
+# The -i option defines the input data file.  By default it will be
+#   gs_sybd-fb.plot.
+# The -n options defines the output data file with the reduced range.  By
+#   default it will be gs_sybd-fb.select.plot.
+ENDHELP
+   exit;
+}

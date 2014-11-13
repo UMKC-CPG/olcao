@@ -1,0 +1,858 @@
+#!/usr/bin/perl
+#PROGRAM collectSpectra
+
+# The purpose of this program is to reduce the human labor necessary to collect
+#   a large number of computed curves (e.g. xanes spectra), organize them into
+#   appropriate groups, operate on them (e.g. normalize them), and then form
+#   the results into files for easy plotting.  Further this program will
+#   perform a special task for XANES calculations where the weighted sum of the
+#   spectra is needed to compare with experiment.  The typical key end result
+#   is a file that contains an energy scale, a curve representing a summation
+#   of many spectra, and then each spectrum used in the sum.
+# If the file "alternate" exists in the storage directory for a particular
+#   element-edge combination, then that file will be read for the order in
+#   which the spectra should be arranged in the final total file.  This file
+#   is simply a list of the spectra filenames as if from "ls -1 *.norm" except
+#   reordered.
+
+#USAGE: collectSpectra [-totalonly] [-flat] [-xyz [-combo]] | [-help]
+
+# The -totalonly option will cause the key result file to *not* contain all of
+#   the spectra used in the sumation.
+#
+# When the -flat option is given, then $flat = 1 else $flat = 0.  When $flat = 0
+#   the spectra will be weighted during summation by the number of atoms of the
+#   same species.  When $flat = 1 then all the spectra will be weighted equally
+#   as 1/(number of spectra).  The -flat option is most useful when there are
+#   many atomic spectra from atoms of the same species, but for which the
+#   spectra are different because they were assigned via the reduce scheme
+#   during makeinput.  Do not turn this on when you have 1 spectrum for each
+#   species and various numbers of atoms of each species and you expect all the
+#   spectra from each atom of each species to be the same.
+#
+# The -xyz option will cause the summation to also be performed over the xx,
+#   yy, and zz components of the spectrum in addition to the usual average.
+#   Each component will be stored in a separate file if the sub-option "-combo"
+#   is not given.  If the sub-option "-combo" is given, then all the components
+#   will be combined together in one file such that each spectra will be given
+#   in the order total, x, y, z including the weighted sum data.
+
+# Turn on necessary controls.
+use warnings;
+use strict;
+use Env;
+use lib "$OLCAO_BIN/perl5";
+
+# Define global variables.
+# Command line switches and associated variables.
+my $flat;   # 1->Scale sum by 1/#Spectra; 0->Scale sum by species proportion.
+my $component;  # Selective summation.  0 = Average; 3 = +xyz.  (3=max index)
+my $doCombo;    # 0 = Separate files; 1 = all in one file.
+my $totalOnly;  # Do not include individual spectra in the summation file.
+my @componentTag;  # Tags for files representing different components.
+
+my $numSpectra;
+my $numEdges;   # At present I only coded for 6 possible edges to collect.
+my @edges;      # 1s, 2s, 2p, 3s, 3p, 3d
+my @shellName;  # -k1, -l1, -l3, -m1, -m3, -m5
+my $numAtoms;   # Number of atoms.
+my @atomList;   # Lower case list of atom names for each atom.
+my @sortedAtomList;  # Just as it says.  A sorted list of the atom names.
+my $numElements;
+my $lastElementName;
+my @elementNameList;
+my @elementCountList;
+my @numSpecies;
+my @speciesCountList;
+
+my $projectDir;  # Full directory name of the calling directory.
+my $projectName; # The last term in projectDir.
+
+# Commonly used variables.
+my $line;
+my @values;
+my ($i,$j,$k);
+
+my @spectraFileList;   # List of the names of spectra containing plot files.
+
+##################################################
+# BEGIN EXECUTION ################################
+##################################################
+
+
+# Initialize the program environment variables.
+&initEnv;
+
+# Parse and record the command line
+&parseCommandLine;
+
+# Obtain structure data such as the number of atoms of each element and the
+#   number of atoms of each species of each element.  This information is
+#   obtained from the olcao.mi file that is created during the makeinput
+#   process.
+&obtainStructure;
+
+# Find all the requested spectra and copy them to an appropriate group
+#   location.  (e.g. XANES spectra copied to the norms directory.)
+&copyCurves;
+
+# Normalize all the appropriately gathered xanes plot files and form the one
+#   final total spectra file for each directory that is in the norms directory
+#   one after the other.
+&normAndForm;
+
+
+##################################################
+# END EXECUTION ##################################
+##################################################
+
+
+
+sub parseCommandLine
+{
+   my $commandLine = "command";
+   my $number=0;
+
+   while ($number < scalar(@ARGV))
+   {
+      if ($ARGV[$number] eq "-totalonly")
+         {$totalOnly = 1;}
+      elsif ($ARGV[$number] eq "-flat")
+         {$flat = 1;}
+      elsif ($ARGV[$number] eq "-xyz")
+      {
+         $component = 3;
+         if (($number+1 < scalar(@ARGV)) && ($ARGV[$number+1] eq "-combo"))
+         {
+            $number++;
+            $doCombo = 1;
+         }
+      }
+      elsif ($ARGV[$number] eq "-help")
+         {&printHelp;}
+      else
+      {
+         print STDOUT "UNKNOWN COMMAND LINE PARAMETER ".
+                      "$ARGV[$number]. ABORTING.\n";
+         exit;
+      }
+
+      $number++;
+   }
+
+   # Record the command line used to shift the gulp data.
+   open (COMMANDLINE,">>$commandLine");
+   print COMMANDLINE "collectSpectra ";
+   $number = 0;
+   while ($number < scalar(@ARGV))
+      {print COMMANDLINE "$ARGV[$number++] ";}
+   print COMMANDLINE "\n";
+   close (COMMANDLINE);
+}
+
+
+sub printHelp
+{
+   print <<ENDHELP;
+#PROGRAM collectSpectra
+#LAST UPDATED: Nov. 24, 2010
+
+# The purpose of this program is to reduce the human labor necessary to collect
+#   a large number of computed curves (e.g. xanes spectra), organize them into
+#   appropriate groups, operate on them (e.g. normalize them), and then form
+#   the results into files for easy plotting.  Further this program will
+#   perform a special task for XANES calculations where the weighted sum of the
+#   spectra is needed to compare with experiment.  The typical key end result
+#   is a file that contains an energy scale, a curve representing a summation
+#   of many spectra, and then each spectrum used in the sum.
+# If the file "alternate" exists in the storage directory for a particular
+#   element-edge combination, then that file will be read for the order in
+#   which the spectra should be arranged in the final total file.  This file
+#   is simply a list of the spectra filenames as if from "ls -1 *.norm" except
+#   reordered.
+
+#USAGE: collectSpectra [-totalonly] [-flat] [-xyz [-combo]] | [-help]
+
+# The -totalonly option will cause the key result file to *not* contain all of
+#   the spectra used in the sumation.
+#
+# When the -flat option is given, then \$flat = 1 else \$flat = 0.  When \$flat = 0
+#   the spectra will be weighted during summation by the number of atoms of the
+#   same species.  When \$flat = 1 then all the spectra will be weighted equally
+#   as 1/(number of spectra).  The -flat option is most useful when there are
+#   many atomic spectra from atoms of the same species, but for which the
+#   spectra are different because they were assigned via the reduce scheme
+#   during makeinput.  Do not turn this on when you have 1 spectrum for each
+#   species and various numbers of atoms of each species and you expect all the
+#   spectra from each atom of each species to be the same.
+#
+# The -xyz option will cause the summation to also be performed over the xx,
+#   yy, and zz components of the spectrum in addition to the usual average.
+#   Each component will be stored in a separate file if the sub-option "-combo"
+#   is not given.  If the sub-option "-combo" is given, then all the components
+#   will be combined together in one file such that each spectra will be given
+#   in the order total, x, y, z including the weighted sum data.
+ENDHELP
+   exit;
+}
+
+
+sub initEnv
+{
+   # Define the initial project directory
+   $projectDir=`pwd`;
+   chomp($projectDir);
+
+   # Assume that we will collect all the spectra together in one big file.
+   $totalOnly = 0;
+
+   # Assume that we will weight the spectra according to the proportion in
+   #   which the atoms appear in the structure.
+   $flat = 0;
+
+   # Assume that we will sum over the total column from each spectrum.
+   $component = 0;
+
+   # Assume that the total, x, y, and z spectra will each be in their own file.
+   $doCombo = 0;
+
+   # Initialize all possible component tags.
+   @componentTag = qw(-t -x -y -z -txyz);
+
+   # Define the number of the shells that will be considered.
+   $numEdges = 6;
+
+   # Define the relationship between the shells and the names of the shells.
+   $shellName[1] = "-k";
+   $shellName[2] = "-l1";
+   $shellName[3] = "-l3";
+   $shellName[4] = "-m1";
+   $shellName[5] = "-m3";
+   $shellName[6] = "-m5";
+
+   # Define the relationship between the edges and the names of the edges.
+   $edges[1] = "1s";
+   $edges[2] = "2s";
+   $edges[3] = "2p";
+   $edges[4] = "3s";
+   $edges[5] = "3p";
+   $edges[6] = "3d";
+}
+
+
+# The purpose of this subroutine is to get the names of the elements in the
+#   system, and the number of atoms of each element, and the number of atoms
+#   of each species of each element.  This is needed to obtain the weighted
+#   sum of spectra.
+sub obtainStructure
+{
+   # Define local variables.
+   my $currentElement;
+   my $currentSpeciesNumber;
+   my $lastSpeciesNumber;
+
+   # We assume that this program is called from the project home where the
+   #   xas input files were made from.  Then, a directory with the same name
+   #   as the projectDir will exist here and there will be an inputs/olcao.mi
+   #   file there.  Get the name of that directory (the last in projectDir).
+   @values = split(/\//,$projectDir);
+   $projectName = $values[$#values];
+   
+
+   # Initialize the count of the number of atoms in the system.
+   $numAtoms = 0;
+
+   # We will open olcao.mi, parse the information, and store the data for use
+   #   later on when we consider making the weighted sums of the xanes spectra.
+   open (GULPMI,"<$projectDir/$projectName/inputs/olcao.mi") || 
+        die "Cannot open olcao.mi for reading.\n";
+
+   # Position the cursor to the point of reading the atom information.
+   while ($line = <GULPMI>)
+   {
+      if (($line =~ /fract/) || ($line =~ /cart/))
+         {last;}
+   }
+
+   # Read the atomic element/species information and abort when we read the
+   #   spacegroup, supercell, or bond distance cutoff value.
+   while ($line = <GULPMI>)
+   {
+      # Abort when we have read the last atom.
+      if (($line =~ /supercell/) || ($line =~ /space/) || ($line =~ /dist/))
+         {last;}
+
+      # Prepare the line.
+      chomp $line;
+      @values = split(/\s+/,"$line");
+      if ($values[0] eq "")
+         {shift @values;}
+
+      # Increment the number of atoms known in the system.
+      $numAtoms++;
+
+      # Store the atom in lower case.
+      $atomList[$numAtoms] = lc($values[0]);
+   }
+   close (GULPMI);
+
+   # Initialize the first array index of atomList to an empty value.  This will
+   #   get rid of warnings about uninitialized values in the sort.
+   $atomList[0] = "";
+
+   # Sort this list so that all atoms of the same element and the same species
+   #   are grouped together.
+   @sortedAtomList = sort {$a cmp $b} @atomList;
+
+
+   # Parse the sorted list one atom at a time keeping track of the number of
+   #   atoms for each element and the number of atoms for each species of each
+   #   element.  To do this, first initialize some variables to a state before
+   #   the first atom is considered.
+
+   # Initialize element data.
+   $numElements = 0;
+   $lastElementName = "";
+
+   # Parse the sorted list.
+   for ($i=1;$i<=$numAtoms;$i++)
+   {
+      # Obtain the current element.
+      @values = split(/[0-9]/,"$sortedAtomList[$i]");
+      $currentElement = $values[0];
+
+      # Obtain the current species number.
+      @values = split(/[a-zA-Z]+/,"$sortedAtomList[$i]");
+      $currentSpeciesNumber = $values[1];
+
+      # Compare the current element to the last one.
+      if ("$currentElement" ne "$lastElementName")
+      {
+         # We found a new element.
+
+         # Increment the number of elements in the system.
+         $numElements++;
+
+         # Update the last element name to the current one.
+         $lastElementName = $currentElement;
+
+         # Reset the species number to the null value so it can be counted
+         #   correctly if there are two species #1 elements in a row (e.g. Si1
+         #   followed immediately by O1).
+         $lastSpeciesNumber = 0;
+
+         # Record the name of the current element.
+         $elementNameList[$numElements] = $currentElement;
+
+         # Initialize the number of atoms for this element that exist in the
+         #   system.  Note that we need to use 1.0 instead of 1 so as to avoid
+         #   using integer division.
+         $elementCountList[$numElements] = 1.0;
+
+         # Initialize the number of species for this element.  It will be set
+         #   to 1 in the next 'if' block when the old species number and the
+         #   new species number are compared.
+         $numSpecies[$numElements] = 0;
+      }
+      else
+      {
+         # We are still considering the same element as last time.
+
+         # Increment the number of atoms for this element that exist in the
+         #   system.
+         $elementCountList[$numElements]++;
+      }
+
+      # Compare the current species to the last one.
+      if ($currentSpeciesNumber != $lastSpeciesNumber)
+      {
+         # We found a new species of the current element.
+
+         # Update the last species number to the current one.
+         $lastSpeciesNumber = $currentSpeciesNumber;
+
+         # Increment the number of species for this element
+         $numSpecies[$numElements]++;
+
+         # Initialize the number of atoms for this species of this element.
+         #   Note that we need to use 1.0 instead of 1 so as to avoid using
+         #   integer division.
+         $speciesCountList[$numElements][$numSpecies[$numElements]] = 1.0;
+      }
+      else
+      {
+         # We are still considering the same element and same species as last
+         #   time.
+
+         # Increment the number of atoms for this species of this element.
+         $speciesCountList[$numElements][$numSpecies[$numElements]]++;
+      }
+   }
+}
+
+
+# The purpose of this subroutine is to find all the requested curves, create
+#   an appropriate directory structure, and then copy the curve to that place.
+sub copyCurves
+{
+   # Define local variables.
+   my $xanesDir;
+   my @fileList;
+   my $subList;
+   my @subItems;
+   my $currentShell;
+   my $currentElement;
+   my $currentNewDir;
+   my $currentNewFile;
+
+   # The first step is to find out whether the directory 'norms' exists, and
+   #   if not, then make it.  The norms directory is the typical place where
+   #   XANES spectra are gathered together to be normalized in one group
+   #   according to the atomic element energy range.
+   if (! -d "norms")
+      {system("mkdir norms");}
+
+
+   # Obtain a list of the directories and files in the initial directory.  This
+   #   list contains the permissions.  If the file is a directory, then it will
+   #   have a 'd' at the beginning.
+   @fileList=`ls -l`;  # Long, detailing dir listing.
+
+   # Loop through all the items in the initial directory.
+   for($i=0;$i<=$#fileList;$i++)
+   {
+      # Only pick the directories.
+      if($fileList[$i] =~ /^d/)
+      {
+         chomp($fileList[$i]);
+      
+         # Get the name of the directory to be the current xanesDir.
+         @values=split(/\s+/,"$fileList[$i]");
+         $xanesDir = $values[$#values];
+     
+         # Enter the directory and get a listing of the files.
+         chdir $xanesDir;
+         $subList=`ls -1`;
+         @subItems=split(/\s+/,"$subList");
+
+         # Examine each file in the xanesDir listing.
+         for($j=0;$j<=$#subItems;$j++)
+         {
+            # Only pick up files with name of '*pacs*plot'.
+            if(($subItems[$j] =~ /pacs/) && ($subItems[$j] =~ /plot$/))
+            {
+               # Find the element associated with this xanes spectra.
+               @values = split(/[0-9]/,"$xanesDir");
+               $currentElement=$values[0];
+
+               # Find the shell name associated with this xanes spectra.
+               @values = split(/_/,"$subItems[$j]");
+               for ($k=1;$k<=$numEdges;$k++)
+               {
+                  if ($values[0] eq $edges[$k])
+                  {
+                     $currentShell = $shellName[$k];
+                     last;
+                  }
+               }
+
+               # Define the name of the directory that this file will be
+               #   copied to.
+               $currentNewDir=$projectDir."/norms/".$currentElement.
+                     $currentShell;
+
+               # Create the appropriate directory if it does not exist.
+               if (! -d "$currentNewDir")
+                  {system("mkdir $currentNewDir");}
+
+               # Define the name that this xanes spectra will be copied to in
+               #   the norms dir.
+               $currentNewFile = $xanesDir.$currentShell.".plot";
+
+               # Copy the xanes spectra.
+               system("cp $subItems[$j] $currentNewDir/$currentNewFile");
+            }
+         }
+
+         # Return to the initial directory for the next iteration where we
+         #   look for another directory that may contain XANES spectra.
+         chdir $projectDir;
+      }
+   }
+}
+
+
+# This subroutine will simply look in the norms directory and call a subroutine
+#   to operate on each subdirectory it finds there.  The operation "formTotal"
+#   will put the total spectra from each species in the subdirectory into one
+#   file.  The first column in that file will be the weighted sum of the
+#   individual spectra.
+sub normAndForm
+{
+   # Define local variables.
+   my $normsDir;
+   my @normsDirList;
+   my $directory;
+
+   # Change to directory 'norms' and record the location.
+   chdir("norms");
+   $normsDir=`pwd`;
+   chomp($normsDir);
+
+
+   #Get a List of all the directories found here.  It is assumed that there
+   #   will be no files here, only useful directories.
+   @normsDirList=`ls -1`;
+
+
+   # For each directory in the norms directory cd into it, normalize it, form
+   #   a total spectra file, give it a header, and then cd out of it.
+   foreach $directory (@normsDirList)
+   {
+      chomp $directory;
+      chdir $directory;
+      &normalize;
+      &formTotal($directory);
+      chdir $normsDir;
+   }
+}
+
+
+# This subroutine will analyze the files in the current directory to try and
+#   find the range over which the data should be normalized.  Once the range
+#   has been determined it will call the "normalize" external program with the
+#   requested range.  This external program will perform the normalization for
+#   all the .plot files in the directory.  (Yes, I know that this subroutine
+#   and the external subroutine have the same name.)  :)
+sub normalize
+{
+   # Define local variables.
+   my $currentStart;
+   my $currentEnd;
+   my $start;
+   my $end;
+   my $errorCheck=0;
+   my $curDir;
+   my @fileList;
+
+   # Initialize the boundries for the normaliztion.  Note that this looks odd
+   #   because we normally want to find the minimum start and the maximum end,
+   #   but here we need to find the minimum end.  Consider the case where one
+   #   spectra goes from 60 to 100 while another goes from 55 to 95.  The
+   #   normalization should cover the range 55 to 95.  (This is actually a bit
+   #   of an unresolved problem because then the 60 to 100 range spectra will
+   #   be artifically increased since only the range 60 to 95 needs to be of
+   #   area = 1, not the whole 60 to 100 range.  This could be mitigated by
+   #   defining an energy range specific to each element.  Then all the spectra
+   #   for each element would have the same ending range.  The problem would
+   #   still exist somewhat because the spectra do still have slightly
+   #   different starting energies.  Although it is not usually a significant
+   #   difference that it would distort the weighted sum of the spectra out
+   #   of making sense.
+   $start = 1000000000;
+   $end   = 1000000000;
+
+   # Obtain a list of all the files in the current directory.
+   @fileList = `ls -1`;
+
+
+   # Initialize a counter to track the number of spectra.
+   $numSpectra = 0;
+
+   # Loop through all the files.
+   for ($i=0;$i<=$#fileList;$i++)
+   {
+      # Only pick the files with the .plot or .raw extension.
+      if(($fileList[$i] =~ /plot$/)||($fileList[$i] =~ /raw$/))
+      {
+         # Record that we found a spectrum and store the file name.
+         $numSpectra++;
+         $spectraFileList[$numSpectra] = $fileList[$i];
+          
+
+         # Prepare the file for opening and open it.
+         chomp $fileList[$i];
+         open(SPECTRA,"<$fileList[$i]") ||
+               die "Cannot open $fileList[$i] for reading\n";
+
+         # Read the file line by line to locate the edge onset.
+         <SPECTRA>;
+         while($line=<SPECTRA>)
+         {
+            chomp($line);
+            @values=split(/\s+/,"$line");
+
+            # If the line begins with space, shift it.
+            if ($values[0] eq "")
+               {shift @values;}
+
+            # Find the beginning of the range.
+            if ($values[1] != 0.0 && $values[1] != 'NaN')
+            {
+               $currentStart = $values[0];
+               $errorCheck=1;
+               last;
+            }
+         }
+         
+         # Print an error if there is no spectra in a file.
+         if ($errorCheck==0)
+         {
+            $curDir=`pwd`;
+            print STDOUT "No Spectra in $curDir";
+            exit;
+         }
+
+         # Finish reading the file to find the highest energy computed.  This
+         #   will be on the last line.
+         $currentEnd = 0;
+         while($line=<SPECTRA>)
+         {
+
+            # Prepare the line.
+            chomp($line);
+            @values=split(/\s+/,"$line");
+            if ($values[0] eq "")
+               {shift @values;}
+
+            # Record the last energy value for this file.
+            if ($values[0] > $currentEnd)
+               {$currentEnd = $values[0];}
+         }
+         close(SPECTRA);
+
+         # Compare the just found start and end to the overall start and end.
+         if ($currentStart < $start)
+            {$start = $currentStart;}
+         if ($currentEnd < $end)
+            {$end = $currentEnd;}
+      }
+   }
+
+   # Check that the smallest 'end' energy found is at least 45 eV larger than
+   #   the smallest 'start' energy found.  If so, then everything is OK.  If
+   #   not, then we shift the begin energy lower.
+   if (!($end > 45 + $start))
+      {$start = $end-45;}
+
+   # Make the start range to be an integer rounded to the nearest factor of 5.
+   if($start%10>=5)
+     {$start=int($start/10)*10+5;}
+   else
+     {$start=int($start/10)*10;}
+
+   # Define the end of the range.
+   $end=$start+45;
+
+
+   # Call the subroutine 'normalize'.
+   system("normalize -range $start $end");
+}
+
+
+# This subroutine will look at each of the now normalized files in the current
+#   directory and will extract the appropriate columns of data to form a new
+#   file that contains the total spectra from each of the computed edges.
+#   Also, it will compute the weighted sum of all the edges and store that as
+#   the first column of data.  The weighted sum is obtained in the following
+#   way.  We assume that each species in the system (listed in the input/olcao.mi
+#   file) will have one spectra associated with it for each appropriate edge.
+#   In the case that two or more spectra for a particular atomic species were
+#   calculated it will be necessary to average them together by hand first.
+#   In a previous subroutine, the number of atoms of each element (Ne) and the
+#   number of atoms of each species of each element (Nse) were determined from
+#   the input/olcao.mi file.  Using the normalized spectra we multiply each
+#   spectra by (Nse)/(Ne) for that species.  These spectra are added together
+#   to obtain a total weighted spectrum.  (NOTE AGAIN:  If you have e.g. 3
+#   spectra for Si2 then you must average them together by hand and store the
+#   result in a place that this script will find it (i.e. call the averaged
+#   result 1s_pacs-eb.plot and store it in the Si2 directory).
+sub formTotal
+{
+   # Define passed variables.
+   my $directory = $_[0];
+
+   # Define local variables.
+   my $beginColumn;
+   my $endColumn;
+   my $column;
+   my $beginTag;
+   my $endTag;
+   my $tag;
+   my $currentElement;
+   my $currentEdge;
+   my $currentElementIndex;
+   my @normFileList;
+   my $toFile;
+   my $fromFile;
+   my $colNum;
+   my $speciesLabel;
+   my $numSpectra4Species;
+   my $add;
+   my $factor;
+   my $header;
+   my @file;
+
+   # The difficult aspect of this is the possiblity that there will be more
+   #   than one spectra for a given type of atom.  This may happen in the case
+   #   of a grain boundary, IGF, or other non-crystalline system.  Here, the
+   #   types are defined by the reduce scheme and the atoms to perform the
+   #   xanes calculations on may have been determined by hand.  The atoms of a
+   #   given type may not be exactly equivalent and so the spectra produced by
+   #   the calculation for these atoms may not be the same.  The solution used
+   #   here is to count the number of spectra of a given species and average
+   #   those spectra together along with the species weighting factor.
+
+   # Determine which element number the current element is.
+   @values=split(/-/,"$directory");
+   $currentElement = $values[0];
+   $currentEdge = $values[1];
+   $currentElementIndex = 0;
+   for ($i=1;$i<=$numElements;$i++)
+   {
+      if ("$currentElement" eq "$elementNameList[$i]")
+      {
+         $currentElementIndex=$i;
+         last;
+      }
+   }
+   if ($currentElementIndex == 0)
+      {die "Cannot find $currentElement in the element list.\n";}
+
+   # Obtain a list of the normalized files in this directory and because the
+   #   '_' character is explicitly requested the list will not contain any of
+   #   the previously constructed total files.  Note that the files will be
+   #   stored in a list with indices from 0 to x.
+   if (! -e "alternate")
+      {@normFileList=`ls -1 *_*.norm`;}
+   else
+   {
+      open (ALT,"<alternate") || die "Can not open alternate for reading\n";
+      @normFileList = <ALT>;
+      close (ALT);
+   }
+   for ($i=0;$i<=$#normFileList;$i++)
+      {chomp $normFileList[$i];}
+
+   # Get the option parameters for the external program 'appendCol' for the
+   #   requested case of either having all the txyz in one file, the txyz in
+   #   separate files, or the t only.
+   if ($component == 0)
+      {$beginTag = 0; $endTag = 0;}     # Average of xyz only.
+   elsif ($doCombo == 0)
+      {$beginTag = 0; $endTag = 3;}     # Average +xyz separate file.
+   else
+      {$beginTag = 4; $endTag = 4;}     # Average +xyz same file.
+
+   foreach $tag ($beginTag..$endTag)
+   {
+      # Get the value for option '-to'.
+      $toFile=$directory.$componentTag[$tag].'.norm';
+
+      # If this program is run twice, then the previously produced total norm
+      #   file will be present and it should be removed.
+      if (-e $toFile)
+         {system("rm -f $toFile");}
+
+      # Stick the energy scale on to the currently tagged file first.
+      $colNum = 1;
+      $fromFile = $normFileList[0];  # Any arbitrary norm file.
+      system("appendCol -col $colNum -from $fromFile -to $toFile");
+
+      # Begin constructing the header for this file.
+      $header = "Energy   ";
+
+      # Determine which columns should be collected for the weighted average.
+      if ($component == 0)
+         {$beginColumn = 0; $endColumn = 0;}  # Average of xyz only.
+      elsif ($doCombo == 0)  # Only the current $tag column (t, x, y, or z).
+         {$beginColumn = $tag; $endColumn = $tag;}
+      else
+         {$beginColumn = 0; $endColumn = 3;}  # Each column in sequence. (txyz)
+
+      # Create the weighted sum of all the spectra for the requested columns(s).
+      foreach $column ($beginColumn..$endColumn)
+      {
+         # Extend the header to include the necessary averaged data.
+         $header = $header . "avg$componentTag[$column] ";
+
+         for ($i=1;$i<=$numSpecies[$currentElementIndex];$i++)
+         {
+            # Identify the current species label.
+            $speciesLabel = "$elementNameList[$currentElementIndex]"."$i"."_";
+
+            # Determine the number of atomic spectra for this species.
+            $numSpectra4Species=0;
+            for ($j=0;$j<=$#normFileList;$j++)
+            {
+               if ($normFileList[$j] =~ /^$speciesLabel/)
+                  {$numSpectra4Species++;}
+            }
+
+            for ($j=0;$j<=$#normFileList;$j++)
+            {
+               if ($normFileList[$j] =~ /^$speciesLabel/)
+               {
+                  if (($j==0) && ($i==1))
+                     {$add="";}
+                  else
+                     {$add="-add";}
+
+                  $fromFile = $normFileList[$j];
+                  if ($flat == 0)
+                     {$factor = $speciesCountList[$currentElementIndex][$i] /
+                                $elementCountList[$currentElementIndex] /
+                                $numSpectra4Species;}
+                  else
+                     {$factor = 1.0/$numSpectra4Species;}
+
+
+                  $colNum = 2 + $column;
+                  system("appendCol -col $colNum -from $fromFile -to $toFile ".
+                         "-factor $factor $add");
+               }
+            }
+         }
+      }
+
+      if ($totalOnly == 0)
+      {
+         # Go through each norm file and append the necessary columns to the
+         #   current toFile.
+         for ($i=0;$i<=$#normFileList;$i++)
+         {
+            $fromFile = $normFileList[$i];
+            foreach $column ($beginColumn..$endColumn)
+            {
+               # Extend the header to include the identified column.
+               @values = split(/\./,$normFileList[$i]);
+               $header = $header . "   $values[0]$componentTag[$column]";
+
+               $colNum = 2 + $column;
+               system("appendCol -col $colNum -from $fromFile -to $toFile");
+            }
+         }
+      }
+
+      # Add the header to the just created file.
+      open (DATA,"<$toFile") || die "Cannot open $toFile for reading\n";
+
+      # Read the norm file containing all the requested spectra.
+      @file = <DATA>;
+
+      # Close the file.
+      close (DATA);
+
+      # Open the file for writing this time.
+      open (DATA,">$toFile") || die "Cannot open $toFile for writing.\n";
+
+      # Write the header and then all the data.
+      print DATA "$header\n";
+      print DATA @file;
+
+      # Close the file.
+      close (DATA);
+   }
+
+   undef @normFileList;
+}

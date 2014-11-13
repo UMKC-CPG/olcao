@@ -1,0 +1,695 @@
+#!/usr/bin/perl
+
+#PROGRAM:  makePDOS
+#PURPOSE:  This program will read a raw PDOS data file for the purpose of
+#   collecting the various data components and combining them according to the
+#   requests of the command line and a user created control file.
+#
+#AUTHOR:  Paul Rulis
+#LAST MODIFIED:  Feb. 3, 2012
+#USAGE:  makePDOS [-i $controlFile] [-o $outputFile] [-f $rawDataFile]
+#                 [-xanes] [-negToZero] | [-help]
+#
+#The -i option is used to provide a control file that defines how to collect
+#   and organize the data from the raw pdos file.  The format of the control
+#   file is given below.
+#
+#The -o option is used to override the default output file name.  The default
+#   is PDOS.plot.
+#
+#The -f option is used to override the default raw data file name.  The default
+#   is gs_dos-fb.p.raw.
+#
+#The -xanes option will alter the default control file (produced internally)
+#   to have the curves decomposed into s+d and p states.
+#
+#The -negToZero option will make any negative numbers equal to zero in the
+#   final output file.
+#
+#To understand the format of the control file it is necessary to first
+#   understand the nature of the raw input file.  The raw PDOS input file has
+#   a header followed by a series of data units.
+#   1)  The header:  The first line of the header lists the number of data
+#       units in the file.  The second line of the header lists the number of
+#       data points in the energy scale for each unit.  The last part of the
+#       header is a list of the data points of the energy scale.  This is
+#       typically a few thousand points with each point on a new line.
+#   2)  The data units:  Each data unit is divided into two parts.  The data
+#       unit header, and the data unit data.
+#   2a) The data unit header consists of a series of filter name / filter value
+#       pairs.  The first filter name is always "SEQUENCE_NUM" and the last
+#       filter name is always "COL_LABELS".  The meaning of the first filter
+#       value depends on whether the data was printed according to the atom
+#       or atomic type.  So, it is either the atom number or the type number.
+#       The last filter value is actually a long string of space separated
+#       names that correspond to the data columns that were printed for this
+#       data unit.  In the case of raw data printed according to atom, there is
+#       only one data column called "TOTAL".  In the case of raw data printed
+#       according to atomic types there are many data columns with names such
+#       as, "TOTAL 2s 3s 2p 3p 3d".
+#   2b) The data unit data consists of columns of data corresponding to the
+#       energy scale from the data file's header.  The number of columns for
+#       each data type depends on the type of print out that was requested.
+#       In the case where the data was printed according to the atoms, there is
+#       only one column of data per data unit.  This column is the total PDOS
+#       for that arom.  In the case where the data was printed according to the
+#       atomic types, there are many columns of data depending on the valence
+#       orbitals that were included in this type.  There is one column for the
+#       total PDOS of this type, and there is one column for each valence
+#       orbital of this type.
+#       
+#The format of the control file can be understood as follows:
+#   1)  The first line is used to define the format of the remaining lines.  It
+#       consists of a series of colon separated character strings called tags.
+#       The first tag is always "LABEL" and the last tag is always "COL_LABELS".
+#       The tags in between can use any name from the lists of available filter
+#       names present in the raw data file (e.g. SEQUENCE_NUM or ELEMENT_NAME).
+#       This first line is called the "filter definition line".
+#   2)  The remaining lines are also colon separated lists of strings, but
+#       they will follow the format defined in the filter definition line and
+#       include the filter values instead of the filter names.  Each of these
+#       lines will correspond to one column of output data and thus one curve
+#       when plotted.  An important thing to understand is that the filter
+#       values can be listed as a set of values within the colon separated
+#       list.  In this way a number of data units can potentially match the
+#       curve you are defining.  Some examples are in order.
+#   2a) Example filter definition line:
+#       LABEL : ELEMENT_NAME : SPECIES_ID : TYPE_ID : COL_LABELS
+#       This line indicates that each of the remaining lines should contain
+#       a set of values defining a label for the curve, which elements should
+#       contribute to the curve, which species of those elements should
+#       contribute to the curve, and which types of those species should
+#       contribute to the curve.  The last filter name in this line indicates
+#       that the available data columns should be filtered now.
+#   2b) Example curve definition matching the above filter definition line:
+#       TOTAL : all : all : all : TOTAL
+#       This gives the TDOS.  All elements, species and types will match, and
+#       only the total DOS data from the available columns for each unit will
+#       be included.
+#   2c) Example curve definition matching the above filter definition line:
+#       Si2_2 : Si : 2 : 2 : TOTAL
+#       This gives the total DOS for silicon atoms of species 2 and type 2.
+#   2d) Example curve definition matching the above filter definition line:
+#       Si_s : Si : all : all : s
+#       This gives the combined s orbitals for all silicon.
+#   2e) Example curve definition matching the above filter definition line:
+#       Si_2_3_4 : Si : 2 3 4 : all : TOTAL
+#       This gives the the combined DOS for silicon of species 2, 3, and 4.
+#
+###########################################################
+
+###########################################################
+# Use necessary modules
+###########################################################
+use strict;
+use warnings;
+use Env;
+use lib "$OLCAO_BIN/perl5";
+use StructureControl;
+
+
+###########################################################
+# Define global variables.
+###########################################################
+
+# File Names
+my $controlFile;
+my $rawDataFile;
+my $outputFile;
+
+# Command Line Parameters Flags
+my $negToZero;
+my $xanes;
+my $usingDefaultControl;
+
+# Data descriptors
+my $numUnits;
+my $numEnergyPoints;
+my @energyPoint; # The value of the energy at each point on the energy scale.
+my $numColDefs;  # The number of different data columnes that will be made.
+my @colDef;     # The name for each data column.
+my @pdosColData; # The columns of pdos data to be made.
+my @format;
+
+# Globally used temporary variables and loop variables.
+my @values;
+my $line;
+my $i;
+my $j;
+my $k;
+my $l;
+my $m;
+
+###########################################################
+# Begin execution of the script
+###########################################################
+
+# Initialize program environment from command line parameters
+&initCLP;
+
+# Read the initialization data from the raw pdos file.
+&initPDOS;
+
+# Read the control file if one exists to define the filters.  If no
+#   control file was given, then define default filters.
+if ($controlFile ne "")
+   {&readControl;}
+else
+   {&defaultControl;}
+
+# Read the PDOS data file and accumulate the column results.
+&readData;
+
+# Print the results
+&printResults;
+
+###########################################################
+#End execution of the script
+###########################################################
+
+
+
+
+# Subroutine to initialize the environment from the command line.
+sub initCLP
+{
+   # Define local variables.
+   my $number;
+
+   # Initialize the default file names.
+   $controlFile = "";
+   $rawDataFile = "gs_dos-fb.p.raw";
+   $outputFile  = "PDOS.plot";
+   $negToZero   = 0;
+
+   # Assume that we will not perform a XANES style orbital decomposition.
+   $xanes=0;
+
+   $number = 0;
+   while ($number < scalar(@ARGV))
+   {
+      if ($ARGV[$number] eq "-i")
+         {$controlFile = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-f")
+         {$rawDataFile = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-o")
+         {$outputFile = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-xanes")
+         {$xanes=1;}
+      elsif ($ARGV[$number] eq "-negToZero")
+         {$negToZero=1;}
+      elsif ($ARGV[$number] eq "-help")
+         {&printHelp;}
+      else
+      {
+         print STDOUT "UNKNOWN COMMAND LINE PARAMETER $ARGV[$number]. ABORTING.\n";
+         exit;
+      }
+
+      $number++;
+   }
+
+   # Record the command line used.
+   open (COMMANDLINE,">>command");
+   print COMMANDLINE "makePDOS ";
+   for ($i = 0; $i <= $#ARGV; $i++)
+      {print COMMANDLINE "$ARGV[$i] ";}
+   print COMMANDLINE "\n";
+   close (COMMANDLINE);
+}
+
+# Read in the initialization data from the PDOS file.
+sub initPDOS
+{
+   open (PDOS,"<$rawDataFile") || die "Cannot open $rawDataFile file.\n";
+
+   # Get the number of PDOS units in this data file.
+   @values = StructureControl::prepLine(\*PDOS,$line,'\s+');
+   $numUnits = $values[$#values];
+
+   # Get the number of energy points for each unit.
+   @values = StructureControl::prepLine(\*PDOS,$line,'\s+');
+   $numEnergyPoints = $values[$#values];
+
+   # Get the energy values that apply to each unit.
+   for ($i=1;$i<=$numEnergyPoints;$i++)
+   {
+      @values = StructureControl::prepLine(\*PDOS,$line,'\s+');
+      $energyPoint[$i] = $values[0];
+   }
+}
+
+
+# Read in the control file if one was requested.
+sub readControl
+{
+   # Define local variables.
+   my $numFilterTerms;
+   my @filterTermTemp;
+   my @formatNameTemp;
+   my @range;
+
+   # Set a flag so that when the raw PDOS data is read in it will know that it
+   #   is not using the default control file.
+   $usingDefaultControl = 0;
+
+   # Open the control file for reading.
+   open (CONTROL, "<$controlFile") || die "Cannot open $controlFile file.\n";
+
+   # Obtain the format line for the column definitions in the control file.
+   @values = StructureControl::prepLine(\*CONTROL,$line,':');
+
+   # Split the format identifiers into separate array indices.
+   for ($i=0;$i<=$#values;$i++)
+   {
+      @formatNameTemp = split(/\s+/,"$values[$i]");
+      if ($formatNameTemp[0] eq "")
+         {shift @formatNameTemp;}
+
+      # Store the individual format name.  Note the +1 for the index so that it
+      #   starts counting at 1.
+      $format[$i+1] = $formatNameTemp[0];
+   }
+
+   # Read each column definition in the control file following the above format.
+   $numColDefs = 0;
+   while ($line = <CONTROL>)
+   {
+      # Increment the number of column definitions read in so far.
+      $numColDefs++;
+
+      # Read the column definition on this line and store its filter parts in
+      #   the definition array.
+      @values = StructureControl::prepLine("",$line,':');
+      for ($i=0;$i<=$#values;$i++)
+      {
+         # Initialize a counter for the number of terms in this filter part.
+         $numFilterTerms = 0;
+
+         # Separate out the number of terms in each filter part and store them.
+         @filterTermTemp = split(/\s+/,$values[$i]);
+         if ($filterTermTemp[0] eq "")
+            {shift @filterTermTemp;}
+
+         for ($j=0;$j<=$#filterTermTemp;$j++)
+         {
+            # Abort if the name is empty because it may be the last item and
+            #   we don't want to store an empty filter term.  (Basically I am
+            #   checking the split of " something ".  The last space may create
+            #   an extra item at the end.
+            if ($filterTermTemp[$j] eq "")
+               {last;}
+
+            # Determine if the filter term is a range and act accordingly.
+            if ($filterTermTemp[$j] =~ /\-/)
+            {
+               @range = split(/\-/,$filterTermTemp[$j]);
+               for ($k=$range[0];$k<=$range[1];$k++)
+               {
+                  # Increment the number of filter terms for each member in the
+                  #   range.
+                  $numFilterTerms++;
+
+                  $colDef[$numColDefs][$i+1][$numFilterTerms] = $k;
+               }
+            }
+            else
+            {
+               # Increment the number of filter terms.
+               $numFilterTerms++;
+
+               # Store the individual filter term.  Note the +1 for the index
+               #   so that it starts counting at 1.
+               $colDef[$numColDefs][$i+1][$numFilterTerms] = 
+                     $filterTermTemp[$j];
+            }
+         }
+      }
+   }
+
+   # Close the control file.
+   close (CONTROL);
+}
+
+
+# Define a default 'control file' that will make a default format and column
+#   definitions.
+sub defaultControl
+{
+   # Define local variables.
+
+   # Set a flag so that when the raw PDOS data is read in it will know that it
+   #   is using the default control settings.  This will be helpful for
+   #   assigning column names.
+   $usingDefaultControl = 1;
+
+   $format[1] = "NAME";
+   $format[2] = "SEQUENCE_NUM";
+   $format[3] = "COL_LABELS";
+
+   # Use the number of units as the default number of columns except for the
+   #   case of XANES decomposition where we double it.  1 curve for s+d and 1
+   #   curve for p states.
+   if ($xanes==0)
+      {$numColDefs = $numUnits;}
+   else
+      {$numColDefs = $numUnits*2;}
+
+
+   for ($i=1;$i<=$numColDefs;$i++)
+   {
+      # The title of this column will be filled in later when the actual data
+      #   is read.  So, $colDef[$i][1] is left blank.
+
+      if ($xanes==0)
+      {
+         # Use the sequence number and the total PDOS for this unit.
+         $colDef[$i][2][1] = $i;
+         $colDef[$i][3][1] = "TOTAL";
+      }
+      else
+      {
+         # The first ($numUnits) columns are for the s+d orbitals and the
+         #   next ($numUnits) columns are for the p orbitals.
+         if ($i<=$numUnits)
+         {
+
+            $colDef[$i][2][1] = $i;
+            $colDef[$i][3][1] = "s";
+            $colDef[$i][3][2] = "d";
+         }
+         else
+         {
+            $colDef[$i][2][1] = $i-$numUnits;
+            $colDef[$i][3][1] = "p";
+         }
+      }
+   }
+}
+
+
+# Read in the PDOS data and accumulate the results.
+sub readData
+{
+   # Define local variables.
+   my $matchesDefinition;
+   my $currentTermValue;
+   my $currentRequest;
+   my $tailID;
+   my $currentKey;
+   my $numColLabels;
+   my @inputColLabels;
+   my %unitHash;
+   my @unitData;
+
+   # Initialize the PDOS data accumulators
+   for ($i=1;$i<=$numColDefs;$i++)
+   {
+      for ($j=1;$j<=$numEnergyPoints;$j++)
+         {$pdosColData[$i][$j] = 0;}
+   }
+
+
+   # Read each PDOS data unit.
+   for ($i=1;$i<=$numUnits;$i++)
+   {
+      my $numLines;
+
+      # Repeatedly read a filter name from the PDOS file and store it in the
+      #   hash for this unit.
+      while (1)
+      {
+         @values = StructureControl::prepLine(\*PDOS,$line,'\s+');
+
+         # Get the key name.
+         $currentKey = shift (@values);
+
+         # Get the value.  (In the case of the COL_LABELS we save the values in
+         #   an array, all other cases are stored in a hash table.)
+         if ($currentKey eq "COL_LABELS")
+         {
+            $numColLabels = shift (@values);
+
+            if ($numColLabels%6 == 0)
+               {$numLines = $numColLabels/6;}
+            else
+               {$numLines = int($numColLabels/6)+1;}
+
+            # Obtain all the column label values and then leave the while loop.
+            foreach my $dataLine (1..$numLines)
+            {
+               @values = StructureControl::prepLine(\*PDOS,$line,'\s+');
+               for ($j=0;$j<=$#values;$j++)
+                  {push(@inputColLabels,$values[$j]);}
+               unshift (@inputColLabels,"");
+            }
+            last;
+         }
+         else
+            {$unitHash{"$currentKey"} = $values[0];}
+      }
+
+
+      # Read the columns of data for this unit.
+      for ($j=1;$j<=$numEnergyPoints;$j++)
+      {
+         foreach my $dataLine (1..$numLines)
+         {
+            @values = StructureControl::prepLine(\*PDOS,$line,'\s+');
+            for ($k=0;$k<=$#values;$k++)
+               {push (@{$unitData[$j]},$values[$k]);}
+            unshift (@{$unitData[$j]},"");
+         }
+      }
+
+
+
+      # Consider each column definition in turn and determine if this data
+      #   unit matches the filter terms appropriately.  When it matches all the
+      #   filter terms, then each requested data column from the column
+      #   definition will be processed.  This means that each requested column
+      #   will be compared to the available columns.  When an available column
+      #   in the provided data matches a requested column, then that column of
+      #   unit data will be accumulated into the data for the output column of
+      #   that column definition.
+      for ($j=1;$j<=$numColDefs;$j++)
+      {
+         # Assume that the data unit matches this definition.
+         $matchesDefinition = 1;
+
+         # Consider all column definition format names except the output
+         #   label (1), and the input data column label (last).  The current
+         #   unit must match every definition format name to have the chance
+         #   of being included in the current column's output.
+ FORMAT: for ($k=2;$k<=$#format-1;$k++)
+         {
+            # If the data unit does not match the definition, then we should
+            #   abort and move on to the next column definition.
+            if ($matchesDefinition == 0)
+               {last;}
+
+            # Take the current format name and use it as a key to get the value
+            #   of that term for this input data unit.
+            $currentTermValue = $unitHash{$format[$k]};
+
+            # Compare this data unit's term value to the acceptable values
+            #   for this column definition's term.
+            for ($l=1;$l<=$#{$colDef[$j][$k]};$l++)
+            {
+               # Check if it matches this column definition's term value.
+               if (("$currentTermValue" eq "$colDef[$j][$k][$l]") ||
+                   ("$colDef[$j][$k][$l]" eq "all"))
+                  {next FORMAT;}
+            }
+
+            # The term value for this data unit does not match any acceptable
+            #   terms for this column.
+            $matchesDefinition = 0;
+         }
+
+         # If there was no match, then we move on to the next column definition.
+         if ($matchesDefinition == 0)
+            {next;}
+
+         # If there was a match so far, now we compare the available data
+         #   columns for this unit with the requested column labels.  Any
+         #   time a column matches a request it will be added to the PDOS
+         #   for this output column.
+         for ($k=1;$k<=$#{$colDef[$j][$#format]};$k++)
+         {
+            # Get this iteration's requested column type.
+            $currentRequest = $colDef[$j][$#format][$k];
+
+            # Compare it to each of the available columns.
+            for ($l=1;$l<=$#inputColLabels;$l++)
+            {
+               # Check for a match.  If there is one, then accumulate that data.
+               if ((index($inputColLabels[$l],$currentRequest) >= 0) || 
+                   ($currentRequest eq "all"))
+               {
+                  for ($m=1;$m<=$numEnergyPoints;$m++)
+                     {$pdosColData[$j][$m] += $unitData[$m][$l];}
+
+                  # If this accumulation is using the default column
+                  #   definitions then we need to give the column a name.
+                  #   Since the default uses only one data unit per column
+                  #   we can give the name now that the match has been found.
+                  if ($usingDefaultControl == 1)
+                  {
+                     if ($xanes==0)
+                        {$tailID="";}
+                     else
+                     {
+                        if ($j<=$numUnits)
+                           {$tailID="_sd";}
+                        else
+                           {$tailID="_p";}
+                     }
+                     $colDef[$j][1][1] = $unitHash{"ELEMENT_NAME"} . "_" .
+                                         $unitHash{"SPECIES_ID"} . "_" .
+                                         $unitHash{"TYPE_ID"} . $tailID;
+                  }
+               }
+            }
+         }
+      }
+
+      # Undefine the input column labels, unit id hash, and unitData so that
+      #   they can be filled properly again with the next unit's data.
+      undef (@inputColLabels);
+      undef (%unitHash);
+      undef (@unitData);
+   }
+}
+
+
+# Print out the results of the PDOS collection.
+sub printResults
+{
+
+   # Open the output file.
+   open (OUTPUT,">$outputFile") || die "Cannot open $outputFile file.\n";
+
+   # Put on the header of column labels.
+   printf OUTPUT ("%10s","ENERGY");
+   for ($i=1;$i<=$numColDefs;$i++)
+      {printf OUTPUT ("%10s",$colDef[$i][1][1]);}
+   print OUTPUT "\n";
+
+   for ($i=1;$i<=$numEnergyPoints;$i++)
+   {
+      # Print the energy point for this iteration.
+      printf OUTPUT ("%10.4f",$energyPoint[$i]);
+
+      for ($j=1;$j<=$numColDefs;$j++)
+      {
+         if (($negToZero == 1) && ($pdosColData[$j][$i] < 0))
+            {printf OUTPUT ("%10.4f",0.0);}
+         else
+            {printf OUTPUT ("%10.4f",$pdosColData[$j][$i]);}
+      }
+      print OUTPUT "\n";
+   }
+
+   close (OUTPUT);
+}
+
+# This subroutine is used to print out helpful information about how to use
+#   the program.
+sub printHelp
+{
+   print STDOUT <<ENDHELP;
+#PROGRAM:  makePDOS
+#PURPOSE:  This program will read a raw PDOS data file for the purpose of
+#   collecting the various data components and combining them according to the
+#   requests of the command line and a user created control file.
+#
+#The -i option is used to provide a control file that defines how to collect
+#   and organize the data from the raw pdos file.  The format of the control
+#   file is given below.
+#
+#The -o option is used to override the default output file name.  The default
+#   is PDOS.plot.
+#
+#The -f option is used to override the default raw data file name.  The default
+#   is gs_pdos-fb.raw.
+#
+#The -xanes option will alter the default control file (produced internally)
+#   to have the curves decomposed into s+d and p states.
+#
+#To understand the format of the control file it is necessary to first
+#   understand the nature of the raw input file.  The raw PDOS input file has
+#   a header followed by a series of data units.
+#   1)  The header:  The first line of the header lists the number of data
+#       units in the file.  The second line of the header lists the number of
+#       data points in the energy scale for each unit.  The last part of the
+#       header is a list of the data points of the energy scale.  This is
+#       typically a few thousand points with each point on a new line.
+#   2)  The data units:  Each data unit is divided into two parts.  The data
+#       unit header, and the data unit data.
+#   2a) The data unit header consists of a series of filter name / filter value
+#       pairs.  The first filter name is always "SEQUENCE_NUM" and the last
+#       filter name is always "COL_LABELS".  The meaning of the first filter
+#       value depends on whether the data was printed according to the atom
+#       or atomic type.  So, it is either the atom number or the type number.
+#       The last filter value is actually a long string of space separated
+#       names that correspond to the data columns that were printed for this
+#       data unit.  In the case of raw data printed according to atom, there is
+#       only one data column called "TOTAL".  In the case of raw data printed
+#       according to atomic types there are many data columns with names such
+#       as, "TOTAL 2s 3s 2p 3p 3d".
+#   2b) The data unit data consists of columns of data corresponding to the
+#       energy scale from the data file's header.  The number of columns for
+#       each data type depends on the type of print out that was requested.
+#       In the case where the data was printed according to the atoms, there is
+#       only one column of data per data unit.  This column is the total PDOS
+#       for that arom.  In the case where the data was printed according to the
+#       atomic types, there are many columns of data depending on the valence
+#       orbitals that were included in this type.  There is one column for the
+#       total PDOS of this type, and there is one column for each valence
+#       orbital of this type.
+#       
+#The format of the control file can be understood as follows:
+#   1)  The first line is used to define the format of the remaining lines.  It
+#       consists of a series of colon separated character strings called tags.
+#       The first tag is always "LABEL" and the last tag is always "COL_LABELS".
+#       The tags in between can use any name from the lists of available filter
+#       names present in the raw data file (e.g. SEQUENCE_NUM or ELEMENT_NAME).
+#       This first line is called the "filter definition line".
+#   2)  The remaining lines are also colon separated lists of strings, but
+#       they will follow the format defined in the filter definition line and
+#       include the filter values instead of the filter names.  Each of these
+#       lines will correspond to one column of output data and thus  one curve
+#       when plotted.  An important thing to understand is that the filter
+#       values can be listed as a set of values within the colon separated
+#       list.  In this way a number of data units can potentially match the
+#       curve you are defining.  Some examples are in order.
+#   2a) Example filter definition line:
+#       LABEL : ELEMENT_NAME : SPECIES_ID : TYPE_ID : COL_LABELS
+#       This line indicates that each of the remaining lines should contain
+#       a set of values defining a label for the curve, which elements should
+#       contribute to the curve, which species of those elements should
+#       contribute to the curve, and which types of those species should
+#       contribute to the curve.  The last filter name in this line indicates
+#       that the available data columns should be filtered now.
+#   2b) Example curve definition matching the above filter definition line:
+#       TOTAL : all : all : all : TOTAL
+#       This gives the TDOS.  All elements, species and types will match, and
+#       only the total DOS data from the available columns for each unit will
+#       be included.
+#   2c) Example curve definition matching the above filter definition line:
+#       Si2_2 : Si : 2 : 2 : TOTAL
+#       This gives the total DOS for silicon atoms of species 2 and type 2.
+#   2d) Example curve definition matching the above filter definition line:
+#       Si_s : Si : all : all : s
+#       This gives the combined s orbitals for all silicon.
+#   2e) Example curve definition matching the above filter definition line:
+#       Si_2_3_4 : Si : 2 3 4 : all : TOTAL
+#       This gives the the combined DOS for silicon of species 2, 3, and 4.
+#
+#USAGE:  makePDOS [-i \$controlFile] [-o \$outputFile] [-f \$rawDataFile]
+#                 [-xanes] [-help]
+#
+ENDHELP
+   exit;
+}

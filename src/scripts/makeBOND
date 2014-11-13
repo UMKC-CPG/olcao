@@ -1,0 +1,2278 @@
+#!/usr/bin/perl
+sub printHelp
+{
+   print <<ENDHELP;
+#Program: makeBOND
+#Last Modified:  March 30, 2012
+#Purpose:  To parse the bondorder output file and create a number of other
+#          files that can be easily plotted by either openDX or origin, etc.
+#
+#USAGE:  makeBOND [-data \$dataFile] [-pos \$posFile]
+#                 [-bc \$bondControlFile] [-gc \$groupControlFile]
+#                 [-maxbo \$maxBO] [-minbo \$minBO]
+#                 [-maxbl \$maxBL] [-minbl \$minBL]
+#                 [-scatter]
+#                 [-profile \$profileAxis]
+#                 [-model [[-atom] | [-bond]] [-rf \$radiusFactor] [-grey]]
+#                 [-mesh [-atom \$compAtom] [-steps \$a \$b \$c] [-fwhm \$fwhm]
+#                        [-limit \$limitDist]]
+#                 [-help]
+
+#It is assumed that the calculated bond order and qstar data will be in the
+#   gs_bond-mb.raw file.  This default can be overridden with the -data option.
+#
+#It is also assumed that the atomic positions will be in the gs_bond-mb.out
+#   file.  This default can be overridden with the -pos option.
+#   In any case the format of the position file must be that of the current
+#   olcao output file.  This has the positions sorted by types.
+#
+#The -bc option is used to define a file that will filter bonds from the raw
+#   output file based bond length, and bond order for each atomic element.
+#   The format of the file is a series of consecutive lines of five space
+#   separated columns of data.  The first column is a tag of either "BO" or
+#   "BL" which indicates that the line represents a restriction for the bond
+#   order or the bond length.  The second and third values are the element
+#   names from the periodic table of the elements.  The fourth and fifth
+#   values are the min and max ranges for the bond order or the bond length
+#   for that element pair.  You can provide as many lines as you wish and they
+#   are applied IN ADDITION to the command line options.
+#
+#The -gc option is used to define a file that will group the output in a
+#   specific way that often corresponds to the definitons in a HIN file.  The
+#   format of the file is a series of space separated names that correspond
+#   to names that are available in the bond order/Q* raw data file.  Each name
+#   that is given is used to construct the tag for all atoms and bonds.  For
+#   example if the filter names are:  "ELEMENT_NAME SPECIES_ID"  Each atom
+#   will then have a tag created with its element name and species id number.
+#   These tags are used to separate the atoms into separate files.
+#
+#The -maxbo and -minbo options take one argument each that will make it so any
+#   printout will not contain any bonds with a bond order greater/less than the
+#   given argument.  This is often used in place of a bondControlFile, but it
+#   applies to all atoms independent of element so it is only useful if you
+#   want to apply conditions to all atoms.
+#
+#The -maxbl and -minbl options take one argument each that will make it so any
+#   printout will not contain any bonds with a length greater/less than the
+#   given argument.  This is often used in place of a bondControlFile, but it
+#   applies to all atoms independent of element so it is only useful if you
+#   want to apply conditions to all atoms.
+#
+#The default output style is to make a scatter plot using the species of the
+#   system as the grouping criterion for both the qstar and bond order.
+#
+#The -scatter option will create multiple files that can be imported by an
+#   associated origin script and made into a scatter plot.  The files will
+#   contain specific groups of atoms based on either the element and species
+#   id or the group control file.
+#
+#The -profile option will produce a simple data file that can be plotted as a
+#   curve indicating the bond profile along a specifc axis.  The bond profile
+#   at a given point along a \$profileAxis is simply the sum of the bond orders
+#   for all the bonds that cross that point divided by the number of bonds.
+#   The acceptable values for \$profileAxis are "a", "b", or "c".  At present
+#   the -profile option will only make one file for the whole system and
+#   is not separated according to any criteria.
+#
+#The -model option will produce multiple openDX format files that describe
+#   a model of the system containing specific sets of atoms and bonds that
+#   can be drawn using color coding to illustrate their relative bond order
+#   and charge transfer.  The openDX files contain info to draw the atoms as
+#   spheres with the color statically coded according to the values in the
+#   database.  The size of the sphere is given as the covalent radius by
+#   by default, but this can be adjusted by the -rf suboption.  The
+#   \$radiusFactor that is given for the -rf suboption will multiply against
+#   the default radius.  The -grey suboption will make the spheres appear in
+#   grey-scale instead of color.  The most important suboptions for -model are
+#   the -atom and -bond suboptions.  If the -atom suboption is given, then the
+#   openDX models will contain specific sets of atoms and the bonds in the
+#   model must contain at least one atom from that set.  If the -bond suboption
+#   is given, then the openDX models will contain specific sets of bonds and
+#   the atoms in the model must be present as one of the ends of the bond.
+#
+#The -mesh option will produce a 3D mesh of data points for display in openDX.
+#   The values at each mesh point are computed by averaging the values of
+#   select data (e.g. BO values at the bond midpoint) from nearby data points.
+#   The suboption -atom is used to request that the properties of a specific
+#   atom are subtracted from the mesh point values to create a difference mesh.
+#   The -step option is used to define the mesh grid.  The -fwhm option is
+#   used to specify how to weight the nearby values.  This is the full width
+#   at half the maximum height of the gaussian function that is used for
+#   applying the weights.  The -limit suboption specifies the maximum distance
+#   of separation between a bond point and a mesh point.
+
+#Other notes:
+
+#There are four important distinctions that must be made concerning the atoms
+#  in the calculation.  First, there is a total number of atoms in the system.
+#  These atoms are divided into three groups.  The first is type, the second is
+#  species, and the third is element.
+
+#Element refers to the elemental type.  An atom is either a carbon or a silicon
+#  or a nitrogen etc.  The set of elements is the smallest set.  It may contain
+#  only two elements (si and n for g-si3n4).  If we make a substitution of a
+#  carbon atom for a silicon in the tetrahedral configuration, then the set of
+#  elements increases by one.  It now contains (si, n, and c).  If we make a
+#  second substitution in the same system of another carbon for a silicon in
+#  the octahedral configuration, the elemental set stays the same.  This scheme
+#  is pretty obviously inflexible and set in stone.  The element set only deals
+#  with the elements in the system, and not the system relations itself.
+
+#Species refers to the atoms that share the same global symmetry and/or a
+#  similar local configuration prior to any system modification.  So, in
+#  crystalline g-si3n4 there are two species of si.  One in a tetrahedral
+#  configuration and one in an octahedral configuration.  There is still only
+#  one species of n.  For complex systems with little or no symmetry the
+#  species are defined by their local configurational similarities.  Those
+#  atoms that have similar neighbor atoms at similar distances will be treated
+#  at the same species.
+
+#Type refers to the atoms that should be considered equivalent by the
+#  calculation.  Often the assignment of types is the exact same as the
+#  assignment of species.  In some cases it is desired to distinguish atoms
+#  of the same species and make them have different potential coefficients
+#  (i.e. a different potential type or different type).  This is true for
+#  XANES calculations or cases where we just assign all atoms in a region to
+#  have different types because they cannot be easily grouped in any other way.
+ENDHELP
+exit;
+}
+
+
+######################################################################
+#Begin execution of the script here
+######################################################################
+# Use necessary modules.
+use strict;
+use warnings;
+use Env;
+use lib "$OLCAO_BIN/perl5";
+use POSIX qw(ceil floor);
+use StructureControl;
+use ElementData;
+
+# Declare global variables.
+my $time;
+my $bohrRad;
+my $alpha;
+my $sigma;
+my $dataFile;
+my $posFile;
+my $bondControlFile;
+my $groupControlFile;
+my $bondProfileFile;
+my $requirementsPassed;
+my $scatterPlot;
+my $bondProfilePlot;
+my $profileAxis;
+my $systemModelDX;
+my $meshDX;
+my @meshBODX;
+my $atomBasedDX;
+my $bondBasedDX;
+my $minBO;
+my $maxBO;
+my $minBL;
+my $maxBL;
+my $radiusFactor;
+my $greyScale;
+my $numSystemBonds;
+my $numAtoms;
+my @bondAtom;
+my @bondLength;
+my @bondOrder;
+my @numBondsByAtom;
+my @bondAtomByAtom;
+my @bondLengthByAtom;
+my @bondOrderByAtom;
+my @numFilters;
+my @filterName;
+my @filterValue;
+my @elementName;
+my @elementZ;
+my @atomQStar;
+my @atomTag;
+my @uniqueAtomTag;
+my @uniqueBondTag;
+my $numUniqueAtomTags;
+my $numUniqueBondTags;
+my $uniqueTagDX;
+my @bondTag;
+my @groupName;
+my $numGroups;
+my $numBOLimits;
+my $numBLLimits;
+my @BOLimits;
+my @BLLimits;
+my @realLattice;
+my @a;
+my @b;
+my @c;
+my $magA;
+my $magB;
+my $magC;
+my $cellDeterminate;
+my @xFactor;
+my @yFactor;
+my @zFactor;
+my @xPos;
+my @yPos;
+my @zPos;
+my @aPos;
+my @bPos;
+my @cPos;
+my @aBondPos;
+my @bBondPos;
+my @cBondPos;
+my @xBondPos;
+my @yBondPos;
+my @zBondPos;
+my @atomMinBO;
+my @atomMaxBO;
+my @atomAvgBO;
+my @atomMinBL;
+my @atomMaxBL;
+my @atomAvgBL;
+my $extBondPosDone;
+my $numBondsExt;
+my $numAtomsExt;
+my @xPosExt;
+my @yPosExt;
+my @zPosExt;
+my @aPosExt;
+my @bPosExt;
+my @cPosExt;
+my @xPosExtDX;
+my @yPosExtDX;
+my @zPosExtDX;
+my @bondAtomExt;
+my @bondOrderExt;
+my @bondTagExt;
+my @atomTagExt;
+my @atomMap2DX;
+my $numAtomsDX;
+my $numAtomsExtDX;
+my @atomColorDX;
+my @atomRadiusDX;
+my @atomChargeTransferDX;
+my $numBondsDX;
+my @bondAtomDX;
+my @bondOrderDX;
+my @atomRadius;
+my @atomColor;
+my @atomChargeTransfer;
+my $compAtom;
+my @numMeshPoints;
+my $fwhm;
+my @delta;
+my @scanPoints;
+my $numScanPoints;
+my @abcBondPos;
+my @xyzBondPos;
+my $limitDist;
+
+#References to data structures in ElementData.pm
+my $colorDX_ref;
+my $greyDX_ref;
+my $valeCharge_ref;
+my $covalRadii_ref;
+
+print STDOUT "\n\nScript Executing.\n\n";
+
+#Define file names, initialize global variables, set database locations etc.
+$time = `date`;
+chomp ($time);
+print STDOUT "\nInitializing the environment at..............$time.\n";
+&initEnv;
+
+
+#Parse the command line.
+$time = `date`;
+chomp ($time);
+print STDOUT "\nParsing the command line parameters at.......$time.\n";
+&parseCLP;
+
+
+#Get the system structure:  Lattice constants, atom types, and atom positions.
+$time = `date`;
+chomp ($time);
+print STDOUT "\nGetting system data at.......................$time.\n";
+&getSystemStructure;
+
+
+#Read the control files if any were provided.  If not, create the default
+#   control definitions.
+$time = `date`;
+chomp ($time);
+print STDOUT "\nReading control files at.....................$time.\n";
+&readControlFiles;
+
+
+#Read in the raw bond order data and store the results in convenient arrays.
+$time = `date`;
+chomp ($time);
+print STDOUT "\nReading in raw data at.......................$time.\n";
+&readData;
+
+
+#Compute the implicit data for each atom and bond.
+$time = `date`;
+chomp ($time);
+print STDOUT "\nComputing the implicit data at...............$time.\n";
+&implicitData;
+
+
+#Print the results in the command line requested form.
+if ($scatterPlot == 1)
+{
+   #Print the results into multiple files in a form that can be imported by
+   #   the associated origin script (or some other program) for plotting of
+   #   the bond order and charge transfer results in the form of a scatter plot.
+   $time = `date`;
+   chomp ($time);
+   print STDOUT "\nPrinting scatter plot data at................$time.\n";
+   &printScatterData;
+}
+elsif ($systemModelDX == 1)
+{
+   #Print the results in a form usable by the openDX program for drawing a
+   #   structure model with bonds colored according to bond order value, and
+   #   atoms drawn with colors corresponding to charge transfer value, etc.
+   $time = `date`;
+   chomp ($time);
+   print STDOUT "\nPrinting openDX model data at................$time.\n";
+   &printModelData;
+}
+elsif ($meshDX == 1)
+{
+   #Print the results in the form of an openDX 3D mesh.  Each mesh point
+   #   contains the weighted sum of contributions from nearby bonds.  The
+   #   results are the bond order results.
+   $time = `date`;
+   print STDOUT "\nPrinting openDX bond order mesh at...........$time.\n";
+   &print3DMeshData;
+}
+elsif ($bondProfilePlot == 1)
+{
+   #Print the results into one file to be plotted as a curve indicating the
+   #   bond profile along the command line specified axis.
+   $time = `date`;
+   chomp ($time);
+   print STDOUT "\nPrinting bond profile data at................$time.\n";
+   &printBondProfile;
+}
+$time = `date`;
+chomp ($time);
+
+print STDOUT "\nScript complete at...........................$time.\n\n";
+
+
+######################################################################
+#End execution of the script here
+######################################################################
+
+# This subroutine will parse the command line, define file names,
+#  initialize global variables, identify database locations etc.
+sub initEnv
+{
+   # Initialize the element data from the database.
+   ElementData::initElementData;
+
+   #Initialize some fundamental values
+   $bohrRad = StructureControl::getBohrRad;
+   $covalRadii_ref = ElementData::getCovalRadiiRef;
+   $valeCharge_ref = ElementData::getValeChargeRef;
+   $colorDX_ref = ElementData::getColorDXRef;
+   $greyDX_ref = ElementData::getGreyDXRef;
+
+   #Set some initial defaults for the file names to be used if they are not
+   #   given on the command line.
+   $dataFile = "gs_bond-mb.raw";
+   $posFile = "gs_bond-mb.out";
+   $bondControlFile = "";
+   $groupControlFile = "";
+   $bondProfileFile = "bondProfile.plot";
+
+   #Initialize execution flags.
+   $extBondPosDone = 0;  #The extended bond positions flag will be set if the
+                         #   positions of bonded atoms outside the cell are
+                         #   obtained.
+
+   #Initialize some command line variables.
+   $scatterPlot = 0;     #Initialize scatter plot to zero, but this will be
+                         #   set to one later if none of the other output
+                         #   schemes are selected on the command line.
+   $systemModelDX   = 0; #Assume to not be doing a system model diagram.
+   $meshDX          = 0; #Assume to not be doing a 3D mesh of the data.
+   $atomBasedDX     = 1; #Assume any openDX model is made to be atom based.
+   $bondBasedDX     = 0; #Assume any openDX model is not made to be bond based.
+   $bondProfilePlot = 0; #Assume to not be doing a bond profile plot.
+   $minBO = -1000;       #Assume inclusion of all bond strengths in all output.
+   $maxBO =  1000;       #Assume inclusion of all bond strengths in all output.
+   $minBL = 0;           #Assume inclusion of all bonds in all output.
+   $maxBL = 1000;        #Assume inclusion of all bonds in all output.
+   $radiusFactor = 1;    #Assume that the radius of the spheres for the model
+                         #   are the covalent radii.
+   $greyScale = 0;      #The spheres for the bond order model will be in color
+                         #   by default.
+
+   $compAtom = 0;
+   $fwhm     = 2;
+   $numMeshPoints[1] = 10;
+   $numMeshPoints[2] = 10;
+   $numMeshPoints[3] = 10;
+   $limitDist = 4.0;
+
+   #Initialize some program constants.
+   $sigma = 1.0 / (2.0*sqrt(2.0*log(2.0))/$fwhm);
+   $alpha = 1/(2.0*$sigma*$sigma);
+}
+
+sub parseCLP
+{
+   # Define local variables.
+   my $number=0;
+   my $argument;
+   my $commandLine = "command";
+   my $i;
+
+   #Parse the command line for script parameters
+   while ($number < scalar(@ARGV))
+   {
+      if ($ARGV[$number] eq "-data")
+         {$dataFile = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-pos")
+         {$posFile = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-bc")
+         {$bondControlFile = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-gc")
+         {$groupControlFile = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-scatter")
+         {$scatterPlot=1;}
+      elsif ($ARGV[$number] eq "-model")
+      {
+         $systemModelDX=1;
+         for ($i=1;$i<=3;$i++)
+         {
+            if ($ARGV[$number+1] eq "-rf")
+            {
+               $radiusFactor = $ARGV[$number+2];
+               $number += 2;
+            }
+            elsif ($ARGV[$number+1] eq "-grey")
+            {
+               $greyScale = 1;
+               $number++;
+            }
+            elsif ($ARGV[$number+1] eq "-atom")
+            {
+               $atomBasedDX = 1;
+               $bondBasedDX = 0;
+               $number++;
+            }
+            elsif ($ARGV[$number+1] eq "-bond")
+            {
+               $bondBasedDX = 1;
+               $atomBasedDX = 0;
+               $number++;
+            }
+         }
+      }
+      elsif ($ARGV[$number] eq "-profile")
+      {
+         $bondProfilePlot=1;
+         $profileAxis = $ARGV[$number+1];
+         $number++;
+      }
+      elsif ($ARGV[$number] eq "-mesh")
+      {
+         $meshDX = 1;
+         for ($i=1;$i<=4;$i++)
+         {
+            if ($number+1 == scalar(@ARGV))
+               {last;}
+
+            if ($ARGV[$number+1] eq "-atom")
+            {
+               $compAtom = $ARGV[$number+2];
+               $number += 2;
+            }
+            elsif ($ARGV[$number+1] eq "-steps")
+            {
+               $numMeshPoints[1] = $ARGV[$number+2];
+               $numMeshPoints[2] = $ARGV[$number+3];
+               $numMeshPoints[3] = $ARGV[$number+4];
+               $number += 4;
+            }
+            elsif ($ARGV[$number+1] eq "-fwhm")
+            {
+               $fwhm = $ARGV[$number+2];
+               $number += 2;
+            }
+            elsif ($ARGV[$number+1] eq "-limit")
+            {
+               $limitDist = $ARGV[$number+2];
+               $number += 2;
+            }
+         }
+      }
+      elsif ($ARGV[$number] eq "-maxbo")
+         {$maxBO = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-minbo")
+         {$minBO = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-maxbl")
+         {$maxBL = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-minbl")
+         {$minBL = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-help")
+         {&printHelp;}
+      else
+      {
+         print STDOUT "UNKNOWN COMMAND LINE PARAMETER $ARGV[$number].";
+         print STDOUT " ABORTING.\n";
+         exit;
+      }
+      $number++;
+   }
+
+   #Assign a default output of scatter plot if no output mode was given.
+   if (($systemModelDX==0) && ($bondProfilePlot==0) && ($meshDX==0))
+      {$scatterPlot=1;}
+
+   #Record the command line used.
+   open (COMMANDLINE,">>$commandLine") ||
+      die "Can not open $commandLine for writing.\n";
+   print COMMANDLINE "makeBOND ";
+   foreach $argument (0..$#ARGV)
+      {print COMMANDLINE "$ARGV[$argument] ";}
+   print COMMANDLINE "\n";
+   close (COMMANDLINE);
+}
+
+
+# This subroutine will read the raw data produced by the olcao bond program.
+sub readData
+{
+   # Define local variables.
+   my $numBondsTemp;
+   my $bondedAtom;
+   my $line;
+   my @values;
+   my $i;
+   my $j;
+
+   # Open the raw data file.
+   open (DATA,"<$dataFile") || die "Can not open $dataFile for writing.\n";
+
+   # Initialize the counter for the total number of bonds.
+   $numSystemBonds = 0;
+
+   # Read the header.
+   @values = StructureControl::prepLine(\*DATA,$line,'\s+');
+   $numAtoms = $values[$#values];
+
+   # Initialize the number of bonds for each atom to zero.  Note that the
+   #   number of bonds by atom is accumulated by looking at both atoms listed
+   #   in the bonds.  This is because the reverse bonds are not listed.  (e.g.
+   #   if a Si to C bond is listed, then that C to Si bond is NOT listed.)
+   for ($i=1;$i<=$numAtoms;$i++)
+      {$numBondsByAtom[$i] = 0;}
+
+   for ($i=1;$i<=$numAtoms;$i++)
+   {
+      # Read the filter names from the data file until the "ATOM_CHARGE"
+      #   label is found.  This indicates the end of the filter names.
+      $numFilters[$i] = 0;
+      while ($line = <DATA>)
+      {
+         # Split the line for processing.
+         chomp ($line);
+         @values = split(/\s+/,$line);
+
+         # Abort when the atom charge is found.
+         if ("$values[0]" eq "ATOM_CHARGE")
+            {last;}
+
+         # Increment the number of filters since we didn't abort.
+         $numFilters[$i]++;
+
+         # Save the filter name and value for this atom.
+         $filterName[$i][$numFilters[$i]] = $values[0];
+         $filterValue[$i][$numFilters[$i]] = $values[1];
+
+         # Save the element name for this atom separately since it will
+         #   come in handy to have the name readily accessible when working
+         #   with the bonds later.
+         if ($values[0] eq "ELEMENT_NAME")
+            {$elementName[$i] = $values[1];}
+      }
+
+      # Store the atom's effective charge.
+      $atomQStar[$i] = $values[1];
+
+      # Get the intrinsic data for this element from the data base.
+      $elementZ[$i] = ElementData::getElementZ(lc($elementName[$i]));
+      $atomRadius[$i] = $covalRadii_ref->[$elementZ[$i]] * $radiusFactor;
+      $atomChargeTransfer[$i] = $atomQStar[$i]-$valeCharge_ref->[$elementZ[$i]];
+      if ($greyScale == 0)
+         {$atomColor[$i] = $colorDX_ref->[$elementZ[$i]];}
+      else
+         {$atomColor[$i] = $greyDX_ref->[$elementZ[$i]];}
+
+      # Obtain the number of bonds that this atom has with other atoms that
+      #   have a higher index number.  Consider the bonds between atom i and
+      #   atom j, we will only count the bonds where i < j.  Otherwise we
+      #   are double counting.
+      @values = StructureControl::prepLine(\*DATA,$line,'\s+');
+      $numBondsTemp = $values[$#values];
+
+      # Add to the number of bonds that this atom has.  It can be
+      #   decremented later if certain bonds do not fit the requested
+      #   bond length or bond order criteria in the bond control file.
+      $numBondsByAtom[$i] += $numBondsTemp;
+
+      # Loop through those bonds to obtain the bonded atom's index number,
+      #   the bond order, and the bond length.
+      for ($j=1;$j<=$numBondsTemp;$j++)
+      {
+         @values = StructureControl::prepLine(\*DATA,$line,'\s+');
+
+         # Store the bond information associated with this atom.
+         $bondAtomByAtom[$i][$j]   = $values[0];
+         $bondLengthByAtom[$i][$j] = $values[1];
+         $bondOrderByAtom[$i][$j]  = $values[2];
+
+         # Store the bond information for the atom at the other end of the bond.
+         $bondedAtom = $values[0];
+         $numBondsByAtom[$bondedAtom]++;
+         $bondAtomByAtom[$bondedAtom][$numBondsByAtom[$bondedAtom]] = $i;
+         $bondLengthByAtom[$bondedAtom][$numBondsByAtom[$bondedAtom]] = 
+               $values[1];
+         $bondOrderByAtom[$bondedAtom][$numBondsByAtom[$bondedAtom]] = 
+               $values[2];
+
+         # Store the bond information for the system.
+         $numSystemBonds++;
+         $bondAtom[$numSystemBonds][1] = $i;
+         $bondAtom[$numSystemBonds][2] = $values[0];
+         $bondLength[$numSystemBonds]  = $values[1];
+         $bondOrder[$numSystemBonds]   = $values[2];
+
+         # Check that this bond fits the requirements laid out in the
+         #   bond control file.
+         &checkRequirements;
+         if ($requirementsPassed == 0)
+         {
+            # Decrement the number of bonds for this atom in the 'ByAtom'
+            #   array and the 'system' array, and the 'ByAtom' array for the
+            #   atom on the other end of the bond.
+            $numBondsByAtom[$i]--;
+            $numSystemBonds--;
+            $numBondsByAtom[$bondedAtom]--;
+         }
+      }
+
+      # Obtain the number of bond angles for this atom.
+   }
+
+   # Close the data file
+   close (DATA);
+}
+
+
+# Compute the implicit data for each atom and bond.
+sub implicitData
+{
+   # Define local variables.
+   my $i;
+   my $j;
+   my $k;
+   my $found;
+   my $tempAtomNum;
+
+   # Build up the tag for each atom using the values for each filter that
+   #   matches the requested group names.
+   for ($i=1;$i<=$numAtoms;$i++)
+   {
+      # Initialize the atom tag with an empty string.
+      $atomTag[$i] = "";
+
+      # Compare each requested group to each available filter and build the
+      #   tag with the values.
+      for ($j=1;$j<=$numGroups;$j++)
+      {
+         for ($k=1;$k<=$numFilters[$i];$k++)
+         {
+            if ($filterName[$i][$k] eq $groupName[$j])
+               {$atomTag[$i] = $atomTag[$i] . substr($groupName[$j],0,1) . 
+                               $filterValue[$i][$k] ."_";}
+         }
+      }
+      # Remove the trailing _ from the last tag addition.
+      chop ($atomTag[$i]);
+   }
+
+   # Make sure that the tag for atom 1 of each bond is alphanumerically
+   #   earlier than the tag name for atom 2 for every bond.
+   for ($i=1;$i<=$numSystemBonds;$i++)
+   {
+      if ($atomTag[$bondAtom[$i][1]] gt $atomTag[$bondAtom[$i][2]])
+      {
+         $tempAtomNum = $bondAtom[$i][1];
+         $bondAtom[$i][1] = $bondAtom[$i][2];
+         $bondAtom[$i][2] = $tempAtomNum;
+      }
+   }
+
+   # Build up the tag for each bond using the tags for each atom in the
+   #   bond.
+   for ($i=1;$i<=$numSystemBonds;$i++)
+   {
+      $bondTag[$i] = $atomTag[$bondAtom[$i][1]] . "__" .
+                     $atomTag[$bondAtom[$i][2]];
+   }
+
+   # Make a list of the unique tags for all atoms.
+   $numUniqueAtomTags = 1;
+   $uniqueAtomTag[1] = $atomTag[1];
+   for ($i=2;$i<=$numAtoms;$i++)
+   {
+      $found = 0;
+      for ($j=1;$j<=$numUniqueAtomTags;$j++)
+      {
+         if ($atomTag[$i] eq $uniqueAtomTag[$j])
+            {$found=1;}
+      }
+      if ($found == 0)
+      {
+         $numUniqueAtomTags++;
+         $uniqueAtomTag[$numUniqueAtomTags] = $atomTag[$i];
+      }
+   }
+
+
+   # Make a list of the unique tags for all bonds
+   $numUniqueBondTags = 1;
+   $uniqueBondTag[1] = $bondTag[1];
+   for ($i=2;$i<=$numSystemBonds;$i++)
+   {
+      $found = 0;
+      for ($j=1;$j<=$numUniqueBondTags;$j++)
+      {
+         if ($bondTag[$i] eq $uniqueBondTag[$j])
+            {$found=1;}
+      }
+      if ($found == 0)
+      {
+         $numUniqueBondTags++;
+         $uniqueBondTag[$numUniqueBondTags] = $bondTag[$i];
+      }
+   }
+}
+
+# This subroutine will read the control file if one is requested.  There are
+#   two types of control files depending on the type of output desired.  The
+#   first is used to limit the bond order and bond length of individual atomic
+#   elements.  The second is used to divide up the output based on certain
+#   group definitions such as those of a HIN file.
+sub readControlFiles
+{
+   # Define local variables.
+   my @values;
+   my $line;
+   my $tempElementName;
+   my $i;
+
+   #If a bond control file was given then open and parse it.
+   if ("$bondControlFile" ne "")
+   {
+      #Initialize counters for bond order and bond length thresholds.
+      $numBOLimits=0;
+      $numBLLimits=0;
+
+      open (CONTROL,"<$bondControlFile") ||
+         die "Can not open $bondControlFile for reading.\n";
+      while ($line = <CONTROL>)
+      {
+         chomp($line);
+         @values=split(/\s+/,"$line");
+         if ($values[0] eq "")
+            {shift @values;}
+
+         if ($values[0] =~ /BO/)
+         {
+            $numBOLimits++;
+            $BOLimits[$numBOLimits][1] = uc($values[1]);  # Element #1
+            $BOLimits[$numBOLimits][2] = uc($values[2]);  # Element #2
+            $BOLimits[$numBOLimits][3] = $values[3];      # Min Bond Order
+            $BOLimits[$numBOLimits][4] = $values[4];      # Max Bond Order
+
+            # Make sure that the element name for 1 comes before the elment
+            #   name for 2 alphabetically.
+            if ($BOLimits[$numBOLimits][1] > $BOLimits[$numBOLimits][2])
+            {
+               $tempElementName = $BOLimits[$numBOLimits][1];
+               $BOLimits[$numBOLimits][1] = $BOLimits[$numBOLimits][2];
+               $BOLimits[$numBOLimits][2] = $tempElementName;
+            }
+         }
+         elsif ($values[0] =~ /BL/)
+         {
+            $numBLLimits++;
+            $BLLimits[$numBLLimits][1] = uc($values[1]);  # Element #1
+            $BLLimits[$numBLLimits][2] = uc($values[2]);  # Element #2
+            $BLLimits[$numBLLimits][3] = $values[3];      # Min Bond Length
+            $BLLimits[$numBLLimits][4] = $values[4];      # Max Bond Length
+
+            # Make sure that the element name for 1 comes before the elment
+            #   name for 2 alphabetically.
+            if ($BLLimits[$numBLLimits][1] > $BLLimits[$numBLLimits][2])
+            {
+               $tempElementName = $BLLimits[$numBLLimits][1];
+               $BLLimits[$numBLLimits][1] = $BLLimits[$numBLLimits][2];
+               $BLLimits[$numBLLimits][2] = $tempElementName;
+            }
+         }
+         else
+            {die "Control File Error $values[0] must be BO or BL\n";}
+      }
+   }
+   else
+   {
+      #Initialize counters for bond order and bond length thresholds.
+      $numBOLimits=0;
+      $numBLLimits=0;
+   }
+
+   # If a grouping control file was given, then open and parse it.
+   if ($groupControlFile ne "")
+   {
+      # Open the control file for reading.
+      open (CONTROL, "<$groupControlFile") ||
+            die "Cannot open $groupControlFile file for reading.\n";
+
+      # Obtain the line that defines how to create the bond and atom tags.
+      $line = <CONTROL>;
+      chomp ($line);
+      @values = split(/\s+/,$line);
+      if ($values[0] eq "")
+         {@groupName = @values;}
+      else
+      {
+         for ($i=0;$i<=$#values;$i++)
+            {$groupName[$i+1] = $values[$i];}
+      }
+
+      # Determine the number of group names.
+      $numGroups = $#groupName;
+      
+   }
+   else
+   {
+      $groupName[1] = "ELEMENT_NAME";
+      $groupName[2] = "SPECIES_ID";
+      $numGroups = 2;
+   }
+}
+
+
+# This subroutine will obtain structures that discribes the system for which
+#   the bond order and charge transfer were calculated.  The key variables that
+#   will be defined when this is done are:
+#   1) @a[], @b[], @c[]:  Range = 1-3
+#                         Meaning = Cell's a,b,c vectors in x,y,z coordinate
+#                                   components.
+#   2) $magA, $magB, $magC:  Magnitude of the cell's a,b,c vectors in angstroms.
+#   3) $numAtoms:  The number of atoms in the system.
+#   4) @xPos[], @yPos[], @zPos[]:  Range = 1-$numAtoms
+#                                  Meaning = Location of each atom in x, y, z
+#                                            orthogonal coordinates.
+#   5) @aPos[], @bPos[], @cPos[]:  Range = 1-$numAtoms
+#                                  Meaning = Location of each atom in a, b, c
+#                                            coordinates.
+sub getSystemStructure
+{
+   # Define local variables.
+   my $line;
+   my @values;
+   my $i;
+
+   open (POS,"<$posFile") ||
+      die "Can not open $posFile for reading.\n";  # e.g. gs_bond-mb.out
+   while ($line = <POS>)
+   {
+      if ($line =~ /PRIMITIVE_VECTORS/)
+      {
+         $line = <POS>;
+         chomp ($line);
+         @a = split (/\s+/,"$line"); # in a.u.
+         if ($a[0] ne "")
+         {
+            $a[3] = $a[2];
+            $a[2] = $a[1];
+            $a[1] = $a[0];
+            $a[0] = "";
+         }
+         for ($i=1;$i<=3;$i++)
+            {$a[$i] = $a[$i]*$bohrRad;} #Convert to Angstroms
+         $magA = sqrt($a[1]*$a[1] + $a[2]*$a[2] + $a[3]*$a[3]);
+
+         $line = <POS>;
+         chomp ($line);
+         @b = split (/\s+/,"$line"); # in a.u.
+         if ($b[0] ne "")
+         {
+            $b[3] = $b[2];
+            $b[2] = $b[1];
+            $b[1] = $b[0];
+            $b[0] = "";
+         }
+         for ($i=1;$i<=3;$i++)
+            {$b[$i] = $b[$i]*$bohrRad;} #Convert to Angstroms
+         $magB = sqrt($b[1]*$b[1] + $b[2]*$b[2] + $b[3]*$b[3]);
+
+         $line = <POS>;
+         chomp ($line);
+         @c = split (/\s+/,"$line"); # in a.u.
+         if ($c[0] ne "")
+         {
+            $c[3] = $c[2];
+            $c[2] = $c[1];
+            $c[1] = $c[0];
+            $c[0] = "";
+         }
+         for ($i=1;$i<=3;$i++)
+            {$c[$i] = $c[$i]*$bohrRad;} #Convert to Angstroms
+         $magC = sqrt($c[1]*$c[1] + $c[2]*$c[2] + $c[3]*$c[3]);
+
+         $cellDeterminate = $c[1]*$a[2]*$b[3] - $c[1]*$a[3]*$b[2] + 
+                            $a[3]*$c[2]*$b[1] + $c[3]*$a[1]*$b[2] - 
+                            $a[2]*$c[3]*$b[1] + $c[2]*$a[1]*$b[3];
+         $xFactor[1] = $c[3]*$b[2] - $c[2]*$b[3];
+         $xFactor[2] = $a[3]*$c[2] - $a[2]*$c[3];
+         $xFactor[3] = $a[2]*$b[3] - $a[3]*$b[2];
+         $yFactor[1] = $c[1]*$b[3] - $c[3]*$b[1];
+         $yFactor[2] = $c[3]*$a[1] - $c[1]*$a[3];
+         $yFactor[3] = $b[1]*$a[3] - $a[1]*$b[3];
+         $zFactor[1] = $b[1]*$c[2] - $c[1]*$b[2];
+         $zFactor[2] = $c[1]*$a[2] - $c[2]*$a[1];
+         $zFactor[3] = $a[1]*$b[2] - $b[1]*$a[2];
+
+         $realLattice[1][1] = $a[1];
+         $realLattice[1][2] = $a[2];
+         $realLattice[1][3] = $a[3];
+         $realLattice[2][1] = $b[1];
+         $realLattice[2][2] = $b[2];
+         $realLattice[2][3] = $b[3];
+         $realLattice[3][1] = $c[1];
+         $realLattice[3][2] = $c[2];
+         $realLattice[3][3] = $c[3];
+      }
+      if ($line =~ /NUM_ATOM_SITES/)
+      {
+         #Get the number of atoms to read.
+         $line = <POS>;
+         chomp ($line);
+         @values=split(/\s+/,"$line");
+         $numAtoms=$values[1];
+
+
+         #Position the read marker past the label.
+         $line = <POS>;
+
+         #Read the position input sorted by type.
+         for ($i=1;$i<=$numAtoms;$i++)
+         {
+            $line = <POS>;
+            chomp ($line);
+            @values=split(/\s+/,"$line");
+
+            $xPos[$i]=$values[3]*$bohrRad;  #In Angstroms
+            $yPos[$i]=$values[4]*$bohrRad;  #In Angstroms
+            $zPos[$i]=$values[5]*$bohrRad;  #In Angstroms
+
+            $aPos[$i] = (($xFactor[1]*$xPos[$i]+
+                          $yFactor[1]*$yPos[$i]+
+                          $zFactor[1]*$zPos[$i]) / $cellDeterminate) * $magA;
+            $bPos[$i] = (($xFactor[2]*$xPos[$i]+
+                          $yFactor[2]*$yPos[$i]+
+                          $zFactor[2]*$zPos[$i]) / $cellDeterminate) * $magB;
+            $cPos[$i] = (($xFactor[3]*$xPos[$i]+
+                          $yFactor[3]*$yPos[$i]+
+                          $zFactor[3]*$zPos[$i]) / $cellDeterminate) * $magC;
+         }
+      }
+   }
+   close(POS);
+}
+
+
+sub printScatterData
+{
+   # Define local variables.
+   my $i;
+   my $j;
+
+   # Obtain the bond position information.
+   &getBondPositions;
+
+   # Obtain the extra atom information (MaxBO, MinBO, etc.).
+   &getExtraAtomInfo;
+
+   # Print the atomic data first.
+   for ($i=1;$i<=$numUniqueAtomTags;$i++)
+   {
+      # Open the file for this tag.
+      open (ATOM,">ATOM_$uniqueAtomTag[$i].dat") ||
+         die "Can not open ATOM_$uniqueAtomTag[$i].dat for writing.\n";
+
+      # Print the header for this file.
+      print ATOM "atom  QStar MaxBL MinBL AVGBL MaxBO MinBO AVGBO     a     b     c\n";
+
+      for ($j=1;$j<=$numAtoms;$j++)
+      {
+         if ($atomTag[$j] eq $uniqueAtomTag[$i])
+            {printf ATOM "%5d %5.3f %5.3f %5.3f %5.3f %5.3f %5.3f %5.3f %5.3f %5.3f %5.3f\n",
+             $j,$atomQStar[$j],$atomMaxBL[$j],$atomMinBL[$j],$atomAvgBL[$j],
+             $atomMaxBO[$j],$atomMinBO[$j],$atomAvgBO[$j],$aPos[$j],$bPos[$j],
+             $cPos[$j];}
+      }
+
+      # Close the file for this tag.
+      close (ATOM);
+   }
+
+
+   # Print the bond data second.
+   for ($i=1;$i<=$numUniqueBondTags;$i++)
+   {
+
+      # Open the file for this tag.
+      open (BOND,">$uniqueBondTag[$i].dat") ||
+         die "Can not open $uniqueBondTag[$i].dat for writing.\n";
+
+      # Print the header for this file.
+      print BOND "BO     BL        #1    #2    a      b      c\n";
+
+      for ($j=1;$j<=$numSystemBonds;$j++)
+      {
+         if ($bondTag[$j] eq $uniqueBondTag[$i])
+            {printf BOND "%5.4f %5.4f %5i %5i %5.4f %5.4f %5.4f\n",
+             $bondOrder[$j], $bondLength[$j], $bondAtom[$j][1],
+             $bondAtom[$j][2], $aBondPos[$j], $bBondPos[$j], $cBondPos[$j];}
+      }
+   }
+}
+
+
+# This subroutine will print one file for each unique atom/bond tag that can be
+#   used by the openDX program to draw a model of the system with colored bonds
+#   indicating the bond strength, and colored spheres for the atoms to
+#   represent the charge transfer.
+sub printModelData
+{
+   # Define local variables.
+   my $i;
+   my $j;
+   my $numUniqueTags;
+   my $firstBondAtom;
+   my $secondBondAtom;
+
+   #Now we need to collect the bond data since some of the atoms may
+   #  be bonded to atoms outside the current cell.  Consider an atom
+   #  near the far corner of a cubic cell.  It will not bond to an atom
+   #  in the near corner all the way across the cell.  Instead it will
+   #  bond to that same atom in the neighbor cell.  We must determine the
+   #  position of that atom in the neighbor cell, and we must define a bond to
+   #  it.
+   &getExtendedPositions;
+
+
+   # If the openDX file is to be based on the atoms, then the files that are
+   #   made will contain a specific set of atoms, and the bonds must contain at
+   #   least one atom from that specific set.  If the openDX file is to be
+   #   based on bonds, then only atoms that are present in the unique bond
+   #   sets will be included.
+   if ($atomBasedDX == 1)
+      {$numUniqueTags = $numUniqueAtomTags;}
+   else
+      {$numUniqueTags = $numUniqueBondTags;}
+
+
+   # Print the lattice information first.  It does not need to be included in
+   #   every file.
+   &printLatticeDX;
+
+
+   # Now, loop to print all the Q* and BO information of each requested kind,
+   #   and the requested atom positions (in a separate file).
+   for ($i=1;$i<=$numUniqueTags;$i++)
+   {
+
+      # Create the atom list and bond list for this file.  This will also
+      #   produce a map between the old atom numbers and the new ones.
+      &createDXList($i);
+
+
+      # First print the atom positions in a separate file.  This is necessary
+      #   if we want to plot the atoms but don't want to use charge data to
+      #   color it.  It is similar to the atomPosODX files except that this
+      #   will contain only the atoms associated with this unique tag.
+      open (ATOMS,">atomPos_$uniqueTagDX.dx") ||
+            die "Cannot open atomPos_$uniqueTagDX.dx for writing.\n";
+ 
+      # Now we need to print the sphere data starting with atom positions.
+      #   Note that the loop only goes to numAtomsDX because we only want to
+      #   show the atoms that are actually in the cell.
+      print ATOMS "object 1 class array type float rank 1 shape 3 items";
+      print ATOMS " $numAtomsDX data follows\n";
+      for ($j=1;$j<=$numAtomsDX;$j++)
+         {print ATOMS "$xPosExtDX[$j] $yPosExtDX[$j] $zPosExtDX[$j]\n";}
+      print ATOMS "\n";
+   
+      # Now we add the color values data.  Note the same loop as above.
+      print ATOMS "object 2 class array type float rank 0 items $numAtomsDX";
+      print ATOMS " data follows\n";
+      for ($j=1;$j<=$numAtomsDX;$j++)
+         {print ATOMS "$atomColorDX[$j]\n";}
+      print ATOMS "attribute \"dep\" string \"positions\"\n";
+      print ATOMS "\n";
+   
+      # Now we add the atom sphere size information.  Same as above
+      print ATOMS "object 3 class array type float rank 0 items $numAtomsDX";
+      print ATOMS " data follows\n";
+      for ($j=1;$j<=$numAtomsDX;$j++)
+         {print ATOMS "$atomRadiusDX[$j]\n";}
+      print ATOMS "attribute \"dep\" string \"positions\"\n";
+      print ATOMS "\n";
+
+      #Finally, we combine the above three objects into the spheres field.
+      print ATOMS <<ENDATOMS;
+object "atoms" class field
+component "positions" value 1
+component "data" value 2
+component "sizes" value 3
+end
+
+ENDATOMS
+      close (ATOMS);
+
+
+
+      # Open the openDX file to be made.
+      open (DX,">$uniqueTagDX.dx") ||
+         die "Can not open $uniqueTagDX.dx for writing.\n";
+
+      # Now we need to print the qstar data starting with atom positions.  Note
+      #   that the loop only goes to numAtomsDX because we only want to show
+      #   the atoms that are actualy in the cell.
+      print DX "object 1 class array type float rank 1 shape 3 items";
+      print DX " $numAtomsDX data follows\n";
+      for ($j=1;$j<=$numAtomsDX;$j++)
+         {print DX "$xPosExtDX[$j] $yPosExtDX[$j] $zPosExtDX[$j]\n";}
+      print DX "\n";
+   
+      # Now add the charge transfer data.  Note the loop is the same as above.
+      print DX "object 2 class array type float rank 0 items $numAtomsDX";
+      print DX " data follows\n";
+      for ($j=1;$j<=$numAtomsDX;$j++)
+         {print DX "$atomChargeTransferDX[$j]\n";}
+      print DX "attribute \"dep\" string \"positions\"\n";
+      print DX "\n";
+   
+      # Now we add the atom sphere size information.  Same loop as above.
+      print DX "object 3 class array type float rank 0 items $numAtomsDX";
+      print DX " data follows\n";
+      for ($j=1;$j<=$numAtomsDX;$j++)
+         {print DX "$atomRadiusDX[$j]\n";}
+      print DX "attribute \"dep\" string \"positions\"\n";
+      print DX "\n";
+   
+      #Finally, we combine the above three objects into the qstar field.
+      print DX <<QSTAR;
+object "qstar" class field
+component "positions" value 1
+component "data" value 2
+component "sizes" value 3
+
+QSTAR
+
+
+
+
+      #Now we have to add the bond data.
+   
+      #First we list all the positions of atoms in the cell, and all of the
+      #  positions where atoms in the cell bond outside the cell.
+      print DX "object 4 class array type float rank 1 shape 3 items";
+      print DX " $numAtomsExtDX data follows\n";
+      for ($j=1;$j<=$numAtomsExtDX;$j++)
+         {print DX "$xPosExtDX[$j] $yPosExtDX[$j] $zPosExtDX[$j]\n";}
+      print DX "\n";
+   
+      #Now we list the connections between data points.
+      print DX "object 5 class array type int rank 1 shape 2 items";
+      print DX " $numBondsDX data follows\n";
+      for ($j=1;$j<=$numBondsDX;$j++)
+      {
+         #Subtract 1 because openDX is a C program and it's array references
+         #  all start from 0.
+         $firstBondAtom  = $bondAtomDX[$j][1] - 1;
+         $secondBondAtom = $bondAtomDX[$j][2] - 1;
+         print DX "$firstBondAtom  $secondBondAtom\n";
+      }
+      print DX "attribute \"ref\" string \"positions\"\n";
+      print DX "attribute \"element type\" string \"lines\"\n";
+      print DX "\n";
+   
+      #Then we list the values for those connections
+      print DX "object 6 class array type float rank 0 items $numBondsDX";
+      print DX " data follows\n";
+      for ($j=1;$j<=$numBondsDX;$j++)
+         {print DX "$bondOrderDX[$j]\n";}
+      print DX "attribute \"dep\" string \"connections\"\n";
+      print DX "\n";
+   
+      #Finally, we combine the necessary objects for the bond order field
+      print DX <<BO;
+object "bo" class field
+component "positions" value 4
+component "connections" value 5
+component "data" value 6
+
+BO
+
+
+      #The DX file is complete now so we can end it.  It is important to
+      #  note that the DX file format requires a blank line at the end.  So
+      #  the \n\n *must* be there.
+      print DX "end\n\n";
+
+      # Release memory that is not necessary any more.
+      @bondOrderDX=("");
+      @abcBondPos=("");
+      @xyzBondPos=("");
+      @bondAtomDX=("");
+      @atomRadiusDX=("");
+      @atomColorDX=("");
+      @atomChargeTransferDX=("");
+      @xPosExtDX=("");
+      @yPosExtDX=("");
+      @zPosExtDX=("");
+#      undef @bondOrderDX;
+#      undef @bondAtomDX;
+#      undef @atomRadiusDX;
+#      undef @atomColorDX;
+#      undef @atomChargeTransferDX;
+#      undef @xPosExtDX;
+#      undef @yPosExtDX;
+#      undef @zPosExtDX;
+
+      # Close this openDX file.
+      close (DX);
+   }
+}
+
+sub print3DMeshData
+{
+   # Define local variables.
+   my $uniqueTag;
+
+   # Now we need to collect the bond data and atom data for the extended
+   #   lattice because we need to about all contributions from bonds that
+   #   extend into neighboring cells.
+   $bondBasedDX = 1;
+   &getExtendedPositions;
+
+   # Print the lattice information since it is only needed once.
+   &printLatticeDX;
+
+   # Create the openDX mesh.
+   &makeDXMesh;
+
+   # Now loop to print the mesh for each requested tag.
+   foreach $uniqueTag (1..$numUniqueBondTags)
+   {
+      # Create the atom list and bond list for this file.  This will also
+      #   produce a map between the old atom numbers and the new ones.
+      &createDXList($uniqueTag);
+
+      # Define the 3D mesh of points.
+      &evalDXMesh;
+
+      # Print the 3D mesh of points.
+      &printDXMesh($uniqueTag);
+
+      # Release unused memory (sortof).
+      @bondOrderDX=("");
+      @abcBondPos=("");
+      @xyzBondPos=("");
+      @bondAtomDX=("");
+      @atomRadiusDX=("");
+      @atomColorDX=("");
+      @atomChargeTransferDX=("");
+      @xPosExtDX=("");
+      @yPosExtDX=("");
+      @zPosExtDX=("");
+   }
+}
+
+
+sub makeDXMesh
+{
+   # Define local variables.
+   my $axis;
+   my $aPoint;
+   my $bPoint;
+   my $cPoint;
+   my $point;
+
+   # Compute the total number of points in this scan.
+   $numScanPoints = $numMeshPoints[1]*$numMeshPoints[2]*$numMeshPoints[3];
+
+   # Compute the x,y,z delta necessary along each a,b,c axis.
+   #   $delta[a,b,c][x,y,z]
+   foreach $axis (1..3) # Loop over x,y,z
+   {
+      # Compute a axis contribution to x,y,z delta.
+      $delta[1][$axis] = $realLattice[1][$axis] / ($numMeshPoints[1]-1);
+
+      # Compute b axis contribution to x,y,z delta.
+      $delta[2][$axis] = $realLattice[2][$axis] / ($numMeshPoints[2]-1);
+
+      # Compute c axis contribution to x,y,z delta.
+      $delta[3][$axis] = $realLattice[3][$axis] / ($numMeshPoints[3]-1);
+   }
+
+   # Compute the position of each point along the path.
+   $point = 0;
+
+   foreach $aPoint (0..$numMeshPoints[1]-1)
+   {
+   foreach $bPoint (0..$numMeshPoints[2]-1)
+   {
+   foreach $cPoint (0..$numMeshPoints[3]-1)
+   {
+      $point++;
+      foreach $axis (1..3) # Loop over x,y,z
+      {
+         $scanPoints[$axis][$point] = $delta[1][$axis]*$aPoint +
+                                      $delta[2][$axis]*$bPoint +
+                                      $delta[3][$axis]*$cPoint;
+      }
+   }
+   }
+   }
+}
+
+
+sub evalDXMesh
+{
+   # Define local variables.
+   my $point;
+   my $bond;
+   my @diff;
+   my $axis;
+   my $distance;
+   my $numContribBonds;
+   my @gaussianDistFactor;
+   my @contribBondNumber;
+   my $contribBond;
+   my $totalWeight;
+
+   # For each mesh points consider each bond in the system that is sufficiently
+   #   close to consider contributing to the bond order mesh plot.
+   foreach $point (1..$numScanPoints)
+   {
+      # Print a running count of progress on the screen so the user does not
+      #   get too bored waiting.  This process can take a while for large
+      #   systems.
+#      if ($point%10 == 0)
+#         {print STDOUT "|";}
+#      else
+#         {print STDOUT ".";}
+#
+#      if ($point%50 == 0)
+#         {print STDOUT " $point\n";}
+
+      # Initialize a count of the number of bonds that will contribute to the
+      #   current mesh point.
+      $numContribBonds=0;
+
+      # Loop over all bonds to check which ones should contribute and how much.
+      foreach $bond (1..$numBondsDX)
+      {
+         # Compute the separation between this bond location and this point.
+         foreach $axis (1..3)
+         {
+            $diff[$axis] = ($scanPoints[$axis][$point] -
+                            $xyzBondPos[$bond][$axis])**2;
+         }
+         $distance = sqrt($diff[1]+$diff[2]+$diff[3]);
+
+
+         # Abort if the distance is too great.
+         if ($distance > $limitDist)
+            {next;}
+
+print STDOUT "point $scanPoints[1][$point] $scanPoints[2][$point] $scanPoints[3][$point]\n";
+print STDOUT "      $xyzBondPos[$bond][1] $xyzBondPos[$bond][2] $xyzBondPos[$bond][3] $distance\n";
+
+
+         # Increment the number of bonds contributing to this mesh point.
+         $numContribBonds++;
+
+         # Determine the distance weighting factor for this bond.
+         $gaussianDistFactor[$numContribBonds] =
+               exp(-1.0*$alpha*$distance**2);
+
+         # Save the associated bond number for this bond order value.
+         $contribBondNumber[$numContribBonds] = $bond;
+      }
+
+      # Compute the normalized weighting factor.  (The sum of all weighting
+      #   factors should be equal to one.)
+      $totalWeight = 0;
+      foreach $contribBond (1..$numContribBonds)
+         {$totalWeight += $gaussianDistFactor[$contribBond];}
+      foreach $contribBond (1..$numContribBonds)
+         {$gaussianDistFactor[$contribBond] /= $totalWeight;}
+
+      # Accumulate the total bond order for this mesh point.
+      $meshBODX[$point] = 0.0;
+if ($numContribBonds == 0)
+   {print STDOUT "NO BONDS $point\n";}
+print STDOUT "$numContribBonds\n";
+      foreach $contribBond (1..$numContribBonds)
+      {
+#print STDOUT "$gaussianDistFactor[$contribBond]\n";
+#print STDOUT "$bondOrderDX[$contribBondNumber[$contribBond]] $contribBond $contribBondNumber[$contribBond]\n";
+         $meshBODX[$point] += $gaussianDistFactor[$contribBond] *
+               $bondOrderDX[$contribBondNumber[$contribBond]];
+         
+      }
+   }
+}
+
+
+sub printDXMesh
+{
+   # Define passed parameters.
+   my $uniqueTag = $_[0];
+
+   # Declare local variables.
+   my $outFile = "$uniqueTag" . ".dx";
+   my $aPoint;
+   my $bPoint;
+   my $cPoint;
+   my $pointCount;
+   my $pointData_ref;
+
+
+   # Open the output file.
+   open (ODX,">$outFile") || die "Cannot open $outFile for writing.\n";
+
+   print ODX "object 1 class gridpositions counts $numMeshPoints[1] $numMeshPoints[2] $numMeshPoints[3]\n";
+   print ODX "origin 0 0 0\n";
+   print ODX "delta $delta[1][1] $delta[1][2] $delta[1][3]\n";
+   print ODX "delta $delta[2][1] $delta[2][2] $delta[2][3]\n";
+   print ODX "delta $delta[3][1] $delta[3][2] $delta[3][3]\n\n";
+
+   print ODX "object 2 class gridconnections counts $numMeshPoints[1] $numMeshPoints[2] $numMeshPoints[3]\n";
+   print ODX "object 3 class array type float rank 0 items $numScanPoints data follows\n";
+
+   $pointCount = 0;
+   foreach $aPoint (1..$numMeshPoints[1])
+   {
+   foreach $bPoint (1..$numMeshPoints[2])
+   {
+   foreach $cPoint (1..$numMeshPoints[3])
+   {
+      $pointCount++;
+      printf ODX "%12.8f ",$meshBODX[$pointCount];
+
+      if ($pointCount%5 == 0)
+         {print ODX "\n";}
+   }
+   }
+   }
+
+   # Add a final newline if necessary.
+   if ($pointCount != 0)
+      {print ODX "\n";}
+
+   # Tack on the ending information.
+   print ODX "attribute \"dep\" string \"positions\"\n\n";
+   print ODX "object \"dataField\" class field\n";
+   print ODX "component \"positions\" value 1\n";
+   print ODX "component \"connections\" value 2\n";
+   print ODX "component \"data\" value 3\n";
+   print ODX "end\n\n";
+
+   close (ODX);
+}
+
+
+# This subroutine will produce a simple data file that can be plotted as a
+#   curve indicating the bond profile along a specifc axis.  The bond profile
+#   at a given point along a $profileAxis is simply the sum of the bond orders
+#   for all the bonds that cross that point divided by the number of bonds.
+sub printBondProfile
+{
+   # Define local variables.
+   my $axisMag;
+   my @axisPosExt;
+   my $numPoints;
+   my @axisPoints;
+   my @cumulBondOrder;
+   my @cumulNumBonds;
+   my $numSearches;
+   my @atomIndex;
+   my $leftIndex;
+   my $rightIndex;
+   my $tempIndex;
+   my $lastPoint;
+   my $currentPoint;
+   my $searchPoint;
+   my $currentBondProfile;
+   my $i;
+   my $j;
+
+   # To compute the bond profile we:
+   #   1) Create a pair of arrays where each index represents a point on the
+   #      requested axis.  The number of indices must be sufficiently high
+   #      to present a clean looking graph.
+   #   2) The values in one array will represent the cumulative number of bonds
+   #      at that point.  The values in the other array will represent the
+   #      cumulative bond order at that point.
+   #   3) Consider each bond in turn.  Increment the array values for both
+   #      arrays for the points between the bond endpoints.
+
+   # Obtain the positions of the atoms outside the cell that immediately bond
+   #   to the atoms inside the cell.  This will also determine all the bonds
+   #   in the system and define their endpoints.
+   &getExtendedPositions;
+
+   # Copy the axis of choice for easy reference.
+   if ($profileAxis eq "a")
+   {
+      @axisPosExt = @aPosExt;
+      $axisMag = $magA;
+   }
+   elsif ($profileAxis eq "b")
+   {
+      @axisPosExt = @bPosExt;
+      $axisMag = $magB;
+   }
+   elsif ($profileAxis eq "c")
+   {
+      @axisPosExt = @cPosExt;
+      $axisMag = $magC;
+   }
+   else
+      {print STDOUT "Invalid profile axis choice $profileAxis.  Aborting.\n";}
+
+   # Create the axisPoints, cumulBondOrder, and cumulNumBonds arrays.
+   $numPoints = int($axisMag/0.01)+1;
+   $axisPoints[0] = -0.01;
+   for ($i=0;$i<=$numPoints-1;$i++) #The strange start, end, and reference
+                                    #  scheme is for numerical accuracy in the
+                                    #  $axisPoints[] values.
+   {
+      $axisPoints[$i+1] = $i * 0.01;
+      $cumulBondOrder[$i+1] = 0;
+      $cumulNumBonds[$i+1]  = 0;
+   }
+
+
+   # Determine the maximum number of binary searches that will be necessary for
+   #   each bond to find its array index.
+   $numSearches = (log($numPoints)/log(2));
+   if ($numSearches - int($numSearches) > 0)
+      {$numSearches = int($numSearches) + 1;}
+
+   # Consider each atom in the extended system to determine its index.
+   for ($i=1;$i<=$numAtomsExt;$i++)
+   {
+      if ($axisPosExt[$i] < 0)
+         {$atomIndex[$i] = 0;}
+      elsif ($axisPosExt[$i] > $axisMag)
+         {$atomIndex[$i] = $numPoints;}
+      else
+      {
+         # Perform a binary search for the most appropriate index number.
+
+         # Initialize the search point.
+         $searchPoint = int($numPoints/2);
+         $lastPoint = 0;
+         for ($j=1;$j<=$numSearches;$j++)
+         {
+            if ($axisPoints[$searchPoint]<$axisPosExt[$i])
+            {
+               $currentPoint = $searchPoint;
+               $searchPoint = $searchPoint + 
+                              int(abs($lastPoint-$searchPoint)/2);
+               $lastPoint = $currentPoint;
+            }
+            else
+            {
+               $currentPoint = $searchPoint;
+               $searchPoint = $searchPoint - 
+                              int(abs($lastPoint-$searchPoint)/2);
+               $lastPoint = $currentPoint;
+            }
+         }
+         $atomIndex[$i] = $searchPoint;
+      }
+   }
+
+   for ($i=1;$i<=$numBondsExt;$i++)
+   {
+      #Obtain the indices for the atoms of this bond
+      $leftIndex  = $atomIndex[$bondAtomExt[$i][1]];
+      $rightIndex = $atomIndex[$bondAtomExt[$i][2]];
+
+      if ($leftIndex > $rightIndex)
+      {
+         $tempIndex  = $leftIndex;
+         $leftIndex  = $rightIndex;
+         $rightIndex = $tempIndex;
+      }
+
+      # Increment the cumulative arrays for all points between the left end
+      #   point and the right end point.
+      while ($leftIndex < $rightIndex)
+      {
+         $cumulBondOrder[$leftIndex] += $bondOrderExt[$i];
+         $cumulNumBonds[$leftIndex]++;
+         $leftIndex++;
+      }
+   }
+
+   # Print out the results.
+   open (BP,">$bondProfileFile") ||
+      die "Can not open $bondProfileFile for writing.\n";
+   $profileAxis = $profileAxis . "-axis";
+   print BP "$profileAxis  bondProfile  bondOrder  numBonds\n";
+   for ($i=1;$i<=$numPoints-1;$i++)
+   {
+      if ($cumulBondOrder[$i] != 0)
+         {$currentBondProfile = $cumulBondOrder[$i]/$cumulNumBonds[$i];}
+      else
+         {$currentBondProfile = 0.0;}
+      printf BP "%5.4f %5.4f %5.4f %5i\n",$axisPoints[$i],
+            $currentBondProfile,$cumulBondOrder[$i],$cumulNumBonds[$i];
+   }
+   close (BP);
+}
+
+
+sub printLatticeDX
+{
+   # Print the lattice information first.  It does not need to be included in
+   #   every file.
+   open (LATTICE,">lattice.dx") || die "Cannot open lattice.dx for writing.\n";
+   print LATTICE <<ENDLATTICE;
+object 1 class gridpositions counts 2 2 2
+origin 0 0 0
+delta @a
+delta @b
+delta @c
+
+object 2 class gridconnections counts 2 2 2
+
+object 3 class array type float rank 0 items 8 data follows
+1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0
+attribute "dep" string "positions"
+
+object "lattice" class field
+component "positions" value 1
+component "connections" value 2
+component "data" value 3
+end
+
+ENDLATTICE
+   close (LATTICE);
+}
+
+
+
+
+# This subroutine will calculate the positions of the bonds as being the
+#   midpoint between the two atoms involved in the bond.
+sub getBondPositions
+{
+   # Declare local variables.
+   my $i;
+
+   for ($i=1;$i<=$numSystemBonds;$i++)
+   {
+      # For each of the three coordinate directions (a, b, c) we check to see
+      #   if the mid point between the bonds in that (a, b, c) direction is
+      #   less than the total bond length.  If it is then the mid point for
+      #   that direction is within the cell.  If it is not, then the mid point
+      #   for that direction is outside the cell and so we have to shift it
+      #   back within the cell, but we must check which direction to shift.
+      #   For example consider atom on opposite side of a large cell.  The
+      #   calculated a-azis mid point is the center of the cell, but this is
+      #   much larger than the bond length so the true bond mid point is
+      #   through the periodic cell.  The question is now, what side?  First
+      #   we add the magnitude of the cell in the a direction, and then if it
+      #   is still outside, we subtract to make it inside.
+
+      # Do the a-axis first.
+      if (abs($aPos[$bondAtom[$i][1]] - $aPos[$bondAtom[$i][2]]) <
+          $bondLength[$i] + 0.1)
+         {$aBondPos[$i] = ($aPos[$bondAtom[$i][1]] + 
+                           $aPos[$bondAtom[$i][2]])/2.0;}
+      else
+      {
+         $aBondPos[$i] = ($aPos[$bondAtom[$i][1]] + 
+                          $aPos[$bondAtom[$i][2]] + $magA)/2.0;
+         if ($aBondPos[$i] > $magA)
+            {$aBondPos[$i] = $aBondPos[$i] - $magA;}
+      }
+
+      # Do the b-axis second.
+      if (abs($bPos[$bondAtom[$i][1]] - $bPos[$bondAtom[$i][2]]) <
+          $bondLength[$i] + 0.1)
+         {$bBondPos[$i] = ($bPos[$bondAtom[$i][1]] + 
+                           $bPos[$bondAtom[$i][2]])/2.0;}
+      else
+      {
+         $bBondPos[$i] = ($bPos[$bondAtom[$i][1]] + 
+                          $bPos[$bondAtom[$i][2]] + $magB)/2.0;
+         if ($bBondPos[$i] > $magB)
+            {$bBondPos[$i] = $bBondPos[$i] - $magB;}
+      }
+
+      # Do the c-axis last.
+      if (abs($cPos[$bondAtom[$i][1]] - $cPos[$bondAtom[$i][2]]) <
+          $bondLength[$i] + 0.1)
+         {$cBondPos[$i] = ($cPos[$bondAtom[$i][1]] + 
+                           $cPos[$bondAtom[$i][2]])/2.0;}
+      else
+      {
+         $cBondPos[$i] = ($cPos[$bondAtom[$i][1]] + 
+                          $cPos[$bondAtom[$i][2]] + $magC)/2.0;
+         if ($cBondPos[$i] > $magC)
+            {$cBondPos[$i] = $cBondPos[$i] - $magC;}
+      }
+   }
+}
+
+
+# This subroutine will calculated extra statistics for each atom that are
+#   printed along with the Q* data.
+sub getExtraAtomInfo
+{
+   # Declare local variables.
+   my $i;
+   my $j;
+
+   # Loop through each atom and accumulate data about its bonds.
+   for ($i=1;$i<=$numAtoms;$i++)
+   {
+      # Initialize the stats for this atom.
+      if ($numBondsByAtom[$i] == 0)
+      {
+         $atomMinBL[$i] = 0;
+         $atomMaxBL[$i] = 0;
+         $atomAvgBL[$i] = 0;
+         $atomMinBO[$i] = 0;
+         $atomMaxBO[$i] = 0;
+         $atomAvgBO[$i] = 0;
+      }
+      else
+      {
+         $atomMinBL[$i] =  1000;
+         $atomMaxBL[$i] =  0;
+         $atomAvgBL[$i] =  0;
+         $atomMinBO[$i] =  1000;
+         $atomMaxBO[$i] = -1000;
+         $atomAvgBO[$i] =  0;
+      }
+
+      for ($j=1;$j<=$numBondsByAtom[$i];$j++)
+      {
+         if ($bondLengthByAtom[$i][$j] < $atomMinBL[$i])
+            {$atomMinBL[$i] = $bondLengthByAtom[$i][$j];}
+         if ($bondLengthByAtom[$i][$j] > $atomMaxBL[$i])
+            {$atomMaxBL[$i] = $bondLengthByAtom[$i][$j];}
+         $atomAvgBL[$i] += $bondLengthByAtom[$i][$j];
+
+         if ($bondOrderByAtom[$i][$j] < $atomMinBO[$i])
+            {$atomMinBO[$i] = $bondOrderByAtom[$i][$j];}
+         if ($bondOrderByAtom[$i][$j] > $atomMaxBO[$i])
+            {$atomMaxBO[$i] = $bondOrderByAtom[$i][$j];}
+         $atomAvgBO[$i] += $bondOrderByAtom[$i][$j];
+      }
+
+      # Compute the AVG values for the BO and BL for this atom.
+      $atomAvgBL[$i] = $atomAvgBL[$i]/$numBondsByAtom[$i];
+      $atomAvgBO[$i] = $atomAvgBO[$i]/$numBondsByAtom[$i];
+   }
+}
+
+
+
+# This subroutine will collect the positions for atoms and bonds which are
+#   outside the cell.  Sometimes it is necessary to be able to represent bonds
+#   extending outside the cell connecting an atom on one side of a cell with
+#   the image of another atom from the other side of the cell.  Periodic
+#   boundary conditions make atoms from opposite sides of a cell connect.
+sub getExtendedPositions
+{
+   # Define local variables.
+   my $i;
+   my $j;
+   my $k;
+   my $l;
+   my $m;
+   my @diffX;
+   my @diffY;
+   my @diffZ;
+   my @testX;
+   my @testY;
+   my @testZ;
+   my @minX;
+   my @minY;
+   my @minZ;
+   my @minDistance;
+   my @distance;
+   my $otherAtom;
+   my $tempAtomNum;   
+
+   # Initialize the counters.  The numAtomsExt tracks the number of
+   #   end points for the bonds including those outside the cell.  The
+   #   numBondsExt tracks the number of bonds including those outside the cell.
+   $numBondsExt = $numSystemBonds;
+   $numAtomsExt = $numAtoms;
+
+   # Initialize values for the extended atomic positions in x,y,z coordinates.
+   @xPosExt = @xPos;
+   @yPosExt = @yPos;
+   @zPosExt = @zPos;
+
+   # Initialize values for the extended atomic positions in a,b,c coordinates.
+   @aPosExt = @aPos;
+   @bPosExt = @bPos;
+   @cPosExt = @cPos;
+
+   # Initialize the values for the extended bond atom definitions.
+   for ($i=1;$i<=$numSystemBonds;$i++)
+   {
+      $bondAtomExt[$i][1] = $bondAtom[$i][1];
+      $bondAtomExt[$i][2] = $bondAtom[$i][2];
+   }
+
+   # Initialize the values for the bond order of each bond.
+   @bondOrderExt = @bondOrder;
+
+   # Initialize the tags for each bond.
+   @bondTagExt = @bondTag;
+
+   # Initialize the tags for each atom.
+   @atomTagExt = @atomTag;
+
+
+   # Consider each bond in turn to determine if the bond connecting these
+   #   atoms extends outside the cell.  If so, then define a new 'atom'
+   #   location outside the cell that is used as an anchor for the bond when
+   #   it is drawn in the openDX file or used in the bond profile calculation.
+   for ($i=1;$i<=$numSystemBonds;$i++)
+   {
+      # Determine if the distance between the atoms of this bond is greater
+      #   than the bond length.  If so, find the position of the outside image
+      #   atom.
+      if ((abs($aPos[$bondAtom[$i][1]] - $aPos[$bondAtom[$i][2]]) >
+           $bondLength[$i] + 0.1) ||
+          (abs($bPos[$bondAtom[$i][1]] - $bPos[$bondAtom[$i][2]]) >
+           $bondLength[$i] + 0.1) ||
+          (abs($cPos[$bondAtom[$i][1]] - $cPos[$bondAtom[$i][2]]) >
+           $bondLength[$i] + 0.1))
+      {
+         # Compute the distance between the atoms across the cell.  Use one
+         #   minDistance value for each 'anchor' atom of the bond.
+         $diffX[1] = $xPos[$bondAtom[$i][1]] - $xPos[$bondAtom[$i][2]];
+         $diffY[1] = $yPos[$bondAtom[$i][1]] - $yPos[$bondAtom[$i][2]];
+         $diffZ[1] = $zPos[$bondAtom[$i][1]] - $zPos[$bondAtom[$i][2]];
+         $minDistance[1] = sqrt($diffX[1] * $diffX[1] +
+                                $diffY[1] * $diffY[1] +
+                                $diffZ[1] * $diffZ[1]);
+         $minDistance[2] = $minDistance[1];
+
+         # Find the locations of the two new 'atoms'.
+         for ($j=-2;$j<=2;$j++)
+         {
+         for ($k=-2;$k<=2;$k++)
+         {
+         for ($l=-2;$l<=2;$l++)
+         {
+            for ($m=1;$m<=2;$m++)
+            {
+               # Shift the test position based on the current j,k,l directions.
+               $testX[$m] = $xPos[$bondAtom[$i][$m]] +
+                            $j*$a[1] + $k*$b[1] + $l*$c[1];
+               $testY[$m] = $yPos[$bondAtom[$i][$m]] +
+                            $j*$a[2] + $k*$b[2] + $l*$c[2];
+               $testZ[$m] = $zPos[$bondAtom[$i][$m]] +
+                            $j*$a[3] + $k*$b[3] + $l*$c[3];
+
+               # Determine the index number opposite the current iteration.
+               if ($m==1)
+                  {$otherAtom = 2;}
+               else
+                  {$otherAtom = 1;}
+
+               # Get the difference between this test position and the target
+               #   atom for each axis.
+               $diffX[$m] = $testX[$m] - $xPos[$bondAtom[$i][$otherAtom]];
+               $diffY[$m] = $testY[$m] - $yPos[$bondAtom[$i][$otherAtom]];
+               $diffZ[$m] = $testZ[$m] - $zPos[$bondAtom[$i][$otherAtom]];
+
+               # Compute the distance between this test position and the target.
+               $distance[$m] = sqrt($diffX[$m] * $diffX[$m] +
+                                    $diffY[$m] * $diffY[$m] +
+                                    $diffZ[$m] * $diffZ[$m]);
+
+               # Compare this distance to the smallest found so far to determine
+               #   if this tests position could be the correct location for the
+               #   bonded atom outside the cell.
+               if ($distance[$m] < $minDistance[$m])
+               {
+                  $minDistance[$m] = $distance[$m];
+                  $minX[$m] = $testX[$m];
+                  $minY[$m] = $testY[$m];
+                  $minZ[$m] = $testZ[$m];
+               }
+            }
+         }
+         }
+         }
+
+
+         for ($j=1;$j<=2;$j++)
+         {
+            # One extra atom for each new bond end extending outside the cell.
+            $numAtomsExt++;
+
+            # Add the new atom locations to the extended atom list.
+            $xPosExt[$numAtomsExt] = $minX[$j];
+            $yPosExt[$numAtomsExt] = $minY[$j];
+            $zPosExt[$numAtomsExt] = $minZ[$j];
+
+            $aPosExt[$numAtomsExt] = (($xFactor[1]*$xPosExt[$numAtomsExt]+
+                                       $yFactor[1]*$yPosExt[$numAtomsExt]+
+                                       $zFactor[1]*$zPosExt[$numAtomsExt])/
+                                       $cellDeterminate) * $magA;
+            $bPosExt[$numAtomsExt] = (($xFactor[2]*$xPosExt[$numAtomsExt]+
+                                       $yFactor[2]*$yPosExt[$numAtomsExt]+
+                                       $zFactor[2]*$zPosExt[$numAtomsExt])/
+                                       $cellDeterminate) * $magB;
+            $cPosExt[$numAtomsExt] = (($xFactor[3]*$xPosExt[$numAtomsExt]+
+                                       $yFactor[3]*$yPosExt[$numAtomsExt]+
+                                       $zFactor[3]*$zPosExt[$numAtomsExt])/
+                                       $cellDeterminate) * $magC;
+
+            # Include the tags for this atom.
+            $atomTagExt[$numAtomsExt] = $atomTag[$bondAtom[$i][$j]];
+         }
+
+         # Make a new bond definition that includes one old atom from inside
+         #   the cell, and one new image 'atom' outside the cell.  Also make
+         #   sure to carry over the bond order value.  The old bondAtom
+         #   definition is wrong since it links two atoms that are far apart
+         #   when considered within the same cell.
+         $numBondsExt++;
+         $bondAtomExt[$numBondsExt][1] = $bondAtomExt[$i][2];
+         $bondAtomExt[$numBondsExt][2] = $numAtomsExt-1;
+         $bondOrderExt[$numBondsExt]   = $bondOrderExt[$i];
+         $bondTagExt[$numBondsExt]     = $bondTag[$i];
+
+         # Make sure that the tag for atom 1 of this bond is alphanumerically
+         #   earlier than the tag name for atom 2 for this bond.
+         if ($atomTagExt[$bondAtomExt[$numBondsExt][1]] gt 
+             $atomTagExt[$bondAtomExt[$numBondsExt][2]])
+         {
+            $tempAtomNum = $bondAtomExt[$numBondsExt][1];
+            $bondAtomExt[$numBondsExt][1] = $bondAtomExt[$numBondsExt][2];
+            $bondAtomExt[$numBondsExt][2] = $tempAtomNum;
+         }
+
+         # Now assign the bond tag for this extended bond.
+         $bondTagExt[$numBondsExt] =
+               $atomTagExt[$bondAtomExt[$numBondsExt][1]] .
+               $atomTagExt[$bondAtomExt[$numBondsExt][2]];
+
+
+         # Record the position of this extended bond.
+         $aBondPos[$numBondsExt]=($aPosExt[$bondAtomExt[$numBondsExt][1]] +
+                                  $aPosExt[$bondAtomExt[$numBondsExt][2]])/2.0;
+         $bBondPos[$numBondsExt]=($bPosExt[$bondAtomExt[$numBondsExt][1]] +
+                                  $bPosExt[$bondAtomExt[$numBondsExt][2]])/2.0;
+         $cBondPos[$numBondsExt]=($cPosExt[$bondAtomExt[$numBondsExt][1]] +
+                                  $cPosExt[$bondAtomExt[$numBondsExt][2]])/2.0;
+         $xBondPos[$numBondsExt] =
+                         $aBondPos[$numBondsExt]*$realLattice[1][1]/$magA +
+                         $bBondPos[$numBondsExt]*$realLattice[2][1]/$magB +
+                         $cBondPos[$numBondsExt]*$realLattice[3][1]/$magC;
+         $yBondPos[$numBondsExt] =
+                         $aBondPos[$numBondsExt]*$realLattice[1][2]/$magA +
+                         $bBondPos[$numBondsExt]*$realLattice[2][2]/$magB +
+                         $cBondPos[$numBondsExt]*$realLattice[3][2]/$magC;
+         $zBondPos[$numBondsExt] =
+                         $aBondPos[$numBondsExt]*$realLattice[1][3]/$magA +
+                         $bBondPos[$numBondsExt]*$realLattice[2][3]/$magB +
+                         $cBondPos[$numBondsExt]*$realLattice[3][3]/$magC;
+
+
+
+         # Use the old bond definition and reassign one atom to be the other
+         #   image 'atom' outside the cell.  The bond order remains the same.
+         $bondAtomExt[$i][2] = $numAtomsExt; 
+
+         # Make sure that the tag for atom 1 of this bond is alphanumerically
+         #   earlier than the tag name for atom 2 for this bond.
+         if ($atomTagExt[$bondAtomExt[$i][1]] gt
+             $atomTagExt[$bondAtomExt[$i][2]])
+         {
+            $tempAtomNum = $bondAtomExt[$i][1];
+            $bondAtomExt[$i][1] = $bondAtomExt[$i][2];
+            $bondAtomExt[$i][2] = $tempAtomNum;
+         }
+
+         # Now assign the bond tag for this extended bond.
+         $bondTagExt[$i] = $atomTagExt[$bondAtomExt[$i][1]] .
+                           $atomTagExt[$bondAtomExt[$i][2]];
+      }
+
+
+      # Record the position of this extended bond.  (This one is done for both
+      #   cases of the extended bond or not.)
+      $aBondPos[$i] = ($aPosExt[$bondAtomExt[$i][1]] +
+                       $aPosExt[$bondAtomExt[$i][2]])/2.0;
+      $bBondPos[$i] = ($bPosExt[$bondAtomExt[$i][1]] +
+                       $bPosExt[$bondAtomExt[$i][2]])/2.0;
+      $cBondPos[$i] = ($cPosExt[$bondAtomExt[$i][1]] +
+                       $cPosExt[$bondAtomExt[$i][2]])/2.0;
+      $xBondPos[$i] = $aBondPos[$i]*$realLattice[1][1]/$magA +
+                      $bBondPos[$i]*$realLattice[2][1]/$magB +
+                      $cBondPos[$i]*$realLattice[3][1]/$magC;
+      $yBondPos[$i] = $aBondPos[$i]*$realLattice[1][2]/$magA +
+                      $bBondPos[$i]*$realLattice[2][2]/$magB +
+                      $cBondPos[$i]*$realLattice[3][2]/$magC;
+      $zBondPos[$i] = $aBondPos[$i]*$realLattice[1][3]/$magA +
+                      $bBondPos[$i]*$realLattice[2][3]/$magB +
+                      $cBondPos[$i]*$realLattice[3][3]/$magC;
+
+      
+   }
+}
+
+
+#This subroutine will check the current bond information to make sure that is
+#   conforms to the requests on the command line and in the control file.
+sub checkRequirements
+{
+   # Define local variables
+   my $i;
+   my $found;
+   my $currentElement1;
+   my $currentElement2;
+
+   # Initalize the current bond as passing.
+   $requirementsPassed = 1;
+
+
+   # Compare to the min and max BO and BL command line requirements first.
+   if (($bondLength[$numSystemBonds] < $minBL) ||
+       ($bondLength[$numSystemBonds] > $maxBL) ||
+       ($bondOrder[$numSystemBonds]  < $minBO) ||
+       ($bondOrder[$numSystemBonds]  > $maxBO))
+      {$requirementsPassed = 0;}
+
+   # Identify the current elements.
+   $currentElement1 = uc($elementName[$bondAtom[$numSystemBonds][1]]);
+   $currentElement2 = uc($elementName[$bondAtom[$numSystemBonds][2]]);
+
+   # Initialize the BO search to not found.
+   $found=0;
+
+   # Search for the current atom element pair in the BO limits list.
+   for ($i=1;$i<=$numBOLimits;$i++)
+   {
+      # Compare the element names for the bond order limits to the current
+      #   elements recalling that the limits and the current elements are
+      #   alphabetical with 1 before 2.
+      if (($BOLimits[$i][1] eq $currentElement1) &&
+          ($BOLimits[$i][2] eq $currentElement2))
+      {
+         # Save which limit should be applied to this atom pair.
+         $found=$i;
+         last;
+      }
+   }
+
+   if ($found > 0)
+   {
+      if (($bondOrder[$numSystemBonds] < $BOLimits[$found][3]) ||
+          ($bondOrder[$numSystemBonds] > $BOLimits[$found][4]))
+         {$requirementsPassed = 0;}
+   }
+
+   #Initialize the BL search to not found.
+   $found=0;
+
+   #Search for the current atom element pair in the BL limits list.
+   for ($i=1;$i<=$numBLLimits;$i++)
+   {
+      # Compare the element names for the bond order limits to the current
+      #   elements recalling that the limits and the current elements are
+      #   alphabetical with 1 before 2.
+      if (($BLLimits[$i][1] eq $currentElement1) &&
+          ($BLLimits[$i][2] eq $currentElement2))
+      {
+         # Save which limit should be applied to this atom pair.
+         $found=$i;
+         last;
+      }
+   }
+
+   if ($found > 0)
+   {
+      if (($bondLength[$numSystemBonds] < $BLLimits[$found][3]) ||
+          ($bondLength[$numSystemBonds] > $BLLimits[$found][4]))
+         {$requirementsPassed = 0;}
+   }
+}
+
+
+# This subroutine will create a list of the atoms and bonds associated with
+#   a particular tag for use in making an openDX data file.
+sub createDXList
+{
+   my $currentIter = $_[0];
+   my $i;
+
+   if ($atomBasedDX == 1)
+   {
+      # Obtain the tag to use in collecting atoms.
+      $uniqueTagDX = $uniqueAtomTag[$currentIter];
+
+      # Loop through all the atoms and make a list of the ones that belong to
+      #   this group.  Also, make a mapping between the old atom index number
+      #   and the new one.
+      $numAtomsDX = 0;
+      $numAtomsExtDX = 0;
+      for ($i=1;$i<=$numAtomsExt;$i++)
+      {
+         if ($atomTagExt[$i] eq $uniqueTagDX)
+            {&addDXAtom($i);}
+      }
+
+      # Loop through all the bonds and include the atoms in the bonds that were
+      #   not already collected above.
+      $numBondsDX = 0;
+      for ($i=1;$i<=$numBondsExt;$i++)
+      {
+         # Check to see if one of the atoms in the bond contains an atom that
+         #   was already included.  If so we may need to add the other atom.
+         if (index($bondTagExt[$i],$uniqueTagDX) >= 0)
+         {
+            # Add the atom that was not already accounted for, if there is one.
+            if ($atomTagExt[$bondAtomExt[$i][1]] ne $uniqueTagDX)
+               {&addDXAtom($bondAtomExt[$i][1]);}
+            elsif ($atomTagExt[$bondAtomExt[$i][2]] ne $uniqueTagDX)
+               {&addDXAtom($bondAtomExt[$i][2]);}
+
+            # Add this bond to the openDX list and map the atom number from
+            #   the old list to the new openDX list.
+            &addDXBond($i);
+         }
+      }
+   }
+   else
+   {
+      # Obtain the tag to use in collecting bonds.
+      $uniqueTagDX = $uniqueBondTag[$currentIter];
+
+      # Initialize the count of the number of atoms and the extended set number
+      #   of atoms.
+      $numAtomsDX = 0;
+      $numAtomsExtDX = 0;
+
+      # Loop through all the bonds (including the extended set) and include
+      #   only those that match the requested bond type.  Also include the
+      #   atoms associated with those included bonds.
+      $numBondsDX = 0;
+      for ($i=1;$i<=$numBondsExt;$i++)
+      {
+         if ($uniqueTagDX eq $bondTagExt[$i])
+         {
+            &addDXAtom($bondAtomExt[$i][1]);
+            &addDXAtom($bondAtomExt[$i][2]);
+            &addDXBond($i);
+         }
+      }
+   }
+}
+
+
+
+# This subroutine is used in the createDXList subroutine to add an atom to
+#   the current openDX atom list.
+sub addDXAtom
+{
+   # Get the atom number to be added
+   my $atomNumber = $_[0];
+
+   # Accumulate both the regular and extended atom count.
+   $numAtomsExtDX++;
+
+   # Copy the orthogonal coordinate positions.
+   $xPosExtDX[$numAtomsExtDX] = $xPosExt[$atomNumber];
+   $yPosExtDX[$numAtomsExtDX] = $yPosExt[$atomNumber];
+   $zPosExtDX[$numAtomsExtDX] = $zPosExt[$atomNumber];
+
+   # Store the atom associations between the original and the DX.
+   #   The index number is the old atom number, and the value is the
+   #   new DX atom number.
+   $atomMap2DX[$atomNumber] = $numAtomsExtDX;
+
+   # Copy important information for the atoms that will be shown which includes
+   #   only those atoms where the given atom number is less that the number of
+   #   atoms in the cell (excludes the extended set).  In the case of the
+   #   atomBasedDX we add the further restriction that the atom tag must
+   #   exactly match the current unique DX tag.
+   if (((($atomBasedDX == 1) && ($atomTagExt[$atomNumber] eq $uniqueTagDX)) ||
+        ($bondBasedDX == 1)) && ($atomNumber <= $numAtoms))
+   {
+      $numAtomsDX++;
+      $atomColorDX[$numAtomsDX] = $atomColor[$atomNumber];
+      $atomRadiusDX[$numAtomsDX] = $atomRadius[$atomNumber];
+      $atomChargeTransferDX[$numAtomsDX] = $atomChargeTransfer[$atomNumber];
+   }
+}
+
+
+# This subroutine is used in the createDXList subroutine to add a bond to
+#   the current openDX bond list
+sub addDXBond
+{
+   # Get the current bond number.
+   my $bondNumber = $_[0];
+
+
+   $numBondsDX++;
+   $bondAtomDX[$numBondsDX][1] = $atomMap2DX[$bondAtomExt[$bondNumber][1]];
+   $bondAtomDX[$numBondsDX][2] = $atomMap2DX[$bondAtomExt[$bondNumber][2]];
+   $bondOrderDX[$numBondsDX]   = $bondOrderExt[$bondNumber];
+
+   $abcBondPos[$numBondsDX][1] = $aBondPos[$bondNumber];
+   $abcBondPos[$numBondsDX][2] = $bBondPos[$bondNumber];
+   $abcBondPos[$numBondsDX][3] = $cBondPos[$bondNumber];
+   $xyzBondPos[$numBondsDX][1] = $xBondPos[$bondNumber];
+   $xyzBondPos[$numBondsDX][2] = $yBondPos[$bondNumber];
+   $xyzBondPos[$numBondsDX][3] = $zBondPos[$bondNumber];
+}

@@ -1,0 +1,418 @@
+#!/usr/bin/perl
+
+# PROGRAM:  gaussOverlapRT
+# PURPOSE:  This program will take a set of atomic orbital povray files and
+#           will construct a new scene as a combination of one Gaussian
+#           function from each contributed orbital.  The Gaussian from the
+#           selected orbitals will be transparent and shifted off center as
+#           requested on the command line.  Then, the product of the orbitals
+#           will be opaque.
+#
+# USAGE:    gaussOverlapRT [-addOrb $orbFile @shiftXYZ] [-addOrb ...]
+#                          [-oThresh $orbThresh] [-pThresh $prodThresh] [-help]
+#
+# The -addOrb will place one Gaussian from the requested orbital into the scene
+#   with the given x, y, z coordinate shift in position.  This option is used
+#   as many times as needed for all of the orbitals that are to be added.
+# The -oThresh defines the threshold value for the orbital's isosurface.
+# The -pThresh defines the threshold value for the product isosurface.
+# The -help option will print a friendly help message.
+
+###############################################
+# Begin program execution #####################
+###############################################
+
+# Use necessary modules.
+use strict;
+use warnings;
+use Env;
+use lib "$OLCAO_BIN/perl5";
+use StructureControl;
+use ElementData;
+
+# Declare global variables.
+my $orbThresh;  # Threshold value for the isosurface of the given orbitals.
+my $prodThresh; # Threshold value for the isosurface of the product orbital.
+my @orbFiles;   # List of the file names of the added orbitals.
+my @orbShifts;  # List of the shifts off-center for all the given orbitals.
+my $numOrbs;    # The number of orbitals in the scene.
+my @numOrbTerms;# The number of terms in each orbital in the scene.
+my $prodFile;   # Filename for the resultant product.
+my $numProdFunTerms; # The number of terms in the final product function.
+my @prodFunction; # The collected terms of the product function.
+my $prodFunHasNeg;  # 0 = Product function is all +; 1 = Has - values too.
+
+# Initialize the environment.
+&initEnv;
+
+# Parse the command line parameters.
+&parseCommandLine;
+
+# Create new POVRay file and write the header information.
+&initProdFile;
+
+# Insert the two shifted orbitals and extract the functions for later
+#   construction of the product.
+&insertShiftedOrbs;
+
+# Insert the product of the given orbitals.
+&insertProdFunction;
+
+# Close everything.
+&closeProdFile;
+
+###############################################
+# End program execution #######################
+###############################################
+
+sub initEnv
+{
+   # There are initially zero orbitals in the scene.
+   $numOrbs = 0;
+
+   # Establish a default threshold for the given orbital isosurfaces.
+   $orbThresh = 0.15;
+
+   # Establish a default threshold for the product of the orbitals.
+   $prodThresh = 0.15;
+
+   # Assume that the product function is all positive.
+   $prodFunHasNeg = 0;
+
+   # Initialize the element data from the database.
+   ElementData::initElementData;
+}
+
+sub parseCommandLine
+{
+   # Initialize the index counter for the command line parameters.
+   my $number = 0;
+
+   # Loop through the command line parameters checking for each option.
+   while ($number < scalar(@ARGV))
+   {
+      if ($ARGV[$number] eq "-addOrb")
+      {
+         $orbFiles[++$numOrbs] = $ARGV[++$number];
+         $orbShifts[$numOrbs][1] = $ARGV[++$number];
+         $orbShifts[$numOrbs][2] = $ARGV[++$number];
+         $orbShifts[$numOrbs][3] = $ARGV[++$number];
+      }
+      elsif ($ARGV[$number] eq "-oThresh")
+         {$orbThresh = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-pThresh")
+         {$prodThresh = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-help")
+         {&printHelp;}
+      else
+      {
+         print STDOUT "UNKNOWN COMMAND LINE PARAMETER $ARGV[$number].";
+         print STDOUT " ABORTING.\n";
+         exit;
+      }
+
+      $number++;
+   }
+
+   # Record the command line used to run this job.
+   open (COMMANDLINE,">>command");
+   print COMMANDLINE "gaussOverlapRT ";
+   foreach my $argument (0..$#ARGV)
+      {print COMMANDLINE "$ARGV[$argument] ";}
+   print COMMANDLINE "\n";
+   close (COMMANDLINE);
+}
+
+sub initProdFile
+{
+   # Define local variables.
+   my @values;
+   my $file;
+
+   # First we determine the name of the file based on the given orbital file
+   #   names and the other control parameters.
+   $prodFile = "";
+   foreach $file (1..$numOrbs)
+   {
+      @values = StructureControl::prepLine("",$orbFiles[$file],'[-.]');
+      $prodFile = $prodFile . $values[0] . "-" . $values[2];
+      if ($file != $numOrbs)
+         {$prodFile = $prodFile . "_";}
+   }
+   $prodFile = $prodFile . ".pov";
+
+   # Open the file for writing.
+   open (PROD,">$prodFile") || die "Could not open $prodFile for writing.\n";
+
+   # Write the initial header for the product file.
+   print PROD <<ENDHEADER;
+//Include necessary libraries for color, finish, and the ability to process functions.
+#include "colors.inc"
+#include "finish.inc"
+#include "functions.inc"
+
+// Orthographic camera
+camera {
+   orthographic
+   location <0, -15, 0>
+   look_at   <0, 0,  0>
+   right     1.33*x  // aspect
+   direction <0,0,10> // direction and zoom
+   angle 67 //field (overrides direction zoom)
+}
+
+// Define the light source.
+light_source {<-100,-200,-100> colour rgb 1}
+
+// Define the background color.
+background { color White }
+
+// Declare object visualization parameters.
+#declare RADIUS = 6;
+#declare ORB_THRESH = -$orbThresh;
+#declare PROD_THRESH = -$prodThresh;
+
+union {
+ENDHEADER
+}
+
+sub insertShiftedOrbs
+{
+   # Define local variables.
+   my $orbital;
+
+   # Initialize the number of terms in the product function.
+   $numProdFunTerms = 0;
+
+   # Add each of the orbitals.
+   foreach $orbital (1..$numOrbs)
+      {&addOrb($orbital);}
+}
+
+sub addOrb
+{
+   # Define the passed parameters.
+   my $orbital = $_[0];
+
+   # Define the local variables.
+   my $i;
+   my $j;
+   my $line;
+   my @values;
+   my $firstFound; # Flag for finding the first Gaussian of each orbital.
+   my $isosurfaceIsPositive;
+
+   # Open the orbital file.
+   open (ORB,"<$orbFiles[$orbital]") || 
+         die "Can not open $orbFiles[$orbital] for reading.\n";
+
+   # Read to the point before the isosurface definition.
+   while ($line = <ORB>)
+   {
+      if ($line =~ /union/)
+         {last;}
+   }
+
+   # Initialize the number of terms in the orbital function.
+   $numOrbTerms[$orbital] = 0;
+
+   # Assume that the first isosurface is negative.
+   $isosurfaceIsPositive = 0;
+
+   # Initialize the flag for finding the first Gaussian of the orbital.
+   $firstFound = 0;
+
+   # Now read and regurgitate the isosurface definition.  We will retain some
+   #   information about each isosurface so as to later construct the product
+   #   of all contriubuted functions.
+   while ($line = <ORB>)
+   {
+      # Keep track of whether we should be saving the terms of the isosurface
+      #   because they are the positive parts of the product function
+      #   definition or not.  Also, it is possible that the entire product
+      #   function could be positive in which case the final product function
+      #   only has one isosurface.  In the event that there is some negative
+      #   contribution, then a second product function isosurface will need to
+      #   be written.  This is marked here.
+print $line;
+      if ($line =~ /Positive/)
+      {
+         $isosurfaceIsPositive = 1;
+         print PROD $line;
+      }
+      elsif ($line =~ /Negative/)
+      {
+         $isosurfaceIsPositive = 0;
+         $prodFunHasNeg = 1;
+         print PROD $line;
+      }
+
+      # In the event that this line contains a function term we will perform
+      #   all the shifts before regurgitating or storing.
+      elsif (($line =~ /exp/) && ($firstFound == 0))
+      {
+         # We found the first Gaussian and so we mark the flag so that we will
+         #   skip all the remaining ones.
+         $firstFound = 1;  
+
+         # Note that I am using a total kludge here.  The substitution of the
+         #   character x with (x+3) or whatever will also affect the letter x
+         #   in the word "exp". So, we substitute the exp with an ep before the
+         #   real "x" substitution, and then substitute back to exp.
+         if ($orbShifts[$orbital][1] != 0)
+         {
+            $line =~ s/exp/ep/;
+            $line =~ s/x/(x+$orbShifts[$orbital][1])/g;
+            $line =~ s/ep/exp/;
+         }
+         if ($orbShifts[$orbital][2] != 0)
+            {$line =~ s/y/(y+$orbShifts[$orbital][2])/g;}
+         if ($orbShifts[$orbital][3] != 0)
+            {$line =~ s/z/(z+$orbShifts[$orbital][3])/g;}
+
+         # Remove the plus sign from the line.
+         chomp $line;
+         chop  $line;
+         $line = $line . "\n";
+         print PROD $line; # Record this term now (whether it is + or -).
+
+         # Recall that for each orbital (except s-type) there are two
+         #   isosurfaces.  One shows the positive portion and one shows the
+         #   negative portion of the basis function.  We only need to retain
+         #   one isosurface definition per orbital, because the function
+         #   (of course) actually defines both the positive and the negative
+         #   values within its domain.  What will be done later is to make
+         #   two isosurfaces of the product funtion, one of the positive values
+         #   and one of the negative.  Thus, we will retain for later use only
+         #   the positive valued isosurface.  Note that we need to keep track
+         #   of the number of terms for this orbital.
+         if ($isosurfaceIsPositive == 1)
+            {$prodFunction[$orbital][++$numOrbTerms[$orbital]] = $line;}
+      }
+
+      # In the event that we have found a Gaussian line but we have already
+      #   found the first one then we skip it.
+      elsif (($line =~ /exp/) && ($firstFound == 1))
+         {} # Do nothing.
+
+      # In the case that we read the line defining the threshold for the
+      #   isosurface we need to modify the line before regurgitation so that
+      #   it now uses the ORB_THRESH variable because the given orbitals and
+      #   the product function will have different threshold values.
+      elsif ($line =~ /THRESH/)
+      {
+         $line =~ s/THRESH/ORB_THRESH/;
+         print PROD $line;
+      }
+
+      # In the case that we read the pigment line we need to make it partly
+      #   transparent.
+      elsif ($line =~ /pigment/)
+      {
+         $line =~ s/,0>/,0.9>/;
+         print PROD $line;
+      }
+
+      # We need to reset the firstFound when we finish the first orbital.
+      elsif ($line =~ /      }/)
+      {
+         $firstFound = 0;
+         print PROD $line;
+      }
+
+      # We don't want to close the union as in each of the input orbital files.
+      elsif ($line =~ /^}/)
+         {next;}
+
+      # Simply print the line to the product function scene in all other cases.
+      else
+         {print PROD $line;}
+   }
+
+   # Close the orbital file.
+   close (ORB);
+}
+
+sub insertProdFunction
+{
+   # Define local variables.
+   my $lastIteration;
+   my $isosurface;
+   my $red;
+   my $green;
+   my $blue;
+   my $orbSignNotice;
+   my $orbital;
+   my $orbitalTerm;
+
+   # In the case that there is a negative component, we include it.
+   if ($prodFunHasNeg == 1)
+      {$lastIteration = 2;}
+   else
+      {$lastIteration = 1;}
+
+   # Create the product isosurface(s).
+   foreach $isosurface (1..$lastIteration)
+   {
+      # The first iteration is always the positive one.  Thus we assign all the
+      #   variables that will be different between positive and negative
+      #   isosurfaces starting with the positive one.
+      if ($isosurface == 1)
+      {
+         $red = 0.000; $green = 0.000; $blue = 1.000;
+         $orbSignNotice = "Positive";
+      }
+      else
+      {
+         $red = 1.000; $green = 0.000; $blue = 0.000;
+         $orbSignNotice = "Negative";
+      }
+
+      # Open the isosurface and function blocks.
+      print PROD "   isosurface { // Sign = $orbSignNotice\n";
+      print PROD "      function {\n";
+
+      # Write all the terms for the product function.
+      foreach $orbital (1..$numOrbs)
+      {
+         # Open parenthesis for this term.
+         print PROD "         (\n";
+
+         foreach $orbitalTerm (1..$numOrbTerms[$orbital])
+            {print PROD $prodFunction[$orbital][$orbitalTerm];}
+
+         # Close parenthesis for this term.
+         print PROD "         )";
+
+         # If this is not the last term then we have to add a multiplication
+         #   operator.  Otherwise we just terminate the line.
+         if ($orbital != $numOrbs)
+            {print PROD "*\n";}
+         else
+            {print PROD "\n";}
+      }
+
+      # Close the function block.
+      print PROD "      }\n";
+
+      # Write all the attributes of the isosurface.
+      print PROD "      contained_by{sphere{0,RADIUS}}\n";
+      print PROD "      threshold PROD_THRESH\n";
+      print PROD "      accuracy 0.0001\n";
+      print PROD "      max_gradient 4\n";
+      print PROD "      pigment {rgbt <$red,$green,$blue,0>}\n";
+      print PROD "      finish {phong 0.5 phong_size 10}\n";
+
+     # Close the isosurface block.
+     print PROD "   }\n";
+   }
+}
+
+sub closeProdFile
+{
+   # Write the last close bracket.  This will close the union definition.
+   print PROD "}\n";
+
+   # Close the file.
+   close (PROD);
+}

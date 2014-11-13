@@ -1,0 +1,39 @@
+#!/usr/bin/perl
+
+# PROGRAM: unpackOLCAODB
+# PURPOSE: This program is simply designed to unpack the database files that
+#          come with the OLCAO package.
+# USAGE:   unpackOLCAODB
+#
+
+# Start Script Execution
+
+# Make sure that we use the proper settings.
+use strict;
+use warnings;
+use Env;
+
+# Go to the $OLCAO_DIR/share (which is where the databases are).
+chdir "$OLCAO_DIR/share";
+
+# Issue the necessary unpacking commands.
+if (system("tar -xzf atomicBDB.tgz") != 0)
+   {die "Failed to unpack atomicBDB.tgz";}
+if (system("tar -xzf atomicPDB.tgz") != 0)
+   {die "Failed to unpack atomicPDB.tgz";}
+if (system("tar -xzf spaceDB.tgz") != 0)
+   {die "Failed to unpack spaceDB.tgz";}
+if (system("tar -xzf sybdDB.tgz") != 0)
+   {die "Failed to unpack sybdDB.tgz";}
+
+# Enter into the space group database directory.
+chdir "spaceDB";
+
+# Recreate the space groups.
+if (system("./remake") != 0)
+   {die "Failed to remake the space group database";}
+
+# Return to the original working directory.
+chdir "..";
+
+#DONE!

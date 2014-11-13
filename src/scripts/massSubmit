@@ -1,0 +1,174 @@
+#!/usr/bin/perl
+
+##############################################################################
+#
+# Program: massSubmit
+# Purpose: This program creates a bash submission script for OLCAO on the
+#          Sirius system.  The program reads in from a file 'batchList' and
+#          creates a submission script that will submit a specified number of
+#          jobs at a time and wait before submitting any new jobs.
+#
+# USAGE:   massSubmit [-n $jobsPer] | -help
+#
+#          The -n option specifies how many jobs the script should submit
+#            before issueing a 'wait'.  If not set, the default value is 5.
+#
+##############################################################################
+
+
+#########################################
+# BEGIN EXECUTION #######################
+#########################################
+
+# Necessary modules.
+use strict;
+use warnings;
+use Env;
+use StructureControl;
+
+
+# Global variables.
+my $jobsPer;
+my $batchFile;
+my @batchList;
+my @dirName;
+my @tagNumber;
+
+# Initialize the environment.
+&initEnv;
+# Parse the command line.
+&parseCommandLine;
+
+# Read the current batch list.
+&readBatchList;
+
+# Write out submission script
+&writeBashSub;
+
+###################################################
+# End Execution ###################################
+###################################################
+
+sub initEnv
+{
+    #Local Variables
+
+    $jobsPer=5;
+    $batchFile = "batchList";
+ 
+}
+
+sub parseCommandLine
+{
+    #Local Variables
+    my $number = 0;
+    my $commandLine = "command";
+    my $argument;
+
+    while($number < scalar(@ARGV))
+    {
+        if($ARGV[$number] eq "-n")
+          {$jobsPer = $ARGV[++$number];}
+        elsif ($ARGV[$number] eq "-help")
+          {&printHelp;}
+        else
+        {
+            print STDOUT "UNKOWN COMMAND LINE PARAMETER $ARGV[$number].\n";
+            exit
+        }
+        $number++;
+    }
+
+    #Record the comand line used to create this set of input files.
+    open (COMMANDLINE,">>$commandLine");
+    print COMMANDLINE "massSubmit ";
+    foreach $argument (0..$#ARGV)
+        {print COMMANDLINE "$ARGV[$argument] ";}
+    print COMMANDLINE "\n";
+    close (COMMANDLINE);
+
+}
+
+
+sub readBatchList
+{
+    #Local Varialbes
+    my $submission;
+    my @values;
+
+    #Open the submission list.
+    open (LIST,"<$batchFile") || die "Can not open $batchFile for reading.\n";
+
+    #Read whole list of directories
+    @batchList = <LIST>;
+
+    #Extract out the directory names and tag ID numbers.
+    foreach $submission (0..$#batchList)
+    {
+        @values = StructureControl::prepLine("",$batchList[$submission],'\s+');
+        $dirName[$submission]= $values[0];
+        $tagNumber[$submission] = $values[1];
+    }
+
+    #Close the batch submission list.
+    close (LIST);
+}
+
+sub writeBashSub
+{
+    #Local Variables
+    my $submit;
+    my $proj_dir;
+    my $bashLocation;
+
+    #Set project directory
+    $proj_dir = `pwd`;
+    chomp $proj_dir;
+
+    #Open file for writing
+    open(SUBFILE,">$proj_dir/mSubmit") ||
+        die "Cannot open $proj_dir/mSubmit for writing.\n";
+    $bashLocation = `which bash`;
+    chomp $bashLocation;
+    
+    #Print headers and other necessary arguments
+    print SUBFILE "\#!$bashLocation\n\n";
+    print SUBFILE "cd $proj_dir\n";
+    print SUBFILE "source $OLCAO_DIR/.olcao\n\n";
+    
+    foreach $submit (0..$#dirName)
+    {
+        print SUBFILE "./$dirName[$submit]/submit &\n";
+        if (($submit+1) % $jobsPer == 0 && $submit != 0)
+        {
+             print SUBFILE "wait\n";
+        }
+    }
+
+    close (SUBFILE);
+
+    system ("chmod 755 $proj_dir/mSubmit");
+}
+
+
+sub printHelp
+{
+    print <<ENDHELP;
+##############################################################################
+#
+# Program: massSubmit
+# Purpose: This program creates a bash submission script for OLCAO on the
+#          Sirius system.  The program reads in from a file 'batchList' and
+#          creates a submission script that will submit a specified number of
+#          jobs at a time and wait before submitting any new jobs.
+#
+# USAGE:   massSubmit [-n \$jobsPer] | -help
+#
+#          The -n option specifies how many jobs the script should submit
+#            before issueing a 'wait'.  If not set, the default value is 5.
+#
+##############################################################################
+#
+ENDHELP
+    exit;
+}

@@ -1,0 +1,343 @@
+#!/usr/bin/perl
+sub printHelp
+{
+   print <<ENDHELP;
+
+# PROGRAM: skl2vasp
+# PURPOSE: This program will take an OLCAO skeleton file and will produce a
+#          collection of input files for executing a vasp calculation with
+#          a few intelligent options.
+#
+# USAGE:   skl2vasp [-j \$jobType] [-p \$potType [-s \$potSubType]] [-GW] [-G]
+#                   [-t \$cellType] [-help]
+#
+# The -j option defines the type of calculation that you would like to run with
+#   vasp.  The idea is that this will choose optimal parameters for some of the
+#   input files for that particular type of job.  Possible options for \$jobType
+#   are: "relaxfull", "relaxion1", "relaxion2", "relaxvol", "cij", "phonon",
+#   and "gpt".  The default value if no option is given is "relaxfull".
+#
+# The -p option defines the base type of potential that will be used. Then,
+#   depending on the selection, there are a number of possible subtypes that
+#   can be selected.  Possible values for \$potType are:
+#   "pot"       = Ultrasoft LDA
+#   "potGGA"    = Ultrasoft GGA
+#   "potpaw"    = Projector Augmented Wave LDA (From VASP 4.x)
+#   "potpawGGA" = Projector Augmented Wave GGA (From VASP 4.x)
+#   "potpawLDA" = Projector Augmented Wave LDA (From VASP 5.x)
+#   "potpawPBE" = Projector Augmented Wave PBE (VASP 5.x potentials preferred)
+#   The default value if no option is given is "potpaw" which will give LDA
+#   potentials from VASP version 5.2 for all elements for which such potentials
+#   exist and it will give VASP version 4.6 potpaw potentials for all others.
+#
+# The -s suboption to the -p option defines the sub type to the potential.
+#   There is a wide variety of potential sub types and many of these options
+#   are valid only for particular elements or potential base types.  At the
+#   moment, it is the user's responsibility to know what potential they are
+#   asking for and to be extra careful.  Acceptable values for \$subTypePot are:
+#   "s"  = Soft
+#   "h"  = Hard
+#   "pv" = Semi-core p states are used as valence states.
+#   "sv" = Semi-core s and p states are used as valence states.
+#   "d"  = Semi-core d states are used as valence states.
+#   In the event that a sub type is not available for a particular element,
+#   then the standard type will be used.
+#
+# The -GW option will append the further subtype of GW to the subtype option.
+#
+# The -G option will request that the calculation use a gamma kpoint.
+#
+# The -t option allows the user to override the cell type that will be found
+#   from the space group label in the skeleton file.  This may be useful in the
+#   case that a calculation is being done on a crystal system (say hexagonal)
+#   but in which some symmetry has been broken.  Now the cell type is triclinic
+#   say but the user still wants to proceed with the calculation as if the
+#   cell was hexagonal.  If this option is not given then the default value
+#   for \$cellType will be determined from the space group number in the
+#   olcao.skl file. Valid options are: "tric", "mono", "ortho", "tet", "trig",
+#   "hex", "sc", "bcc", and "fcc".
+ENDHELP
+   exit(0);
+}
+
+##############################################################
+# Begin program execution
+##############################################################
+
+# Use necessary pragmas and import important environment variables.
+use strict;
+use warnings;
+use Env;
+use lib "$OLCAO_BIN/perl5";
+use ElementData;
+use StructureControl;
+
+# Define global variables.
+my $jobType;    # The type of job the input files are for.
+my $potType;    # The type of potential to use.
+my $subPotType; # The sub-type of the potential to use.
+my $GW;         # Flag to include (1) or not include (0) the GW sub-sub type.
+my $GKPoint;    # Flag to use (1) or not use (0) a Gamma kpoint.
+my $cellType;   # Bravis lattice cell type.
+my $olcaoSkl;   # File name for the OLCAO skeleton file.
+my $olcaoSklSorted;   # File name for the element sorted OLCAO skeleton file.
+
+# Initialize the environment.
+&initEnv;
+
+# Parse the command line.
+&parseCommandLine;
+
+# Presort the element list in the skeleton file.
+&preSortSkl;
+
+# Get the string of the potential sub type.
+&getSubPotType;
+
+# Read the skeleton file.
+StructureControl::readInputFile($olcaoSklSorted,0);
+
+# Print the VASP input files.
+StructureControl::printVASP($cellType,$potType,$subPotType,$GKPoint,$jobType);
+
+##############################################################
+# End program execution
+##############################################################
+
+sub initEnv
+{
+   # Initialize the element data from the database.
+   ElementData::initElementData;
+
+   # Initialize the default job type.
+   $jobType = "relaxfull";
+
+   # Initialize the default potential type.
+   $potType = "potpaw";
+
+   # Initialize the default sub type for the potential.
+   $subPotType = "";
+
+   # Assume that the GW pseudo potentail PAW type will not be used.
+   $GW = 0;
+
+   # Assume that the calculation will be a multi kpoint calculation.
+   $GKPoint = 0;
+
+   # Assume that the lattice cell type is undefined.
+   $cellType = "";
+
+   # Define the input file name and the element sorted file name.
+   $olcaoSkl = "olcao.skl";
+   $olcaoSklSorted = "olcao.skl.sorted";
+}
+
+sub parseCommandLine
+{
+   # Define local variables.
+   my $number = 0;
+   my $argument;
+   my $commandLine = "command";
+
+   # Read the command line.
+   while ($number < scalar(@ARGV))
+   {
+      if ($ARGV[$number] eq "-j")
+         {$jobType = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-p")
+      {
+         $potType = $ARGV[++$number];
+
+         if ($number >= $#ARGV)
+            {last;}
+         
+         if ($ARGV[++$number] eq "-s")
+            {$subPotType = $ARGV[++$number];}
+         else
+            {$number--;}
+      }
+      elsif ($ARGV[$number] eq "-t")
+         {$cellType = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-GW")
+         {$GW=1;}
+      elsif ($ARGV[$number] eq "-G")
+         {$GKPoint=1;}
+      elsif ($ARGV[$number] eq "-help")
+         {&printHelp;}
+      else
+      {
+         print STDOUT "UNKNOWN COMMAND LINE PARAMETER $ARGV[$number]. BYE.\n";
+         exit;
+      }
+
+      if ($number > scalar(@ARGV))
+      {
+         print STDOUT "Command line overrun.\n";
+         print STDOUT "Check command line parameters for missing options.\n";
+         die "Aborting\n";
+      }
+      else
+         {$number++;}
+   }
+   
+   # Record the command line call for this program.
+   open (COMMANDLINE,">>$commandLine");
+   print COMMANDLINE "skl2vasp ";
+   foreach $argument (0..$#ARGV)
+      {print COMMANDLINE "$ARGV[$argument] ";}
+   print COMMANDLINE "\n";
+   close (COMMANDLINE);
+}
+
+sub preSortSkl
+{
+   # Define local variables.
+   my $line;
+   my @values;
+   my $atom;  # Loop index value for going over atoms.
+   my $numAtoms;  # Number of atom lines in the olcao.skl file.
+   my @atomLines; # All the atom lines in the olcao.skl file.
+   my @sortedAtomLines; # All the atom lines in the olcao.skl file sorted.
+
+   # What we need to do here is make a copy of the OLCAO skeleton file with
+   #   the modification that the atoms listed in it will be reordered so that
+   #   atoms of the same element are listed together.  The approach will be
+   #   to read in and immediately output the header information.  Then we
+   #   read in the atom list, sort it, and the print it.  Finally we will
+   #   read in the tail information and immediately print it.
+
+   # Open the necessary files first.
+   open (SKLIN,"<$olcaoSkl") || die "Cannot open $olcaoSkl for reading.\n";
+   open (SKLOUT,">$olcaoSklSorted") || 
+         die "Cannot open $olcaoSklSorted for writing.\n";
+
+   # Read a regurgitate the header information.
+   while ($line = <SKLIN>)
+   {
+      # Regurgitate the line.
+      print SKLOUT "$line";
+
+      # Once we reach the part with the atomic coordinates we shift to
+      #   collecting the lines for sorting.  NOTE that we also make sure to
+      #   grab the number of atom lines in the file.
+      if (($line =~ /frac/) || ($line =~ /cart/))
+      {
+         @values = StructureControl::prepLine("",$line,'\s+');
+         $numAtoms = $values[1];
+         last;
+      }
+   }
+
+   # Collect the atom lines for sorting.
+   foreach $atom (0..$numAtoms-1)
+      {$atomLines[$atom] = <SKLIN>;}
+
+   # Sort the atom lines.
+   @sortedAtomLines = sort {lc($a) cmp lc($b)} @atomLines;
+
+   # Print the atom lines to the sorted olcao.skl file.
+   foreach $atom (0..$numAtoms-1)
+      {print SKLOUT "$sortedAtomLines[$atom]";}
+
+   # Read and regurgitate the tail information making sure to keep track of the
+   #   space group request.
+   while ($line = <SKLIN>)
+   {
+      print SKLOUT "$line";
+
+      # Get the cell type if it was not defined on the command line.
+      if (($line =~ /space/) && ($cellType eq ""))
+         {&getCellType($line);}
+   }
+
+   # Close the files.
+   close (SKLIN);
+   close (SKLOUT);
+}
+
+sub getCellType
+{
+   # Define passed parameters.
+   my $line = $_[0];
+
+   # Define local variables.
+   my @values;
+   my $spaceGroup;
+
+   # Get the space group designation from the skeleton file.
+   @values = StructureControl::prepLine("",$line,'\s+');
+   $spaceGroup = $values[1];
+
+   # Follow the designation to the space group definition file in the
+   #   database.  Then open the file and get the number on the second
+   #   line.  This is the space group number and is the only thing that
+   #   is really needed to determine the crystal cell type.
+   open (SPACE,"<$OLCAO_DATA/spaceDB/$spaceGroup") || die
+         "Cannot open $OLCAO_DATA/spaceDB/$spaceGroup for reading\n";
+   @values = StructureControl::prepLine(\*SPACE,"",'\s+');
+   @values = StructureControl::prepLine(\*SPACE,"",'\s+');
+   $spaceGroup = $values[0];
+   close (SPACE);
+
+   # Determine the cell type from the space group number.
+   if ($spaceGroup <= 2)
+      {$cellType = "tric";}
+   elsif ($spaceGroup <= 15)
+      {$cellType = "mono";}
+   elsif ($spaceGroup <= 74)
+      {$cellType = "ortho";}
+   elsif ($spaceGroup <= 142)
+      {$cellType = "tet";}
+   elsif ($spaceGroup <= 167)
+      {$cellType = "trig";}
+   elsif ($spaceGroup <= 194)
+      {$cellType = "hex";}
+   elsif ($spaceGroup <= 230)
+      {$cellType = "cubic";}
+   else
+   {
+      print STDOUT "Error, space group number > 230.\n";
+      exit;
+   }
+}
+
+sub getSubPotType
+{
+   # Determine the string to use when searching for the requested potential
+   #   sub type.  This will need to be improved over time.
+   if ($subPotType eq "s")
+      {$subPotType = "_s";}
+   elsif ($subPotType eq "h")
+      {$subPotType = "_h";}
+   elsif ($subPotType eq "sv")
+      {$subPotType = "_sv";}
+   elsif ($subPotType eq "pv")
+      {$subPotType = "_pv";}
+   elsif ($subPotType eq "d")
+      {$subPotType = "_d";}
+   elsif ($subPotType eq "soft")
+      {$subPotType = "_soft";}
+   elsif ($subPotType eq "200ev")
+      {$subPotType = "_200ev";}
+   elsif ($subPotType eq ".75")
+      {$subPotType = ".75";}
+   elsif ($subPotType eq "1.25")
+      {$subPotType = "1.25";}
+   elsif ($subPotType eq "1.5")
+      {$subPotType = "1.5";}
+   elsif ($subPotType eq ".5")
+      {$subPotType = ".5";}
+   elsif ($subPotType eq ".33")
+      {$subPotType = ".33";}
+   elsif ($subPotType eq ".66")
+      {$subPotType = ".66";}
+   elsif ($subPotType eq "3")
+      {$subPotType = "_3";}
+   elsif ($subPotType eq "2")
+      {$subPotType = "_2";}
+   elsif ($subPotType eq "new")
+      {$subPotType = "_new";}
+
+   if ($GW == 1)
+      {$subPotType = $subPotType . "_GW";}
+}

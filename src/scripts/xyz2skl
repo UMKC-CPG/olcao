@@ -1,0 +1,132 @@
+#!/usr/bin/perl
+sub printHelp
+{
+   print STDOUT <<ENDHELP;
+###############################################################################
+#Program:  xyz2skl
+#Purpose:  This program will convert a file containing a structure in pure xyz
+#          direct space coordinates into an OLCAO skeleton file with the atoms
+#          all rearranged such that they are sorted according to their
+#          elements.  This will also produce a mapping between the xyz file and
+#          the skl atoms.
+#
+#USAGE:  xyz2skl [-i \$xyzInputFile] [-o \$sklOutputFile] [-m \$mapFile]
+#                 [-xyztypes] [-help]
+#
+#The -i option is used to request that a specific input file be used for the
+#   conversion.  If this option is not given, then the default value for the
+#   input file is model.xyz.
+#The -o option is used to request that a specific output file be written to
+#   for the conversion.  If this option is not given, then the default value
+#   for the output file is skl.dat.
+#The -m option is used to request that the mapping between the xyz and skl
+#   files be stored in the file named \$mapFile.
+#The -xyztypes option will require that the skl.dat file use the types as
+#   defined in the xyz file.  The default is to have no types assigned.
+#   
+###############################################################################
+ENDHELP
+   exit;
+}
+
+# BEGIN PROGRAM EXECUTION #################
+
+# Use necessary modules.
+use strict;
+use warnings;
+use Env;
+use lib "$OLCAO_BIN/perl5";
+use ElementData;
+use StructureControl;
+
+# Declare global variables.
+my $xyzTypes;
+my $xyzFile;
+my $sklFile;
+my $mapFile;
+my $title;
+
+# Set default values for various file names.
+&setDefaults;
+
+# Read the command line for requested options.
+&parseCommandLine;
+
+# Open output files for writing.
+&initEnvironment;
+
+# Read the XYZ input file and store/calculate all the important information.
+StructureControl::readInputFile($xyzFile,$xyzTypes);
+
+# Get the title for th system.
+$title = StructureControl::getTitle;
+$title = "Generated from XYZ file: $title";
+
+# Print the skl input file.
+StructureControl::printOLCAO(\*SKL,$title,"cartesian");
+
+# Print the data file that maps the xyz nature of each atom to the skl atoms.
+StructureControl::printOLCAOMap(\*MAP);
+
+# END PROGRAM EXECUTION ###################
+
+sub setDefaults
+{
+   # Define the default file names.
+   $xyzFile  = "model.xyz";
+   $sklFile  = "olcao.skl";
+   $mapFile  = "sklXYZ.map";
+
+   # Assign default behavior for types assignment.
+   $xyzTypes = 0;
+}
+
+sub parseCommandLine
+{
+   # Define local variables.
+   my $number=0;
+   my $argument;
+   my $commandLine = "command";
+
+   while ($number < scalar(@ARGV))
+   {
+      if ($ARGV[$number] eq "-i")
+      {
+         $xyzFile = $ARGV[$number+1];
+         $number++;
+      }
+      elsif ($ARGV[$number] eq "-o")
+      {
+         $sklFile = $ARGV[$number+1];
+         $number++;
+      }
+      elsif ($ARGV[$number] eq "-m")
+      {
+         $mapFile = $ARGV[$number+1];
+         $number++;
+      }
+      elsif ($ARGV[$number] eq "-xyztypes")
+         {$xyzTypes = 1;}
+      elsif ($ARGV[$number] eq "-help")
+         {&printHelp;}
+      else
+         {die "Unknown command line parameter.  Aborting\n";}
+
+      $number++;
+   }
+
+   #Record the command line used to create this set of input files.
+   open (COMMANDLINE,">>$commandLine");
+   print COMMANDLINE "xyz2skl ";
+   foreach $argument (0..$#ARGV)
+      {print COMMANDLINE "$ARGV[$argument] ";}
+   print COMMANDLINE "\n";
+   close (COMMANDLINE);
+}
+
+sub initEnvironment
+{
+   # Open all files for writing.
+   open (SKL,">$sklFile") || die "Cannot open $sklFile for writing.\n";
+   open (MAP,">$mapFile") || die "Cannot open $mapFile for writing.\n";
+}

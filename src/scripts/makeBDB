@@ -1,0 +1,608 @@
+#!/usr/bin/perl
+sub printHelp
+{
+   print <<ENDHELP;
+#PROGRAM:  makeBDB
+#PURPOSE:  This program will perform all the necessary operations to construct
+#          a default atomic basis set for OLCAO calculations using the atomic
+#          data stored in the ElementData.pm library file.  There are three
+#          steps to the basis set construction.
+#          (1) An atomic scf input file is created and a calculation is done
+#          using it to obtain a numerical free atom potential function.
+#          (2) The numerical potential is fit with Gaussians as accurately as
+#          possible.  (This may take some considerable time.)
+#          (3) A pair of input files for contracting a Gaussian basis set are
+#          constructed.  The first contains specific orbitals sequestered to
+#          the core where they can be orthogonalized out of the secular
+#          equation, the second includes those core orbitals in the valence
+#          section so that they are included in the secular equation.
+#          NOTE:  The contraction is not actually performed at this stage.
+#          The wave functions are contracted at the time the 'makeinput' script
+#          is invoked.  This allows the user to modify the basis set used for
+#          any purpose if they desire.  It is recommended however, that because
+#          the basis sets are generally applicable to an exceptionally wide
+#          variety of systems that they not be modified without cause to
+#          'improve' a result for a specific system.
+#
+#          Advice and criticism on the basis set construction are always
+#          welcome.
+#
+#USAGE:  makeBDB [[-scf] | [-fit] | [-cont]] [-fork \$numForks]
+#                [-element \$targetZ] [-force] [-v] | [-help]
+#
+#OPTIONS:
+#
+# The -scf option will cause the program to perform only the scf operation.
+# The -fit option will cause the program to perform only the Gaussian fitting
+#   procedure (which can be time consuming).
+# The -cont option will cause the program to perform only the contraction
+#   operation.
+# The -fork will allow the user to request that the Gaussian fitting of the
+#   numerical potential be performed in parallel with \$numForks number of
+#   processes.  (The non-linear fitting can take a very long time.)
+# The -element option takes one atomic Z number as its argument and will
+#   perform the requested operation(s) for that element only.  The \$targetZ is
+#   is the atomic Z value for chosen element.  If this option is not given then
+#   all elements will be treated.
+# The -force option will cause the program to overwrite any previously obtained
+#   results for the requested operations.
+# The -v option stands for "verbose".  When present the program will print
+#   progress reports of what it is doing.
+# The -help option will print this useful information.
+ENDHELP
+   exit;
+}
+######################################################################
+#Use necessary modules
+######################################################################
+use strict;
+use warnings;
+use Env;
+use lib "$OLCAO_BIN/perl5";
+use POSIX qw(ceil floor);
+use ElementData;
+use StructureControl;
+
+######################################################################
+# Define global variables.  (Yes, I know this is ugly.)
+######################################################################
+
+my $opCode;         # 0=do all steps; 1=Do SCF; 2=Do fitting; 3=Do contraction.
+my $targetZ;        # Work on this specific atom only.  Not the whole database.
+my $numForks;       # Num of processes to use for fitting all the potentials.
+
+my $atomicBDB;      # Dir location of the data base from StructureControl.pm
+
+my $numElements;    # Number of elements in the database.
+my $elementNames_ref; # A pointer to each element's name.
+my $elementInit;    # First element index number to do.
+my $elementFin;     # Last element index number to do.
+
+my $currMinTermWF;  # Minimum Gaussian alpha used in all orbital expansions.
+my $currMaxTermWF;  # Maximum Gaussiam alpha used in all orbital expansions.
+my $currNumTermsWF; # Num of Gaussians to use in the current orbital expn.
+my $currMaxQN_l;    # Highest QN_l for the current element in a loop.
+
+my @orbitalTag;     # S,P,D,F character for labeling
+my @orbitalTerms;   # Flag for each Gaussian term to use or not use in this orb.
+my @orbitalQN_n;    # The QN_n for each orbital.
+my @upCharge;       # The up spin charge for each orbital.
+my @dnCharge;       # The down spin charge for each orbital.
+
+my @totalOrbitals;  # Total set of orbitals to contract.
+my @coreOrbitals;   # Set of core orbitals in contraction.
+my @valeOrbitals;   # Set of valence orbitals in contraction.
+my $numTotalCoreOrbitals; # Sum of num core orbitals.
+my $numTotalValeOrbitals; # Sum of num occupied vale orbitals for each s,p,d,f.
+my @numValeOrbitals;      # Num occupied orbitals for each s,p,d,f.
+
+my @valeCharge;    # The charge for each QN_l in the valence orbitals for SCF.
+
+my $verbose;  # Flag to print a lot of notes as the program progresses.
+my $force;    # Flag to overwrite old results.
+
+######################################################################
+# Begin execution of the script here
+######################################################################
+
+# Initialize the execution environment.
+&initEnv;
+
+# Parse the command line.
+&parseCommandLine;
+
+# Determine the range of elements to treat.
+&getElementRange;
+
+# For each element, create the directory.
+&makeDirs;
+
+# Enter each directory and create the atomSCF.dat input files.
+if (($opCode == 0) || ($opCode == 1))
+   {&makeAtomSCF;}
+
+# Enter each directory and fit the potentials with Gaussian functions.
+if (($opCode == 0) || ($opCode == 2))
+   {&makeGaussFit;}
+
+# Enter each directory and create the two contract.dat files.
+if (($opCode == 0) || ($opCode == 3))
+   {&makeContracts;}
+
+######################################################################
+# End execution of the script here
+######################################################################
+
+
+
+
+sub initEnv
+{
+   # Obtain references to all necessary data in the ElementData.pm file.
+   $numElements      = ElementData::getNumElements();
+   $elementNames_ref = ElementData::getElementNamesRef();
+
+   # Get the database location.
+   $atomicBDB = StructureControl::getAtomicBDB();
+
+   # Define the tags for each orbital angular momentum quantum number.
+   $orbitalTag[0] = 'S';
+   $orbitalTag[1] = 'P';
+   $orbitalTag[2] = 'D';
+   $orbitalTag[3] = 'F';
+
+   # Initialize the opcode to do all steps.
+   $opCode = 0;
+
+   # Assume that we will act on all elements.
+   $targetZ = 0;
+
+   # Assume that we will only have 1 process.
+   $numForks = 1;
+
+   # Assume that we will be silent.
+   $verbose = 0;
+
+   # Assume that we will not overwrite any previously obtained results.
+   $force = 0;
+
+   # Initialize the element data from the database.
+   ElementData::initElementData;
+}
+
+
+sub parseCommandLine
+{
+   # Define local variables.
+   my $number;
+   my $argument;
+   my $command = "command";
+
+   $number = 0;
+
+   while ($number < scalar(@ARGV))
+   {
+      if ($ARGV[$number] eq "-scf")
+         {$opCode = 1;}
+      elsif ($ARGV[$number] eq "-fit")
+         {$opCode = 2;}
+      elsif ($ARGV[$number] eq "-cont")
+         {$opCode = 3;}
+      elsif ($ARGV[$number] eq "-fork")
+         {$numForks = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-element")
+         {$targetZ = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-force")
+         {$force = 1;}
+      elsif ($ARGV[$number] eq "-v")
+         {$verbose = 1;}
+      elsif ($ARGV[$number] eq "-help")
+         {&printHelp;}
+
+      $number++;
+   }
+
+   #Record the command line used to create this set of input files.
+   open (COMMANDLINE,">>$command");
+   print COMMANDLINE "makeBDB ";
+   foreach $argument (0..$#ARGV)
+      {print COMMANDLINE "$ARGV[$argument] ";}
+   print COMMANDLINE "\n";
+   close (COMMANDLINE);
+}
+
+
+
+sub getElementRange
+{
+   # Determine if all or one element should be done.  Initialize the loop
+   #   range accordingly.
+   if ($targetZ == 0)
+      {$elementInit = 1; $elementFin = $numElements;}
+   else
+      {$elementInit = $targetZ; $elementFin = $targetZ;}
+}
+
+
+sub makeDirs
+{
+   # Define local variables.
+   my $element;
+
+   # Create the database directory if it does not already exist.
+   if (! -e $atomicBDB)
+      {mkdir $atomicBDB;}
+
+   # Go to the atomic basis function database location.
+   chdir $atomicBDB || die "Can not change directories to $atomicBDB\n";
+
+   # Make the directory for each element only if it does not already exist.
+   foreach $element ($elementInit..$elementFin)
+   {
+      if (! -e $elementNames_ref->[$element])
+         {system("mkdir $elementNames_ref->[$element]");}
+   }
+}
+
+
+sub makeAtomSCF
+{
+   # Define local variables.
+   my $element;
+   my $QN_l;
+   my $orbital;
+
+   # Print the atomSCF input file for the requested elements.
+   foreach $element ($elementInit..$elementFin)
+   {
+      if (($force == 1) && (-e "$elementNames_ref->[$element]/atomSCF.out"))
+      {
+         system("rm -f $elementNames_ref->[$element]/atomSCF.out");
+         system("rm -f $elementNames_ref->[$element]/numericalPot.dat");
+         system("rm -f $elementNames_ref->[$element]/numericalRho.dat");
+         system("rm -f $elementNames_ref->[$element]/progress.scf");
+      }
+
+      # Do not touch this element if it already is done.
+      if (-e "$elementNames_ref->[$element]/atomSCF.out")
+         {next;}
+
+      # Go into the directory for this element.
+      chdir $elementNames_ref->[$element];
+
+      # Extract information needed for this element.
+      &getElementData ($element);
+
+      # Open the atom scf input file.
+      open (SCF,">atomSCF.dat") ||
+            die "Can not open atomSCF.dat for writing.\n";
+
+      # Write the title.
+      print SCF "Default Atomic SCF Calculation\n";
+
+      # Write most of the input parameters.
+      print SCF "ELEMENT_NAME\n";
+      print SCF "$elementNames_ref->[$element]\n";
+      print SCF "NUCLEAR_ALPHA\n";
+      print SCF "20.0\n";
+      print SCF "MAX_ITERATION\n";
+      print SCF "100\n";
+      print SCF "CONVG_TOLERANCE\n";
+      print SCF "1.0D-8\n";
+      print SCF "MIXING_FACTOR\n";
+      print SCF "0.4\n";
+      print SCF "EXCHANGE_CORRELATION_CODE\n";
+      print SCF "1\n";
+      print SCF "SPIN_POLARIZATION_FLAG\n";
+      print SCF "0\n";
+      print SCF "RELATIVISTIC_FLAG\n";
+      print SCF "0\n";
+      print SCF "ATOMIC_NUMBER\n";
+      print SCF "$element\n";
+      print SCF "SHELL_CHARGE\n";
+      print SCF "0\n";
+      print SCF "SHELL_RADIUS\n";
+      print SCF "0\n";
+      print SCF "RADIAL_GRID_PARAMETERS\n";
+      print SCF "80.0 5.0 50.0\n";
+      print SCF "MAX_ORB_ANGMOM_QN\n";
+      print SCF "$currMaxQN_l\n";
+      print SCF "NUM_CORE_ORBITALS\n";
+      print SCF "$numTotalCoreOrbitals\n";
+      print SCF "NUM_VALE_ORBITALS\n";
+      print SCF "$numTotalValeOrbitals\n";
+      foreach $QN_l (0..3)
+      {
+         foreach $orbital (1..$numValeOrbitals[$QN_l])
+         {
+            print SCF "$orbitalQN_n[$QN_l][$orbital] $QN_l " .
+                  "$upCharge[$QN_l][$orbital] $dnCharge[$QN_l][$orbital]\n";
+         }
+      }
+
+      # Close the input file.
+      close (SCF);
+
+      if ($verbose == 1)
+         {print STDOUT "Working on atomic SCF for element $element " .
+                       "($elementNames_ref->[$element])\n";}
+
+      # Execute the atomSCF program.
+      system("atomSCF > progress.scf");
+
+      # Return to the root directory of the database.
+      chdir ("..");
+   }
+}
+
+
+
+sub makeGaussFit
+{
+   # Define local variables.
+   my $element;
+   my $numProcesses;
+   my $pid;
+
+   # Initialize the current number of processes.
+   $numProcesses = 0;
+
+   # Perform the fitting on each requested element.
+   foreach $element ($elementInit..$elementFin)
+   {
+      if (($force == 1) && (-e "$elementNames_ref->[$element]/gaussFit.out"))
+      {
+         system("rm -f $elementNames_ref->[$element]/gaussFit.out");
+         system("rm -f $elementNames_ref->[$element]/gauss.fit");
+         system("rm -f $elementNames_ref->[$element]/progress.fit");
+      }
+
+      # Do not touch this element if it already is done.
+      if (-e "$elementNames_ref->[$element]/gaussFit.out")
+         {next;}
+
+      $numProcesses++;
+
+      $pid = fork();
+
+      if ($pid == 0)
+      {
+         # Go into the directory for this element.
+         chdir $elementNames_ref->[$element];
+
+         # Run the fitting program.
+         system("gaussFit < numericalPot.dat > progress.fit");
+
+         exit;
+      }
+      else
+      {
+         if ($numProcesses >= $numForks)
+         {
+            wait();
+            $numProcesses--;
+         }
+      }
+   }
+
+   # Wait for any remaining child processes to finish.
+   while ($numProcesses != 0)
+   {
+      wait();
+      $numProcesses--;
+   }
+}
+
+
+sub makeContracts
+{
+   # Define local variables.
+   my $element;
+   my $orbital;
+   my $file;
+   my @fileName;
+
+   # Print the contract.dat and nocore_contract.dat for the requested elements.
+   foreach $element ($elementInit..$elementFin)
+   {
+
+      # Define the file names.
+      $fileName[1] = "contract1_$elementNames_ref->[$element]";
+      $fileName[2] = "nocore_contract1_$elementNames_ref->[$element]";
+
+      # Go into the directory for this element.
+      chdir $elementNames_ref->[$element];
+
+      # Clean up if we are forcing a recomputation.
+      if (($force == 1) && (-e "$fileName[1]"))
+         {system("rm -f $fileName[1] $fileName[2]");}
+
+      # Extract information needed for this element.
+      &getElementData ($element);
+
+      foreach $file (1..2)
+      {
+         # Open the contract file for writing.
+         open (CONTRACT,">$fileName[$file]") ||
+               die "Can not open $fileName[$file] for writing.\n";
+
+         # Write the element info.
+         print CONTRACT "ELEMENT_NAME\n";
+         print CONTRACT "$elementNames_ref->[$element]\n";
+
+         # Write the core orbital info.
+         print CONTRACT "NUM_CORE_ORBITALS\n";
+         print CONTRACT "@{$coreOrbitals[$file]}\n";
+
+         # Write the valence orbital info.
+         print CONTRACT "NUM_VALE_ORBITALS_MB\n";         # Beyond Core
+         print CONTRACT "@{$valeOrbitals[$file][1]}\n";
+         print CONTRACT "NUM_VALE_ORBITALS_FB\n";         # Beyond MB
+         print CONTRACT "@{$valeOrbitals[$file][2]}\n";
+         print CONTRACT "NUM_VALE_ORBITALS_EB\n";         # Beyond FB
+         print CONTRACT "@{$valeOrbitals[$file][3]}\n";
+
+         # Write the max number of gaussians for orbital expansion.
+         print CONTRACT "MAX_NUM_GAUSSIANS\n";
+         print CONTRACT "$currNumTermsWF\n";
+
+         # Write the min and max exponential alphas.
+         print CONTRACT "MIN_MAX_ALPHAS\n";
+         print CONTRACT "$currMinTermWF $currMaxTermWF\n";
+
+         # Write the atomic Z number.
+         print  CONTRACT "ATOMIC_NUMBER\n";
+         printf CONTRACT "%f\n",$element;
+
+         # Write the nuclear alpha.
+         print CONTRACT "NUCLEAR_ALPHA\n";
+         print CONTRACT "20.0\n";
+
+         # Write the list of which Gaussian terms to use for each orbital type.
+         foreach $orbital (0..3)
+         {
+            if ($totalOrbitals[$orbital] == 0)
+               {next;}
+
+            print CONTRACT "$orbitalTag[$orbital]_GAUSSIAN_LIST\n";
+            print CONTRACT "$orbitalTerms[$orbital]\n";
+         }
+
+         # Make sure that we do not also compute the charge density.
+         print CONTRACT "CALCULATE_CHARGE\n";
+         print CONTRACT "0\n";
+
+         # Close the core and no-core files.
+         close (CONTRACT);
+      }
+
+      # Return to the root directory of the database.
+      chdir ("..");
+   }
+}
+
+
+sub getElementData
+{
+   # Define passed parameters.
+   my $element = $_[0];
+
+   # Define local variables.
+   my $basis;  # 1=MB, 2=FB, 3=EB
+   my $orbital;
+   my $QN_l;
+   my @tempNumTermsWF;
+   my $thisOrbitalCharge;
+   my $availableOrbitalCharge;
+
+   # Get the gaussian wave function data.  Min, max, number of terms.
+   $currMinTermWF  = ElementData::getMinTermWF($element);
+   $currMaxTermWF  = ElementData::getMaxTermWF($element);
+   @tempNumTermsWF = ElementData::getNumTermsWF($element);
+   $currNumTermsWF = $tempNumTermsWF[0];
+
+   # Get the valence charge data for this element.
+   @valeCharge = ElementData::getValeCharge($element);
+
+   # Get the current element's core orbitals for both files (core 1,nocore 2).
+   @{$coreOrbitals[1]} = ElementData::getCoreOrbitals($element);
+   @{$coreOrbitals[2]} = (0,0,0,0);
+
+   # Get the current element's valence orbitals for the core [1] case.
+   foreach $basis (1..3)
+      {@{$valeOrbitals[1][$basis]} =
+            ElementData::getValeOrbitals($basis,$element);}
+
+   # Create the minimal basis for the no-core [2] case as a sum of the core and
+   #   the minimal basis specification from above.
+   foreach $orbital (0..3)
+      {$valeOrbitals[2][1][$orbital] = $valeOrbitals[1][1][$orbital] +
+                                       $coreOrbitals[1][$orbital];}
+
+   # Copy the full and extended basis definitons from the core to the no-core.
+   @{$valeOrbitals[2][2]} = @{$valeOrbitals[1][2]};
+   @{$valeOrbitals[2][3]} = @{$valeOrbitals[1][3]};
+
+   # Compute the total number of orbitals for each ang. mom. QN.  This is
+   #   applicable to both the core and no-core case.
+   @totalOrbitals = @{$coreOrbitals[1]};
+   foreach $basis (1..3)
+   {
+      foreach $orbital (0..3)
+         {$totalOrbitals[$orbital] += $valeOrbitals[1][$basis][$orbital];}
+   }
+
+   # Obtain which gaussian terms are used for which orbitals.
+   foreach $orbital (0..3)
+   {
+      if ($totalOrbitals[$orbital] == 0)
+         {next;}
+      $orbitalTerms[$orbital]=ElementData::getOrbitalTerms($orbital,$element);
+   }
+
+   # Compute the number of core orbitals.
+   $numTotalCoreOrbitals = 0;
+   foreach $QN_l (0..3)
+      {$numTotalCoreOrbitals += $coreOrbitals[1][$QN_l];}
+
+
+   # Compute the number of s,p,d,f valence orbitals (occupied only!).
+   foreach $QN_l (0..3)
+      {$numValeOrbitals[$QN_l] = 0;}
+   foreach $QN_l (0..3)
+   {
+      $numValeOrbitals[$QN_l] +=
+            floor($valeCharge[$QN_l] / ((2*$QN_l+1)*2));
+      if ($valeCharge[$QN_l] % ((2*$QN_l+1)*2) > 0)
+         {$numValeOrbitals[$QN_l]++;}
+   }
+
+
+   # Compute the total number of occupied valence orbitals.
+   $numTotalValeOrbitals = 0;
+   foreach $QN_l (0..3)
+      {$numTotalValeOrbitals += $numValeOrbitals[$QN_l];}
+
+
+
+   # Compute the maximum QN_l for this element.
+   $currMaxQN_l = 0;
+   foreach $QN_l (0..3)
+   {
+      if ($coreOrbitals[1][$QN_l] > 0)
+         {$currMaxQN_l = $QN_l;}
+
+      if (($valeCharge[$QN_l] > 0) && ($QN_l > $currMaxQN_l))
+         {$currMaxQN_l = $QN_l;}
+   }
+
+   # Compute the descriptive components for each of the occupied valence
+   #   orbitals.  This includes QN_n, and the up and down charge for
+   #   each occupied orbital.
+   foreach $QN_l (0..3)
+   {
+      # Save the total valence charge in all orbitals of this QN_l.
+      $availableOrbitalCharge = $valeCharge[$QN_l];
+
+      foreach $orbital (1..$numValeOrbitals[$QN_l])
+      {
+         # Determine the QN_n for this orbital.
+         $orbitalQN_n[$QN_l][$orbital] =
+               $coreOrbitals[1][$QN_l] + $orbital + $QN_l;
+
+         # Determine the total charge for this orbital from the amount
+         #   available for all orbitals of the current QN_l..
+         if ($availableOrbitalCharge-((2*$QN_l+1)*2) >= 0)
+         {
+            $thisOrbitalCharge = ((2*$QN_l+1)*2);
+            $availableOrbitalCharge -= $thisOrbitalCharge;
+         }
+         else
+            {$thisOrbitalCharge = $availableOrbitalCharge;}
+
+         # Separate the total charge for this orbital into up and down parts.
+         $upCharge[$QN_l][$orbital] = floor($thisOrbitalCharge/2.0);
+         $dnCharge[$QN_l][$orbital] =  ceil($thisOrbitalCharge/2.0);
+      }
+   }
+}

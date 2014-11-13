@@ -1,0 +1,781 @@
+#!/usr/bin/perl
+
+
+###############################################################################
+# PROGRAM:  spectra2ODX
+# PURPOSE:  This program will read a data file created with the scanSpectra
+#           script and convert the data to openDX format using some
+#           visualization technique given on the command line.  The function
+#           field feature extraction method described by John C. Anderson,
+#           Luke J. Gosink, Mark A. Duchaineau, and Kenneth I. Joy at the 2007
+#           Eurographics/IEEE-VGTC Symposium on Visualization is one method.
+#           In it, a point from the mesh is given and the function field is
+#           converted to a scalar field based on the similarity of other
+#           spectra to the spectra at the requested mesh point.  Other methods
+#           are described below.
+#
+# USAGE:  spectra2ODX [-mp $aPoint $bPoint $cPoint <[-onset] |
+#                     [-select $beginEnergy $offset $endEnergy] |
+#                     [-intpeak $beginEnergy $offset $endEnergy]>]
+#                     [-peak1 $targetPeak1 $otherPeak1] [-shift $edgeShift]
+#                     [-t $targetFile] [-i $inFile] [-o $outFile] [-help]
+#
+# The -mp option defines the "mesh point" that is used for comparison with all
+#   other spectra.  The point values must range between 1 and the number of
+#   points in the mesh which can be seen as the first line in the input data.
+#   If no point is given, then the default value of 1 1 1 is used.
+# The -onset option will find the energy value of the edge onset for the given
+#   target position and will compare the onset energy of all other points to
+#   it.  Note that this is a sub option of -mp because we must be given a
+#   target mesh point to compare the onset energy shift to.  This options is
+#   off by default.
+# The -select option is used to define a range where the weighting factor for
+#   the spectral difference is set to 1.  Energy values outside that range will
+#   have 0 weight.  If the $beginEnergy is negative, then the edge onset is
+#   used as the beginning and the $endEnergy is taken to mean the energy range
+#   starting from the edge onset.  (e.g. if $beginEnergy = -1 and $endEnergy =
+#   5, then the first 5 eV from the edge onset will be weighted 1 and all
+#   other energies will be weighted 0.)  The $offset value is used to define an
+#   offset from the edge onset so we can measure spectral differences between
+#   e.g. 5 and 10 eV from the edge onset or 15 and 20 eV.  When not using the
+#   edge onset as the starting point, then this value should be 0.
+# The -intpeak option defines a general range within which a peak will be
+#   searched for on each mesh point spectra.  The peak's area is integrated
+#   using the minima on either side of the peak within the range as the guide
+#   posts.  This is done with dynamically assigned weights.  (Actually, for now,
+#   this will just simply integrate the area in the specified range.  Further,
+#   if the beginPeak value is negative, then the endPeak value is taken to mean
+#   the energy range starting from the edge onset.)  The $offset value is used
+#   as defined above for the -weight option.
+# The -peak1 option is used as an alternative method for identifying the
+#   initial point of comparison between a target spectrum and all the other
+#   mesh point spectra for the case of dynamic comparisons.  The default method
+#   for dynamic comparison if this option is not given is to use the edge onset
+#   (defined as the first non-zero value) to begin the comparison.  The value
+#   of $targetPeak1 and $otherPeak1 are supposed to be the energy values of
+#   points on each spectrum (where other is a sample spectrum).  The value in
+# The -shift option is used to set the value in $edgeShift.  This will be
+#   subtracted from the identified location of the edge onset.  It is assumed
+#   that this will be sufficient to include all of the edge onset.  If not
+#   given, then a default value of 5 eV is assumed.
+# The -t option is used to define the name of an alternate input file
+#   specifically for obtaining the target point information.  If this option
+#   is not given, then the target point information will be taken from the
+#   data file given in the -i option (or its default).  At present it is
+#   necessary that the target file and actual data file have all the same
+#   format (number of mesh points, energy scale size and number of points, etc.)
+# The -i option defines the name of the input file (meshSpectra.dat = default).
+# The -o option defines the name of the output file (meshSpectra.dx = default).
+# The -help option prints this friendly message.
+###############################################################################
+
+
+
+##################################################
+# BEGIN EXECUTION ################################
+##################################################
+
+
+
+# Use necessary modules.
+use strict;
+use warnings;
+use Env;
+use lib "$OLCAO_DIR/perl5";
+use POSIX qw(ceil floor);
+use StructureControl;
+
+# Declare global variables.
+my @funFieldDiff;
+my $numSpacePoints;
+my $numEnergyPoints;
+my $initialEnergy;  # Initial energy value of the energy scale.
+my $finalEnergy;    # Final energy value of the energy scale.
+my $beignEnergy;    # Beginning energy for peak integration.
+my $endEnergy;      # Ending energy for peak integration.
+my $energyDelta;
+my @numMeshPoints;
+my $numLinesPerSpectrum;
+my $targetFile;
+my $inFile;
+my $outFile;
+my @targetPoint;
+my @targetPointSpectrum;
+my @delta;
+my @realLattice;
+my $targetOnset;
+my $targetArea;
+my $targetInitIndex;
+my $targetFinIndex;
+my @meshOnset;
+my @meshArea;
+my $opCode;  # 0=Standard function field diff, 1=onset diff, 2=intg diff.
+my $targetPeak1;
+my $otherPeak1;
+my $beginPeak;
+my $edgeShift;
+my $edgeThresh;
+my $offset;
+my $endPeak;
+my @weight;
+
+# Initialize the program environment variables.
+&initEnv;
+
+# Parse the command line.
+&parseCommandLine;
+
+# Read the header of the spectral data.
+&readHeader;
+
+# Read the data for the target point.
+&readTarget;
+
+# Compute spectral comparison information.
+&computeSpectralData;
+
+# Print the openDX data file.
+&printODX;
+
+sub printHelp
+{
+   print <<ENDHELP;
+###############################################################################
+# PROGRAM:  spectra2ODX
+# PURPOSE:  This program will read a data file created with the scanSpectra
+#           script and convert the data to openDX format using some
+#           visualization technique given on the command line.  The function
+#           field feature extraction method described by John C. Anderson,
+#           Luke J. Gosink, Mark A. Duchaineau, and Kenneth I. Joy at the 2007
+#           Eurographics/IEEE-VGTC Symposium on Visualization is one method.
+#           In it, a point from the mesh is given and the function field is
+#           converted to a scalar field based on the similarity of other
+#           spectra to the spectra at the requested mesh point.  Other methods
+#           are described below.
+#
+# The -mp option defines the "mesh point" that is used for comparison with all
+#   other spectra.  The point values must range between 1 and the number of
+#   points in the mesh which can be seen as the first line in the input data.
+#   If no point is given, then the default value of 1 1 1 is used.
+# The -onset option will find the energy value of the edge onset for the given
+#   target position and will compare the onset energy of all other points to
+#   it.  Note that this is a sub option of -mp because we must be given a
+#   target mesh point to compare the onset energy shift to.  This options is
+#   off by default.
+# The -weight option is used to define a range where the weighting factor for
+#   the spectral difference is set to 1.  Energy values outside that range will
+#   have 0 weight.  If the \$beginEnergy is negative, then the edge onset is
+#   used as the beginning and the \$endEnergy is taken to mean the energy range
+#   starting from the edge onset.  (e.g. if \$beginEnergy = -1 and \$endEnergy =
+#   5, then the first 5 eV from the edge onset will be weighted 1 and all
+#   other energies will be weighted 0.)  The \$offset value is used to define an
+#   offset from the edge onset so we can measure spectral differences between
+#   e.g. 5 and 10 eV from the edge onset or 15 and 20 eV.  When not using the
+#   edge onset as the starting point, then this value should be 0.
+# The -intpeak option defines a general range within which a peak will be
+#   searched for on each mesh point spectra.  The peak's area is integrated
+#   using the minima on either side of the peak within the range as the guide
+#   posts.  This is done with dynamically assigned weights.  (Actually, for now,
+#   this will just simply integrate the area in the specified range.  Further,
+#   if the beginPeak value is negative, then the endPeak value is taken to mean
+#   the energy range starting from the edge onset.)  The \$offset value is used
+#   as defined above for the -weight option.
+# The -t option is used to define the name of an alternate input file
+#   specifically for obtaining the target point information.  If this option
+#   is not given, then the target point information will be taken from the
+#   data file given in the -i option (or its default).  At present it is
+#   necessary that the target file and actual data file have all the same
+#   format (number of mesh points, energy scale size and number of points, etc.)
+# The -i option defines the name of the input file (meshSpectra.dat = default).
+# The -o option defines the name of the output file (meshSpectra.dx = default).
+# The -help option prints this friendly message.
+#
+# USAGE:  spectra2ODX [-mp \$aPoint \$bPoint \$cPoint <[-onset] |
+#                     [-weight \$beginEnergy \$offset \$endEnergy] |
+#                     [-intpeak \$beginEnergy \$offset \$endEnergy]>]
+#                     [-t \$targetFile] [-i \$inFile] [-o \$outFile] [-help]
+###############################################################################
+ENDHELP
+   exit;
+}
+
+sub initEnv
+{
+   # Assign default file names.
+   $targetFile = "";
+   $inFile     = "meshSpectra.dat";
+   $outFile    = "meshSpectra.dx";
+
+   # Assign a default target mesh point and turn on use of it (weight scheme).
+   $opCode = 0;
+   $targetPoint[1] = 1;
+   $targetPoint[2] = 1;
+   $targetPoint[3] = 1;
+
+   # Assign a default value for the peak feature range.  These values will
+   #   include the entire spectra.
+   $beginPeak = -1;
+   $endPeak   = 100;
+   $offset    = 0;
+
+   # Assume that the point of comparison will be defined by the edge onset for
+   #   the dynamic comparison case.
+   $targetPeak1 = 0;
+   $otherPeak1  = 0;
+
+   # Assume that in the case of dynamic spectral shifting we find the points we
+   #   want to "line up" for direct comparison.  Then shift the initial point
+   #   back by $edgeShift eV to include the whole spectrum.  Assume that we
+   #   identify the spectral edge onset as the point where the intensity is
+   #   greater than $edgeThresh.
+#   $edgeShift   = 5;
+   $edgeShift   = 0;
+   $edgeThresh  = 0.01;
+}
+
+
+sub parseCommandLine
+{
+   # Declare local variables.
+   my $number = 0;
+   my $argument;
+   my $commandLine = "command";
+
+   while ($number < scalar(@ARGV))
+   {
+      if ($ARGV[$number] eq "-mp")
+      {
+         # Get the index number of the target point.  This is not a spacial
+         #   coordinate.
+         $targetPoint[1] = $ARGV[++$number];
+         $targetPoint[2] = $ARGV[++$number];
+         $targetPoint[3] = $ARGV[++$number];
+         if ($ARGV[$number+1] eq "-onset")
+         {
+            $number++;
+            $opCode = 1;
+         }
+         elsif ($ARGV[$number+1] eq "-select")
+         {
+            $number++;
+            $beginPeak = $ARGV[++$number];
+            $offset    = $ARGV[++$number];
+            $endPeak   = $ARGV[++$number];
+         }
+         elsif ($ARGV[$number+1] eq "-intpeak")
+         {
+            $number++;
+            $opCode = 2;
+            $beginPeak = $ARGV[++$number];
+            $offset    = $ARGV[++$number];
+            $endPeak   = $ARGV[++$number];
+         }
+      }
+      elsif ($ARGV[$number] eq "-peak1")
+      {
+         $targetPeak1 = $ARGV[++$number];
+         $otherPeak1  = $ARGV[++$number];
+      }
+      elsif ($ARGV[$number] eq "-shift")
+         {$edgeShift  = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-t")
+         {$targetFile = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-i")
+         {$inFile = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-o")
+         {$outFile = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-help")
+         {&printHelp;}
+      else
+      {
+         print STDOUT "UNKNOWN COMMAND LINE PARAMETER $ARGV[$number].\n";
+         exit;
+      }
+      $number++;
+   }
+
+   # Apply defaults if certain variables were not given on the command line.
+   if ($targetFile eq "")
+      {$targetFile = $inFile;}
+
+
+   #Record the command line used to create this set of input files.
+   open (COMMANDLINE,">>$commandLine");
+   print COMMANDLINE "spectra2ODX ";
+   foreach $argument (0..$#ARGV)
+      {print COMMANDLINE "$ARGV[$argument] ";}
+   print COMMANDLINE "\n";
+   close (COMMANDLINE);
+}
+
+
+sub readHeader
+{
+   # Declare local variables.
+   my @values;
+   my $line;
+   my $abc;
+
+   open (MESH,"<$inFile") || die "Can not open $inFile.\n";
+
+   # Get the total number of mesh points in each a,b,c direction.
+   @values = StructureControl::prepLine(\*MESH,$line,'\s+');
+   $numMeshPoints[1] = $values[0];
+   $numMeshPoints[2] = $values[1];
+   $numMeshPoints[3] = $values[2];
+
+   # Compute the total number of spacial points.
+   $numSpacePoints = $numMeshPoints[1]*$numMeshPoints[2]*$numMeshPoints[3];
+
+   # Read the lattice a,b,c parameters each in x,y,z vector form.
+   foreach $abc (1..3)
+   {
+      @values = StructureControl::prepLine(\*MESH,$line,'\s+');
+      $realLattice[$abc][1] = $values[0];
+      $realLattice[$abc][2] = $values[1];
+      $realLattice[$abc][3] = $values[2];
+
+      # Compute the step size of each mesh point.
+      $delta[$abc][1] = $realLattice[$abc][1]/($numMeshPoints[$abc]-1);
+      $delta[$abc][2] = $realLattice[$abc][2]/($numMeshPoints[$abc]-1);
+      $delta[$abc][3] = $realLattice[$abc][3]/($numMeshPoints[$abc]-1);
+   }
+
+   # Read the number of energy points in each spectra and the initial and
+   #   final energy values of the range.
+   @values = StructureControl::prepLine(\*MESH,$line,'\s+');
+   $numEnergyPoints = $values[0];
+   $initialEnergy   = $values[1];
+   $finalEnergy     = $values[2];
+
+   # Compute the energy delta.
+   $energyDelta = ($finalEnergy - $initialEnergy) / ($numEnergyPoints - 1);
+
+   # Compute the number of text lines per spectrum
+   if ($numEnergyPoints%5 != 0)
+      {$numLinesPerSpectrum = int($numEnergyPoints/5)+1;}
+   else
+      {$numLinesPerSpectrum = int($numEnergyPoints/5);}
+
+   # Assign weights for the calculation.  At present, all the weights are 1.
+   &assignWeights(\@weight);
+
+   # Close the data file for the header.
+   close (MESH);
+}
+
+
+sub readTarget
+{
+   # Declare local variables.
+   my @values;
+   my $line;
+   my $spacePoint;
+   my $targetPointIndex;
+   my $energyPoint;
+   my $readInPoints;
+   my $currentIndex;
+
+   # Open the target data file and read past the header information.
+   open (MESH,"<$targetFile") || die "Can not open $targetFile.\n";
+   <MESH>;
+   <MESH>;
+   <MESH>;
+   <MESH>;
+   <MESH>;
+
+   # Compute the target point index as the index number when all mesh points
+   #   are listed in linear fashion with the c axis index values varying
+   #   fastest.  (Recall that the smallest acceptable triplet is 1,1,1.)
+   $targetPointIndex = $targetPoint[3] +
+                      ($targetPoint[2]-1) * $numMeshPoints[3] + 
+                      ($targetPoint[1]-1) * $numMeshPoints[2] *
+                                            $numMeshPoints[3];
+
+   # Find and then read the spectrum of the target point.  This is done by
+   #   reading past each spectrum up to the target point index.
+
+   # This is the find part.
+   $currentIndex = 0;
+   while ($currentIndex != $targetPointIndex-1)
+   {
+      $currentIndex++;
+      foreach $line (1..$numLinesPerSpectrum)
+         {<MESH>;}
+   }
+
+   # This is the read part.
+   &readSpectrum(\@targetPointSpectrum);
+
+   # Find the target edge onset.
+   $targetOnset = &findOnset(\@targetPointSpectrum);
+
+   # Adjust the value of the edge onset to the requested first peak positions
+   #   if necessary.
+   if ($targetPeak1 != $otherPeak1)
+      {$targetOnset = $targetPeak1 - $edgeShift;}
+
+   # Compute the energy range indices for the target spectrum.  The indices
+   #   will be different for different energy onsets.  The indices will be the
+   #   same as the indices for the other spectra if they were statically
+   #   requested.  The indices will be different for other spectra if they
+   #   were dynamically requested.
+   ($targetInitIndex,$targetFinIndex) = 
+      &getEnergyIndices(\@targetPointSpectrum,$targetInitIndex,
+                         $targetFinIndex,$targetOnset);
+
+   # In the case that we will be comparing a specific integrated area we now
+   #   find that area for the target point.
+   if ($opCode == 2)
+      {$targetArea = &integrate($targetOnset,\@targetPointSpectrum,\@weight);}
+
+   # Close the mesh data.  (It is opened again later to read the rest of the
+   #   data.)
+   close (MESH);
+}
+
+
+sub computeSpectralData
+{
+   # Declare local variables.
+   my @meshPointSpectrum;
+   my @values;
+   my $readInPoints;
+   my $spacePoint;
+   my $energyPoint;
+   my $line;
+   my $initIndex;
+   my $finIndex;
+
+
+   # Reopen the data file and read past the header information.
+   open (MESH,"<$inFile") || die "Can not open $inFile.\n";
+   <MESH>;
+   <MESH>;
+   <MESH>;
+   <MESH>;
+   <MESH>;
+
+   # Read the spectrum at each space point and compute its difference with the
+   #   previously read in target spectrum.
+   foreach $spacePoint (1..$numSpacePoints)
+   {
+      # Mark the initiation of the computation on this space point.
+      if ($spacePoint%10 == 0)
+         {print STDOUT "|";}
+      else
+         {print STDOUT ".";}
+
+      if ($spacePoint%50 == 0)
+         {print STDOUT " $spacePoint\n";}
+
+      # Read the spectrum for this space point.
+      &readSpectrum (\@meshPointSpectrum);
+
+      # Find the edge onset as the first non-zero value of the spectra.
+      $meshOnset[$spacePoint] = &findOnset(\@meshPointSpectrum);
+
+      # Adjust the value of the edge onset to the requested first peak
+      #   positions if necessary.
+      if ($targetPeak1 != $otherPeak1)
+         {$meshOnset[$spacePoint] = $otherPeak1 - $edgeShift;}
+
+      # Compute the energy indices used for comparison.  The indices will be
+      #   different for different energy onsets.  The indices will be the same
+      #   as for the other spectra if they were statically requested.
+      if ($opCode != 1)
+      {
+         ($initIndex,$finIndex) = 
+               &getEnergyIndices(\@meshPointSpectrum,$initIndex,$finIndex,
+               $meshOnset[$spacePoint]);
+
+         # Check that the number of indices for this spectrum and the
+         #   number of indices for the target spectrum match.  If the range of
+         #   energy points chosen for this spectrum is LARGER than for the
+         #   target spectrum, then we reduce the range for this spectrum.  If
+         #   the range for this spectrum is SMALLER than for the target
+         #   spectrum, then we do nothing because the calculations are all
+         #   based on the range for the current spectrum.
+         if (($finIndex-$initIndex) != ($targetFinIndex-$targetInitIndex))
+         {
+            if ($initIndex < $targetInitIndex)
+               {$finIndex = $initIndex+$targetFinIndex-$targetInitIndex;}
+         }
+      }
+
+      # Compute the requested comparison data.  Note that the opCode==1 case
+      #   was already done when the onset was obtained.
+      if ($opCode == 0)
+      {
+         $funFieldDiff[$spacePoint] = &euclidianDiff(\@weight,
+               \@meshPointSpectrum,$initIndex,$finIndex);
+      }
+      elsif ($opCode == 2)
+      {
+         $meshArea[$spacePoint] = &integrate(\@weight.
+               \@meshPointSpectrum,$initIndex,$finIndex);
+      }
+   }
+
+   # Add a final newline if necessary.
+   if ($numSpacePoints%50 != 0)
+      {print STDOUT "\n";}
+}
+
+
+sub readSpectrum
+{
+   # Define passed parameters.
+   my $spectrum_ref = $_[0];
+
+   # Define local variables.
+   my @values;
+   my $readInPoints;
+   my $energyPoint;
+   my $line;
+
+   # Initialize the number of points read in for this spectrum to zero.
+   $readInPoints = 0;
+
+   # Read in all the points for this spectrum.
+   while ($readInPoints != $numEnergyPoints)
+   {
+      @values = StructureControl::prepLine(\*MESH,$line,'\s+');
+      foreach $energyPoint (0..scalar(@values)-1)
+      {
+         $spectrum_ref->[$readInPoints] = $values[$energyPoint];
+         $readInPoints++;
+      }
+   }
+}
+
+
+
+sub getEnergyIndices
+{
+   # Define passed parameters.
+   my $spectra_ref = $_[0];
+   my $initIndex   = $_[1];
+   my $finIndex    = $_[2];
+   my $onset       = $_[3];
+
+   # Define local variables.
+   my $energyPoint;
+
+   # Compute beginning and ending ranges for the current spectra according to
+   #   its energy onset and the command line beginPeak, endPeak, and offset.
+   #   Recall that when $beginPeak is < 0 the energy range is dynamically set
+   #   according to the edge onset.  In the static case, the begin and end
+   #   peak values are absolute references.  In the dynamic case, the end peak
+   #   is in reference to the edge onset (and the begin peak is negative).
+   if ($beginPeak < 0)
+   {
+      $initIndex = floor(($onset - $initialEnergy + $offset)/$energyDelta);
+      $finIndex  = ceil($initIndex + $endPeak/$energyDelta);
+   }
+   else
+   {
+      $initIndex = floor(($beginPeak - $initialEnergy + $offset)/$energyDelta);
+      $finIndex  = ceil(($endPeak - $initialEnergy + $offset)/$energyDelta);
+   }
+
+   # Make sure that we do not go outside the bounds of the spectrum array.
+   if ($finIndex > $numEnergyPoints-1)
+      {$finIndex = $numEnergyPoints-1;}
+
+   return ($initIndex,$finIndex);
+}
+
+
+
+sub assignWeights
+{
+   # Define passed parameters.
+#   my $onset      = $_[0];
+#   my $weight_ref = $_[1];
+   my $weight_ref = $_[0];
+
+   # Define local variables.
+#   my $startEnergyIndex;
+#   my $endEnergyIndex;
+   my $energyPoint;
+
+   # Assign all weights to be 1 for now.
+   foreach $energyPoint (0..$numEnergyPoints-1)
+      {$weight_ref->[$energyPoint] = 1.0;}
+
+
+   # Assign the weights.
+#   foreach $energyPoint (0..$startEnergyIndex-1)
+#      {$weight_ref->[$energyPoint] = 0.0;}
+#   foreach $energyPoint ($startEnergyIndex..$endEnergyIndex)
+#      {$weight_ref->[$energyPoint] = 1.0;}
+#   foreach $energyPoint ($endEnergyIndex+1..$numEnergyPoints-1)
+#      {$weight_ref->[$energyPoint] = 0.0;}
+}
+
+sub euclidianDiff
+{
+   # Define passed parameters.
+   my $weight_ref   = $_[0];
+   my $spectrum_ref = $_[1];
+   my $initIndex    = $_[2];
+   my $finIndex     = $_[3];
+
+
+   # Define local variables.
+   my $energyPoint;
+   my $funFieldDiff;
+   my $numIndices;
+
+   # Compute the number of indices that the calculation uses.
+   $numIndices = $finIndex - $initIndex + 1;
+
+   # Initialize the function field euclidian difference.
+   $funFieldDiff = 0.0;
+
+   # Perform summation of weighted squares of differences.
+   foreach $energyPoint (0..$numIndices-1)
+   {
+      # Sum of squares (with weight).
+      $funFieldDiff += $weight_ref->[$energyPoint+$initIndex] * 
+         ($spectrum_ref->[$energyPoint+$initIndex] - 
+          $targetPointSpectrum[$energyPoint+$targetInitIndex])**2;
+   }
+
+   # Square root applied here after the summation.
+   $funFieldDiff = sqrt($funFieldDiff);
+
+   return $funFieldDiff;
+}
+
+sub integrate
+{
+   # Define passed parameters.
+   my $weight_ref    = $_[0];
+   my $spectrum_ref  = $_[1];
+   my $initIndex     = $_[2];
+   my $finIndex      = $_[3];
+
+   # Define local variables.
+   my $energyPoint;
+   my $intgArea;
+   my $numIndices;
+
+   # Compute the number of indices that the calculation uses.
+   $numIndices = $finIndex - $initIndex + 1;
+
+   # Initialize the area.
+   $intgArea = 0;
+
+   # Sum up each relevant point.
+   foreach $energyPoint (0..$numIndices-1)
+      {$intgArea += $spectrum_ref->[$energyPoint+$initIndex]*$energyDelta;}
+
+   return $intgArea;
+}
+
+
+sub findOnset
+{
+   # Define passed parameters.
+   my $spectrum_ref = $_[0];
+
+   # Define local variables.
+   my $edgeOnset;
+   my $energyPoint;
+   my $maxValue;
+   my $edgeDetect;
+
+
+
+   # Scan the spectrum to find the first non-zero value greater than the
+   #   requested threshold.  This point is chosen to be the edge onset.
+   foreach $energyPoint (0..$numEnergyPoints-1)
+   {
+      if ($spectrum_ref->[$energyPoint+1] > $edgeThresh)
+      {
+         $edgeOnset = $initialEnergy + $energyPoint*$energyDelta - $edgeShift;
+         last;
+      }
+   }
+   return $edgeOnset;
+
+# This method will try to find the position of the first peak, but it will have
+#   problems if the first peak is actually a double peak that is sometimes
+#   smoothed out.
+#   # Scan the spectrum to find the first point where after increasing, the
+#   #   spectral intensity begins to decrease.  This position is considered to
+#   #   be the position of the first peak.  
+#   foreach $energyPoint (0..$numEnergyPoints-2)
+#   {
+#      if ($spectrum_ref->[$energyPoint+1] < $spectrum_ref->[$energyPoint])
+#      {
+#         $edgeOnset = $initialEnergy + $energyPoint*$energyDelta - $edgeShift;
+#         last;
+#      }
+#   }
+#
+   return $edgeOnset;
+}
+
+
+sub printODX
+{
+   # Declare local variables.
+   my $aPoint;
+   my $bPoint;
+   my $cPoint;
+   my $pointCount;
+   my $pointData_ref;
+
+   # Determine which data set to print.
+   if ($opCode == 0)
+      {$pointData_ref = \@funFieldDiff;}
+   elsif ($opCode == 1)
+      {$pointData_ref = \@meshOnset;}
+   elsif ($opCode == 2)
+      {$pointData_ref = \@meshArea;}
+
+   # Open the output file.
+   open (ODX,">$outFile") || die "Cannot open $outFile for writing.\n";
+
+   print ODX "object 1 class gridpositions counts $numMeshPoints[1] $numMeshPoints[2] $numMeshPoints[3]\n";
+   print ODX "origin 0 0 0\n";
+   print ODX "delta $delta[1][1] $delta[1][2] $delta[1][3]\n";
+   print ODX "delta $delta[2][1] $delta[2][2] $delta[2][3]\n";
+   print ODX "delta $delta[3][1] $delta[3][2] $delta[3][3]\n\n";
+
+   print ODX "object 2 class gridconnections counts $numMeshPoints[1] $numMeshPoints[2] $numMeshPoints[3]\n";
+   print ODX "object 3 class array type float rank 0 items $numSpacePoints data follows\n";
+
+   $pointCount = 0;
+   foreach $aPoint (1..$numMeshPoints[1])
+   {
+   foreach $bPoint (1..$numMeshPoints[2])
+   {
+   foreach $cPoint (1..$numMeshPoints[3])
+   {
+      $pointCount++;
+      printf ODX "%12.8f ",$pointData_ref->[$pointCount];
+
+      if ($pointCount%5 == 0)
+         {print ODX "\n";}
+   }
+   }
+   }
+
+   # Add a final newline if necessary.
+   if ($pointCount != 0)
+      {print ODX "\n";}
+
+   # Tack on the ending information.
+   print ODX "attribute \"dep\" string \"positions\"\n\n";
+   print ODX "object \"dataField\" class field\n";
+   print ODX "component \"positions\" value 1\n";
+   print ODX "component \"connections\" value 2\n";
+   print ODX "component \"data\" value 3\n";
+   print ODX "end\n\n";
+
+   close (ODX);
+}

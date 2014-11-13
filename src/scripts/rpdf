@@ -1,0 +1,266 @@
+#!/usr/bin/perl
+#
+#PROGRAM:  rpdf
+#PURPOSE:  This program computes the radial pair distribution function.
+#
+#USAGE:  rpdf [-i $inputFile] [-p $plotFile]
+#             [-dist $limitDist] [-pair $atom1 $atom2]
+#             [-limit $a1 $b1 $c1 $a2 $b2 $c2] [-limitzone $zone] | -help
+#
+# The -i option allows the user to over-ride the default behavior of expecting
+#   the presence of a olcao.skl file.  The $inputFile file will be read
+#   assuming the following format:  a,b,c lattice vectors on one line followed
+#   by all atoms with element name and a,b,c coordinates on one line each.
+# The -p option can be used to override the default output file name.  If not
+#   given, then the file name is rpdf.plot.
+# The -dist option is used to define the distance out to which the rpdf should
+#   be computed.  If not given, then the default value is 10 A.
+# The -pair option is used to request that only atoms of certain elements be
+#   considered for the calculation.  In this way, for example, only Si-O pairs
+#   are considered.  The $atom1 and $atom2 are elements in either upper or
+#   lower case.  The order does not matter.
+# The -limit option is used to exclude pairs where one atom originates from
+#   inside or outside the confines of the box defined by the given 6 points in
+#   the original cell.  The choice of inside or outside defaults to outside
+#   (i.e. if an atom originates outside the box it is NOT included).  Note also
+#   that these coordinates must be given in a,b,c fractional.  Please make sure
+#   that a1<a2 etc.
+# The -limitzone option is used to explicitly specify whether to exclude atoms
+#   from inside the box or outside the box.  If $zone==1, then atoms outside
+#   the box will be excluded.  If $zone==2 the atoms inside the box will be
+#   excluded.
+# The -help option prints a brief help message.
+#
+
+###############################################
+# Begin program execution #####################
+###############################################
+
+# Use necessary modules.
+use strict;
+use warnings;
+use Env;
+use lib "$OLCAO_BIN/perl5";
+use StructureControl;
+use ElementData;
+
+# Declare global variables.
+my $inputFile;
+my $plotFile;
+my $limitDist;
+my $limitedPair;
+my $zone;
+my @border1;
+my @border2;
+my $atom1;
+my $atom2;
+my $rpdf_ref;
+my $elementCount_ref;
+my $elementList_ref;
+my $numElements;
+
+# Initialize the environment.
+&initEnv;
+
+# Parse the command line.
+&parseCommandLine;
+
+# Read the input file.
+StructureControl::readInputFile($inputFile,1); # The 1 is to use file species.
+
+# Set the limit for atom interaction.  (RPDF distance)
+StructureControl::setLimitDist($limitDist);
+
+# Set the borders for inclusion/exclusion if requested.
+if ($zone != 0)
+   {StructureControl::setRPDFBorderABC($zone,@border1,@border2);}
+
+# Set the choice of elements to consider if requested.
+if ($limitedPair == 1)
+   {StructureControl::setRPDFSelectAtoms($atom1,$atom2);}
+
+# Compute the radial pair distribution function.
+StructureControl::computeRPDF;
+
+# Obtain a reference to the RPDF data.
+$rpdf_ref = StructureControl::getRPDFRef;
+
+# Obtain a reference to the element count data.
+StructureControl::countElementAtoms;
+$elementCount_ref = StructureControl::getElementCountRef;
+
+# Obtain a reference to the names of the elements.
+$elementList_ref = StructureControl::getElementListRef;
+
+# Get the number of elements in the system.
+$numElements = StructureControl::getNumElements;
+
+# Print the results;
+&printRPDF;
+&printElementCount;
+
+###############################################
+# End program execution #######################
+###############################################
+
+
+sub initEnv
+{
+   # Initialize the element data from the database.
+   ElementData::initElementData;
+
+   # Assume the default file names.
+   $inputFile = "olcao.skl";
+   $plotFile = "rpdf.plot";
+
+   # Assume the default limit distance.
+   $limitDist = 10.0;
+
+   # Assume that all the elements are to be included.
+   $limitedPair = 0;
+
+   # Assume that there are no limitations for the atomic positions.
+   $zone = 0;
+}
+
+
+sub parseCommandLine
+{
+   # Declare local variables
+   my $number;
+   my $commandLine = "command";
+
+   # Initialize the index counter for the command line parameters.
+   $number=0;
+
+   # Loop through the command line parameters checking for each option.
+   while ($number < scalar(@ARGV))
+   {
+      if ($ARGV[$number] eq "-i")
+      {
+         $inputFile = $ARGV[$number+1];
+         $number++;
+      }
+      elsif ($ARGV[$number] eq "-p")
+      {
+         $plotFile = $ARGV[$number+1];
+         $number++;
+      }
+      elsif ($ARGV[$number] eq "-dist")
+      {
+         $limitDist = $ARGV[$number+1];
+         $number++;
+      }
+      elsif ($ARGV[$number] eq "-pair")
+      {
+         $limitedPair = 1;
+         $atom1 = lc($ARGV[$number+1]);
+         $atom2 = lc($ARGV[$number+2]);
+         $number = $number + 2;
+      }
+      elsif ($ARGV[$number] eq "-limit")
+      {
+         if ($zone == 0) # Init to exclude outside unless already specified.
+            {$zone=1;}
+         $border1[0] = $ARGV[++$number];
+         $border1[1] = $ARGV[++$number];
+         $border1[2] = $ARGV[++$number];
+         $border2[0] = $ARGV[++$number];
+         $border2[1] = $ARGV[++$number];
+         $border2[2] = $ARGV[++$number];
+      }
+      elsif ($ARGV[$number] eq "-limitzone")
+      {
+         $zone = $ARGV[$number+1];
+         $number++;
+      }
+      elsif ($ARGV[$number] eq "-help")
+         {&printHelp;}
+      else
+      {
+         print STDOUT "UNKNOWN COMMAND LINE PARAMETER $ARGV[$number].";
+         print STDOUT " ABORTING.\n";
+         exit;
+      }
+
+      $number++;
+   }
+
+   # Record the command line used to create this RPDF.
+   open(COMMANDLINE,">>$commandLine");
+   print COMMANDLINE "rpdf";
+   foreach my $argument (0..$#ARGV)
+      { print COMMANDLINE " $ARGV[$argument]"; }
+   print COMMANDLINE "\n";
+   close(COMMANDLINE);
+}
+
+
+sub printHelp
+{
+   print <<ENDHELP;
+#
+#PROGRAM:  rpdf
+#PURPOSE:  This program computes the radial pair distribution function.
+#
+#USAGE:  rpdf [-i \$inputFile] [-p \$plotFile]
+#             [-dist \$limitDist] [-pair \$atom1 \$atom2]
+#             [-limit \$a1 \$b1 \$c1 \$a2 \$b2 \$c2] [-limitzone \$zone] | -help
+#
+# The -i option allows the user to over-ride the default behavior of expecting
+#   the presence of a olcao.skl file.  The \$inputFile file will be read
+#   assuming the following format:  a,b,c lattice vectors on one line followed
+#   by all atoms with element name and a,b,c coordinates on one line each.
+# The -p option can be used to override the default output file name.  If not
+#   given, then the file name is rpdf.plot.
+# The -dist option is used to define the distance for which the rpdf should be
+#   computed.  If not given, then the default value is 10 A.
+# The -pair option is used to request that only atoms of certain elements be
+#   considered for the calculation.  In this way, for example, only Si-O pairs
+#   are considered.  The \$atom1 and \$atom2 are elements in either upper or
+#   lower case.  The order does not matter.
+# The -limit option is used to exclude pairs where one atom originates from
+#   inside or outside the confines of the box defined by the given 6 points in
+#   the original cell.  The choice of inside or outside defaults to outside
+#   (i.e. if an atom originates outside the box it is NOT included).  Note also
+#   that these coordinates must be given in a,b,c fractional.  Please make sure
+#   that a1<a2 etc.
+# The -limitzone option is used to explicitly specify whether to exclude atoms
+#   from inside the box or outside the box.  If \$zone==1, then atoms outside
+#   the box will be excluded.  If \$zone==2 the atoms inside the box will be
+#   excluded.
+# The -help option prints a brief help message.
+#
+ENDHELP
+   exit;
+}
+
+
+
+sub printRPDF
+{
+   # Declare local variables.
+   my $point;
+   my $index;
+
+   open (RPDF,">$plotFile") || die "Can not open $plotFile for writing\n";
+
+   foreach $point (1..1000)
+   {
+      $index = $point/100.0;
+      printf RPDF "%-6.3f %10.5f\n",$index,$rpdf_ref->[$point];
+   }
+}
+
+
+sub printElementCount
+{
+   # Declare local variables.
+   my $element;
+
+   print STDOUT "Elements read:\n";
+   foreach $element (1..$numElements)
+   {
+      print STDOUT "$elementList_ref->[$element]:  $elementCount_ref->[$element]\n";
+   }
+}

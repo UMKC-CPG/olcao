@@ -1,0 +1,8 @@
+Functional            XC_Code      Spin  Rel  GGA
+6
+Wigner                  100         1     0    0 
+Ceperly-Alder           101         1     0    0
+Hedin-Lundqvist         102         1     0    0
+Ceperly-Alder(spin)     150         2     0    0
+von_Barth-Hedin         151         2     0    0
+unknown-LSDA            152         2     0    0

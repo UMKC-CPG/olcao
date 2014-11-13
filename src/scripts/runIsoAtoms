@@ -1,0 +1,176 @@
+#!/usr/bin/perl
+sub printHelp
+{
+   print <<ENDHELP;
+#
+# PROGRAM: runIsoAtoms
+# PURPOSE: This program will run an isolated atom calculation for every atom in
+#          the ElementData.pm perl module.  The resultant converged potentials
+#          will be used to create an atomic potential function database.
+#
+# USAGE:   runIsoAtoms -help
+#
+# The -help option will print a helpful guide to the program.
+ENDHELP
+}
+###############################################
+# Begin program execution #####################
+###############################################
+
+# Use necessary modules.
+use strict;
+use warnings;
+use Env;
+use File::Copy;
+use lib "$OLCAO_BIN/perl5";
+use StructureControl;
+use ElementData;
+
+# Declare global variables.
+my $numElements;  # Total number of elements in the OLCAO program.
+my $element; # Element index counter.
+my $atom;  # Atom index counter.
+my $elementNames_ref;  # Reference to the name of every atom.
+
+# Initialize environment.
+#&initEnv;
+
+# Parse the command line.
+&parseCommandLine;
+
+# Populate local variables and obtain links to elemental data.
+&getElementData;
+
+# Create input for every atom.
+&makeAtomPot;
+
+# Create a new atomic potential function database.
+&makePDB;
+
+sub parseCommandLine
+{
+   # Declare local variables.
+   my $number;
+   my $argument;
+   my $commandLine = "command";
+
+   # Initialize the index counter for the command line parameters.
+   $number = 0;
+
+   # Loop through the command line parameters checking for each option.
+   while ($number < scalar(@ARGV))
+   {
+      if ($ARGV[$number] eq "help")
+         {&printHelp;}
+      else
+      {
+         print STDOUT "UNKNOWN COMMAND LINE PARAMETER $ARGV[$number].";
+         print STDOUT " ABORTING.\n";
+         exit;
+      }
+
+      $number++;
+   }
+
+   #Record the command line used to create this set of input files.
+   open (COMMANDLINE,">>$commandLine");
+   print COMMANDLINE "runIsoAtoms ";
+   foreach $argument (0..$#ARGV)
+      {print COMMANDLINE "$ARGV[$argument] ";}
+   print COMMANDLINE "\n";
+   close (COMMANDLINE);
+}
+
+sub getElementData
+{
+   # Read the element data into the perl module.
+   ElementData::initElementData;
+
+   # Get the number of possible elements to compute.
+   $numElements = ElementData::getNumElements;
+
+   # Get the lower case names of the elements from the periodic table.
+   $elementNames_ref = ElementData::getElementNamesRef;
+}
+
+sub makeAtomPot
+{
+   foreach $element (1..$numElements)
+   {
+
+      mkdir $elementNames_ref->[$element];
+      chdir $elementNames_ref->[$element];
+      open (SKL,">olcao.skl");
+      print SKL <<ENDSKL;
+title
+Isolated $elementNames_ref->[$element]
+end
+cell
+   20 20 20 90 90 90
+fract 1
+$elementNames_ref->[$element] 0.000 0.000 0.000
+space 1_a
+supercell 1 1 1
+prim
+ENDSKL
+
+      system("makeinput");
+      system("$OLCAO_BIN/olcao");
+      chdir "..";
+   }
+}
+
+sub makePDB
+{
+   # Define local variables.
+   my $line;
+
+   # Create a directory that will contain the potential function database.
+   mkdir "atomPDB";
+   chdir "atomPDB";
+
+   # For each element we will need to produce a coefficients file and a
+   #   potential definitions file.  The coefficients will be pulled from the
+   #   just completed single atom calculations.  The potential definition will
+   #   be pulled from the existing potential database.
+   foreach $element (1..$numElements)
+   {
+      # Create and enter the directory for this element.
+      mkdir $elementNames_ref->[$element];
+      chdir $elementNames_ref->[$element];
+
+      # Open the file that will contain the new potential coefficients and a
+      #   second file that will contain duplicate information but which will be
+      #   called by a different name to indicate specifically that this set of
+      #   coefficients is for the isolated atom case.  (Even though presently
+      #   both files will contain the same information.)
+      open (COEFF,">coeff1") || die "Cannot open coeff1 for writing.\n";
+      open (ISOCOEFF,">coeff.isolated") ||
+            die "Cannot open coeff.isolated for writing.\n";
+
+      # Open the file that contains the just computed SCF converged potential
+      #   coefficients.
+      open (SCFCOEFF,"<../../$elementNames_ref->[$element]/gs_scfV-fb.dat") ||
+            die "Cannot open $elementNames_ref->[$element]/gs_scfV-fb.dat\n";
+
+      # Read past the header for the SCF potential.
+      <SCFCOEFF>;
+
+      # Copy the rest of the SCF data into the new potential coefficients file.
+      while ($line = <SCFCOEFF>)
+      {
+         print COEFF $line;
+         print ISOCOEFF $line;
+      }
+
+      # Copy the existing potential definition file here.
+      copy("$OLCAO_DATA/atomicPDB/$elementNames_ref->[$element]/pot1","pot1")
+            or die "Could not copy potential definition file for ",
+            "$elementNames_ref->[$element]\n";
+
+      close (COEFF);
+      close (ISOCOEFF);
+      close (SCFCOEFF);
+      chdir ("..");
+   }
+}

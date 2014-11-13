@@ -1,0 +1,4036 @@
+#!/usr/bin/perl
+
+sub printHelp
+{
+   print <<ENDHELP;
+#PROGRAM:  makeinput
+#PURPOSE:  To create all the necessary input files for any requested type of
+#   calculation and crystal configuration.  See important notes after usage.
+#INPUTS:   An olcao.skl skeleton file organized in one of a few ways.
+
+#USAGE: makeinput [-basisdb \$atomicBDB] [-potdb \$atomicPDB]
+#                 [-modpot \$modElementName \$minModTerm \$maxModTerm \$numModTerms]
+#                 [-subbasis \$basisSubOut \$basisSubIn [-subbasis ...]]
+#                 [-subpot \$potSubOut \$potSubIn [-subpot ...]]
+#                 [[[-scfkp \$a \$b \$c] [-pscfkp \$a \$b \$c] [-altkp \$a \$b \$c]]
+#                          | [-kp \$a \$b \$c]]
+#                 [-xcmesh [-numvect \$numSampVectors]
+#                          [-weight \$xcInWeight \$xcOutWeight]
+#                          [-samp \$xcInSamp \$xcOutSamp \$xcSpacingSamp]]
+#                 [-target <[-atom \$targetAtom] || [-atxyz \$x \$y \$z] ||
+#                           [-atabc \$a \$b \$c]> [-sphere \$targetRadius]
+#                           [-zone \$targetZone] [-operand \$targetOp]
+#                           [-relate \$targetRelation]]
+#                 [-block <-abc \$froma \$toa \$fromb \$tob \$fromz \$toc>
+#                         [-zone \$blockZone] [-operand \$blockOp]
+#                         [-relate \$blockRelation]]
+#                 [-reduce [-level \$reduceLevel] [-thick \$reduceThick]
+#                          [-cutoff \$reduceCutoff] [-operand \$reduceOp]
+#                          [-tolerance \$reduceTolerance]
+#                          [-selection \$reduceSelection]]
+#                 [-xanes [-sphere \$xanesRadius]
+#                         [-atom \$xanesAtom1 [\$xanesAtom2 [...]]]]
+#                 [-sybdpath \$sybdPath]
+#                 [-rel]
+#                 [-statefactor \$factor]
+#                 [-pdb] [-cif] [-basisVis]
+#                 [-emu]
+#                 [-nocore]
+#                 [-help]
+
+###################################################
+# CONSIDERATIONS AS YOU PREPARE YOUR INPUT FILE:  #
+###################################################
+
+#(1) Please remember the following definitions:
+#    a. Elements are defined by the periodic table of the elements.
+#    b. Species are defined by the structure of the system (local or global).
+#    c. Types are defined by the needs of the calculation.
+#
+#(2) One of the key components of running an efficient and accurate
+#    calculation is to properly assign the potential types of the atoms in
+#    the system.  In many (most?) cases the potential types and the species are
+#    identical sets of atoms.  When they differ it is usually done
+#    automatically by the makeinput script for specific calculations (e.g.
+#    ELNES/XANES).
+#
+#(3) You will assign the types depending on the kind of system you are trying
+#    to run a calculation on.
+#    a. Is the system crystalline?  If so, types will likely be assigned by
+#       crystallographic equivalency within the olcao.skl input file.  This
+#       makeinput script will then create atoms in the appropriate positions
+#       based on the space group and equivalent atoms will have the same
+#       potential type.  There is little to consider.
+#    b. Is the system crystalline with a small perturbation?  (e.g. atom
+#       substitution, vacancy, interstitial, etc.)  This can be treated with a
+#       two step process.  In the first step the crystalline olcao.skl file is
+#       created and the makeinput script is called.  This will produce a set of
+#       input files in the ./inputs directory.  You will then edit the file:
+#       ./inputs/olcao.mi (makeinput) which contains all atoms explicitly
+#       listed.  You can apply your perturbation(s) and then copy the
+#       ./inputs/olcao.mi file back out as the new input file.  The species can
+#       be assigned using the 'reduce', 'target', or 'block' methods as the
+#       perturbation nature may require.
+#    c. Is the system a complex system with no symmetry or is it a crystalline
+#       system after a relaxation (done by some other program)?  You will
+#       likely need to use the 'reduce' scheme to assign types.
+#
+#(4) What follows is a short review of the different grouping techniques.
+#    These assignment methods can be overlapped so that a system can be defined
+#    by the olcao.skl file and then further modified by xanes requests or other
+#    targeted requests or similarity classifications etc.
+#    a. Atoms are initially explicitly grouped in the olcao.skl file.
+#    b. Atoms can be grouped by similarity characteristics that detail the
+#         threshold where two atoms are considered to be in the same group
+#         based on their local configuration.  (Reduce scheme)
+#    c. Atoms can be grouped by a list of targeted locations and radius
+#         cutoffs.  Then, either inside or outside the cutoff radius, atoms
+#         can be group alike or unalike. (Target scheme)
+#    d. Atoms can be grouped by blocks where inside or outside the specified
+#         3D lattice-like boundries atoms will be grouped alike or unalike.
+#         (Block scheme)
+#    e. Atoms can be grouped in a special way that is related to the targeted
+#         method given above.  For XANES calculations the targets can be either
+#         explicitly requested or automatically selected from each species.
+#         For each target a seperate input file set is created so the targets
+#         do not overlap.  Within a sphere around the target all atoms will be
+#         given different types and the target atom will have its core orbitals
+#         included in the calculation instead of being orthogonalized out.
+#         This is just an automation of the target method for easily creating
+#         lots of input files for a given system for xas calculation.
+#         (XANES Target scheme)
+#    f. Whatever future ideas I can come up with that is needed and useful.
+
+##########################
+# OPTIONS EXPLANATIONS:  #
+##########################
+
+#The -basisdb option allows the user to supply the location of another atomic
+#   basis functions database.  The default value is in
+#   \$OLCAO_DIR/share/atomicBDB.
+
+#The -potdb option allows the user to supply the location of another potential
+#   function database.  The default value is in \$OLCAO_DIR/share/atomicPDB.
+
+#If the -subbasis option is given, then when the input files are constructed,
+#  the value in \$basisSubIn will substitue for the value in \$basisSubOut.  For
+#  example:  "-subbasis b 2" will use the contract2.dat basis definition file
+#  instead of the default contract1.dat basis definition file for all boron.
+#  This allows one to use alternate configurations from the default basis set.
+#  The exact way the substitution is done depends on the value of \$basisSubOut
+#  If \$basisSubOut is an element (e.g. si, c, zr) then all atoms of that
+#  element will be substituted.  If \$basisSubOut is a species (e.g. si1, c3,
+#  zr2) then only that specific species will be substituted.  This substitution
+#  is for the basis set only.
+
+#If the -subpot option is given the behavior is the same as the -subbasis above
+#  except that the potential is substituted for instead of the basis.
+
+#If the -modpot option is given then the potential for the element specified
+#  by \$modElementName will have its potential adjusted so that the minimum
+#  value is \$minModTerm, the maximum value is \$maxModTerm, and the number of
+#  terms is \$numModTerms;
+
+#Concerning the -scfkp option.  This will allow you to specify the mesh of
+#  k-points to be used for the scf calculation.  The three parameters are the
+#  size of the mesh in the a, b, and c directions.  (e.g. 2 2 2 would produce
+#  8 kpoints before symmetry reductions, and 2 3 4 would produce 24 kpoints
+#  before symmetry reductions.)  This applies to the primary scf programs
+#  (setup and main) and also to any subroutines run within the scf stage (e.g.
+#  dos or bond).  Please note that most of the time things like dos or bond
+#  are automatically run in the post-scf stage where a larger number of kpoints
+#  are typically used.  One further important note is necessary.  If the kpoint
+#  scheme given is 1 1 1 then it is assumed that the one point is at the gamma
+#  site.  If no kpoint definition is given then 1 general kpoint is used.
+#  This is important since the program will run differently (faster) if the
+#  gamma kpoint is used since all the integral matrices will be real with no
+#  imaginary component.
+
+#The -pscfkp is the same as the -scfkp option except that it applies to the
+#  post-scf calculations (band, bond, dos, optc).  (NOTE that sybd will choose
+#  kpoints given by the path associated with the crystalline cell or the -cell
+#  parameter if it was given to request an explicit path.)
+
+#The -altkp is the same as the -scfkp option.  It defines an alternate set of
+#  kpoints that can be requested.  This is sometimes used for the sigma E
+#  calculation where a finer kpoint mesh is desired.
+
+#The -kp option will apply the same kpoint selection to the scf, alt, and
+#  post-scf kpoints.
+
+#The -xcmesh option will define the construction of the real space mesh for
+#  sampling the charge density for the exchange correlation evaluation.  The
+#  mesh is spherical and atom centered.  The -level option sets the number of
+#  vector directions in the mesh.  Level 1 has 6 directions, level 2 has 6+8,
+#  level 3 has 6+8+...  The -weight changes the weighting of the points within
+#  and outside a radial cutoff.  The -samp sub option defines the distribution
+#  of points along the vector directions.
+
+#The -target option will consider a point given either by an x,y,z location, an
+#  a,b,c location, or an atom number (using that atoms location).  Then the
+#  atoms either in or out of the zone \$radius will be considered in terms of
+#  their \$targetOp (species,type,reduce) and will be grouped by their relation
+#  (alike or diff).  If the reduce \$targetOp is given then this target is used
+#  as a selecting tool for a reduce call.
+
+#The -block option functions just like the -target option except that the area
+#  is defined like a slab or block of the system.  Note that it is possible to
+#  use the letters 'a', 'b', or 'c' in the place of actual numbers when one
+#  wants the block "To" value to be the maximum. (e.g. 0 a 0 b 0 c would
+#  include the entire cell.)
+
+#The -reduce option will collect information about each atom in order to
+#  group all the atoms based on the similarity of the information.  A group
+#  is defined by a series of spherical shells (levels), what neighbor atoms
+#  are in the shells, and what the distance is to each shell from the center.
+#  Parameters can be adjusted to determine the number of shells (levels) to
+#  include, the thickness of the shells, a maximum cutoff radius, and a
+#  distance threshold for comparing the same shell number from different atoms.
+#  The basic idea is to find the nearest atom to the current atom, define a
+#  shell of a given thickness and record what atoms are in that shell.  Then
+#  repeat \$reduceLevel times with the next nearest atom outside the shell.
+#  once all the shells have been defined for each atom.  The results are
+#  compared in terms of the atoms in each shell and the shell distances.
+#  This grouping method is not at all defined by boundaries and so does not
+#  have in and out -zone parameters.  It will also not have the ability to
+#  make grouping dissimilar (e.g. it will not find a group of atoms that are
+#  similar and then make them all different).  This method will only work to
+#  make species out of elements, and will not make types out of species.
+#  It can be applied differently to different groups of atoms
+
+#The -xanes option will tell the script that instead of generating one set of
+#  input files it should make one set for each of the atomic species or listed
+#  xanes atoms in the system.  Each input file set will be different in that a
+#  xanes atom of the current input file set will have the core orbitals
+#  included in the calculation, and the atoms within \$radius (default 3.50 A)
+#  of the xanes atom will all have different types.
+
+#The -sybdpath option lets you specify the type of cell and particular path to
+#  be used in the symmetric band calculation (SYBD).  You should be consistant
+#  with the actual cell type or you will get a warning (even though it will
+#  still allow you to create the input files).  The valid options are present
+#  in the \$OLCAO_DATA/data/sybdDB directory.  Simply specify one of those names
+#  as the \$sybdPath.
+
+#The -rel option will prepare the OLCAO input files for a relativistic
+#  calculation.  (Whenever this gets implemented in the future.)
+
+#The -statefactor will let you select the number of states to calculate in the
+#  system as a multiple of the number of valence electrons in the system.  The
+#  default (if this option is not used) is 2.5.
+
+#If the -pdb option is given, then a pdb file will be generated that can be
+#  used by some other program capable of dealing with Protein Data Bank files.
+
+#The -cif option acts just like the -pdb option except that the file will be
+#  in the Crystallographic Interchange Format.  This format will allow for
+#  greater numbers of species for each atom and is the preferred method.
+
+#The -basisVis option will ask the contract program to produce a set of files
+#  in the .inputTemp directory that can be used for visualizing the complete
+#  atomic orbital basis.  The files are numerical data of the radial part of
+#  the basis functions, and a set of POVRay scene files (one for each type of
+#  atomic orbital in the system).
+
+#The -help option will print all this great useful information.
+
+##############
+# DEFAULTS:  #
+##############
+
+# The following are the default values used if any of the options are NOT given:
+#   -subbasis:     No substitutions are done by default.
+#   -subpot:       No substitutions are done by default.
+#   -modpot:       No potential are modified by default.
+#   -basisdb:      The default is \$OLCAO_DATA/atomicBDB
+#   -potdb:        The default is \$OLCAO_DATA/atomicPDB
+#   -scfkp:        One general kpoint is used for all scf calculations.
+#   -pscfkp:       One general kpoint is used for all pscf calculations.
+#   -altkp:        No alternate kpoint input file is created.
+#   -kp:           One general kpoint is used for all scf and pscf calculations.
+#   -reduce:       This is off by default.  The default sub parameters are:
+#        \$reduceLevels = 2, \$reduceThick = 0.1 A, \$reduceCutoff = 4.0 A, 
+#        \$reduceOp = species, \$reduceTolerance = 0.05, \$reduceSelection = 0=all.
+#   -target:       This is off by default.  The default sub parameters are:
+#        \$targetZone = in, \$targetOp = species, \$targetRelation = diff,
+#        \$targetRadius=3.50 A.  The location is undefined.
+#   -block:        This is off by default.  The default sub parameters are:
+#        \$blockZone = in, \$blockOp = species, \$blockRelation = diff.
+#        The area is undefined.
+#   -xanes:        This is off by default so that only one set of input files
+#        will be created.  The default radius if the option is given is 3.50 A.
+#        The \$xanesAtoms are chosen 1 from each species by default.
+#   -xcmesh:       The default number of sampling vectors is 100.  The default
+#        weights are 0.5, 0.5.  The default in sampling is 0.1, the out
+#        sampling is 3.5, and the spacing is 0.8.
+#   -cell:         The default value here is based on the given lattice.
+#   -rel:          The input will be prepared for relativistic calculations.
+#   -statefactor:  The default state factor is 2.5.
+#   -pdb:          No pdb crystal structure diagram file will be made.
+#   -cif:          No cif crystal structure diagram file will be made.
+#   -help:         No help will be printed.
+ENDHELP
+   exit(0);
+}
+
+######################################################################
+#Use necessary modules
+######################################################################
+use strict;
+use warnings;
+use Env;
+use lib "$OLCAO_BIN/perl5";
+use POSIX qw(ceil floor);
+use Math::Trig;
+use ElementData;
+use StructureControl;
+
+######################################################################
+# Define global variables.  (Yes, I know this is ugly.)
+######################################################################
+
+# Record keeping and misc.
+my $time;        # Record time of script events.
+my $pi;
+my $bohrRad;
+
+# Directory locations.
+my $proj_home;   # Full path to project directory.
+my $inputTemp;   # Relative path to files used to make input.
+my $inputs;      # Relative path to inputs directory.
+my $atomicBDB;   # Full path to the atomic basis function data base.
+my $atomicPDB;   # Full path to the atomic potential function data base.
+my $sybdDB;      # Full path to data base of reciprocal cell paths.
+my $spaceDB;     # Full path to data base of space group operations.
+
+# File names for olcao input generation and olcao calculations.
+my $olcao_skl;    # Input file for generating all other OLCAO input.
+my $olcao_mi;    # Created by makeinput from $olcao_skl with all info explicit.
+my $olcao_in;    # Primary input file for all OLCAO Fortran90 programs.
+my $potential;   # Initial potential function for SCF.
+my $spinPotential; # Initial spin polarized potential function for SCF.
+my @kpGroupFile; # List of files with all kpoint data for scf, pscf, and alt.
+my $kpInFile;    # File created for the makekpoints program.
+my $kpOutFile;   # File created by the makekpoints program.
+my $structure;   # File with cell parameters and atomic and potential positions.
+
+# File names for running jobs, structure analysis, job tracking, etc.
+my $pbs_sub;       # File for submitting jobs on systems with pbs.
+my $lsf_sub;       # File for submitting jobs on systems with lsf.
+my $bash_sub;      # File for submitting jobs on systems without pbs or lsf.
+my $commandLine;   # File for recording all commands given on the command line.
+my $summary;       # Contains a summary of the input for olcao calculation.
+my $memNeeds;      # Rough estimation of memory requirements.
+my $datSklMap;     # Map between atom numbers of olcao.dat and olcao.skl.
+my $tarMethod;     # How files should be tarred together;0=linux;1=unix.
+
+# Structure plotting extensions.
+my $pdb_ext; # Extension for protein data bank files.
+my $cif_ext; # Extension for crystallographic interchange format files.
+
+# Flags to create or not create specific files.
+my $pdb; # Make a pdb structure file = 1; Don't = 0.
+my $cif; # Make a cif structure file = 1; Don't = 0.
+my $pbs; # Make a pbs queue submission file = 1; Don't = 0.
+my $lsf; # Make a lsf queue submission file = 1; Don't = 0.
+# Note that if both $pbs and $lsf are 0, then a bash "submit" file is created.
+
+# Variables that define the exchange correlation mesh.
+my $xcInWeight;    # Weighting of points within the radial cutoff.
+my $xcOutWeight;   # Weighting of points outside the radial cutoff.
+my $xcInSamp;      # Sampling rate of points inside the radial cutoff.
+my $xcOutSamp;     # Sampling rate of points outside the radial cutoff.
+my $xcSpacingSamp; # Spacing of sampling points.
+my $numSampVectors;# Number of radial sample vectors for XC.
+
+# Variables for default values for calculation parameters.
+my $bfCutoff;    # Minimum integral value for basis function interaction.
+my $esCutoff;    # Minimum value for electrostatic interaction.  (ExchCorr?)
+my $stateFactor; # Control number of states to use.  States=stateFactor*(num e-)
+my $rel;         # Flag to create relativistic input.  (NOT OPERATIONAL)
+my $eDeltaDOS;   # Energy delta for DOS evaluation.
+my $sigmaDOS;    # Gaussian broadening for DOS curves.
+my $eminDOS;     # Minimum energy to evaluate DOS at.
+my $emaxDOS;     # Maximum energy to evaluate DOS at.
+my $allAtomPDOS; # Flag to force PDOS of each atom=1; each type=0.
+my $iterTDOS;    # Flag to compute TDOS for each SCF iteration.
+my $maxLenBOND;  # Length beyond which atoms are not considered to "bond".
+my $eDeltaBOND;  # Energy delta for BOND evaluation.
+my $sigmaBOND;   # Gaussian broadening for BOND curves.
+my $eminBOND;    # Minimum energy to evaluate BOND at.
+my $emaxBOND;    # Maximum energy to evaluate BOND at.
+my $allAtomBOND; # Flag to force bond calculations for each atom=1; each type=0.
+my $eDeltaPACS;  # Energy delta for ELNES/XANES evaluation.
+my $sigmaPACS;   # Gaussian broadening for ELNES/XANES curves.
+my $onsetSlackPACS; # Amount of slack in window before onset.
+my $energyWindowPACS; # Energy window size for PACS calculations.
+my $eDeltaOPTC;  # Energy delta for valence band optical evaluation.
+my $eDeltaSIGE;  # Energy delta for Sigma(E) thermal conductivity evaluation.
+my $sigmaOPTC;   # Gaussian broadening for valence band optical curves.
+my $sigmaSIGE;   # Gaussian broadening for Sigma(E) curves.
+my $eTransOPTC;  # Maximum transition energy for valence band optical calcs.
+my $eTransSIGE;  # Maximum transition energy for Sigma(E) calculations.
+my $eCutOffOPTC; # Highest final state energy value for optical calculations.
+my $eCutOffSIGE; # Highest final state energy value for sigma(E) calculations.
+my $numIterMAIN; # Limit to the number of iterations for SCF.
+my $convergMAIN; # Convergence criteria for potential function variation in SCF.
+my $spinMAIN;    # Percent of total charge to set for up-down in spin pol. SCF.
+my $thermSmearMAIN; # Term in eV to smear e- population.  1 eV = 11604.505 K
+
+# K Point variables.
+my $kpWeightSum; # Total number of electrons per band. 1=spinpolarized, 2=not.
+my $kpShift;  # Lattice dependent shift of the regular kpoint mesh.
+my @kpMesh;   # Num. of kpoints in each dim. for Scf, Pscf, and Alt.[SPA][1..3]
+my @kpNum;    # Total number of kpoints after symmetry reduction.
+my @kpNote;   # String for each group indicating general or gamma.  [1..3]
+my @setKPFlag;# Flag  1=done; 0=not done.  Set kpoints on command line.
+
+# Variables that control structure analysis and description.
+my $cellName; # String of bravis lattice cell name.
+
+# Variables that are used to assign potential types.
+my $numMethods;   # Number of methods to be applied in sequence.
+my @method;       # List of which methods to apply and in which order.
+my $reduce;       # Number of reduce uses to apply.
+my @reduceLevel;  # Number of levels to create in reduce for each reduce.
+my @reduceThick;  # Thickness of each level shell in Angstroms for each reduce.
+my @reduceCutoff; # Distance in Angstroms beyond which no atoms affect reduce.
+my @reduceOp;     # Reduce according to species or type.  (TYPES NOT WORKING)
+my @reduceTolerance; # Distance in Ang. that levels must be within to match.
+my @reduceSelection; # What selection of atoms to apply the reduce to.
+my $target;       # Number of type assignment targets.
+my @targetRadius; # List of sphere radii for each target.
+my @targetZone;   # List of zone (in|out) to consider for each target sphere.
+my @targetOp;     # List of whether to operate on species or types.
+my @targetRelation; # List of what to do to each zone.  (Make alike or diff.)
+my @targetLoc;    # Location of target center.  (Either atom num. or coords.)
+my @targetType;   # Type of location (atom site, xyz, or abc coordinates).
+my @targetFractABC; # ABC fractional coordinates of target locations.
+my @targetDirectXYZ;# XYZ direct space coordinates of target locations.
+my $block;        # Number of type assignment blocks.
+my @blockZone;    # List of zone (in|out) to consider for each block.
+my @blockOp;      # List of whether to operate on species or types.
+my @blockRelation; # List of what to do to each zone.  (Make alike or diff.)
+my @blockBorders; # List of block borders. [a,b,c][From,To][blockNum]
+my $xanes;        # Flag to create ELNES/XANES input=1;  Do not=0;
+my $xanesRadius;  # Distance in Ang. around target atom to make unique types.
+my $numXanesAtoms;# Number of target atoms for ELNES/XANES input creation.
+my @xanesAtoms;   # List of target atom nums from olcao.skl. [1..numXanesAtoms].
+my @initXanesStates; # List of the states that are used as initial states for
+                     #   each QN_n, QN_l pair.
+my $numCoreXanes; # Number of core states in the current xanes input file.
+my @xanesControl; # Set of init and fin states for the xurrent xanes file.
+
+# Variables that control basis or potential function command line modification.
+my $modPot;       # Flag to modify the potential function.  1=modify; 0=do not
+my $modElementName; # Name of element to have potential modified.
+my $minModTerm;   # Minimum exponential Gaussian alpha for the modified pot.
+my $maxModTerm;   # Maximum exponential Gaussian alpha for the modified pot.
+my $numModTerms;  # Number of terms for the potential re-definition as above.
+my $numBasisSubs; # Count of number of basis substitutions.
+my @basisSubOut;  # List of basis names to be substituted out.
+my @basisSubIn;   # List of basis names to be substituted in.
+my @basisFiles;   # File for each element/species that holds its basis.
+my @basisFilesNC; # File for each element/species that holds its nocore basis.
+my $numPotSubs;   # Count of number of pot function substitutions.
+my @potSubOut;    # List of potential names to be substituted out.
+my @potSubIn;     # List of potential names to be substituted in.
+my @potFiles;     # File for each element/species that holds its pot def.
+my @coeffFiles;   # File for each element/species that holds its pot coeffs.
+
+# Variables that define the state of the script execution.
+my $targetsPrepared;     # Targets have been prepared=1;  Not prepared=0.
+my $minDistMatricesMade; # Minimal distance matrix made=1;  Not made=0.
+
+# Variables related to variables in the StructureControl package.  (Yes, this
+#   is very ugly.)  The goal here is to minimize the ugliness until a better
+#   data exchange hierarchy is designed in the future that properly isolates
+#   data and allows for easy access and extensions.
+
+# The structure of the system does not change in this program, really only the
+#   labels for the atoms are changed.  At one point the atoms are sorted
+#   according to the labels but that is about it.  I will keep local copies
+#   of the label data and other data for convenience.  Some data will only
+#   be referenced from here.  I will try to make it as orderly as possible.
+my $numAtoms;
+my $numElements;
+my @elementList;     # Element names for each unique element in the system.
+my @atomElementName; # Element names for each atom in the system.
+my @atomElementID;   # Element ID number for each atom in the system.
+my $spaceGroupName;
+my $spaceGroupNum;
+my $sybdPath;
+
+# These variables are different.  They are dependent on the type of calculation
+#   that is being done and the possible modification of the species and type
+#   assignments.  (Calculation type dependence is on xanes/elnes.)
+my @numSpecies;    # This is the number of species for each element.
+                   #    [1-$numElements]
+my @numTypes;      # This is the number of types for each species of each
+                   #   element in each xanes file.  [0-$numXanesAtoms]
+                   #   [1-$numElements][1-$numSpeces[$element]]
+my @atomSpeciesID; # This is the ID number of each species within each element.
+                   #   (Only unique within element.)  [0-$numElements]
+my @atomTypeID;    # This is the ID number of each type within each species
+                   #   within each element.  (Only unique within a given
+                   #   species of a given element.  [0-$numXanesAtoms]
+                   #   [1-$numElements][1-$numSpeces[$element]]
+my @cumulativeNumTypes; # Modified for each numXanesAtom.  Consecutive sequence
+                        #   number of each type in the system.
+                        #   [0-$numElements][1-$numSpeces[$element]]
+my @totalNumTypes; # Total number of types of all species of all elements for
+                   #   each fileSet.  [1..$numXanesAtoms]
+my @numAtomsOfType;# Number of atoms of each sequential type.  [1..$numAtoms]
+my @numTotalCoreStates;# Number of states in the core for each basis type.
+my @numTotalValeStates;# Number of states in the valence for each basis type.
+my $nucCharge;     # Total nuclear charge of all atoms in the system.
+my @potDim;        # The number of potential terms in each fileset system.
+my $numElectrons;
+my @numStatesUsed;
+
+# References to data in StructureControl.
+my $systemTitle_ref;
+my $mag_ref;
+my $angle_ref;
+my $realLattice_ref;
+my $realLatticeInv_ref;
+my $recipLattice_ref;
+my $doFullCell;
+my $fractABC_ref;
+my $directABC_ref;
+my $directXYZ_ref;
+my $minDist_ref;
+my $selfMinDist_ref;
+
+# Sorted sets of data for each Xanes Atom input file set.
+my @sortedAtomElementID;
+my @sortedAtomSpeciesID;
+my @sortedAtomTypeID;
+my @sortedFractABC;
+my @sortedDirectABC;
+my @sortedDirectXYZ;
+my @sortedXanesAtoms;
+
+# Undocumented feature.  Allows printing of the basis functions in numerical
+#   form simply for the purpose of plotting them.
+my $doBasisVis;
+
+# Emu variables.
+my $emu;
+my $emu_conf;
+my $pso_conf;
+
+# Variable to request that *none* of the core orbitals be orthogonalized out of
+#   the calculation. Thus, all the core orbitals will be included in the
+#   valence section if the value of noCore=1 (meaning that none of the orbitals
+#   will be listed in the core section of the input file).  The default will be
+#   to let the defined "core" orbitals remain in the core section of the input
+#   file and thus be removed from the calculation via orthogonalization.
+my $noCore;
+
+######################################################################
+# Begin execution of the script here
+######################################################################
+print STDOUT "\n\nScript Executing.\n\n";
+
+# This will parse the command line, define file names, init defaults, etc.
+$time = `date`;
+chomp($time);
+print STDOUT "\nStarting environment setup at................$time.\n";
+&setupEnvironment;
+
+
+
+# Parse input, apply space group and supercell, inititialize default species.
+$time = `date`;
+chomp($time);
+print STDOUT "\nStarting structure initialization at.........$time.\n";
+&initializeCell;
+
+
+
+# Assign species based on command line parameters.
+$time = `date`;
+chomp($time);
+print STDOUT "\nStarting to assign species at................$time.\n";
+&assignGroup("species");
+
+
+
+# Assign types based on command line parameters.
+$time = `date`;
+chomp($time);
+print STDOUT "\nStarting to assign general types at..........$time.\n";
+&assignGroup("types");
+
+
+
+# If -xanes option was given then generate a type list for each atomic species.
+if ($xanes == 1)
+{
+   $time = `date`;
+   chomp($time);
+   print STDOUT "\nStarting to assign XANES types at............$time.\n";
+   &assignXanesTypes;
+}
+
+
+
+# If the -emu option was given then create the input files for running Emu.
+if ($emu == 1)
+{
+   $time = `date`;
+   chomp($time);
+   print STDOUT "\nStarting to print emu configuration files at $time.\n";
+   &initializeEmu
+}
+
+
+# Print out the necessary files for OLCAO (olcao.dat, scfV, kpoints etc.)
+$time = `date`;
+chomp($time);
+print STDOUT "\nStarting to print input files at.............$time.\n";
+&printOLCAO;
+
+
+
+
+# Print summary file
+$time = `date`;
+chomp($time);
+print STDOUT "\nStarting to print summary at.................$time.\n";
+&printSummary;
+
+
+
+# Complete the script.
+$time = `date`;
+chomp($time);
+print STDOUT "\nScript Complete at...........................$time.\n\n";
+
+
+
+######################################################################
+# End execution of the script here
+######################################################################
+
+######################################################################
+# Define all the subroutines
+######################################################################
+
+# These are utility subroutines for moving and copying files without dieing.
+sub copy
+{
+   if ((! -e $_[0]) && (-e $_[1]))
+   {
+      print STDOUT "$_[0] not found but $_[1] exists.  No copy done.\n";
+      return();
+   }
+   if(system("cp -f $_[0] $_[1]") != 0)
+      {die "Cannot copy $_[0] to $_[1].  Died $!";}
+}
+sub move
+{
+   if ((! -e $_[0]) && (-e $_[1]))
+   {
+      print STDOUT "$_[0] not found but $_[1] exists.  No move done.\n";
+      return();
+   }
+   if(system("mv -f $_[0] $_[1]") != 0)
+      {die "Cannot move $_[0] to $_[1].  Died $!";}
+}
+
+
+#This subroutine will setup the execution environment for the rest of the
+#  makeingput script.  This includes initializing a large number of global
+#  variables that can be accessed by any other subroutine in the program.   The
+#  variables are generally static and should not be modified by any of the
+#  later subroutines.
+sub setupEnvironment
+{
+   print STDOUT "      Cleaning up Previous Inputs\n";
+
+   # Remove any existing .dat files to prevent their reuse.
+   &removeOldInput;
+
+   print STDOUT "      Initializing File Names\n";
+
+   # Define all the file names, file extensions, directory tags, etc. used
+   #   in the script.
+   &initNames;
+
+   print STDOUT "      Initializing Defaults\n";
+
+   # Initialize a bunch of variables (some of which could be modified on the
+   #   command line but which if they are not need to have default values).
+   &initDefaults;
+
+   print STDOUT "      Parsing Command Line\n";
+
+   # Parse (and record) the command line.
+   &parseCommandLine;
+
+   print STDOUT "      Initializing State\n";
+
+   # Set a few variables that are system dependent and others that define the
+   #   current state of the system.
+   &initState;
+}
+
+# This subroutine will delete any old input files present in the project home.
+#   It will also remove any previously computed converged potentials.
+sub removeOldInput
+{
+   # Define local variables.
+   my @edgeTag;
+   my $edge;
+
+   if (-e "olcao.dat")
+      {system("rm -f olcao.dat");}
+   if (-e "structure.dat")
+      {system("rm -f structure.dat");}
+   if (-e "kp-scf.dat")
+      {system("rm -f kp-scf.dat");}
+   if (-e "kp-pscf.dat")
+      {system("rm -f kp-pscf.dat");}
+   if (-e "kp-alt.dat")
+      {system("rm -f kp-alt.dat");}
+
+   $edgeTag[0]  = "";
+   $edgeTag[1]  = "1s_";
+   $edgeTag[2]  = "2s_";
+   $edgeTag[3]  = "2p_";
+   $edgeTag[4]  = "3s_";
+   $edgeTag[5]  = "3p_";
+   $edgeTag[6]  = "4s_";
+   $edgeTag[7]  = "3d_";
+   $edgeTag[8]  = "4p_";
+   $edgeTag[9]  = "5s_";
+   $edgeTag[10] = "4d_";
+   $edgeTag[11] = "5p_";
+   $edgeTag[12] = "6s_";
+   $edgeTag[13] = "4f_";
+   $edgeTag[14] = "5d_";
+   $edgeTag[15] = "6p_";
+   $edgeTag[16] = "7s_";
+   foreach $edge (0..16)
+   {
+      if (-e "$edgeTag[$edge]scfV.dat")
+         {system("rm -f $edgeTag[$edge]scfV.dat");}
+   }
+}
+
+# This subroutine will initialize all the file names, file extensions, and
+#   directory tags used in the script.
+sub initNames
+{
+   # Define local variables.
+   my $pwd;
+   my @directories;
+
+   # Determine the project name
+   $pwd=`pwd`;
+   chomp ($pwd);
+   @directories=split(/\//,"$pwd");
+   $proj_home=$directories[$#directories];
+
+   # Define directory variables
+   $inputTemp="./.inputTemp";
+   $inputs="./inputs";
+   $atomicBDB="$OLCAO_DATA/atomicBDB";
+   $atomicPDB="$OLCAO_DATA/atomicPDB";
+   $sybdDB="$OLCAO_DATA/sybdDB";
+   $spaceDB="$OLCAO_DATA/spaceDB";
+
+   # Script inputs and generated outputs used for olcao calculation.
+   $olcao_skl      = "olcao.skl";
+   $olcao_mi       = "olcao.mi";
+   $olcao_in       = "olcao.dat";
+   $potential      = "scfV.dat";
+   $kpGroupFile[1] = "kp-scf.dat";
+   $kpGroupFile[2] = "kp-pscf.dat";
+   $kpGroupFile[3] = "kp-alt.dat";
+   $kpInFile       = "kpSpecs.dat";
+   $kpOutFile      = "kpSpecs.out";
+   $structure      = "structure.dat";
+   $emu_conf       = "emu.conf";
+   $pso_conf       = "pso.conf";
+
+   # Outputs used for running, structure analysis, job tracking, etc.
+   $pbs_sub        = "pbs";
+   $lsf_sub        = "lsf";
+   $bash_sub       = "submit";
+   $commandLine    = "command";
+   $summary        = "summary";
+   $memNeeds       = "memory";
+   $datSklMap      = "datSkl.map";
+
+   # Structure plotting extensions.
+   $pdb_ext=".pdb";
+   $cif_ext=".cif";
+}
+
+# This subroutine will initialize a set of variables that can be modified by
+#   command line parameters (CLPs) but which if they are not modified should
+#   have default values set.
+sub initDefaults
+{
+   # Define local variables.
+   my $axis;
+   my $kpGroup;
+
+   # Will any potentials be modified.  (Default=0=no)
+   $modPot = 0;
+   $modElementName = "";
+
+   # Initialize the variables that are modified by the command line.
+   #   Which extra files to print?
+   $pdb=0;
+   $cif=0;
+   $pbs=$OLCAO_PBS;
+   $lsf=$OLCAO_LSF;
+
+   # Default cutoff criteria (exponent) for negligable gaussian interations.
+   $bfCutoff=16;
+   $esCutoff=16;
+
+   # Default exchange correlation mesh parameters.
+   $xcInWeight=0.5;
+   $xcOutWeight=0.5;
+   $xcInSamp=0.1;
+   $xcOutSamp=3.5;
+   $xcSpacingSamp=0.8;
+   $numSampVectors=100;
+
+
+   # Default DOS options
+   $eDeltaDOS=0.01;
+   $sigmaDOS=0.1;
+   $eminDOS=-30;
+   $emaxDOS=30;
+   $allAtomPDOS=0;
+   $iterTDOS=0;
+
+   # Default BOND options
+   $maxLenBOND=3.5;
+   $eminBOND=-30;
+   $emaxBOND=30;
+   $sigmaBOND=0.1;
+   $eDeltaBOND=0.01;
+   $allAtomBOND=1;
+   
+   # Default PACS options
+   $eDeltaPACS=0.01;
+   $sigmaPACS=0.5;
+   $onsetSlackPACS=5.0;
+   $energyWindowPACS=50.0;
+   
+   # Default OPTC options
+   $eDeltaOPTC=0.01;
+   $eDeltaSIGE=0.001;
+   $sigmaOPTC=0.1;
+   $sigmaSIGE=0.1;
+   $eTransOPTC=100;
+   $eTransSIGE=0.3;
+   $eCutOffOPTC=45;
+   $eCutOffSIGE=5;
+   
+   # Default MAIN options
+   $numIterMAIN=50;
+   $convergMAIN=0.0001;
+   $spinMAIN=0.01;
+   $thermSmearMAIN=0.0;
+
+   # Default cell type (for symmetric band structure path) and bravis lattice
+   #  full name for CIF file outputs.
+   $sybdPath="";
+   $cellName="";
+
+   # Default kpoints
+   foreach $axis (1..3)
+   {
+      foreach $kpGroup (1..3)
+         {$kpMesh[$kpGroup][$axis] = 1;}
+      $setKPFlag[$axis] = 0;
+      $kpNote[$axis] = "(General)";
+   }
+   $kpWeightSum = 2;
+
+   # Initial setting to track the number of basis set substitutions.
+   $numBasisSubs = 0;
+   $numPotSubs   = 0;
+
+   # Initialize the counter for the number of grouping methods to use and the
+   #   number of uses of each group.
+   $numMethods = 0;
+   $reduce     = 0;
+   $target     = 0;
+   $block      = 0;
+
+   # Non default switch to make xanes input files with the default radius for
+   #   assigning seperate types.  The default behavior is detected for a
+   #   $numXanesAtoms assignment of 0.
+   $xanes=0;
+   $xanesRadius=3.50;
+   $xanesAtoms[0]=0;
+   $numXanesAtoms=0;
+
+   # Factor to determine the number of states to calculate.  (numStates = this
+   #   number * num valence electrons)
+   $stateFactor=2.5;
+
+   # Default type of calculation = non-relativistic.
+   $rel = 0;
+
+   # Normally, do not make a numerical basis function plot file or a ray
+   #   tracable POVRay scene file.
+   $doBasisVis = 0;
+
+   # Default for creation of emu-related files and deletion of all other files.
+   $emu = 0;
+
+   # Default for whether or not to use all orbitals (no core orthogonalization).
+   $noCore = 0; # This will have core orbitals orthogonalized out.
+
+   # Make the inputTemp directory.
+   mkdir ("$inputTemp");
+}
+
+
+# This subroutine will parse all the command line parameters.
+sub parseCommandLine
+{
+   # Define local variables.
+   my $number;
+   my $nextTag;    # Used for sub options.
+   my @numberPair; # Used to extract ranges of the form 3..8.
+   my $argument;   # Used to record the command line.
+   my $pair;       # Used for XANES/ELNES atom group specification.
+   my $kpGroup;    # ID for each kpoint group:  1=scf; 2=pscf; 3=alternate.
+   my $axis;       # ABC axes.
+   my $numPossibleArgs;  # Variable number of sub arguments.
+
+   $number = 0;
+
+   while ($number < scalar(@ARGV))
+   {
+      if ($ARGV[$number] eq "-pdb")
+         {$pdb=1;}
+      elsif ($ARGV[$number] eq "-cif")
+         {$cif=1;}
+      elsif ($ARGV[$number] eq "-sybdpath")
+      {
+         $sybdPath=lc($ARGV[++$number]);
+         if ($sybdPath =~ /mono/)
+            {$cellName = "monoclinic";}
+         elsif ($sybdPath =~ /ortho/)
+            {$cellName = "orthorhombic";}
+         elsif ($sybdPath =~ /tet/)
+            {$cellName = "tetragonal";}
+         elsif ($sybdPath =~ /trig/)
+            {$cellName = "trigonal";}
+         elsif ($sybdPath =~ /hex/)
+            {$cellName = "hexagonal";}
+         elsif ($sybdPath =~ /tri/)
+            {$cellName = "triclinic";}
+         elsif ($sybdPath =~ /rhomb/)
+            {$cellName = "rhombohedral";}
+         elsif ($sybdPath =~ /fcc/)
+            {$cellName = "cubic";}
+         elsif ($sybdPath =~ /sc/)
+            {$cellName = "cubic";}
+         elsif ($sybdPath =~ /bcc/)
+            {$cellName = "cubic";}
+         elsif ($sybdPath =~ /zb/)
+            {$cellName = "cubic";}
+      }
+      elsif ($ARGV[$number] eq "-rel")
+      {
+         $rel=1;
+         $numIterMAIN = 150;
+      }
+      elsif ($ARGV[$number] eq "-scfkp")
+      {
+         $setKPFlag[1] = 1;
+         foreach $axis (1..3)
+            {$kpMesh[1][$axis]=$ARGV[++$number];}
+         if (($kpMesh[1][1]==1) && ($kpMesh[1][2]==1) && ($kpMesh[1][3]==1))
+            {$kpNote[1] = "(Gamma)";}
+      }
+      elsif ($ARGV[$number] eq "-pscfkp")
+      {
+         $setKPFlag[2] = 1;
+         foreach $axis (1..3)
+            {$kpMesh[2][$axis]=$ARGV[++$number];}
+         if (($kpMesh[2][1]==1) && ($kpMesh[2][2]==1) && ($kpMesh[2][3]==1))
+            {$kpNote[2] = "(Gamma)";}
+      }
+      elsif ($ARGV[$number] eq "-altkp")
+      {
+         $setKPFlag[3] = 1;
+         foreach $axis (1..3)
+            {$kpMesh[3][$axis]=$ARGV[++$number];}
+         if (($kpMesh[3][1]==1) && ($kpMesh[3][2]==1) && ($kpMesh[3][3]==1))
+            {$kpNote[3] = "(Gamma)";}
+      }
+      elsif ($ARGV[$number] eq "-kp")
+      {
+         # Read the first group from the command line.
+         foreach $axis (1..3)
+            {$kpMesh[1][$axis] = $ARGV[++$number];}
+         if (($kpMesh[1][1]==1) && ($kpMesh[1][2]==1) && ($kpMesh[1][3]==1))
+         {
+            $kpNote[1] = "(Gamma)";
+            $kpNote[2] = "(Gamma)";
+            $kpNote[3] = "(Gamma)";
+         }
+
+         # Copy this to the other two groups.
+         foreach $kpGroup (2..3)
+         {
+            foreach $axis (1..3)
+               {$kpMesh[$kpGroup][$axis] = $kpMesh[1][$axis];}
+         }
+
+         # Mark that all kpoints have been set from the command line.
+         foreach $kpGroup (1..3)
+            {$setKPFlag[$kpGroup] = 1;}
+      }
+      elsif ($ARGV[$number] eq "-subbasis")
+      {
+         $numBasisSubs++;
+         $basisSubOut[$numBasisSubs] = $ARGV[++$number];
+         $basisSubIn[$numBasisSubs]  = $ARGV[++$number];
+      }
+      elsif ($ARGV[$number] eq "-subpot")
+      {
+         $numPotSubs++;
+         $potSubOut[$numPotSubs] = $ARGV[++$number];
+         $potSubIn[$numPotSubs]  = $ARGV[++$number];
+      }
+      elsif ($ARGV[$number] eq "-modpot")
+      {
+         $modPot=1;
+         $modElementName = lc($ARGV[++$number]);
+         $minModTerm  = $ARGV[++$number];
+         $maxModTerm  = $ARGV[++$number];
+         $numModTerms = $ARGV[++$number];
+      }
+      elsif ($ARGV[$number] eq "-basisdb")
+         {$atomicBDB = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-potdb")
+         {$atomicPDB = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-reduce")
+      {
+         $numMethods++;
+         $method[$numMethods]=0;
+
+         $reduce++;
+
+         # Define default parameters for this reduce operation.
+         $reduceLevel[$reduce]     = 2;
+         $reduceThick[$reduce]     = 0.10;
+         $reduceCutoff[$reduce]    = 4.0;
+         $reduceOp[$reduce]        = "species";
+         $reduceTolerance[$reduce] = 0.05;
+         $reduceSelection[$reduce] = 0;
+
+         foreach $argument (1..6)
+         {
+            if ($number >= $#ARGV)
+               {last;}
+
+            $nextTag = $ARGV[++$number];
+
+            if ($nextTag eq "-level")
+               {$reduceLevel[$reduce] = $ARGV[++$number];}
+            elsif ($nextTag eq "-thick")
+               {$reduceThick[$reduce] = $ARGV[++$number];}
+            elsif ($nextTag eq "-cutoff")
+               {$reduceCutoff[$reduce] = $ARGV[++$number];}
+            elsif ($nextTag eq "-operand")
+               {$reduceOp[$reduce] = $ARGV[++$number];}
+            elsif ($nextTag eq "-tolerance")
+               {$reduceTolerance[$reduce] = $ARGV[++$number];}
+            elsif ($nextTag eq "-selection")
+               {$reduceSelection[$reduce] = $ARGV[++$number];}
+            else
+               {$number--;last;}
+         }
+      }
+      elsif ($ARGV[$number] eq "-target")
+      {
+         $numMethods++;
+         $method[$numMethods]=1;
+
+         $target++;
+
+         # Define the default parameters for this target
+         $targetRadius[$target]   = 3.50;
+         $targetZone[$target]     = "in";
+         $targetOp[$target]       = "species";
+         $targetRelation[$target] = "diff";
+
+         foreach $argument (1..5)
+         {
+            if ($number >= $#ARGV)
+               {last;}
+
+            $nextTag = $ARGV[++$number];
+
+            if ($nextTag eq "-atom")
+            {
+               $targetLoc[$target] = $ARGV[++$number];
+               $targetType[$target] = 1;
+            }
+            elsif ($nextTag eq "-atxyz")
+            {
+               $targetLoc[$target] =
+                     "$ARGV[++$number] $ARGV[++$number] $ARGV[++$number]";
+               $targetType[$target] = 2;
+            }
+            elsif ($nextTag eq "-atabc")
+            {
+               $targetLoc[$target] =
+                     "$ARGV[++$number] $ARGV[++$number] $ARGV[++$number]";
+               $targetType[$target] = 3;
+            }
+            elsif ($nextTag eq "-sphere")
+               {$targetRadius[$target] = $ARGV[++$number];}
+            elsif ($nextTag eq "-zone")
+               {$targetZone[$target] = lc($ARGV[++$number]);}
+            elsif ($nextTag eq "-operand")
+               {$targetOp[$target] = lc($ARGV[++$number]);}
+            elsif ($nextTag eq "-relate")
+               {$targetRelation[$target] = lc($ARGV[++$number]);}
+            else
+               {$number--;last;}
+         }
+      }
+      elsif ($ARGV[$number] eq "-block")
+      {
+         $numMethods++;
+         $method[$numMethods]=2;
+
+         $block++;
+
+         # Define the default parameters for this target
+         $blockZone[$block]     = "in";
+         $blockOp[$block]       = "species";
+         $blockRelation[$block] = "diff";
+
+         foreach $argument (1..4)
+         {
+            if ($number >= $#ARGV)
+               {last;}
+
+            $nextTag = $ARGV[++$number];
+
+            if ($nextTag eq "-abc")
+            {
+               $blockBorders[1][1][$block] = $ARGV[++$number];
+               $blockBorders[1][2][$block] = $ARGV[++$number];
+               $blockBorders[2][1][$block] = $ARGV[++$number];
+               $blockBorders[2][2][$block] = $ARGV[++$number];
+               $blockBorders[3][1][$block] = $ARGV[++$number];
+               $blockBorders[3][2][$block] = $ARGV[++$number];
+            }
+            elsif ($nextTag eq "-zone")
+               {$blockZone[$block] = lc($ARGV[++$number]);}
+            elsif ($nextTag eq "-operand")
+               {$blockOp[$block] = lc($ARGV[++$number]);}
+            elsif ($nextTag eq "-relate")
+               {$blockRelation[$block] = lc($ARGV[++$number]);}
+            else
+               {$number--;last;}
+         }
+      }
+      elsif ($ARGV[$number] eq "-xanes")
+      {
+         $xanes=1;
+
+         foreach $argument (1..2)
+         {
+            if ($number >= $#ARGV)
+               {last;}
+
+            $nextTag = $ARGV[++$number];
+
+            if ($nextTag eq "-sphere")
+               {$xanesRadius = $ARGV[++$number];}
+            elsif ($nextTag eq "-atom")
+            {
+               while (($number+1 <= $#ARGV)
+                     && ($ARGV[$number+1] !~ /-/) && ($ARGV[$number+1] ne ""))
+               {
+                  if ($ARGV[$number+1] =~ /\.\./)
+                  {
+                     @numberPair = split (/\.\./,$ARGV[++$number]);
+                     foreach $pair ($numberPair[0]..$numberPair[1])
+                     {
+                        $numXanesAtoms++;
+                        $xanesAtoms[$numXanesAtoms] = $pair;
+                     }
+                  }
+                  else
+                  {
+                     # Increment the number of xanes atoms
+                     $numXanesAtoms++;
+
+                     # Save the atom number of a xanes excitation atom.
+                     $xanesAtoms[$numXanesAtoms] = $ARGV[++$number];
+                  }
+               }
+            }
+            else
+               {$number--;last;}
+         }
+      }
+      elsif ($ARGV[$number] eq "-xcmesh")
+      {
+         foreach $argument (1..3)
+         {
+            if ($number >= $#ARGV)
+               {last;}
+
+            $nextTag = $ARGV[++$number];
+
+            if ($nextTag eq "-numvect")
+               {$numSampVectors = $ARGV[++$number];}
+            elsif ($nextTag eq "-weight")
+            {
+               $xcInWeight  = $ARGV[++$number];
+               $xcOutWeight = $ARGV[++$number];
+            }
+            elsif ($nextTag eq "-samp")
+            {
+               $xcInSamp  = $ARGV[++$number];
+               $xcOutSamp = $ARGV[++$number];
+               $xcSpacingSamp = $ARGV[++$number];
+            }
+         }
+      }
+      elsif ($ARGV[$number] eq "-statefactor")
+         {$stateFactor=$ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-bfcut")
+         {$bfCutoff = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-escut")
+         {$esCutoff = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-basisVis")
+         {$doBasisVis = 1;}
+      elsif ($ARGV[$number] eq "-emu")
+         {$emu = 1;}
+      elsif ($ARGV[$number] eq "-nocore")
+         {$noCore = 1;}
+      elsif ($ARGV[$number] eq "-help")
+         {&printHelp;}
+      else
+      {
+         print STDOUT "UNKNOWN COMMAND LINE PARAMETER $ARGV[$number]. BYE.\n";
+         exit;
+      }
+
+      if ($number > scalar(@ARGV))
+      {
+         print STDOUT "Command line overrun.\n";
+         print STDOUT "Check command line parameters for missing options.\n";
+         die "Aborting\n";
+      }
+      else
+         {$number++;}
+   }
+
+   #Record the command line used to create this set of input files.
+   open (COMMANDLINE,">>$commandLine");
+   print COMMANDLINE "makeinput ";
+   foreach $argument (0..$#ARGV)
+      {print COMMANDLINE "$ARGV[$argument] ";}
+   print COMMANDLINE "\n";
+   close (COMMANDLINE);
+}
+
+# This subroutine will initialize a few variables that are system dependent,
+#   and a few others that define the execution state of the script.
+sub initState
+{
+   #Determine the method to use for tarring up the results.
+   if ($OLCAO_TAR eq "linux")
+      {$tarMethod=0;}
+   else
+      {$tarMethod=1;}
+
+   # Initialize parameters that say whether or not a specific action is done.
+   $targetsPrepared = 0;
+   $minDistMatricesMade = 0;
+
+   # Define the set of initial states used for XANES calculations for various
+   #   QN_n QN_l pairs.
+   $initXanesStates[1][0] = "  1  1 ";  # 1s
+   $initXanesStates[2][0] = "  2  2 ";  # 2s
+   $initXanesStates[2][1] = "  3  5 ";  # 2p
+   $initXanesStates[3][0] = "  6  6 ";  # 3s
+   $initXanesStates[3][1] = "  7  9 ";  # 3p
+   $initXanesStates[4][0] = " 10 10 ";  # 4s
+   $initXanesStates[3][2] = " 11 15 ";  # 3d
+   $initXanesStates[4][1] = " 16 18 ";  # 4p
+   $initXanesStates[5][0] = " 19 19 ";  # 5s
+   $initXanesStates[4][2] = " 20 24 ";  # 4d
+   $initXanesStates[5][1] = " 25 27 ";  # 5p
+   $initXanesStates[6][0] = " 28 28 ";  # 6s
+   $initXanesStates[4][3] = " 29 35 ";  # 4f
+   $initXanesStates[5][2] = " 36 40 ";  # 5d
+   $initXanesStates[6][1] = " 41 43 ";  # 6p
+   $initXanesStates[7][0] = " 44 44 ";  # 7s
+}
+
+# This subroutine will read the olcao.skl input file and initialize all the
+#   parameters read from it that define the structure.
+sub initializeCell
+{
+   # Define local variables.
+   my $atom;
+   my $element;
+   my $species;
+   my $numSpecies_ref;
+   my $elementList_ref;
+   my $atomElementName_ref;
+   my $atomElementID_ref;
+   my $atomSpeciesID_ref;
+
+   # Define some constants.
+   $pi      = StructureControl::getPi();
+   $bohrRad = StructureControl::getBohrRad();
+
+   # Read olcao.skl and request to use the species defined in that file.
+   StructureControl::readInputFile("$olcao_skl",1);
+
+   # Get the system title.
+   $systemTitle_ref = StructureControl::getSystemTitleRef();
+
+   # Retrieve references to useful structural data.
+   $realLattice_ref    = StructureControl::getRealLatticeRef();
+   $realLatticeInv_ref = StructureControl::getRealLatticeInvRef();
+   $recipLattice_ref   = StructureControl::getRecipLatticeRef();
+   $fractABC_ref       = StructureControl::getFractABCRef();
+   $directXYZ_ref      = StructureControl::getDirectXYZRef();
+   $directABC_ref      = StructureControl::getDirectABCRef();
+   $mag_ref            = StructureControl::getMagRef();
+   $angle_ref          = StructureControl::getAngleRef();
+
+   # Retrieve local versions of certain values.
+   $doFullCell     = StructureControl::getDoFullCell();
+   $spaceGroupName = StructureControl::getSpaceGroupName();
+   $spaceGroupNum  = StructureControl::getSpaceGroupNum();
+   $numElements    = StructureControl::getNumElements();
+   $numAtoms       = StructureControl::getNumAtoms();
+
+   # Retrieve initial states of element names and ID, and species IDs and #s.
+   $elementList_ref     = StructureControl::getElementListRef();
+   $atomElementName_ref = StructureControl::getAtomElementNameRef();
+   $atomElementID_ref   = StructureControl::getAtomElementIDRef();
+   $atomSpeciesID_ref   = StructureControl::getAtomSpeciesIDRef();
+   $numSpecies_ref      = StructureControl::getNumSpeciesRef();
+
+   # Transfer initial state information to local copies.
+   foreach $atom (1..$numAtoms)
+   {
+      $atomElementName[$atom] = $atomElementName_ref->[$atom];
+      $atomElementID[$atom]   = $atomElementID_ref->[$atom];
+      $atomSpeciesID[$atom]   = $atomSpeciesID_ref->[$atom];
+      $atomTypeID[0][$atom]    = 1;
+   }
+
+   # Initialize system species numbers.  (Copy)
+   foreach $element (1..$numElements)
+      {$numSpecies[$element] = $numSpecies_ref->[$element];}
+
+   # Initialize system types numbers.
+   foreach $element (1..$numElements)
+   {
+      foreach $species (1..$numSpecies[$element])
+         {$numTypes[0][$element][$species] = 1;}
+   }
+
+   foreach $element (1..$numElements)
+      {$elementList[$element] = $elementList_ref->[$element];}
+
+
+
+   # Determine lattice specific information (such as symmetric band path and
+   #   kpoint mesh shift).  The high-symmetry points of the first Brillouin
+   #   zone (BZ) are given in the sybd database in fractional coordinates of
+   #   the reciprocal space lattice vectors of the appropriate lattice type
+   #   (conventional, primitive).  If an fcc cubic system is given and the
+   #   primitive cell is used, then the reciprocal lattice of the primitive
+   #   cell is also used and so the high symmetry points must come from the
+   #   fcc recipricol primitive lattice.  In an fcc cubic system is given and
+   #   the conventional (full) cell is used, then the reciprocal lattice of the
+   #   conventional (full) cell is also used and so the high symmetry points
+   #   must come from the simple cubic recipricol primitive lattice.  This
+   #   holds for the other crystal systems too.
+   if ($spaceGroupNum <= 2)
+   {
+      $sybdPath = "tric";
+      $cellName = "triclinic";
+      $kpShift  = "0.5 0.5 0.5";
+   }
+   elsif ($spaceGroupNum <= 15)
+   {
+      $sybdPath = "mono";
+      $cellName = "monoclinic";
+      $kpShift  = "0.5 0.5 0.5";
+   }
+   elsif ($spaceGroupNum <= 74)
+   {
+      $sybdPath = "ortho";
+      $cellName = "orthorhombic";
+      $kpShift  = "0.5 0.5 0.5";
+   }
+   elsif ($spaceGroupNum <= 142)
+   {
+      $sybdPath = "tet";
+      $cellName = "tetragonal";
+      $kpShift  = "0.5 0.5 0.5";
+   }
+   elsif ($spaceGroupNum <= 167)
+   {
+      $sybdPath = "trig";
+      $cellName = "trigonal";
+      $kpShift  = "0.5 0.5 0.5";
+   }
+   elsif ($spaceGroupNum <= 194)
+   {
+      $sybdPath = "hex";
+      $cellName = "hexagonal";
+      $kpShift  = "0.3333333333333333 0.3333333333333333 0.25";
+   }
+   elsif ($spaceGroupNum <= 230)
+   {
+      if ($doFullCell == 1)
+      {
+         $sybdPath = "sc";
+         $kpShift  = "0.25 0.25 0.25";
+      }
+      else
+      {
+         if ($spaceGroupName =~ /^F/)
+         {
+            $sybdPath = "fcc";
+            $kpShift  = "0.25 0.25 0.25";
+         }
+         elsif ($spaceGroupName =~ /^I/)
+         {
+            $sybdPath = "bcc";
+            $kpShift  = "0.5 0.5 0.5";
+         }
+         else
+         {
+            $sybdPath = "sc";
+            $kpShift  = "0.25 0.25 0.25";
+         }
+      }
+      $cellName = "cubic";
+   }
+$kpShift = "0.0 0.0 0.0";
+   # Move the files created by the space group program when the olcao.skl input
+   #   was read in.
+   &move("sginput","$inputTemp/sginput");
+   &move("sgoutput","$inputTemp/sgoutput");
+}
+
+sub assignGroup
+{
+   # This subroutine will assign atoms to a group (species, types) in the
+   #   current system by going through the list of requested grouping methods
+   #   and applying the ones that will redefine the requested operands of the
+   #   system.  This is done in the order that they were requested.
+
+   # Define local variables.
+   my $i;
+   my $operand;  # The current operand (species, types).  This subroutine is
+                 #   *never* called with the reduce operand.
+   my $currentReduce;  # Reduce request number.
+   my $currentTarget;  # Target request number.
+   my $currentBlock;   # Block request number.
+   my $relaxationNeeded;  # Flag to request that types or species be 'relaxed'.
+   my $limitDist;
+
+   # Set the limit distance for interaction
+   # Initial value.
+   $limitDist = 4.0;
+   if ($target > 0)
+   {
+      foreach $currentTarget (1..$target)
+      {
+         if ($targetRadius[$currentTarget] > $limitDist)
+            {$limitDist = $targetRadius[$currentTarget];}
+      }
+   }
+   if ($reduce > 0)
+   {
+      foreach $currentReduce (1..$reduce)
+      {
+         if ($reduceCutoff[$currentReduce] > $limitDist)
+            {$limitDist = $reduceCutoff[$currentReduce];}
+      }
+   }
+   if ($xanes == 1)
+   {
+      if ($xanesRadius > $limitDist)
+         {$limitDist = $xanesRadius;}
+   }
+   StructureControl::setLimitDist($limitDist);
+
+   # Prepare target data points in fractional abc, and real xyz if needed.
+   if (($target > 0) && ($targetsPrepared == 0))
+      {&prepareTargets;}
+
+   # Determine if it is necessary to make the minimal distance matrix.
+   if ((($target > 0) || ($xanes == 1) || ($reduce > 0)) &&
+      ($minDistMatricesMade == 0))
+      {&makeMinDistMatrices($numAtoms,$target,$fractABC_ref,
+                            \@targetFractABC,$directXYZ_ref,
+                            \@targetDirectXYZ);}
+   # Determine what the operand is (species,types,reduce).  Recall that the
+   #   'reduce' operand is used by target or block to request that the
+   #   atoms selected by that target or block be used for the reduce call.
+   $operand = $_[0];
+
+   # Initialize counters that indicate which group request number we are on for
+   #   each grouping method.
+   $currentReduce = 1;
+   $currentTarget = 1;
+   $currentBlock  = 1;
+
+   #Initialize a flag to mark when it is necessary to perform relaxation.  The
+   #   need for relaxation is that when an atom is to be assigned a new species
+   #   or type we just assign that atom a species/type with a number that is
+   #   one greater than the current maximum number.  We do not check to see if
+   #   this atom is the only atom with the original species/type number.  (e.g.
+   #   and atom of species Si3 out of 7 Si species is to be given a new species
+   #   number.  It goes from Si3 to Si8.  If that atom was the only Si3 in the
+   #   system, then there is a hole in the list of Si species.  So, after all
+   #   the species numbers have been assigned, this list is relaxed to fill in
+   #   whatever holes may exist.
+   $relaxationNeeded=0;
+
+   # Consider each method in turn in the order they appeared on the command
+   #   line.  Then call the appropriate grouping subroutine.
+   for ($i=1;$i<=$numMethods;$i++)
+   {
+      if (($method[$i] == 0) && ("$reduceOp[$currentReduce]" eq "$operand"))
+      {
+         # Reduce is only applied to species, not to types.
+         &groupReduce ($currentReduce);
+         $relaxationNeeded=1;
+         $currentReduce++;
+      }
+      elsif ($method[$i] == 1)
+      {
+         # Apply grouping if the target's operand matches how this was called.
+         if ("$targetOp[$currentTarget]" eq "$operand")
+         {
+            &groupTarget ($currentTarget);
+            $relaxationNeeded=1;
+         }
+         $currentTarget++;
+      }
+      elsif ($method[$i] == 2)
+      {
+         # Apply grouping if the block's operand matches how this was called.
+         if ("$blockOp[$currentBlock]" eq "$operand")
+         {
+            &groupBlock ($currentBlock);
+            $relaxationNeeded=1;
+         }
+         $currentBlock++;
+      }
+   }
+
+   # Relax the atoms of the current operand only if a method other than the
+   #   reduce method was used (since that one does not require a relaxation).
+   #   Also this relaxation will only be used on the 0 file set.  That is the
+   #   initial one before any xanes input files are made.
+   if ($relaxationNeeded == 1)
+      {&relaxGroup ($operand,0);}
+}
+
+
+sub prepareTargets
+{
+   # Update Progress.
+   print STDOUT "      Preparing Targets for Inclusion in Distance Matrix\n";
+
+   # Define local variables.
+   my $currTarget;
+   my $axis;
+   my $abcAxis;
+   my $xyzAxis;
+   my @values;
+
+   # Consider each target that was requested on the command line.
+   foreach $currTarget (1..$target)
+   {
+      # Get the location of the target point in fractional abc and real xyz.
+      #   This is used in constructing a minimal distance matrix with the
+      #   atomic positions.
+      if ($targetType[$currTarget] == 1) # Atomic position
+      {
+         foreach $axis (1..3)
+         {
+            $targetDirectXYZ[$currTarget][$axis] =
+                  $directXYZ_ref->[$targetLoc[$currTarget]][$axis];
+            $targetFractABC[$currTarget][$axis] =
+                  $fractABC_ref->[$targetLoc[$currTarget]][$axis];
+         }
+      }
+      elsif ($targetType[$currTarget] == 2) # General position given in x,y,z.
+      {
+         # x,y,z values are obtained directly.
+         @values = split (/\s+/,"$targetLoc[$currTarget]");
+         foreach $axis (1..3)
+            {$targetDirectXYZ[$currTarget][$axis] = $values[$axis-1];}
+
+         my $tempDirectABC = StructureControl::directXYZ2directABC(
+               \@{$targetDirectXYZ[$currTarget]}[0..3],$realLatticeInv_ref);
+
+         foreach $axis (1..3)
+         {
+            $targetFractABC[$currTarget][$axis] =
+                  $tempDirectABC->[$axis] / $mag_ref->[$axis];
+         }
+      }
+      elsif ($targetType[$currTarget] == 3) # General position given in a,b,c.
+      {
+         # Fractional a,b,c values are obtained directly.
+         @values = split (/\s+/,"$targetLoc[$currTarget]");
+         foreach $axis (1..3)
+         {
+            $targetFractABC[$currTarget][$axis] =
+                  $values[$axis-1] / $mag_ref->[$axis];
+         }
+
+         my $tempDirectXYZ = StructureControl::fractABC2directXYZ(
+               \@{$targetFractABC[$currTarget]}[0..3],$realLattice_ref);
+
+         foreach $axis (1..3)
+         {
+            $targetDirectXYZ[$currTarget][$axis] =
+                  $tempDirectXYZ->[$axis];
+         }
+      }
+   }
+
+   # Record that the targets have been prepared.
+   $targetsPrepared=1;
+}
+
+
+sub makeMinDistMatrices
+{
+   # Define passed parameters.
+   my $numSet1        = $_[0];
+   my $numSet2        = $_[1];
+   my $fractABC1_ref  = $_[2];
+   my $fractABC2_ref  = $_[3];
+   my $directXYZ1_ref = $_[4];
+   my $directXYZ2_ref = $_[5];
+
+   # Define local variables.
+   
+
+   # Create the minimal distance matrix.
+   StructureControl::createMinDistMatrix($numSet1,$numSet2,$fractABC1_ref,
+         $fractABC2_ref,$directXYZ1_ref,$directXYZ2_ref);
+
+   # Retrieve a reference to the minimal distance matrix and the self minimal
+   #   distance matrix.
+   $minDist_ref = StructureControl::getMinDistRef();
+   $selfMinDist_ref = StructureControl::getSelfMinDistRef();
+
+   # Record that the minimal distance matrices have been created.
+   $minDistMatricesMade = 1;
+}
+
+
+sub groupBlock
+{
+   # Define passed parameters.
+   my $currentBlock = $_[0];
+
+   # Define local parameters.
+   my $atom;
+   my @trackFlag;   # Flag for each element (or species) to show alike change.
+   my $currentOp;       # Short name for $blockOp[$currentBlock].
+   my $currentZone;     # Short name for $blockZone[$currentBlock].
+   my $currentRelation; # Short name for $blockRelation[$currentBlock].
+   my $status;          # Test for each atom.  1 = pass, 0 = fail.
+
+   # Assign local short names.
+   $currentOp       = $blockOp[$currentBlock];
+   $currentZone     = $blockZone[$currentBlock];
+   $currentRelation = $blockRelation[$currentBlock];
+
+   # If the current block is designed to make the selected operands alike then
+   #   we must initialize an array to track which relations have had their
+   #   numbers modified.  (e.g. Consider a block that makes all Si1 in the block
+   #   zone have the same type.  We must track that Si1 has had the number of
+   #   types changed.  All the new alike types will be given a type number that
+   #   is one higher than the current number of types for that Si1 species.
+   #   Later, the type numbers will be relaxed so that any type numbers that
+   #   were eliminated can be removed from the counting.
+   &initTrackFlag($currentRelation,$currentOp,\@trackFlag);
+
+   # Determine if any of the block boundries should be set to the maximum.
+   if ($blockBorders[1][2][$currentBlock] eq "a")
+      {$blockBorders[1][2][$currentBlock] = $mag_ref->[1];}
+   if ($blockBorders[2][2][$currentBlock] eq "b")
+      {$blockBorders[2][2][$currentBlock] = $mag_ref->[2];}
+   if ($blockBorders[3][2][$currentBlock] eq "c")
+      {$blockBorders[3][2][$currentBlock] = $mag_ref->[3];}
+
+   # Check each atom to determine its position relative to the block borders.
+   foreach $atom (1..$numAtoms)
+   {
+      # Set the status of this atom by determining if it is within the given
+      #   borders.
+      if (($directABC_ref->[$atom][1] >= $blockBorders[1][1][$currentBlock]) &&
+          ($directABC_ref->[$atom][2] >= $blockBorders[2][1][$currentBlock]) &&
+          ($directABC_ref->[$atom][3] >= $blockBorders[3][1][$currentBlock]) &&
+          ($directABC_ref->[$atom][1] <= $blockBorders[1][2][$currentBlock]) &&
+          ($directABC_ref->[$atom][2] <= $blockBorders[2][2][$currentBlock]) &&
+          ($directABC_ref->[$atom][3] <= $blockBorders[3][2][$currentBlock]))
+         {$status = 1;}
+      else
+         {$status = 0;}
+      
+      # Extend the group according to requested requirements for this current
+      #   operation and the value of status.
+      &compareStatusAndRequest($status,$currentZone,$currentRelation,
+            $currentOp,$atom,\@trackFlag);
+   }
+
+   # If the relation was to make the target zone operands alike then we must
+   #   check which operands were affected and need to be tracked.
+   &updateFromTrackFlag($currentRelation,$currentOp,\@trackFlag);
+}
+
+
+sub groupTarget
+{
+   #Get a local version of the current target number of all targets.
+   my $currentTarget = $_[0];
+
+   # Define local parameters.
+   my $atom;
+   my @trackFlag;   # Flag for each element (or species) to show alike change.
+   my $currentOp;       # Local short name for $targetOp[$currentTarget]
+   my $currentZone;     # Local short name for $targetZone[$currentTarget].
+   my $currentRelation; # Local short name for $targetRelation[$currentTarget]
+   my $status;          # Test for each atom.  1 = pass, 0 = fail.
+   my $currentDistance;
+
+   # Apply short names.
+   $currentOp = $targetOp[$currentTarget];
+   $currentZone = $targetZone[$currentTarget];
+   $currentRelation = $targetRelation[$currentTarget];
+
+   # If the current target is designed to make the selected operands alike then
+   #   we must initialize an array to track which relations have had their
+   #   numbers modified.  (e.g. Consider a target makes all Si1 in the target
+   #   zone have the same type.  We must track that Si1 has had the number of
+   #   types changed.  All the new alike types will be given a type number that
+   #   is one higher than the current number of types for that Si1 species.
+   #   Later, the type numbers will be relaxed so that any type numbers that
+   #   were eliminated can be removed from the counting.
+   &initTrackFlag($currentRelation,$currentOp,\@trackFlag);
+
+   #Check each atom to determine its closest position relative to the target.
+   foreach $atom (1..$numAtoms)
+   {
+      $currentDistance = $minDist_ref->[$numAtoms+$currentTarget][$atom];
+
+      # Set the status of this atom by determining if it is within the given
+      #   target radius.
+      if ($currentDistance <= $targetRadius[$currentTarget])
+         {$status = 1;}
+      else
+         {$status = 0;}
+      
+      # Extend the group according to requested requirements for this current
+      #   operation and the value of status.
+      &compareStatusAndRequest($status,$currentZone,$currentRelation,
+            $currentOp,$atom,\@trackFlag);
+   }
+
+   # If the relation was to make the target zone operands alike then we must
+   #   check which operands were affected.
+   &updateFromTrackFlag($currentRelation,$currentOp,\@trackFlag);
+}
+
+sub initTrackFlag
+{
+   # Define passed parameters.
+   my $currentRelation = $_[0];
+   my $currentOp = $_[1];
+   my $trackFlag_ref = $_[3];
+
+   # Define local variables.
+   my $element;
+   my $species;
+
+   if ($currentRelation eq "alike")
+   {
+      if ($currentOp eq "species")
+      {
+         undef @$trackFlag_ref;
+
+         foreach $element (1..$numElements)
+            {$trackFlag_ref->[$element] = 0;}
+      }
+      elsif ($currentOp eq "types")
+      {
+         undef @$trackFlag_ref;
+
+         foreach $element (1..$numElements)
+         {
+            foreach $species (1..$numSpecies[$element])
+               {$trackFlag_ref->[$element][$species] = 0;}
+         }
+      }
+   }
+}
+
+
+sub compareStatusAndRequest
+{
+   # Define passed parameters.
+   my $status          = $_[0];
+   my $currentZone     = $_[1];
+   my $currentRelation = $_[2];
+   my $currentOp       = $_[3];
+   my $atom            = $_[4];
+   my $trackFlag_ref   = $_[5];
+
+   if ($status == 1)
+   {
+      # This atom is in the block zone.
+      # Only affect this atom if the block zone is inside the borders.
+      if ($currentZone eq "in")
+      {
+         # Should we make this atom different or the same?
+         if ("$currentRelation" eq "diff")
+            {&extendGroup ($currentOp,$atom,"diff",0,$trackFlag_ref);}
+         else
+            {&extendGroup ($currentOp,$atom,"alike",0,$trackFlag_ref);}
+      }
+   }
+   else
+   {
+      # This atom is outside the block zone.
+      # Only affect this atom if the block zone is outside the borders.
+      if ($currentZone eq "out")
+      {
+         # Should we make this atom different or the same?
+         if ("$currentRelation" eq "diff")
+            {&extendGroup ($currentOp,$atom,"diff",0,$trackFlag_ref);}
+         else
+            {&extendGroup ($currentOp,$atom,"alike",0,$trackFlag_ref);}
+      }
+   }
+}
+
+sub updateFromTrackFlag
+{
+   # Define passed parameters.
+   my $currentRelation = $_[0];
+   my $currentOp = $_[1];
+   my $trackFlag_ref = $_[2];
+
+   # Define local variables.
+   my $element;
+   my $species;
+
+   if ($currentRelation eq "alike")
+   {
+      if ($currentOp eq "species")
+      {
+         foreach $element (1..$numElements)
+         {
+            if ($trackFlag_ref->[$element] == 1)
+               {$numSpecies[$element]++;}
+         }
+      }
+      elsif ($currentOp eq "types")
+      {
+         foreach $element (1..$numElements)
+         {
+            foreach $species (1..$numSpecies[$element])
+            {
+               if ($trackFlag_ref->[$element][$species] == 1)
+                  {$numTypes[0][$element][$species]++;}
+            }
+         }
+      }
+   }
+}
+
+sub extendGroup
+{
+   # Extract passed parameters.
+   my $currentOp     = $_[0];
+   my $currentAtom   = $_[1];
+   my $relation      = $_[2];
+   my $fileSet       = $_[3];
+   my $trackFlag_ref = $_[4];
+
+   # Define local variables.
+   my $currElementID;
+   my $currSpeciesID;
+
+   #Assign the new type number to the current atom.
+   if ("$currentOp" eq "species")
+   {
+      # Obtain the current element ID number.
+      $currElementID = $atomElementID[$currentAtom];
+
+      # Increment the ID number for the current atom to 1 greater than the
+      #   current total number of species for this element.
+      $atomSpeciesID[$currentAtom] = $numSpecies[$currElementID] + 1;
+
+      # Determine if the total number of species for this element should be
+      #   incremented or not.  The total number is incremented if all the later
+      #   species are going to be of a different species than this one.  The
+      #   total number is not incremented now if the later species are going
+      #   to be the same as this one.  (After all the species that are the
+      #   same as this one have been identified, then the total number of
+      #   species will be incremented outside this subroutine.  That is the
+      #   reason for the tracking.)
+      if ("$relation" eq "diff")
+         {$numSpecies[$currElementID]++;}
+      else
+         {$trackFlag_ref->[$currElementID] = 1;}
+
+      # Record the number of types for this species as 1 always.
+      $numTypes[$fileSet][$currElementID]
+            [$numSpecies[$currElementID]]=1;
+   }
+   elsif ("$currentOp" eq "types")
+   {
+      # Obtain the current element and species ID numbers.
+      $currElementID = $atomElementID[$currentAtom];
+      $currSpeciesID = $atomSpeciesID[$currentAtom];
+
+      # Increment the ID number for the current atom to 1 greater than the
+      #   current total number of types for this element/species combination.
+      $atomTypeID[$fileSet][$currentAtom] =
+         $numTypes[$fileSet][$currElementID][$currSpeciesID]+1;
+
+      # Determine if the total number of types for this element/species should
+      #   be incremented or not.  The total number is incremented if all the
+      #   later types of this element/species combination are going to be
+      #   different than this one.  The total number is not incremented now if
+      #   the later types are going to be the same as this one.  (After all the
+      #   types that are the same as this one have been identified, then the
+      #   total number of types for this element/species will be incremented
+      #   outside this subroutine.  That is the reason for the tracking.)
+      if ("$relation" eq "diff")
+         {$numTypes[$fileSet][$currElementID][$currSpeciesID]++;}
+      else
+         {$trackFlag_ref->[$currElementID][$currSpeciesID] = 1;}
+   }
+}
+
+
+sub relaxGroup
+{
+   # Define passed parameters.
+   my $operand = $_[0]; # Determine what the operand is (species,types)
+   my $fileSet = $_[1]; # Determine what input file set we are working on.
+
+   # Define local variables.
+   my $element;
+   my $species;
+   my $type;
+   my $atom;
+   my $currentSpeciesID;
+   my @speciesFlagger;
+   my @speciesMap;
+   my $currentTypeID;
+   my @typeFlagger;
+   my @typeMap;
+
+   # It is assumed that if the species are to be relaxed that the types
+   #   have not yet been assigned (all type 1).  It is assumed that if the
+   #   types are to be relaxed that the species have been completely assigned
+   #   and are already relaxed.
+
+   # Proceed based on the operand.
+   if ($operand eq "species")
+   {
+      # Initialize a flag for the existing species IDs of each element.
+      foreach $element (1..$numElements)
+      {
+         foreach $species (1..$numSpecies[$element])
+            {$speciesFlagger[$element][$species] = 0;}
+      }
+
+      # Flag the existing species ID for each element.
+      foreach $atom (1..$numAtoms)
+      {
+         # Flag the species of each element as they are found.
+         $speciesFlagger[$atomElementID[$atom]][$atomSpeciesID[$atom]]=1;
+      }
+
+      # Make a mapping to reassign the species of each element.  Note that even
+      #   species that do not really exist will have a mapping number.  It will
+      #   be the same as the atom before it.  However, that value will never be
+      #   referenced because only species that exist will be remapped.  (i.e.
+      #   Given an initial set of Si species after all sorts of different
+      #   species assignments: Si1 Si3 Si4 Si9.  The flagger for this element
+      #   will have values of 1 0 1 1 0 0 0 0 1.  The mapping will look like
+      #   1 1 2 3 3 3 3 3 4.  The flagger was made from the list of existing
+      #   species.  The mapping is made from the flagger, then the types are
+      #   assigned from the mapping using only the existing species from the
+      #   flagger.  Consider index 2.  The species Si2 does not initially
+      #   exist and so it could never be mapped to Si1  Or consider Si7.
+      #   The species Si7 does not exist so it would never be mapped to Si3
+      #   However, Si9 does exist and it will be mapped to Si4.  OK?
+      foreach $element (1..$numElements)
+      {
+         # Initialize a counter for this element to be incremented when a
+         #   species exists as shown by the flags from above.
+         $currentSpeciesID = 0;
+
+         foreach $species (1..$numSpecies[$element])
+         {
+            # Since this species exists we increment the current species ID.
+            if ($speciesFlagger[$element][$species] == 1)
+               {$currentSpeciesID++;}
+
+            # Assign the currentSpeciesID to the map for this species of this
+            #   element whether or not the species really exists.
+            $speciesMap[$element][$species] = $currentSpeciesID;
+         }
+
+         # As a side effect of this double loop we can simultainiously fix
+         #   the number of species of each element.
+         $numSpecies[$element] = $currentSpeciesID;
+      }
+
+      # Loop through the atom list again making the reassignments for species.
+      foreach $atom (1..$numAtoms)
+      {
+         $atomSpeciesID[$atom] = $speciesMap[$atomElementID[$atom]]
+               [$atomSpeciesID[$atom]];
+         $atomTypeID[$fileSet][$atom] = 1;
+      }
+   }
+   elsif ($operand eq "types")
+   {
+      # This procedure is one level more complicated than the species one
+      #   above.  The above one just remapped the species for each element.
+      #   Now we must remap the types of each species of each element.
+      foreach $element (1..$numElements)
+      {
+         # Initialize a flagger for the existing type IDs of this species.
+         foreach $species (1..$numSpecies[$element])
+         {
+            foreach $type (1..$numTypes[$fileSet][$element][$species])
+               {$typeFlagger[$species][$type]=0;}
+         }
+
+         # Flag the existing type IDs for each species.
+         foreach $atom (1..$numAtoms)
+         {
+            if ($atomElementID[$atom] == $element)
+            {
+               # Flag the types of each species as they are found.
+               $typeFlagger[$atomSpeciesID[$atom]]
+                           [$atomTypeID[$fileSet][$atom]]=1;
+            }
+         }
+
+         # This mapping scheme works just like the one for the species above.
+         foreach $species (1..$numSpecies[$element])
+         {
+            # Initialize a counter for this species to be incremented when a
+            #   type exists as shown by the flags from above.
+            $currentTypeID = 0;
+
+            foreach $type (1..$numTypes[$fileSet][$element][$species])
+            {
+               # Since this type exists we increment the current type ID.
+               if ($typeFlagger[$species][$type] == 1)
+                  {$currentTypeID++;}
+
+               # Assign the currentTypeID to the map for this type of this
+               #   species whether or not the type really exists.
+               $typeMap[$species][$type] = $currentTypeID;
+            }
+
+            # As a side effect of this double loop we can simultainiously fix
+            #   the number of types of each species.
+            $numTypes[$fileSet][$element][$species] = $currentTypeID;
+         }
+
+         # Loop through the atom list again making the reassignments for types.
+         foreach $atom (1..$numAtoms)
+         {
+            if ($element == $atomElementID[$atom])
+            {
+               $atomTypeID[$fileSet][$atom] =
+                     $typeMap[$atomSpeciesID[$atom]]
+                     [$atomTypeID[$fileSet][$atom]];
+            }
+         }
+
+         # Undefine the typeFlagger and typeMap for the next element.
+         undef @typeFlagger;
+         undef @typeMap;
+      }
+   }
+}
+
+
+sub groupReduce
+{
+   # Define passed parameters.
+   my $currentReduce = $_[0];
+
+   open (REDUCE,">reduceSummary") || die "Can not open reduceSummary ".
+                                         "for writing.\n";
+
+   # Define local variables.
+   my $temp;
+   my $atom;
+   my $atom2;
+   my $level;
+   my $element;
+   my $species;
+   my @reducedAtoms;
+   my $reducedAtom;
+   my $reducedAtom2;
+   my @atomLevel;
+   my $closestAtom;
+   my @levelDistance;
+   my @numReduced;
+   my @tempAtomSpeciesID;
+   my @tempNumSpecies;
+   my $levelAtoms;
+   my @RAelements;
+   my @RAspecies;
+   my $levelDistDiff;
+   my @CAelements;
+   my @CAspecies;
+
+   # Find the set of reduced atoms for each atom at each level.
+   foreach $atom (1..$numAtoms)
+   {
+      # Initialize a list of which level each atom is at for the current atom.
+      foreach $atom2 (1..$numAtoms)
+         {$atomLevel[$atom2] = 0;}
+      $atomLevel[$atom] = -1;  #The current atom is excluded
+      
+      # Determine the configuration for each level seperately.
+      foreach $level (1..$reduceLevel[$currentReduce])
+      {
+         # First determine which atom is closest to this atom for this level
+         #   by searching only the valid ranges.
+         $closestAtom=0;
+         foreach $atom2 (1..$numAtoms)
+         {
+            if ($atomLevel[$atom2] == 0)
+            {
+               if ($closestAtom == 0)
+                  {$closestAtom = $atom2;}
+               elsif ($minDist_ref->[$atom][$atom2] <
+                      $minDist_ref->[$atom][$closestAtom])
+                  {$closestAtom = $atom2;}
+            }
+         }
+
+         # Record the distance to the current level for the current atom.
+         $levelDistance[$atom][$level] = $minDist_ref->[$atom][$closestAtom];
+
+         # Mark all atoms with distances from the target atom that are
+         #   in the range [$minDist[$atom][$closestAtom],
+         #                 $minDist[$atom][$closestAtom]+$reduceThick], but are
+         #   also not greater than $reduceCutoff distance from the current
+         #   atom.
+         foreach $atom2 (1..$numAtoms)
+         {
+            if (($minDist_ref->[$atom][$atom2] >=
+                 $minDist_ref->[$atom][$closestAtom]) &&
+                ($minDist_ref->[$atom][$atom2] <=
+                 $minDist_ref->[$atom][$closestAtom] +
+                 $reduceThick[$currentReduce]) &&
+                ($minDist_ref->[$atom][$atom2]<=$reduceCutoff[$currentReduce]))
+               {$atomLevel[$atom2] = $level;}
+         }
+      }
+
+      # Initialize a counter for the number of atoms that are reduced to
+      #   each level for the current atom.
+      foreach $level (1..$reduceLevel[$currentReduce])
+         {$numReduced[$level] = 0;}
+
+      # Save the level assignments for this atom.
+      foreach $atom2 (1..$numAtoms)
+      {
+         foreach $level (1..$reduceLevel[$currentReduce])
+         {
+            if ($atomLevel[$atom2] == $level)
+            {
+               $numReduced[$level]++;
+               $reducedAtoms[$atom][$level][$numReduced[$level]] = $atom2;
+            }
+         }
+      }
+   }
+
+   # At this point the 3D matrix @reducedAtoms should be complete for
+   #   each requested level of reduction.  Now we must compare the
+   #   data to determine which atoms are sufficiently similar to be grouped
+   #   together.
+
+   # If the species are not the operand, then abort.
+   if ($reduceOp[$currentReduce] ne "species")
+   {
+      print STDOUT "Only can reduce species now.  Aborting\n";
+      exit;
+   }
+
+   # Initialize a temporary $atomSpeciesID array.
+   foreach $atom (1..$numAtoms)
+      {$tempAtomSpeciesID[$atom] = 0;}
+
+   # Initialize a temporary counter for the number of species of each element.
+   foreach $element (1..$numElements)
+      {$tempNumSpecies[$element] = 0;}
+
+   # Undefine the counters for the number of types of each species.
+   undef @numTypes;
+
+   foreach $atom (1..$numAtoms)
+   {
+
+      # Determine the species of this atom or go to the next atom if the
+      #   species has already been assigned for this atom.
+      if ($tempAtomSpeciesID[$atom] == 0)
+      {
+         # Increment the number of species for this element.
+         $tempNumSpecies[$atomElementID[$atom]]++;
+
+         # Save the species ID number for this atom,
+         $tempAtomSpeciesID[$atom] = $tempNumSpecies[$atomElementID[$atom]];
+      }
+      else
+         {next;}
+
+      # Recode the current atom number, element name, and new species ID.
+      print REDUCE "---------------------------------------\n";
+      print REDUCE "$atom $atomElementName[$atom]$tempAtomSpeciesID[$atom]\n";
+
+      # Make a list of the Nearest Neighbor (NN) element and species IDs for
+      #   the reduction atom (RA) for each reduce level.
+      foreach $level (1..$reduceLevel[$currentReduce])
+      {
+
+         # Record the distance to the current level for the current atom.
+         print REDUCE "Distance to level $level = ".
+                      "$levelDistance[$atom][$level]\n";
+
+         # Initialize a list to record the atom elements in this level.
+         $levelAtoms="";
+
+         # Record the elementIDs and speciesIDs of the reduced atoms for this
+         #   level.  Also record the element name.
+         foreach $reducedAtom (1..$#{$reducedAtoms[$atom][$level]})
+         {
+            $RAelements[$level][$reducedAtom] =
+                  $atomElementID[$reducedAtoms[$atom][$level][$reducedAtom]];
+            $RAspecies[$level][$reducedAtom]  =
+                  $atomSpeciesID[$reducedAtoms[$atom][$level][$reducedAtom]];
+
+            # Add this element to the list for recording.
+            $levelAtoms="$levelAtoms".
+               " $atomElementName[$reducedAtoms[$atom][$level][$reducedAtom]]";
+         }
+
+         # Print the list of atoms in this level.
+         print REDUCE "Atoms in level $level :  $levelAtoms\n";
+      }
+
+#print REDUCE "$atom $atomElementName[$atom]$tempAtomSpeciesID[$atom] RAspecies[1]=@{$RAspecies[1]} RAelements=@{$RAelements[1]}\n";
+
+
+      # Check each of the other atoms to see if it is sufficiently similar
+      #   to the current atom according to the requested criteria.
+
+ATOM: foreach $atom2 ($atom+1..$numAtoms)
+      {
+         # Check that current atom (CA) is the same initial element as the
+         #   reduction atom.  If not, then go to the next atom.
+         if ($atomElementID[$atom] != $atomElementID[$atom2])
+            {next ATOM;}
+
+         # Check that the CA has distances to the levels that are within
+         #   $reduceTolerance times the distances to the RA levels.
+         foreach $level (1..$reduceLevel[$currentReduce])
+         {
+            # Compute the absolute difference in distance for this level.
+            $levelDistDiff = abs($levelDistance[$atom][$level] -
+                                 $levelDistance[$atom2][$level]);
+
+            if ($levelDistDiff>$reduceTolerance[$currentReduce] *
+                               $levelDistance[$atom][$level])
+               {next ATOM;}
+         }
+
+         # Check that this CA has the same number of NNs as the RA for each
+         #   reduce level.
+         foreach $level (1..$reduceLevel[$currentReduce])
+         {
+            if ($#{$reducedAtoms[$atom][$level]} !=
+                $#{$reducedAtoms[$atom2][$level]})
+               {next ATOM;}
+         }
+
+         # Check for identical element/species combinations at each level.  The
+         #   order of elements for each level is not required to be the same.
+         #   The order implies an order in distance from closest to farthest
+         #   for first to last within the level only.
+         foreach $level (1..$reduceLevel[$currentReduce])
+         {
+            # Make a list of the NN elements for the CA.
+            foreach $reducedAtom (1..$#{$reducedAtoms[$atom2][$level]})
+            {
+               $CAelements[$reducedAtom]=$atomElementID[$reducedAtoms[$atom2]
+                     [$level][$reducedAtom]];
+            }
+
+            # Make a list of the NN species for the CA.
+            foreach $reducedAtom (1..$#{$reducedAtoms[$atom2][$level]})
+            {
+               $CAspecies[$reducedAtom]=$atomSpeciesID[$reducedAtoms[$atom2]
+                                       [$level][$reducedAtom]];
+            }
+
+            # Now we must see if the CA list is a permutation of the RA list.
+            #   This is done simply by searching for each RA element/species ID
+            #   combination in the CA list.  If it is found in the CA list,
+            #   then it is removed from the CA list.  If every search is
+            #   successful, then they share the same element/species of NNs.
+            foreach $reducedAtom (1..$#{$RAspecies[$level]})
+            {
+               foreach $reducedAtom2 (1..$#CAspecies)
+               {
+                  if (($RAspecies[$level][$reducedAtom] ==
+                       $CAspecies[$reducedAtom2]) &&
+                      ($RAelements[$level][$reducedAtom] ==
+                       $CAelements[$reducedAtom2]))
+                  {
+                     # Swap $CAspecies[$reducedAtom2] with $CAspecies[1] & swap
+                     #   $CAelements[$reducedAtom2] with $CAelements[1] & shift.
+
+                     $temp = $CAspecies[1];
+                     $CAspecies[1] = $CAspecies[$reducedAtom2];
+                     $CAspecies[$reducedAtom2] = $temp;
+                     shift @CAspecies;
+
+                     $temp = $CAelements[1];
+                     $CAelements[1] = $CAelements[$reducedAtom2];
+                     $CAelements[$reducedAtom2] = $temp;
+                     shift @CAelements;
+
+                     last;
+                  }
+                  elsif ($reducedAtom2 == $#CAspecies)
+                     {next ATOM;}
+               }
+            }
+
+            # Clear the values in CAelements and CAspecies.
+            undef @CAelements;
+            undef @CAspecies;
+         }
+         # By this point all the tests have been passed and this current atom
+         #   (CA) is to be considered as the same element/species as the RA.
+         $tempAtomSpeciesID[$atom2] = $tempAtomSpeciesID[$atom];
+      }
+      # Clear the values in RAelements and RAspecies.
+      undef @RAelements;
+      undef @RAspecies;
+   }
+
+   # Copy the temp results into the complete results.
+
+   # Copy the atom species ID numbers.
+   foreach $atom (1..$numAtoms)
+      {$atomSpeciesID[$atom] = $tempAtomSpeciesID[$atom];}
+
+   # Copy the number of species of each element.
+   foreach $element (1..$numElements)
+      {$numSpecies[$element] = $tempNumSpecies[$element];}
+
+   # Re-initialize the number of types and for each atomic species.
+   foreach $element (1..$numElements)
+   {
+      foreach $species (1..$numSpecies[$element])
+         {$numTypes[0][$element][$species] = 1;}
+   }
+
+   close (REDUCE);
+}
+
+
+sub assignXanesTypes
+{
+   # Define local variables.
+   my $xanesAtom;
+   my $atom;
+   my $atom1; # Reference atom number for minDist matrix.
+   my $atom2; # Reference atom number for minDist matrix.
+   my $element;
+   my $species;
+   my $currentDistance;
+
+   # When the -xanes option is given the default behavior will be to select
+   #   one atom of each species and create a separate set of input files for
+   #   it.  This can be modified by using the -atom option within the -xanes
+   #   option.  In this case only the atoms specified by the -atom option
+   #   will be used for xanes excitation and separate file creation.  When the
+   #   -atom option is given, the $numXanesAtoms is incremented for each atom
+   #   given on the list.  When it is not given, $numXanesAtoms is left at 0.
+   if ($numXanesAtoms == 0)
+      {&prepareXanesList;}
+
+   # For each atom in the xanes atom list we will create a seperate list of
+   #   atom type assignments.  The xanes atom (XA) will be placed at the center
+   #   of a sphere of radius $xanesRadius.  All the atoms within that sphere
+   #   will be given their own type.  This is applied to each atom in the
+   #   xanes list.
+   foreach $xanesAtom (1..$numXanesAtoms)
+   {
+      # Init the typeID numbers for this fileSet (xanes atom).
+      foreach $atom (1..$numAtoms)
+         {$atomTypeID[$xanesAtom][$atom]    = $atomTypeID[0][$atom];}
+
+      # Init the numTypes for this fileSet (xanes atom).
+      foreach $element (1..$numElements)
+      {
+         foreach $species (1..$numSpecies[$element])
+         {
+            $numTypes[$xanesAtom][$element][$species] =
+                  $numTypes[0][$element][$species];
+         }
+      }
+
+      # Check each atom to determine its closest position relative to the XA.
+      foreach $atom (1..$numAtoms)
+      {
+         # Since the minDist matrix is only half filled we can only reference
+         #   the filled half.
+         if ($atom > $xanesAtoms[$xanesAtom])
+            {$atom1 = $xanesAtoms[$xanesAtom]; $atom2=$atom;}
+         else
+            {$atom1 = $atom; $atom2=$xanesAtoms[$xanesAtom];}
+
+         $currentDistance = $minDist_ref->[$atom1][$atom2];
+
+         # Is the current atom inside the xanes sphere radius?
+         if ($currentDistance <= $xanesRadius)
+            {&extendGroup ("types",$atom,"diff",$xanesAtom,0);}
+      }
+
+      # Allow the types to be relaxed to a contiguous sequence of numbers.
+      &relaxGroup ("types",$xanesAtom);
+   }
+}
+
+
+sub prepareXanesList
+{
+   # Define local loop control variables.
+   my $h;
+   my $atom;
+   my $element;
+   my $species;
+   my @xanesAtomsTemp;
+
+   # Go through the list of atoms.  Record any atom number corresponding to
+   #   a given element and species.  After going through all the atoms in the
+   #   system, then the last atom number for each species of each element will
+   #   be recorded as the xanes atom.
+   foreach $atom (1..$numAtoms)
+      {$xanesAtomsTemp[$atomElementID[$atom]][$atomSpeciesID[$atom]]=$atom;}
+
+   # Parse the list of xanesAtomsTemp to make a linear list of the atoms to
+   #   be excited for xanes calculations.  Also record the total number of
+   #   xanes atoms.
+   foreach $element (1..$numElements)
+   {
+      foreach $species (1..$numSpecies[$element])
+      {
+         # Increment the total number of xanes atoms.
+         $numXanesAtoms++;
+
+         # Record the atom number of the atom to be excited.
+         $xanesAtoms[$numXanesAtoms] = $xanesAtomsTemp[$element][$species];
+      }
+   }
+}
+
+
+sub printOLCAO
+{
+   # Define local variables.
+   my $h;  # Loop index variable to go through the file sets.
+   my $currentName;  # Name of the project as it will be seen in a queue if
+                     #   it is submitted on a queue using system.  (PBS,LSF)
+   my $currentDirName;  # Name of the directory that the current set of input
+                        #   files will be stored in.
+   my $proj_dir; # Name for the current project directory.
+   my @values;
+
+   #Open a file that will be used to list the directories for batch submission
+   #  and execution of XANES/ELNES jobs.
+   if ($numXanesAtoms > 0)
+      {open (DIRLIST,">batchList") ||
+             die "Cannot open batchList for writing\n";}
+
+   #For olcao input files the lattice vectors and atomic positions must be in
+   #  atomic units.
+   &convertAtoAU;
+
+   #We only have to make the k points once since the same set will be used
+   #  for each xanes set.
+   &makeKP;
+
+   # Contract the basis set for each unique element.  In the case of xanes
+   #   calculations also produce a basis set with zero core orbitals.
+   &contractBasis;
+
+   # Obtain potential information for each unique element from database.
+   &obtainPotInfo;
+
+   # Begin creating the olcao input file.  NOTE:  The index $h=0 corresponds to
+   #   the case of the basis set without any core holes.
+   for ($h=0;$h<=$numXanesAtoms;$h++)
+   {
+      # Print a progress message.
+      if ($h == 0)
+         {print STDOUT "      Working on standard input files\n";}
+      else
+         {print STDOUT "      Working on xanes input file set $h\n";}
+
+      # Create the input directory that will hold these files.
+      mkdir ("$inputs");
+
+      # Obtain the cumulative number of types through the elements and species.
+      &getCumulativeTypes($h);
+
+      # Sort the atoms according to type, species, and then element.  This will
+      #   organize the atoms in the necessary way for OLCAO calculation.  Also,
+      #   record a mapping for this file set from the initial to the final atom
+      #   order for later reference.  This is the datSkl.map file.
+      &sortAtoms($h);
+
+      # Print the structure data including cell parameters and atom positions.
+      &printStructure($h);
+
+      # Get the number of atoms for each type.
+      &getNumAtomsOfType($h);
+
+      # Print the olcao input file.
+      &printOLCAOInput($h);
+
+      # Copy the KPoint data.
+      &getKP;
+
+#      # Compute the memory estimate for this fileSet.
+#      &computeMemEst($i,$h);
+
+#      # Print the computed memory estimate.
+#      &printMemNeeds($h);
+
+      # Create a new olcao.skl file called olcao.mi (for makeinput) where the
+      #  species assignments are explicit.  This is only done for the non-xanes
+      #   type of input.
+      if ($h==0)
+         {&makeOLCAOMI;}
+
+      # Define the current name for the directory where this data set will go.
+      if ($h==0)
+         {$currentName=$proj_home;}
+      else
+         {$currentName = 
+         "$elementList[$sortedAtomElementID[$sortedXanesAtoms[$h]]]".
+         "$sortedAtomSpeciesID[$sortedXanesAtoms[$h]]".
+         "_"."$xanesAtoms[$h]";}
+
+      # Create a file to view the structure.
+      if ($pdb == 1)
+         {&makePDB($h);}
+      if ($cif == 1)
+      {
+         StructureControl::printCIF($currentName,$cellName,
+               \@sortedAtomElementID,\@sortedAtomSpeciesID,
+               $sortedAtomTypeID[$h],\@sortedFractABC);
+      }
+
+      # For XANES calculations simply rename the inputs directory to a new name
+      #   based on the element, species, and olcao.skl atom number.
+      if ($xanes == 1)
+      {
+         # Choose a name for the directory of this target atom.
+         $currentDirName = lc($currentName);
+
+         # Make sure that this directory does not yet exist.
+         if (-e $currentDirName)
+            {system("rm -rf $currentDirName");}
+
+         # Create the directory anew.
+         system("mkdir $currentDirName");
+
+         # Move the inputs directory.
+         &move ("$inputs","$currentDirName");
+
+         # Move the cif if it was created.
+         if ($cif == 1)
+            {&move ("$currentName$cif_ext","$currentDirName");}
+
+         # Move the pdb if it was created.
+         if ($pdb == 1)
+            {&move ("$currentName$pdb_ext","$currentDirName");}
+
+         # Append this directory name to a list for batch submission/execution.
+         if ($h > 0)
+            {print DIRLIST "$currentDirName   0\n";}
+      }
+
+      # Print the submission file.
+      if ($xanes == 1)
+         {&makeSubFile($h,$currentName,$currentDirName);}
+      else
+         {&makeSubFile($h,$currentName,'.');}
+   }
+}
+
+
+sub convertAtoAU
+{
+   # Define local variables.
+   my $axisABC;
+   my $axisXYZ;
+   my $axis;
+   my $atom;
+   my $bohrRad;
+
+   # Retrieve value for the bohr radius.
+   $bohrRad = StructureControl::getBohrRad();
+
+   foreach $axisABC (1..3)
+   {
+      $mag_ref->[$axisABC] /= $bohrRad;
+
+      foreach $axisXYZ (1..3)
+         {$realLattice_ref->[$axisABC][$axisXYZ] /= $bohrRad;}
+   }
+
+   foreach $atom (1..$numAtoms)
+   {
+      foreach $axis (1..3)
+      {
+         $directABC_ref->[$atom][$axis] /= $bohrRad;
+         $directXYZ_ref->[$atom][$axis] /= $bohrRad;
+      }
+   }
+}
+
+
+sub makeKP
+{
+   print STDOUT "      Generating KPoints.\n";
+
+   # Define local variables.
+   my $kpGroup;  # KPoint groups:  SCF, Post-SCF, Alternate.
+   my @values;
+
+   # Print the kpoint set for each of the three groups: SCF, Post-SCF, and alt.
+   #   Also, record the number of kpoints generated for each set.
+   foreach $kpGroup (1..3)
+   {
+      &printKPInFile(@{$kpMesh[$kpGroup]}[1..3],$kpGroup);
+      system("makekpoints");
+      $kpNum[$kpGroup] = `wc -l $kpOutFile`;  # Count the lines.
+      @values=StructureControl::prepLine("",$kpNum[$kpGroup],'\s+');
+      $kpNum[$kpGroup] = $values[0] - 3; # Subtract the three line header.
+      &move("$kpOutFile","$inputTemp/$kpGroupFile[$kpGroup]");
+   }
+   &move("$kpInFile","$inputTemp/$kpInFile");
+}
+
+
+sub printKPInFile
+{
+   # Define passed parameters.
+   my @kpMeshRequest = ("",$_[0],$_[1],$_[2]);
+   my $kpGroup = $_[3];
+
+   # Define local variables.
+   my @spaceOps;
+   my $abcAxis;
+   my $xyzAxis;
+   my $doGamma;
+
+   # Determine if the kpoint set is general or gamma only.
+   if (($kpMeshRequest[1]==1) &&
+       ($kpMeshRequest[2]==1) &&
+       ($kpMeshRequest[3]==1) &&
+       ($setKPFlag[$kpGroup]==1))
+      {$doGamma = 1;}
+   else
+      {$doGamma = 0;}
+
+   # Open the kpoint file for printing.
+   open(KP,">$kpInFile") || die "Can not open $kpInFile for writing.\n";
+
+   # Print the lattice parameters to the file.
+   foreach $abcAxis (1..3)
+   {
+      foreach $xyzAxis (1..3)
+         {print KP "$realLattice_ref->[$abcAxis][$xyzAxis] ";}
+      print KP "\n";
+   }
+
+   # Obtain and print the space group data to the file.
+   open(SPACE,"<$spaceDB/$spaceGroupName") ||
+         die "Can not open space group $spaceDB/$spaceGroupName for reading.\n";
+   @spaceOps = <SPACE>;
+   print KP @spaceOps;
+   close (SPACE);
+
+   # Print the kpoint mesh parameters.
+   print KP "@kpMeshRequest\n";
+   print KP "$kpShift\n";
+   print KP "$doGamma\n";
+
+   # Close the makekpoint input file.
+   close (KP);
+}
+
+
+sub contractBasis
+{
+   print STDOUT "      Contracting Elemental Wave Functions\n";
+
+   # Define local variables.
+   my $element;
+   my $species;
+   my $basisSub;
+   my @basisSubOutElement;
+   my @basisSubOutSpecies;
+   my $currBasisFile;
+   my $currBasisFileNC;
+   my $tempFileName;
+   my @values;
+
+   # Enter the input temp directory for easier writing.
+   chdir $inputTemp;
+
+   # For each substituted value define the element and species affected.
+   foreach $basisSub (1..$numBasisSubs)
+   {
+      if ($basisSubOut[$basisSub] !~ /[0-9]/)
+      {
+         $basisSubOutElement[$basisSub] = $basisSubOut[$basisSub];
+         $basisSubOutSpecies[$basisSub] = 0;
+      }
+      else
+      {
+         @values = split(/[0-9]+/,$basisSubOut[$basisSub]);
+         $basisSubOutElement[$basisSub] = $values[0];
+         @values = split(/[a-z]+/,$basisSubOut[$basisSub]);
+         $basisSubOutSpecies[$basisSub] = $values[1];
+      }
+   }
+
+   # For each species of each element, set up the name of the basis set files
+   #   to be used including substitution effects.
+   foreach $element (1..$numElements)
+   {
+      foreach $species (1..$numSpecies[$element])
+      {
+         # Assume the default case.
+         $currBasisFile   = "contract1" . "_$elementList[$element]";
+         $currBasisFileNC = "nocore_contract1" . "_$elementList[$element]";
+
+         # Check for substitutions that affect this.
+         foreach $basisSub (1..$numBasisSubs)
+         {
+            if (($basisSubOutElement[$basisSub] eq $elementList[$element]) &&
+                (($basisSubOutSpecies[$basisSub] == $species) ||
+                 ($basisSubOutSpecies[$basisSub] == 0)))
+            {
+               $currBasisFile   = "contract$basisSubIn[$basisSub]" .
+                                  "_$elementList[$element]";
+               $currBasisFileNC = "nocore_contract$basisSubIn[$basisSub]" .
+                                  "_$elementList[$element]";
+            }
+         }
+
+         # Check if this basis file has been treated already.
+         if (! -e "$currBasisFile.wf")
+         {
+
+            # This basis file has not yet been contracted, so we do it now.
+
+            # Copy the contraction input to the inputTemp directory with a
+            #   temporary name.  When noCore is true (1) we will use the input
+            #   file that has the core orbitals removed from the "core" section
+            #   and explicitly included in the "valence" section so that they
+            #   will be a part of the calculation.
+            if ($noCore == 0)
+               {&copy("$atomicBDB/$elementList[$element]/$currBasisFile",
+                     "contract.dat");}
+            else
+               {&copy("$atomicBDB/$elementList[$element]/$currBasisFileNC",
+                     "contract.dat");}
+
+            # Copy the isolated atom potential function in its analytical
+            #   Gaussian form.
+            &copy("$atomicBDB/$elementList[$element]/gauss.fit","gauss.fit");
+
+            # Run the contraction program and rename the results files.
+            system("contract $doBasisVis");
+            $tempFileName = $currBasisFile . ".out";
+            &move("contract.out","$tempFileName");
+            $tempFileName = $currBasisFile . ".dat";
+            &move("contract.dat","$tempFileName");
+            $tempFileName = $currBasisFile . ".wf";
+            &move("waveFn.dat","$tempFileName");
+            if ($doBasisVis == 1)
+            {
+               $tempFileName = $currBasisFile . ".plot";
+               &move("waveFn.plot","$tempFileName");
+            }
+
+            # Repeat the process for the nocore case if we are doing XANES.
+            if ($numXanesAtoms > 0)
+            {
+               # Copy the contraction input to the inputTemp directory with a
+               #   temporary name.
+               &copy("$atomicBDB/$elementList[$element]/$currBasisFileNC",
+                     "contract.dat");
+
+               # Run the contraction program and rename the results files.
+               system("contract 0");
+               $tempFileName = $currBasisFileNC . ".out";
+               &move("contract.out","$tempFileName");
+               $tempFileName = $currBasisFileNC . ".dat";
+               &move("contract.dat","$tempFileName");
+               $tempFileName = $currBasisFileNC . ".wf";
+               &move("waveFn.dat","$tempFileName");
+            }
+         }
+
+         # Record the names of the core and nocore basis files for this
+         #   element/species pair.
+         $basisFiles[$element][$species] = $currBasisFile . ".wf";
+         $basisFilesNC[$element][$species] = $currBasisFileNC . ".wf";
+      }
+   }
+
+   # Once all contractions are done, remove the remaining potential file.
+   if (-e "gauss.fit")
+      {system("rm -f gauss.fit");}
+
+   # Move back to the project directory.
+   chdir "..";
+}
+
+
+sub obtainPotInfo
+{
+   # Define local variables.
+   my $species;
+   my $element;
+   my @values;
+   my $potSub;
+   my @potSubOutElement;
+   my @potSubOutSpecies;
+   my $currPotFile;
+   my $currCoeffFile;
+   my $tempFileName;
+
+   # For each substituted value define the element and species affected.
+   foreach $potSub (1..$numPotSubs)
+   {
+      if ($potSubOut[$potSub] !~ /[0-9]/)
+      {
+         $potSubOutElement[$potSub] = $potSubOut[$potSub];
+         $potSubOutSpecies[$potSub] = 0;
+      }
+      else
+      {
+         @values = split(/[0-9]+/,$potSubOut[$potSub]);
+         $potSubOutElement[$potSub] = $values[0];
+         @values = split(/[a-z]+/,$potSubOut[$potSub]);
+         $potSubOutSpecies[$potSub] = $values[1];
+      }
+   }
+
+   # For each species of each element, set up the name of the potential files
+   #   to be used including substitution effects.
+   foreach $element (1..$numElements)
+   {
+      foreach $species (1..$numSpecies[$element])
+      {
+         # Assume the default case.
+         $currPotFile   = "pot1";
+         $currCoeffFile = "coeff1";
+
+         # Check for substitutions that affect this.
+         foreach $potSub (1..$numPotSubs)
+         {
+            if (($potSubOutElement[$potSub] eq $elementList[$element]) &&
+                (($potSubOutSpecies[$potSub] == $species) ||
+                 ($potSubOutSpecies[$potSub] == 0)))
+            {
+               $currPotFile   = "pot$potSubIn[$potSub]";
+               $currCoeffFile = "coeff$potSubIn[$potSub]";
+            }
+         }
+
+         # Copy the files if they have not been copied already.
+         if (! -e "$inputTemp/$currPotFile")
+         {
+            $tempFileName = $currPotFile . "_$elementList[$element]";
+            &copy("$atomicPDB/$elementList[$element]/$currPotFile",
+                  "$inputTemp/$tempFileName");
+            $tempFileName = $currCoeffFile . "_$elementList[$element]";
+            &copy("$atomicPDB/$elementList[$element]/$currCoeffFile",
+                  "$inputTemp/$tempFileName");
+         }
+
+         # Record the names of the pot and coeff file for this element/species.
+         $potFiles[$element][$species] = $currPotFile .
+                                         "_$elementList[$element]";
+         $coeffFiles[$element][$species] = $currCoeffFile .
+                                         "_$elementList[$element]";
+      }
+   }
+}
+
+
+sub getCumulativeTypes
+{
+   # Extract passed parameters
+   my $fileSet = $_[0];
+
+   # Define local variables.
+   my $element;
+   my $species;
+   my $cumulTypesCounter;
+
+   # Initialize variables to track the cumulative number of types.
+   $cumulTypesCounter = 0;
+   $totalNumTypes[$fileSet] = 0;
+
+   # Go though each element and species recording the total number of types for
+   #   the previous element/species combination.
+   foreach $element (1..$numElements)
+   {
+      foreach $species (1..$numSpecies[$element])
+      {
+         # Record the number of types previous to this element/species combo.
+         $cumulativeNumTypes[$element][$species] = $cumulTypesCounter;
+
+         # Increment the number of types encountered so far.
+         $cumulTypesCounter = $cumulTypesCounter +
+                              $numTypes[$fileSet][$element][$species];
+
+         # Record the total number of types for this fileset.
+         $totalNumTypes[$fileSet] += $numTypes[$fileSet][$element][$species];
+      }
+   }
+}
+
+sub sortAtoms
+{
+   # Obtain passed parameters.
+   my $fileSet = $_[0];
+
+   # Define local varibles.
+   my $atom;
+   my $axis;
+   my @indexMap;
+   my @tempIDList;
+
+   # Since there are a lot of various different data sets that must be
+   #   adjusted it is probably best to perform the sorting while retaining
+   #   an index map between the old and the new.  Then after the sort is
+   #   complete, just apply the index map.
+
+   # Initialize arrays to record the sorting order changes.  Index $i refers to
+   #   the current OLCAO atom number $i.  The value in indexMap[$i] refers to
+   #   the given input atom number.  This is why we initialize them to be the
+   #   same at the beginning.
+   foreach $atom (1..$numAtoms)
+      {$indexMap[$atom]=$atom;}
+
+   # Initialize an array to hold the atom types to be sorted.
+   foreach $atom (1..$numAtoms)
+      {$tempIDList[$atom] = $atomTypeID[$fileSet][$atom];}
+
+   # Sort by type with a stable sorting algorithm.
+   StructureControl::stableSort(\@tempIDList,\@indexMap,$numAtoms);
+
+   # Before the sorting, OLCAO atom number 1 may have come from GULP atom number
+   #   1.  But now, OLCAO atom number 1 may come from GULP atom number 7.  The
+   #   value of $i represents the OLCAO atom number, and the value of
+   #   indexMap[$i] represents the GULP atom number.
+
+   # Apply the changes for the species
+   foreach $atom (1..$numAtoms)
+      {$tempIDList[$atom] = $atomSpeciesID[$indexMap[$atom]];}
+
+   # Sort by species with a stable sorting algorithm.
+   StructureControl::stableSort(\@tempIDList,\@indexMap,$numAtoms);
+
+   # Apply the changes for the elements
+   foreach $atom (1..$numAtoms)
+      {$tempIDList[$atom] = $atomElementID[$indexMap[$atom]];}
+
+   # Sort by elements with a stable sorting algorithm.
+   StructureControl::stableSort(\@tempIDList,\@indexMap,$numAtoms);
+
+   # Produce sorted versions of the key data sets.
+   foreach $atom (1..$numAtoms)
+   {
+      $sortedAtomElementID[$atom] = $atomElementID[$indexMap[$atom]];
+      $sortedAtomSpeciesID[$atom] = $atomSpeciesID[$indexMap[$atom]];
+      $sortedAtomTypeID[$fileSet][$atom] =
+            $atomTypeID[$fileSet][$indexMap[$atom]];
+      foreach $axis (1..3)
+      {
+         $sortedFractABC[$atom][$axis]  =
+               $fractABC_ref->[$indexMap[$atom]][$axis];
+         $sortedDirectABC[$atom][$axis] =
+               $directABC_ref->[$indexMap[$atom]][$axis];
+         $sortedDirectXYZ[$atom][$axis] =
+               $directXYZ_ref->[$indexMap[$atom]][$axis];
+      }
+   }
+
+   # Insert values for atom #0 which does not exist but is used later for
+   #   comparison to the sortedXanesAtoms list in the $fileSet=0 case.
+   $sortedAtomElementID[0] = 0;
+   $sortedAtomSpeciesID[0] = 0;
+   $sortedAtomTypeID[$fileSet][0] = 0;
+
+   # Record the mapping between the original XANES atom numbers and the new
+   #   XANES atom numbers.
+   if ($fileSet == 0)
+   {
+      foreach $atom (0..$numXanesAtoms)
+         {$sortedXanesAtoms[$atom]=0;}
+   }
+   else
+   {
+      foreach $atom (1..$numAtoms)
+      {
+         if ($indexMap[$atom] == $xanesAtoms[$fileSet])
+         {
+            $sortedXanesAtoms[$fileSet] = $atom;
+            last;
+         }
+      }
+   }
+
+   # Produce the mapping between the input atom numbers and the olcao
+   #   atom numbers.  The first column lists the atom numbers in the
+   #   olcao.dat file.  The second column lists the original atom
+   #   numbers from the olcao.skl file is.
+   open (ATOMMAP,">$inputs/$datSklMap");
+   print ATOMMAP "       DAT#     SKELETON#\n";
+   foreach $atom (1..$numAtoms)
+      {printf ATOMMAP "%10d %10d\n",$atom,$indexMap[$atom];}
+   close (ATOMMAP);
+}
+
+
+sub getNumAtomsOfType
+{
+   # Define passed parameters
+   my $fileSet = $_[0];
+
+   # Define local variables.
+   my $type;
+   my $atom;
+   my $currTypeID;
+
+   # Initialize the number of atoms of each type for this fileset.
+   foreach $type (1..$totalNumTypes[$fileSet])
+      {$numAtomsOfType[$fileSet][$type] = 0;}
+
+   # Compute the number of atoms that exist for each type.
+   foreach $atom (1..$numAtoms)
+   {
+      $currTypeID = $sortedAtomTypeID[$fileSet][$atom] + 
+            $cumulativeNumTypes[$sortedAtomElementID[$atom]]
+            [$sortedAtomSpeciesID[$atom]];
+
+      $numAtomsOfType[$fileSet][$currTypeID]++;
+   }
+}
+
+
+sub printStructure
+{
+   # Define passed parameters.
+   my $fileSet = $_[0];
+
+   # Define local variables.
+   my $axisABC;
+   my $atom;
+   my $currTypeID;
+
+   # Open the structure file for writing.
+   open (STRUCTURE,">$inputs/$structure") ||
+         die "Can not open $inputs/$structure for writing $fileSet\n";
+
+   # Print the cell parameters label.
+   print STRUCTURE "CELL_VECTORS\n";
+
+   # Insert the primitive vectors determined from the gulp output.
+   foreach $axisABC (1..3)
+   {
+      printf STRUCTURE "%16.8f%16.8f%16.8f\n",$realLattice_ref->[$axisABC][1],
+            $realLattice_ref->[$axisABC][2],$realLattice_ref->[$axisABC][3];
+   }
+
+   # Print the number of atomic sites.
+   print  STRUCTURE "NUM_ATOM_SITES\n";
+   printf STRUCTURE "%-5d\n",$numAtoms;
+
+   # Print the atomic position label.
+   print STRUCTURE "NUM_TYPE_X_Y_Z_ELEM\n";
+
+   # Loop to print the atomic positions.
+   foreach $atom (1..$numAtoms)
+   {
+      # Get the current sequential type ID number from the cumulative type
+      #   assignments.
+      $currTypeID = $sortedAtomTypeID[$fileSet][$atom] +
+            $cumulativeNumTypes[$sortedAtomElementID[$atom]]
+            [$sortedAtomSpeciesID[$atom]];
+
+      printf STRUCTURE "%5d %5d %18.8f %18.8f %18.8f %2s\n",$atom,$currTypeID,
+            $sortedDirectXYZ[$atom][1],
+            $sortedDirectXYZ[$atom][2],
+            $sortedDirectXYZ[$atom][3],
+            $elementList[$sortedAtomElementID[$atom]];
+   }
+
+   # Print the number of potential sites.
+   print  STRUCTURE "NUM_POTENTIAL_SITES\n";
+   printf STRUCTURE "%-5d\n",$numAtoms;
+
+   # Print the potential position label.
+   print STRUCTURE "NUM_TYPE_X_Y_Z_ELEM\n";
+
+   # Loop to print the potential positions
+   foreach $atom (1..$numAtoms)
+   {
+      $currTypeID = $sortedAtomTypeID[$fileSet][$atom] + 
+            $cumulativeNumTypes[$sortedAtomElementID[$atom]]
+            [$sortedAtomSpeciesID[$atom]];
+
+      printf STRUCTURE "%5d %5d %18.8f %18.8f %18.8f %2s\n",$atom,$currTypeID,
+            $sortedDirectXYZ[$atom][1],
+            $sortedDirectXYZ[$atom][2],
+            $sortedDirectXYZ[$atom][3],
+            $elementList[$sortedAtomElementID[$atom]];
+   }
+
+   close (STRUCTURE);
+}
+
+
+sub printOLCAOInput
+{
+   # Define passed parameteres.
+   my $fileSet = $_[0];
+
+   # Define local variables.
+   my $orbital;
+   my $line;
+
+   # Open the olcao input file.
+   open (OLCAO,">$inputs/$olcao_in") ||
+         die "Can not open $inputs/$olcao_in for writing.\n";
+
+   # Make the title header for the olcao input file.
+   print OLCAO "TITLE\n";
+   print OLCAO "@{$systemTitle_ref}";
+   print OLCAO "END_TITLE\n";
+
+   # Define the number of atomic types in the system.
+   print  OLCAO "NUM_ATOM_TYPES\n";
+   printf OLCAO "%-5d\n",$totalNumTypes[$fileSet];
+
+   # Write each type's atomic orbital basis set contribution.
+   &printBasisSet($fileSet);
+
+   # Define the number of potential types in the system.
+   print  OLCAO "NUM_POTENTIAL_TYPES\n";
+   printf OLCAO "%-5d\n",$totalNumTypes[$fileSet];
+
+   # Write each atomic type's potential function contribution.
+   &printPot($fileSet);
+
+   # Print the exchange correlation mesh definition.
+   print OLCAO "NUM_ANGULAR_SAMPLE_VECTORS\n";
+   print OLCAO "$numSampVectors\n";
+   print OLCAO "WTIN_WTOUT\n";
+   print OLCAO "$xcInWeight $xcOutWeight\n";
+   print OLCAO "RADIAL_SAMPLE-IN_OUT_SPACING\n";
+   print OLCAO "$xcInSamp $xcOutSamp $xcSpacingSamp\n";
+
+   # Compute the number of states and electrons in this system with the given
+   #   statefactor.
+   &getElecAndStates;
+
+   # Print parameters that are used by multiple programs:  cutoff for the
+   #   basis function and electrostatic interactions, states, electrons, and
+   #   thermal smearing parameter.
+   print OLCAO "SHARED_INPUT_DATA\n";
+
+   # Print the cutoff criteria for negligable gaussian interactions.
+   print OLCAO "BASISFUNCTION_AND_ELECTROSTATIC_CUTOFFS\n";
+   print OLCAO "    1.00000000E-$bfCutoff    1.00000000E-$esCutoff\n";
+   print OLCAO "NUM_STATES_TO_USE\n";
+   print OLCAO "@numStatesUsed[1..3]\n";
+   print OLCAO "NUM_ELECTRONS\n";
+   print OLCAO "$numElectrons\n";
+   print OLCAO "THERMAL_SMEARING_SIGMA\n";
+   print OLCAO "$thermSmearMAIN 0\n";
+
+   # Print data that is useful for the main portion of the calculation.
+   print OLCAO "MAIN_INPUT_DATA\n";
+   print OLCAO "LAST_ITERATION\n";
+   print OLCAO "$numIterMAIN\n";
+   print OLCAO "CONVERGENCE_TEST\n";
+   print OLCAO "$convergMAIN\n";
+   print OLCAO "XC_CODE\n";
+   print OLCAO "100\n";
+   print OLCAO "FEEDBACK_LEVEL\n";
+   print OLCAO "2\n";
+   print OLCAO "RELAXATION_FACTOR\n";
+   print OLCAO "0.2\n";
+   print OLCAO "EACH_ITER_FLAGS__TDOS\n";
+   print OLCAO "$iterTDOS\n";
+   print OLCAO "NUM_SPLIT_TYPES__DEFAULT_SPLIT\n";
+   print OLCAO "0 $spinMAIN\n";
+   print OLCAO "TYPE_ID__SPIN_SPLIT_FACTOR\n";
+
+   # Print data useful for the dos portion of the calculation
+   print OLCAO "DOS_INPUT_DATA\n";
+   print OLCAO "$eDeltaDOS $sigmaDOS               ! DOS Delta Energy, DOS sigma broadening\n";
+   print OLCAO "$eminDOS $emaxDOS                 ! DOS EMIN and EMAX\n";
+   print OLCAO "$allAtomPDOS                       ! Flag for all atom PDOS\n";
+
+   # Print data useful for the bond portion of the calculation
+   print OLCAO "BOND_INPUT_DATA\n";
+   print OLCAO "$maxLenBOND                     ! MAXIMUM BOND LENGTH\n";
+   print OLCAO "$eDeltaBOND $sigmaBOND               ! BOND Delta Energy, BOND sigma broadening\n";
+   print OLCAO "$eminBOND $emaxBOND                 ! BOND EMIN and EMAX\n";
+   print OLCAO "$allAtomBOND                        ! Flag for all atom BOND\n";
+
+   # Print data useful for the sybd portion of the calculation
+   print OLCAO "SYBD_INPUT_DATA\n";
+   open (SYMKP,"<$sybdDB/$sybdPath") ||
+         die "$sybdPath not found in sybd database.\n";
+   while ($line = <SYMKP>)
+      {print OLCAO $line;}
+   close (SYMKP);
+
+   # Print data that is useful for the xanes portion of the calculation.
+   print OLCAO "PACS_INPUT_DATA\n";
+   print OLCAO "$sortedXanesAtoms[$fileSet]                       ! Excited atom number\n";
+   print OLCAO "$eDeltaPACS $sigmaPACS               ! PACS delta Energy, PACS sigma factor\n";
+   print OLCAO "$onsetSlackPACS $energyWindowPACS               ! Energy slack before onset, energy window\n";
+   print OLCAO "$numCoreXanes                    ! Number of possible core orbitals to excite\n";
+   foreach $orbital (1..$numCoreXanes)
+   {
+      print OLCAO "$xanesControl[$orbital] -1  ! QN_n QN_l Init1 Init2 TEDiff\n";
+   }
+
+   # Print Optical properties input data
+   print OLCAO "OPTC_INPUT_DATA\n";
+   print OLCAO "$eCutOffOPTC                    ! OPTC energy cutoff\n";
+   print OLCAO "$eTransOPTC                     ! OPTC energy trans\n";
+   print OLCAO "$eDeltaOPTC                     ! OPTC delta energy\n";
+   print OLCAO "$sigmaOPTC                      ! OPTC broadening\n";
+
+   # Print sigma(E) input data
+   print OLCAO "SIGE_INPUT_DATA\n";
+   print OLCAO "$eCutOffSIGE                    ! SIGE energy cutoff\n";
+   print OLCAO "$eTransSIGE                     ! SIGE energy trans\n";
+   print OLCAO "$eDeltaSIGE                     ! SIGE delta energy\n";
+   print OLCAO "$sigmaSIGE                      ! SIGE broadening\n";
+
+   # Print wave function squared input control parameters.
+   print OLCAO "WAVE_INPUT_DATA\n";
+   print OLCAO "10 10 10                      ! a,b,c # of mesh points\n";
+   print OLCAO "-100000.0 100000.0            ! min,max range of energy\n";
+   print OLCAO "0                             ! 0=Psi^2; 1=Rho\n";
+   print OLCAO "1                             ! 1=3D+1D; 2=3D; 3=1D.\n";
+
+   # Print the end of data marker
+   print OLCAO "END_OF_DATA\n";
+
+   # Close the olcao file.
+   close (OLCAO);
+}
+
+
+sub printBasisSet
+{
+   # Define passed parameters.
+   my $fileSet = $_[0];
+
+   # Define local variables.
+   my $element;
+   my $species;
+   my $type;
+   my $orbital;
+   my $component;
+   my $numComponents;
+   my $currTypeNum;
+   my $typeLabel;
+   my $currBasisFile;
+   my $inclCoreBasisFile;
+   my $line;
+   my @values;
+   my $term;
+   my @numTerms;
+   my @numTermLines;
+   my $dataLine;
+   my $numCoreOrbitals;
+   my $numValeOrbitals;
+   my $isXanes;
+   my @numCoreStates;
+   my @numValeStates;
+   my $basisSet;
+
+   # In the case that we are not making input for a XANES calculation we need
+   #   to set the number of core xanes orbitals to zero.  If we are making
+   #   input files for and XANES calculation, then the number of core orbitals
+   #   for this target atom will be set as a part of this subroutine.
+   if ($fileSet == 0)
+      {$numCoreXanes = 0;}
+
+   # Initialize the total number of core and valence states.
+   foreach $basisSet (1..3)
+   {
+      $numTotalCoreStates[$basisSet] = 0;
+      $numTotalValeStates[$basisSet] = 0;
+   }
+
+   # Loop through each element, species, type and print its basis.  Also,
+   #   extract useful information about this set of atomic orbitals.
+   foreach $element (1..$numElements)
+   {
+   foreach $species (1..$numSpecies[$element])
+   {
+   foreach $type (1..$numTypes[$fileSet][$element][$species])
+   {
+      # Obtain the sequential type number for this type.
+      $currTypeNum = $type + $cumulativeNumTypes[$element][$species];
+
+      # Get the names of the files containing the next basis set contribution
+      #   and potential function contribution.  This depends on the element and
+      #   whether or not this current type number is the type number for an
+      #   atom with the core included in the valence for xanes calculation.
+      #   Also, get the label for this type.
+      if (($xanes == 1) &&
+            ($sortedAtomElementID[$sortedXanesAtoms[$fileSet]] == $element) &&
+            ($sortedAtomSpeciesID[$sortedXanesAtoms[$fileSet]] == $species) &&
+            ($sortedAtomTypeID[$fileSet][$sortedXanesAtoms[$fileSet]] == $type))
+      {
+         $currBasisFile = $basisFilesNC[$element][$species];
+         $typeLabel     = "C$elementList[$element]$species"."_$type";
+         $inclCoreBasisFile = $basisFiles[$element][$species];
+         $isXanes = 1;
+      }
+      else
+      {
+         $currBasisFile = $basisFiles[$element][$species];
+         $typeLabel     = "$elementList[$element]$species"."_$type";
+         $isXanes = 0;
+      }
+
+      # Write the header for this type.
+      print  OLCAO "ATOM_TYPE_ID__SEQUENTIAL_NUMBER\n";
+      printf OLCAO "%-5d %-5d %-5d     $currTypeNum\n",$element,$species,$type;
+      print  OLCAO "ATOM_TYPE_LABEL\n";
+      print  OLCAO "$typeLabel\n";
+
+      # Retrieve the datafile and append it to the olcao input file, then
+      #   reset the read cursor to the beginning to parse for important data.
+      open (BASIS,"<$inputTemp/$currBasisFile") ||
+            die "Can not open $inputTemp/$currBasisFile for reading.\n";
+      @values = <BASIS>;
+      print OLCAO @values;
+      seek(BASIS,0,0);
+
+      # Get information about the number of terms for each orbital type and
+      #   derive from that the number of lines needed for each set of coeffs.
+      <BASIS>;
+      @numTerms = StructureControl::prepLine(\*BASIS,"",'\s+');
+      foreach $term (0..$#numTerms)
+      {
+         if ($numTerms[$term] % 4 == 0)
+            {$numTermLines[$term] = $numTerms[$term] / 4;}
+         else
+            {$numTermLines[$term] = floor($numTerms[$term] / 4) + 1;}
+      }
+
+      # Read past the alphas.  The number of Gaussian alphas is always equal
+      #   to the maximum number of terms for an orbital type.
+      <BASIS>;
+      foreach $line (1..$numTermLines[0])
+         {<BASIS>;}
+
+      # Get the number of core orbitals as the number of core orbitals for the
+      #   minimal basis (it is the same for all three).
+      <BASIS>;
+      @values = StructureControl::prepLine(\*BASIS,"",'\s+');
+      $numCoreOrbitals = $values[0];  # MB
+
+      # Get the number of states that the core orbitals represent for each
+      #   basis set type.  (Will be the same for all three.)
+      if ($numCoreOrbitals > 0)
+         {@numCoreStates = &getOrbitalStates($numCoreOrbitals,\@numTermLines);}
+      else
+         {@numCoreStates = (0,0,0,0);} #empty, MB,FB,EB
+
+      # Get the number of valence orbitals as the number of valence orbitals
+      #   for the extended basis since this is the maximum (and includes the
+      #   remainder of the whole file).
+      <BASIS>;
+      @values = StructureControl::prepLine(\*BASIS,"",'\s+');
+      $numValeOrbitals = $values[2]; # EB
+
+      # Get the number of states that the valence orbitals represent for each
+      #   basis set type.  (Will be different for all three.)
+      if ($numValeOrbitals > 0)
+         {@numValeStates = &getOrbitalStates($numValeOrbitals,\@numTermLines);}
+      else
+         {@numValeStates = (0,0,0,0);} #empty, MB,FB,EB
+
+      close (BASIS);
+
+      # Accumulate the number of core states and valence states in the system.
+      foreach $basisSet (1..3)
+      {
+         $numTotalCoreStates[$basisSet] += $numCoreStates[$basisSet] *
+               $numAtomsOfType[$fileSet][$currTypeNum];
+         $numTotalValeStates[$basisSet] += $numValeStates[$basisSet] *
+               $numAtomsOfType[$fileSet][$currTypeNum];
+      }
+
+      # In the case that this type is used for XANES/ELNES type of calculations
+      #   we need to determine the set of core orbitals that *could* be excited.
+      if ($isXanes == 1)
+      {
+         open (BASIS,"<$inputTemp/$inclCoreBasisFile") ||
+               die "Can not open $inputTemp/$inclCoreBasisFile for reading.\n";
+
+         # Position the read cursor by the num core orbital data and get the
+         #   number of core orbitals.
+         foreach $line (1..$numTermLines[0] + 4)
+            {<BASIS>;}
+         @values = StructureControl::prepLine(\*BASIS,"",'\s+');
+         $numCoreXanes = $values[0];
+
+         # Read past the NL_RADIAL_FUNCTIONS header.
+         <BASIS>;
+
+         foreach $orbital (1..$numCoreXanes)
+         {
+            # Determine the number of components this orbital has.
+            @values = StructureControl::prepLine(\*BASIS,"",'\s+');
+            $numComponents = $values[0];
+
+            # Get the orbital specification for each component.
+            foreach $component (1..$numComponents)
+            {
+               @values = StructureControl::prepLine(\*BASIS,"",'\s+');
+
+               # $values[0]=QN_n; 1=QN_l; 2=2*QN_j; 3=numStates; 4=indexNum
+               # Record the excitation information for this orbital.
+               $xanesControl[$orbital] = "$values[0] $values[1] " .
+                     "$initXanesStates[$values[0]][$values[1]] ";
+
+               # Read past the coefficients.
+               foreach $line (1..$numTermLines[$values[1]])
+                  {<BASIS>;}
+            }
+         }
+
+         close (BASIS);
+      }
+   }
+   }
+   }
+}
+
+
+sub getOrbitalStates
+{
+   # Define passed parameters.
+   my $numOrbitals = $_[0];
+   my $numTermLines_ref = $_[1];
+
+   # Define local variables.
+   my @numStates;
+   my $orbital;
+   my @values;
+   my $numComponents;
+   my $component;
+   my $basisTag;
+   my $basisSet;
+   my $line;
+
+   # Read past the header for NL_RADIAL_FUNCTIONS
+   <BASIS>;
+
+   # Initialize the number of states for the minimal, full, and extended
+   #   basis sets to zero.
+   foreach $basisSet (1..3)
+      {$numStates[$basisSet] = 0;}
+
+   foreach $orbital (1..$numOrbitals)
+   {
+      # Determine which basis sets this orbital is used for and how many
+      #   components this orbital has.
+      @values = StructureControl::prepLine(\*BASIS,"",'\s+');
+      $numComponents = $values[0];
+      $basisTag = $values[1];
+
+      # Obtain the number of states from this orbital and add it to the total
+      #   for each applicable basis set.
+      foreach $component (1..$numComponents)
+      {
+         # Read the identifying numbers for this orbital component.
+         @values = StructureControl::prepLine(\*BASIS,"",'\s+');
+         # $values[0]=QN_n; 1=QN_l; 2=2*QN_j; 3=numStates; 4=indexNum
+         foreach $basisSet (1..3)
+         {
+            # Note that the numStates value in the file is NOT spin degenerate.
+            #   (i.e. s states have a value of 2 for numStates.)  This is the
+            #   reason for the division by 2 here.
+            if ($basisTag <= $basisSet)
+               {$numStates[$basisSet] += $values[3]/2;}
+         }
+
+         # Read past the coefficients.
+         foreach $line (1..$numTermLines_ref->[$values[1]])
+            {<BASIS>;}
+      }
+   }
+
+   return @numStates;
+}
+
+sub printPot
+{
+   # Define passed parameters.
+   my $fileSet = $_[0];
+
+   # Define local variables.
+   my $element;
+   my $species;
+   my $type;
+   my $term;
+   my $typeLabel;
+   my $currTypeNum;
+   my $currPotFile;
+   my $currCoeffFile;
+   my $line;
+   my @values;
+   my @tempCoeffs;
+   my @scfCoeffs;
+
+   # Open the scf potential input file for writing.
+   open(SCFPOT,">$inputs/$potential") ||
+         die "Cannot open $inputs/$potential for writing.\n";
+
+   # Print the total number of types in the SCF potential input file.
+   print SCFPOT "NUM_TYPES $totalNumTypes[$fileSet]\n";
+
+   # Initialize the count of the total nuclear charge in the system.
+   $nucCharge = 0;
+
+   # Initialize the count of the # of potential terms in the system (potDim).
+   $potDim[$fileSet] = 0;
+
+   # Loop through each element, species, type triplet to print its data.
+   foreach $element (1..$numElements)
+   {
+   foreach $species (1..$numSpecies[$element])
+   {
+   foreach $type (1..$numTypes[$fileSet][$element][$species])
+   {
+      # Obtain the current sequential type number.
+      $currTypeNum = $type + $cumulativeNumTypes[$element][$species];
+
+      # Get the names of the files containing the potential function and coeffs.
+      $currPotFile   = $potFiles[$element][$species];
+      $currCoeffFile = $coeffFiles[$element][$species];
+
+      # Get the label for this type.  (Dependent on whether this is a xanes
+      #   atom or not.
+      if (($xanes == 1) &&
+            ($sortedAtomElementID[$sortedXanesAtoms[$fileSet]] == $element) &&
+            ($sortedAtomSpeciesID[$sortedXanesAtoms[$fileSet]] == $species) &&
+            ($sortedAtomTypeID[$fileSet][$sortedXanesAtoms[$fileSet]] == $type))
+         {$typeLabel     = "C$elementList[$element]$species"."_$type";}
+      else
+         {$typeLabel     = "$elementList[$element]$species"."_$type";}
+
+      print  OLCAO "POTENTIAL_TYPE_ID__SEQUENTIAL_NUMBER\n";
+      printf OLCAO "%-5d %-5d %-5d     $currTypeNum\n",$element,$species,$type;
+      print  OLCAO "POTENTIAL_TYPE_LABEL\n";
+      print  OLCAO "$typeLabel\n";
+
+      # Retrieve the potential function definition.
+      open (POT,"<$inputTemp/$currPotFile") ||
+            die "Can not open $inputTemp/$currPotFile for reading.\n";
+
+      # Parse the file and possibly modify it as requested on the command line.
+      $line = <POT>;
+      print OLCAO $line;
+      $line = <POT>;
+      print OLCAO $line;
+
+      # Get the charge on this atomic type and multiply by the number of atoms
+      #   of this type to get the total system nuclear charge.
+      @values = StructureControl::prepLine("","$line",'\s+');
+      $nucCharge += $values[0]*$numAtomsOfType[$fileSet][$currTypeNum];
+
+      # Print the covalent radius label, value, and num alphas label.
+      $line = <POT>;
+      print OLCAO $line;
+      $line = <POT>;
+      print OLCAO $line;
+      $line = <POT>;
+      print OLCAO $line;
+
+      # If the potential needs to be modified then we change it.  Otherwise
+      #   we simply copy values.  In both cases we also accumulate the number
+      #   of potential terms in the system.  (potDim)
+      if (lc($modElementName) eq lc($elementList[$element]))
+      {
+         <POT>;
+         print OLCAO "$numModTerms\n";
+         $potDim[$fileSet] += $numModTerms;
+         <POT>;
+         print OLCAO "ALPHAS\n";
+         <POT>;
+         printf OLCAO "%14.8e  %14.8e\n",$minModTerm,$maxModTerm;
+      }
+      else
+      {
+         $line = <POT>;
+         @values = StructureControl::prepLine("","$line",'\s+');
+         $potDim[$fileSet] += $values[0];
+         print OLCAO $line;
+         $line = <POT>;
+         print OLCAO $line;
+         $line = <POT>;
+         print OLCAO $line;
+      }
+
+      close (POT);
+
+      # Open the pot coeff definition file.
+      open (COEFF,"<$inputTemp/$currCoeffFile") ||
+            die "Can not open $inputTemp/$currCoeffFile for reading.\n";
+
+      @tempCoeffs = <COEFF>;
+
+      # Checks if the potential has the correct number of terms, and if
+      #         neccessary lengthens or shortens @tempCoeffs accordingly.
+
+      if (lc($modElementName) eq lc($elementList[$element]))
+      {
+         # Modify the number of terms if we ask for more or fewer terms.
+         #   Do nothing if we stupidly ask for the same number of terms.
+         if ($numModTerms < $#tempCoeffs)
+         {
+	         foreach $term (1..($#tempCoeffs-$numModTerms))
+		         {pop @tempCoeffs;}
+               $tempCoeffs[0]=" $numModTerms\n";
+      	}
+         elsif ($numModTerms > $#tempCoeffs)
+         {
+            foreach $term (($#tempCoeffs)..($numModTerms-1))
+               {push (@tempCoeffs, "    0.00000000        0.00000000 0.0 0.0 0.0\n");}
+               $tempCoeffs[0]=" $numModTerms\n";
+         }
+      }
+
+     close (COEFF);
+
+     push (@scfCoeffs, @tempCoeffs);
+   }
+   }
+   }
+
+   #Print the spin up and spin down components and close the file
+   
+   print SCFPOT " TOTAL OR SPIN_UP\n";
+   print SCFPOT @scfCoeffs;
+
+   print SCFPOT " SPIN_DN\n";
+   print SCFPOT @scfCoeffs;
+
+   close (SCFPOT);
+}
+
+
+sub getElecAndStates
+{
+   # Define local variables.
+   my $basis;
+
+   # Initialize the electron count and state numbers.
+   @numStatesUsed = (0,0,0,0); # Empty, MB, FB, EB.
+
+   # The number of electrons in the calculation (after orthogonalization) is
+   #   the total charge minus the core states charge.  This can be found
+   #   using the nuclear charge as the total, and the previously obtained
+   #   core charge.  The number of electrons for each basis should be the
+   #   same.
+   $numElectrons = $nucCharge - $numTotalCoreStates[1] * 2;
+
+   # Compute the number of states to use for each basis.  For each basis type
+   #   this is the lesser of (the max possible, numElectrons*stateFactor).
+   foreach $basis (1..3)
+   {
+      if ($numElectrons * $stateFactor < $numTotalValeStates[$basis])
+      {
+         if ($numElectrons % 2 == 0)
+            {$numStatesUsed[$basis] = int($numElectrons*$stateFactor);}
+         else
+            {$numStatesUsed[$basis] = int($numElectrons*$stateFactor)+1;}
+      }
+      else
+         {$numStatesUsed[$basis] = $numTotalValeStates[$basis];}
+   }
+}
+
+
+sub getKP
+{
+   # Define local variables.
+   my $kpGroup;
+
+   foreach $kpGroup (1..3)
+      {&copy("$inputTemp/$kpGroupFile[$kpGroup]","$inputs");}
+}
+
+
+sub makeOLCAOMI
+{
+   # Define local variables.
+   my $element;
+   my $species;
+   my $atom;
+
+   # Open the new olcao file.
+   open (OLCAOMI,">$inputs/$olcao_mi") ||
+         die "Could not open $olcao_mi for writing\n";
+
+   # Create the header for the gulp file
+   print OLCAOMI "title\n";
+   print OLCAOMI "OLCAO file created by makeinput\n";
+   print OLCAOMI "@{$systemTitle_ref}";
+   print OLCAOMI "end\n";
+   print OLCAOMI "cell\n";
+
+   # Print the cell parameters in a,b,c alpha,beta,gamma format.
+   printf OLCAOMI "%12.8f %12.8f %12.8f %12.8f %12.8f %12.8f\n",
+         $mag_ref->[1]*$bohrRad,$mag_ref->[2]*$bohrRad,$mag_ref->[3]*$bohrRad,
+         $angle_ref->[1]*180.0/$pi,$angle_ref->[2]*180.0/$pi,
+         $angle_ref->[3]*180.0/$pi;
+
+   # Print the header for the atom positions.
+   print OLCAOMI "fract $numAtoms\n";
+
+   # Loop to print out the atom positions.
+   foreach $atom (1..$numAtoms)
+   {
+      # Determine the element name and species ID number.
+      $element = $elementList[$sortedAtomElementID[$atom]];
+      $species = $sortedAtomSpeciesID[$atom];
+
+      printf OLCAOMI "%2s%-4s %12.6f %12.6f %12.6f\n",$element,$species,
+            $sortedFractABC[$atom][1],$sortedFractABC[$atom][2],
+            $sortedFractABC[$atom][3];
+   }
+
+   # Print the footer for the gulp file.
+   print OLCAOMI "space 1_a\n";
+   print OLCAOMI "supercell 1 1 1\n";
+   print OLCAOMI "full\n";
+}
+
+
+sub makeSubFile
+{
+   # Define passed parameters.
+   my $h = $_[0];
+   my $currentName = $_[1];
+   my $subDir = $_[2];  # Location where the submission file should be.
+
+   # Define local variables.
+   my $proj_name;
+   my $proj_dir;
+   my $orbital;
+   my $character1;
+   my $character2;
+   my $bashLocation;
+   my @subHeader;
+   my @values;
+   my $basename;
+
+   # Define the name for this project that will be seen in the queue
+   if ($h==0)
+      {$proj_name = $proj_home;}
+   else
+      {$proj_name = "$proj_home" . "-" . lc($currentName);}
+
+   # Cut it short to 15 characters if necessary.
+   if (length($proj_name) > 15)
+      {$proj_name = substr($proj_name,0,15);}
+
+   # Define the directory in which this project will run.
+   $proj_dir = `pwd`;
+   chomp $proj_dir;
+
+   # Initialize values that are dependent on the submission method.
+   if ($pbs == 1)
+   {
+      open (SUBFILE,">$subDir/$pbs_sub") ||
+            die "Cannot open $subDir/$pbs_sub for writing.\n";
+      $subHeader[0] = "\#PBS -N $proj_name\n";
+      $subHeader[1] = "\#PBS -l cput=100:0:0,ncpus=1\n";
+      $subHeader[2] = "\#\n";
+   }
+   elsif ($lsf == 1)
+   {
+      open (SUBFILE,">$subDir/$lsf_sub") ||
+            die "Cannot open $subDir/$lsf_sub for writing.\n";
+      $subHeader[0] = "\#BSUB -J $proj_name\n";
+      $subHeader[1] = "\#BSUB -oo $proj_name.o\%J\n";
+      $subHeader[2] = "\#BSUB -eo $proj_name.e\%J\n";
+      $subHeader[3] = "\#BSUB -c 100:0\n";
+      $subHeader[4] = "\#\n";
+   }
+   else
+   {
+      open (SUBFILE,">$subDir/$bash_sub") ||
+            die "Cannot open $subDir/$bash_sub for writing.\n";
+      $bashLocation = `which bash`;
+      chomp $bashLocation;
+      $subHeader[0] = "\#!$bashLocation\n";
+   }
+
+   # Print the system dependent submission file header.
+   print SUBFILE @subHeader;
+
+   # Print the default commands (these are not system dependent).
+   if ($xanes == 0)
+   {
+      print SUBFILE "source $OLCAO_DIR/.olcao\n";
+      print SUBFILE "cd $proj_dir\n";
+      print SUBFILE "\$OLCAO_BIN/olcao -dos\n";
+      print SUBFILE "\$OLCAO_BIN/olcao -bond\n";
+      print SUBFILE "\$OLCAO_BIN/olcao -sybd\n";
+      print SUBFILE "\$OLCAO_BIN/olcao -optc\n";
+   }
+   elsif ($h == 0)
+   {
+      print SUBFILE "source $OLCAO_DIR/.olcao\n";
+      @values = StructureControl::prepLine("","$proj_dir",'\/');
+      $basename = "/" . $values[$#values];
+      print SUBFILE "cd $proj_dir$basename\n";
+      print SUBFILE "\$OLCAO_BIN/olcao -dos\n";
+      print SUBFILE "\$OLCAO_BIN/olcao -bond\n";
+      print SUBFILE "\$OLCAO_BIN/olcao -sybd\n";
+      print SUBFILE "\$OLCAO_BIN/olcao -optc\n";
+   }
+   else
+   {
+      $proj_dir = "$proj_dir" . "/" . lc($currentName);
+      print SUBFILE "source $OLCAO_DIR/.olcao\n";
+      print SUBFILE "cd $proj_dir\n";
+      foreach $orbital (1..$numCoreXanes)
+      {
+         @values=StructureControl::prepLine("",$xanesControl[$orbital],'\s+');
+         $character1 = $values[0];  # This is QN_n
+
+         # Get the second character (the l quantum number)
+         if ($values[1] == 0)
+            {$character2 = "s";}
+         elsif ($values[1] == 1)
+            {$character2 = "p";}
+         elsif ($values[1] == 2)
+            {$character2 = "d";}
+         elsif ($values[1] == 3)
+            {$character2 = "f";}
+
+         # Print the pacs command with the appropriate edge.
+         print SUBFILE "\$OLCAO_BIN/olcao -pacs $character1$character2\n";
+      }
+   }
+
+   close (SUBFILE);
+
+   # If bash was used, then make the submission file executable.
+   if (($lsf == 0) && ($pbs == 0))
+      {system ("chmod u+x $subDir/$bash_sub");}
+}
+
+
+sub printSummary
+{
+   # Declare local variables.
+   my $kpIndexSpace;
+   my $axis;
+   my $fileSet;
+
+   # Determine the spacing that is needed to neatly show the kpoint
+   #   distribution request.
+   $kpIndexSpace=1;
+   foreach $axis (1..3)
+   {
+      if ($kpMesh[1][$axis] >= 10)
+         {$kpIndexSpace=2;}
+      if ($kpMesh[2][$axis] >= 10)
+         {$kpIndexSpace=2;}
+      if ($kpMesh[3][$axis] >= 10)
+         {$kpIndexSpace=2;}
+   }
+
+   # Open the summary file for writing
+   open (SUMMARY,">$summary") || die "Could not open $summary for writing.\n";
+
+   # Print structure information.
+   printf SUMMARY "    a = %12.8f A;       b = %12.8f A;".
+                  "        c = %12.8f A\n",
+                   $mag_ref->[1]*$bohrRad,$mag_ref->[2]*$bohrRad,
+                   $mag_ref->[3]*$bohrRad;
+   printf SUMMARY "alpha = %12.8f Deg.; beta = %12.8f Deg.; ".
+                   "gamma = %12.8f Deg.\n",
+                   $angle_ref->[1]*180.0/$pi,$angle_ref->[2]*180.0/$pi,
+                   $angle_ref->[3]*180.0/$pi;
+   printf SUMMARY "%16.8f%16.8f%16.8f ax ay az a.u.\n",
+                   $realLattice_ref->[1][1],
+                   $realLattice_ref->[1][2],
+                   $realLattice_ref->[1][3];
+   printf SUMMARY "%16.8f%16.8f%16.8f bx by bz a.u.\n",
+                   $realLattice_ref->[2][1],
+                   $realLattice_ref->[2][2],
+                   $realLattice_ref->[2][3];
+   printf SUMMARY "%16.8f%16.8f%16.8f cx cy cz a.u.\n",
+                   $realLattice_ref->[3][1],
+                   $realLattice_ref->[3][2],
+                   $realLattice_ref->[3][3];
+
+   # Print matrix dimension information.
+   print  SUMMARY "Dimensions: Vale        = @numTotalValeStates[1..3]\n";
+   print  SUMMARY "Dimensions: Core        = @numTotalCoreStates[1..3]\n";
+   print  SUMMARY "Dimension:  Pot         =  $potDim[0]\n";
+
+   # Print other statistics.
+   print  SUMMARY "Number of Atoms         =  $numAtoms\n";
+   print  SUMMARY "Number of Electrons     =  $numElectrons\n";
+   print  SUMMARY "Number of States        = @numStatesUsed[1..3]\n";
+
+
+   # Print KPoint information.
+   print  SUMMARY "Number of SCF KPoints  =  ";
+   printf SUMMARY '%-4i %9s  [%*6$i %*6$i %*6$i]%7$s',$kpNum[1],$kpNote[1],
+         $kpMesh[1][1],$kpMesh[1][2],$kpMesh[1][3],$kpIndexSpace,"\n";
+   print  SUMMARY "Number of PSCF KPoints =  ";
+   printf SUMMARY '%-4i %9s  [%*6$i %*6$i %*6$i]%7$s',$kpNum[2],$kpNote[2],
+         $kpMesh[2][1],$kpMesh[2][2],$kpMesh[2][3],$kpIndexSpace,"\n";
+   print  SUMMARY "Number of ALT KPoints  =  ";
+   printf SUMMARY '%-4i %9s  [%*6$i %*6$i %*6$i]%7$s',$kpNum[3],$kpNote[3],
+         $kpMesh[3][1],$kpMesh[3][2],$kpMesh[3][3],$kpIndexSpace,"\n";
+
+   # Print execution parameters.
+   print  SUMMARY "Convergence Limit       =  $convergMAIN\n";
+   print  SUMMARY "Thermal Sigma           =  $thermSmearMAIN\n";
+   print  SUMMARY "DOS  Sigma              =  $sigmaDOS\n";
+   print  SUMMARY "OPTC Sigma              =  $sigmaOPTC\n";
+   print  SUMMARY "SIGE Sigma              =  $sigmaSIGE\n";
+
+   # Print type information for the default system.
+   print  SUMMARY "Number of Types         =  $totalNumTypes[0]   (For the $proj_home case)\n";
+
+   # Print extra information for each xanes input file.
+   if ($numXanesAtoms>0)
+   {
+      print SUMMARY "All target atoms mirror at " .
+                    "$selfMinDist_ref->[$xanesAtoms[1]] A\n";}
+
+   foreach $fileSet (1..$numXanesAtoms)
+   {
+      print SUMMARY "-------------------------------------------------------\n";
+      print SUMMARY "Dimension:  Pot      = $potDim[$fileSet]\n";
+      print SUMMARY "Number of types      = $totalNumTypes[$fileSet] (For the $elementList[$atomElementID[$xanesAtoms[$fileSet]]]$atomSpeciesID[$xanesAtoms[$fileSet]] case)\n";
+      print SUMMARY "DAT# $sortedXanesAtoms[$fileSet];  SKELETON# $xanesAtoms[$fileSet]\n";
+      print SUMMARY "-------------------------------------------------------\n";
+   }
+
+   close (SUMMARY);
+}
+
+sub initializeEmu
+{
+   #  The purpose of this subroutine is to clean all the files that are
+   #  normally created during the run of this script with the exception
+   #  of the olcao.mi file. Then an emu configuration file with default
+   #  values is created. WARNING: this script will delete everything in
+   #  the project's directory. Use with caution.
+
+   chdir "..";
+   system("mv $proj_home/olcao.skl emu_temp");
+   system("rm -r $proj_home/*");
+   system("mv emu_temp $proj_home/olcao.skl");
+   chdir "$proj_home";
+  
+   open  (EMUCONF,">$emu_conf");
+   print EMUCONF "Number of swarms               = 1\n";  
+   print EMUCONF "number of candidates           = 10\n";  
+   print EMUCONF "Number of unique elements      = 1\n";  
+   print EMUCONF "Defect cutoff                  = 0.900\n";
+   close (EMUCONF);
+
+   open  (PSOCONF,">$pso_conf");
+   print PSOCONF "Halting criterion              = 1\n";
+   print PSOCONF "Number of concurrent threads   = 4\n";
+   print PSOCONF "Number of swarms               = 1\n";
+   print PSOCONF "Number of candidates           = 10\n";
+   print PSOCONF "Number of atoms                = $numAtoms\n";
+   close (PSOCONF);
+}

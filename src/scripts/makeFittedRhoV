@@ -1,0 +1,375 @@
+#!/usr/bin/perl
+sub printHelp
+{
+   print <<ENDHELP;
+#
+# PROGRAM: makeFittedRhoV
+# PURPOSE: To evaluate computed OLCAO charge density and potential functions
+#          on a 3D real-space mesh for the purpose of visualization in a
+#          variety of forms.  Data will be created to view the potential
+#          function, the total charge density, the valence charge density,
+#          the potential difference, and the valnce charge difference.  The
+#          differences are computed in comparison to the potential and charge
+#          from a single isolated atom calculation (as stored in the potential
+#          database).  It is important to understand that the plot of the
+#          charage density is derived from the fitted charge.
+#
+# USAGE:   makeFittedRhoV  -m \$numPointsA \$numPointsB \$numPointsC
+#                        [-i \$inFile] [-noDX] | [-help]
+#
+# The -m switch is used to define the number of mesh points along each a,b,c
+#   axis in the (possibly non-orthogonal) cell.  Note that periodic boundary
+#   conditions are observed.  This is a required switch, if it is not given,
+#   then the script will stop.
+# The -i option is used to define which file should be used as the source of
+#   the SCF charge and potential data.  If this option is not given then the
+#   value of "gs_scfV-fb.dat" will be used.
+# The -noDX switch is used to demand that the openDX plottable data *not* be
+#   created.  By default, this data will be made because it does not cost much
+#   extra time and it will prevent the user from having to run the computation
+#   twice (once for the profiles and again for the openDX data).
+#
+# PROGRAM NOTES:
+#
+# This program will construct an input file for the OLCOrhoV Fortran90
+#   program and will then call that program with the appropriate command line
+#   parameters.
+# The input files for this program are: (1) A SCF potential file (defaults to
+#   "gs_scfV-fb.dat").  (2) A structure file (always assumed to be
+#   "structure.dat").  (3) A database of SCF potential files for single
+#   isolated atom calculations.
+# The output file created by this program is then used by the OLCAOrhoV
+#   Fortran90 program and it contains the following columns of data.
+#   Column#1:  Exponential alphas for each Gaussian.
+#   Column#2:  Potential coefficients for the SCF calculation.
+#   Column#3:  Difference between potential coefficients of the SCF and
+#              isolated atom calculations.
+#   Column#4:  Valence charge coefficients for the SCF calculation.
+#   Column#5:  Difference between valence charge coefficients of the SCF and
+#              isolated atom calculations.
+#   Column#6:  Total charge coefficients for the SCF calculation.
+# There is no column for the difference in total charge at this time although
+#   this could be added if such a need ever arose in the future.
+#
+ENDHELP
+   exit;
+}
+
+###############################################
+# Begin program execution #####################
+###############################################
+
+# Use necessary modules.
+use strict;
+use warnings;
+use Env;
+use lib "$OLCAO_BIN/perl5";
+use StructureControl;
+use ElementData;
+
+# Declare global variables.
+my @numMeshPoints;
+my $structFile;
+my $inFile;
+my $outFile;
+my $atomPotDB;
+my $numTerms;  # Total number of terms in the "total potential" file.
+my $numTypes;
+my $numSites;  # Total number of sites in the model.
+my @typeElements;  # List of what element each type is.
+my @outValues;  # All output data including alphas, SCF, and diff coeffs.
+my $lastCol;    # Records the number of columns of data starting from 0.
+my $doOpenDX;
+
+# Initialize the environment.
+&initEnv;
+
+# Read the command line parameters.
+&parseCommandLine;
+
+# Read the structure file to get the elements in the system and associate
+#   elements with types.
+&readStruct;
+
+# Compute difference between SCF data and non-interacting data.
+&computeDiff;
+
+# Print an input file for the makeRho.exe fortran program.
+&printTempData;
+
+# Run the makeRho.exe program
+&runOLCAOrhoVF90;
+
+###############################################
+# End program execution #######################
+###############################################
+
+
+sub initEnv
+{
+   # Assume that the openDX type data files will be created.
+   $doOpenDX = 1;
+
+   # Assume the name for the input structure file.
+   $structFile = "structure.dat";
+
+   # Assume that the input file to be used for comparison to the isolated
+   #   data is from the ground state calculation.
+   $inFile = "gs_scfV-fb.dat";
+
+   # Define the assumed name for the output file.
+   $outFile = "tempPotRho.dat";
+
+   # Define the database location.
+   $atomPotDB = "$OLCAO_DATA/atomicPDB";
+
+   # Initialize the mesh points to 0 so we can check that they are given on
+   #   the command line and valid.
+   @numMeshPoints = (0,0,0);
+}
+
+
+sub parseCommandLine
+{
+   # Declare local variables.
+   my $number;
+   my $argument;
+   my $commandLine = "command";
+
+   # Initialize the index counter for the command line parameters.
+   $number = 0;
+
+   # Loop through the command line parameters checking for each option.
+   while ($number < scalar(@ARGV))
+   {
+      if ($ARGV[$number] eq "-m")
+      {
+         $numMeshPoints[0] = $ARGV[++$number];
+         $numMeshPoints[1] = $ARGV[++$number];
+         $numMeshPoints[2] = $ARGV[++$number];
+      }
+      elsif ($ARGV[$number] eq "-i")
+         {$inFile = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-noDX")
+         {$doOpenDX = 0;}
+      elsif ($ARGV[$number] eq "-help")
+         {&printHelp;}
+      else
+      {
+         print STDOUT "UNKNOWN COMMAND LINE PARAMETER $ARGV[$number].";
+         print STDOUT " ABORTING.\n";
+         exit;
+      }
+
+      $number++;
+   }
+
+   # Make sure that the -m switch was given and that the numbers given are
+   #   valid (i.e. > 0 and integers).
+   foreach $number (1..3)
+   {
+      if ($numMeshPoints[$number-1] <= 0)
+      {
+         print STDOUT "Mesh point # $number = $numMeshPoints[$number-1]\n";
+         print STDOUT "Mesh points must be > 0.\n";
+         exit;
+      }
+      if ($numMeshPoints[$number-1] != int($numMeshPoints[$number-1]))
+      {
+         print STDOUT "Mesh point # $number = $numMeshPoints[$number-1]\n";
+         print STDOUT "Mesh points must be integers.\n";
+         exit;
+      }
+   }
+
+   #Record the command line used to create this set of input files.
+   open (COMMANDLINE,">>$commandLine");
+   print COMMANDLINE "makeFittedRhoV ";
+   foreach $argument (0..$#ARGV)
+      {print COMMANDLINE "$ARGV[$argument] ";}
+   print COMMANDLINE "\n";
+   close (COMMANDLINE);
+}
+
+sub readStruct
+{
+   # Define local variables.
+   my $currAtom;
+   my @values;
+   my $line;
+   my $site;
+
+   # Initialize the atom number and the number of types.
+   $currAtom = 0;
+   $numTypes = 0;
+
+   # Open the input structure file.
+   open (STRUCT,"<$structFile") ||
+      die "Cannot open $structFile for reading.\n";
+
+   # Read past the cell parameters and the NUM_ATOM_SITES header.
+   foreach $line (1..5)
+      {<STRUCT>;}
+
+   # Read the number of atomic and potential sites in the model.
+   @values = StructureControl::prepLine(\*STRUCT,$line,'\s+');
+   $numSites = $values[0];
+
+   # Read past the header for the list of atomic coordinate data.
+   <STRUCT>;
+
+   # Read each atom and collect the appropriate information.
+   foreach $site (1..$numSites)
+   {
+      # Read and prepare the line for processing.
+      @values = StructureControl::prepLine(\*STRUCT,$line,'\s+');
+
+      # Check if this is a new type and if so record the element for this type.
+      if ($values[1] > $numTypes)
+      {
+         $numTypes++;
+         $typeElements[$numTypes] = lc($values[$#values]);
+      }
+   }
+
+   # Close the structure file.
+   close (STRUCT);
+}
+
+sub computeDiff
+{
+   # Define local variables.
+   my $type;
+   my $lineNP;   # Non-interacting potential line.
+   my $lineIP;   # Input potential line.
+   my @values;
+   my @valuesNP; # Non-interacting potential values
+   my @valuesIP; # Input potential values.
+   my @valuesOP; # Output potential values.
+   my $isoCoeffFile; # File containing coefficients of the isolated atom calc.
+   my $value;
+
+   # Initialize the term number of the input pot file.
+   $numTerms = 0;
+
+   # Open the input scf potential file.
+   open (INPOT,"<$inFile") ||
+      die "Can not open $inFile for reading.\n";
+
+   # Read past the line that lists the number of types.  (This was already
+   #   computed from the structure.dat file where the element data was also
+   #   obtained.)
+   <INPOT>;
+
+   # Loop over each type and perform a difference calculation.
+   foreach $type (1..$numTypes)
+   {
+      # Define the isolated potential and charge coeff file.
+      $isoCoeffFile = "$atomPotDB/$typeElements[$type]/coeff.isolated";
+
+      # Open the non-interacting potential file associated with this type.
+      open (NONPOT,"<$isoCoeffFile") ||
+         die "Can not open $isoCoeffFile for reading.\n";
+
+      # Read the number of terms from the isolated coefficient file and from
+      #   the SCF potential file.
+      @values = StructureControl::prepLine(\*NONPOT,$lineNP,'\s+');
+      @values = StructureControl::prepLine(\*INPOT,$lineNP,'\s+');
+      
+
+      # Read the terms of this non-interacting data and compute the difference
+      #   compared to the scf terms.
+      while ($lineNP = <NONPOT>)
+      {
+         # Read a line from the input potential file and increment the count of
+         #   the number of terms read from this "total potential" file.
+         $lineIP = <INPOT>;
+         $numTerms++;
+
+         # Prepare the data for comparison.
+         @valuesNP = StructureControl::prepLine("",$lineNP,'\s+');
+         @valuesIP = StructureControl::prepLine("",$lineIP,'\s+');
+
+         # Perform a check to make sure that the comparison is valid.
+         if ($valuesIP[1] != $valuesNP[1])
+         {
+            die "Compare failure: type $type; element $typeElements[$type];" .
+                " in term = $valuesIP[1]; iso term = $valuesNP[1].\n";
+         }
+
+         # Record the exponential alpha.
+         $valuesOP[1] = $valuesIP[1];
+
+         # Perform the subtraction.
+         $valuesOP[0] = $valuesIP[0] - $valuesNP[0];
+         $valuesOP[2] = $valuesIP[2] - $valuesNP[2];
+         $valuesOP[3] = $valuesIP[3] - $valuesNP[3];
+         if ($#valuesOP == 4)
+         {
+            $valuesOP[4] = $valuesIP[4] - $valuesNP[4];
+            $lastCol = 4;
+         }
+         else
+            {$lastCol = 3;}
+
+         # Create the contents of the new file.
+         $outValues[$numTerms][0] = $valuesOP[1];  # Exponential alphas.
+         $outValues[$numTerms][1] = $valuesIP[0];  # SCF Potential Coeffs
+         $outValues[$numTerms][2] = $valuesOP[0];  # Potential Difference
+         $outValues[$numTerms][3] = $valuesIP[3];  # Valence Charge Coeffs
+         $outValues[$numTerms][4] = $valuesOP[3];  # Valence Charge Difference
+         $outValues[$numTerms][5] = $valuesIP[2];  # Total Charge Coeffs
+      }
+
+      # Close the element non-interacting potential file.
+      close (NONPOT);
+   }
+}
+
+
+sub printTempData
+{
+   # Define local variables.
+   my $term;
+   my $value;
+
+   # Open the output file.
+   open (OUTPOT,">$outFile") ||
+      die "Can not opent $outFile for writing.\n";
+
+   foreach $term (1..$numTerms)
+   {
+      foreach $value (0..5)
+         {printf OUTPOT "%16.8e",$outValues[$term][$value];}
+      print OUTPOT "\n";
+   }
+
+   # Close the output file.
+   close (OUTPOT);
+}
+
+
+sub runOLCAOrhoVF90
+{
+   # Define local variables.
+   my $stdout;
+
+   # Run the fortran 90 OLCAOrhoV program to acutally compute the charge
+   #   and potential functions.  The first three command line parameters are
+   #   from the @numMeshPoints array and they contain the number of mesh
+   #   points to evaluate the functions on.  The fourth command line parameter
+   #   is a hard coded request to only consider atoms from the first
+   #   neighboring replicated cells.  (27 total cells)  If this is changed to
+   #   a 2 then the first 2 levels of neighboring cells are considered.  (125
+   #   total cells).  If it is set to a 0, then only the original cell is
+   #   considered.  The fifth command line parameter is a flag that when set to
+   #   1 will prevent the openDX data from being produced in addition to the
+   #   profile data.  (The profile data is always produced.)
+   print STDOUT "OLCAOrhoV $outFile @numMeshPoints 1 0\n";
+
+   $stdout = `OLCAOrhoV $outFile @numMeshPoints 1 0`;
+
+   print STDOUT "Program Done\n";
+
+   print STDOUT $stdout;
+}
