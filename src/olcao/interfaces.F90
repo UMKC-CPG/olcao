@@ -245,8 +245,8 @@ subroutine solveDPOSVX (N, NRHS, A, LD, B)
    ! Define passed parameters.
    integer, intent(IN) :: N
    integer, intent(IN) :: NRHS
-   real (kind=double), dimension (LD,N), intent(IN)  :: A
    integer, intent(IN) :: LD
+   real (kind=double), dimension (LD,N), intent(IN)  :: A
    real (kind=double), dimension (LD,NRHS), intent(INOUT)  :: B
 
    ! Define local variables.

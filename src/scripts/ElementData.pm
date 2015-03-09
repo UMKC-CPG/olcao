@@ -48,6 +48,7 @@ my @colorDX;         # Color in openDX on scale of 1-100.
 my @greyDX;          # Greyscale value in openDX on scale of 1-100.
 
 # Define other important variables.
+my $maxQN_l;
 my $numElements = 103;
 my $initData = 0; # Set to 1 when the initialization portion is run.
 
@@ -59,7 +60,6 @@ sub initElementData
    my $element;
    my $basis;
    my $QN_l;
-   my $maxQN_l;
 
    # Check to see if the initialization was run already and skip the rest if so.
    if ($initData == 0)
@@ -2227,6 +2227,9 @@ sub applyBondFactor
 
 sub getNumElements
    {return $numElements;}
+
+sub getMaxQN_l
+   {return $maxQN_l;}
 
 sub getCoreOrbitals
    {return @{$coreOrbitals[$_[0]]};}

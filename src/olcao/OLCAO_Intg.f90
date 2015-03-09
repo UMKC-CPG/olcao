@@ -19,6 +19,9 @@ subroutine intgPSCF
    ! Make sure that there are not accidental variable declarations.
    implicit none
 
+   type(commandLineParameters) :: clp ! from O_commandLine
+   type(inputData) :: inDat ! from O_input
+
    ! Open the potential file that will be read from in this program.
    open (unit=8,file='fort.8',status='old',form='formatted')
 
@@ -28,11 +31,11 @@ subroutine intgPSCF
 
 
    ! Parse the command line parameters
-   call parseIntgCommandLine
+   call parseIntgCommandLine(clp)
 
 
    ! Read in the input to initialize all the key data structure variables.
-   call parseInput
+   call parseInput(inDat,clp)
 
 
    ! Find specific computational parameters not EXPLICITLY given in the input
@@ -79,12 +82,12 @@ subroutine intgPSCF
    !   only the MME need to be computed.  In that case the same subroutine can
    !   be used, except that only the MME are computed, not the overlap and
    !   hamiltonian.
-   call intgAndOrMom(1)
+   call intgAndOrMom(1,clp%doMOME)
 
 
    ! Record to the HDF5 file an attribute that says whether or not the MOME
    !   were computed.
-   call setMOMEStatus(doMOME)
+   call setMOMEStatus(clp%doMOME)
 
 
    ! Close the HDF5 PSCF integrals file.

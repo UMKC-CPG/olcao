@@ -24,8 +24,13 @@ subroutine parseContractInput
 
    implicit none
 
+   integer    :: readUnit   ! The unit number of the file from which
+                                        ! we are reading.
+   integer    :: writeUnit  ! The unit number of the file to which
+                                        ! we are writing.
+
    ! Define local variables.
-   integer :: i,j
+   integer :: i
    character*8 :: commandBuffer
 
    ! Read the command line parameter for plotting the basis numerically and
@@ -36,15 +41,15 @@ subroutine parseContractInput
    ! Open the file needed to read the input.
    open(44,file='gauss.fit',status='old',form='formatted')
    open(5,file='contract.dat',status='old',form='formatted')
-   call setReadUnit(5)
+   readUnit = 5
 
    ! Open the file that will be written to as output for this program
    open(20,file='contract.out',status='new',form='formatted')
-   call setWriteUnit(20)
+   writeUnit = 20
 
    ! Read the name of the element abbreviated from the periodic table.
-   call readData (len(elementName),elementName,len('ELEMENT_NAME'),&
-         & 'ELEMENT_NAME')
+   call readData(readUnit,writeUnit,len(elementName),elementName,&
+         & len('ELEMENT_NAME'),'ELEMENT_NAME')
 
    ! Initialize the count of orbitals.
    numCoreOrbitals(:) = 0
@@ -52,14 +57,14 @@ subroutine parseContractInput
 
    ! Read the list of core orbitals and valence orbitals for each basis set
    !   beyond the previous set for this atom.
-   call readData(4,numCoreOrbitals(:),len('NUM_CORE_ORBITALS'),&
-         & 'NUM_CORE_ORBITALS')
-   call readData(4,numValeOrbitalsPerBasis(:,1),len('NUM_VALE_ORBITALS_MB'),&
-         & 'NUM_VALE_ORBITALS_MB')
-   call readData(4,numValeOrbitalsPerBasis(:,2),len('NUM_VALE_ORBITALS_FB'),&
-         & 'NUM_VALE_ORBITALS_FB')
-   call readData(4,numValeOrbitalsPerBasis(:,3),len('NUM_VALE_ORBITALS_EB'),&
-         & 'NUM_VALE_ORBITALS_EB')
+   call readData(readUnit,writeUnit,4,numCoreOrbitals(:),&
+         & len('NUM_CORE_ORBITALS'),'NUM_CORE_ORBITALS')
+   call readData(readUnit,writeUnit,4,numValeOrbitalsPerBasis(:,1),&
+         & len('NUM_VALE_ORBITALS_MB'),'NUM_VALE_ORBITALS_MB')
+   call readData(readUnit,writeUnit,4,numValeOrbitalsPerBasis(:,2),&
+         & len('NUM_VALE_ORBITALS_FB'),'NUM_VALE_ORBITALS_FB')
+   call readData(readUnit,writeUnit,4,numValeOrbitalsPerBasis(:,3),&
+         & len('NUM_VALE_ORBITALS_EB'),'NUM_VALE_ORBITALS_EB')
 
    ! Compute the total number of valence orbitals as the sum of the
    !   contributions of the individual basis additions.
@@ -72,26 +77,29 @@ subroutine parseContractInput
 
    ! Read the max number of Gaussians to use for the orbitals (each orbital
    !   angular momentum can not use more than this although they can use less).
-   call readData(maxNumBasisGaussians,&
+   call readData(readUnit,writeUnit,maxNumBasisGaussians,&
          & len('MAX_NUM_GAUSSIANS'),'MAX_NUM_GAUSSIANS')
 
    ! Read the minimum and maximum gaussian alphas.
-   call readData(minBasisAlpha,maxBasisAlpha,&
+   call readData(readUnit,writeUnit,minBasisAlpha,maxBasisAlpha,&
          & len('MIN_MAX_ALPHAS'),'MIN_MAX_ALPHAS')
 
    ! Read the atomic number and nuclear atomic alpha for this atom.
-   call readData(atomicNumber,len('ATOMIC_NUMBER'),'ATOMIC_NUMBER')
-   call readData(nuclearAlpha,len('NUCLEAR_ALPHA'),'NUCLEAR_ALPHA')
+   call readData(readUnit,writeUnit,atomicNumber,len('ATOMIC_NUMBER'),&
+         & 'ATOMIC_NUMBER')
+   call readData(readUnit,writeUnit,nuclearAlpha,len('NUCLEAR_ALPHA'),&
+         & 'NUCLEAR_ALPHA')
 
    ! Allocate space to hold the list of which gaussians should be selected for
    !    each of the s,p,d,f orbitals.
    allocate (selectGaussians(maxNumBasisGaussians,4))
+   selectGaussians(:,:) = 0
 
    ! Read the list of gaussians to use for the s,p,d,f orbitals.
-   call readOrbitalSelection(1,'S_GAUSSIAN_LIST')
-   call readOrbitalSelection(2,'P_GAUSSIAN_LIST')
-   call readOrbitalSelection(3,'D_GAUSSIAN_LIST')
-   call readOrbitalSelection(4,'F_GAUSSIAN_LIST')
+   call readOrbitalSelection(readUnit,writeUnit,1,'S_GAUSSIAN_LIST')
+   call readOrbitalSelection(readUnit,writeUnit,2,'P_GAUSSIAN_LIST')
+   call readOrbitalSelection(readUnit,writeUnit,3,'D_GAUSSIAN_LIST')
+   call readOrbitalSelection(readUnit,writeUnit,4,'F_GAUSSIAN_LIST')
 
 
    ! Read the atomic potential function in its gaussian form.
@@ -112,11 +120,12 @@ subroutine parseContractInput
 
    ! Read data necessary for plotting the charge density and for comparison to
    !   the charge calculated with the atomSCF program.  (If requested.)
-   call readData (doCharge,len('CALCULATE_CHARGE'),'CALCULATE_CHARGE')
+   call readData(readUnit,writeUnit,doCharge,len('CALCULATE_CHARGE'),&
+         & 'CALCULATE_CHARGE')
    if (doCharge == 1) then
 
       ! Read the radial grid parameters.
-      call readData (radialMaxDist,aaWhatever,bbWhatever,&
+      call readData(readUnit,writeUnit,radialMaxDist,aaWhatever,bbWhatever,&
             & len('RADIAL_GRID_PARAMETERS'),'RADIAL_GRID_PARAMETERS')
 
       ! Allocate space to hold charge present in each orbital and initialize it.
@@ -124,10 +133,10 @@ subroutine parseContractInput
       orbitalCharge (:,:) = 0.0_double
 
       ! Read the s,p,d,f orbital occupations.
-      call readOrbitalOccupations (1,'S_ORBITAL_OCCUPATIONS')
-      call readOrbitalOccupations (2,'P_ORBITAL_OCCUPATIONS')
-      call readOrbitalOccupations (3,'D_ORBITAL_OCCUPATIONS')
-      call readOrbitalOccupations (4,'F_ORBITAL_OCCUPATIONS')
+      call readOrbitalOccupations (readUnit,writeUnit,1,'S_ORBITAL_OCCUPATIONS')
+      call readOrbitalOccupations (readUnit,writeUnit,2,'P_ORBITAL_OCCUPATIONS')
+      call readOrbitalOccupations (readUnit,writeUnit,3,'D_ORBITAL_OCCUPATIONS')
+      call readOrbitalOccupations (readUnit,writeUnit,4,'F_ORBITAL_OCCUPATIONS')
    endif
 
    ! Close the input files.
@@ -139,7 +148,7 @@ subroutine parseContractInput
 end subroutine parseContractInput
 
 
-subroutine readOrbitalSelection (QN_l,tag)
+subroutine readOrbitalSelection(readUnit,writeUnit,QN_l,tag)
 
    ! Use the necessary program parameters
    use O_Kinds
@@ -150,19 +159,27 @@ subroutine readOrbitalSelection (QN_l,tag)
    ! Use necessary data modules.
    use GaussianBasisData
    use AtomData
+   implicit none
+
+   ! passed parameters
+   integer, intent(in)    :: readUnit   ! The unit number of the file from which
+                                        ! we are reading.
+   integer, intent(in)    :: writeUnit  ! The unit number of the file to which
+                                        ! we are writing.
 
    ! Define local variables.
    integer :: QN_l
    character*15 :: tag
 
    if (numTotalOrbitals(QN_l) /= 0) then
-      call readData(maxNumBasisGaussians,selectGaussians(:,QN_l),15,tag)
+      call readData(readUnit,writeUnit,maxNumBasisGaussians,&
+            & selectGaussians(:,QN_l),15,tag)
    endif
 
 end subroutine readOrbitalSelection
 
 
-subroutine readOrbitalOccupations (QN_l,tag)
+subroutine readOrbitalOccupations(readUnit, writeUnit,QN_l,tag)
 
    ! Use the necessary program parameters
    use O_Kinds
@@ -174,12 +191,18 @@ subroutine readOrbitalOccupations (QN_l,tag)
    use ChargeDensityMod
    use AtomData
 
+   ! passed parameters
+   integer, intent(in)    :: readUnit   ! The unit number of the file from which
+                                        ! we are reading.
+   integer, intent(in)    :: writeUnit  ! The unit number of the file to which
+                                        ! we are writing.
+
    ! Define local variables.
    integer :: QN_l
    character*21 :: tag
 
    if (numTotalOrbitals(QN_l) /= 0) then
-      call readData(numTotalOrbitals(QN_l), &
+      call readData(readUnit,writeUnit,numTotalOrbitals(QN_l), &
                & orbitalCharge(QN_l,1:numTotalOrbitals(QN_l)),21,tag)
    endif
 

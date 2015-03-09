@@ -1,4 +1,4 @@
-#!/usr/bin/perl
+#!/bin/env perl
 #PROGRAM collectSpectra
 
 # The purpose of this program is to reduce the human labor necessary to collect
@@ -257,7 +257,6 @@ sub obtainStructure
    #   file there.  Get the name of that directory (the last in projectDir).
    @values = split(/\//,$projectDir);
    $projectName = $values[$#values];
-   
 
    # Initialize the count of the number of atoms in the system.
    $numAtoms = 0;

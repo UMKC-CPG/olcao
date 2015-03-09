@@ -1,0 +1,574 @@
+#!/bin/env perl
+sub printHelp
+{
+   print <<ENDHELP;
+#Program: insert3cbo
+#Purpose: To create new bond order raw and structure files such that they
+#         include new information describing three center bonds and such that
+#         information describing two center bonds is removed (except for real
+#         two center bonds which are identified by the fact that there are no
+#         three center bonds with them in them).
+#
+#It is assumed that the three center bond order information is stored in the
+#   gs_bond-mb.3c.raw file. This default can be overridden with the -3cdata
+#   option.
+#
+#It is assumed that the two center bond order information is stored in the
+#   gs_bond-mb.raw file. This default can be overridden with the -2cdata
+#   option.
+#
+#It is assumed that the structure information will be found in structure.dat.
+#   This default can be overridder with the -sdata option.
+#
+#It is assumed that the raw data output file will be gs_bond-mb.23cbo.raw.
+#   This is the original 2-center bond order file that has been manipulated
+#   to contain information for 2 and 3 center bond order. This default can be
+#   overridden with the -rawout option.
+#
+#It is assumed that the structure output file will be structure.23cbo.dat. This
+#   is the original structure file modified to include the addition of fake
+#   atoms that represent the centroids of the three center bonds. This default
+#   can be overridden with the -sout option.
+#
+#USAGE:  insert3cbo [-3cdata \$data3C] [-2cdata \$data2C]
+#                   [-sdata \$structData] [-rawout \$raw23COut]
+#                   [-sout \$struct23COut] [-help]
+
+ENDHELP
+   exit;
+}
+
+######################################################################
+#Begin execution of the script here
+######################################################################
+
+# Use necessary modules.
+use strict;
+use warnings;
+use Env;
+use lib "$OLCAO_BIN/perl5";
+use StructureControl;
+use ElementData;
+
+# Declare global variables.
+my $time;
+my @boData;
+my $numAtoms;
+my $num3CBonds;
+my @bo3cPositions;
+my $data3C;
+my $data2C;
+my $structData;
+my $raw23COut;
+my $struct23COut;
+
+# Start doing things.
+
+print STDOUT "\n\nScript Executing.\n\n";
+
+
+#Define file names, initialize any global variables, etc.
+$time = `date`;
+chomp ($time);
+print STDOUT "\nInitializing the environment.................$time.\n";
+&initEnv;
+
+
+#Parse the command line.
+$time = `date`;
+chomp ($time);
+print STDOUT "\nParse the command line parameters............$time.\n";
+&parseCLP;
+
+
+# Read in the 2 center bond order data.
+$time = `date`;
+chomp ($time);
+print STDOUT "\nReading in the 2-center bond order data......$time.\n";
+&read2CBO;
+
+
+# Read in the 3 center bond order data and modify the data structures that were
+#   created to hold the two center bond order information.
+$time = `date`;
+chomp ($time);
+print STDOUT "\nReading in the 3-center bond order data......$time.\n";
+&read3CBO;
+
+
+# Print out the new bond order data file that contains 2 and 3 center bonds.
+#   Note that many 2-center bonds may have been removed and replaced with
+#   3-center bonds.
+$time = `date`;
+chomp ($time);
+print STDOUT "\nWriting the new bond order data..............$time.\n";
+&write2CBO;
+
+
+# Print out a new structure file with extra "atoms" added that represent the
+#   centroids of the three center bonds.
+$time = `date`;
+chomp ($time);
+print STDOUT "\nWriting the new structure file...............$time.\n";
+&add2Struct;
+
+
+# Print a recommended command line for the makeBOND command.
+print STDOUT "\n\nA possible command for the makeBOND script is:\n";
+print STDOUT "makeBOND -pos structure.23cbo.dat -data gs_bond-mb.23cbo.raw\n";
+print STDOUT "-gc groupControl -minbo 0.0 -model\n";
+print STDOUT "Note that groupControl contains only \"SYSTEM_NUM\"\n";
+
+# Initialize the execution environment.
+sub initEnv
+{
+   # Set initial defaults for file names in case they are not given on the
+   #   command line.
+   $data3C = "gs_bond-mb.3c.raw";
+   $data2C = "gs_bond-mb.raw";
+   $structData = "structure.dat";
+   $raw23COut  = "gs_bond-mb.23cbo.raw";
+   $struct23COut = "structure.23cbo.dat";
+}
+
+
+# Parse the command line parameters.
+sub parseCLP
+{
+   # Define local variables.
+   my $number = 0;
+   my $argument;
+   my $commandLine = "command";
+   my $i;
+
+   # Start parsing.
+   while ($number < scalar(@ARGV))
+   {
+      if ($ARGV[$number] eq "-3cdata")
+         {$data3C = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-2cdata")
+         {$data2C = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-sdata")
+         {$structData = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-rawout")
+         {$raw23COut = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-sout")
+         {$struct23COut = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-help")
+         {&printHelp;}
+      else
+      {
+         print STDOUT "UNKNOWN COMMAND LINE PARAMETER $ARGV[$number].";
+         print STDOUT " ABORTING.\n";
+         exit;
+      }
+      $number++;
+   }
+
+   #Record the command line used.
+   open (COMMANDLINE,">>$commandLine") ||
+      die "Can not open $commandLine for writing.\n";
+   print COMMANDLINE "insert3cbo ";
+   foreach $argument (0..$#ARGV)
+      {print COMMANDLINE "$ARGV[$argument] ";}
+   print COMMANDLINE "\n";
+   close (COMMANDLINE);
+}
+
+# Read the existing 2 center BO file.
+sub read2CBO
+{
+   # Define local variables.
+   my $atom;
+   my $bondedAtom;
+   my $bondAngle;
+   my $line;
+   my @values;
+
+   # Open the data file that contains the original 2-center bond order data.
+   open (BO2C, "<$data2C") || die "Cannot open $data2C for reading.\n";
+
+   # Get the number of atoms before three center bonds are added.
+   @values = StructureControl::prepLine(\*BO2C,$line,'\s+');
+   $numAtoms = $values[$#values];
+
+   # For each atom we will read its information in to a complicated and ugly
+   #   multidimensional array.
+   foreach $atom (1..$numAtoms)
+   {
+      @values = StructureControl::prepLine(\*BO2C,$line,'\s+');
+      $boData[$atom][1] = $values[$#values];  # ATOM_NUM (integer)
+      @values = StructureControl::prepLine(\*BO2C,$line,'\s+');
+      $boData[$atom][2] = $values[$#values];  # SYSTEM_NAME (integer)
+      @values = StructureControl::prepLine(\*BO2C,$line,'\s+');
+      $boData[$atom][3] = $values[$#values];  # ELEMENT_NAME (character)
+      @values = StructureControl::prepLine(\*BO2C,$line,'\s+');
+      $boData[$atom][4] = $values[$#values];  # ELEMENT_ID (integer)
+      @values = StructureControl::prepLine(\*BO2C,$line,'\s+');
+      $boData[$atom][5] = $values[$#values];  # SPECIES_ID (integer)
+      @values = StructureControl::prepLine(\*BO2C,$line,'\s+');
+      $boData[$atom][6] = $values[$#values];  # TYPE_ID (integer)
+      @values = StructureControl::prepLine(\*BO2C,$line,'\s+');
+      $boData[$atom][7] = $values[$#values];  # ATOM_CHARGE (real)
+      @values = StructureControl::prepLine(\*BO2C,$line,'\s+');
+      $boData[$atom][8] = $values[$#values];  # NUM_BONDED_ATOMS (integer)
+      foreach $bondedAtom (1..$boData[$atom][8])
+      {
+         @values = StructureControl::prepLine(\*BO2C,$line,'\s+');
+         $boData[$atom][9][$bondedAtom][1] = $values[0]; # Bonded atom ID num
+         $boData[$atom][9][$bondedAtom][2] = $values[1]; # Bonded length (au)
+         $boData[$atom][9][$bondedAtom][3] = $values[2]; # Bond order
+      }
+      @values = StructureControl::prepLine(\*BO2C,$line,'\s+');
+      $boData[$atom][10] = $values[$#values];  # NUM_BOND_ANGLES (integer)
+      foreach $bondAngle (1..$boData[$atom][10])
+      {
+         $line = <BO2C>;
+         chomp $line;
+         $boData[$atom][11][$bondAngle] = $line; # String
+      }
+   }
+
+   # Close the original data file.
+   close (BO2C);
+}
+
+# Open the new three center bond order file and read its contents. As it is
+#   read we will process the existing 2-center bond order data structure by
+#   deleting 2-center bonds that are actually part of three center bonds and
+#   by adding "2-center" bonds where the bonded "atom" is actually the centroid
+#   of the three center bond. Additionally, the bond order data structure will
+#   be extended to include the centroids of the three center bonds as "atoms"
+#   with fake data.
+sub read3CBO
+{
+   # Define local variables.
+   my $line;
+   my $atom;
+   my $bo3c;
+   my $found;
+   my $bondedAtom;
+   my $next3CBondAtom;
+   my $current3CBO;
+   my $xyzAxis;
+   my @atomCoords;
+   my @displacement;
+   my @bondLength;
+   my @values;
+   my $atom1;
+   my $atom2;
+   my $atom3;
+   my @latticeIndices;
+   my @latticeVectors;
+
+   # Okay, this is stupid and at some point should be improved.  We have to
+   #   read the last line in the file to get the number of three center bonds.
+   $line = `tail -1 $data3C`;
+   @values = StructureControl::prepLine("",$line,'\s+');
+   $num3CBonds = $values[$#values];
+
+   # Open the three center bond order data file for reading in perl.
+   open (BO3C,"<$data3C") || die "Cannot open $data3C for reading.\n";
+
+   # Read past the header.
+   $line = <BO3C>;
+
+   # Read the lattice vectors.
+   @values = StructureControl::prepLine(\*BO3C,$line,'\s+');
+   $latticeVectors[1][1] = $values[3];  # ax
+   $latticeVectors[1][2] = $values[4];  # ay
+   $latticeVectors[1][3] = $values[5];  # az
+   @values = StructureControl::prepLine(\*BO3C,$line,'\s+');
+   $latticeVectors[2][1] = $values[3];  # bx
+   $latticeVectors[2][2] = $values[4];  # by
+   $latticeVectors[2][3] = $values[5];  # bz
+   @values = StructureControl::prepLine(\*BO3C,$line,'\s+');
+   $latticeVectors[3][1] = $values[3];  # cx
+   $latticeVectors[3][2] = $values[4];  # cy
+   $latticeVectors[3][3] = $values[5];  # cz
+
+   # Read information for each of the three center bonds and modify the two
+   #   center bond data structure accordingly.
+   foreach $bo3c (1..$num3CBonds)
+   {
+      # Read which atoms are involved in this three center bond and call them
+      #   atom1 atom2 and atom3.
+      @values = StructureControl::prepLine(\*BO3C,$line,'\s+');
+      $atom1 = $values[1];
+      $atom2 = $values[2];
+      $atom3 = $values[3];
+
+      # For the first atom, look in its list of bonded atoms and remove from
+      #   that list any atom number that participates in this three center
+      #   bond.  Note that we will have to decrement the number of bonds that
+      #   this atom has for each bond that is removed.
+      $found = 0;
+      foreach $bondedAtom (1..$boData[$atom1][8])
+      {
+         if ($boData[$atom1][9][$bondedAtom][1] == $atom2)
+         {
+            splice(@{$boData[$atom1][9]},$bondedAtom,1);
+            $found++;
+            last;
+         }
+      }
+      $boData[$atom1][8] -= $found;
+      $found = 0;
+      foreach $bondedAtom (1..$boData[$atom1][8])
+      {
+         if ($boData[$atom1][9][$bondedAtom][1] == $atom3)
+         {
+            splice(@{$boData[$atom1][9]},$bondedAtom,1);
+            $found++;
+            last;
+         }
+      }
+      $boData[$atom1][8] -= $found;
+
+      # Now we have to do essentially the same thing for the second atom but
+      #   we only have to search for the third atom because the first atom
+      #   will always have a lower index number and thus will not be present
+      #   in the bond list.
+      $found = 0;
+      foreach $bondedAtom (1..$boData[$atom2][8])
+      {
+         if ($boData[$atom2][9][$bondedAtom][1] == $atom3)
+         {
+            splice(@{$boData[$atom2][9]},$bondedAtom,1);
+            $found++;
+            last;
+         }
+      }
+      $boData[$atom2][8] -= $found;
+
+      # Read the LATTICE_INDICES_1,2,3.
+      @values = StructureControl::prepLine(\*BO3C,$line,'\s+');
+      $latticeIndices[1][1] = $values[1]; # atom1 a
+      $latticeIndices[1][2] = $values[2]; # atom1 b
+      $latticeIndices[1][3] = $values[3]; # atom1 c
+      @values = StructureControl::prepLine(\*BO3C,$line,'\s+');
+      $latticeIndices[2][1] = $values[1]; # atom2 a
+      $latticeIndices[2][2] = $values[2]; # atom2 b
+      $latticeIndices[2][3] = $values[3]; # atom2 c
+      @values = StructureControl::prepLine(\*BO3C,$line,'\s+');
+      $latticeIndices[3][1] = $values[1]; # atom3 a
+      $latticeIndices[3][2] = $values[2]; # atom3 b
+      $latticeIndices[3][3] = $values[3]; # atom3 c
+
+      # Get the x,y,z coordinates for each atom in the three center bond (au).
+      foreach $atom (1..3)
+      {
+         @values = StructureControl::prepLine(\*BO3C,$line,'\s+');
+         foreach $xyzAxis (1..3)
+         {
+            $atomCoords[$xyzAxis][$atom] = $values[$xyzAxis] + 
+                  $latticeIndices[$atom][1] * $latticeVectors[1][$xyzAxis] +
+                  $latticeIndices[$atom][2] * $latticeVectors[2][$xyzAxis] +
+                  $latticeIndices[$atom][3] * $latticeVectors[3][$xyzAxis];
+         }
+      }
+
+      # Read past the geometric centroid.
+      $line = <BO3C>;
+
+      # Get the bond weighted centroid coordinates and compute the displacement
+      #   between each atom of the three center bond and the weighted centroid.
+      @values = StructureControl::prepLine(\*BO3C,$line,'\s+');
+      foreach $atom (1..3)
+      {
+         $displacement[1][$atom] = $atomCoords[1][$atom] - $values[1];
+         $displacement[2][$atom] = $atomCoords[2][$atom] - $values[2];
+         $displacement[3][$atom] = $atomCoords[3][$atom] - $values[3];
+      }
+
+      # Compute the "bond length" between the atom and the bond centroid.
+      foreach $atom (1..3)
+      {
+         $bondLength[$atom] = 
+               sqrt($displacement[1][$atom]*$displacement[1][$atom] +
+                    $displacement[2][$atom]*$displacement[2][$atom] +
+                    $displacement[3][$atom]*$displacement[3][$atom]);
+      }
+
+      # Read the position of the bond weighted centroid that was shifted to be
+      #   inside the unit cell.
+      @values = StructureControl::prepLine(\*BO3C,$line,'\s+');
+      $bo3cPositions[$bo3c][1] = $values[1];
+      $bo3cPositions[$bo3c][2] = $values[2];
+      $bo3cPositions[$bo3c][3] = $values[3];
+
+      # Read past the 2C bond order pairs.
+      $line = <BO3C>;
+
+      # Read in the 3C bond order.
+      @values = StructureControl::prepLine(\*BO3C,$line,'\s+');
+      $current3CBO = $values[1];
+
+      # Now, we are going to add a new bond to a fake atom that represents the
+      #   centroid of the three center bond. Therefore, we will first increment
+      #   the number of bonds that each atom has.
+      $boData[$atom1][8]++;
+      $boData[$atom2][8]++;
+      $boData[$atom3][8]++;
+
+      # Record the data for the new bond.
+      $next3CBondAtom = $numAtoms + $bo3c;
+      $boData[$atom1][9][$boData[$atom1][8]][1] = $next3CBondAtom;
+      $boData[$atom1][9][$boData[$atom1][8]][2] = $bondLength[1];
+      $boData[$atom1][9][$boData[$atom1][8]][3] = $current3CBO;
+      $boData[$atom2][9][$boData[$atom2][8]][1] = $next3CBondAtom;
+      $boData[$atom2][9][$boData[$atom2][8]][2] = $bondLength[2];
+      $boData[$atom2][9][$boData[$atom2][8]][3] = $current3CBO;
+      $boData[$atom3][9][$boData[$atom3][8]][1] = $next3CBondAtom;
+      $boData[$atom3][9][$boData[$atom3][8]][2] = $bondLength[3];
+      $boData[$atom3][9][$boData[$atom3][8]][3] = $current3CBO;
+
+      # Finally, we have to add the "atoms" to the list of boData.
+      $boData[$numAtoms + $bo3c][1]  = $numAtoms + $bo3c;
+      $boData[$numAtoms + $bo3c][2]  = 1;
+      $boData[$numAtoms + $bo3c][3]  = "3c";
+      $boData[$numAtoms + $bo3c][4]  = 0;
+      $boData[$numAtoms + $bo3c][5]  = 0;
+      $boData[$numAtoms + $bo3c][6]  = 0;
+      $boData[$numAtoms + $bo3c][7]  = 0.0;
+      $boData[$numAtoms + $bo3c][8]  = 0;
+      $boData[$numAtoms + $bo3c][10] = 0;
+   }
+
+   # Close the three center bond order data file.
+   close (BO3C);
+}
+
+# Write out the modified 2-center bond order data structure.
+sub write2CBO
+{
+   # Define local variables.
+   my $atom;
+   my $bond;
+   my $atomNumber; # Sum of real and fake atoms.
+
+   # Open the new file.  For now we will open a differently named file to avoid
+   #   accidentally hosing the original data.
+   open (NEW2CBO, ">$raw23COut") || die "Cannot open $raw23COut for writing\n";
+
+   # Compute the number of atoms (combined real and fake).
+   $atomNumber = $numAtoms + $num3CBonds;
+
+   # Print out the new boData.
+   print NEW2CBO "NUM_ATOMS $atomNumber\n";
+   foreach $atom (1..$atomNumber)
+   {
+      print NEW2CBO "ATOM_NUM            $boData[$atom][1]\n";
+      print NEW2CBO "SYSTEM_NUM          $boData[$atom][2]\n";
+      print NEW2CBO "ELEMENT_NAME        $boData[$atom][3]\n";
+      print NEW2CBO "ELEMENT_ID          $boData[$atom][4]\n";
+      print NEW2CBO "SPECIES_ID          $boData[$atom][5]\n";
+      print NEW2CBO "TYPE_ID             $boData[$atom][6]\n";
+      print NEW2CBO "ATOM_CHARGE         $boData[$atom][7]\n";
+      print NEW2CBO "NUM_BONDED_ATOMS    $boData[$atom][8]\n";
+      foreach $bond (1..$boData[$atom][8])
+      {
+         print NEW2CBO "$boData[$atom][9][$bond][1] ".
+               "$boData[$atom][9][$bond][2] $boData[$atom][9][$bond][3]\n";
+      }
+      print NEW2CBO "NUM_BOND_ANGLES     $boData[$atom][10]\n";
+   }
+
+   # Close the newly produced data file.
+   close (NEW2CBO);
+}
+
+# Now we have to add the fake atoms to the structure file so that when we try
+#   to plot a figure using makeBOND these "atoms" will  be found and plotted.
+sub add2Struct
+{
+   # Define local variables.
+   my $line;
+   my $atom;
+   my $lastType;
+   my $atomNumber;  # Sum of real and fake atoms.
+   my $typeNumber;  # Type number for the fake atoms.
+   my @values;
+
+   # Open the structure file for reading.
+   open (STRUCT, "<$structData")
+         || die "Cannot open $structData for reading.\n";
+
+   # Open a new file that will contain the modified structure.
+   open (NEWSTRUCT, ">$struct23COut")
+         || die "Cannot open $struct23COut for writing.\n";
+
+   # Read and reproduce the first few lines.
+   $line = <STRUCT>;
+   print NEWSTRUCT $line;
+   $line = <STRUCT>;
+   print NEWSTRUCT $line;
+   $line = <STRUCT>;
+   print NEWSTRUCT $line;
+   $line = <STRUCT>;
+   print NEWSTRUCT $line;
+   $line = <STRUCT>;
+   print NEWSTRUCT $line;
+   $line = <STRUCT>;
+
+   # Print the new number of atoms (including the "atoms").
+   print NEWSTRUCT $numAtoms+$num3CBonds;
+   print NEWSTRUCT "\n";
+
+   # Read past and reproduce the num_type_x_y_z_elem tag line.
+   $line = <STRUCT>;
+   print NEWSTRUCT $line;
+
+   # Read and reproduce all of the atomic sites.
+   foreach $atom (1..$numAtoms)
+   {
+      $line = <STRUCT>;
+      print NEWSTRUCT $line;
+   }
+
+   # Extract the type number of the last atom.
+   @values = StructureControl::prepLine("",$line,'\s+');
+   $lastType = $values[1];
+
+   # Add the new "atoms" to the list.
+   foreach $atom (1..$num3CBonds)
+   {
+      $atomNumber = $numAtoms + $atom;
+      $typeNumber = $lastType + 1;
+      print NEWSTRUCT " $atomNumber  $typeNumber $bo3cPositions[$atom][1] " .
+            "$bo3cPositions[$atom][2] $bo3cPositions[$atom][3] 3c\n";
+   }
+
+   # Read and reproduce the potential site tag.
+   $line = <STRUCT>;
+   print NEWSTRUCT $line;
+
+   # Print the new number of potential sites (including the "atoms").
+   $line = <STRUCT>;
+   print NEWSTRUCT $numAtoms+$num3CBonds;
+   print NEWSTRUCT "\n";
+
+   # Read past and reproduce the num_type_x_y_z_elem tag line.
+   $line = <STRUCT>;
+   print NEWSTRUCT $line;
+
+   # Read and reproduce all of the potential sites.
+   foreach $atom (1..$numAtoms)
+   {
+      $line = <STRUCT>;
+      print NEWSTRUCT $line;
+   }
+
+   # Add the new "atoms" to the list.
+   foreach $atom (1..$num3CBonds)
+   {
+      $atomNumber = $numAtoms + $atom;
+      $typeNumber = $lastType + 1;
+      print NEWSTRUCT " $atomNumber  $typeNumber $bo3cPositions[$atom][1] " .
+            "$bo3cPositions[$atom][2] $bo3cPositions[$atom][3] 3c\n";
+   }
+
+   # Close the original structure file and the newly modified one.
+   close (STRUCT);
+   close (NEWSTRUCT);
+} 

@@ -1,4 +1,4 @@
-#!/usr/bin/perl
+#!/bin/env perl
 #plotdata script v0.3  Paul Rulis
 #Last update Jan 03, 2007
 ######################################################################

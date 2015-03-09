@@ -30,7 +30,7 @@ module O_SecularEquation
    contains
 
 
-subroutine secularEqnAllKP(spinDirection)
+subroutine secularEqnAllKP(spinDirection, numStates)
 
    ! Import necessary modules.
    use O_Kinds
@@ -57,6 +57,7 @@ subroutine secularEqnAllKP(spinDirection)
 
    ! Define the passed parameters.
    integer :: spinDirection
+   integer :: numStates
 
    ! Define the local variables used in this subroutine.
    integer :: i,j ! Loop index variables
@@ -201,7 +202,7 @@ subroutine secularEqnAllKP(spinDirection)
 end subroutine secularEqnAllKP
 
 
-subroutine secularEqnOneKP (spinDirection,choiceKP)
+subroutine secularEqnOneKP (spinDirection,choiceKP,numStates,doSYBD)
 
    ! Import necessary modules.
    use O_Kinds
@@ -226,6 +227,8 @@ subroutine secularEqnOneKP (spinDirection,choiceKP)
    ! Define the passed parameters.
    integer :: spinDirection
    integer :: choiceKP
+   integer :: numStates
+   integer :: doSYBD
 
    ! Define the local variables used in this subroutine.
    integer :: hdferr
@@ -270,13 +273,16 @@ subroutine secularEqnOneKP (spinDirection,choiceKP)
 end subroutine secularEqnOneKP
 
 
-subroutine shiftEnergyEigenValues(energyShift)
+subroutine shiftEnergyEigenValues(energyShift,numStates)
 
    ! Use necessary modules.
    use O_Input
 
    ! Make sure that no funny variables are defined.
    implicit none
+
+   ! define vriables passed to this subroutine
+   integer :: numStates
 
    ! Define passed dummy parameters.
    real (kind=double) :: energyShift
@@ -303,7 +309,7 @@ end subroutine shiftEnergyEigenValues
 !end subroutine convertEnergyEigenValuesToeV
 
 
-subroutine readEnergyEigenValuesBand
+subroutine readEnergyEigenValuesBand(numStates)
 
    ! Use necessary modules
    use O_Kinds
@@ -316,6 +322,9 @@ subroutine readEnergyEigenValuesBand
 
    ! Make sure that no funny variables are defined.
    implicit none
+
+   ! define variables passed to this subroutine.
+   integer :: numStates
 
    ! Define local variables used in this subroutine.
    integer :: i,j
@@ -345,7 +354,7 @@ subroutine readEnergyEigenValuesBand
 end subroutine readEnergyEigenValuesBand
 
 
-subroutine appendExcitedEnergyEigenValuesBand (occupiedEnergy)
+subroutine appendExcitedEnergyEigenValuesBand (firstStateIndex,numStates)
 
    ! Use necessary modules
    use O_Kinds
@@ -360,7 +369,8 @@ subroutine appendExcitedEnergyEigenValuesBand (occupiedEnergy)
    implicit none
 
    ! Define variables passed to this subroutine.
-   real (kind=double) :: occupiedEnergy
+   integer :: firstStateIndex
+   integer :: numStates
 
    ! Define local variables used in this subroutine.
    integer :: i,j,k
@@ -383,26 +393,9 @@ subroutine appendExcitedEnergyEigenValuesBand (occupiedEnergy)
                & energyValuesTemp(:numStates),statesBand,hdferr)
          if (hdferr /= 0) stop 'Failed to read excited energy eigen values'
 
-         ! Search for the occupied energy level for this spin and kpoint.  Note
-         !   that since the occupied energy was just obtained exactly we don't
-         !   have to look for (abs(x-y)<epsilon).  The first state of any
-         !   kpoint greater than the occupied energy is the first unoccupied
-         !   state (note that this also includes degenerate highest occupied
-         !   states).
-         do k = 1, numStates
-            if (energyValuesTemp(k) > occupiedEnergy) then
+         energyEigenValues(firstStateIndex:numStates,i,j) = &
+               & energyValuesTemp(firstStateIndex:numStates)
 
-               firstUnoccupiedState = k
-
-               ! Paste the conduction band values from the excited state over
-               !   the conduction band values from the ground state.
-               energyEigenValues(firstUnoccupiedState:numStates,i,j) = &
-                     & energyValuesTemp(firstUnoccupiedState:numStates)
-
-               ! Exit the loop because this spin,kpoint combination is done.
-               exit
-            endif
-         enddo
       enddo
    enddo
 
@@ -476,7 +469,7 @@ end subroutine restoreValeValeOL
 
 
 
-subroutine readDataSCF(h,i)
+subroutine readDataSCF(h,i,numStates)
 
    ! Import necessary data modules.
    use O_Input
@@ -490,6 +483,7 @@ subroutine readDataSCF(h,i)
    ! Define passed parameters.
    integer :: h ! Spin variable.
    integer :: i ! KPoint variable
+   integer :: numStates
 
    ! Define local variables.
    integer :: dim1
@@ -545,7 +539,7 @@ end subroutine readDataSCF
 
 
 
-subroutine readDataPSCF(h,i)
+subroutine readDataPSCF(h,i,numStates)
 
    ! Use necessary modules.
    use O_Input
@@ -556,6 +550,7 @@ subroutine readDataPSCF(h,i)
    ! Define passed parameters.
    integer :: h ! Spin variable.
    integer :: i ! KPoint variable
+   integer :: numStates
 
    ! Define local variables.
    integer :: dim1

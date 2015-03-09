@@ -1,5 +1,4 @@
-#!usr/bin/perl
-
+#!/bin/env perl
 sub printHelp
 {
    print <<ENDHELP;

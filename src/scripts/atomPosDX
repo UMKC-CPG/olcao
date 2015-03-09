@@ -1,5 +1,4 @@
-#!/usr/bin/perl
-
+#!/bin/env perl
 # This program will read a standard olcao skeleton input file and will then
 #   create an openDX file as output that contains the positions of the atoms,
 #   their sizes, and colors (pulled from the ElementData.pm perl module).  The

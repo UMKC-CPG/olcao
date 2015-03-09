@@ -24,6 +24,9 @@ program waveFnPlotDX
    ! Make sure that there are not accidental variable declarations.
    implicit none
 
+   type(commandLineParameters) :: clp ! from O_CommandLine
+   type(inputData) :: inDat ! from O_Input
+
 
    ! Open the potential file that will be read from in this program.
    open (unit=8,file='fort.8',status='old',form='formatted')
@@ -38,10 +41,10 @@ program waveFnPlotDX
 
 
    ! Parse the command line parameters
-   call parseWaveCommandLine
+   call parseWaveCommandLine(clp)
 
    ! Read in the input to initialize all the key data structure variables.
-   call parseInput
+   call parseInput(inDat,clp)
 
 
    ! Find specific computational parameters not EXPLICITLY given in the input
@@ -51,7 +54,7 @@ program waveFnPlotDX
 
 
    ! Access the HDF5 data stored by band.
-   call accessPSCFBandHDF5
+   call accessPSCFBandHDF5(inDat%numStates,clp)
 
 
    ! Create real-space and reciprocal-space super lattices out of the primitive
@@ -80,26 +83,26 @@ program waveFnPlotDX
 
 
    ! Allocate space to store the energy eigen values, and then read them in.
-   allocate (energyEigenValues (numStates,numKPoints,spin))
-   call readEnergyEigenValuesBand
+   allocate (energyEigenValues (inDat%numStates,numKPoints,spin))
+   call readEnergyEigenValuesBand(inDat%numStates)
 
 
    ! Populate the electron states to find the highest occupied state (Fermi
    !   energ for metals).
-   call populateStates
+   call populateStates(inDat,clp)
 
 
    ! Initialize certain parameters for constructing and traversing the 3D mesh.
    call initialize3DMesh
 
    ! Compute the wave function squared values for each mesh point and print.
-   call computeWaveFnMesh
+   call computeWaveFnMesh(inDat)
 
    ! Clean up any left over arrays that need to be deallocated.
    call cleanUpWave
 
    ! Close the HDF data file.
-   call closeAccessPSCFBandHDF5
+   call closeAccessPSCFBandHDF5(clp)
 
    ! Open a file to signal completion of the program.
    open (unit=2,file='fort.2',status='new')

@@ -40,6 +40,8 @@ subroutine band
    ! Make sure that there are no accidental variable declarations.
    implicit none
 
+   type(commandLineParameters) :: clp ! from O_CommandLine
+   type(inputData) :: inDat ! from O_Input
 
 
    ! Initialize the logging labels.
@@ -47,11 +49,11 @@ subroutine band
 
 
    ! Parse the command line parameters
-   call parseBandCommandLine
+   call parseBandCommandLine(clp)
 
 
    ! Read in the input to initialize all the key data structure variables.
-   call parseInput
+   call parseInput(inDat,clp)
 
 
    ! Find specific computational parameters not EXPLICITLY given in the input
@@ -68,7 +70,7 @@ subroutine band
    ! In the case of a symmetric band structure calculation we must modify the
    !   kpoints according to the lattice type information given in the
    !   olcao.dat input file.
-   if (doSYBD == 1) then
+   if (clp%doSYBD == 1) then
       call makePathKPoints
    endif
 
@@ -91,15 +93,15 @@ subroutine band
 
 
    ! Prepare the HDF5 files for the post SCF band structure calculation.
-   call initPSCFBandHDF5
+   call initPSCFBandHDF5(inDat%numStates,clp)
 
 
    ! Compute the solid state wave function.
-   call computeBands
+   call computeBands(inDat,clp)
 
 
    ! Close the HDF5 band structure file.
-   call closePSCFBandHDF5
+   call closePSCFBandHDF5(clp)
 
 
    ! Open a file to signal completion of the program.
@@ -110,7 +112,7 @@ end subroutine band
 
 
 
-subroutine computeBands
+subroutine computeBands(inDat,clp)
 
    ! Use necessary modules.
    use O_Kinds
@@ -124,6 +126,10 @@ subroutine computeBands
    use O_PSCFBandHDF5
    use O_Potential
 
+   !Define passed variables
+   type(inputData) :: inDat ! from O_Input
+   type(commandLineParameters) :: clp ! from O_CommandLine
+
    ! Define local variables.
    integer :: i,j
 
@@ -133,7 +139,7 @@ subroutine computeBands
 
    ! Allocate space to hold the energyEigenValues, coreValeOL, and valeVale
    !   matrices.
-   allocate (energyEigenValues(numStates,numKPoints,spin))
+   allocate (energyEigenValues(inDat%numStates,numKPoints,spin))
 #ifndef GAMMA
    allocate (valeVale(valeDim,valeDim,1,spin))
    allocate (valeValeOL(valeDim,valeDim,1,spin))
@@ -157,60 +163,48 @@ subroutine computeBands
       ! Read the overlap integral results and apply kpoints effects.
 #ifndef GAMMA
       call getIntgResults(valeValeOL(:,:,:,1),coreValeOL,i,1,&
-            & valeValeBand_did(i),valeValeBand,doSYBD,1)
+            & valeValeBand_did(i),valeValeBand,clp%doSYBD,1)
 #else
       call getIntgResults(valeValeOLGamma(:,:,1),coreValeOLGamma,1,&
-            & valeValeBand_did(i),valeValeBand,doSYBD,1)
+            & valeValeBand_did(i),valeValeBand,clp%doSYBD,1)
 #endif
 !write (20,*) "Got here 0"
 !call flush (20)
 
       ! Write the coreValeOL for later use by other programs (if needed).
 #ifndef GAMMA
-      call saveCoreValeOL (coreValeOL,i)
+      call saveCoreValeOL (coreValeOL,i,clp)
 #else
-      call saveCoreValeOL (coreValeOLGamma,i)
+      call saveCoreValeOL (coreValeOLGamma,i,clp)
 #endif
-!write (20,*) "Got here 1"
-!call flush (20)
 
       ! Preserve the valeValeOL (if needed).
       call preserveValeValeOL
-!write (20,*) "Got here 2"
-!call flush (20)
 
       do j = 1, spin
 #ifndef GAMMA
          ! Read the hamiltonian integral results and apply kpoint effects.
          call getIntgResults(valeVale(:,:,:,j),coreValeOL,i,2,&
-               & valeValeBand_did(i),valeValeBand,doSYBD,j)
+               & valeValeBand_did(i),valeValeBand,clp%doSYBD,j)
 #else
          ! Read the hamiltonian integral results and apply kpoint effects.
          call getIntgResults(valeValeGamma(:,:,j),coreValeOLGamma,2,&
-               & valeValeBand_did(i),valeValeBand,doSYBD,j)
+               & valeValeBand_did(i),valeValeBand,clp%doSYBD,j)
 #endif
-!write (20,*) "Got here 3"
-!call flush (20)
 
          ! Solve the wave equation for this kpoint.
-         call secularEqnOneKP(j,i)
-!write (20,*) "Got here 4"
-!call flush (20)
+         call secularEqnOneKP(j,i,inDat%numStates,clp%doSYBD)
 
          ! Restore the valeValeOL (if needed).
          if (j == 1) then
             call restoreValeValeOL
          endif
-!write (20,*) "Got here 5"
-!call flush (20)
       enddo
    enddo
 
    ! Print the band results if necessary.
-   if (doSYBD == 1) then
-      call printSYBD
-!write (20,*) "Got here 6"
-!call flush (20)
+   if (clp%doSYBD == 1) then
+      call printSYBD(inDat,clp)
    endif
 
    ! Record the date and time we end.
@@ -219,7 +213,7 @@ subroutine computeBands
 end subroutine computeBands
 
 
-subroutine printSYBD
+subroutine printSYBD(inDat,clp)
 
    ! Use necessary modules.
    use O_Constants
@@ -230,15 +224,19 @@ subroutine printSYBD
    use O_SecularEquation
    use O_Potential
 
+   ! define passed parameters
+   type(inputData), intent(in) :: inDat ! from O_Input
+   type(commandLineParameters), intent(in) :: clp ! from O_CommandLine
+
    ! Define local variables.
    integer :: i,j
    character*7 :: filename
 
    ! Obtain the fermi energy with the populate energy levels subroutine.
-   call populateStates
+   call populateStates(inDat,clp)
 
    ! Adjust the energyEigenValues down by the fermi level determined above.
-   call shiftEnergyEigenValues(occupiedEnergy)
+   call shiftEnergyEigenValues(occupiedEnergy,inDat%numStates)
 
    do i = 1, spin
 
@@ -249,7 +247,7 @@ subroutine printSYBD
       open (unit=30+i,file=filename,status='new',form='formatted')
 
       ! Record the number of kpoints and the number of states
-      write (30+i,*) numPathKP, numStates
+      write (30+i,*) numPathKP, inDat%numStates
 
       ! Record each kpoint's energy values
       do j = 1, numPathKP
@@ -258,7 +256,7 @@ subroutine printSYBD
          write (30+i,*) pathKPointMag(j)
 
          ! Record the energy values for this KPoint
-         write (30+i,fmt="(10f12.5)") energyEigenValues(:numStates,j,i)*hartree
+         write (30+i,fmt="(10f12.5)") energyEigenValues(:inDat%numStates,j,i)*hartree
       enddo
 
       ! Close the output file.

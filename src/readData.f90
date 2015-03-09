@@ -3,7 +3,7 @@ module O_ReadDataSubs
    implicit none
 
    private
-   public :: readLabel, readAndCheckLabel, readData, setReadUnit, setWriteUnit
+   public :: readLabel, readAndCheckLabel, readData
 
    integer :: readUnit
    integer :: writeUnit
@@ -17,33 +17,15 @@ module O_ReadDataSubs
    contains
 
 
-subroutine setReadUnit (givenReadUnit)
+subroutine readLabel(readUnit,writeUnit)
 
    implicit none
 
-   ! Passed dummy variables.
-   integer :: givenReadUnit
-
-   readUnit = givenReadUnit
-
-end subroutine setReadUnit
-
-
-subroutine setWriteUnit (givenWriteUnit)
-
-   implicit none
-
-   ! Passed dummy variables.
-   integer :: givenWriteUnit
-
-   writeUnit = givenWriteUnit
-
-end subroutine setWriteUnit
-
-
-subroutine readLabel
-
-   implicit none
+   ! passed parameters
+   integer, intent(in)    :: readUnit   ! The unit number of the file from which
+                                        ! we are reading.
+   integer, intent(in)    :: writeUnit  ! The unit number of the file to which
+                                        ! we are writing.
 
    ! Local variables.
    character*70 :: foundLabel ! The label that is found by reading.
@@ -62,13 +44,17 @@ end subroutine readLabel
 
 
 
-subroutine readAndCheckLabel (length,lookLabel)
+subroutine readAndCheckLabel(readUnit,writeUnit,length,lookLabel)
 
    implicit none
 
    ! Passed parameters
    integer                :: length    ! Length of label.
    character (LEN=length) :: lookLabel ! Label that we are looking for.
+   integer, intent(in)    :: readUnit  ! The unit number of the file from which
+                                       ! we are reading.
+   integer, intent(in)    :: writeUnit  ! The unit number of the file to which
+                                        ! we are writing.
 
    ! Local variables.
    character (LEN=length) :: foundLabel   ! The label that is found by reading.
@@ -90,7 +76,7 @@ subroutine readAndCheckLabel (length,lookLabel)
 
 end subroutine readAndCheckLabel
 
-subroutine readDouble (doubleVar,length,lookLabel)
+subroutine readDouble (readUnit,writeUnit,doubleVar,length,lookLabel)
 
    use O_Kinds
 
@@ -100,10 +86,14 @@ subroutine readDouble (doubleVar,length,lookLabel)
    real (kind=double)     :: doubleVar ! The double that we wish to read.
    integer                :: length    ! Label length.
    character (LEN=length) :: lookLabel ! Label that we are looking for.
+   integer, intent(in)    :: readUnit  ! The unit number of the file from which
+                                       ! we are reading.
+   integer, intent(in)    :: writeUnit  ! The unit number of the file to which
+                                        ! we are writing.
 
    ! Check that the label is present and correct.
    if (length /= 0) then
-      call readAndCheckLabel (length,lookLabel)
+      call readAndCheckLabel(readUnit,writeUnit,length,lookLabel)
    endif
 
    ! Read and regurgitate the input parameter.
@@ -113,7 +103,8 @@ subroutine readDouble (doubleVar,length,lookLabel)
 
 end subroutine readDouble
 
-subroutine read2Double (doubleVar1,doubleVar2,length,lookLabel)
+subroutine read2Double (readUnit,writeUnit,doubleVar1,doubleVar2,length,&
+            lookLabel)
 
    use O_Kinds
 
@@ -124,10 +115,14 @@ subroutine read2Double (doubleVar1,doubleVar2,length,lookLabel)
    real (kind=double)     :: doubleVar2 ! The double that we wish to read.
    integer                :: length     ! Label length.
    character (LEN=length) :: lookLabel  ! Label that we are looking for.
+   integer, intent(in)    :: readUnit  ! The unit number of the file from which
+                                       ! we are reading.
+   integer, intent(in)    :: writeUnit  ! The unit number of the file to which
+                                        ! we are writing.
 
    ! Check that the label is present and correct.
    if (length /= 0) then
-      call readAndCheckLabel (length,lookLabel)
+      call readAndCheckLabel(readUnit,writeUnit,length,lookLabel)
    endif
 
    ! Read and regurgitate the input parameters.
@@ -137,7 +132,8 @@ subroutine read2Double (doubleVar1,doubleVar2,length,lookLabel)
 
 end subroutine read2Double
 
-subroutine read3Double (doubleVar1,doubleVar2,doubleVar3,length,lookLabel)
+subroutine read3Double (readUnit,writeUnit,doubleVar1,doubleVar2,doubleVar3,&
+            length,lookLabel)
 
    use O_Kinds
 
@@ -149,10 +145,14 @@ subroutine read3Double (doubleVar1,doubleVar2,doubleVar3,length,lookLabel)
    real (kind=double)     :: doubleVar3 ! The double that we wish to read.
    integer                :: length     ! Label length.
    character (LEN=length) :: lookLabel  ! Label that we are looking for.
+   integer, intent(in)    :: readUnit  ! The unit number of the file from which
+                                       ! we are reading.
+   integer, intent(in)    :: writeUnit  ! The unit number of the file to which
+                                        ! we are writing.
 
    ! Check that the label is present and correct.
    if (length /= 0) then
-      call readAndCheckLabel (length,lookLabel)
+      call readAndCheckLabel(readUnit,writeUnit,length,lookLabel)
    endif
 
    ! Read and regurgitate the input parameters.
@@ -162,7 +162,7 @@ subroutine read3Double (doubleVar1,doubleVar2,doubleVar3,length,lookLabel)
 
 end subroutine read3Double
 
-subroutine readDoubleArray (numValues,doubleArray,length,lookLabel)
+subroutine readDoubleArray (readUnit,writeUnit,numValues,doubleArray,length,lookLabel)
 
    use O_Kinds
 
@@ -174,13 +174,17 @@ subroutine readDoubleArray (numValues,doubleArray,length,lookLabel)
          & dimension(numValues) :: doubleArray ! Array to read.
    integer, intent (in)    :: length     ! Label length
    character (LEN=length)  :: lookLabel  ! Label that we are looking for.
+   integer, intent(in)    :: readUnit  ! The unit number of the file from which
+                                       ! we are reading.
+   integer, intent(in)    :: writeUnit  ! The unit number of the file to which
+                                        ! we are writing.
 
    ! Local variables.
    character*9 :: formatString
 
    ! Check that the label is present and correct.
    if (length /= 0) then
-      call readAndCheckLabel (length,lookLabel)
+      call readAndCheckLabel(readUnit,writeUnit,length,lookLabel)
    endif
 
    ! Read and regurgitate the input parameter.
@@ -192,8 +196,8 @@ subroutine readDoubleArray (numValues,doubleArray,length,lookLabel)
 end subroutine readDoubleArray
 
 
-subroutine readDoubleMatrix (numValues1,numValues2,doubleMatrix,length,&
-      & lookLabel)
+subroutine readDoubleMatrix (readUnit,writeUnit,numValues1,numValues2,&
+            doubleMatrix,length,lookLabel)
 
    use O_Kinds
 
@@ -206,6 +210,10 @@ subroutine readDoubleMatrix (numValues1,numValues2,doubleMatrix,length,&
          & dimension(numValues1,numValues2) :: doubleMatrix ! Matrix to read.
    integer, intent (in)    :: length     ! Label length
    character (LEN=length)  :: lookLabel  ! Label that we are looking for.
+   integer, intent(in)    :: readUnit  ! The unit number of the file from which
+                                       ! we are reading.
+   integer, intent(in)    :: writeUnit  ! The unit number of the file to which
+                                        ! we are writing.
 
    ! Local variables.
    character*9 :: formatString
@@ -213,7 +221,7 @@ subroutine readDoubleMatrix (numValues1,numValues2,doubleMatrix,length,&
 
    ! Check that the label is present and correct.
    if (length /= 0) then
-      call readAndCheckLabel (length,lookLabel)
+      call readAndCheckLabel(readUnit,writeUnit,length,lookLabel)
    endif
 
    ! Read and regurgitate the input parameter.
@@ -226,7 +234,7 @@ subroutine readDoubleMatrix (numValues1,numValues2,doubleMatrix,length,&
 
 end subroutine readDoubleMatrix
 
-subroutine readIntDouble (intVar,doubleVar,length,lookLabel)
+subroutine readIntDouble (readUnit,writeUnit,intVar,doubleVar,length,lookLabel)
 
    use O_Kinds
 
@@ -237,10 +245,14 @@ subroutine readIntDouble (intVar,doubleVar,length,lookLabel)
    real (kind=double)     :: doubleVar  ! The double that we wish to read.
    integer                :: length     ! Label length.
    character (LEN=length) :: lookLabel  ! Label that we are looking for.
+   integer, intent(in)    :: readUnit  ! The unit number of the file from which
+                                       ! we are reading.
+   integer, intent(in)    :: writeUnit  ! The unit number of the file to which
+                                        ! we are writing.
 
    ! Check that the label is present and correct.
    if (length /= 0) then
-      call readAndCheckLabel (length,lookLabel)
+      call readAndCheckLabel(readUnit,writeUnit,length,lookLabel)
    endif
 
    ! Read and regurgitate the input parameters.
@@ -250,7 +262,7 @@ subroutine readIntDouble (intVar,doubleVar,length,lookLabel)
 
 end subroutine readIntDouble
 
-subroutine readInt (integerVar,length,lookLabel)
+subroutine readInt (readUnit,writeUnit,integerVar,length,lookLabel)
 
    implicit none
 
@@ -258,10 +270,14 @@ subroutine readInt (integerVar,length,lookLabel)
    integer                :: integerVar ! The integer we wish to read.
    integer                :: length     ! Label length.
    character (LEN=length) :: lookLabel  ! Label that we are looking for.
+   integer, intent(in)    :: readUnit  ! The unit number of the file from which
+                                       ! we are reading.
+   integer, intent(in)    :: writeUnit  ! The unit number of the file to which
+                                        ! we are writing.
 
    ! Check that the label is present and correct.
    if (length /= 0) then
-      call readAndCheckLabel (length,lookLabel)
+      call readAndCheckLabel(readUnit,writeUnit,length,lookLabel)
    endif
 
    ! Read and regurgitate the input parameter.
@@ -272,7 +288,7 @@ subroutine readInt (integerVar,length,lookLabel)
 end subroutine readInt
 
 
-subroutine read3Int (intVar1,intVar2,intVar3,length,lookLabel)
+subroutine read3Int (readUnit,writeUnit,intVar1,intVar2,intVar3,length,lookLabel)
 
    use O_Kinds
 
@@ -284,10 +300,14 @@ subroutine read3Int (intVar1,intVar2,intVar3,length,lookLabel)
    integer                :: intVar3 ! The int that we wish to read.
    integer                :: length     ! Label length.
    character (LEN=length) :: lookLabel  ! Label that we are looking for.
+   integer, intent(in)    :: readUnit  ! The unit number of the file from which
+                                       ! we are reading.
+   integer, intent(in)    :: writeUnit  ! The unit number of the file to which
+                                        ! we are writing.
 
    ! Check that the label is present and correct.
    if (length /= 0) then
-      call readAndCheckLabel (length,lookLabel)
+      call readAndCheckLabel(readUnit,writeUnit,length,lookLabel)
    endif
 
    ! Read and regurgitate the input parameters.
@@ -298,7 +318,7 @@ subroutine read3Int (intVar1,intVar2,intVar3,length,lookLabel)
 end subroutine read3Int
 
 
-subroutine readIntArray (numValues,intArray,length,lookLabel)
+subroutine readIntArray (readUnit,writeUnit,numValues,intArray,length,lookLabel)
 
    use O_Kinds
 
@@ -309,13 +329,17 @@ subroutine readIntArray (numValues,intArray,length,lookLabel)
    integer, dimension(numValues) :: intArray ! Array to read.
    integer                :: length     ! Label length
    character (LEN=length) :: lookLabel  ! Label that we are looking for.
+   integer, intent(in)    :: readUnit  ! The unit number of the file from which
+                                       ! we are reading.
+   integer, intent(in)    :: writeUnit  ! The unit number of the file to which
+                                        ! we are writing.
 
    ! Local variables.
    character*6 :: formatString
 
    ! Check that the label is present and correct.
    if (length /= 0) then
-      call readAndCheckLabel (length,lookLabel)
+      call readAndCheckLabel(readUnit,writeUnit,length,lookLabel)
    endif
 
    ! Read and regurgitate the input parameter.
@@ -328,7 +352,7 @@ end subroutine readIntArray
 
 
 
-subroutine readChar (varLength,charVar,labelLength,lookLabel)
+subroutine readChar (readUnit,writeUnit,varLength,charVar,labelLength,lookLabel)
 
    implicit none
 
@@ -337,10 +361,14 @@ subroutine readChar (varLength,charVar,labelLength,lookLabel)
    character (LEN=varLength)   :: charVar     ! Character variable to be read.
    integer                     :: labelLength ! Label length.
    character (LEN=labelLength) :: lookLabel   ! Label that we are looking for.
+   integer, intent(in)    :: readUnit  ! The unit number of the file from which
+                                       ! we are reading.
+   integer, intent(in)    :: writeUnit  ! The unit number of the file to which
+                                        ! we are writing.
 
    ! Check that the label is present and correct.
    if (labelLength /= 0) then
-      call readAndCheckLabel (labelLength,lookLabel)
+      call readAndCheckLabel(readUnit,writeUnit,labelLength,lookLabel)
    endif
 
    ! Read and regurgitate the input parameter.

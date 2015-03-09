@@ -21,70 +21,74 @@ subroutine readSCFInput
    integer :: i          ! Loop index variable.
    character*8  :: date  ! Date
    character*10 :: time  ! Time
+   integer      :: readUnit   ! The unit number of the file from which
+                                        ! we are reading.
+   integer      :: writeUnit  ! The unit number of the file to which
+                                        ! we are writing.
 
    ! Open the file needed to read the input.
    open(5,file='atomSCF.dat',status='old',form='formatted')
-   call setReadUnit(5)
+   readUnit = 5
 
    ! Open the file needed to write output.
    open(20,file='atomSCF.out',status='new',form='formatted')
-   call setWriteUnit(20)
+   writeUnit = 20
 
    ! Start parsing the input
-   write (20,*) '***************************************************'
-   write (20,*) '**************  Begin Parsing Input  **************'
-   write (20,*) '***************************************************'
+   write (writeUnit,*) '***************************************************'
+   write (writeUnit,*) '**************  Begin Parsing Input  **************'
+   write (writeUnit,*) '***************************************************'
 
    ! Log the date and time we start.
    call date_and_time(date,time)
-   write (20,100) date,time
+   write (writeUnit,100) date,time
 
    ! Read and echo the title of the calculation.
-   call readLabel
+   call readLabel(readUnit, writeUnit)
 
    ! Read the name of the element abbreviated from the periodic table.
-   call readData (len(elementName),elementName,len('ELEMENT_NAME'),&
+   call readData(readUnit,writeUnit,len(elementName),elementName,len('ELEMENT_NAME'),&
          & 'ELEMENT_NAME')
 
    ! Read the alpha for the gaussian that defines the nuclear potential.
-   call readData (nuclearAlpha,len('NUCLEAR_ALPHA'),'NUCLEAR_ALPHA')
+   call readData(readUnit,writeUnit,nuclearAlpha,len('NUCLEAR_ALPHA'),'NUCLEAR_ALPHA')
 
    ! Read the maximum number of iterations to use.
-   call readData (maxIteration,len('MAX_ITERATION'),'MAX_ITERATION')
+   call readData(readUnit,writeUnit,maxIteration,len('MAX_ITERATION'),'MAX_ITERATION')
 
    ! Read the level of tolerance to use for testing convergence.
-   call readData (tolerance,len('CONVG_TOLERANCE'),'CONVG_TOLERANCE')
+   call readData(readUnit,writeUnit,tolerance,len('CONVG_TOLERANCE'),'CONVG_TOLERANCE')
 
    ! Read the mixing factor to use to mix the input & output electric pot.
-   call readData (mixingFactor,len('MIXING_FACTOR'),'MIXING_FACTOR')
+   call readData(readUnit,writeUnit,mixingFactor,len('MIXING_FACTOR'),'MIXING_FACTOR')
 
    ! Read the type of exchange correlation to use.
-   call readData (exchCorrCode,len('EXCHANGE_CORRELATION_CODE'),&
+   call readData(readUnit,writeUnit,exchCorrCode,len('EXCHANGE_CORRELATION_CODE'),&
          & 'EXCHANGE_CORRELATION_CODE')
 
    ! Read the flag that says if this is a spin polarized calculation.
-   call readData (doSpinPol,len('SPIN_POLARIZATION_FLAG'),&
+   call readData(readUnit,writeUnit,doSpinPol,len('SPIN_POLARIZATION_FLAG'),&
          & 'SPIN_POLARIZATION_FLAG')
 
    ! Read the flag that says if this is a relativistic calculation.
-   call readData (doRelativistic,len('RELATIVISTIC_FLAG'),&
+   call readData(readUnit,writeUnit,doRelativistic,len('RELATIVISTIC_FLAG'),&
          & 'RELATIVISTIC_FLAG')
 
    ! Read the atomic number (Z value).
-   call readData (atomicNumber,len('ATOMIC_NUMBER'),'ATOMIC_NUMBER')
+   call readData(readUnit,writeUnit,atomicNumber,len('ATOMIC_NUMBER'),'ATOMIC_NUMBER')
 
    ! Read the atomic shell charge.  ! NOT SURE WHAT THIS IS FOR YET.
-   call readData (shellCharge,len('SHELL_CHARGE'),'SHELL_CHARGE')
+   call readData(readUnit,writeUnit,shellCharge,len('SHELL_CHARGE'),'SHELL_CHARGE')
 
    ! Read the atomic shell radius.  ! NOT SURE WHAT THIS IS FOR YET.
-   call readData (shellRadius,len('SHELL_RADIUS'),'SHELL_RADIUS')
+   call readData(readUnit,writeUnit,shellRadius,len('SHELL_RADIUS'),'SHELL_RADIUS')
 
    ! Read the radial grid parameters.
-   call readData (radialMaxDist,aaWhatever,bbWhatever,&
+   call readData(readUnit,writeUnit,radialMaxDist,aaWhatever,bbWhatever,&
          & len('RADIAL_GRID_PARAMETERS'),'RADIAL_GRID_PARAMETERS')
 
    ! Read the maximum l quantum number present in this system.
-   call readData (maxQNl,len('MAX_ORB_ANGMOM_QN'),'MAX_ORB_ANGMOM_QN')
+   call readData(readUnit,writeUnit,maxQNl,len('MAX_ORB_ANGMOM_QN'),'MAX_ORB_ANGMOM_QN')
    ! Increase the value read in by 1 because all loops and array indices must
    !   start with 1 and so this will account for spin 0.  NOTE:  This can cause
    !   confusion and can be tricky.  Watch out!
@@ -94,13 +98,13 @@ subroutine readSCFInput
    !   orbitals in the case that a non spin-polarized calculation is being
    !   done.  It will be adjusted for spin-polarization in the implicit input
    !   subroutines.
-   call readData (numCoreOrb,len('NUM_CORE_ORBITALS'),'NUM_CORE_ORBITALS')
+   call readData(readUnit,writeUnit,numCoreOrb,len('NUM_CORE_ORBITALS'),'NUM_CORE_ORBITALS')
 
    ! Read the number of valence orbitals.  As with the number of core orbitals
    !   above, this should be the number of valence orbitals in the case that a
    !   non spin-polarized calculation is being done.  It will be adjusted for
    !   spin-polarization in the implicit input subroutines.
-   call readData (numValeOrb,len('NUM_VALE_ORBITALS'),'NUM_VALE_ORBITALS')
+   call readData(readUnit,writeUnit,numValeOrb,len('NUM_VALE_ORBITALS'),'NUM_VALE_ORBITALS')
 
    ! Allocate space to hold the orbital quantum numbers.  Note that the number
    !   of orbitals that will actually be used depends on whether or not we are
@@ -134,13 +138,13 @@ subroutine readSCFInput
 
    ! Log the date and time we start.
    call date_and_time(date,time)
-   write (20,100) date,time
+   write (writeUnit,100) date,time
 
    ! End parsing the input
-   write (20,*) '***************************************************'
-   write (20,*) '***************  End Parsing Input  ***************'
-   write (20,*) '***************************************************'
-   call flush(20)
+   write (writeUnit,*) '***************************************************'
+   write (writeUnit,*) '***************  End Parsing Input  ***************'
+   write (writeUnit,*) '***************************************************'
+   call flush(writeUnit)
 
    ! Define all the formatted output styles.
    100 format ('Date is: ',a8,' Time is: ',a10) ! Date and time output

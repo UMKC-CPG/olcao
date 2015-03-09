@@ -1,4 +1,4 @@
-#!/usr/bin/perl
+#!/bin/env perl
 ###############################################################################
 #PROGRAM normalize
 #LAST UPDATED:  Sept. 3, 2008.

@@ -97,7 +97,7 @@ dnl ######################################################################
 
 dnl if test $ac_cv_have_hdf5 = yes; then
 dnl   AC_DEFINE(HAVE_HDF5,1,Define to 1 if you have the hdf5 library (-lhdf5).)
-  FC=h5fc
+  FC=h5pfc
   AC_SUBST(FC)
 dnl fi
 
@@ -134,5 +134,8 @@ AC_CONFIG_FILES([Makefile src/Makefile src/makeKPoints/Makefile \
    src/applySpaceGroup/Makefile src/olcao/Makefile src/olcao/real/Makefile \
    src/olcao/complex/Makefile src/olcao/auxiliary/Makefile \
    src/scripts/Makefile src/data/Makefile])
+dnl   src/scripts/Makefile src/data/Makefile src/polcao/Makefile \
+dnl   src/polcao/complex/Makefile src/debug-tools/Makefile \
+dnl   src/debug-tools/parSerComp/Makefile])
 
 AC_OUTPUT

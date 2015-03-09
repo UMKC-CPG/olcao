@@ -42,7 +42,7 @@ module O_KPoints
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    contains
 
-subroutine readKPoints
+subroutine readKPoints(readUnit, writeUnit)
 
    ! Include the modules we need
    use O_Kinds ! Variable precision defined for intrinsic types
@@ -54,19 +54,25 @@ subroutine readKPoints
    ! Make sure that there are not accidental variable declarations.
    implicit none
 
+   ! passed parameters
+   integer, intent(in)    :: readUnit   ! The unit number of the file from which
+                                        ! we are reading.
+   integer, intent(in)    :: writeUnit  ! The unit number of the file to which
+                                        ! we are writing.
+
    ! Define the local variables used in this subroutine.
    integer :: i ! Loop index variable.
    integer :: counter ! Dummy variable to read the kpoint index number.
 
    ! Read the number of kpoints.
-   call readData (numKPoints,len('NUM_BLOCH_VECTORS'),'NUM_BLOCH_VECTORS')
+   call readData(readUnit,writeUnit,numKPoints,len('NUM_BLOCH_VECTORS'),'NUM_BLOCH_VECTORS')
 
    ! Allocate space to hold the kpoints and their weighting factors.
    allocate (kPoints(dim3,numKPoints))
    allocate (kPointWeight(numKPoints))
 
    ! Read past the 'NUM_WEIGHT_KA_KB_KC' header.
-   call readAndCheckLabel(len('NUM_WEIGHT_KA_KB_KC'),'NUM_WEIGHT_KA_KB_KC')
+   call readAndCheckLabel(readUnit,writeUnit,len('NUM_WEIGHT_KA_KB_KC'),'NUM_WEIGHT_KA_KB_KC')
 
    ! Note that the values read in here are in terms of a,b,c fractional
    !   coordinates.  Later, after the reciprocal lattice has been initialized
@@ -82,7 +88,7 @@ subroutine readKPoints
 end subroutine readKPoints
 
 
-subroutine readSYBDKPoints
+subroutine readSYBDKPoints(readUnit, writeUnit)
 
    ! Include the modules we need
    use O_Kinds ! Variable precision defined for intrinsic types
@@ -94,14 +100,20 @@ subroutine readSYBDKPoints
    ! Make sure that there are not accidental variable declarations.
    implicit none
 
+   ! passed parameters
+   integer, intent(in)    :: readUnit   ! The unit number of the file from which
+                                        ! we are reading.
+   integer, intent(in)    :: writeUnit  ! The unit number of the file to which
+                                        ! we are writing.
+
    ! Define the local variables used in this subroutine.
    integer :: i ! Loop index variable.
 
    ! Read the number of highly symmetric kpoints that define the vertices of
    !   the reciprocal space path, the number of kpoints to use on that path,
    !   and whether or not the points are given in cartesian coordinates or not.
-   call readData(numHighSymmKP,numPathKP,isCartesian,len('SYBD_INPUT_DATA'),&
-         & 'SYBD_INPUT_DATA')
+   call readData(readUnit,writeUnit,numHighSymmKP,numPathKP,isCartesian,&
+                    len('SYBD_INPUT_DATA'),'SYBD_INPUT_DATA')
 
    write (20,*) 'Number of high symmetry K-Points = ',numHighSymmKP
    write (20,*) 'Number of path K-Points          = ',numPathKP
@@ -113,7 +125,7 @@ subroutine readSYBDKPoints
 
    ! Read the coordinates of the high symmetry kpoints.
    do i = 1, numHighSymmKP
-      call readData(3,highSymmKP(:,i),0,'')
+      call readData(readUnit,writeUnit,3,highSymmKP(:,i),0,'')
    enddo
 end subroutine readSYBDKPoints
 

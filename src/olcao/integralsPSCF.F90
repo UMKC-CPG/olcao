@@ -33,7 +33,7 @@ module O_IntegralsPSCF
 
 contains
 
-subroutine intgAndOrMom(doINTG)
+subroutine intgAndOrMom(doINTG,doMOME)
 
    ! Import necessary modules.
    use O_Kinds
@@ -56,6 +56,7 @@ subroutine intgAndOrMom(doINTG)
 
    ! Define passed parameters.
    integer :: doINTG  ! (1) = do overlap & hamiltonian integrals; (0) = do not.
+   integer, intent(in) :: doMOME
 
    ! Define local variables for logging, loop control, and file writing.
    integer :: i,j,k,l,m,n,o,p,q ! Loop index variables
@@ -188,6 +189,10 @@ subroutine intgAndOrMom(doINTG)
          ! lattice points will be considered for integration.  This is used
          ! for the nuclear alpha triple.
 
+   ! Define variables for gauss integrals
+   integer :: l1l2Switch
+   integer, dimension(16) :: powerOfTwo = (/0,1,1,1,2,2,2,2,2,3,3,3,3,3,3,3/)
+
 
    ! Log the date and time we start.
    call timeStampStart(20)
@@ -241,7 +246,7 @@ subroutine intgAndOrMom(doINTG)
    do i = 1, numAtomSites
 
       ! Initialize the HDF5 dataset and dataspace for this atom.
-      call initAtomHDF (i,doINTG)
+      call initAtomHDF (i,doINTG,doMOME)
 
       ! Obtain local copies of key data from larger global data structures for
       !   the first looped atom.
@@ -593,13 +598,29 @@ subroutine intgAndOrMom(doINTG)
                                        & latticeVector2(:) + cellDimsReal(:,p)
 
                                  if (n <= currentNumPotAlphas) then
-                                    call threeCentInteg (oneAlphaSet,&
-                                       & currentlmAlphaIndex (alphaIndex(1),1),&
-                                       & currentlmAlphaIndex (alphaIndex(2),2),&
-                                       & currentAlphas(alphaIndex(1),1),&
+				                        ! Calculate the opcode to do the correct
+                                    !   set of integrals for the current alpha
+                                    !   pair.
+                                    l1l2Switch = ishft(1,(powerOfTwo(&
+                                         & currentlmAlphaIndex(&
+                                         & alphaIndex(1),1))))+ ishft(16,&
+                                         & (powerOfTwo(currentlmAlphaIndex(&
+                                         & alphaIndex(2),2))))
+
+                                    call threeCentInteg (currentAlphas(alphaIndex(1),1),&
                                        & currentAlphas(alphaIndex(2),2),&
-                                       & currentPotAlpha,currentPosition(:,1),&
-                                       & shiftedAtomPos(:),shiftedPotPos(:))
+                                       & currentPotAlpha, currentPosition(:,1),&
+                                       & shiftedAtomPos(:), shiftedPotPos(:),&
+                                       & l1l2Switch, oneAlphaSet)
+
+
+                                    !call threeCentInteg (oneAlphaSet,&
+                                    !   & currentlmAlphaIndex (alphaIndex(1),1),&
+                                    !   & currentlmAlphaIndex (alphaIndex(2),2),&
+                                    !   & currentAlphas(alphaIndex(1),1),&
+                                    !   & currentAlphas(alphaIndex(2),2),&
+                                    !   & currentPotAlpha,currentPosition(:,1),&
+                                    !   & shiftedAtomPos(:),shiftedPotPos(:))
 
                                     ! Accumulate results returned for alpha set.
                                     do q = 1, spin
@@ -615,14 +636,28 @@ subroutine intgAndOrMom(doINTG)
                                        & currentPotCoeff(q)
                                     enddo
                                  else
-
-                                    call nucPotInteg (oneAlphaSet,&
-                                       & currentlmAlphaIndex (alphaIndex(1),1),&
-                                       & currentlmAlphaIndex (alphaIndex(2),2),&
-                                       & currentAlphas(alphaIndex(1),1),&
+                                   ! Calculate the opcode to do the correct set
+                                   ! of integrals for the current alpha pair
+                                   l1l2Switch = ishft(1,&
+                                     &(powerOfTwo(currentlmAlphaIndex(alphaIndex(1),1))))&
+                                     &+ ishft(16,&
+                                     &(powerOfTwo(currentlmAlphaIndex(alphaIndex(2),2))))
+                                   
+                                   call nucPotInteg (currentAlphas(alphaIndex(1),1),&
                                        & currentAlphas(alphaIndex(2),2),&
                                        & currentPotAlpha,currentPosition(:,1),&
-                                       & shiftedAtomPos(:),shiftedPotPos(:))
+                                       & shiftedAtomPos(:),shiftedPotPos(:),&
+                                       & l1l2Switch,oneAlphaSet)
+
+
+
+                                    !call nucPotInteg (oneAlphaSet,&
+                                    !   & currentlmAlphaIndex (alphaIndex(1),1),&
+                                    !   & currentlmAlphaIndex (alphaIndex(2),2),&
+                                    !   & currentAlphas(alphaIndex(1),1),&
+                                    !   & currentAlphas(alphaIndex(2),2),&
+                                    !   & currentPotAlpha,currentPosition(:,1),&
+                                    !   & shiftedAtomPos(:),shiftedPotPos(:))
 
                                     ! Accumulate results returned for alpha set.
                                     do q = 1, spin
@@ -645,13 +680,27 @@ subroutine intgAndOrMom(doINTG)
                         enddo ! (n numCurrentPotAlphas+1)
                      enddo ! (m numPots (inequivalent))
 
-                     ! Determine the kinetic energy contribution
-                     call KEInteg (oneAlphaSet,&
-                           & currentlmAlphaIndex (alphaIndex(1),1),&
-                           & currentlmAlphaIndex (alphaIndex(2),2),&
-                           & currentAlphas(alphaIndex(1),1),&
+
+		     ! Calculate the opcode to do the correct set of integrals
+                     ! for the current alpha pair
+                     l1l2Switch = ishft(1,&
+                       &(powerOfTwo(currentlmAlphaIndex(alphaIndex(1),1))))&
+                       &+ ishft(16,&
+                       &(powerOfTwo(currentlmAlphaIndex(alphaIndex(2),2))))
+
+                   ! Determine the kinetic energy contribution
+                     call KEInteg (currentAlphas(alphaIndex(1),1),&
                            & currentAlphas(alphaIndex(2),2),&
-                           & currentPosition(:,1),shiftedAtomPos(:))
+                           & currentPosition(:,1), shiftedAtomPos(:),&
+                           & l1l2Switch, oneAlphaSet)
+
+                     ! Determine the kinetic energy contribution
+                     !call KEInteg (oneAlphaSet,&
+                     !      & currentlmAlphaIndex (alphaIndex(1),1),&
+                     !      & currentlmAlphaIndex (alphaIndex(2),2),&
+                     !      & currentAlphas(alphaIndex(1),1),&
+                     !      & currentAlphas(alphaIndex(2),2),&
+                     !      & currentPosition(:,1),shiftedAtomPos(:))
 
                      ! Accumulate the contribution from this alpha pair
                      do m = 1, spin
@@ -666,25 +715,51 @@ subroutine intgAndOrMom(doINTG)
                               & (alphaIndex(2),2))
                      enddo
 
+               ! Calculate the opcode to do the correct set of integrals
+               ! for the current alpha pair
+                l1l2Switch = ishft(1,&
+                  &(powerOfTwo(currentlmAlphaIndex(alphaIndex(1),1))))&
+                  &+ ishft(16,&
+                  &(powerOfTwo(currentlmAlphaIndex(alphaIndex(2),2))))
+                
+                !print*,l1l2Switch
+                ! We can proceed with the next step of the calculation.
+                ! This is the actual integral.
+                call overlapInteg (currentAlphas(alphaIndex(1),1),&
+                  & currentAlphas(alphaIndex(2),2), &
+                  & currentPosition(:,1), shiftedAtomPos(:),&
+                  & l1l2Switch, oneAlphaSet)
+
 
                      ! Compute the atomic overlap for this atom pair.
-                     call overlapInteg (oneAlphaSet,&
-                           & currentlmAlphaIndex (alphaIndex(1),1),&
-                           & currentlmAlphaIndex (alphaIndex(2),2),&
-                           & currentAlphas(alphaIndex(1),1),&
-                           & currentAlphas(alphaIndex(2),2),&
-                           & currentPosition(:,1),shiftedAtomPos(:))
+                     !call overlapInteg (oneAlphaSet,&
+                     !      & currentlmAlphaIndex (alphaIndex(1),1),&
+                     !      & currentlmAlphaIndex (alphaIndex(2),2),&
+                     !      & currentAlphas(alphaIndex(1),1),&
+                     !      & currentAlphas(alphaIndex(2),2),&
+                     !      & currentPosition(:,1),shiftedAtomPos(:))
                   endif
 
 
                   ! Compute the momentum matrix values if requested.
                   if (doMOME == 1) then
-                     call MOMF (oneAlphaSetMom,&
-                           & currentlmAlphaIndex (alphaIndex(1),1),&
-                           & currentlmAlphaIndex (alphaIndex(2),2),&
-                           & currentAlphas(alphaIndex(1),1),&
+                     ! Calculate the opcode to do the correct set
+                     ! of integrals for the current alpha pair
+                     l1l2Switch = ishft(1,&
+                        & (powerOfTwo(currentlmAlphaIndex(alphaIndex(1),1))))&
+                        & + ishft(16,&
+                        & (powerOfTwo(currentlmAlphaIndex(alphaIndex(2),2))))
+
+                     call MOMF (currentAlphas(alphaIndex(1),1),&
                            & currentAlphas(alphaIndex(2),2),&
-                           & currentPosition(:,1),shiftedAtomPos(:))
+                           & currentPosition(:,1), shiftedAtomPos(:),&
+                           & l1l2Switch, oneAlphaSetMom)
+                     !call MOMF (oneAlphaSetMom,&
+                     !      & currentlmAlphaIndex (alphaIndex(1),1),&
+                     !      & currentlmAlphaIndex (alphaIndex(2),2),&
+                     !      & currentAlphas(alphaIndex(1),1),&
+                     !      & currentAlphas(alphaIndex(2),2),&
+                     !      & currentPosition(:,1),shiftedAtomPos(:))
                   endif
 
                   ! Collect the results of the overlap of the current alpha
@@ -847,7 +922,7 @@ subroutine intgAndOrMom(doINTG)
             !   necessary counters for the next chunk.
             if (cumulDataSize .ge. targetChunkSize) then
 
-               call saveCurrentAccumulation(doINTG)
+               call saveCurrentAccumulation(doINTG,doMOME)
 
                ! Set a flag if the data was recorded as an exact fit.  It is
                !   possible that the last bit of data will not be large enough
@@ -875,7 +950,7 @@ subroutine intgAndOrMom(doINTG)
 
       ! Make an explicit call to save the accumulated data if there is any need.
       if (exactFit .eq. 0) then
-         call saveCurrentAccumulation(doINTG)
+         call saveCurrentAccumulation(doINTG,doMOME)
       endif
 
       ! Reset the totalDataCounter and cumulative data size stored.
@@ -883,7 +958,7 @@ subroutine intgAndOrMom(doINTG)
       cumulDataSize   = 0
 
       ! Close up the HDF data for this atom.
-      call closeAtomHDF (doINTG)
+      call closeAtomHDF (doINTG,doMOME)
 
       ! Mark the completion of this atom.
       if (mod(i,10) .eq. 0) then
@@ -930,7 +1005,7 @@ end subroutine intgAndOrMom
 
 
 
-subroutine initAtomHDF (i,doINTG)
+subroutine initAtomHDF (i,doINTG,doMOME)
 
    ! Import the necessary modules
    use O_Kinds
@@ -950,6 +1025,7 @@ subroutine initAtomHDF (i,doINTG)
    ! Define the data structure variables passed to this subroutine
    integer :: i ! Current atom 1 index number
    integer :: doINTG
+   integer, intent(in) :: doMOME
 
    ! Define local variables needed for HDF file computations
    character*30 :: currentName
@@ -1409,7 +1485,7 @@ subroutine initAtomHDF (i,doINTG)
 end subroutine initAtomHDF
 
 
-subroutine closeAtomHDF (doINTG)
+subroutine closeAtomHDF (doINTG,doMOME)
 
    ! Import the necessary modules
    use O_Kinds
@@ -1423,6 +1499,7 @@ subroutine closeAtomHDF (doINTG)
 
    ! Define the dummy variables passed to this subroutine
    integer :: doINTG
+   integer, intent(in) :: doMOME
 
    ! Define local variables
    integer :: hdferr
@@ -1511,7 +1588,7 @@ end subroutine closeAtomHDF
 
 
 
-subroutine saveCurrentAccumulation(doINTG)
+subroutine saveCurrentAccumulation(doINTG,doMOME)
 
    ! Import the necessary modules
    use O_Kinds
@@ -1525,6 +1602,7 @@ subroutine saveCurrentAccumulation(doINTG)
 
    ! Define the data structure variables passed to this subroutine
    integer :: doINTG
+   integer, intent(in) :: doMOME
 
    ! Define local variables
    integer :: hdferr

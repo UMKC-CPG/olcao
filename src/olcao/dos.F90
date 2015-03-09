@@ -16,7 +16,7 @@ module O_DOS
 
    contains
 
-subroutine computeIterationTDOS
+subroutine computeIterationTDOS(inDat)
 
    ! Import the necessary modules.
    use O_Kinds
@@ -31,6 +31,10 @@ subroutine computeIterationTDOS
    ! Make sure that no variables are declared accidentally.
    implicit none
 
+   ! define passed parameters
+   type(inputData) :: inDat
+
+
    ! Define local variables
    integer :: i,j,k,l
    real (kind=double) :: sigmaSqrtPi
@@ -38,24 +42,24 @@ subroutine computeIterationTDOS
    real (kind=double) :: expFactor
 
    ! Compute local factors from input data.
-   sigmaSqrtPi = sqrt(pi) * sigmaDOS  ! Normalization for Gaussian broadening.
+   sigmaSqrtPi = sqrt(pi) * inDat%sigmaDOS  ! Normalization for Gaussian broadening.
 
    if (.not. allocated(tdos)) then
 
       ! Determine the number of energy buckets to be computed for.
-      numEnergyPoints = int((emaxDOS - eminDOS ) / deltaDOS)
+      numEnergyPoints = int((inDat%emaxDOS - inDat%eminDOS ) / inDat%deltaDOS)
 
       ! Allocate memory to hold the data for those points.
       allocate (tdos(numEnergyPoints,spin,lastIteration))
       allocate (energyScale(numEnergyPoints))
-      allocate (currentEnergyValues(numStates))
+      allocate (currentEnergyValues(inDat%numStates))
 
       ! Initialize the data for accumulation.
       tdos(:,:,:) = 0.0_double
 
       ! Compute the values for the energy scale.
       do i = 1, numEnergyPoints
-         energyScale(i) = eminDOS + (i-1) * deltaDOS
+         energyScale(i) = inDat%eminDOS + (i-1) * inDat%deltaDOS
       enddo
    endif
 
@@ -68,7 +72,7 @@ subroutine computeIterationTDOS
          !   level.
          currentEnergyValues(:) = (energyEigenValues(:,j,i) - occupiedEnergy)
 
-         do k = 1, numStates
+         do k = 1, inDat%numStates
 
             ! Apply broadening to each state.
             do l = 1, numEnergyPoints
@@ -76,7 +80,7 @@ subroutine computeIterationTDOS
                ! Compute the exponential term for the broadening of this point.
                !   Note that from the usual Gaussian term of exp(-alpha*x^2)
                !   we are have (eV-eS)^2 = x^2 and (1/sigma)^2 = alpha.
-               expTerm = ((currentEnergyValues(k)-energyScale(l))/sigmaDOS)**2
+               expTerm = ((currentEnergyValues(k)-energyScale(l))/inDat%sigmaDOS)**2
 
                ! If the exponential term is less than 50 we apply the
                !   broadening.
@@ -142,7 +146,7 @@ subroutine printIterationTDOS
 !      write (fileID,*) "object 1 class gridpositions counts ",numEnergyPoints,&
 !            & currIteration
 !      write (fileID,*) "origin -30 0"
-!      write (fileID,*) "delta ",dosInput%deltaDOS,0.0_double
+!      write (fileID,*) "delta ",dosInput%inDat%deltaDOS,0.0_double
 !      write (fileID,*) "delta ",0.0_double,1.0_double
 !      write (fileID,*)
 
@@ -206,7 +210,7 @@ enddo
 end subroutine printIterationTDOS
 
 
-subroutine computeDOS
+subroutine computeDOS(inDat,clp)
 
    ! Import the necessary modules.
    use O_Kinds
@@ -224,6 +228,10 @@ subroutine computeDOS
 
    ! Make sure that no funny variables are used.
    implicit none
+
+   ! Define passed variables.
+   type(inputData) :: inDat
+   type(commandLineParameters), intent(in) :: clp ! from O_CommandLine
 
    ! Define local variables.
    integer :: h,i,j,k,l ! Loop index variables
@@ -280,35 +288,35 @@ subroutine computeDOS
 
 
    ! Compute local factors from input data.
-   sigmaSqrtPi = sqrt(pi) * sigmaDOS  ! Normalization for Gaussian broadening.
+   sigmaSqrtPi = sqrt(pi) * inDat%sigmaDOS  ! Normalization for Gaussian broadening.
 
    ! Allocate arrays and matrices for this computation.
    allocate (pdosIndex       (valeDim))
    allocate (numAtomStates   (numAtomSites))
-   if     (detailCodePDOS == 0) then ! Store DOS for each type's orbital sum.
+   if     (inDat%detailCodePDOS == 0) then ! Store DOS for each type's orbital sum.
       allocate (cumulNumDOS  (numAtomTypes + 1))
       allocate (pdosAccum    (valeDim))
-   elseif (detailCodePDOS == 1) then ! Store DOS for each atom's TDOS.
-      allocate (cumulNumDOS  (1)) ! Unused for this detailCodePDOS.
+   elseif (inDat%detailCodePDOS == 1) then ! Store DOS for each atom's TDOS.
+      allocate (cumulNumDOS  (1)) ! Unused for this inDat%detailCodePDOS.
       allocate (pdosAccum    (numAtomSites))
-   elseif (detailCodePDOS == 2) then ! Store DOS for each QN_nl resolved atom.
+   elseif (inDat%detailCodePDOS == 2) then ! Store DOS for each QN_nl resolved atom.
       allocate (cumulNumDOS  (numAtomSites + 1))
       allocate (pdosAccum    (valeDim))
-   elseif (detailCodePDOS == 3) then ! Store DOS for each QN_nlm resolved atom.
+   elseif (inDat%detailCodePDOS == 3) then ! Store DOS for each QN_nlm resolved atom.
       allocate (cumulNumDOS  (numAtomSites + 1))
       allocate (pdosAccum    (valeDim))
    endif
 #ifndef GAMMA
    allocate      (waveFnSqrd (valeDim))
    allocate      (valeValeOL (valeDim,valeDim,1,1))   !Holds overlap.
-   if (doDOS == 0) then  ! If true then we are not in the SCF phase.
-      allocate   (valeVale(valeDim,numStates,1,1)) !Holds wave functions.
+   if (clp%doDOS == 0) then  ! If true then we are not in the SCF phase.
+      allocate   (valeVale(valeDim,inDat%numStates,1,1)) !Holds wave functions.
    endif
 #else
    allocate      (waveFnSqrdGamma (valeDim))
    allocate      (valeValeOLGamma (valeDim,valeDim,1))   !Holds overlap.
-   if (doDOS == 0) then  ! If true then we are not in the SCF phase.
-      allocate   (valeValeGamma(valeDim,numStates,1)) !Holds wave functions
+   if (clp%doDOS == 0) then  ! If true then we are not in the SCF phase.
+      allocate   (valeValeGamma(valeDim,inDat%numStates,1)) !Holds wave functions
    endif
 #endif
 
@@ -340,7 +348,7 @@ subroutine computeDOS
    cumulNumDOS(:) = 0
    cumulDOSTotal  = 0
 
-   if (detailCodePDOS == 0) then
+   if (inDat%detailCodePDOS == 0) then
 
       ! Initialize counter to index the cumulative sum of QN_l orbitals for all
       !   atomic types.  (This PDOS will give a DOS for each QN_nl pair of each
@@ -357,7 +365,7 @@ subroutine computeDOS
       ! Record the total number of orbitals summed over all types.
       cumulDOSTotal = cumulNumDOS(numAtomTypes+1)
 
-   elseif (detailCodePDOS == 2) then
+   elseif (inDat%detailCodePDOS == 2) then
 
       ! Initialize counter to index the cumulative sum of QN_l orbitals for all
       !   atoms.  (This PDOS will give a DOS for each QN_nl pair of each atom.)
@@ -373,7 +381,7 @@ subroutine computeDOS
       ! Record the total number of orbitals summed over all atoms.
       cumulDOSTotal = cumulNumDOS(numAtomSites+1)
 
-   elseif (detailCodePDOS == 3) then
+   elseif (inDat%detailCodePDOS == 3) then
 
       ! Initialize counter to index the cumulative sum of QN_l orbitals for
       !   all atoms.  (This PDOS will give a DOS for each QN_nlm set for each
@@ -415,7 +423,7 @@ subroutine computeDOS
       !   with the index of this atom.  In the case where the PDOS is collected
       !   for each QN_nl pair of each atom the index is as in the first case
       !   that now we index for each atom as opposed to each type.
-      if (detailCodePDOS == 0) then
+      if (inDat%detailCodePDOS == 0) then
 
          numSQN_l = atomTypes(currentType)%numQN_lValeRadialFns(1)
          numPQN_l = atomTypes(currentType)%numQN_lValeRadialFns(2)
@@ -449,12 +457,12 @@ subroutine computeDOS
                pdosIndex(valeDimIndex) = initFIndex + j
             enddo
          enddo
-      elseif (detailCodePDOS == 1) then
+      elseif (inDat%detailCodePDOS == 1) then
          do j = 1, numAtomStates(i)
             valeDimIndex = valeDimIndex + 1
             pdosIndex(valeDimIndex) = i  ! NOTE THAT THIS IS 'i', NOT 'j'.
          enddo
-      elseif (detailCodePDOS == 2) then ! Consider s,p,d,f for each atom too.
+      elseif (inDat%detailCodePDOS == 2) then ! Consider s,p,d,f for each atom too.
 
          numSQN_l = atomTypes(currentType)%numQN_lValeRadialFns(1)
          numPQN_l = atomTypes(currentType)%numQN_lValeRadialFns(2)
@@ -488,7 +496,7 @@ subroutine computeDOS
                pdosIndex(valeDimIndex) = initFIndex + j
             enddo
          enddo
-      elseif (detailCodePDOS == 3) then
+      elseif (inDat%detailCodePDOS == 3) then
          do j = 1, numAtomStates(i)
             valeDimIndex = valeDimIndex + 1
             pdosIndex(valeDimIndex) = valeDimIndex ! Each QN_nlm is saved.
@@ -497,30 +505,30 @@ subroutine computeDOS
    enddo
 
    ! Determine the number of energy buckets to be computed for.
-   numEnergyPoints = int((emaxDOS - eminDOS ) / deltaDOS)
+   numEnergyPoints = int((inDat%emaxDOS - inDat%eminDOS ) / inDat%deltaDOS)
 
    ! Allocate space to hold the pdos and localization index results
-   allocate (localizationIndex (numStates))
+   allocate (localizationIndex (inDat%numStates))
    allocate (energyScale       (numEnergyPoints))
    allocate (totalSystemDos    (numEnergyPoints))
    allocate (electronNumber    (maxNumValeStates,numAtomSites))
-   allocate (energyValuesAvg   (numStates))
-   if     (detailCodePDOS == 0) then ! Save DOS according to orbitals
+   allocate (energyValuesAvg   (inDat%numStates))
+   if     (inDat%detailCodePDOS == 0) then ! Save DOS according to orbitals
       allocate (pdosComplete      (cumulDOSTotal,numEnergyPoints))
       allocate (totalTypeDos      (numEnergyPoints))
-   elseif (detailCodePDOS == 1) then ! Save DOS according to atoms
+   elseif (inDat%detailCodePDOS == 1) then ! Save DOS according to atoms
       allocate (pdosComplete      (numAtomSites,numEnergyPoints))
-   elseif (detailCodePDOS == 2) then ! Save DOS according to atom and orbitals.
+   elseif (inDat%detailCodePDOS == 2) then ! Save DOS according to atom and orbitals.
       allocate (pdosComplete      (cumulDOSTotal,numEnergyPoints))
       allocate (totalAtomDos      (numEnergyPoints))
-   elseif (detailCodePDOS == 3) then ! Save DOS by select atoms and lm QNs.
+   elseif (inDat%detailCodePDOS == 3) then ! Save DOS by select atoms and lm QNs.
       allocate (pdosComplete      (cumulDOSTotal,numEnergyPoints)) !valeDim
       allocate (totalAtomDos      (numEnergyPoints))
    endif
 
    ! Assign values to the energy scale.
    do i = 1, numEnergyPoints
-      energyScale(i) = eminDOS + (i-1) * deltaDOS
+      energyScale(i) = inDat%eminDOS + (i-1) * inDat%deltaDOS
    enddo
 
    do h = 1, spin
@@ -544,21 +552,21 @@ subroutine computeDOS
 
 
          ! Determine if we are doing the DOS in a post-SCF calculation, or
-         !   within an SCF calculation.  (The doDOS flag is only set to true
+         !   within an SCF calculation.  (The clp%doDOS flag is only set to true
          !   within an SCF calculation because that is the only place that this
          !   option makes sense to use.  In a post-SCF case, the DOS job was
          !   explicitly asked for by the user and so this request flag is not
          !   used.)
-         if (doDOS == 1) then
+         if (clp%doDOS == 1) then
             ! Read necessary data from SCF (setup,main) data structures.
-            call readDataSCF(h,i)
+            call readDataSCF(h,i,inDat%numStates)
          else
             ! Read necessary data from post SCF (intg,band) data structures.
-            call readDataPSCF(h,i)
+            call readDataPSCF(h,i,inDat%numStates)
          endif
 
 
-         do j = 1, numStates
+         do j = 1, inDat%numStates
 
             ! Determine the occupancy number for this state.  The default
             !   assumption is that each state contains 2 electrons.  This is
@@ -639,7 +647,7 @@ subroutine computeDOS
                !   Note that from the usual Gaussian term of exp(-alpha*x^2)
                !   we are have (eV-eS)^2 = x^2 and (1/sigma)^2 = alpha.
                expTerm = &
-                     & ((energyEigenValues(j,i,h)-energyScale(k))/sigmaDOS)**2
+                     & ((energyEigenValues(j,i,h)-energyScale(k))/inDat%sigmaDOS)**2
 
                ! If the exponential term is less than 50 we apply the
                !   broadening.
@@ -650,7 +658,7 @@ subroutine computeDOS
                   !   bucket we are considering be filled with the right number
                   !   of electrons.  The pdosAccum below already has the
                   !   1/spin factor included.  Note that the hartree conversion
-                  !   must be included here because the sigmaDOS was in units
+                  !   must be included here because the inDat%sigmaDOS was in units
                   !   of hartree, but the expTerm was not (because the energy
                   !   values were also in hartree).  This left a hartree factor
                   !   that was uncompensated for in the sigmaSqrtPi.
@@ -662,7 +670,7 @@ subroutine computeDOS
                         & expFactor
                endif
             enddo
-         enddo ! (j numStates)
+         enddo ! (j inDat%numStates)
 
          ! Record that this kpoint has been finished.
          if (mod(i,10) .eq. 0) then
@@ -691,13 +699,13 @@ subroutine computeDOS
       enddo
 
 
-      ! Compute the number of electron states present in the range of eminDOS
-      !   to emaxDOS for this spin orientation or combination.
+      ! Compute the number of electron states present in the range of inDat%eminDOS
+      !   to inDat%emaxDOS for this spin orientation or combination.
       numStatesInRange = 0.0_double
       do i = 1, numKPoints
-         do j = 1, numStates
-            if ((energyEigenValues(j,i,h) > eminDOS) .and. &
-                  & (energyEigenValues(j,i,h) < emaxDOS)) then
+         do j = 1, inDat%numStates
+            if ((energyEigenValues(j,i,h) > inDat%eminDOS) .and. &
+                  & (energyEigenValues(j,i,h) < inDat%emaxDOS)) then
                numStatesInRange = numStatesInRange + kPointWeight(i) / &
                      & real(spin,double)
             endif
@@ -717,7 +725,7 @@ subroutine computeDOS
       energyLevelCounter = 0
       do i = 1, numKPoints
          do j = 1, spin
-            do k = 1, numStates
+            do k = 1, inDat%numStates
                energyLevelCounter = energyLevelCounter + 1
                ! Accumulate only electrons for the current spin orientation.
                !   In the case of spin non-polarized calculations we will
@@ -749,7 +757,7 @@ subroutine computeDOS
       !   the number of electron spin states available in the system
       !   (occupied + unoccupied) OVER THE REQUESTED ENERGY RANGE ONLY!
       integratedArea = sum(totalSystemDos(1:numEnergyPoints - 1) + &
-            & totalSystemDos(2:numEnergyPoints)) * deltaDOS * 0.5_double
+            & totalSystemDos(2:numEnergyPoints)) * inDat%deltaDOS * 0.5_double
 
       ! Record the exact values and calculated values for electrons and states.
       write (20,*) 'Electrons Calculated:    ',totalElectronsComputed
@@ -767,7 +775,7 @@ subroutine computeDOS
       enddo
 
 
-      if (detailCodePDOS == 0) then ! Loop over types for the types-based DOS
+      if (inDat%detailCodePDOS == 0) then ! Loop over types for the types-based DOS
 
          ! Print the key bits of information for the PDOS output.
          write (69+h,fmt="(a10,i6)") 'NUM_UNITS ',numAtomTypes
@@ -842,7 +850,7 @@ subroutine computeDOS
                endif
             enddo
          enddo
-      elseif (detailCodePDOS == 1) then ! Loop over atoms for the atom-based DOS
+      elseif (inDat%detailCodePDOS == 1) then ! Loop over atoms for the atom-based DOS
 
          ! Print the key bits of information for the PDOS output.
          write (69+h,fmt="(a10,i6)") 'NUM_UNITS ', numAtomSites
@@ -874,7 +882,7 @@ subroutine computeDOS
                write (69+h,fmt="(f16.8)") pdosComplete(i,j)
             enddo
          enddo
-      elseif (detailCodePDOS == 2) then  ! Loop over atoms & orbitals (valeDim).
+      elseif (inDat%detailCodePDOS == 2) then  ! Loop over atoms & orbitals (valeDim).
 
          ! Print the key bits of information for the PDOS output.
          write (69+h,fmt="(a10,i6)") 'NUM_UNITS ',numAtomSites
@@ -958,7 +966,7 @@ subroutine computeDOS
                endif
             enddo
          enddo
-      elseif (detailCodePDOS == 3) then  ! Loop over atoms and QN_nlm orbitals.
+      elseif (inDat%detailCodePDOS == 3) then  ! Loop over atoms and QN_nlm orbitals.
 
          ! Print the key bits of information for the PDOS output.
          write (69+h,fmt="(a10,i6)") 'NUM_UNITS ',numAtomSites
@@ -1064,7 +1072,7 @@ subroutine computeDOS
 
          ! Collect weighted sum of the energy for this kpoint over all states.
          energyValuesAvg(:) = energyValuesAvg(:) + &
-               & energyEigenValues(:numStates,i,h) * kPointWeight(i)
+               & energyEigenValues(:inDat%numStates,i,h) * kPointWeight(i)
       enddo
 
       ! Divide the result by two since the sum of kpoint weights is two and not
@@ -1074,18 +1082,18 @@ subroutine computeDOS
 
       ! Record the results to disk as the localization index for each state,
       !   converting the energy scale to eV.
-      do i = 1, numStates
+      do i = 1, inDat%numStates
          write (79+h,fmt="(1x,f14.8,2x,f14.8)") energyValuesAvg(i) * hartree,&
                & localizationIndex(i)
       enddo
    enddo ! (h spin)
 
    ! Deallocate all the unnecessary matrices and arrays
-   if (detailCodePDOS == 0) then
+   if (inDat%detailCodePDOS == 0) then
       deallocate (totalTypeDos)
-   elseif (detailCodePDOS == 2) then
+   elseif (inDat%detailCodePDOS == 2) then
       deallocate (totalAtomDos)
-   elseif (detailCodePDOS == 3) then
+   elseif (inDat%detailCodePDOS == 3) then
       deallocate (totalAtomDos)
    endif
    deallocate (cumulNumDOS)
@@ -1099,13 +1107,13 @@ subroutine computeDOS
    deallocate (electronNumber)
 #ifndef GAMMA
    deallocate (waveFnSqrd)
-   if (doDOS == 0) then
+   if (clp%doDOS == 0) then
       deallocate (valeVale)
       deallocate (valeValeOL)
    endif
 #else
    deallocate (waveFnSqrdGamma)
-   if (doDOS == 0) then
+   if (clp%doDOS == 0) then
       deallocate (valeValeGamma)
       deallocate (valeValeOLGamma)
    endif

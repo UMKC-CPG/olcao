@@ -1,4 +1,4 @@
-#!/usr/bin/perl
+#!/bin/env perl
 #PROGRAM:  makeSGDB
 #PURPOSE:  This program is used to create a data base of space groups and their
 #          symmetry operations for use in reading the olcao.dat input files.
@@ -17,7 +17,7 @@
 
 # Use necessary modules.
 use strict;
-use warnings;
+#use warnings;
 use Env;
 use lib "$OLCAO_BIN/perl5";
 use StructureControl;

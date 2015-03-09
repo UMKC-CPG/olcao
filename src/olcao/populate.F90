@@ -32,7 +32,9 @@ module O_Populate
          ! this array corresponds to the index number of the sorted energy
          ! eigen value array.  The value in this array corresponds to the index
          ! of the original unsorted array.  (Note that while the original
-         ! array is not sorted, it is grouped by kpoint, spin, and then state.)
+         ! array is not sorted, it is grouped by kpoint, spin, and then state.
+         ! Thus, given a kpoint, spin, and state it is possible to deduce the
+         ! appropriate index number to use.)
    integer, dimension(6,4) :: QN_nlOrderIndex ! The first index is the QN_n,
          ! and the second index is the QN_l+1 (because Fortran starts counting
          ! array indices at 1).  The value is the order of the state from
@@ -104,7 +106,7 @@ module O_Populate
 !     that triplet includes.  FORTUNATELY, we thought ahead and grouped the
 !     values according to their kpoint.  So, we just have to do a simple
 !     integer division to get the kpoint number:
-!     e.g. 1+(indexArray(i)-1) / (numStates*spin).  Once the cumulative
+!     e.g. 1+(indexArray(i)-1) / (inDat%numStates*spin).  Once the cumulative
 !     number of electrons is the same as the number of electrons in the
 !     system, we abort the loop.
 ! 5)  There is one issue with the highest occupied state.  If it turns out
@@ -127,17 +129,19 @@ module O_Populate
 !     populated.
 
 
-subroutine populateStates
+subroutine populateStates(inDat,clp)
 
    ! Import necessary modules.
    use O_Kinds
    use O_Constants
+   use O_input
    use O_TimeStamps
-   use O_Input ! For thermalSigma
-   use O_CommandLine ! For excitedQN_n
+   use O_CommandLine ! For clp%excitedQN_n
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
+   type(inputData) :: inDat
+   type(commandLineParameters), intent(in) :: clp
 
    ! Define the local variables used in this subroutine.
 
@@ -146,17 +150,17 @@ subroutine populateStates
 
    ! In the case that this is a XANES/ELNES type of calculation then we must
    !   initialize the core state structures if they have not yet been set up.
-   if ((excitedQN_n /= 0) .and. (coreStructInit == 0)) then
-      call initCoreStateStructures
+   if ((clp%excitedQN_n /= 0) .and. (coreStructInit == 0)) then
+      call initCoreStateStructures(clp)
    endif
 
    ! Always populate the states in the standard way.
-   call populateStandard
+   call populateStandard(inDat,clp)
 
    ! If the thermal smearing parameter is non-zero, then we continue the
    !   population using the thermal smearing scheme.
-   if (thermalSigma /= 0.0_double) then
-      call populateSmearing
+   if (inDat%thermalSigma /= 0.0_double) then
+      call populateSmearing(inDat,clp)
    endif
 
    ! Write out the calculated occupied energy (Fermi energy for metals) in eV.
@@ -169,7 +173,7 @@ subroutine populateStates
 end subroutine populateStates
 
 
-subroutine populateStandard
+subroutine populateStandard(inDat,clp)
 
    ! Import necessary modules.
    use O_Kinds
@@ -184,6 +188,10 @@ subroutine populateStandard
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
+
+   ! Define passed parameters.
+   type(inputData) :: inDat
+   type(commandLineParameters), intent(in) :: clp
 
    ! Define the local variables used in this subroutine.
    integer :: i,j,k ! Loop index variables
@@ -210,14 +218,14 @@ subroutine populateStandard
    ! These arrays will be deallocated in makeValenceRho after the kpoint
    !   loop because they are not needed until the next scf iteration after that
    !   point.
-   allocate (electronPopulation      (numStates*numKPoints*spin))
-   allocate (sortedEnergyEigenValues (numStates*numKPoints*spin))
-   allocate (indexEnergyEigenValues  (numStates*numKPoints*spin))
+   allocate (electronPopulation      (inDat%numStates*numKPoints*spin))
+   allocate (sortedEnergyEigenValues (inDat%numStates*numKPoints*spin))
+   allocate (indexEnergyEigenValues  (inDat%numStates*numKPoints*spin))
 
 
    ! These arrays are used only for sorting and will be deallocated here.
-   allocate (segmentBorders        (numStates*numKPoints*spin+1))
-   allocate (tempEnergyEigenValues (numStates*numKPoints*spin))
+   allocate (segmentBorders        (inDat%numStates*numKPoints*spin+1))
+   allocate (tempEnergyEigenValues (inDat%numStates*numKPoints*spin))
 
    ! Sort the energy eigen values in ascending order for populating.  This is
    !   done once at the beginning of this subroutine and the sorted order is
@@ -230,7 +238,7 @@ subroutine populateStandard
    tripletCounter = 0
    do i = 1, numKPoints
       do j = 1, spin
-         do k = 1, numStates
+         do k = 1, inDat%numStates
             tripletCounter = tripletCounter + 1
             tempEnergyEigenValues(tripletCounter) = energyEigenValues(k,i,j)
          enddo
@@ -239,7 +247,7 @@ subroutine populateStandard
 
 
    ! Initialize the segment borders to each individual array slot.
-   numSegments = numStates * numKPoints * spin
+   numSegments = inDat%numStates * numKPoints * spin
    segmentBorders(1) = 0
    do i = 1, numSegments
       segmentBorders (i+1) = i
@@ -278,9 +286,9 @@ subroutine populateStandard
    
 
    ! First we determine if it is necessary to artificially increment the
-   !   numElectrons in the system by one due to xanes excitation.
-   if (excitedQN_n /= 0) then
-      numElectrons = numElectrons + 1
+   !   inDat%numElectrons in the system by one due to xanes excitation.
+   if (clp%excitedQN_n /= 0) then
+      inDat%numElectrons = inDat%numElectrons + 1
    endif
 
 
@@ -296,7 +304,7 @@ subroutine populateStandard
       !   get the index for the kPointWeight.  The reason this works is because
       !   the energy values were grouped by their kpoints before sorting.
       electronPopulation(indexEnergyEigenValues(i)) = kPointWeight &
-            & (1+(indexEnergyEigenValues(i)-1)/(numStates*spin)) / &
+            & (1+(indexEnergyEigenValues(i)-1)/(inDat%numStates*spin)) / &
             & real(spin,double)
 
       ! Accumulate the electron population
@@ -307,21 +315,21 @@ subroutine populateStandard
       !   exceeds the number of electrons in the system.  If so, reduce the
       !   last populated level so that the total number of populated electrons
       !   equals the total number of electrons in the system.
-      if (populatedElectrons > numElectrons) then
+      if (populatedElectrons > inDat%numElectrons) then
 
          ! First adjust the actual population.
          electronPopulation(indexEnergyEigenValues(i)) = kPointWeight &
-            & (1+(indexEnergyEigenValues(i)-1)/(numStates*spin)) / &
-            & real(spin,double) + numElectrons - populatedElectrons
+            & (1+(indexEnergyEigenValues(i)-1)/(inDat%numStates*spin)) / &
+            & real(spin,double) + inDat%numElectrons - populatedElectrons
 
          ! Then adjust the record of the number of populated electrons.
-         populatedElectrons = numElectrons
+         populatedElectrons = inDat%numElectrons
 
       endif
 
       ! Abort the loop when the last electron has been populated, recording
       !   the occupied energy (fermi energy for metals) as we leave.
-      if (abs(numElectrons - populatedElectrons) < smallThresh) then
+      if (abs(inDat%numElectrons - populatedElectrons) < smallThresh) then
          occupiedEnergyIndex = i
          occupiedEnergy = sortedEnergyEigenValues(occupiedEnergyIndex)
          exit
@@ -345,7 +353,7 @@ subroutine populateStandard
    degenerateCharge = electronPopulation(indexEnergyEigenValues( &
          & occupiedEnergyIndex))
    possibleDegenCharge = kPointWeight(1+(indexEnergyEigenValues &
-            & (occupiedEnergyIndex)-1)/(numStates*spin)) / real(spin,double)
+         & (occupiedEnergyIndex)-1)/(inDat%numStates*spin)) / real(spin,double)
 
    ! The way to check for degeneracy is to first assume that the last populated
    !   state is not degenerate and then search higher and lower energy states
@@ -359,11 +367,11 @@ subroutine populateStandard
       ! Accumulate the amount of charge that *could* be held in the degenerate
       !   states.  (The possible charge.)
       possibleDegenCharge = possibleDegenCharge + kPointWeight &
-            & (1+(indexEnergyEigenValues(maxStateIndex)-1)/(numStates*spin))/&
-            & real(spin,double)
+            & (1+(indexEnergyEigenValues(maxStateIndex)-1) / &
+            & (inDat%numStates*spin)) / real(spin,double)
 
       ! Abort if we reach the bounds of the calculation.
-      if (maxStateIndex == numKPoints * numStates * spin) exit
+      if (maxStateIndex == numKPoints * inDat%numStates * spin) exit
    enddo
    do while (abs(occupiedEnergy - sortedEnergyEigenValues(minStateIndex-1)) <= &
          & smallThresh)
@@ -374,13 +382,13 @@ subroutine populateStandard
       ! Accumulate the amount of charge that *could* be held in the degenerate
       !   states.  (The possible charge.)
       possibleDegenCharge = possibleDegenCharge + kPointWeight &
-            & (1+(indexEnergyEigenValues(minStateIndex)-1)/(numStates*spin))/&
-            & real(spin,double)
+            & (1+(indexEnergyEigenValues(minStateIndex)-1) / &
+            & (inDat%numStates*spin)) / real(spin,double)
 
       ! Accumulate the amount of existing charge.
       degenerateCharge = degenerateCharge + kPointWeight &
-            & (1+(indexEnergyEigenValues(minStateIndex)-1)/(numStates*spin))/&
-            & real(spin,double)
+            & (1+(indexEnergyEigenValues(minStateIndex)-1) / &
+            & (inDat%numStates*spin)) / real(spin,double)
 
        ! Abort if we reach the bounds of the calculation.
       if (minStateIndex == 1) exit
@@ -391,7 +399,7 @@ subroutine populateStandard
    do i = minStateIndex, maxStateIndex
       electronPopulation(indexEnergyEigenValues(i)) = degenerateCharge / &
             & possibleDegenCharge * kPointWeight &
-            & (1+(indexEnergyEigenValues(i)-1)/(numStates*spin)) / &
+            & (1+(indexEnergyEigenValues(i)-1)/(inDat%numStates*spin)) / &
             & real(spin,double)
    enddo
 
@@ -402,14 +410,14 @@ subroutine populateStandard
 
    ! Now that all the levels have been populated we remove an electron from
    !   the level that had a xanes excitation applied to it (if applicable).
-   if (excitedQN_n /= 0) then
-      call correctCorePopulation
+   if (clp%excitedQN_n /= 0) then
+      call correctCorePopulation(inDat,clp)
    endif
 
 end subroutine populateStandard
 
 
-subroutine populateSmearing
+subroutine populateSmearing(inDat,clp)
 
    ! Import necessary modules.
    use O_Kinds
@@ -421,11 +429,13 @@ subroutine populateSmearing
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
+   type(inputdata) :: inDat
+   type(commandLineParameters), intent(in) :: clp
 
    ! Define the local variables used in this subroutine.
    integer :: i,j
    integer :: numSegments
-   real (kind=double) :: smearingRange
+   real (kind=double) :: fermiFunction
    real (kind=double) :: minEnergyInit
    real (kind=double) :: maxEnergyInit
    real (kind=double) :: minEnergy
@@ -433,24 +443,60 @@ subroutine populateSmearing
    real (kind=double) :: chargeSum
 
    ! Compute the number of energy eigen value terms.
-   numSegments = numStates * numKPoints * spin
+   numSegments = inDat%numStates * numKPoints * spin
 
-   ! Define the initial border extension range due to thermal smearing.  The
-   !   number chosen here is so that it is larger than any reasonable
-   !   electronic gap.  The unit here is atomic units, not eV.
-   smearingRange = 10
+   ! So the basic idea here is to make two posts that bound the possible
+   !   values of the fermi energy. The first guess for the fermi energy is in
+   !   the exact middle between the two posts. (Which will be in the middle of
+   !   the gap for an insulator.) Then we apply the smearing function and if
+   !   the integrated charge is too small we bring the minimum post up to the
+   !   current guess and if the integrated charge is too large we bring the
+   !   maximum post down to the current guess. Then we make a new guess between
+   !   the posts and evaluate the smearing function all over again.
 
-   ! Obtain the energy of the lowest populated level and the energy of the 
-   !   highest populated level as determined from phase one.
+   ! The first guess will be pretty close to correct for most systems. In the
+   !   case of most insulators with a gap this will put the fermi level right
+   !   in the middle of the gap and it will be correct on the first iteration.
+   !   In the case of metals or small gap semiconductors it may be close but
+   !   wrong on the first iteration. Then one border post will shift a lot (by
+   !   moving to the point of the zeroth fermi level guess) and the integrated
+   !   charge will be wrong for a few iterations while the two border posts
+   !   move closer to each other.
 
-   ! Initialize with values from the first kpoint.
-   minEnergyInit = sortedEnergyEigenValues(1)
-   maxEnergyInit = sortedEnergyEigenValues(occupiedEnergyIndex)
+   ! The process may be envisioned in the following sequence of interations in
+   !   the loop over variable i. Consider that the first guess integrates to a
+   !   charge that is too high. The high post moves in and the low post stays.
+   !   The new guess (1) will probably be way too low (the integrated charge
+   !   will be < the number of electrons). The low post moves up and the new
+   !   guess is made at (2) for the fermi level. In the figures we assume that
+   !   each of the subsequent guesses are too low (producing an integrated
+   !   charge that is too small). Thus, steps 3 and 4 are moves of the lower
+   !   post. Eventually, it will find a situation that is neither too high or
+   !   too low. This is the appropriate fermi level.
+   !   |                    0                   |
+   !   |          1         |
+   !              |    2    |
+   !                   |  3 |
+   !                      |4|
 
-   ! Adjust the min and max boundaries from the initial values by the thermal
-   !   smearing range.
-   minEnergy = minEnergyInit
-   maxEnergy = maxEnergyInit + smearingRange
+   ! The Fermi search range is given in the input (olcao.dat) file with a
+   !   default value of 13.6 eV (which is ~0.5 a.u.). This should realistically
+   !   encompass any appropriate search space for a fermi level because it is
+   !   13.6 eV lower than the highest occupied state and 13.6 eV higher than
+   !   the lowest unoccupied state. (By this time the value is stored in a.u.)
+
+   ! Initialize the min and max boundaries acording to the given thermal
+   !   smearing range and the highest occupied and lowest unoccupied states.
+   !   That is, the min boundary starts at the highest occupied minus some
+   !   defined smearing range while the max boundary starts at the lowest
+   !   occupied plus the same smearing range. (Thus the initial energy for the
+   !   fermi level will be the fermi energy (occupiedEnergy) determined above
+   !   in the non-smearing population subroutine that is always performed
+   !   before any smearing is done.
+   minEnergy = sortedEnergyEigenValues(occupiedEnergyIndex)   - &
+         & inDat%fermiSearchLimit
+   maxEnergy = sortedEnergyEigenValues(occupiedEnergyIndex+1) + &
+         & inDat%fermiSearchLimit
 
    ! Begin a search for the Fermi energy.  500 iterations should be enough. :)
    do i = 1,500
@@ -459,9 +505,9 @@ subroutine populateSmearing
       !   fill the energy levels in order again.
 
       ! So first we determine if it is necessary to artificially increment the
-      !   numElectrons in the system by one due to xanes excitation.
-      if (excitedQN_n /= 0) then
-         numElectrons = numElectrons + 1
+      !   inDat%numElectrons in the system by one due to xanes excitation.
+      if (clp%excitedQN_n /= 0) then
+         inDat%numElectrons = inDat%numElectrons + 1
       endif
 
       ! Make an initial guess for the Fermi energy (occupiedEnergy) as being
@@ -471,9 +517,21 @@ subroutine populateSmearing
       ! Initialize the counter of the number of electrons populated so far.
       chargeSum = 0.0_double
 
+      ! Initialize the electron population.
+      electronPopulation (:) = 0.0_double
+
       ! Start populating every state for every kpoint.
       do j = 1, numSegments
 
+         ! Compute fermi function multiplicative factor for this energy value.
+         fermiFunction = stepFunction((sortedEnergyEigenValues(j) - &
+               & occupiedEnergy) / inDat%thermalSigma,inDat%maxThermalRange)
+
+         ! Abort in the event that the fermi function is zero because all the
+         !   remaining energy values will also be zero.
+         if (fermiFunction == 0.0_double) then
+            exit
+         endif
 
          ! Weight the electron population for this state by the kpoint 
          !   weighting factor and divide by the spin value so that a
@@ -481,34 +539,40 @@ subroutine populateSmearing
          !   non-spin-polarized calculation has two electrons per state.  Then
          !   multiply by a smeared step function to smear the population.
          electronPopulation(indexEnergyEigenValues(j)) = (kPointWeight &
-               & (1+(indexEnergyEigenValues(j)-1)/(numStates*spin)) / &
-               & real(spin,double)) * stepFunction(( &
-               & sortedEnergyEigenValues(j)-occupiedEnergy) / thermalSigma)
+               & (1+(indexEnergyEigenValues(j)-1)/(inDat%numStates*spin)) / &
+               & real(spin,double)) * fermiFunction
 
-         ! Accumulate the electron population
+         ! Accumulate the electron population.
          chargeSum = chargeSum + electronPopulation(indexEnergyEigenValues(j))
 
       enddo
 
       ! Now that all the levels have been populated we remove an electron from
       !   the core level that had an excitation applied to it (if applicable).
-      if (excitedQN_n /= 0) then  ! If not a ground state type calculation.
-         call correctCorePopulation
+      !   We must also reduce the chargeSum by one because it also counted that
+      !   one core electron.
+      if (clp%excitedQN_n /= 0) then  ! If not a ground state type calculation.
+         call correctCorePopulation(inDat,clp)
+         chargeSum = chargeSum - 1
       endif
 
-      ! If the difference in charge between the correct nummElectrons and the
+      ! Record the integrated charge for posterity.
+!      write (20,fmt="(a8,e16.8,a10,i4,a11,e16.8)") "IntgChg=",chargeSum,&
+!            & " for iter ",i," occEnergy=",occupiedEnergy*hartree
+!      call flush (20)
+
+      ! If the difference in charge between the correct numElectrons and
       !   the just assigned chargeSum is sufficiently small then we can exit
       !   the population outer (i) loop since we have found the correct
       !   population values, and Fermi level.
-      if (abs(chargeSum - numElectrons) < smallThresh) then
+      if (abs(chargeSum - inDat%numElectrons) < smallThresh) then
          exit
       endif
 
-
-      ! Move the correct border value to the position of the last
+      ! Move one or the other border value to the position of the last
       !   Fermi energy.  The Fermi energy will be re-guessed in the next
       !   iteration.
-      if (chargeSum < numElectrons) then
+      if (chargeSum < inDat%numElectrons) then
          minEnergy = occupiedEnergy
       else
          maxEnergy = occupiedEnergy
@@ -518,7 +582,7 @@ subroutine populateSmearing
 end subroutine populateSmearing
 
 
-subroutine correctCorePopulation
+subroutine correctCorePopulation(inDat,clp)
 
    ! Import necessary modules.
    use O_Kinds
@@ -531,6 +595,10 @@ subroutine correctCorePopulation
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
+
+   !define passed variables
+   type(inputData) :: inDat ! from O_Input
+   type(commandLineParameters), intent(in) :: clp ! from O_CommandLine
 
    ! Define the local variables used in this subroutine.
    integer :: i
@@ -558,7 +626,8 @@ subroutine correctCorePopulation
    !   The -1 is the last state (without it we would mark the next higher
    !   orbital).
    finalState = initialState + numKPoints * spin * &
-         & numOrbitalStates(QN_nlOrderIndex(excitedQN_n,excitedQN_l+1)) - 1
+         & numOrbitalStates(QN_nlOrderIndex(clp%excitedQN_n,&
+         & clp%excitedQN_l+1)) - 1
 
    ! Remove a fraction of an electron from every kpoint/spin pair for the
    !   choice of QN_n, QN_l states.
@@ -567,25 +636,27 @@ subroutine correctCorePopulation
             & electronPopulation(indexEnergyEigenValues(i)) - &
             & electronPopulation(indexEnergyEigenValues(i)) * &
             & real(spin,double) / 2.0_double / &
-            & numOrbitalStates(QN_nlOrderIndex(excitedQN_n,excitedQN_l+1))
+            & numOrbitalStates(QN_nlOrderIndex(clp%excitedQN_n,&
+            & clp%excitedQN_l+1))
    enddo
 
-   ! We also restore the local numElectrons variable for the next part of
+   ! We also restore the local inDat%numElectrons variable for the next part of
    !   the OLCAO calculation that may rely on it.
-   numElectrons = numElectrons - 1
+   inDat%numElectrons = inDat%numElectrons - 1
 
 end subroutine correctCorePopulation
 
 
-subroutine initCoreStateStructures
+subroutine initCoreStateStructures(clp)
 
    ! Import necessary modules.
    use O_Kinds
-   use O_CommandLine ! excitedQN_n, and excitedQN_l
+   use O_CommandLine ! clp%excitedQN_n, and clp%excitedQN_l
    use O_Potential   ! For spin
 
    ! Make sure that nothing funny is accidentally used.
    implicit none
+   type(commandLineParameters), intent(in) :: clp ! from O_CommandLine
 
    ! Define local variables.
    integer :: i
@@ -629,13 +700,13 @@ subroutine initCoreStateStructures
 
    ! Determine the band index number of the requested core excitation
    !   (excluding the ground state of course).
-   if (excitedQN_n /= 0) then
+   if (clp%excitedQN_n /= 0) then
 
       ! Initialize the core state index number.
       excitedCoreStateIndex = 0
 
       ! Accumulate all the states except the core state to be excited.
-      do i = 1, QN_nlOrderIndex(excitedQN_n,excitedQN_l+1) - 1
+      do i = 1, QN_nlOrderIndex(clp%excitedQN_n,clp%excitedQN_l+1) - 1
          excitedCoreStateIndex = excitedCoreStateIndex + numOrbitalStates(i)
       enddo
 

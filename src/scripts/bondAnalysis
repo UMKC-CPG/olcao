@@ -1,4 +1,4 @@
-#!/usr/bin/perl
+#!/bin/env perl
 
 sub printHelp
 {
@@ -83,7 +83,7 @@ sub printHelp
 #   result in bad looking models.
 #The -3dparts option will produce a collection of OpenScad model files that
 #   contain descriptions of the individual parts associated with an atomic
-#   scale model. When the parts models are printed on a 3D printer then can be
+#   scale model. When the parts models are printed on a 3D printer they can be
 #   used to assemble a large complex 3D structural model. The three sub-options
 #   work the same way for this command as they do for the -3dfull option. The
 #   additional -vol option is used to specify the printable volume that the 3D
@@ -201,6 +201,15 @@ my @stdAtomBA;
 my $bondRadiusScale; # Used for openscad models. Default ratio of bond cylinder
                      #    radius to atomic covalent radius.
 $bondRadiusScale = 0.1; # 10%.
+
+# Useful kludges.
+my $atomLabel = 0;  # This stupid global variable is a product of laziness.  It
+                    #   keeps track of the number of atoms that have been
+                    #   labeled so far.
+
+
+# BEGIN NON-INITIALIZATION EXECTUION
+
 
 # Initialize the environment.
 &initEnv;
@@ -388,12 +397,12 @@ sub initEnv
    # Assume a scaling factor of 10.0 for the atom and cell size so that 1.0
    #   angstrom is equal to 10.0mm.
    $aScale = 10.0;
-   $cScale = 20.0;
+   $cScale = 10.0;
 
    # The scaling factor for the bond diameter is set equal to 1.0 so that when
    #   the default bond diameter of 10% of the largest covalent radius is
    #   computed that is what will be used.
-   $bScale = 2.0;
+   $bScale = 1.0;
 
    # Set the default volume to be 5% less than the max volume of the Prusa
    #   Mendle model 3D printer (measured in mm).
@@ -921,6 +930,7 @@ sub printOpenScad
    my $doParts = $_[0];
 
    # Define local variables.
+   my $xyz;
    my $atom;
    my $bond;
    my $out;
@@ -943,21 +953,76 @@ sub printOpenScad
    my @point1XYZ;
    my @point2XYZ;
    my @returnValue;
-   my @sheetPos;
+   my @sheetPos1;
+   my @sheetPos2;
    my @scaledCoords;
    my @scaledCoordsExt;
    my @scaledAtomRadius; # Scaled radius of each atom.
+   my @atomBondCount; # This is a size [$numAtoms] array. Each value is the
+                      #   current count of the number of bonds created for the
+                      #   indexed atom.
+   my @atomNumIndex; # An ordered index number for each of the atoms in the
+                     #   extended list of atoms being printed.
 
    # The basic approach that is used in this subroutine is to simultaneously
    #   allow for two different model printing methods.  The first is to create
    #   a complete model (cell, atoms, bonds) that is all conjoined as one
    #   giant union in one single file.  The second is to create the model in a
    #   set of files where the components of the model are disassembled and
-   #   printed in bricks and forests for manual assembly.
+   #   printed as a set of sheets for manual assembly.
 
    # The first approach may not be easy to actually print although it looks
    #   nice on a computer screen.  The second approach should be easier to
    #   print but it will require manual assembly.
+
+   # The basic algorithm for the first approach is relatively easy.  Use some
+   #   elementary modules for depositing a sphere at any point in space and for
+   #   depositing a rod (cylinder) at any point in space. Then create a module
+   #   that will deposite every bond and each of the eight cell vectors in
+   #   space and join them as a giant union (even though they may not be
+   #   touching). Note that all the bonds and vectors are arranged as they
+   #   would be found in the crystal model.  That is, they are not set up as
+   #   sheets here. Do a similar thing for the atoms (spheres). That is, create
+   #   a module that will print each of the spheres in space (not in sheets)
+   #   and join them as a single union even though they don't touch. Finally,
+   #   make a union of the bonds, vectors, and atoms.  The output is all in one
+   #   single file.
+
+   # The basic algorithm for the second approach is a bit more complicated.
+   #   Here, the atoms and bonds will be built and layed out in a set of files.
+   #   There will be a bunch of files for the atoms and a bunch for the bonds.
+   #   After the 3D printer prints the model it will be assembled by gathering
+   #   all the pieces together and putting the rods in the holes. The tricks
+   #   are that (1) when the atoms are printed in sheets, they will all have
+   #   to have holes in them in exactly the right places (angles); (2) after
+   #   printing there will be a bunch of pieces that all look almost exactly
+   #   the same. Thus, there will need to be labels on the pieces to
+   #   distinguish them. There will need to be three types of labels. Each atom
+   #   will need a label for the atom as a whole, then each hole on each atom
+   #   will need a label. Finally, each bond (rod) will need a label on each
+   #   end to identify which atom and which hole on which atom that end of the
+   #   bond is supposed to go in to.  This makes life a bit tricky.
+   # The approach that is used to make the holes in the atoms is to create the
+   #   same structure of rods used in the "first approach" described above.
+   #   That is, describe a structure with just the bonds and the cell vectors
+   #   in their appropriate positions in the crystalline cell in space. Then,
+   #   position each atom (one at a time) into that model in its appropriate
+   #   place and take a difference so that holes are established in the sphere
+   #   at the right angles. Then, move the atoms to their place in a sheet.
+   #   In the openScad file, this sequence reads a bit inside out. So, put
+   #   into the sheet the difference between an atom in its cell coordinates
+   #   and the structure containing all the bonds and cell vectors.
+   # For the labeling of the hole, an index number is used (1,2,3,...). The
+   #   label is placed near the hole as an indentation in the sphere.
+   # For labeling the atoms, and index symbol triplet is used (AAA,AAB,AAC,...,
+   #   AAZ,AAa,AAb,AAc,...AAz,ABA,ABB,ABC,...zzz. This will accomodate up to
+   #   52^3=140608 number of atoms in a given model. If this needs to be
+   #   increased I think that this can be done with relative ease by making
+   #   the string longer or by including 0..9 or other symbols or even other
+   #   fonts.  The label is placed somewhere away from the holes and other
+   #   labels.
+   # For labeling the bonds, the combination of atom label and atom-hole label
+   #   are used.
 
    # Scale the atomic coordinates.
    &scaleAtomicCoords(\@scaledCoords,\@scaledCoordsExt);
@@ -995,7 +1060,33 @@ sub printOpenScad
    $reducedBondInfoExt_ref = $returnValue[0];
    $reducedNumBondsExt = $returnValue[1];
 
-   # Compute the maximum bond length.
+   # Scale the bond lengths.
+   foreach $bond (1..$reducedNumBondsExt)
+      {$reducedBondInfoExt_ref->[$bond][3] *= $cScale;}
+
+   # Create an ordered sequence of the extended atom numbers associated with
+   #   the set of bonds being shown.
+   $atom = 0;
+   $reducedBondInfoExt_ref->[0][1] = 0;
+   $reducedBondInfoExt_ref->[0][2] = 0;
+   foreach $bond (1..$reducedNumBondsExt)
+   {
+      if ($reducedBondInfoExt_ref->[$bond][1] ==
+          $reducedBondInfoExt_ref->[$bond-1][1])
+         {next;}
+      else
+         {$atomNumIndex[$reducedBondInfoExt_ref->[$bond][1]] = ++$atom;}
+   }
+   foreach $bond (1..$reducedNumBondsExt)
+   {
+      if ($reducedBondInfoExt_ref->[$bond][2] ==
+          $reducedBondInfoExt_ref->[$bond-1][2])
+         {next;}
+      else
+         {$atomNumIndex[$reducedBondInfoExt_ref->[$bond][2]] = ++$atom;}
+   }
+
+   # Compute the scaled maximum bond length.
    $maxBondLength = 0;
    foreach $bond (1..$reducedNumBondsExt)
    {
@@ -1022,26 +1113,32 @@ sub printOpenScad
       # Print the module for making the rods.
       &printRodModule(\*OUT);
 
-      # Print the module for making spheres.
-      &printSphereModule(\*OUT);
+      # Print the module for making a sphere that is translated to a give point.
+      &printTransSphereModule(\*OUT);
 
       # Print the module for making the bonds and cell vectors. Note that the
-      #   1 flag on the end is for requesting that corner spheres be included
+      #   1 flag near the end is for requesting that corner spheres be included
       #   in the print.  These should not be included when printing the bonds
       #   and vectors (BAV) as a skeleton for subtracting holes.
-      &printBAVModule(\*OUT,$minAtomRadius,\@scaledCoords,\@scaledCoordsExt,
-            $bondRadius,$reducedBondInfoExt_ref,$reducedNumBondsExt,1);
+      &printBAVModule(\*OUT,$minAtomRadius,$maxAtomRadius,\@scaledCoords,
+            \@scaledCoordsExt,$bondRadius,$reducedBondInfoExt_ref,
+            $reducedNumBondsExt,\@atomNumIndex,1,$doParts);
 
       # Print the module for printing all of the atoms as a big union.
       &printUnionAtomsModule(\@scaledCoords,\@scaledAtomRadius,\*OUT);
 
       # Print the model.
       &printFullModel(\*OUT);
+
+      # Close the OUT handle.
+      close (OUT);
    }
    else
    {
       # Close the originally opened OUT handle.
       close (OUT);
+
+      # We are going to print the sheets of atoms first.
 
       # Select the grid step size.
       $xStepSize = 2.0*$maxAtomRadius+0.1*$maxAtomRadius;
@@ -1065,9 +1162,13 @@ sub printOpenScad
          open (OUT, "> atomSheet$sheet.scad") ||
                die "Cannot open atomSheet$sheet.scad for writing\n";
 
+         # Use the write module to allow for adding text labels to each of the
+         #   rod and sphere components.
+         print OUT ("use <write.scad>\n");
+
          # Initialize the position for the atoms on the sheet in the x-y axis.
-         $sheetPos[1] = $maxAtomRadius;
-         $sheetPos[2] = $maxAtomRadius;
+         $sheetPos1[1] = $maxAtomRadius;
+         $sheetPos1[2] = $maxAtomRadius;
 
          # Initialize the count of our current position in the x-y grid.
          $xGridPos = 1;
@@ -1076,29 +1177,33 @@ sub printOpenScad
          # Print the module for making rods.
          &printRodModule(\*OUT);
 
-         # Print the module for making spheres.
-         &printSphereModule(\*OUT);
+         # Print the module for making labels that will appear on the spheres.
+         &printSphereLabelModule(\*OUT);
+
+         # Print module for making a sphere that is translated to a give point.
+         &printTransSphereModule(\*OUT);
 
          # Print the module for making the bonds and vectors skeleton.  Note
          #   that the 0 flag on the end requests that no corner spheres be
          #   included in the definition of the skeleton.  The corner spheres
          #   will have to be explicitly requested later.
-         &printBAVModule(\*OUT,$minAtomRadius,\@scaledCoords,\@scaledCoordsExt,
-            $bondRadius,$reducedBondInfoExt_ref,$reducedNumBondsExt,0);
+         &printBAVModule(\*OUT,$minAtomRadius,$maxAtomRadius,\@scaledCoords,
+               \@scaledCoordsExt,$bondRadius,$reducedBondInfoExt_ref,
+               $reducedNumBondsExt,\@atomNumIndex,0,$doParts);
 
          # Add each atom to the sheet.
          foreach $atom ($startingItemNumber..$numAtoms)
          {
             # Adjust the height of the current atom on the sheet.
-            $sheetPos[3] = $scaledAtomRadius[$atom];
+            $sheetPos1[3] = $scaledAtomRadius[$atom];
 
-            &addAtomToSheet(\*OUT,$atom,$scaledCoords[$atom],\@sheetPos,
+            &addAtomToSheet(\*OUT,$atom,$scaledCoords[$atom],\@sheetPos1,
                   $scaledAtomRadius[$atom]);
 
             # Record that we have added an atom in the x-axis and update the
             #   position for the next atom.
             $xGridPos++;
-            $sheetPos[1] += $xStepSize;
+            $sheetPos1[1] += $xStepSize;
 
             # If this puts us over the maximum number of cells in the x-axis
             #   direction of the grid, then reset the x-axis count, reset the
@@ -1107,9 +1212,9 @@ sub printOpenScad
             if ($xGridPos > $maxXItems)
             {
                $xGridPos = 1;
-               $sheetPos[1] = $maxAtomRadius;
+               $sheetPos1[1] = $maxAtomRadius;
                $yGridPos++;
-               $sheetPos[2] += $yStepSize;
+               $sheetPos1[2] += $yStepSize;
             }
 
             # If this takes us over the maximum number of cells in the y-axis
@@ -1119,7 +1224,7 @@ sub printOpenScad
             if ($yGridPos > $maxYItems)
             {
                $yGridPos = 1;
-               $sheetPos[2] = $maxAtomRadius;
+               $sheetPos1[2] = $maxAtomRadius;
                $lastItemNumberPrinted = $atom;
                last;
             }
@@ -1141,6 +1246,13 @@ sub printOpenScad
 
       # Now we do the bonds.
 
+      $sheetPos1[0] = 0;
+      $sheetPos2[0] = 0;
+
+      # Set the height of both end points of the bond rod on the sheet.
+      $sheetPos1[3] = $bondRadius;
+      $sheetPos2[3] = $bondRadius;
+
       # Select the grid step size.
       $xStepSize = 2.0*$bondRadius + 0.1*$bondRadius;
       $yStepSize = $maxBondLength + 0.05*$maxBondLength;
@@ -1156,6 +1268,10 @@ sub printOpenScad
       # Initialize the starting item number for the first sheet.
       $startingItemNumber = 1;
 
+      # Initialize the number of bonds that each atom has had printed so far.
+      foreach $atom (1..$numAtoms)
+         {$atomBondCount[$atom] = 0;}
+
        # Print the sheets.
       foreach $sheet (1..$numItemSheets)
       {
@@ -1163,9 +1279,16 @@ sub printOpenScad
          open (OUT, "> bondSheet$sheet.scad") ||
                die "Cannot open bondSheet$sheet.scad for writing\n";
 
-         # Initialize the position for the bonds on the sheet in the x-y axis.
-         $sheetPos[1] = $bondRadius;
-         $sheetPos[2] = $bondRadius;
+         # Use the write module to allow for adding text labels to each of the
+         #   rod and sphere components.
+         print OUT ("use <write.scad>\n");
+
+         # Initialize the end points for the first bond on the sheet in the
+         #   x-y axis.
+         $sheetPos1[1] = $bondRadius;
+         $sheetPos1[2] = $bondRadius;
+         $sheetPos2[1] = $bondRadius;
+         $sheetPos2[2] = $bondRadius + $reducedBondInfoExt_ref->[1][3];
 
          # Initialize the count of our current position in the x-y grid.
          $xGridPos = 1;
@@ -1174,16 +1297,29 @@ sub printOpenScad
          # Print the module for making rods.
          &printRodModule(\*OUT);
 
+         # Print the module for making labels on the rods.
+         &printRodLabelModule(\*OUT);
+
          # Add each bond to the sheet.
          foreach $bond ($startingItemNumber..$reducedNumBondsExt)
          {
+            # Increment the number of bonds that each of the atoms connected by
+            #   the current bond have had placed so far.
+            $atomBondCount[$reducedBondInfoExt_ref->[$bond][1]]++;
+            $atomBondCount[$reducedBondInfoExt_ref->[$bond][2]]++;
+
             # Print a scaled rod between these two cartesian points.
-            &printRod(\@point1XYZ,\@point2XYZ,$bondRadius,0,$out);
+            &printRod(\@sheetPos1,\@sheetPos2,$bondRadius,0,0,\*OUT,
+                  $atomNumIndex[$reducedBondInfoExt_ref->[$bond][1]],
+                  $atomNumIndex[$reducedBondInfoExt_ref->[$bond][2]],
+                  $atomBondCount[$reducedBondInfoExt_ref->[$bond][1]],
+                  $atomBondCount[$reducedBondInfoExt_ref->[$bond][2]],2);
 
             # Record that we have added a bond in the x-axis and update the
             #   position for the next bond.
             $xGridPos++;
-            $sheetPos[1] += $xStepSize;
+            $sheetPos1[1] += $xStepSize;
+            $sheetPos2[1] += $xStepSize;
 
             # If this puts us over the maximum number of cells in the x-axis
             #   direction of the grid, then reset the x-axis count, reset the
@@ -1192,19 +1328,22 @@ sub printOpenScad
             if ($xGridPos > $maxXItems)
             {
                $xGridPos = 1;
-               $sheetPos[1] = $bondRadius;
+               $sheetPos1[1] = $bondRadius;
+               $sheetPos2[1] = $bondRadius;
                $yGridPos++;
-               $sheetPos[2] += $yStepSize;
+               $sheetPos1[2] += $yStepSize;
+               $sheetPos2[2] += $yStepSize;
             }
 
             # If this takes us over the maximum number of cells in the y-axis
             #   direction of the grid, reset the y-axis count and start a new
-            #   sheet. Then record the last atom printed so that the new sheet
+            #   sheet. Then record the last bond printed so that the new sheet
             #   can start from the next atom.
             if ($yGridPos > $maxYItems)
             {
                $yGridPos = 1;
-               $sheetPos[2] = $bondRadius;
+               $sheetPos1[2] = $bondRadius;
+               $sheetPos2[2] = $bondRadius+$reducedBondInfoExt_ref->[$bond][3];
                $lastItemNumberPrinted = $bond;
                last;
             }
@@ -1213,6 +1352,15 @@ sub printOpenScad
             #   finishes before it is full.
             $lastItemNumberPrinted = $bond;
          }
+
+         # Close the OUT file for this sheet.
+         close (OUT);
+
+         # Set up the starting bond for the next sheet and abort if this sheet
+         #   just happened to perfectly fit the number of bonds.
+         $startingItemNumber = $lastItemNumberPrinted + 1;
+         if ($startingItemNumber > $reducedNumBondsExt)
+            {last;}
       }
    }
 }
@@ -1233,7 +1381,72 @@ sub printRodModule
    print $out "}\n";
 }
 
-sub printSphereModule
+sub printRodLabelModule
+{
+   # Define passed paramters.
+   my $out = $_[0];
+
+   # Print out the modules that will be used to make individual rods.
+   print $out "module labeledRod(xPos,yPos,zPos,angle,xNormal,yNormal,zNormal,shift,";
+   print $out "length,radius,atomLabel1,atomLabel2,label1,label2)\n";
+   print $out "{\n";
+   print $out "   difference() {\n";
+   print $out "      translate(v=[xPos,yPos,zPos]) {\n";
+   print $out "         rotate(a=angle, v=[xNormal,yNormal,zNormal]) {\n";
+   print $out "            translate(v=[0,0,shift]) {\n";
+   print $out "               cylinder(h=length,r=radius,\$fn=100);}}}\n";
+
+   print $out "      translate(v=[xPos,yPos,zPos]) {\n";
+   print $out "         rotate(a=angle, v=[xNormal,yNormal,zNormal]) {\n";
+   print $out "            translate(v=[0,0,shift]) {\n";
+   print $out "               writecylinder(atomLabel1,[0,0,0],radius,length,";
+   print $out "up=length*1/3,h=radius,rotate=90,\$fn=100);}}}\n";
+
+   print $out "      translate(v=[xPos,yPos,zPos]) {\n";
+   print $out "         rotate(a=angle, v=[xNormal,yNormal,zNormal]) {\n";
+   print $out "            translate(v=[0,0,shift]) {\n";
+   print $out "               writecylinder(atomLabel2,[0,0,0],radius,length,";
+   print $out "down=length*1/3,h=radius,rotate=90,\$fn=100);}}}\n";
+
+   print $out "      translate(v=[xPos,yPos,zPos]) {\n";
+   print $out "         rotate(a=angle, v=[xNormal,yNormal,zNormal]) {\n";
+   print $out "            translate(v=[0,0,shift]) {\n";
+   print $out "               writecylinder(label1,[0,0,0],radius,length,";
+   print $out "up=length*1/6,h=radius,rotate=90,\$fn=100);}}}\n";
+
+   print $out "      translate(v=[xPos,yPos,zPos]) {\n";
+   print $out "         rotate(a=angle, v=[xNormal,yNormal,zNormal]) {\n";
+   print $out "            translate(v=[0,0,shift]) {\n";
+   print $out "               writecylinder(label2,[0,0,0],radius,length,";
+   print $out "down=length*1/6,h=radius,rotate=90,\$fn=100);}}}\n";
+   print $out "   }\n";
+   print $out "}\n";
+}
+
+# This module is essentially the same as the printRodModule except that instead
+#   of printing a cylinder, this will create a requested number at the radius
+#   of the targeted atom.  Thus, the number will appear on the surface of an
+#   atom that has this number differenced out of it.
+sub printSphereLabelModule
+{
+   # Define passed paramters.
+   my $out = $_[0];
+
+   # Print out the module that will be used to make a label for bond holes on
+   #   an atom. This acts just like the rod module except it prints a number
+   #   instead of a cylinder.
+   print $out "module sphereLabel(xPos,yPos,zPos,angle,xNormal,yNormal,";
+   print $out "zNormal,shift,distance,thickness,radius,label)\n";
+   print $out "{\n";
+   print $out "   translate(v=[xPos,yPos,zPos]) {\n";
+   print $out "      rotate(a=angle, v=[xNormal,yNormal,zNormal]) {\n";
+   print $out "         translate(v=[0,0,shift]) {\n";
+   print $out "            writecube(label,[0,0,0],[radius,radius,distance],";
+   print $out "t=thickness,h=radius*2,face=\"top\",\$fn=100);}}}\n";
+   print $out "}\n";
+}
+
+sub printTransSphereModule
 {
    # Define passed paramters.
    my $out = $_[0];
@@ -1250,12 +1463,15 @@ sub printBAVModule
    # Define passed paramters.
    my $out                    = $_[0];
    my $minAtomRadius          = $_[1];
-   my $bondRadius             = $_[2];
+   my $maxAtomRadius          = $_[2];
    my $scaledCoords_ref       = $_[3];
    my $scaledCoordsExt_ref    = $_[4];
-   my $reducedBondInfoExt_ref = $_[5];
-   my $reducedNumBondsExt     = $_[6];
-   my $doCornerSpheres        = $_[7];
+   my $bondRadius             = $_[5];
+   my $reducedBondInfoExt_ref = $_[6];
+   my $reducedNumBondsExt     = $_[7];
+   my $atomNumIndex_ref       = $_[8];
+   my $doCornerSpheres        = $_[9];
+   my $doParts                = $_[10];
 
    # Define local variables.
    my $i;
@@ -1269,6 +1485,11 @@ sub printBAVModule
    my @point2ABC;
    my @point1XYZ;
    my @point2XYZ;
+   my $label1;
+   my $label2;
+   my @atomBondCount; # This is a size [$numAtoms] array. Each value is the
+                      #   current count of the number of bonds created for the
+                      #   indexed atom.
 
    # Print out the module that is used to make the collection of bonds and
    #   lattice vectors as a single union.
@@ -1310,7 +1531,8 @@ sub printBAVModule
             }
 
             # Print a scaled rod between these two cartesian points.
-            &printRod(\@point1XYZ,\@point2XYZ,$bondRadius,$minAtomRadius,$out);
+            &printRod(\@point1XYZ,\@point2XYZ,$bondRadius,$minAtomRadius,
+                  $maxAtomRadius,$out,0,0,0,0,0);
 
             if ($doCornerSpheres == 1)
             {
@@ -1322,20 +1544,66 @@ sub printBAVModule
       }
    }
 
-   # Create a scaled cylinder for each bond and place it.
-   foreach $bond (1..$reducedNumBondsExt)
+   # In the case that the model is not printed by parts, then simply create a
+   #   bond in space for each bond.
+   if ($doParts == 0)
    {
-      # Identify the end points of the bond.
-      foreach $xyz (1..3)
+      foreach $bond (1..$reducedNumBondsExt)
       {
-         $point1XYZ[$xyz] =
-              $scaledCoordsExt_ref->[$reducedBondInfoExt_ref->[$bond][1]][$xyz];
-         $point2XYZ[$xyz] =
-              $scaledCoordsExt_ref->[$reducedBondInfoExt_ref->[$bond][2]][$xyz];
-      }
+         # Identify the end points of the bond.
+         foreach $xyz (1..3)
+         {
+            $point1XYZ[$xyz] =
+                 $scaledCoordsExt_ref->[$reducedBondInfoExt_ref->
+                 [$bond][1]][$xyz];
+            $point2XYZ[$xyz] =
+                 $scaledCoordsExt_ref->[$reducedBondInfoExt_ref->
+                 [$bond][2]][$xyz];
+         }
 
-      # Ask for the bond to be printed.
-      &printRod(\@point1XYZ,\@point2XYZ,$bondRadius,$minAtomRadius,$out);
+         # Ask for the bond to be printed.
+         &printRod(\@point1XYZ,\@point2XYZ,$bondRadius,$minAtomRadius,
+               $maxAtomRadius,$out,0,0,0,0,0);
+      }
+   }
+
+   # If the model is being printed in parts, then labels need to be printed in
+   #   addition to simply printing the bond in space. These labels are the
+   #   labels that will appear on the spheres.
+   else
+   {
+      # Initialize the number of bonds that each atom has had printed so far.
+      foreach $atom (1..$numAtoms)
+         {$atomBondCount[$atom] = 0;}
+
+      # Iterate over all of the bonds in the system.
+      foreach $bond (1..$reducedNumBondsExt)
+      {
+         # Identify the end points of the bond.
+         foreach $xyz (1..3)
+         {
+            $point1XYZ[$xyz] = $scaledCoordsExt_ref->
+                  [$reducedBondInfoExt_ref->[$bond][1]][$xyz];
+            $point2XYZ[$xyz] = $scaledCoordsExt_ref->
+                  [$reducedBondInfoExt_ref->[$bond][2]][$xyz];
+         }
+
+         # Increment the number of bonds that each of the atoms connected by
+         #   the current bond have had placed so far.
+         $atomBondCount[$reducedBondInfoExt_ref->[$bond][1]]++;
+         $atomBondCount[$reducedBondInfoExt_ref->[$bond][2]]++;
+
+         # Obtain the labels for the bonds (i.e. the bond count so far for both
+         #   atoms in the bond.
+         $label1 = $atomBondCount[$reducedBondInfoExt_ref->[$bond][1]];
+         $label2 = $atomBondCount[$reducedBondInfoExt_ref->[$bond][2]];
+
+         # This will make two numbers in space that are the bond numbers for
+         #   the two atoms joined by this bond.
+         &printRod(\@point1XYZ,\@point2XYZ,$bondRadius,$minAtomRadius,
+               $maxAtomRadius,$out,$atomNumIndex_ref->[$reducedBondInfoExt_ref->[$bond][1]],
+               $atomNumIndex_ref->[$reducedBondInfoExt_ref->[$bond][2]],$label1,$label2,1);
+      }
    }
 
    # Close the union of bond and cell vector parts.
@@ -1416,7 +1684,13 @@ sub printRod
    my $point2_ref = $_[1];
    my $rodRadius  = $_[2];
    my $minSphereRadius = $_[3];
-   my $out = $_[4]; # File handle
+   my $maxSphereRadius = $_[4];
+   my $out = $_[5]; # File handle
+   my $atomLabel1 = $_[6];
+   my $atomLabel2 = $_[7];
+   my $label1 = $_[8];
+   my $label2 = $_[9];
+   my $labelCode = $_[10]; # 0=no labels; 1=labels on spheres; 2=labels on rods
 
    # Define local variables.
    my $xyz;
@@ -1426,6 +1700,8 @@ sub printRod
    my @shiftedPoint2;
    my @normal;
    my $rodShift;
+   my $labelThickness;
+   my $labelDistance;
 
    # Compute the rod length between defined points.
    $rodLength = 0.0;
@@ -1464,14 +1740,80 @@ sub printRod
 
    # Obtain the vector that is normal to the plane formed by following three
    #   points:  (1) The origin; (2) A point on the z-axis at a distance equal
-   #   to the length of the rod; (3) The shifted end point of the rod.
+   #   to the length of the rod; (3) The shifted end point of the rod.  Note
+   #   that the leading zeros in the passed arrays are there becaues the
+   #   subroutine works on array elements 1, 2, 3 instead of 0, 1, 2.
    @normal = StructureControl::getPlaneNormal([0,0,0,0],\@shiftedPoint2,
       [0,0,0,$rodLength]);
 
-   # Use the rod module to print this rod.
-   print $out "rod($point1_ref->[1],$point1_ref->[2],$point1_ref->[3],$angle,";
-   print $out "$normal[1],$normal[2],$normal[3],$rodShift,$rodLength,";
-   print $out "$rodRadius);\n";
+   # Use the rod module to print this rod by itself.  This is used for
+   #   labelCode 0 and 1.
+   if (($labelCode == 0) || ($labelCode == 1))
+   {
+      print $out "rod($point1_ref->[1],$point1_ref->[2],$point1_ref->[3],";
+      print $out "$angle,$normal[1],$normal[2],$normal[3],$rodShift,";
+      print $out "$rodLength,$rodRadius);\n";
+   }
+
+   # If the labelCode is 1, then print the label number next to the rod (so
+   #   that it will appear on the sphere when subtracted away).
+   if ($labelCode == 1)
+   {
+      # Compute the label thickness. Because the label is positioned between
+      #   the radii of the max and min spheres it is necessary to make the
+      #   thickness just a bit larger so that it penetrates all sphere
+      #   surfaces.
+      $labelThickness = ($maxSphereRadius-$minSphereRadius)*1.3;
+      if ($labelThickness == 0)
+         {$labelThickness = $rodRadius;}
+
+      # Compute the distance from the center of the sphere that the label
+      #   should be positioned.  The math looks stupid here to make a point.
+      #   The label is drawn on the surface of a 3D rectangle with the relevant
+      #   length being equal to average radius between the min and max sphere
+      #   radius so that the label will be exactly between the two sphere
+      #   radii. However, the 3D rectangle is created centered on 0,0,0 and so
+      #   the surface is only 1/2 of the distance it needs to be.  Thus, we
+      #   take the average of the two radii and then multiply by two.
+      $labelDistance = ($maxSphereRadius+$minSphereRadius)/2.0*2.0;
+
+      # Print the appropriate labels for the holes for this bond rod.
+      print $out "sphereLabel($point1_ref->[1],$point1_ref->[2],";
+      print $out "$point1_ref->[3],$angle+20,$normal[1],$normal[2],";
+      print $out "$normal[3],0,$labelDistance,$labelThickness,";
+      print $out "$rodRadius,\"$label1\");\n";
+      print $out "sphereLabel($point2_ref->[1],$point2_ref->[2],";
+      print $out "$point2_ref->[3],$angle+200,$normal[1],$normal[2],";
+      print $out "$normal[3],0,$labelDistance,$labelThickness,";
+      print $out "$rodRadius,\"$label2\");\n";
+
+      # In the special case that the first bond for this atom is being printed,
+      #   then we must also print the atom label.
+      if ($label1 == 1)
+      {
+         # Print the sphere label.
+         print $out "sphereLabel($point1_ref->[1],$point1_ref->[2],";
+         print $out "$point1_ref->[3],$angle-20,$normal[1],$normal[2],";
+         print $out "$normal[3],0,$labelDistance,$labelThickness,";
+         print $out "$rodRadius,\"$atomLabel1\");\n";
+      }
+      if ($label2 == 1)
+      {
+         # Print the sphere label.
+         print $out "sphereLabel($point2_ref->[1],$point2_ref->[2],";
+         print $out "$point2_ref->[3],$angle+160,$normal[1],$normal[2],";
+         print $out "$normal[3],0,$labelDistance,$labelThickness,";
+         print $out "$rodRadius,\"$atomLabel2\");\n";
+      }
+   }
+
+   # Print labels onto the rods if requested.
+   if ($labelCode == 2)
+   {
+      print $out "labeledRod($point1_ref->[1],$point1_ref->[2],$point1_ref->[3],";
+      print $out "$angle,$normal[1],$normal[2],$normal[3],$rodShift,";
+      print $out "$rodLength,$rodRadius,\"$atomLabel1\",\"$atomLabel2\",\"$label1\",\"$label2\");\n";
+   }
 }
 
 sub printSphere
@@ -1512,7 +1854,6 @@ sub addAtomToSheet
    print $out "   difference() {\n   ";
    &printSphere($atomPos_ref,$radius,$out);
    print $out "      bondsAndVectors();\n";
-   print $out "      \n";
    print $out "   }\n";
    print $out "}\n";
 }
@@ -1584,7 +1925,8 @@ sub printPartsLattice
             $point2XYZ[3] = $vectorRadius;
 
             # Print a scaled rod between these two cartesian points.
-            #&printRod(\@point1XYZ,\@point2XYZ,$bondRadius,$minAtomRadius,$out);
+            #&printRod(\@point1XYZ,\@point2XYZ,$bondRadius,$minAtomRadius,
+            #      $maxAtomRadius,$out,0,0);
 
             # Print a scaled sphere at each point.  (To ensure connectivity.)
 #            &printSphere(\@point1XYZ,$bondRadius);
@@ -1696,7 +2038,7 @@ sub getBondsToShow
       }
    }
 
-   # Return a reference to the reduced bond info list (with numbers references
+   # Return a reference to the reduced bond info list (with numbers referencing
    #   the extended lattice).
    return (\@reducedBondInfoExt, $reducedNumBondsExt);
 }

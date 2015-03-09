@@ -26,6 +26,8 @@ subroutine computeOptc
 
    ! Define local variables.
    integer :: doneMOME
+   type(commandLineParameters) :: clp ! from O_CommandLine
+   type(inputData) :: inDat ! from O_Input
 
 
    ! Initialize the logging labels.
@@ -33,16 +35,16 @@ subroutine computeOptc
 
 
    ! Parse the command line parameters
-   call parseOptcCommandLine
+   call parseOptcCommandLine(clp)
 
 
    ! Open the optc files that will be written to.
-   if (stateSet /= 1) then
+   if (clp%stateSet /= 1) then
       open (unit=40,file='fort.40',status='new',form='formatted')
    endif
    open (unit=50,file='fort.50',status='new',form='formatted')
    if (spin == 2) then
-      if (stateSet /= 1) then
+      if (clp%stateSet /= 1) then
          open (unit=41,file='fort.41',status='new',form='formatted')
       endif
       open (unit=51,file='fort.51',status='new',form='formatted')
@@ -50,8 +52,7 @@ subroutine computeOptc
 
 
    ! Read in the input to initialize all the key data structure variables.
-   call parseInput
-
+   call parseInput(inDat,clp)
 
    ! Find specific computational parameters not EXPLICITLY given in the input
    !   file.  These values can, however, be easily determined from the input
@@ -73,52 +74,51 @@ subroutine computeOptc
 
    ! Compute the momentum matrix elements if necessary.
    if (doneMOME == 0) then
-      call addOnMOME
+      call addOnMOME(clp)
    endif
 
    ! Access the HDF5 data stored by band.
-   call accessPSCFBandHDF5
+   call accessPSCFBandHDF5(inDat%numStates,clp)
 
    ! Allocate space to store the energy eigen values, and then read them in.
-   allocate (energyEigenValues (numStates,numKPoints,spin))
-   call readEnergyEigenValuesBand
+   allocate (energyEigenValues (inDat%numStates,numKPoints,spin))
+   call readEnergyEigenValuesBand(inDat%numStates)
 
    ! Populate the electron states to find the highest occupied state (Fermi
    !   energ for metals).
-   call populateStates
+   call populateStates(inDat,clp)
 
-   if (stateSet == 1) then ! Doing PACS calculation and we need to modify the
-                           ! energy eigen values and their position.
-
-      ! Now that the occupied energy is known we can append the unoccupied
-      !   excited states.
-      call appendExcitedEnergyEigenValuesBand(occupiedEnergy)
+   if (clp%stateSet == 1) then ! Doing PACS calculation and we need to modify
+      ! the energy eigen values and their position. Now that the occupied
+      ! energy is known we can append the unoccupied excited states.
+      call appendExcitedEnergyEigenValuesBand(inDat%lastInitStatePACS+1,&
+            & inDat%numStates)
    endif
 
    ! Shift the energy eigen values according to the highest occupied state.
-   call shiftEnergyEigenValues(occupiedEnergy)
+   call shiftEnergyEigenValues(occupiedEnergy,inDat%numStates)
 
    ! Compute some statistics and variables concerning the energy values.
-   call getEnergyStatistics
+   call getEnergyStatistics(inDat,clp)
 
    ! Compute the transition pairs and energy values of those transitions.
-   call computeTransitions
+   call computeTransitions(inDat,clp)
 
    ! Print the output if necessary.
-   if (stateSet /= 2) then  ! Not doing a Sigma(E) calculation.
-      call printOptcResults
+   if (clp%stateSet /= 2) then  ! Not doing a Sigma(E) calculation.
+      call printOptcResults(inDat,clp)
    endif
 
    ! Deallocate unused matrices
    deallocate (energyEigenValues)
    deallocate (transCounter)
-   if (stateSet /= 2) then  ! Not doing a sigma(E) calculation.
+   if (clp%stateSet /= 2) then  ! Not doing a sigma(E) calculation.
       deallocate (energyDiff)
-      deallocate (energyMom)
+      deallocate (transitionProb)
    endif
 
    ! Close access to the band HDF5 data.
-   call closeAccessPSCFBandHDF5
+   call closeAccessPSCFBandHDF5(clp)
 
    ! Open a file to signal completion of the program.
    open (unit=2,file='fort.2',status='new')
@@ -162,7 +162,7 @@ subroutine getImplicitInfo
 end subroutine getImplicitInfo
 
 
-subroutine addOnMOME
+subroutine addOnMOME(clp)
 
    ! Import the necessary HDF modules
    use HDF5
@@ -174,11 +174,12 @@ subroutine addOnMOME
 
    ! Make sure that no variables are implicitly declared.
    implicit none
+   type(commandLineParameters), intent(inout) :: clp ! from O_CommandLine
 
-   ! Set the doMOME command line parameter to 1 (even though it was not given
-   !   on the command line).  This will allow us to use the intgAndOrMom
+   ! Set the clp%doMOME command line parameter to 1 (even though it was not
+   !   given on the command line).  This will allow us to use the intgAndOrMom
    !   subroutine.
-   doMOME = 1
+   clp%doMOME = 1
 
    ! Prepare the necessary data structures for computing the MOME.
    call renormalizeBasis
@@ -187,10 +188,10 @@ subroutine addOnMOME
    call openMOMEPSCFIntgHDF5
 
    ! Compute momentum matrix integrals and add them to the integral HDF5 file.
-   call intgAndOrMom(0)
+   call intgAndOrMom(0,clp%doMOME)
 
    ! Record that the momentum matrix elements were calculated.
-   call setMOMEStatus(1)
+   call setMOMEStatus(clp%doMOME)
 
    ! Close the integral HDF5 file so that the rest of optc can proceed as if
    !   this never happened (except now of course the file has the momentum

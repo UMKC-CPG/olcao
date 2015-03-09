@@ -1,4 +1,4 @@
-#!/usr/bin/perl
+#!/bin/env perl
 #PURPOSE:  To write a data file that is usable by origin to plot a symmetric
 #         band diagram using the Origin band script.
 #AUTHOR:  Paul Rulis

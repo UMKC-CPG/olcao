@@ -27,7 +27,7 @@ module O_PotentialUpdate
    contains
 
 
-subroutine makeSCFPot (totalEnergy)
+subroutine makeSCFPot (totalEnergy,inDat)
 
    ! Import necessary modules.
    use O_Kinds
@@ -49,6 +49,10 @@ subroutine makeSCFPot (totalEnergy)
 
    ! Make sure that no funny variables are defined.
    implicit none
+
+   ! Define passed parameters
+   type(inputData) :: inDat
+
 
    ! Define passed dummy variables.
    real (kind=double) :: totalEnergy
@@ -118,8 +122,9 @@ subroutine makeSCFPot (totalEnergy)
    ! Copy the electrostatic potential constants of integration and the 
    !   charge density potential (potRho) into a data structure
    generalRho(:,1)     = potRho(:,1)  ! (Spin up + Spin down) or total
+   generalRho(:,2)     = intgConsts(:)
    if (spin == 2) then
-      generalRho(:,2)  = potRho(:,2)  !  Spin up - Spin down
+      generalRho(:,3)  = potRho(:,2)  !  Spin up - Spin down
    endif
 
    ! Deallocate the potRho since it will not be needed until the
@@ -143,35 +148,37 @@ subroutine makeSCFPot (totalEnergy)
    ! Solve the linear set of equations with LAPACK to get the coefficients for
    !   total valence charge and (for spin polarized calcs.) the spin difference
    !   of the valence charge.
-   call solveDPOSVX (potDim,spin,tempOverlap,potDim,generalRho(:,:spin))
+   call solveDPOSVX (potDim,spin+1,tempOverlap,potDim,generalRho(:,:spin+1))
 
    ! Compute the fitted valence charge.  (Up + Down for spin polarized calcs.)
    fittedCharge = dot_product(intgConsts(:potDim),generalRho(:potDim,1))
    if (spin == 2) then
       ! Compute the fitted valence charge difference.  (Up - Down)
       fittedSpinDiffCharge = dot_product(intgConsts(:potDim),&
-            & generalRho(:potDim,2))
+            & generalRho(:potDim,3))
 
       ! Preserve the spin (UP-DOWN) charge density coefficients in 
       !   generalRho(:,8).
-      generalRho(:potDim,8) = generalRho(:potDim,2)
+      generalRho(:potDim,8) = generalRho(:potDim,3)
    endif
 
    ! Calculate the difference between the electron number and the fitted charge
    !   determined above.  This represents the difficulty of the Gaussians to
    !   accurately represent the true charge density.
-   electronDiff = numElectrons - fittedCharge
+   electronDiff = inDat%numElectrons - fittedCharge
 
    ! Record the electron fitting error.
    write (20,fmt="(a37,f12.8,a8,i12)") &
          & 'Unconstrained Vale Electron Fit Error',&
-         & electronDiff, ' Out Of ',numElectrons
+         & electronDiff, ' Out Of ',inDat%numElectrons
    call flush (20)
 
    ! Correct and store the valence charge coefficients in generalRho(:,2).
    !   This would overwrite the spin difference for spin polarized
    !   calculations, but that was already saved in generalRho(:,8).
-   generalRho(:potDim,2) = generalRho(:potDim,1)*numElectrons/fittedCharge
+!generalRho(:potDim,2) = generalRho(:potDim,1)*inDat%numElectrons/fittedCharge
+   generalRho(:potDim,2) = generalRho(:potDim,1) + generalRho(:potDim,2) * &
+         & electronDiff / sum(intgConsts(:potDim)*generalRho(:potDim,2))
 
    ! Demonstrate that the constrained fit will produce an exact valence charge.
    write (20,*) "Constrained fit num e- = ",dot_product(intgConsts(:potDim), &

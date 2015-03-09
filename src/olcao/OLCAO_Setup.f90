@@ -35,6 +35,9 @@ subroutine setupSCF
    ! Make sure that there are no accidental variable declarations.
    implicit none
 
+   type(commandLineParameters) :: clp ! from O_CommandLine
+   type(inputData) :: inDat ! from O_Input
+
    ! Define global mpi parameters
 !   integer :: myWorldPid
 !   integer :: numWorldProcs
@@ -65,11 +68,11 @@ subroutine setupSCF
    call initOperationLabels
 
    ! Parse the command line parameters
-   call parseSetupCommandLine
+   call parseSetupCommandLine(clp)
 
 
    ! Read in the input to initialize all the key data structure variables.
-   call parseInput
+   call parseInput(inDat,clp)
 
 
    ! Find specific computational parameters not EXPLICITLY given in the input

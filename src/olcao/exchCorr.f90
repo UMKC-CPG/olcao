@@ -15,6 +15,7 @@ module O_ExchangeCorrelation
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
    ! Exchange Correlation mesh definition.
+   integer :: printXCMesh ! 0 = Do not print the mesh; 1 = Print it.
    integer :: numSampleVectors ! How many vectors to use.
    real (kind=double), dimension (2) :: angSampleWeights ! This holds the
          !   weighting factor coefficients that are applied to the vectors.
@@ -129,10 +130,22 @@ subroutine getECMeshParameters
    allocate(potLatticeSep       (dim3,numPotSites))
    allocate(siteSampleMaxRadius (numSampleVectors,numPotSites))
 
+   ! In the event that someone wants the exchange correlation mesh printed
+   !   for visualization, then this is where that starts.
+   if (printXCMesh == 1) then
+      write (200,*) numPotSites
+      write (200,*) numSampleVectors
+   endif
 
    ! For every replicated cell, compile a list of the distances from the system
    !   origin to each potential site.
    do i = 1, numPotSites
+
+      ! If requested, print the position of the potential site for plotting of
+      !   the XC mesh.
+      if (printXCMesh == 1) then
+         write (200,*) potSites(i)%cartPos(:)
+      endif
 
       ! Determine if this potential site contributes to the exchange
       !   correlation potential.  If not, then skip this site.
@@ -144,7 +157,7 @@ subroutine getECMeshParameters
 
       ! Store the difference in distance between the nearest lattice
       !   vector, and the potential site vector.
-      potLatticeSep(:,i) = potSites(i)%cartPos - latticeVector
+      potLatticeSep(:,i) = potSites(i)%cartPos(:) - latticeVector
 
       ! Determine the distance from the origin to each replication of the
       !   current potential site within real super lattice or its truncated
@@ -246,6 +259,12 @@ subroutine getECMeshParameters
          ! Initialize the radius of the first sample point on this ray
          currentPointRadius = currentMaxRadius
 
+         ! If requested, print the unit vector describing the current ray
+         !   direction and the radius of that ray.  (For XCMesh)
+         if (printXCMesh == 1) then
+            write (200,*) currentAngleVector(:), currentPointRadius
+         endif
+
          ! Initialize the choice of weighting factor
          weightingIndex = 2
 
@@ -275,7 +294,18 @@ subroutine getECMeshParameters
 
             ! Multiply the radius by a factor to reduce its distance.
             currentPointRadius = currentPointRadius * rSampleSpace
+
+            ! If requested, print the radius of the current point on the ray.
+            if (printXCMesh == 1) then
+               write (200,*) currentPointRadius
+            endif
          enddo
+
+         ! If the request to print the XCMesh is true, then we are done doing
+         !   it for this ray and we print "END" to signify that.
+         if (printXCMesh == 1) then
+            write (200,*) "END"
+         endif
       enddo
 
       ! Determine the maximum number of ray points required so far.  This will
@@ -697,7 +727,7 @@ subroutine makeECMeshAndOverlap
 end subroutine makeECMeshAndOverlap
 
 
-subroutine readExchCorrMeshParameters
+subroutine readExchCorrMeshParameters(readUnit, writeUnit)
 
    ! Import necessary modules.
    use O_Kinds
@@ -709,19 +739,30 @@ subroutine readExchCorrMeshParameters
    ! Make sure that no funny variables are defined.
    implicit none
 
+   ! Define passed parameters.
+   integer, intent(in) :: readUnit ! The unit number of the file from which we
+                                   ! are reading.
+   integer, intent(in) :: writeUnit ! The unit number of the file to which we
+                                    ! are writing.
+
    ! Define local variables.
    real (kind=double), dimension(3) :: tempData
 
+   ! Read the flag requesting that the XC mesh be printed or not.
+   call readData(readUnit,writeUnit,printXCMesh,len('PRINT_XC_MESH'),&
+         & 'PRINT_XC_MESH')
+
    ! Read the number of angular sample vectors.
-   call readData(numSampleVectors,len('NUM_ANGULAR_SAMPLE_VECTORS'),&
-         & 'NUM_ANGULAR_SAMPLE_VECTORS')
+   call readData(readUnit,writeUnit,numSampleVectors,&
+         & len('NUM_ANGULAR_SAMPLE_VECTORS'),'NUM_ANGULAR_SAMPLE_VECTORS')
 
    ! Read the inner and outer weighting factors.
-   call readData(2,angSampleWeights(:),len('WTIN_WTOUT'),'WTIN_WTOUT')
+   call readData(readUnit,writeUnit,2,angSampleWeights(:),&
+         & len('WTIN_WTOUT'),'WTIN_WTOUT')
 
    ! Read the parameters for sampling.
-   call readData(3,tempData(:),len('RADIAL_SAMPLE-IN_OUT_SPACING'),&
-         & 'RADIAL_SAMPLE-IN_OUT_SPACING')
+   call readData(readUnit,writeUnit,3,tempData(:),&
+         & len('RADIAL_SAMPLE-IN_OUT_SPACING'),'RADIAL_SAMPLE-IN_OUT_SPACING')
    rSampleIn    = tempData(1)
    rSampleOut   = tempData(2)
    rSampleSpace = tempData(3)

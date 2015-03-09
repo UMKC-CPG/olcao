@@ -2,7 +2,7 @@ module O_OptcPrint
 
 contains
 
-subroutine printOptcResults
+subroutine printOptcResults(inDat,clp)
 
    ! Import necessary data modules.
    use O_Kinds
@@ -17,6 +17,10 @@ subroutine printOptcResults
    ! Make sure that there are not accidental variable declarations.
    implicit none
 
+   ! Define passed parameters
+   type(inputData) :: inDat ! from O_Input
+   type(commandLineParameters), intent(in) :: clp ! from O_CommandLine
+
    ! Define local variables
    integer :: i ! Loop index variables
    integer :: numEnergyPoints
@@ -30,14 +34,14 @@ subroutine printOptcResults
 
 
    ! Initialize variables.
-   if (stateSet == 0) then ! Standard optical properties calculation.
-      sigma           = sigmaOPTC
-      energyDelta     = deltaOPTC
-      energyMin       = deltaOPTC ! Start as close to 0 as possible.
+   if (clp%stateSet == 0) then ! Standard optical properties calculation.
+      sigma           = inDat%sigmaOPTC
+      energyDelta     = inDat%deltaOPTC
+      energyMin       = inDat%deltaOPTC ! Start as close to 0 as possible.
       numEnergyPoints = maxTransEnergy / energyDelta + 1
    else ! PACS calculation, Sigma(E) calculations never call this subroutine.
-      sigma           = sigmaPACS
-      energyDelta     = deltaPACS
+      sigma           = inDat%sigmaPACS
+      energyDelta     = inDat%deltaPACS
       ! The energyMin was already determined for PACS calculations.
       numEnergyPoints = (maxTransEnergy - energyMin) / energyDelta + 1
    endif ! Sigma(E) calculations never call this subroutine.
@@ -152,7 +156,7 @@ subroutine printOptcResults
 
 
    ! Output the computed results.
-   if (stateSet == 1) then ! Doing PACS calculation.
+   if (clp%stateSet == 1) then ! Doing PACS calculation.
       call printXAS(numEnergyPoints, optcCond, conversionFactor)
    else
       call printCond (numEnergyPoints, optcCond, conversionFactor)
@@ -204,7 +208,7 @@ subroutine getOptcCond (numEnergyPoints, optcCond, kPointFactor, &
                !   complete the broadening for this set because it will not have
                !   a significant effect.
                if (expAlpha < 50.0_double) then
-                  optcCond(:,k,h) = optcCond(:,k,h) + energyMom(:,j,i,h) * &
+                  optcCond(:,k,h) = optcCond(:,k,h)+transitionProb(:,j,i,h) * &
                         & exp(-expAlpha) * kPointFactor(i)
                endif
             enddo

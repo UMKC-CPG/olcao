@@ -478,6 +478,7 @@ subroutine getELF(length,eps1,eps2,elf)
 
    integer :: i
 
+   ! elf = eps2/(eps1^2 +eps2^2)
    do i = 1,length
       elf(:,i) = eps2(:,i)/(eps1(:,i)**2 + eps2(:,i)**2)
    enddo

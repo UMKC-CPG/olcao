@@ -29,7 +29,7 @@ real (kind=double) :: accumChargeKP
 
 contains
 
-subroutine computeWaveFnMesh
+subroutine computeWaveFnMesh(inDat)
 
    ! The goal of this subroutine
 
@@ -54,6 +54,9 @@ subroutine computeWaveFnMesh
 
    ! Make sure that no variables are accidentally defined.
    implicit none
+
+   ! define passed parameters
+   type(inputdata) :: inDat
 
    ! Define local variables.
    integer :: a,b,c
@@ -160,7 +163,7 @@ subroutine computeWaveFnMesh
    allocate (atomicOrbitalGamma    (maxNumStates,numCols-spin))
 #endif
    allocate (profile               (3,numCols,maxVal(numMeshPoints(:))))
-   allocate (structuredElectronPopulation (numStates,numKPoints,spin))
+   allocate (structuredElectronPopulation (inDat%numStates,numKPoints,spin))
 allocate (accumCharge           (spin,numKPoints))
 !allocate (tempPointValue        (numCols-spin))
    allocate (currentPointValue     (numCols))
@@ -180,7 +183,7 @@ allocate (currNumElec (numKPoints,spin))
 
    ! If we will create an OpenDX file, then we will print the header for the
    !   field data, the lattice information, and the atomic positions now.
-   if ((styleWAVE == 1) .or. (styleWAVE == 2)) then
+   if ((inDat%styleWave == 1) .or. (inDat%styleWave == 2)) then
 !write (20,*) "numCols =",numCols
       call printODXFieldHead (numCols)
       call printODXAtomPos
@@ -199,7 +202,7 @@ allocate (currNumElec (numKPoints,spin))
    energyLevelCounter=0
    do i = 1, numKPoints
       do j = 1, spin
-         do k = 1, numStates
+         do k = 1, inDat%numStates
             energyLevelCounter = energyLevelCounter + 1
             structuredElectronPopulation (k,i,j) = electronPopulation(&
                   & energyLevelCounter)
@@ -219,15 +222,15 @@ allocate (currNumElec (numKPoints,spin))
    !   initialize the coefficient accumulators.
 #ifndef GAMMA
 !   allocate (valeVale(valeDim,valeDim,1,spin))
-   allocate (valeVale(valeDim,numStates,1,spin))
-   allocate (tempRealValeVale(valeDim,numStates))
-   allocate (tempImagValeVale(valeDim,numStates))
+   allocate (valeVale(valeDim,inDat%numStates,1,spin))
+   allocate (tempRealValeVale(valeDim,inDat%numStates))
+   allocate (tempImagValeVale(valeDim,inDat%numStates))
    allocate (accumWaveFnCoeffs(valeDim,numCols-spin,numKPoints)) ! No coeffs
          ! are needed for the total or spin-up, spin-down potential.
    accumWaveFnCoeffs(:,:,:) = cmplx(0.0_double,0.0_double)
 #else
 !   allocate (valeValeGamma(valeDim,valeDim,spin))
-   allocate (valeValeGamma(valeDim,numStates,spin))
+   allocate (valeValeGamma(valeDim,inDat%numStates,spin))
    allocate (accumWaveFnCoeffsGamma(valeDim,numCols-spin)) ! No coeffs are
          ! for the total or spin-up, spin-down potential.  (Only 1 kp.)
    accumWaveFnCoeffsGamma(:,:) = 0.0_double
@@ -259,7 +262,7 @@ accumChargeKP = 0.0_double
 
       ! Skip any kpoints with a negligable contribution for each state.
       skipKP = 0
-      do j = 1, numStates
+      do j = 1, inDat%numStates
          if (sum(abs(structuredElectronPopulation(j,i,:)))>smallThresh) then
             skipKP = 1
             exit
@@ -276,31 +279,31 @@ accumChargeKP = 0.0_double
       !   the best in terms of not having too many names or too many
       !   allocate deallocate calls.
 !write (20,*) "valeStatesBand = ",valeStatesBand
-!write (20,*) "valeDim, numStates=",valeDim,numStates
+!write (20,*) "valeDim, inDat%numStates=",valeDim,inDat%numStates
       do j = 1, spin
 #ifndef GAMMA
          call readMatrix (eigenVectorsBand_did(:,i,j),&
-               & valeVale(:,:numStates,1,j),&
-               & tempRealValeVale(:,:numStates),&
-               & tempImagValeVale(:,:numStates),&
-               & valeStatesBand,valeDim,numStates)
+               & valeVale(:,:inDat%numStates,1,j),&
+               & tempRealValeVale(:,:inDat%numStates),&
+               & tempImagValeVale(:,:inDat%numStates),&
+               & valeStatesBand,valeDim,inDat%numStates)
 #else
          call readMatrixGamma (eigenVectorsBand_did(1,i,j),&
-               & valeValeGamma(:,:numStates,j),&
-               & valeStatesBand,valeDim,numStates)
+               & valeValeGamma(:,:inDat%numStates,j),&
+               & valeStatesBand,valeDim,inDat%numStates)
 #endif
       enddo
 
       ! Accumulate the wave function coefficients including either the kpoint
       !   weight factor or the charge occupancy weight factor depending on the
-      !   value of doRho.
+      !   value of inDat%doRho.
       do j = 1, spin
 
          ! Find the minimum and maximum state indices to include in the wave
          !   function summation for this kpoint and spin.
          minStateIndex = 0
-         do k = 1, numStates
-            if (energyEigenValues(k,i,j)*hartree >= eminWAVE) then
+         do k = 1, inDat%numStates
+            if (energyEigenValues(k,i,j)*hartree >= inDat%eminWave) then
                minStateIndex = k
                exit
             endif
@@ -309,9 +312,9 @@ accumChargeKP = 0.0_double
          ! Assume that the last state will be the max state index.  This will
          !   be fixed to a lower state if one is found that exceeds the
          !   requested highest energy state.
-         maxStateIndex = numStates
-         do k = 2, numStates
-            if (energyEigenValues(k,i,j)*hartree > emaxWAVE) then
+         maxStateIndex = inDat%numStates
+         do k = 2, inDat%numStates
+            if (energyEigenValues(k,i,j)*hartree > inDat%emaxWave) then
                maxStateIndex = k-1
                exit
             endif
@@ -319,7 +322,7 @@ accumChargeKP = 0.0_double
 
 currNumElec(i,j) = sum(structuredElectronPopulation(&
       & minStateIndex:maxStateIndex,i,j))
-write (20,*) "i,j,currNumElec(i,j) = ",i,j,currNumElec(i,j)
+!write (20,*) "i,j,currNumElec(i,j) = ",i,j,currNumElec(i,j)
 !write (20,*) "minStateIndex=",minStateIndex
 !write (20,*) "maxStateIndex=",maxStateIndex
 #ifndef GAMMA
@@ -334,7 +337,7 @@ write (20,*) "i,j,currNumElec(i,j) = ",i,j,currNumElec(i,j)
 !enddo
 !write (20,*) "k,valeVale state squared=",k,tempPointValue(1)
 
-            if (doRho == 0) then
+            if (inDat%doRho == 0) then
 !write (20,*) "kPointWeight(i),spin=",kPointWeight(i),spin
 !call flush (20)
                currentPopulation = kPointWeight(i)/real(spin,double)
@@ -350,7 +353,7 @@ write (20,*) "i,j,currNumElec(i,j) = ",i,j,currNumElec(i,j)
             accumWaveFnCoeffs(:,j,i) = accumWaveFnCoeffs(:,j,i) + &
                   & currentPopulation * valeVale(:,k,1,j)
          enddo
-write (20,*) "accumCharge=",accumCharge(j,i)
+!write (20,*) "accumCharge=",accumCharge(j,i)
 accumChargeKP = accumChargeKP + accumCharge(j,i)
 !write (20,*) "before divide aWFC=",accumWaveFnCoeffs(:,j,i)
 !tempPointValue(1)=cmplx(0.0_double,0.0_double)
@@ -362,7 +365,7 @@ accumChargeKP = accumChargeKP + accumCharge(j,i)
 !enddo
 !write (20,*) "accum state squared=",tempPointValue(1)
 
-         if (doRho == 1) then
+         if (inDat%doRho == 1) then
             accumWaveFnCoeffs(:,j,i) = accumWaveFnCoeffs(:,j,i) / &
                   & sqrt(dot_product(accumWaveFnCoeffs(:,j,i),&
                   & accumWaveFnCoeffs(:,j,i)))
@@ -382,7 +385,7 @@ accumChargeKP = accumChargeKP + accumCharge(j,i)
 #else
          do k = minStateIndex, maxStateIndex
 
-            if (doRho == 0) then
+            if (inDat%doRho == 0) then
                currentPopulation = kPointWeight(i)/real(spin,double)
             else
                currentPopulation = structuredElectronPopulation(k,i,j)
@@ -395,7 +398,7 @@ accumChargeKP = accumChargeKP + accumCharge(j,i)
       enddo
    enddo
 
-write (20,*) "accumChargeKP=",accumChargeKP
+!write (20,*) "accumChargeKP=",accumChargeKP
 
    ! Save special coefficients to represent the neutral non-interacting
    !   electronic distribution for each atom.
@@ -770,7 +773,7 @@ write (20,*) "accumChargeKP=",accumChargeKP
          currentPointValue(2) = sum(waveFnEval(:,2) * currNumElec(:,2))
          waveFnEval(:,3) = conjg(waveFnEval(:,3)) * waveFnEval(:,3)
          currentPointValue(3) = sum(waveFnEval(:,3) * &
-               & numElectrons * 0.5_double * kPointWeight(:))
+               & inDat%numElectrons * 0.5_double * kPointWeight(:))
 
          ! Compute the total charge as the sum of the up and down.
          currentPointValue(1) = currentPointValue(1) + currentPointValue(2)
@@ -800,7 +803,7 @@ write (20,*) "accumChargeKP=",accumChargeKP
       currentPointValue(numCols-spin+1:numCols) = potFnEval(1:spin)
 
       ! If openDX Files are being created, then print to them.
-      if ((styleWAVE == 1) .or. (styleWAVE == 2)) then
+      if ((inDat%styleWave == 1) .or. (inDat%styleWave == 2)) then
          do i = 1, numCols
             write (57+i,ADVANCE="NO",fmt="(1x,e13.5)") currentPointValue(i)
 
@@ -832,10 +835,10 @@ write (20,*) "accumChargeKP=",accumChargeKP
    enddo
    enddo
    enddo
-write (20,*) "accumCharge(1,:)=",accumCharge(1,:)
+!write (20,*) "accumCharge(1,:)=",accumCharge(1,:)
 
    ! Finalize printing of the OpenDX field data.
-   if ((styleWAVE == 1) .or. (styleWAVE == 2)) then
+   if ((inDat%styleWave == 1) .or. (inDat%styleWave == 2)) then
 
       ! Write a newline to finish out any uneven (incomplete) lines if needed.
       if (mod(currentPointCount,5) /= 0) then

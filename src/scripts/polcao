@@ -1,4 +1,4 @@
-#!/usr/bin/perl
+#!/bin/env perl
 
 # This script is a work in progress and its purpose is to parallelize OLCAO
 # over jobs, allowing it to have multiple inputs.

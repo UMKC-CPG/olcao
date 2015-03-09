@@ -27,7 +27,7 @@ module O_ValeCharge
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    contains
 
-subroutine makeValenceRho
+subroutine makeValenceRho(inDat)
 
    ! Import the necessary modules.
    use O_Kinds
@@ -51,6 +51,9 @@ subroutine makeValenceRho
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
+
+   ! Define passed parameters
+   type(inputData) :: inDat
 
    ! Define the local variables used in this subroutine.
    integer :: i,j,k ! Loop index variables
@@ -113,7 +116,7 @@ chargeDensityTrace(:) = 0.0_double
    ! Allocate space to hold the currentPopulation based on spin
    allocate (currentPopulation (spin))
    allocate (electronEnergy    (spin))
-   allocate (structuredElectronPopulation (numStates,numKPoints,spin))
+   allocate (structuredElectronPopulation (inDat%numStates,numKPoints,spin))
 
    ! Initialize variables from data modules.
    potRho(:,:)           = 0.0_double
@@ -133,7 +136,7 @@ chargeDensityTrace(:) = 0.0_double
    energyLevelCounter=0
    do i = 1, numKPoints
       do j = 1, spin
-         do k = 1, numStates
+         do k = 1, inDat%numStates
             energyLevelCounter = energyLevelCounter + 1
             structuredElectronPopulation (k,i,j) = &
                   & electronPopulation(energyLevelCounter)
@@ -155,7 +158,7 @@ chargeDensityTrace(:) = 0.0_double
 
          ! Skip any kpoints with a negligable contribution for each state.
          skipKP = 0
-         do j = 1, numStates
+         do j = 1, inDat%numStates
             if (sum(abs(structuredElectronPopulation(j,i,:)))>smallThresh) then
                skipKP = 1
                exit
@@ -173,14 +176,14 @@ chargeDensityTrace(:) = 0.0_double
          !   wave function to disk and so the valeVale *still* holds it from
          !   the diagonalization call.  Therefore we are stuck using the same
          !   name even in the >1 kpoint case.)
-         allocate (tempRealValeVale(valeDim,numStates))
-         allocate (tempImagValeVale(valeDim,numStates))
+         allocate (tempRealValeVale(valeDim,inDat%numStates))
+         allocate (tempImagValeVale(valeDim,inDat%numStates))
          do j = 1, spin
             call readMatrix (eigenVectors_did(:,i,j),&
-                  & valeVale(:,:numStates,1,j),&
-                  & tempRealValeVale(:,:numStates),&
-                  & tempImagValeVale(:,:numStates),&
-                  & valeStates,valeDim,numStates)
+                  & valeVale(:,:inDat%numStates,1,j),&
+                  & tempRealValeVale(:,:inDat%numStates),&
+                  & tempImagValeVale(:,:inDat%numStates),&
+                  & valeStates,valeDim,inDat%numStates)
          enddo
          deallocate (tempRealValeVale)
          deallocate (tempImagValeVale)
@@ -198,7 +201,7 @@ chargeDensityTrace(:) = 0.0_double
 
       ! Accumulate the valeValeRho matrix upper triangle and electron energy.
 #ifndef GAMMA
-      do j = 1, numStates
+      do j = 1, inDat%numStates
          currentPopulation(:) = structuredElectronPopulation(j,i,:)
 
          if (sum(abs(currentPopulation(:))) < smallThresh) cycle
@@ -220,7 +223,7 @@ chargeDensityTrace(:) = 0.0_double
                & valeDim)
       enddo
 #else
-      do j = 1, numStates
+      do j = 1, inDat%numStates
          currentPopulation(:) = structuredElectronPopulation(j,i,:)
          if (sum(abs(currentPopulation(:))) < smallThresh) cycle
 
@@ -261,7 +264,9 @@ chargeDensityTrace(:) = 0.0_double
       allocate (packedValeVale(dim1,valeDim*(valeDim+1)/2))
 
 ! Compute the integration of the charge density to show that <Psi|Psi> is
-!   actually equal to the expected number of eletrons.
+!   actually equal to the expected number of eletrons. Note that in the spin
+!   polarized case the first index will refer to the total number of electrons
+!   and the second index will refer to the spin difference.
 call readPackedMatrix (atomOverlap_did(i),packedValeVale,&
       & atomDims,dim1,valeDim)
 do j = 1, spin
@@ -321,7 +326,11 @@ enddo
    enddo ! i   numKPoints
 
 write (20,*) "Total number of electrons from <psi|psi> = ",&
-      & sum(chargeDensityTrace(:))
+      & chargeDensityTrace(1)
+if (spin == 2) then
+   write (20,*) "Electron spin difference from <psi|psi> = ",&
+         & chargeDensityTrace(2)
+endif
 
    if (spin == 1) then
 

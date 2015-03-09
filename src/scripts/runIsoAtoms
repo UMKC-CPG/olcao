@@ -1,4 +1,4 @@
-#!/usr/bin/perl
+#!/bin/env perl
 sub printHelp
 {
    print <<ENDHELP;
@@ -8,8 +8,10 @@ sub printHelp
 #          the ElementData.pm perl module.  The resultant converged potentials
 #          will be used to create an atomic potential function database.
 #
-# USAGE:   runIsoAtoms -help
+# USAGE:   runIsoAtoms [-element \$targetZ] -help
 #
+# The -element option takes one atomic Z number as an argument and will run an
+#   isolated atom calculation for that element only.
 # The -help option will print a helpful guide to the program.
 ENDHELP
 }
@@ -31,9 +33,10 @@ my $numElements;  # Total number of elements in the OLCAO program.
 my $element; # Element index counter.
 my $atom;  # Atom index counter.
 my $elementNames_ref;  # Reference to the name of every atom.
+my $targetZ;
 
 # Initialize environment.
-#&initEnv;
+&initEnv;
 
 # Parse the command line.
 &parseCommandLine;
@@ -46,6 +49,12 @@ my $elementNames_ref;  # Reference to the name of every atom.
 
 # Create a new atomic potential function database.
 &makePDB;
+
+sub initEnv
+{
+   # Assume that we will do all elements.
+   $targetZ = 0;
+}
 
 sub parseCommandLine
 {
@@ -60,8 +69,10 @@ sub parseCommandLine
    # Loop through the command line parameters checking for each option.
    while ($number < scalar(@ARGV))
    {
-      if ($ARGV[$number] eq "help")
+      if ($ARGV[$number] eq "-help")
          {&printHelp;}
+      elsif ($ARGV[$number] eq "-element")
+         {$targetZ = $ARGV[++$number];}
       else
       {
          print STDOUT "UNKNOWN COMMAND LINE PARAMETER $ARGV[$number].";
@@ -95,7 +106,17 @@ sub getElementData
 
 sub makeAtomPot
 {
-   foreach $element (1..$numElements)
+   # Define local variables.
+   my $elementInit;
+   my $elementFin;
+
+   # Determine the range of elements to do.  (I.e. one or all.)
+   if ($targetZ == 0)
+      {$elementInit = 1; $elementFin = $numElements;}
+   else
+      {$elementInit = $targetZ; $elementFin = $targetZ;}
+
+   foreach $element ($elementInit..$elementFin)
    {
 
       mkdir $elementNames_ref->[$element];
@@ -123,17 +144,26 @@ ENDSKL
 sub makePDB
 {
    # Define local variables.
+   my $elementInit;
+   my $elementFin;
    my $line;
 
    # Create a directory that will contain the potential function database.
    mkdir "atomPDB";
    chdir "atomPDB";
 
+   # Determine if all or only one element should be done.  Initialize the loop
+   #   range accordingly.
+   if ($targetZ == 0)
+      {$elementInit = 1; $elementFin = $numElements;}
+   else
+      {$elementInit = $targetZ; $elementFin = $targetZ;}
+
    # For each element we will need to produce a coefficients file and a
    #   potential definitions file.  The coefficients will be pulled from the
    #   just completed single atom calculations.  The potential definition will
    #   be pulled from the existing potential database.
-   foreach $element (1..$numElements)
+   foreach $element ($elementInit..$elementFin)
    {
       # Create and enter the directory for this element.
       mkdir $elementNames_ref->[$element];

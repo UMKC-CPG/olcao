@@ -376,8 +376,8 @@ sub setABCXYZAssignmentOrder
 sub setBorder
 {
    # Input is [0] = flag, [1] = coordinate type, [2]..[7] = a1,b1,c1,a2,b2,c2
-   #   with a1<a2 etc.  Theborders can be given in any units (direct space xyz,
-   #   direct space abc, or fractional abc).It is up to the user to be
+   #   with a1<a2 etc.  The borders can be given in any units (direct space xyz,
+   #   direct space abc, or fractional abc). It is up to the user to be
    #   internally consistent with their programs.  (I.e. if the border is set
    #   in fractional coordinates, then don't ask to check whether an item is
    #   is inside it with direct space xyz coordinates.  The coordinate type
@@ -2362,8 +2362,8 @@ sub getDirectABC
       }
 
       # Note that we now also have the fractional ABC coordinates but we are
-      #   not going to do anything with them now because I am not sure if it
-      #   will mess stuff up.
+      #   not going to do anything with them now because I don't want to mess
+      #   stuff up by making things confusing (any more than they already are).
 
       # Multiply by the lattice magnitude to get the direct space ABC coords.
       $directABC[$currentAtom][$abcAxis] *= $mag[$abcAxis];
@@ -2965,7 +2965,8 @@ sub printCIF
       $type    = $sortedAtomTypeID_ref->[$i];
 
       printf CIF "   %2s%-s%1s%-3s %2s %12.6f %12.6f %12.6f\n",$element,
-            $species,"_",$type,$element,$sortedFractABC_ref->[$i][1],
+            $species,"_",$type,ucfirst($element),
+            $sortedFractABC_ref->[$i][1],
             $sortedFractABC_ref->[$i][2],$sortedFractABC_ref->[$i][3];
    }
 
@@ -4622,7 +4623,9 @@ sub prepLine
    # Chomp, split, and shift it.
    chomp $line;
    @values = split(/$splitter/,$line);
-   if ($values[0] eq "")
+   if ($#values == -1)
+      {$values[0] = "";}
+   if (($values[0] eq "") && ($#values != 0))
       {shift @values;}
 
    return @values;

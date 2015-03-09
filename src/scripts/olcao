@@ -1,4 +1,4 @@
-#!/usr/bin/perl
+#!/bin/env perl
 
 sub printHelp
 {
@@ -174,12 +174,13 @@ my $wave;
 my $loci;
 my $tdos;
 my $pdos;
+my $bo3c;
 my $elf;
 my $eps1;
 my $eps1i;
 my $eps2;
 my $cond;
-my $ref;
+my $refr;
 my $pot;
 my $valeRho;
 my $up;
@@ -215,8 +216,6 @@ my $exeMechanism;
 
 # Set up the execution environment.
 &setupExeEnv;
-
-&XC_CodeSpin;
 
 # Run the requested job.
 &runOLCAO;
@@ -455,8 +454,16 @@ sub XC_CodeSpin
 	my $line;
 
 	# Open olcao.dat for reading.
-	open(OLCAODAT, "<$inputs/$olcao$dat" ) ||
-         die "could not open olcao.dat for reading";
+   if (-e "$proj_home/$olcao$dat")
+   {
+      open(OLCAODAT, "<$proj_home/$olcao$dat" ) ||
+            die "could not open olcao.dat for reading";
+   }
+   else
+   {
+      open(OLCAODAT, "<$inputs/$olcao$dat" ) ||
+            die "could not open ./inputs/olcao.dat for reading";
+   }
 
 	while ($line = <OLCAODAT>)
 	{
@@ -516,6 +523,9 @@ sub setupExeEnv
    # Set a number flag for the edge request.
    &setEdgeCode;
 
+   # Determine the XC Code and if the calculation is spin polarized.
+   &XC_CodeSpin;
+
    # Finally, check that a lock file does not exist blocking execution.  If it
    #   doesn't, then make one so we can start running the job.
    if (-e "$temp/$OLCAOlock")
@@ -571,12 +581,13 @@ sub initFileNames
    $loci      = ".loci";
    $tdos      = ".t";
    $pdos      = ".p";
+   $bo3c      = ".3c";
    $elf       = ".elf";
    $eps1      = ".eps1";
    $eps1i     = ".eps1i";
    $eps2      = ".eps2";
    $cond      = ".cond";
-   $ref       = ".ref";
+   $refr      = ".refr";
    $pot       = ".pot";
    $valeRho   = ".rhoV";
    $up        = ".up";
@@ -900,7 +911,7 @@ sub runTask
 
    # Mark the date and time of the beginning of this task.
    $output=`date`;
-   print RUNTIME "$taskEdge$taskName$taskBasis------------------------------\n";
+   print RUNTIME "$taskEdge$taskName$taskBasis----spin=$spinPol-----------------------------\n";
    print RUNTIME "Start:  $output";
 
    # Identify the task kpoint file to use.
@@ -933,6 +944,7 @@ sub runTask
 
       # Create the proper command line parameters (CLP) for this task.
       $taskCLP = &determineCLP($taskName,$taskEdge);
+      #print STDOUT "Task Command Line: $taskName $taskCLP\n";
 
       # Execute the requested task program and save the runtime data.
       &executeProgram($taskName,$taskCLP);
@@ -1426,11 +1438,26 @@ sub manageOutput
             &move("fort.10","$proj_home/$taskEdge$bond$taskBasis$alt$up$raw");
             &copy("fort.11","$taskEdge$bond$taskBasis$alt$raw.11");
             &move("fort.11","$proj_home/$taskEdge$bond$taskBasis$alt$dn$raw");
+            if (-e "fort.12")
+            {
+               &copy("fort.12","$taskEdge$bond$taskBasis$bo3c$alt$raw.12");
+               &move("fort.12",
+                     "$proj_home/$taskEdge$bond$taskBasis$bo3c$alt$up$raw");
+               &copy("fort.13","$taskEdge$bond$taskBasis$bo3c$alt$raw.13");
+               &move("fort.13",
+                     "$proj_home/$taskEdge$bond$taskBasis$bo3c$alt$dn$raw");
+            }
          }
          else
          {
             &copy("fort.10","$taskEdge$bond$taskBasis$raw.10");
             &move("fort.10","$proj_home/$taskEdge$bond$taskBasis$raw");
+            if (-e "fort.12")
+            {
+               &copy("fort.12","$taskEdge$bond$taskBasis$bo3c$alt$raw.12");
+               &move("fort.12",
+                     "$proj_home/$taskEdge$bond$taskBasis$bo3c$alt$raw");
+            }
          }
       }
    }
@@ -1497,11 +1524,26 @@ sub manageOutput
          &move("fort.10","$proj_home/$taskEdge$bond$taskBasis$alt$up$raw");
          &copy("fort.11","$taskEdge$bond$taskBasis$alt$raw.11");
          &move("fort.11","$proj_home/$taskEdge$bond$taskBasis$alt$dn$raw");
+         if (-e "fort.12")
+         {
+            &copy("fort.12","$taskEdge$bond$taskBasis$bo3c$alt$raw.12");
+            &move("fort.12",
+               "$proj_home/$taskEdge$bond$taskBasis$bo3c$alt$up$raw");
+            &copy("fort.13","$taskEdge$bond$taskBasis$bo3c$alt$raw.13");
+            &move("fort.13",
+                  "$proj_home/$taskEdge$bond$taskBasis$bo3c$alt$dn$raw");
+         }
       }
       else
       {
          &copy("fort.10","$taskEdge$bond$taskBasis$alt$raw.10");
          &move("fort.10","$proj_home/$taskEdge$bond$taskBasis$alt$raw");
+         if (-e "fort.12")
+         {
+            &copy("fort.12","$taskEdge$bond$taskBasis$bo3c$alt$raw.12");
+            &move("fort.12",
+                  "$proj_home/$taskEdge$bond$taskBasis$bo3c$alt$raw");
+         }
       }
    }
    elsif ("$taskName" eq "$optc")
@@ -1522,7 +1564,7 @@ sub manageOutput
          &move("fort.120",
             "$proj_home/$taskEdge$optc$taskBasis$elf$alt$up$plot");
          &move("fort.130",
-            "$proj_home/$taskEdge$optc$taskBasis$ref$alt$up$plot");
+            "$proj_home/$taskEdge$optc$taskBasis$refr$alt$up$plot");
          &move("fort.140",
             "$proj_home/$taskEdge$optc$taskBasis$eps1i$alt$up$plot");
 
@@ -1539,7 +1581,7 @@ sub manageOutput
          &move("fort.121",
             "$proj_home/$taskEdge$optc$taskBasis$elf$alt$dn$plot");
          &move("fort.131",
-            "$proj_home/$taskEdge$optc$taskBasis$ref$alt$dn$plot");
+            "$proj_home/$taskEdge$optc$taskBasis$refr$alt$dn$plot");
          &move("fort.141",
             "$proj_home/$taskEdge$optc$taskBasis$eps1i$alt$dn$plot");
       }
@@ -1554,7 +1596,7 @@ sub manageOutput
          &move("fort.100","$proj_home/$taskEdge$optc$taskBasis$alt$plot");
          &move("fort.110","$proj_home/$taskEdge$optc$taskBasis$eps1$alt$plot");
          &move("fort.120","$proj_home/$taskEdge$optc$taskBasis$elf$alt$plot");
-         &move("fort.130","$proj_home/$taskEdge$optc$taskBasis$ref$alt$plot");
+         &move("fort.130","$proj_home/$taskEdge$optc$taskBasis$refr$alt$plot");
          &move("fort.140","$proj_home/$taskEdge$optc$taskBasis$eps1i$alt$plot");
       }
    }

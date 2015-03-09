@@ -33,6 +33,9 @@ subroutine mainSCF (totalEnergy, fromExternal)
    ! Make sure that there are no accidental variable declarations.
    implicit none
 
+   type(commandLineParameters) :: clp ! from O_CommandLine
+   type(inputData) :: inDat ! from O_Input
+
    ! Define the parameters that are passed to this subroutine.
    real (kind=double) :: totalEnergy
    integer :: fromExternal
@@ -62,21 +65,21 @@ subroutine mainSCF (totalEnergy, fromExternal)
 
 
    ! Parse the command line parameters
-   call parseMainCommandLine
+   call parseMainCommandLine(clp)
 
 
    ! Read in the input to initialize all the key data structure variables.
-   call parseInput
+   call parseInput(inDat,clp)
 
 
    ! Find specific computational parameters not EXPLICITLY given in the input
    !   file.  These values can, however, be easily determined from the input
    !   file.
-   call getImplicitInfo
+   call getImplicitInfo(clp)
 
 
    ! Prepare the HDF5 files for main.
-   call initMainHDF5
+   call initMainHDF5(inDat%numStates)
 
 
    ! Access the setup hdf5 files.
@@ -111,27 +114,27 @@ subroutine mainSCF (totalEnergy, fromExternal)
 
       ! Solve the schrodinger equation
       do i = 1, spin
-         call secularEqnAllKP(i)
+         call secularEqnAllKP(i,inDat%numStates)
       enddo
 
 
       ! Find the Fermi level, and the number of occupied bands, and the
       !   number of electrons occupying each of those bands.
-      call populateStates
+      call populateStates(inDat,clp)
 
 
       ! Compute the TDOS if it was requested for each iteration.
-      if (iterFlagTDOS == 1) then
-         call computeIterationTDOS
+      if (inDat%iterFlagTDOS == 1) then
+         call computeIterationTDOS(inDat)
       endif
 
 
       ! Calculate the valence charge density
-      call makeValenceRho
+      call makeValenceRho(inDat)
 
 
       ! Compute the new self consistant potential
-      call makeSCFPot (totalEnergy)
+      call makeSCFPot (totalEnergy,inDat)
 
 
       ! Determine if the computation is complete
@@ -147,7 +150,7 @@ subroutine mainSCF (totalEnergy, fromExternal)
 
 
    ! Print the accumulated TDOS in a useful format if requested in the input.
-   if (iterFlagTDOS == 1) then
+   if (inDat%iterFlagTDOS == 1) then
       call printIterationTDOS
    endif
 
@@ -156,18 +159,18 @@ subroutine mainSCF (totalEnergy, fromExternal)
    ! Compute the final band structure if convergence was achieved or if the
    !   last iteration was done.  (I.e. we are out of the SCF loop.)
    do i = 1, spin
-      call secularEqnAllKP(i)
+      call secularEqnAllKP(i, inDat%numStates)
    enddo
 
    ! Find the Fermi level, the number of occupied bands, and the number of
    !   electrons occupying each of those bands.
-   if ((doDOS .eq. 1) .or. (doBond .eq. 1)) then
-      call populateStates
+   if ((clp%doDOS .eq. 1) .or. (clp%doBond .eq. 1)) then
+      call populateStates(inDat,clp)
    endif
 
    ! Compute the dos if it was requested.  For spin polarized calculations the
    !   spin up is in 60, 70, 80 and spin down is in 61, 71, 81.
-   if (doDOS == 1) then
+   if (clp%doDOS == 1) then
       open (unit=60,file='fort.60',status='new',form='formatted') ! TDOS
       open (unit=70,file='fort.70',status='new',form='formatted') ! PDOS
       open (unit=80,file='fort.80',status='new',form='formatted') ! LI
@@ -176,16 +179,16 @@ subroutine mainSCF (totalEnergy, fromExternal)
          open (unit=71,file='fort.71',status='new',form='formatted') !Spin PDOS
          open (unit=81,file='fort.81',status='new',form='formatted') !Spin LI
       endif
-      call computeDos
+      call computeDos(inDat,clp)
    endif
 
    ! Compute the bond order if it was requested.
-   if (doBond == 1) then
+   if (clp%doBond == 1) then
       open (unit=10,file='fort.10',status='new',form='formatted')
       if (spin == 2) then
          open (unit=11,file='fort.11',status='new',form='formatted')
       endif
-      call computeBond
+      call computeBond(inDat,clp)
    endif
 
    ! Close the HDF objects that were used.
@@ -221,7 +224,7 @@ subroutine mainSCF (totalEnergy, fromExternal)
 end subroutine mainSCF
 
 
-subroutine getImplicitInfo
+subroutine getImplicitInfo(clp)
 
    ! Import necessary modules.
    use O_ExchangeCorrelation
@@ -234,8 +237,12 @@ subroutine getImplicitInfo
    use O_Potential
    use O_Populate
    use O_TimeStamps
+   use O_CommandLine
 
    implicit none
+
+   ! define passed parameters
+   type(commandLineParameters), intent(in) :: clp ! from O_CommandLine
 
    call timeStampStart(2)
 
@@ -252,7 +259,7 @@ subroutine getImplicitInfo
 
    call initPotStructures
 
-   call initCoreStateStructures
+   call initCoreStateStructures(clp)
 
    call timeStampEnd(2)
 

@@ -5,6 +5,7 @@ program bond
    use O_CommandLine
    use O_TimeStamps
    use O_Bond
+   use O_Bond3C
    use O_Input
    use O_KPoints
    use O_Populate
@@ -16,13 +17,16 @@ program bond
    ! Make sure that no funny variables are defined.
    implicit none
 
+   type(commandLineParameters) :: clp ! from O_CommandLine
+   type(inputData) :: inDat ! from O_Input
+
 
    ! Initialize the logging labels.
    call initOperationLabels
 
 
    ! Parse the command line parameters
-   call parseBondCommandLine
+   call parseBondCommandLine(clp)
 
 
    ! Open the bond files that will be written to.
@@ -30,15 +34,20 @@ program bond
    if (spin == 2) then
       open (unit=11,file='fort.11',status='new',form='formatted')
    endif
-
+   if (inDat%doBond3C == 1) then
+      open (unit=12,file='fort.12',status='new',form='formatted')
+      if (spin == 2) then
+         open (unit=13,file='fort.13',status='new',form='formatted')
+      endif
+   endif
 
    ! Read in the input to initialize all the key data structure variables.
-   call parseInput
+   call parseInput(inDat,clp)
 
    ! The bond calculation must be done without any smearing to determine
    !   the number of electrons for each atom.  So we set the thermal smearing
    !   factor to zero.
-   thermalSigma = 0.0_double
+   inDat%thermalSigma = 0.0_double
 
    ! Find specific computational parameters not EXPLICITLY given in the input
    !   file.  These values can, however, be easily determined from the input
@@ -47,29 +56,46 @@ program bond
 
 
    ! Access the HDF5 data stored by band.
-   call accessPSCFBandHDF5
+   call accessPSCFBandHDF5(inDat%numStates,clp)
 
    ! Allocate space to store the energy eigen values, and then read them in.
-   allocate (energyEigenValues (numStates,numKPoints,spin))
-   call readEnergyEigenValuesBand
+   allocate (energyEigenValues (inDat%numStates,numKPoints,spin))
+   call readEnergyEigenValuesBand(inDat%numStates)
 
    ! Populate the electron states to find the highest occupied state (Fermi
    !   energ for metals).
-   call populateStates
+   call populateStates(inDat,clp)
 
    ! Shift the energy eigen values according to the highest occupied state and
    !   convert them from au to eV.
-   call shiftEnergyEigenValues(occupiedEnergy)
+   call shiftEnergyEigenValues(occupiedEnergy,inDat%numStates)
 !   call convertEnergyEigenValuesToeV
 
    ! Call the bond subroutine to compute the bond order and effective charge.
-   call computeBond
+   call computeBond(inDat,clp)
+
+   ! Compute the three center bond order if requested.
+   if (inDat%doBond3C == 1) then
+      call computeBond3C(inDat,clp)
+   endif
 
    ! Deallocate unnecesary matrices
    deallocate (energyEigenValues)
 
    ! Close access to the band HDF5 data.
-   call closeAccessPSCFBandHDF5
+   call closeAccessPSCFBandHDF5(clp)
+
+   ! Close the BOND files that were written to.
+   close (10)
+   if (spin == 2) then
+      close (11)
+   endif
+   if (inDat%doBond3C == 1) then
+      close (12)
+      if (spin == 2) then
+         close (13)
+      endif
+   endif
 
    ! Open a file to signal completion of the program.
    open (unit=2,file='fort.2',status='new')

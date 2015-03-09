@@ -155,6 +155,10 @@ subroutine gaussOverlapOL
    real (kind=double) :: maxLatticeRadius ! Maximum radius beyond which no
          ! lattice points will be considered for integration.
 
+   ! Define variables for gauss integrals
+   integer :: l1l2Switch
+   integer, dimension(16) :: powerOfTwo = (/0,1,1,1,2,2,2,2,2,3,3,3,3,3,3,3/)
+
    ! Record the beginning of this phase of the setup calculation.
    call timeStampStart (8)
 
@@ -362,14 +366,28 @@ subroutine gaussOverlapOL
                   !   has been shown to exist.
                   contrib = .true.
 
+	       ! Calculate the opcode to do the correct set of integrals
+               ! for the current alpha pair
+                l1l2Switch = ishft(1,&
+                  &(powerOfTwo(currentlmAlphaIndex(alphaIndex(1),1))))&
+                  &+ ishft(16,&
+                  &(powerOfTwo(currentlmAlphaIndex(alphaIndex(2),2))))
+
+                ! We can proceed with the next step of the calculation.
+                !   This is the actual integral.             
+                call overlapInteg (currentAlphas(alphaIndex(1),1),&
+                  & currentAlphas(alphaIndex(2),2), &
+                  & currentPosition(:,1), shiftedAtomPos(:),&
+                  & l1l2Switch, oneAlphaPair)
+
                   ! We can proceed with the next step of the calculation.
                   !   This is the actual integral.
-                  call overlapInteg (oneAlphaPair,&
-                         & currentlmAlphaIndex (alphaIndex(1),1),&
-                         & currentlmAlphaIndex (alphaIndex(2),2),&
-                         & currentAlphas(alphaIndex(1),1),&
-                         & currentAlphas(alphaIndex(2),2),&
-                         & currentPosition(:,1),shiftedAtomPos(:))
+                  !call overlapInteg (oneAlphaPair,&
+                  !       & currentlmAlphaIndex (alphaIndex(1),1),&
+                  !       & currentlmAlphaIndex (alphaIndex(2),2),&
+                  !       & currentAlphas(alphaIndex(1),1),&
+                  !       & currentAlphas(alphaIndex(2),2),&
+                  !       & currentPosition(:,1),shiftedAtomPos(:))
 
                   ! Collect the results of the overlap of the current alpha
                   !   times the basis functions of atom 2.
@@ -540,6 +558,10 @@ subroutine gaussOverlapKE
          ! alpha pairs are considered to have no overlap.
    real (kind=double) :: maxLatticeRadius ! Maximum radius beyond which no
          ! lattice points will be considered for integration.
+
+   ! Define variables for gauss integrals
+   integer :: l1l2Switch
+   integer, dimension(16) :: powerOfTwo = (/0,1,1,1,2,2,2,2,2,3,3,3,3,3,3,3/)
 
    ! Record the beginning of this phase of the setup calculation.
    call timeStampStart (9)
@@ -748,14 +770,28 @@ subroutine gaussOverlapKE
                   !   has been shown to exist.
                   contrib = .true.
 
+	      ! Calculate the opcode to do the correct set of integrals
+              ! for the current alpha pair
+               l1l2Switch = ishft(1,&
+                 &(powerOfTwo(currentlmAlphaIndex(alphaIndex(1),1))))&
+                 &+ ishft(16,&
+                 &(powerOfTwo(currentlmAlphaIndex(alphaIndex(2),2))))
+
+              ! We can proceed with the next step of the calculation. This
+              ! is the actual integral.
+               call KEInteg (currentAlphas(alphaIndex(1),1),&
+                 & currentAlphas(alphaIndex(2),2), &
+                 & currentPosition(:,1), shiftedAtomPos(:),&
+                 & l1l2Switch, oneAlphaPair)
+
                   ! We can proceed with the next step of the calculation. This
                   !   is the actual integral.
-                  call KEInteg (oneAlphaPair,&
-                        & currentlmAlphaIndex (alphaIndex(1),1),&
-                        & currentlmAlphaIndex (alphaIndex(2),2),&
-                        & currentAlphas(alphaIndex(1),1),&
-                        & currentAlphas(alphaIndex(2),2),&
-                        & currentPosition(:,1),shiftedAtomPos(:))
+                  !call KEInteg (oneAlphaPair,&
+                  !      & currentlmAlphaIndex (alphaIndex(1),1),&
+                  !      & currentlmAlphaIndex (alphaIndex(2),2),&
+                  !      & currentAlphas(alphaIndex(1),1),&
+                  !      & currentAlphas(alphaIndex(2),2),&
+                  !      & currentPosition(:,1),shiftedAtomPos(:))
 
                   ! Collect the results of the overlap of the current alpha
                   !   times the basis functions of atom 2.
@@ -1321,6 +1357,10 @@ subroutine gaussOverlapEP
    real (kind=double) :: maxLatticeRadius ! Maximum radius beyond which no
          ! lattice points will be considered for integration.
 
+   ! Define variables for gauss integrals
+   integer :: l1l2Switch
+   integer, dimension(16) :: powerOfTwo = (/0,1,1,1,2,2,2,2,2,3,3,3,3,3,3,3/)
+
    ! Allocate space for locally defined allocatable arrays
    allocate (currentBasisFns     (maxNumAtomAlphas,maxNumStates,2))
    allocate (currentAlphas       (maxNumAtomAlphas,2))
@@ -1850,6 +1890,9 @@ subroutine nuclearPE(contrib,alphaIndex,currentElements,currentlmAlphaIndex,&
          ! for the nuclear alpha triple.
    real (kind=double), dimension (16,16) :: nucPotAlphaOverlap
 
+   integer :: l1l2Switch
+   integer, dimension(16) :: powerOfTwo = (/0,1,1,1,2,2,2,2,2,3,3,3,3,3,3,3/)
+
    ! At this point a sufficient overlap has been found for the current alpha
    !   pair so we start looking through nuclear potentials.
 
@@ -1923,13 +1966,26 @@ subroutine nuclearPE(contrib,alphaIndex,currentElements,currentlmAlphaIndex,&
          shiftedPotPos(:) = potPosition(:) + latticeVector2(:) + &
                & cellDimsReal(:,n)
 
-         call nucPotInteg (oneAlphaPair,&
-               & currentlmAlphaIndex (alphaIndex(1),1),&
-               & currentlmAlphaIndex (alphaIndex(2),2),&
-               & currentAlphas(alphaIndex(1),1),&
+         ! Calculate the opcode to do the correct set of integrals
+         ! for the current alpha pair
+         l1l2Switch = ishft(1,&
+           &(powerOfTwo(currentlmAlphaIndex(alphaIndex(1),1))))&
+           &+ ishft(16,&
+           &(powerOfTwo(currentlmAlphaIndex(alphaIndex(2),2))))
+
+         call nucPotInteg (currentAlphas(alphaIndex(1),1),&
                & currentAlphas(alphaIndex(2),2),&
-               & nucAlpha,currentPosition(:,1),&
-               & shiftedAtomPos(:),shiftedPotPos(:))
+               & nucAlpha, currentPosition(:,1),&
+               & shiftedAtomPos(:), shiftedPotPos(:),&
+               & l1l2Switch, oneAlphaPair)
+
+         !call nucPotInteg (oneAlphaPair,&
+         !      & currentlmAlphaIndex (alphaIndex(1),1),&
+         !      & currentlmAlphaIndex (alphaIndex(2),2),&
+         !      & currentAlphas(alphaIndex(1),1),&
+         !      & currentAlphas(alphaIndex(2),2),&
+         !      & nucAlpha,currentPosition(:,1),&
+         !      & shiftedAtomPos(:),shiftedPotPos(:))
 
          ! Accumulate the results returned for this alpha set.
          nucPotAlphaOverlap(:currentlmAlphaIndex (alphaIndex(1),1), &
@@ -1974,6 +2030,9 @@ subroutine electronicPE(contrib,alphaIndex,currentElements,currentlmAlphaIndex,&
    real (kind=double), dimension (dim3),   intent (in)  :: shiftedAtomPos
    real (kind=double), dimension (16,16),  intent (out) :: oneAlphaPair
    real (kind=double), dimension (:,:),    intent (in)  :: currentAlphas
+   ! Define variables for gauss integrals
+   integer :: l1l2Switch
+   integer, dimension(16) :: powerOfTwo = (/0,1,1,1,2,2,2,2,2,3,3,3,3,3,3,3/)
 
    ! Declare local varibales.
    integer :: m,n
@@ -2074,12 +2133,29 @@ subroutine electronicPE(contrib,alphaIndex,currentElements,currentlmAlphaIndex,&
          shiftedPotPos(:) = potPosition(:) + latticeVector2(:) + &
                & cellDimsReal(:,n)
 
-         call threeCentInteg (oneAlphaPair,&
-               & currentlmAlphaIndex (alphaIndex(1),1),&
-               & currentlmAlphaIndex (alphaIndex(2),2),&
-               & currentAlphas(alphaIndex(1),1),&
-               & currentAlphas(alphaIndex(2),2),currPotAlpha,&
-               & currentPosition(:,1),shiftedAtomPos(:),shiftedPotPos(:))
+         !call threeCentInteg (currentAlphas(alphaIndex(1),1),&
+         !& currentAlphas(alphaIndex(2),2),currPotAlpha,&
+         !& currentPosition(:,1), shiftedAtomPos(:), &
+         !& shiftedPotPos(:), oneAlphaPair, l1l2Switch)
+
+	 ! Calculate the opcode to do the correct set of integrals
+         ! for the current alpha pair
+         l1l2Switch = ishft(1,&
+            &(powerOfTwo(currentlmAlphaIndex(alphaIndex(1),1))))&
+            &+ ishft(16,&                     
+            &(powerOfTwo(currentlmAlphaIndex(alphaIndex(2),2))))
+
+	       call threeCentInteg (currentAlphas(alphaIndex(1),1),&
+         & currentAlphas(alphaIndex(2),2),currPotAlpha,&
+         & currentPosition(:,1), shiftedAtomPos(:), &
+         & shiftedPotPos(:), l1l2Switch, oneAlphaPair)
+
+         !call threeCentInteg (oneAlphaPair,&
+         !      & currentlmAlphaIndex (alphaIndex(1),1),&
+         !      & currentlmAlphaIndex (alphaIndex(2),2),&
+         !      & currentAlphas(alphaIndex(1),1),&
+         !      & currentAlphas(alphaIndex(2),2),currPotAlpha,&
+         !      & currentPosition(:,1),shiftedAtomPos(:),shiftedPotPos(:))
 
          ! Accumulate the results returned for this alpha set.
          elecPotAlphaOverlap(:currentlmAlphaIndex(alphaIndex(1),1), &

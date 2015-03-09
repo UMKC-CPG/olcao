@@ -120,29 +120,42 @@ module O_Lattice  ! Lattice and superlattice object.
    contains
 
 ! This subroutine will read the real space lattice vectors.
-subroutine readRealCellVectors
+subroutine readRealCellVectors(readUnit,writeUnit)
 
    ! Use necessary modules.
    use O_ReadDataSubs
 
    ! Make sure no funny variables are defined.
-   implicit none
+   implicit none 
 
-   call readData (3,3,realVectors(:,:),len('CELL_VECTORS'),'CELL_VECTORS')
+   ! passed parameters.
+   integer, intent(in)    :: readUnit   ! The unit number of the file from which
+                                        ! we are reading.
+   integer, intent(in)    :: writeUnit  ! The unit number of the file to which
+                                        ! we are writing.
+
+   call readData(readUnit,writeUnit,3,3,realVectors(:,:),&
+      & len('CELL_VECTORS'),'CELL_VECTORS')
 
 end subroutine readRealCellVectors
 
 ! This subroutine will read the definition for a 3D mesh that can be used to
 !   evaluate and display the charge density or specific wave function states.
-subroutine readNumMeshPoints
+subroutine readNumMeshPoints(readUnit,writeUnit)
 
    ! Use necessary modules.
    use O_ReadDataSubs
 
    ! Make sure no funny variables are defined.
    implicit none
+   
+   ! passed parameters.
+   integer, intent(in)    :: readUnit   ! The unit number of the file from which
+                                        ! we are reading.
+   integer, intent(in)    :: writeUnit  ! The unit number of the file to which
+                                        ! we are writing.
 
-   call readData (3,numMeshPoints(:),0,'')
+   call readData(readUnit,writeUnit,3,numMeshPoints(:),0,'')
 
 end subroutine readNumMeshPoints
 
@@ -193,6 +206,10 @@ subroutine getRecipCellVectors
 
    realCellVolume = abs(realCellVolume) ! Volume is always positive
    recipCellVolume = ((2.0_double*Pi)**3)/realCellVolume
+
+   ! Also, since we're here, let's compute the inverse of the real lattice
+   !   vector matrix.
+   invRealVectors(:,:) = recipVectors(:,:) / (2.0_double * pi)
 
    write (20,100) 'The real  cell volume is: ',realCellVolume
    write (20,100) 'The recip cell volume is: ',recipCellVolume

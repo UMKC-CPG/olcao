@@ -36,7 +36,7 @@ module O_MainEVectHDF5
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    contains
 
-subroutine initMainEVectHDF5 (main_fid)
+subroutine initMainEVectHDF5 (main_fid,numStates)
 
    ! Import any necessary definition modules.
    use HDF5
@@ -44,12 +44,12 @@ subroutine initMainEVectHDF5 (main_fid)
    ! Import necessary object modules.
    use O_KPoints     ! For numKPoints
    use O_AtomicSites ! For valeDim
-   use O_Input       ! For numStates
    use O_CommandLine ! For spin (not anymore)
    use O_Potential   ! For spin
 
    ! Define the passed parameters.
    integer(hid_t) :: main_fid
+   integer, intent(in) :: numStates
 
    ! Define local variables.
    integer :: i,j

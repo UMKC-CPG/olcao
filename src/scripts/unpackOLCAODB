@@ -1,4 +1,4 @@
-#!/usr/bin/perl
+#!/bin/env perl
 
 # PROGRAM: unpackOLCAODB
 # PURPOSE: This program is simply designed to unpack the database files that

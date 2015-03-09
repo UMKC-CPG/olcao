@@ -38,11 +38,14 @@ module O_OptcTransitions
    real (kind=double), allocatable, dimension (:) :: indirectGap ! This is the
          !   smallest energy difference between the highest occupied state and
          !   the lowest unoccupied state for all kpoints.
-   real (kind=double), allocatable, dimension (:) :: directGap ! This is the
+   real (kind=double), allocatable, dimension (:,:) :: directGap ! This is the
          !   smallest energy difference between the highest occupied state and
          !   the lowest unoccupied state for any single kpoint.
+   real (kind=double), allocatable, dimension (:,:) :: indirectGapEnergies !
+         !   This is the list of upper and lower energy values for the
+         !   directGap of each kpoint and spin.
 
-   real (kind=double), allocatable, dimension (:,:,:,:) :: energyMom
+   real (kind=double), allocatable, dimension (:,:,:,:) :: transitionProb
    real (kind=double), allocatable, dimension (:,:,:)   :: energyDiff
 
 #ifndef GAMMA
@@ -57,7 +60,7 @@ module O_OptcTransitions
 
 contains
 
-subroutine getEnergyStatistics
+subroutine getEnergyStatistics(inDat,clp)
 
    ! Import necessary modules.
    use O_Kinds
@@ -67,9 +70,14 @@ subroutine getEnergyStatistics
    use O_CommandLine
    use O_SecularEquation
    use O_Potential
+   use O_Populate
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
+
+   ! define passed parameters
+   type(inputData), intent(in) :: inDat ! from O_Input
+   type(commandLineParameters), intent(in) :: clp ! from O_CommandLine
 
    ! Define local variables.
    integer :: h,i,j,k ! Loop index variables.
@@ -81,17 +89,17 @@ subroutine getEnergyStatistics
    integer :: lastInit
    integer :: firstFin
    integer :: lastFin
-
+   integer :: orderedIndex
 
    ! Pull variables out of imported modules.
-   if (stateSet == 0) then      ! Standard optical properties calculation.
+   if (clp%stateSet == 0) then      ! Standard optical properties calculation.
       ! The energy onset for standard optical properties calculations is the
       !   band gap width in eV.  The energy scale for evaluating the
       !   accumulated (and broadened) transitions will begin as close to 0 eV
       !   as conveniently possible.
-      energyCutoff   = cutoffEnOPTC
-      maxTransEnergy = maxTransEnOPTC
-   elseif (stateSet == 1) then  ! PACS type calculation
+      energyCutoff   = inDat%cutoffEnOPTC
+      maxTransEnergy = inDat%maxTransEnOPTC
+   elseif (clp%stateSet == 1) then  ! PACS type calculation
       ! PACS calculations have the interesting feature that the energy onset is
       !   at some very high energy that is dependent on the particular target
       !   atom being excited (elemental dependency).  This is because the
@@ -113,12 +121,14 @@ subroutine getEnergyStatistics
       !   the lowest energy in the output data set (no transitions at this
       !   energy though).  Then, we add the energy window we want to compute
       !   for to get the maximum transition energy.
-      energyMin      = totalEnergyDiffPACS - mod(totalEnergyDiffPACS,&
-            & onsetEnergySlackPACS)
-      maxTransEnergy = energyMin + energyWindowPACS
+      energyMin = inDat%totalEnergyDiffPACS - &
+            & mod(inDat%totalEnergyDiffPACS,inDat%onsetEnergySlackPACS)
+      maxTransEnergy = energyMin + inDat%energyWindowPACS
+!write (20,*) maxTransEnergy,energyMin,inDat%deltaPACS
+!call flush (20)
    else                         ! Sigma(E) type calculation
-      energyCutoff   = cutoffEnSIGE
-      maxTransEnergy = maxTransEnSIGE
+      energyCutoff   = inDat%cutoffEnSIGE
+      maxTransEnergy = inDat%maxTransEnSIGE
    endif
 
 
@@ -128,8 +138,20 @@ subroutine getEnergyStatistics
    allocate (lastOccupiedState    (numKPoints,spin))
    allocate (firstUnoccupiedState (numKPoints,spin))
    allocate (lastUnoccupiedState  (numKPoints,spin))
-   allocate (directGap   (spin))
-   allocate (indirectGap (spin))
+   allocate (directGap            (numKPoints,spin))
+   allocate (indirectGapEnergies  (spin,2)) ! Last index: Upper=1, Lower=2
+   allocate (indirectGap          (spin))
+
+   ! Initialize the arrays.
+   transCounter(:,:)         = 0
+   firstOccupiedState(:,:)   = 0
+   lastOccupiedState(:,:)    = 0
+   firstUnoccupiedState(:,:) = 0
+   lastUnoccupiedState(:,:)  = 0
+   directGap(:,:)            = bigThresh
+   indirectGapEnergies(:,1)  = bigThresh
+   indirectGapEnergies(:,2)  = -bigThresh
+   inDirectGap(:)            = 0.0_double
 
    ! The purpose of this subroutine is to gather important statistics and
    !   indices for use later on.  The important values that will be determined
@@ -141,93 +163,237 @@ subroutine getEnergyStatistics
    !   level); 2) The direct band gap for each spin; 3) The minimum indirect
    !   band gap for each spin; 4) The number of transitions for each kpoint and
    !   spin so that we can allocate memory easily; 5) whatever ...
+   ! We must take some extra consideration of the situation in which thermal
+   !   smearing is present. It should be understood that in this case the
+   !   population statistics are a bit different than the 0K case where the
+   !   Fermi edge is a flat step function. For thermal smearing we have the
+   !   condition that states near the Fermi level that are fully occupied at
+   !   0K will be partially occupied at a finite temperature. Further, states
+   !   that are totally unoccupied at 0K will also be partially occupied at a
+   !   finite temperature. Thus we must consider the case of transitions
+   !   between occupied and unoccupied states a bit carefully.
+   ! Consider first the PACS case. Here we have the initial state(s) being core
+   !   states that will always be fully occupied in the ground state regardless
+   !   of temperature (becaues they are so deep). The electron from the core
+   !   state may transition into any state with partial or zero occupation.
+   !   Thus, when making a list of the states to transition into, we must find
+   !   the first one that has a non-negligable portion that is unoccupied (i.e.
+   !   a mostly occupied VB state that is a bit far-ish from the traditional
+   !   top of the VB.) The core electron may transition into this state, but
+   !   the probability of doing so must be affected by (of course) the
+   !   momentum matrix element that represents conservation of angular momentum
+   !   selection rules (i.e. s->p and p->s,d etc) *and* the fact that the
+   !   state at that energy is mostly occupied already (e.g. 99%). Therefore,
+   !   the transition calculation proceeds as normal except that the intensity
+   !   must be scaled by a factor of 0.01. Without thermal smearing, the
+   !   probability of transitioning into this state would be 0%. As the higher
+   !   energy states are considered, the so-called occupation scaling factor
+   !   will increase to a maximum of 1.0 in the case that the core electron is
+   !   transitioning into a state that has zero initial occupation.
+   ! Consider second the case of a traditional VB optical properties
+   !   calculation. Now the situation is even more complicated because the
+   !   initial state may be partially occupied as well as the final state.
+   !   However, similar physical principles will apply and the probability of
+   !   making a transition will be scaled by two occupation scaling factors,
+   !   one for the originating state and one for the final state.
 
    do h = 1, spin
 
       ! Initialize the values used to find the indirect gap and the direct gap.
       maxOccupiedEnergy = -bigThresh
       minUnoccupiedEnergy = bigThresh
-      directGap(h) = bigThresh
 
       ! Pacs calculations need to have the resultant spectra shifted according
       !   to the difference in orbital energies from the ground and excited
       !   states.  To find the amount of the shift we initialize the search
       !   number.
-      if (stateSet == 1) then  ! Doing PACS calculation.
+      if (clp%stateSet == 1) then  ! Doing PACS calculation.
          orbitalDiff = bigThresh
       endif
 
       do i = 1, numKPoints
-         do j = 1, numStates
+         do j = 2, inDat%numStates
 
-            ! Find the last occupied state for this KPoint. (This works because
-            !   the energy values have already been shifted such that the
-            !   highest occupied state of all kpoints is at 0.0 eV.)  Also note
+            ! Find the last occupied state for this KPoint and spin. Also note
             !   that this will deal with degenerate highest occupied states.
-            if (energyEigenValues(j,i,h) > 0.0_double) then
+            ! Note: In the case that thermal smearing is turned on, then the
+            !   zero of energy is the Fermi level (which may be in the gap for
+            !   insulators). There may be paritially occupied orbitals above
+            !   the Fermi level and partially occupid orbitals below the Fermi
+            !   level because of the smearing.
 
-               ! Store the index values for the last occupied and first
-               !   unoccupied states for this kpoint.
-               lastOccupiedState(i,h) = j-1
-               firstUnoccupiedState(i,h) = j
+            ! Transitions are from the core states into any of the partially
+            !   occupied states scaled by the degree of population for PACS
+            !   calculations.
+            ! Transitions are from the valence states (including any partially
+            !   occupied states above or below the fermi level) into any of the
+            !   partially occupied states above or below the fermi level (that
+            !   are also *above* the initial state) for traditional optical
+            !   properties calculations.
+            ! Thermal excitations in conducting materials are taken to occur
+            !   between any occupied (or partially occupied) state and any
+            !   unoccupied (or partially occupied state of higher energy) that
+            !   is within a designated range (usually on the order of a few eV
+            !   or tenths of an eV). This is for sigma(E) calculations.
 
-               ! Compute the size of the direct gap for this kpoint.
-               currentGap = abs(energyEigenValues(j,i,h) - &
-                     & energyEigenValues(j-1,i,h))
+            ! Determine the array index value of the current spin-kpoint-state
+            !   as defined by the tempEnergyEigenValues loop near the beginning
+            !   of the population subroutine.
+            orderedIndex = j+inDat%numStates*(h-1)+inDat%numStates*spin*(i-1)
 
-               ! Compare the smallest overall gap to the gap for this kpoint to
-               !   get the new smallest overall direct gap so far.
-               if (currentGap < directGap(h)) then
-                  directGap(h) = currentGap
+            ! Note that we should anticipate that the following "if" statement
+            !   will never be true when j=1. This means that the electron
+            !   population of the first (lowest) state will always be the
+            !   maximum possible (the kPointWeight). This condition might be
+            !   broken if the thermal smearing was set so insanely high that
+            !   it smeared all the way to the lowest state (some -20 eV). This
+            !   would correspond to rediculous temperatures. Just to be sure
+            !   though, the j-loop starts at 2. (The first state will not be
+            !   the first (partially) unoccupied state.) This is important
+            !   because some j-1 and j-k with k/=0 type calculations are done
+            !   inside this if-statement.
+            ! This "if" statement will be true any time that we find a state
+            !   with less than full occupation.
+            if (abs(electronPopulation(orderedIndex)-kPointWeight(i) / &
+                  & real(spin,double)) > smallThresh) then
+!            if (energyEigenValues(j,i,h) > 0.0_double) then
+!write (20,*) "ePop,ordIndex,kPWeight,j,i,h",electronPopulation(orderedIndex),&
+!   & orderedIndex,kPointWeight(i),j,i,h
+!call flush (20)
+
+               ! In the condition that we are doing a PACS calculation then
+               !   the initial state core state(s) *will* be partially
+               !   occupied because we have pulled an electron out of them.
+               !   These states will never be final states and so we have to
+               !   skip them.
+               if (clp%stateSet == 1) then
+                  if (j <= inDat%lastInitStatePACS) cycle
                endif
 
-               ! Compute the energy values of these states so that we can later
-               !   determine the indirect band gap.
-               if (energyEigenValues(j-1,i,h) > maxOccupiedEnergy) then
-                  maxOccupiedEnergy = energyEigenValues(j-1,i,h)
-               endif
-               if (energyEigenValues(j,i,h) < minUnoccupiedEnergy) then
-                  minUnoccupiedEnergy = energyEigenValues(j,i,h)
-               endif
-
-               ! If we are doing a sige calculation then we are only concerned
-               !   with states that are a few eV from the Fermi energy.  In this
-               !   case we will search for the beginning and ending states.
-               if (stateSet == 2) then
-
-                  ! Loop higher than the current j-loop state to find the
-                  !   lowest unoccupied state that is greater than the maximum
-                  !   transition energy from the Fermi level.
-                  do k = j, numStates
-                     if (energyEigenValues(k,i,h) > maxTransEnergy) then
-                         lastUnoccupiedState(i,h) = k
-                         exit
-                     endif
-                     if (k == numStates) then
-                        lastUnoccupiedState(i,h) = numStates
-                     endif
-                  enddo
-
-
-                  ! Loop lower than the current j-loop state to find the
-                  !   highest occupied state that is less than the maximum
-                  !   transition energy from the Fermi level.
-                  do k = 1, j-1
-                     if (abs(energyEigenValues(j-k,i,h)) > maxTransEnergy) then
-                        firstOccupiedState(i,h) = j-k
-                        exit
-                     endif
-                     if (k == j-1) then
-                        firstOccupiedState(i,h) = 1
-                     endif
-                  enddo
+               ! We have found a state that is either partially or fully
+               !   unoccupied. Therefore, this state may be the lowest energy
+               !   state that an electron *could* transfer into (indirect gap)
+               !   considering that each spin and kpoint has its own set of
+               !   states. If this state is lower in energy than any other
+               !   previously found state with non-occupation then we record it
+               !   as the final state for the indirect gap for this spin. (Note
+               !   that for metals with thermal smearing turned on, this state
+               !   will be below the fermi level while there will be partially
+               !   occupied states above the fermi level. Thus, there will be
+               !   no gap. Metals should have no gap.)
+               if (indirectGapEnergies(h,1) > energyEigenValues(j,i,h)) then
+                  indirectGapEnergies(h,1) = energyEigenValues(j,i,h)
                endif
 
-               ! No need to search through any higher states in the outer j
-               !   loop.  All relevant information has been obtained.
-               exit
-            endif
-         enddo
+               ! Store the index values for the first unoccupied state for this
+               !   kpoint and spin.
+               if (firstUnoccupiedState(i,h) == 0) then
+                  firstUnoccupiedState(i,h) = j
+               endif
+
+               ! In the event that the previous state is partially or fully
+               !   occupied then we want to check the energy difference
+               !   between it and the current state (which is partially
+               !   occupied or fully unoccupied) to see if it is a "gap". For
+               !   the 0K case with insulators, this is an obvious calculation,
+               !   but for the finite temperature case with thermal smearing
+               !   the situation is more complex.  Essentailly, for the current
+               !   kpoint, we are looking for the largest separation between a
+               !   state with some electrons in it and a state that isn't fully
+               !   occupied. At the moment we are at a state that has less than
+               !   full occupation and we are checking the previous state to
+               !   see if it has any electrons.
+               if (electronPopulation(orderedIndex-1) > 0.0_double) then
+
+                  ! Obviously, this is also an occupied state and the last time
+                  !   that we get inside this "if" statement (inside the upper
+                  !   one too) we will have found the last occupied state.
+                  !   Thus, we assume that every time is the last time and
+                  !   eventually it will be correct.  (This is only useful for
+                  !   traditional VB optical properties calculations and
+                  !   sigma(E) calculations. It is not useful for PACS
+                  !   calculatoins because they will use the user specified
+                  !   core states by overriding this determination later on.)
+                  lastOccupiedState(i,h) = j-1
+
+                  ! Similarly, we will find the highest occupied state energy.
+                  if (indirectGapEnergies(h,2)<energyEigenValues(j-1,i,h)) then
+                     indirectGapEnergies(h,2) = energyEigenValues(j-1,i,h)
+                  endif
+
+                  ! Compute the size of the energy difference between the
+                  !   current partially occupied or fully unoccupied state and
+                  !   the previous (j-1) state which is either partially
+                  !   occupied or fully occupied. Note that we had to check
+                  !   that the previous state was at least partially occupied.
+                  currentGap = abs(energyEigenValues(j,i,h) - &
+                        & energyEigenValues(j-1,i,h))
+
+                  ! This so-called currentGap will become the direct gap *for
+                  !   this kpoint and spin* if it is minimal compared to other
+                  !   previous currentGap values for this kpoint (and spin).
+                  !   Note that the comparison between kpoints will be done
+                  !   later. Also, just remember that we are always only
+                  !   comparing the energy difference between adjacent states
+                  !   for the current kpoint.
+                  if (currentGap < directGap(i,h)) then
+                     directGap(i,h) = currentGap
+!write (20,*) "currGap,dirGap,i,h",currentGap,directGap(i,h),i,h
+!call flush(20)
+                     ! The largest currentGap for this kpoint might be a
+                     !   directGap when compared with other directGap values
+                     !   from other kpoints (to be determined later).
+                  endif
+               else ! The previous state has no electrons in it.
+                  ! No need to search through any higher states in the outer j
+                  !   loop.  All relevant information has been obtained.
+                  exit
+               endif ! The previous state has at least some electrons in it.
+
+            endif ! (Found a partially occupied or fully unoccupied state)
+         enddo ! (j = numStates)
+
+         ! If we are doing a sige calculation then we are only concerned
+         !   with states that are a few eV from the Fermi energy.  This
+         !   means that in addition to having to seek out the first
+         !   unoccupied state and the last occupied state we also need to
+         !   identify the last unoccupied state (which will be *just*
+         !   above the last occupied state according to the
+         !   maxTransEnergy given in the input file) and the first
+         !   occupied state (which will be *just* below the first
+         !   unoccupied state according to the maxTransEnergy given in
+         !   the input file (olcao.dat)).
+         ! Note that this search only needs to be done once per kpoint so this
+         !   is why we are doing it after the numStates loop.
+         if (clp%stateSet == 2) then
+
+            ! Loop higher than the last occupied state to find the
+            !   lowest unoccupied state that is *greater* than the maximum
+            !   transition energy from the Fermi level.
+            do k = lastOccupiedState(i,h), inDat%numStates
+               if (energyEigenValues(k,i,h) > maxTransEnergy) then
+                   lastUnoccupiedState(i,h) = k
+                   exit
+               endif
+               if (k == inDat%numStates) then
+                  lastUnoccupiedState(i,h) = inDat%numStates
+               endif
+            enddo
+
+            ! Loop lower than the first unoccupied state to find the
+            !   highest occupied state that is *less* than the maximum
+            !   transition energy from the Fermi level.
+            do k = 1, firstUnoccupiedState(i,h)-1
+               if (abs(energyEigenValues(firstUnoccupiedState(i,h)-k,i,h)) > &
+                        & maxTransEnergy) then
+                  firstOccupiedState(i,h) = firstUnoccupiedState(i,h)-k
+                  exit
+               endif
+               if (k == firstUnoccupiedState(i,h)-1) then
+                  firstOccupiedState(i,h) = 1
+               endif
+            enddo
+         endif ! stateSet 2
 
          ! Initialize the counter for the number of transitions for this kpoint.
          transCounter(i,h) = 0
@@ -236,26 +402,28 @@ subroutine getEnergyStatistics
          !   we care about is the last (highest) state in the calculation, and
          !   the first occupied state is always the first (lowest) state in the
          !   calculation.  For PACS, these values depend on which core state
-         !   has been excited.  For Sigma(E) these values depend
+         !   has been excited.  For Sigma(E) these values depend on the range
+         !   around the Fermi level to consider (defined by the user) and the
+         !   determination above.
 
-         if (stateSet == 0) then ! Doing normal optical properties calculation.
+         if (clp%stateSet == 0) then ! Normal optical properties calculation.
             firstOccupiedState(i,h) = 1
             ! lastOccupiedState determined above.
             ! firstUnoccupiedState determined above.
-            lastUnoccupiedState(i,h) = numStates
-         elseif (stateSet == 1) then ! Doing a PACS calculation.
-            firstOccupiedState(i,h) = firstInitStatePACS ! From O_Input
-            lastOccupiedState(i,h)  = lastInitStatePACS  ! From O_Input
+            lastUnoccupiedState(i,h) = inDat%numStates
+         elseif (clp%stateSet == 1) then ! Doing a PACS calculation.
+            firstOccupiedState(i,h) = inDat%firstInitStatePACS ! From O_Input
+            lastOccupiedState(i,h)  = inDat%lastInitStatePACS  ! From O_Input
             ! firstUnoccupiedState determined above.
-            lastUnoccupiedState(i,h) = numStates
-         elseif (stateSet == 2) then ! Doing a Sigma(E) calculation.
+            lastUnoccupiedState(i,h) = inDat%numStates
+         elseif (clp%stateSet == 2) then ! Doing a Sigma(E) calculation.
             ! firstOccupiedState determined above.
             ! lastOccupiedState determined above.
             ! firstUnoccupiedState determined above.
             ! lastUnoccupiedState determined above.
          else
             ! Error, no other options.
-            stop "Check optical properties command line parameter:  stateSet"
+            stop "Check optical properties command line parameter: stateSet"
          endif
 
          ! Store the state variables for temporary use as loop indices.
@@ -264,12 +432,14 @@ subroutine getEnergyStatistics
          firstFin  = firstUnoccupiedState(i,h)
          lastFin   = lastUnoccupiedState(i,h)
 
-         if (stateSet == 1) then ! Doing PACS calculation.
+         if (clp%stateSet == 1) then ! Doing PACS calculation.
             ! Determine the orbital energy difference for this kpoint and
             !   compare it to the smallest difference yet obtained.
             orbitalDiff = min(orbitalDiff,&
                   & energyEigenValues(firstFin,i,h) - &
                   & energyEigenValues(lastInit,i,h))
+!write (20,*) "orbitalDiff=",orbitalDiff
+!call flush (20)
          endif
 
          ! Loop over all the possible transitions for this kpoint to determine
@@ -277,6 +447,13 @@ subroutine getEnergyStatistics
          !   refine the value for the lastUnoccupied state to consider.
          do j = firstInit, lastInit
             do k = firstFin, lastFin
+
+               ! An important note is that with thermal smearing turned on,
+               !   there is the potential for a state to be *both* an initial
+               !   and a finel state because it is partially occupied. If we
+               !   encounter any such states we will not count the case where
+               !   the final state is lower in energy that the initial state.
+               if (j >= k) cycle
 
                ! If the energy of the final state is higher than the requested
                !   cut-off then we adjust the record for the last unoccupied
@@ -287,7 +464,7 @@ subroutine getEnergyStatistics
                   exit
                endif
 
-               ! Compute the energy of the transition from the current states.
+               ! Compute the energy of transition between the current states.
                currentEnergyDiff = energyEigenValues(k,i,h) - &
                      & energyEigenValues(j,i,h)
 
@@ -308,48 +485,56 @@ subroutine getEnergyStatistics
                !   it will have to be done again.  (BOO)  (Unless we do some
                !   static memory allocation. (BOO))
                transCounter(i,h) = transCounter(i,h) + 1
-            enddo
-         enddo
-      enddo
+            enddo ! (k First to Last Fin)
+         enddo ! (j First to Last Init)
+      enddo ! (i kpoints)
 
-      ! Determine the band gap.
-      indirectGap(h) = minUnoccupiedEnergy - maxOccupiedEnergy
+      ! Determine the indirect band gap.
+      indirectGap(h) = indirectGapEnergies(h,1) - indirectGapEnergies(h,2)
+      if (indirectGap(h) < 0.0_double) then
+         indirectGap(h) = 0.0_double
+      endif
 
+      ! Write the indirect band gap and determine+write the direct band gap.
       if (spin == 1) then
          write (20,*) "Indirect Band Gap(eV) = ",indirectGap(h)*hartree
-         write (20,*) "Direct Band Gap(eV)   = ",directGap(h)*hartree
+         write (20,*) "Direct Band Gap(eV)   = ",minval(directGap(:,h))*hartree
          call flush (20)
       elseif (h == 1) then
          write (20,*) "(Up) Indirect Band Gap(eV) = ",indirectGap(h)*hartree
-         write (20,*) "(Up) Direct Band Gap(eV)   = ",directGap(h)*hartree
+         write (20,*) "(Up) Direct Band Gap(eV)   = ",minval(directGap(:,h))* &
+               & hartree
          call flush (20)
       else ! spin == 2 and h == 2
          write (20,*) "(Dn) Indirect Band Gap(eV) = ",indirectGap(h)*hartree
-         write (20,*) "(Dn) Direct Band Gap(eV)   = ",directGap(h)*hartree
+         write (20,*) "(Dn) Direct Band Gap(eV)   = ",minval(directGap(:,h))* &
+               & hartree
          call flush (20)
       endif
 
       ! Determine the maximum number of transition pairs of all the kpoints and
       !   for both spins.
       maxPairs = max(maxPairs,maxval(transCounter(:,h)))
+!write (20,*) "maxPairs=",maxPairs
+!call flush (20)
    enddo ! (h spin)
 
    ! Now that the number of transitions for each kpoint are known we can 
    !   allocate space to hold information based on the number transitions.
-   if (stateSet /= 2) then  ! Not doing a Sigma(E) calculation.
+   if (clp%stateSet /= 2) then  ! Not doing a Sigma(E) calculation.
       allocate (energyDiff (maxPairs,numKPoints,spin))
-      allocate (energyMom  (dim3,maxPairs,numKPoints,spin))
+      allocate (transitionProb  (dim3,maxPairs,numKPoints,spin))
 
       ! Initialize these arrays.
       energyDiff(:maxPairs,:numKPoints,:) = 0.0_double
-      energyMom(:dim3,:maxPairs,:numKPoints,:) = 0.0_double
+      transitionProb(:dim3,:maxPairs,:numKPoints,:) = 0.0_double
    endif
 
 end subroutine getEnergyStatistics
 
 
 
-subroutine computeTransitions
+subroutine computeTransitions(inDat,clp)
 
 
    ! Import the necessary modules.
@@ -371,6 +556,10 @@ subroutine computeTransitions
    ! Make sure that there are no accidental variable declarations.
    implicit none
 
+   ! define passed parameters
+   type(inputData), intent(in) :: inDat ! from O_Input
+   type(commandLineParameters), intent(inout) :: clp ! from O_CommandLine
+
    ! Define local variables.
    integer :: h,i,j ! Loop index variables
    real (kind=double) :: energyShift
@@ -385,10 +574,10 @@ subroutine computeTransitions
 
    ! Allocate the matrix to hold the wave functions and initialize it.
 #ifndef GAMMA
-   allocate (valeVale (valeDim,numStates,1,1))
+   allocate (valeVale (valeDim,inDat%numStates,1,1))
    valeVale(:,:,1,1) = cmplx(0.0_double,0.0_double,double)
 #else
-   allocate (valeValeGamma(valeDim,numStates,1))
+   allocate (valeValeGamma(valeDim,inDat%numStates,1))
    valeValeGamma(:,:,1) = 0.0_double
 #endif
 
@@ -401,22 +590,22 @@ subroutine computeTransitions
 
          ! Allocate temporary reading matrices.
 #ifndef GAMMA
-         allocate (tempRealValeVale(valeDim,numStates))
-         allocate (tempImagValeVale(valeDim,numStates))
+         allocate (tempRealValeVale(valeDim,inDat%numStates))
+         allocate (tempImagValeVale(valeDim,inDat%numStates))
 #else
-         allocate (tempRealValeVale(valeDim,numStates))
+         allocate (tempRealValeVale(valeDim,inDat%numStates))
 #endif
 
-         if (stateSet /= 1) then  ! Not doing a PACS calculation.
+         if (clp%stateSet /= 1) then  ! Not doing a PACS calculation.
 
             ! Read the datasets for this kpoint.
 #ifndef GAMMA
             call readMatrix(eigenVectorsBand_did(:,i,h),valeVale(:,:,1,1),&
                   & tempRealValeVale(:,:),tempImagValeVale(:,:),&
-                  & valeStatesBand,valeDim,numStates)
+                  & valeStatesBand,valeDim,inDat%numStates)
 #else
             call readMatrixGamma(eigenVectorsBand_did(1,i,h),&
-                  & valeValeGamma(:,:,1),valeStatesBand,valeDim,numStates)
+                  & valeValeGamma(:,:,1),valeStatesBand,valeDim,inDat%numStates)
 #endif
          else
 
@@ -426,26 +615,28 @@ subroutine computeTransitions
                   & valeVale(:,:,1,1),tempRealValeVale(:,:),&
                   & tempImagValeVale(:,:),valeStatesBand,&
                   & firstOccupiedState(i,h),lastOccupiedState(i,h),&
-                  & valeDim,numStates)
+                  & valeDim,inDat%numStates)
 
             ! Read the data for the excited state for this kpoint.
             call readPartialWaveFns(eigenVectorsBand2_did(:,i,h),&
                   & valeVale(:,:,1,1),tempRealValeVale(:,:),&
                   & tempImagValeVale(:,:),valeStatesBand,&
-                  & firstUnoccupiedState(i,h),lastUnoccupiedState(i,h),&
-                  & valeDim,numStates)
+!                  & firstUnoccupiedState(i,h),lastUnoccupiedState(i,h),&
+                  & lastOccupiedState(i,h)+1,lastUnoccupiedState(i,h),&
+                  & valeDim,inDat%numStates)
 #else
             ! Read the data for the ground state for this kpoint.
             call readPartialWaveFnsGamma(eigenVectorsBand_did(1,i,h),&
                   & valeValeGamma(:,:,1),tempRealValeVale(:,:),valeStatesBand,&
                   & firstOccupiedState(i,h),lastOccupiedState(i,h),&
-                  & valeDim,numStates)
+                  & valeDim,inDat%numStates)
 
             ! Read the data for the excited state for this kpoint.
             call readPartialWaveFnsGamma(eigenVectorsBand2_did(1,i,h),&
                   & valeValeGamma(:,:,1),tempRealValeVale(:,:),valeStatesBand,&
-                  & firstUnoccupiedState(i,h),lastUnoccupiedState(i,h),&
-                  & valeDim,numStates)
+!                  & firstUnoccupiedState(i,h),lastUnoccupiedState(i,h),&
+                  & lastOccupiedState(i,h)+1,lastUnoccupiedState(i,h),&
+                  & valeDim,inDat%numStates)
 #endif
          endif
 
@@ -476,7 +667,7 @@ subroutine computeTransitions
 
 
          ! Perform the computations in serial or all together.
-         if (serialXYZ == 0) then
+         if (clp%serialXYZ == 0) then
 #ifndef GAMMA
 
             allocate   (valeValeMom (valeDim,valeDim,1,3))
@@ -502,10 +693,10 @@ subroutine computeTransitions
             deallocate (coreValeOLGamma)
 #endif
 
-            if (stateSet /= 2) then  ! Not doing a Sigma(E) calculation.
-               call computePairs (i,0,h)
+            if (clp%stateSet /= 2) then  ! Not doing a Sigma(E) calculation.
+               call computePairs (i,0,h,inDat,clp)
             else
-               call computeSigmaE (i,0,h)
+               call computeSigmaE (i,0,h,inDat)
             endif
 
          else
@@ -522,10 +713,10 @@ subroutine computeTransitions
                      & j+2,valeValeBand_did(i),valeValeBand,0,1)
 #endif
 
-               if (stateSet /= 2) then  ! Not doing a Sigma(E) calc.
-                  call computePairs (i,j,h)
+               if (clp%stateSet /= 2) then  ! Not doing a Sigma(E) calc.
+                  call computePairs (i,j,h,inDat,clp)
                else
-                  call computeSigmaE (i,j,h)
+                  call computeSigmaE (i,j,h,inDat)
                endif
             enddo
 
@@ -560,8 +751,8 @@ subroutine computeTransitions
       !   energy values.  The amount of the shift is equal to the difference
       !   between (the total energy difference between the ground and excited
       !   states) and (the calculated LUMO,core difference).
-      if (stateSet == 1) then  ! Doing PACS calculation.
-         energyShift = totalEnergyDiffPACS - orbitalDiff
+      if (clp%stateSet == 1) then  ! Doing PACS calculation.
+         energyShift = inDat%totalEnergyDiffPACS - orbitalDiff
          energyDiff(:,:,h) = energyDiff(:,:,h) + energyShift
       endif
    enddo ! (h spin)
@@ -577,6 +768,7 @@ subroutine computeTransitions
    deallocate (firstUnoccupiedState)
    deallocate (lastUnoccupiedState)
    deallocate (directGap)
+   deallocate (indirectGapEnergies)
    deallocate (indirectGap)
 
    ! Log the date and time we end.
@@ -586,13 +778,15 @@ end subroutine computeTransitions
 
 
 
-subroutine computePairs (currentKPoint,xyzComponents,spinDirection)
+subroutine computePairs (currentKPoint,xyzComponents,spinDirection,inDat,clp)
 
    ! Import the necessary modules.
    use O_Kinds
    use O_KPoints
    use O_SortSubs
    use O_Input
+   use O_Populate
+   use O_Potential
    use O_CommandLine
    use O_AtomicSites
    use O_SecularEquation
@@ -604,6 +798,8 @@ subroutine computePairs (currentKPoint,xyzComponents,spinDirection)
    integer :: currentKPoint
    integer :: xyzComponents ! 0=all, 1=x, 2=y, 3=z
    integer :: spinDirection
+   type(inputData), intent(in) :: inDat ! from O_Input
+   type(commandLineParameters), intent(inout) :: clp ! from O_CommandLine
 
    ! Define local variables.
    integer :: i,j,k ! Loop index variables
@@ -615,11 +811,14 @@ subroutine computePairs (currentKPoint,xyzComponents,spinDirection)
    integer :: firstFin
    integer :: lastFin
    integer :: finalStateIndex
+   integer :: orderedIndex
    integer, allocatable, dimension (:) :: sortOrder
    integer, allocatable, dimension (:) :: segmentBorders
+   real    (kind=double) :: initStateFactor
+   real    (kind=double) :: finStatefactor
    real    (kind=double) :: currentEnergyDiff
    real    (kind=double), allocatable, dimension (:)     :: energyDiffTemp
-   real    (kind=double), allocatable, dimension (:,:)   :: energyMomTemp
+   real    (kind=double), allocatable, dimension (:,:)   :: transitionProbTemp
 #ifndef GAMMA
    complex (kind=double), allocatable, dimension (:,:,:) :: conjWaveMomSum
    complex (kind=double),              dimension (dim3)  :: valeValeXMom
@@ -708,7 +907,7 @@ subroutine computePairs (currentKPoint,xyzComponents,spinDirection)
 
    ! Allocate space for the energy difference.
    allocate (energyDiffTemp (maxPairs))
-   allocate (energyMomTemp  (finComponent,maxPairs))
+   allocate (transitionProbTemp  (finComponent,maxPairs))
 
    ! Initialize the temporary energy transition array.
    energyDiffTemp(:) = 0.0_double
@@ -720,13 +919,21 @@ subroutine computePairs (currentKPoint,xyzComponents,spinDirection)
    ! Initialize the first index since it will always be 0.
    segmentBorders(1) = 0
 
-write (20,*) "firstInit, lastInit=",firstInit,lastInit
-write (20,*) "firstFin, lastFin=",firstFin,lastFin
-call flush (20)
+!write (20,*) "firstInit, lastInit=",firstInit,lastInit
+!write (20,*) "firstFin, lastFin=",firstFin,lastFin
+!write (20,*) "energyCutoff=",energyCutoff
+!call flush (20)
    ! Begin the double loop to determine the transition energies.
    do i = firstInit, lastInit
       finalStateIndex = 0
       do j = firstFin, lastFin
+
+         ! Recall that thermal smearing may allow some states to be both
+         !   initial and final. We do not consider transitions where the final
+         !   state has an energy less than the initial.
+         if (i >= j) cycle
+!write (20,*) "energyEigenValue(",j,")=",energyEigenValues(j,currentKPoint,spinDirection)
+!call flush (20)
 
          ! If the energy of the final state is higher than the requested
          !   cut-off we go to the next initial state.
@@ -737,6 +944,8 @@ call flush (20)
          currentEnergyDiff = energyEigenValues(j,currentKPoint,spinDirection)-&
                & energyEigenValues(i,currentKPoint,spinDirection)
 
+!write (20,*) "eDiff,transE",currentEnergyDiff,maxTransEnergy
+!call flush (20)
          ! Check if the energy difference is less than the maximum
          !   transition energy that the input file requested computation
          !   for.  If it fails, then we go to the next initial state because
@@ -745,12 +954,49 @@ call flush (20)
 
          ! Increment the number of transition pairs counted so far.
          transPairCount = transPairCount + 1
+!write (20,*) "transPairCount=",transPairCount,maxPairs
+!call flush (20)
 
          ! Store the transition energy for the current pair.
          energyDiffTemp(transPairCount) = currentEnergyDiff
 
          ! Increment the final state index for the conjWaveMomSum
          finalStateIndex = finalStateIndex + 1
+
+         ! In the event that thermal smearing is turned on. The state that the
+         !   e- comes from and goes into may be fully, partially, or not
+         !   occupied. We will scale the probability of a transition linearly
+         !   according to the percent occupation of both the initial and final
+         !   states.
+
+         ! Determine the array index value of the current initial (index i)
+         !   spin-kpoint-state as defined by the tempEnergyEigenValues loop
+         !   near the beginning of the population subroutine.
+         orderedIndex = i + inDat%numStates*(spinDirection-1) + &
+               & inDat%numStates*spin*(currentKPoint-1)
+
+         ! Use the normal state factor for non-PACS calculations. For PACS
+         !   calculations the initStateFactor is always 1 even though the
+         !   initial core state(s) will have an electron missing.
+         if (clp%stateSet /= 1) then
+            initStateFactor = electronPopulation(orderedIndex) / &
+                  & (kPointWeight(currentKPoint)/real(spin,double))
+         else
+            initStateFactor = 1.0_double
+         endif
+
+         ! Determine the array index value of the current final (index j)
+         !   spin-kpoint-state as defined by the tempEnergyEigenValues loop
+         !   near the beginning of the population subroutine.
+         orderedIndex = j + inDat%numStates*(spinDirection-1) + &
+               & inDat%numStates*spin*(currentKPoint-1)
+
+         finStateFactor = 1.0_double - electronPopulation(orderedIndex) / &
+               & (kPointWeight(currentKPoint)/real(spin,double))
+!initStateFactor = 1.0_double
+!finStateFactor = 1.0_double
+!write (20,*) "i,j,stateFactors",i,j,initStateFactor,finStateFactor
+!call flush (20)
 
 #ifndef GAMMA
 
@@ -760,11 +1006,13 @@ call flush (20)
                    & conjWaveMomSum(:,finalStateIndex,k))
 
             ! Compute the imaginary component of the square of the valeValeXMom
-            !   to obtain the momentum energy????  Note that the reason it
+            !   to obtain the transition probability.  Note that the reason it
             !   is imaginary is because of the negative sign included in the
-            !   getIntgResults subroutine for the momentum matrix.
-            energyMomTemp(k,transPairCount) = &
-                  &  real(valeValeXMom(k),double)**2 + aimag(valeValeXMom(k))**2
+            !   getIntgResults subroutine for the momentum matrix. (I.e. this
+            !   is stored as a real number, but it represents the y in (x+iy).)
+            transitionProbTemp(k,transPairCount) = &
+                  & real(valeValeXMom(k),double)**2+aimag(valeValeXMom(k))**2 *&
+                  & initStateFactor*finStateFactor
          enddo
 #else
 
@@ -774,16 +1022,16 @@ call flush (20)
                   & conjWaveMomSumGamma(:,finalStateIndex,k))
 
             ! Compute the real component of the square of the valeValeXMom to
-            !   obtain the momentum energy????
-            energyMomTemp(k,transPairCount) = valeValeXMomGamma(k)**2
+            !   obtain the transition probability.
+            transitionProbTemp(k,transPairCount) = valeValeXMomGamma(k)**2 * &
+                  & initStateFactor*finStateFactor
          enddo
 #endif
-      enddo
+      enddo ! Fin loop j
 
       ! Save the index for the end border of this segment.
       segmentBorders(i - firstInit + 2) = transPairCount
-   enddo
-
+   enddo ! Init loop i
 
    ! Deallocate unnecessary matrix
 #ifndef GAMMA
@@ -804,23 +1052,23 @@ call flush (20)
    call mergeSort (energyDiffTemp,energyDiff(:,currentKPoint,spinDirection),&
          & sortOrder,segmentBorders,transPairCount)
 
-   ! Copy energyMomTemp to the real energyMom data structure using the sorting
-   !   order determined in the mergeSort subroutine.
+   ! Copy transitionProbTemp to the real transitionProb data structure using
+   !   the sorting order determined in the mergeSort subroutine.
    if (xyzComponents == 0) then
       do i = 1, transPairCount
-         energyMom(:,i,currentKPoint,spinDirection) = &
-               & energyMomTemp(:,sortOrder(i))
+         transitionProb(:,i,currentKPoint,spinDirection) = &
+               & transitionProbTemp(:,sortOrder(i))
       enddo
    else
       do i = 1, transPairCount
-         energyMom(xyzComponents,i,currentKPoint,spinDirection) = &
-               & energyMomTemp(1,sortOrder(i))
+         transitionProb(xyzComponents,i,currentKPoint,spinDirection) = &
+               & transitionProbTemp(1,sortOrder(i))
       enddo
    endif
 
    ! Deallocate unnecessary arrays and matrices
    deallocate (energyDiffTemp)
-   deallocate (energyMomTemp)
+   deallocate (transitionProbTemp)
    deallocate (segmentBorders)
    deallocate (sortOrder)
 
@@ -828,7 +1076,7 @@ end subroutine computePairs
 
 
 
-subroutine computeSigmaE (currentKPoint,xyzComponents,spinDirection)
+subroutine computeSigmaE (currentKPoint,xyzComponents,spinDirection,inDat)
 
    ! Import the necessary data modules.
    use O_Kinds
@@ -837,6 +1085,7 @@ subroutine computeSigmaE (currentKPoint,xyzComponents,spinDirection)
    use O_SortSubs
    use O_Input
    use O_Lattice
+   use O_Potential ! For spin
    use O_AtomicSites
    use O_SecularEquation
 
@@ -847,6 +1096,7 @@ subroutine computeSigmaE (currentKPoint,xyzComponents,spinDirection)
    integer :: currentKPoint
    integer :: xyzComponents
    integer :: spinDirection
+   type(inputData) :: inDat
 
    ! Define local variables.
    integer :: i,j,k ! Loop index variables
@@ -856,17 +1106,18 @@ subroutine computeSigmaE (currentKPoint,xyzComponents,spinDirection)
    integer :: lastInit
    integer :: firstFin
    integer :: lastFin
-   integer :: numEnergyStates
+   integer :: numInitEnergyStates
+   integer :: numFinEnergyStates
+   integer :: numTotalEnergyStates
    integer :: finalStateIndex
    integer :: initialStateIndex
    integer :: numEnergyPoints
-   real (kind=double) :: expAlpha
-   real (kind=double) :: broadenEnergyDiff
+   real (kind=double) :: alphaFactor
    real (kind=double) :: kPointFactor
-   real (kind=double) :: sigmaSqrtPi
+   real (kind=double) :: sigmaSqrt2Pi
    real (kind=double) :: conversionFactor
-   real    (kind=double), allocatable, dimension (:,:)   :: energyRangeAll
-   real    (kind=double), allocatable, dimension (:,:,:) :: momMatrix
+   real (kind=double) :: totalSigma
+   real    (kind=double), allocatable, dimension (:,:,:) :: transitionProb
 #ifndef GAMMA
    complex (kind=double), allocatable, dimension (:,:,:) :: conjWaveMomSum
    complex (kind=double)                                 :: valeValeXMom
@@ -876,10 +1127,10 @@ subroutine computeSigmaE (currentKPoint,xyzComponents,spinDirection)
 #endif
 
    ! Compute the number of energy points to evaluate.
-   numEnergyPoints = int((maxTransEnSIGE * 2) / deltaSIGE + 1)
+   numEnergyPoints = int((inDat%maxTransEnSIGE * 2) / inDat%deltaSIGE + 1)
 
    ! Define constants for normalizing the broadening gaussian.
-   sigmaSqrtPi = sqrt(pi) * sigmaSIGE
+   sigmaSqrt2Pi = inDat%sigmaSIGE * sqrt(2.0_double * pi)
 
    ! Obtain the state bounds for this kpoint.
    firstInit =   firstOccupiedState(currentKPoint,spinDirection)
@@ -888,7 +1139,9 @@ subroutine computeSigmaE (currentKPoint,xyzComponents,spinDirection)
    lastFin   =  lastUnoccupiedState(currentKPoint,spinDirection)
 
    ! Get the number of energy states in the system.
-   numEnergyStates = lastFin - firstInit + 1
+   numFinEnergyStates   = lastFin  - firstFin  + 1
+   numInitEnergyStates  = lastInit - firstInit + 1
+   numTotalEnergyStates = lastFin  - firstInit + 1
 
    ! Allocate space for the resulting sigmaE and initialize it to zero during
    !   the first kpoint iteration.  Also create the energy scale and initialize
@@ -899,7 +1152,7 @@ subroutine computeSigmaE (currentKPoint,xyzComponents,spinDirection)
 
       allocate (energyScale (numEnergyPoints))
       do i = 1, numEnergyPoints
-         energyScale(i) = -maxTransEnSIGE + deltaSIGE * (i-1)
+         energyScale(i) = -inDat%maxTransEnSIGE + inDat%deltaSIGE * (i-1)
       enddo
    endif
 
@@ -915,12 +1168,12 @@ subroutine computeSigmaE (currentKPoint,xyzComponents,spinDirection)
 #ifndef GAMMA
    ! Allocate space to hold the sum(conjg(valeVale(:,j)) * valeVale_Mom(:,k,1))
    !   for each of the possible energy states.
-   allocate (conjWaveMomSum (valeDim,numEnergyStates,finComponent))
+   allocate (conjWaveMomSum (valeDim,numFinEnergyStates,finComponent))
 
    ! Compute the sum over all the energy states.
    do i = initComponent,finComponent
       finalStateIndex = 0
-      do j = firstInit, lastFin
+      do j = firstFin, lastFin
          ! Increment the final state index for conjWaveMomSum
          finalStateIndex = finalStateIndex + 1
          do k = 1, valeDim
@@ -935,13 +1188,13 @@ subroutine computeSigmaE (currentKPoint,xyzComponents,spinDirection)
 
 #else
 
-   allocate (conjWaveMomSumGamma (valeDim,numEnergyStates,finComponent))
+   allocate (conjWaveMomSumGamma (valeDim,numFinEnergyStates,finComponent))
 
    ! Compute the sum over all the energy states.
    do i = initComponent,finComponent
 
       finalStateIndex = 0
-      do j = firstInit, lastFin
+      do j = firstFin, lastFin
 
          ! Increment the final state index for conjWaveMomSum
          finalStateIndex = finalStateIndex + 1
@@ -958,24 +1211,33 @@ subroutine computeSigmaE (currentKPoint,xyzComponents,spinDirection)
 #endif
 
 
-   ! Allocate space for the fully computed momentum matrix.
-   allocate (momMatrix (finComponent,numEnergyStates,numEnergyStates))
+   ! Allocate space for the fully computed set of transition probabilties
+   !   between all of the involved states.  FinComponent is either 1 or 3.
+   allocate (transitionProb (finComponent,numTotalEnergyStates,&
+         & numTotalEnergyStates))
 
    ! Begin the double loop to determine the momentum matrix elements between
    !   each possible state.
+   ! Initialize the counter for the initial state index number. (The point is
+   !   that the firstInit and lastInit values could be something like 345 and
+   !   400.  We want to index an array from 1 to 56 so we use counters like
+   !   this.)
    initialStateIndex = 0
-   do i = firstInit, lastFin
-      finalStateIndex = 0
-      do j = firstInit, lastFin
+   do i = firstInit, lastInit
 
-         ! We don't care about self interactions so we skip the i=j case.
-         if (i == j) then
-            cycle
-         endif
+      ! Increment the index number for the initial states.
+      initialStateIndex = initialStateIndex + 1
+
+      ! Initialize the counter for the final state index number.
+      finalStateIndex = 0
+      do j = firstFin, lastFin
+
+         ! We don't want double counting or self interactions so we skip the
+         !   i<=j cases.
+         if (i <= j) cycle
 
          ! Define the indices for the conjWaveMomSum and the momentum matrix
          !   elements.
-         initialStateIndex = initialStateIndex + 1
          finalStateIndex   = finalStateIndex + 1
 
 #ifndef GAMMA
@@ -985,11 +1247,11 @@ subroutine computeSigmaE (currentKPoint,xyzComponents,spinDirection)
                    & conjWaveMomSum(:,finalStateIndex,k))
 
             ! Compute the imaginary component of the square of the
-            !   valeValeXMom to obtain the momentum matrix element.  Note
-            !   that the reason it is imaginary is because of the negative
+            !   valeValeXMom to obtain the transition probabilty element.
+            ! Note that the reason it is imaginary is because of the negative
             !   sign included in the getIntgResults subroutine for the
-            !   momentum matrix.
-            momMatrix(k,initialStateIndex,finalStateIndex) = &
+            !   momentum matrix. (See notes in that code.)
+            transitionProb(k,initialStateIndex,finalStateIndex) = &
                   &  real(valeValeXMom,double)**2 + &
                   & aimag(valeValeXMom)**2
          enddo
@@ -1001,74 +1263,112 @@ subroutine computeSigmaE (currentKPoint,xyzComponents,spinDirection)
                   & conjWaveMomSumGamma(:,finalStateIndex,k))
 
             ! Compute the real component of the square of the valeValeXMom to
-            !   obtain the momentum energy????
-            momMatrix(k,initialStateIndex,finalStateIndex) = &
+            !   obtain the transition probability.
+            transitionProb(k,initialStateIndex,finalStateIndex) = &
                   & valeValeXMomGamma**2
          enddo
 #endif
       enddo
    enddo
 
-   ! Allocate space for one energy range for each initial state and one energy
-   !   range for each final state.
-   allocate (energyRangeAll (numEnergyPoints, numEnergyStates))
-
    ! Determine the weighting effect of this kpoint and include the normalizaion
-   !   factor for the gaussian.
-   kPointFactor = kPointWeight(currentKPoint) * 0.5_double / sigmaSqrtPi 
+   !   factor for the gaussian. We will actually be multiplying two Gaussians
+   !   together so we need this squared.
+   kPointFactor = (kPointWeight(currentKPoint)/real(spin,double) / &
+         & sigmaSqrt2Pi)**2
 
+   ! Now compute the exponential alpha factor which is -1/(2 * sigma^2).
+   alphaFactor = -1.0_double / (2.0_double * inDat%sigmaSIGE**2)
 
-   ! Define a gaussian of unit area for each energy state and compute its value
-   !   for each energy point.  Note that the energy range is in hartree atomic
-   !   units.
-   do i = 1, numEnergyStates
-      do j = 1, numEnergyPoints
-         ! Determine the energy difference between the current state and the
-         !   current point on the energy scale.
-         broadenEnergyDiff = energyEigenValues(firstInit+i-1,currentKPoint,&
-               & spinDirection) - energyScale(j)
-
-         ! Determine the exponential alpha for the broadening factor.
-         expAlpha = broadenEnergyDiff * broadenEnergyDiff / &
-               & (sigmaSIGE * sigmaSIGE)
-
-         ! Compute the value of the gaussian broadened energy state at this
-         !   point on the energy scale.
-         energyRangeAll(j,i) = exp(-expAlpha) * kPointFactor
-      enddo
-   enddo
-
-   ! Multiply the gaussian for each state by the gaussian for each other state
-   !   and the momentum matrix factor between the two states.
+   ! Now we fill up the sigmaEAccumulator.  There are two scenarios in which
+   !   this may happen, the xyz all at once (xyzComponents==0) case, and the
+   !   each axis (x, y, z) one at a time case (xyzComponents/=0). The only
+   !   real difference is the k-loop in the first case and the specific index
+   !   access in the second.
+   ! The basic approach is to loop over all pairs of states and for each pair
+   !   create a Gaussian (of unit area) for each, multiply them together to
+   !   get a new Gaussian between them, and then numerically evaluate and
+   !   accumulate those on a mesh.
    if (xyzComponents == 0) then
-      do i = 1, numEnergyStates
-         do j = 1, numEnergyStates
 
-            ! Ignore self interactions
-            if (i == j) then
-               cycle
-            endif
+      ! Initialize the counter for the index number of the initial states.
+      initialStateIndex = 0
 
-            do k = 1,dim3
+      ! Loop over the set of initial states from first to last. Recall that
+      !   this list will include fully occupied states a little below the first
+      !   unoccupied state up to the last state with any occupation (as long
+      !   as it is within range of the fermi level).
+      do i = firstInit, lastInit
+
+         ! Increment the index number for the initial states.
+         initialStateIndex = initialStateIndex + 1
+
+         ! Initialize the counter for the index number of the final states.
+         finalStateIndex = 0
+         do j = firstFin, lastFin
+
+            ! We don't want double counting or self interactions so we skip the
+            !   i<=j cases.
+            if (i <= j) cycle
+
+            ! Increment the index number for the final states.
+            finalStateIndex = finalStateIndex + 1
+
+            ! Here we compute the product of two gaussians evaluated on a mesh.
+            !   The kPointFactor is the square of (the kpoint weight divided by
+            !   the spin (2 or 1 depending on spin polarized or not), divided
+            !   by sqrt(2Pi)*sigmaSIGE broadening factor). The exponential has
+            !   the alphaFactor of -1/(2*sigmaSIGE^2) times the r^2 value where
+            !   the r^2 value is essentially the distance between the current
+            !   mesh point and the center of the new Gaussian that is formed
+            !   by the product of the Gaussians for each transition state. The
+            !   r^2 can be expressed as r1^2 +r2^2 where r1=e-e1 and r2=e-e2
+            !   with e=the current mesh point energy and e1=the current initial
+            !   state energy value and e2=the current final state energy value.
+            do k = 1, 3
                sigmaEAccumulator(:,k) = sigmaEAccumulator(:,k) + &
-                  & energyRangeAll(:,i) * energyRangeAll(:,j) * &
-                  & momMatrix(k,i,j)
+                     & kPointFactor * exp(alphaFactor * ( &
+                     & (energyScale(:) - energyEigenValues(i,currentKPoint,&
+                     & spinDirection))**2 + &
+                     & (energyScale(:) - energyEigenValues(i,currentKPoint,&
+                     & spinDirection))**2)) * transitionProb(k,&
+                     & initialStateIndex,finalStateIndex)
             enddo
          enddo
       enddo
    else
-      do i = 1, numEnergyStates
-         do j = 1, numEnergyStates
 
-            ! Ignore self interactions
-            if (i == j) then
-               cycle
-            endif
+      ! Now we create a Gaussin of unit area for each pair of states and
+      !   multiply them together to create a new Gaussian (somewhere between
+      !   them). These product Gaussians will be evaluated and accumulated on a
+      !   numerical mesh.
+      ! Initialize the counter for the index number of the initial states.
+      initialStateIndex = 0
+      do i = firstInit, lastInit
 
+         ! Increment the index number for the initial states.
+         initialStateIndex = initialStateIndex + 1
+
+         ! Initialize the counter for the index number of the final states.
+         finalStateIndex = 0
+         do j = firstFin, lastFin
+
+            ! We don't want double counting or self interactions so we skip the
+            !   i<=j cases.
+            if (i <= j) cycle
+
+            ! Increment the index number for the final states.
+            finalStateIndex = finalStateIndex + 1
+
+            ! See notes for the above case.
             sigmaEAccumulator(:,xyzComponents) = &
-               & sigmaEAccumulator(:,xyzComponents) + &
-               & energyRangeAll(:,i) * energyRangeAll(:,j) * &
-               & momMatrix(1,i,j)
+                  & sigmaEAccumulator(:,xyzComponents) + &
+                  & kPointFactor * exp(alphaFactor * ( &
+                  & (energyScale(:) - energyEigenValues(i,currentKPoint,&
+                  & spinDirection))**2 + &
+                  & (energyScale(:) - energyEigenValues(i,currentKPoint,&
+                  & spinDirection))**2)) * transitionProb(1,&
+                  & initialStateIndex,finalStateIndex)
          enddo
       enddo
    endif
@@ -1156,6 +1456,10 @@ subroutine computeSigmaE (currentKPoint,xyzComponents,spinDirection)
             & sum(sigmaEAccumulator(i,:))/3.0_double,sigmaEAccumulator(i,:)
       enddo
 
+      ! Accumulate the total electronic contribution to the thermal conductivity.
+      totalSigma = sum(sigmaEAccumulator(:,:)) / 3.0_double
+      write (20,*) "The total sigma is: ",totalSigma
+
       deallocate (sigmaEAccumulator)
       deallocate (energyScale)
    endif
@@ -1166,8 +1470,7 @@ subroutine computeSigmaE (currentKPoint,xyzComponents,spinDirection)
 #else
    deallocate (conjWaveMomSumGamma)
 #endif
-   deallocate (momMatrix)
-   deallocate (energyRangeAll)
+   deallocate (transitionProb)
 
 end subroutine computeSigmaE
 

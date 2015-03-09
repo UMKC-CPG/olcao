@@ -1,5 +1,4 @@
-#!/usr/bin/perl
-
+#!/bin/env perl
 ###############################################################################
 # PROGRAM:  batchSub
 # PURPOSE:  This program will submit a requested sequence of jobs.

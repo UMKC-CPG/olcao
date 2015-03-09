@@ -82,7 +82,7 @@ module O_PSCFBandHDF5
 
 contains
 
-subroutine initPSCFBandHDF5
+subroutine initPSCFBandHDF5(numStates,clp)
 
    ! Import the necessary HDF modules
    use HDF5
@@ -96,6 +96,10 @@ subroutine initPSCFBandHDF5
 
    ! Make sure that no variables are implicitly declared.
    implicit none
+   type(commandLineParameters), intent(inout) :: clp
+
+   ! Define passed parameters.
+   integer, intent(in) :: numStates
 
    ! Define local variables that will be used to create the dataspaces etc.
    integer :: i,j
@@ -119,7 +123,7 @@ subroutine initPSCFBandHDF5
    statesBand(1)        = numStates
 
    ! The symmetric band calculation will not use these HDF5 settings for output.
-   if (doSybd .eq. 0) then
+   if (clp%doSybd .eq. 0) then
 
       ! Create the property list for the band hdf5 file and turn off
       !   chunk caching.
@@ -266,7 +270,7 @@ subroutine initPSCFBandHDF5
 
 end subroutine initPSCFBandHDF5
 
-subroutine closePSCFBandHDF5
+subroutine closePSCFBandHDF5(clp)
 
    ! Import the necessary HDF data modules
    use HDF5
@@ -280,6 +284,7 @@ subroutine closePSCFBandHDF5
 
    ! Make sure that no variables are implicitly declared.
    implicit none
+   type(commandLineParameters), intent(inout) :: clp
 
    ! Define local loop control and error control variables
    integer :: i,j
@@ -289,7 +294,7 @@ subroutine closePSCFBandHDF5
    !   only if the symmetric band calculation was not done since it does not
    !   use any of these.
 
-   if (doSybd .eq. 0) then
+   if (clp%doSybd .eq. 0) then
 
       ! Close the band dataspaces first (only if this was a band calculation
       !   where data was written and not a dos, optc, bond, wave, etc type of
@@ -357,7 +362,7 @@ subroutine closePSCFBandHDF5
       ! In the case that we are closing access to the band hdf5 file from a
       !   PACS type calculation we need to also close the second file that was
       !   opened for the excited state.
-      if (stateSet == 1) then
+      if (clp%stateSet == 1) then
 
          ! Close the overlap datasets in the second band file.
          do i = 1, numKPoints
@@ -394,7 +399,7 @@ subroutine closePSCFBandHDF5
 end subroutine closePSCFBandHDF5
 
 
-subroutine accessPSCFBandHDF5
+subroutine accessPSCFBandHDF5(numStates,clp)
 
    ! Import necessary HDF5 modules.
    use HDF5
@@ -408,6 +413,10 @@ subroutine accessPSCFBandHDF5
 
    ! Make sure that no variables are implicitly declared.
    implicit none
+
+   ! Define passed parameters
+   integer, intent(in) :: numStates
+   type(commandLineParameters), intent(inout) :: clp
 
    ! Define the local variables.
    integer :: i,j
@@ -496,7 +505,7 @@ subroutine accessPSCFBandHDF5
       enddo
    enddo
 
-   if (stateSet == 1) then  ! Doing a PACS type optc calculation.
+   if (clp%stateSet == 1) then  ! Doing a PACS type optc calculation.
 
       ! Create the property list for the band hdf5 file and turn off
       !   chunk caching.
@@ -553,7 +562,7 @@ subroutine accessPSCFBandHDF5
 end subroutine accessPSCFBandHDF5
 
 
-subroutine closeAccessPSCFBandHDF5
+subroutine closeAccessPSCFBandHDF5(clp)
 
    ! Import the necessary HDF data modules
    use HDF5
@@ -567,6 +576,7 @@ subroutine closeAccessPSCFBandHDF5
 
    ! Make sure that no variables are implicitly declared.
    implicit none
+   type(commandLineParameters), intent(inout) :: clp
 
    ! Define local loop control and error control variables
    integer :: i,j
@@ -636,7 +646,7 @@ subroutine closeAccessPSCFBandHDF5
    ! In the case that we are closing access to the band hdf5 file from a
    !   PACS type calculation we need to also close the second file that was
    !   opened for the excited state.
-   if (stateSet == 1) then
+   if (clp%stateSet == 1) then
 
       ! Close the overlap datasets in the second band file.
       do i = 1, numKPoints
@@ -683,9 +693,9 @@ end subroutine closeAccessPSCFBandHDF5
 
 
 #ifndef GAMMA
-subroutine saveCoreValeOL (coreValeOL,i)
+subroutine saveCoreValeOL (coreValeOL,i,clp)
 #else
-subroutine saveCoreValeOL (coreValeOLGamma,i)
+subroutine saveCoreValeOL (coreValeOLGamma,i,clp)
 #endif
 
    ! Use necessary modules.
@@ -701,11 +711,12 @@ subroutine saveCoreValeOL (coreValeOLGamma,i)
    real (kind=double), dimension (:,:)      :: coreValeOLGamma
 #endif
    integer :: i ! Current KPoint index number.
+   type(commandLineParameters), intent(inout) :: clp
    
    ! Define local variables.
    integer :: hdferr
 
-   if ((doSYBD == 0) .and. (coreDim /= 0)) then
+   if ((clp%doSYBD == 0) .and. (coreDim /= 0)) then
 #ifndef GAMMA
       call h5dwrite_f (coreValeBand_did(1,i),H5T_NATIVE_DOUBLE,&
             & real(coreValeOL(:coreDim,:valeDim,1),double),coreValeBand,hdferr)

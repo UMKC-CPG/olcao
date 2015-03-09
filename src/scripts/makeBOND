@@ -7,21 +7,11 @@ sub printHelp
 #Purpose:  To parse the bondorder output file and create a number of other
 #          files that can be easily plotted by either openDX or origin, etc.
 #
-#USAGE:  makeBOND [-data \$dataFile] [-pos \$posFile]
-#                 [-bc \$bondControlFile] [-gc \$groupControlFile]
-#                 [-maxbo \$maxBO] [-minbo \$minBO]
-#                 [-maxbl \$maxBL] [-minbl \$minBL]
-#                 [-scatter]
-#                 [-profile \$profileAxis]
-#                 [-model [[-atom] | [-bond]] [-rf \$radiusFactor] [-grey]]
-#                 [-mesh [-atom \$compAtom] [-steps \$a \$b \$c] [-fwhm \$fwhm]
-#                        [-limit \$limitDist]]
-#                 [-help]
 
 #It is assumed that the calculated bond order and qstar data will be in the
 #   gs_bond-mb.raw file.  This default can be overridden with the -data option.
 #
-#It is also assumed that the atomic positions will be in the gs_bond-mb.out
+#It is also assumed that the atomic positions will be in the structure.dat
 #   file.  This default can be overridden with the -pos option.
 #   In any case the format of the position file must be that of the current
 #   olcao output file.  This has the positions sorted by types.
@@ -83,7 +73,9 @@ sub printHelp
 #   by default, but this can be adjusted by the -rf suboption.  The
 #   \$radiusFactor that is given for the -rf suboption will multiply against
 #   the default radius.  The -grey suboption will make the spheres appear in
-#   grey-scale instead of color.  The most important suboptions for -model are
+#   grey-scale instead of color.  The -bo3c suboption will alter the structure
+#   to show three center bonds where they occur and to show two center bond
+#   in the places they occur.  The most important suboptions for -model are
 #   the -atom and -bond suboptions.  If the -atom suboption is given, then the
 #   openDX models will contain specific sets of atoms and the bonds in the
 #   model must contain at least one atom from that set.  If the -bond suboption
@@ -134,8 +126,20 @@ sub printHelp
 #  (i.e. a different potential type or different type).  This is true for
 #  XANES calculations or cases where we just assign all atoms in a region to
 #  have different types because they cannot be easily grouped in any other way.
+
+#USAGE:  makeBOND [-data \$dataFile] [-pos \$posFile]
+#                 [-bc \$bondControlFile] [-gc \$groupControlFile]
+#                 [-maxbo \$maxBO] [-minbo \$minBO]
+#                 [-maxbl \$maxBL] [-minbl \$minBL]
+#                 [-scatter]
+#                 [-profile \$profileAxis]
+#                 [-model [[-atom] | [-bond]] [-rf \$radiusFactor] [-grey]
+#                        [-bo3c]]
+#                 [-mesh [-atom \$compAtom] [-steps \$a \$b \$c] [-fwhm \$fwhm]
+#                        [-limit \$limitDist]]
+#                 [-help]
 ENDHELP
-exit;
+   exit;
 }
 
 
@@ -166,6 +170,7 @@ my $scatterPlot;
 my $bondProfilePlot;
 my $profileAxis;
 my $systemModelDX;
+my $bo3c;
 my $meshDX;
 my @meshBODX;
 my $atomBasedDX;
@@ -211,7 +216,7 @@ my @c;
 my $magA;
 my $magB;
 my $magC;
-my $cellDeterminate;
+my $cellDeterminant;
 my @xFactor;
 my @yFactor;
 my @zFactor;
@@ -271,11 +276,12 @@ my @abcBondPos;
 my @xyzBondPos;
 my $limitDist;
 
-#References to data structures in ElementData.pm
+#References and copies of data and data structures in ElementData.pm
 my $colorDX_ref;
 my $greyDX_ref;
 my $valeCharge_ref;
 my $covalRadii_ref;
+my $maxQN_l;
 
 print STDOUT "\n\nScript Executing.\n\n";
 
@@ -382,13 +388,14 @@ sub initEnv
    $bohrRad = StructureControl::getBohrRad;
    $covalRadii_ref = ElementData::getCovalRadiiRef;
    $valeCharge_ref = ElementData::getValeChargeRef;
-   $colorDX_ref = ElementData::getColorDXRef;
-   $greyDX_ref = ElementData::getGreyDXRef;
+   $colorDX_ref    = ElementData::getColorDXRef;
+   $greyDX_ref     = ElementData::getGreyDXRef;
+   $maxQN_l        = ElementData::getMaxQN_l;
 
    #Set some initial defaults for the file names to be used if they are not
    #   given on the command line.
    $dataFile = "gs_bond-mb.raw";
-   $posFile = "gs_bond-mb.out";
+   $posFile = "structure.dat";
    $bondControlFile = "";
    $groupControlFile = "";
    $bondProfileFile = "bondProfile.plot";
@@ -403,6 +410,7 @@ sub initEnv
                          #   set to one later if none of the other output
                          #   schemes are selected on the command line.
    $systemModelDX   = 0; #Assume to not be doing a system model diagram.
+   $bo3c            = 0; #Assume to not be doing a 3-center-bond model diagram.
    $meshDX          = 0; #Assume to not be doing a 3D mesh of the data.
    $atomBasedDX     = 1; #Assume any openDX model is made to be atom based.
    $bondBasedDX     = 0; #Assume any openDX model is not made to be bond based.
@@ -452,8 +460,10 @@ sub parseCLP
       elsif ($ARGV[$number] eq "-model")
       {
          $systemModelDX=1;
-         for ($i=1;$i<=3;$i++)
+         for ($i=1;$i<=5;$i++)
          {
+            if ($number+1 >= scalar(@ARGV))
+               {last;}
             if ($ARGV[$number+1] eq "-rf")
             {
                $radiusFactor = $ARGV[$number+2];
@@ -474,6 +484,11 @@ sub parseCLP
             {
                $bondBasedDX = 1;
                $atomBasedDX = 0;
+               $number++;
+            }
+            elsif ($ARGV[$number+1] eq "-bo3c")
+            {
+               $bo3c = 1;
                $number++;
             }
          }
@@ -558,6 +573,7 @@ sub readData
    my $bondedAtom;
    my $line;
    my @values;
+   my $QN_l;
    my $i;
    my $j;
 
@@ -588,6 +604,8 @@ sub readData
          # Split the line for processing.
          chomp ($line);
          @values = split(/\s+/,$line);
+         if ($values[0] eq "")
+            {shift @values;}
 
          # Abort when the atom charge is found.
          if ("$values[0]" eq "ATOM_CHARGE")
@@ -611,13 +629,24 @@ sub readData
       $atomQStar[$i] = $values[1];
 
       # Get the intrinsic data for this element from the data base.
-      $elementZ[$i] = ElementData::getElementZ(lc($elementName[$i]));
-      $atomRadius[$i] = $covalRadii_ref->[$elementZ[$i]] * $radiusFactor;
-      $atomChargeTransfer[$i] = $atomQStar[$i]-$valeCharge_ref->[$elementZ[$i]];
-      if ($greyScale == 0)
-         {$atomColor[$i] = $colorDX_ref->[$elementZ[$i]];}
+      if (lc($elementName[$i]) eq "3c") # Fake atom for a 3-center bond
+      {
+         $atomRadius[$i] = 0.25 * $radiusFactor;
+         $atomChargeTransfer[$i] = $atomQStar[$i];
+         $atomColor[$i] = 100;
+      }
       else
-         {$atomColor[$i] = $greyDX_ref->[$elementZ[$i]];}
+      {
+         $elementZ[$i] = ElementData::getElementZ(lc($elementName[$i]));
+         $atomRadius[$i] = $covalRadii_ref->[$elementZ[$i]] * $radiusFactor;
+         $atomChargeTransfer[$i] = $atomQStar[$i];
+         foreach $QN_l (0..$maxQN_l)
+            {$atomChargeTransfer[$i]-=$valeCharge_ref->[$elementZ[$i]][$QN_l];}
+         if ($greyScale == 0)
+            {$atomColor[$i] = $colorDX_ref->[$elementZ[$i]];}
+         else
+            {$atomColor[$i] = $greyDX_ref->[$elementZ[$i]];}
+      }
 
       # Obtain the number of bonds that this atom has with other atoms that
       #   have a higher index number.  Consider the bonds between atom i and
@@ -898,10 +927,10 @@ sub getSystemStructure
    my $i;
 
    open (POS,"<$posFile") ||
-      die "Can not open $posFile for reading.\n";  # e.g. gs_bond-mb.out
+      die "Can not open $posFile for reading.\n";  # e.g. structure.dat
    while ($line = <POS>)
    {
-      if ($line =~ /PRIMITIVE_VECTORS/)
+      if ($line =~ /CELL_VECTORS/)
       {
          $line = <POS>;
          chomp ($line);
@@ -945,7 +974,7 @@ sub getSystemStructure
             {$c[$i] = $c[$i]*$bohrRad;} #Convert to Angstroms
          $magC = sqrt($c[1]*$c[1] + $c[2]*$c[2] + $c[3]*$c[3]);
 
-         $cellDeterminate = $c[1]*$a[2]*$b[3] - $c[1]*$a[3]*$b[2] + 
+         $cellDeterminant = $c[1]*$a[2]*$b[3] - $c[1]*$a[3]*$b[2] + 
                             $a[3]*$c[2]*$b[1] + $c[3]*$a[1]*$b[2] - 
                             $a[2]*$c[3]*$b[1] + $c[2]*$a[1]*$b[3];
          $xFactor[1] = $c[3]*$b[2] - $c[2]*$b[3];
@@ -974,7 +1003,9 @@ sub getSystemStructure
          $line = <POS>;
          chomp ($line);
          @values=split(/\s+/,"$line");
-         $numAtoms=$values[1];
+         if ($values[0] eq "")
+            {shift @values;}
+         $numAtoms=$values[0];
 
 
          #Position the read marker past the label.
@@ -993,13 +1024,13 @@ sub getSystemStructure
 
             $aPos[$i] = (($xFactor[1]*$xPos[$i]+
                           $yFactor[1]*$yPos[$i]+
-                          $zFactor[1]*$zPos[$i]) / $cellDeterminate) * $magA;
+                          $zFactor[1]*$zPos[$i]) / $cellDeterminant) * $magA;
             $bPos[$i] = (($xFactor[2]*$xPos[$i]+
                           $yFactor[2]*$yPos[$i]+
-                          $zFactor[2]*$zPos[$i]) / $cellDeterminate) * $magB;
+                          $zFactor[2]*$zPos[$i]) / $cellDeterminant) * $magB;
             $cPos[$i] = (($xFactor[3]*$xPos[$i]+
                           $yFactor[3]*$yPos[$i]+
-                          $zFactor[3]*$zPos[$i]) / $cellDeterminate) * $magC;
+                          $zFactor[3]*$zPos[$i]) / $cellDeterminant) * $magC;
          }
       }
    }
@@ -1052,7 +1083,7 @@ sub printScatterData
          die "Can not open $uniqueBondTag[$i].dat for writing.\n";
 
       # Print the header for this file.
-      print BOND "BO     BL        #1    #2    a      b      c\n";
+      print BOND "BO     BL(au)    #1    #2    a      b      c\n";
 
       for ($j=1;$j<=$numSystemBonds;$j++)
       {
@@ -1415,8 +1446,8 @@ sub evalDXMesh
          if ($distance > $limitDist)
             {next;}
 
-print STDOUT "point $scanPoints[1][$point] $scanPoints[2][$point] $scanPoints[3][$point]\n";
-print STDOUT "      $xyzBondPos[$bond][1] $xyzBondPos[$bond][2] $xyzBondPos[$bond][3] $distance\n";
+#print STDOUT "point $scanPoints[1][$point] $scanPoints[2][$point] $scanPoints[3][$point]\n";
+#print STDOUT "      $xyzBondPos[$bond][1] $xyzBondPos[$bond][2] $xyzBondPos[$bond][3] $distance\n";
 
 
          # Increment the number of bonds contributing to this mesh point.
@@ -1885,22 +1916,21 @@ sub getExtendedPositions
       # Determine if the distance between the atoms of this bond is greater
       #   than the bond length.  If so, find the position of the outside image
       #   atom.
-      if ((abs($aPos[$bondAtom[$i][1]] - $aPos[$bondAtom[$i][2]]) >
-           $bondLength[$i] + 0.1) ||
-          (abs($bPos[$bondAtom[$i][1]] - $bPos[$bondAtom[$i][2]]) >
-           $bondLength[$i] + 0.1) ||
-          (abs($cPos[$bondAtom[$i][1]] - $cPos[$bondAtom[$i][2]]) >
-           $bondLength[$i] + 0.1))
+      # Compute the distance between the atoms across the cell.  Use one
+      #   minDistance value for each 'anchor' atom of the bond. If this
+      #   distance is greater than the known bond length (plus a small number
+      #   to manage machine precision) then we need to look for the alternative
+      #   (outside the central cell) positions.
+      $diffX[1] = $xPos[$bondAtom[$i][1]] - $xPos[$bondAtom[$i][2]];
+      $diffY[1] = $yPos[$bondAtom[$i][1]] - $yPos[$bondAtom[$i][2]];
+      $diffZ[1] = $zPos[$bondAtom[$i][1]] - $zPos[$bondAtom[$i][2]];
+      $minDistance[1] = sqrt($diffX[1] * $diffX[1] +
+                             $diffY[1] * $diffY[1] +
+                             $diffZ[1] * $diffZ[1]);
+      $minDistance[2] = $minDistance[1];
+
+      if ($minDistance[1] > $bondLength[$i]*$bohrRad + 0.1)
       {
-         # Compute the distance between the atoms across the cell.  Use one
-         #   minDistance value for each 'anchor' atom of the bond.
-         $diffX[1] = $xPos[$bondAtom[$i][1]] - $xPos[$bondAtom[$i][2]];
-         $diffY[1] = $yPos[$bondAtom[$i][1]] - $yPos[$bondAtom[$i][2]];
-         $diffZ[1] = $zPos[$bondAtom[$i][1]] - $zPos[$bondAtom[$i][2]];
-         $minDistance[1] = sqrt($diffX[1] * $diffX[1] +
-                                $diffY[1] * $diffY[1] +
-                                $diffZ[1] * $diffZ[1]);
-         $minDistance[2] = $minDistance[1];
 
          # Find the locations of the two new 'atoms'.
          for ($j=-2;$j<=2;$j++)
@@ -1965,15 +1995,15 @@ sub getExtendedPositions
             $aPosExt[$numAtomsExt] = (($xFactor[1]*$xPosExt[$numAtomsExt]+
                                        $yFactor[1]*$yPosExt[$numAtomsExt]+
                                        $zFactor[1]*$zPosExt[$numAtomsExt])/
-                                       $cellDeterminate) * $magA;
+                                       $cellDeterminant) * $magA;
             $bPosExt[$numAtomsExt] = (($xFactor[2]*$xPosExt[$numAtomsExt]+
                                        $yFactor[2]*$yPosExt[$numAtomsExt]+
                                        $zFactor[2]*$zPosExt[$numAtomsExt])/
-                                       $cellDeterminate) * $magB;
+                                       $cellDeterminant) * $magB;
             $cPosExt[$numAtomsExt] = (($xFactor[3]*$xPosExt[$numAtomsExt]+
                                        $yFactor[3]*$yPosExt[$numAtomsExt]+
                                        $zFactor[3]*$zPosExt[$numAtomsExt])/
-                                       $cellDeterminate) * $magC;
+                                       $cellDeterminant) * $magC;
 
             # Include the tags for this atom.
             $atomTagExt[$numAtomsExt] = $atomTag[$bondAtom[$i][$j]];

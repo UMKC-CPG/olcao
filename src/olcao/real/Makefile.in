@@ -81,7 +81,8 @@ am_gOLCAObond_OBJECTS = kinds.$(OBJEXT) constants.$(OBJEXT) \
 	hdf5Main.$(OBJEXT) exchCorr.$(OBJEXT) \
 	gOLCAObond-matrixSubs.$(OBJEXT) input.$(OBJEXT) \
 	gOLCAObond-secularEqn.$(OBJEXT) gOLCAObond-populate.$(OBJEXT) \
-	gOLCAObond-bond.$(OBJEXT) OLCAO_Bond.$(OBJEXT)
+	gOLCAObond-bond.$(OBJEXT) gOLCAObond-bond3C.$(OBJEXT) \
+	OLCAO_Bond.$(OBJEXT)
 gOLCAObond_OBJECTS = $(am_gOLCAObond_OBJECTS)
 gOLCAObond_LDADD = $(LDADD)
 am_gOLCAOdos_OBJECTS = kinds.$(OBJEXT) constants.$(OBJEXT) \
@@ -130,7 +131,8 @@ am_gOLCAOmain_OBJECTS = kinds.$(OBJEXT) constants.$(OBJEXT) \
 	gOLCAOmain-secularEqn.$(OBJEXT) gOLCAOmain-populate.$(OBJEXT) \
 	gOLCAOmain-valeCharge.$(OBJEXT) potentialUpdate.$(OBJEXT) \
 	gOLCAOmain-dos.$(OBJEXT) gOLCAOmain-bond.$(OBJEXT) \
-	OLCAO_Main.$(OBJEXT) OLCAO_MainWrap.$(OBJEXT)
+	gOLCAOmain-bond3C.$(OBJEXT) OLCAO_Main.$(OBJEXT) \
+	OLCAO_MainWrap.$(OBJEXT)
 gOLCAOmain_OBJECTS = $(am_gOLCAOmain_OBJECTS)
 gOLCAOmain_LDADD = $(LDADD)
 am_gOLCAOoptc_OBJECTS = kinds.$(OBJEXT) constants.$(OBJEXT) \
@@ -294,8 +296,8 @@ gOLCAOsetup_SOURCES = ../../kinds.f90 ../../constants.f90 ../../readData.f90 \
    ../basis.f90 ../kpoints.f90 ../gaussRelations.f90 ../gaussIntegrals.f90 \
    ../hdf5SetupIntg.F90 ../hdf5SetupElec.f90 ../hdf5SetupExco.f90 \
    ../hdf5Setup.f90 ../exchCorr.f90 ../elecStat.f90 ../intgOrtho.F90 \
-   ../intgSaving.F90 ../integralsSCF.F90 ../coreCharge.f90 ../input.f90 \
-   ../OLCAO_Setup.f90 ../OLCAO_SetupWrap.f90
+   ../intgSaving.F90 ../integralsSCF.F90 ../coreCharge.f90 \
+   ../input.f90 ../OLCAO_Setup.f90 ../OLCAO_SetupWrap.f90
 
 gOLCAOmain_SOURCES = ../../kinds.f90 ../../constants.f90 ../../readData.f90 \
    ../stringSubs.f90 ../mathSubs.f90 ../sortSubs.f90 ../interfaces.F90 \
@@ -306,7 +308,7 @@ gOLCAOmain_SOURCES = ../../kinds.f90 ../../constants.f90 ../../readData.f90 \
    ../hdf5MainEvect.F90 ../hdf5Main.f90 ../hdf5PSCFBand.F90 \
    ../exchCorr.f90 ../elecStat.f90 ../matrixSubs.F90 ../input.f90 \
    ../secularEqn.F90 ../populate.F90 ../valeCharge.F90 ../potentialUpdate.f90 \
-   ../dos.F90 ../bond.F90 ../OLCAO_Main.f90 ../OLCAO_MainWrap.f90
+   ../dos.F90 ../bond.F90 ../bond3C.F90 ../OLCAO_Main.f90 ../OLCAO_MainWrap.f90
 
 gOLCAOintg_SOURCES = ../../kinds.f90 ../../constants.f90 ../../readData.f90 \
    ../stringSubs.f90 ../mathSubs.f90 ../sortSubs.f90 ../interfaces.F90 \
@@ -325,29 +327,30 @@ gOLCAOband_SOURCES = ../../kinds.f90 ../../constants.f90 ../../readData.f90 \
    ../atomicTypes.f90 ../atomicSites.f90 ../potential.f90 ../lattice.f90 \
    ../basis.f90 ../kpoints.f90 ../gaussIntegrals.f90 ../hdf5PSCFBand.F90 \
    ../hdf5PSCFIntg.f90 ../hdf5SetupIntg.F90 ../hdf5SetupElec.f90 \
-   ../hdf5SetupExco.f90 ../hdf5Setup.f90 ../hdf5MainEval.f90 ../hdf5MainEvect.F90 \
-   ../hdf5Main.f90 \
-   ../exchCorr.f90 ../intgOrtho.F90 ../intgSaving.F90 ../integralsPSCF.F90 \
-   ../matrixSubs.F90 ../input.f90 ../secularEqn.F90 ../populate.F90 \
-   ../OLCAO_Band.F90 ../OLCAO_BandWrap.f90
+   ../hdf5SetupExco.f90 ../hdf5Setup.f90 ../hdf5MainEval.f90 \
+   ../hdf5MainEvect.F90 ../hdf5Main.f90 ../exchCorr.f90 ../intgOrtho.F90 \
+   ../intgSaving.F90 ../integralsPSCF.F90 ../matrixSubs.F90 ../input.f90 \
+   ../secularEqn.F90 ../populate.F90 ../OLCAO_Band.F90 ../OLCAO_BandWrap.f90
 
 gOLCAOdos_SOURCES = ../../kinds.f90 ../../constants.f90 ../../readData.f90 \
    ../stringSubs.f90 ../mathSubs.f90 ../sortSubs.f90 ../interfaces.F90 \
    ../timeStamps.f90 ../commandLine.f90 ../potSites.f90 ../potTypes.f90 \
    ../atomicTypes.f90 ../atomicSites.f90 ../potential.f90 ../lattice.f90 \
    ../kpoints.f90 ../hdf5PSCFBand.F90 ../hdf5SetupIntg.F90 \
-   ../hdf5SetupElec.f90 ../hdf5SetupExco.f90 ../hdf5Setup.f90 ../hdf5MainEval.f90 \
-   ../hdf5MainEvect.F90 ../hdf5Main.f90 ../exchCorr.f90 ../matrixSubs.F90 ../input.f90 \
-   ../secularEqn.F90 ../populate.F90 ../dos.F90 ../OLCAO_DOS.f90
+   ../hdf5SetupElec.f90 ../hdf5SetupExco.f90 ../hdf5Setup.f90 \
+   ../hdf5MainEval.f90 ../hdf5MainEvect.F90 ../hdf5Main.f90 ../exchCorr.f90 \
+   ../matrixSubs.F90 ../input.f90 ../secularEqn.F90 ../populate.F90 \
+   ../dos.F90 ../OLCAO_DOS.f90
 
 gOLCAObond_SOURCES = ../../kinds.f90 ../../constants.f90 ../../readData.f90 \
    ../stringSubs.f90 ../mathSubs.f90 ../sortSubs.f90 ../interfaces.F90 \
    ../timeStamps.f90 ../commandLine.f90 ../potSites.f90 ../potTypes.f90 \
    ../atomicTypes.f90 ../atomicSites.f90 ../potential.f90 ../lattice.f90 \
    ../kpoints.f90 ../hdf5PSCFBand.F90 ../hdf5SetupIntg.F90 \
-   ../hdf5SetupElec.f90 ../hdf5SetupExco.f90 ../hdf5Setup.f90 ../hdf5MainEval.f90 \
-   ../hdf5MainEvect.F90 ../hdf5Main.f90 ../exchCorr.f90 ../matrixSubs.F90 ../input.f90 \
-   ../secularEqn.F90 ../populate.F90 ../bond.F90 ../OLCAO_Bond.f90
+   ../hdf5SetupElec.f90 ../hdf5SetupExco.f90 ../hdf5Setup.f90 \
+   ../hdf5MainEval.f90 ../hdf5MainEvect.F90 ../hdf5Main.f90 ../exchCorr.f90 \
+   ../matrixSubs.F90 ../input.f90 ../secularEqn.F90 ../populate.F90 \
+   ../bond.F90 ../bond3C.F90 ../OLCAO_Bond.f90
 
 gOLCAOoptc_SOURCES = ../../kinds.f90 ../../constants.f90 ../../readData.f90 \
    ../stringSubs.f90 ../mathSubs.f90 ../sortSubs.f90 ../interfaces.F90 \
@@ -579,6 +582,12 @@ gOLCAObond-bond.o: ../bond.F90
 gOLCAObond-bond.obj: ../bond.F90
 	$(FC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(gOLCAObond_CPPFLAGS) $(CPPFLAGS) $(AM_FCFLAGS) $(FCFLAGS) -c -o gOLCAObond-bond.obj `if test -f '../bond.F90'; then $(CYGPATH_W) '../bond.F90'; else $(CYGPATH_W) '$(srcdir)/../bond.F90'; fi`
 
+gOLCAObond-bond3C.o: ../bond3C.F90
+	$(FC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(gOLCAObond_CPPFLAGS) $(CPPFLAGS) $(AM_FCFLAGS) $(FCFLAGS) -c -o gOLCAObond-bond3C.o `test -f '../bond3C.F90' || echo '$(srcdir)/'`../bond3C.F90
+
+gOLCAObond-bond3C.obj: ../bond3C.F90
+	$(FC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(gOLCAObond_CPPFLAGS) $(CPPFLAGS) $(AM_FCFLAGS) $(FCFLAGS) -c -o gOLCAObond-bond3C.obj `if test -f '../bond3C.F90'; then $(CYGPATH_W) '../bond3C.F90'; else $(CYGPATH_W) '$(srcdir)/../bond3C.F90'; fi`
+
 gOLCAOdos-interfaces.o: ../interfaces.F90
 	$(FC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(gOLCAOdos_CPPFLAGS) $(CPPFLAGS) $(AM_FCFLAGS) $(FCFLAGS) -c -o gOLCAOdos-interfaces.o `test -f '../interfaces.F90' || echo '$(srcdir)/'`../interfaces.F90
 
@@ -716,6 +725,12 @@ gOLCAOmain-bond.o: ../bond.F90
 
 gOLCAOmain-bond.obj: ../bond.F90
 	$(FC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(gOLCAOmain_CPPFLAGS) $(CPPFLAGS) $(AM_FCFLAGS) $(FCFLAGS) -c -o gOLCAOmain-bond.obj `if test -f '../bond.F90'; then $(CYGPATH_W) '../bond.F90'; else $(CYGPATH_W) '$(srcdir)/../bond.F90'; fi`
+
+gOLCAOmain-bond3C.o: ../bond3C.F90
+	$(FC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(gOLCAOmain_CPPFLAGS) $(CPPFLAGS) $(AM_FCFLAGS) $(FCFLAGS) -c -o gOLCAOmain-bond3C.o `test -f '../bond3C.F90' || echo '$(srcdir)/'`../bond3C.F90
+
+gOLCAOmain-bond3C.obj: ../bond3C.F90
+	$(FC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(gOLCAOmain_CPPFLAGS) $(CPPFLAGS) $(AM_FCFLAGS) $(FCFLAGS) -c -o gOLCAOmain-bond3C.obj `if test -f '../bond3C.F90'; then $(CYGPATH_W) '../bond3C.F90'; else $(CYGPATH_W) '$(srcdir)/../bond3C.F90'; fi`
 
 gOLCAOoptc-interfaces.o: ../interfaces.F90
 	$(FC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(gOLCAOoptc_CPPFLAGS) $(CPPFLAGS) $(AM_FCFLAGS) $(FCFLAGS) -c -o gOLCAOoptc-interfaces.o `test -f '../interfaces.F90' || echo '$(srcdir)/'`../interfaces.F90

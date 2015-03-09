@@ -1,0 +1,128 @@
+#!/bin/env perl
+
+use strict;
+use warnings;
+
+my $numSites;
+my $numRays;
+my $site;
+my @values;
+my $line;
+my @currPos;
+my $currRadius;
+my @coords;
+my @currRay;
+my $ray;
+
+open (DATA,"<fort.200") || die "Cannot find fort.200\n";
+open (RAY,">xcmesh.pov") || die "Cannot open xcmesh.pov for writing.\n";
+
+print RAY<<ENDHEADER;
+//Include necessary libraries for color, finish, and the ability to process functions.
+#include "colors.inc"
+#include "finish.inc"
+#include "functions.inc"
+
+// Orthographic camera
+camera {
+   orthographic
+   location <0.5, 0, -1>
+   look_at   <0.5, 0,  0>
+   right     1.33*x  // aspect
+   direction <0,0,10> // direction and zoom
+   angle 67 //field (overrides direction zoom)
+}
+
+// Define the light source.
+light_source {<-100,-200,-100> colour rgb 1}
+
+// Define the background color.
+background { color White }
+
+// Declare object visualization parameters.
+#declare RADIUS = 0.004;
+#declare RAYRADIUS = 0.002;
+ENDHEADER
+
+$numSites = <DATA>;
+$numRays  = <DATA>;
+
+foreach $site (1..$numSites)
+{
+   $line = <DATA>;
+   chomp $line;
+   @values = split(/\s+/,$line);
+   shift @values;
+   $coords[$site][1] = $values[0];
+   $coords[$site][2] = $values[1];
+   $coords[$site][3] = $values[2];
+
+   print RAY <<ENDSPHERE;
+sphere
+{
+   <$coords[$site][1],$coords[$site][2],$coords[$site][3]>,RADIUS
+   pigment {rgbt <0.000,0.000,1.000,0>}
+   finish {phong 0.5 phong_size 10}
+}
+ENDSPHERE
+}
+
+foreach $site (1..$numSites)
+{
+   foreach $ray (1..$numRays)
+   {
+      $line = <DATA>;
+      chomp $line;
+      @values = split(/\s+/,$line);
+      shift @values;
+
+      $currRay[1] = $values[0];
+      $currRay[2] = $values[1];
+      $currRay[3] = $values[2];
+
+      $currRadius = $values[3];
+
+      $currPos[1] = $coords[$site][1]+$currRay[1]*$currRadius;
+      $currPos[2] = $coords[$site][2]+$currRay[2]*$currRadius;
+      $currPos[3] = $coords[$site][3]+$currRay[3]*$currRadius;
+
+print RAY <<ENDROD;
+cylinder
+{
+   <$coords[$site][1],$coords[$site][2],$coords[$site][3]>,
+   <$currPos[1],$currPos[2],$currPos[3]>,RAYRADIUS
+   pigment {rgbt <0.000,0.000,1.000,0>}
+   finish {phong 0.5 phong_size 10}
+}
+sphere
+{
+   <$currPos[1],$currPos[2],$currPos[3]>,RADIUS
+   pigment {rgbt <0.000,0.000,1.000,0>}
+   finish {phong 0.5 phong_size 10}
+}
+ENDROD
+      while ($line = <DATA>)
+      {
+         if ($line =~ /END/)
+            {last;}
+
+         chomp $line;
+         @values = split(/\s+/,$line);
+         shift @values;
+         $currRadius=$values[0];
+
+         $currPos[1] = $coords[$site][1]+$currRay[1]*$currRadius;
+         $currPos[2] = $coords[$site][2]+$currRay[2]*$currRadius;
+         $currPos[3] = $coords[$site][3]+$currRay[3]*$currRadius;
+
+         print RAY <<ENDPOINT;
+sphere
+{
+   <$currPos[1],$currPos[2],$currPos[3]>,RADIUS
+   pigment {rgbt <0.000,0.000,1.000,0>}
+   finish {phong 0.5 phong_size 10}
+}
+ENDPOINT
+      }
+   }
+}

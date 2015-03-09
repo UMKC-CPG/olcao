@@ -1,0 +1,6 @@
+#!/bin/bash
+
+cp inputs/olcao.dat ./fort.5
+cp inputs/structure.dat ./fort.4
+cp inputs/kp-scf.dat ./fort.15
+cp inputs/scfV.dat ./fort.8

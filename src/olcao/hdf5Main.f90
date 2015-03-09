@@ -28,7 +28,7 @@ module O_MainHDF5
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    contains
 
-subroutine initMainHDF5
+subroutine initMainHDF5(numStates)
 
    ! Use the HDF5 module.
    use HDF5
@@ -37,6 +37,9 @@ subroutine initMainHDF5
 
    ! Make sure that no funny variables are defined.
    implicit none
+
+   ! Define passed variable.
+   integer, intent(inout) :: numStates
 
    ! Define local variables.
    integer :: hdferr
@@ -67,8 +70,8 @@ subroutine initMainHDF5
 
 
    ! Then create the necessary subgroups of the main hdf5 file.
-   call initMainEVectHDF5 (main_fid)
-   call initMainEValHDF5  (main_fid)
+   call initMainEVectHDF5 (main_fid,numStates)
+   call initMainEValHDF5  (main_fid,numStates)
 
 end subroutine initMainHDF5
 

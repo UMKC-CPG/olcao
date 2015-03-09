@@ -1,5 +1,4 @@
-#!/usr/bin/perl
-
+#!/bin/env perl
 ###############################################################################
 # PROGRAM:  batchClean
 # PURPOSE:  This program will clean up the intermediate directories after a

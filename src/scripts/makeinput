@@ -9,11 +9,12 @@ sub printHelp
 #INPUTS:   An olcao.skl skeleton file organized in one of a few ways.
 
 #USAGE: makeinput [-basisdb \$atomicBDB] [-potdb \$atomicPDB]
-#                 [-modpot \$modElementName \$minModTerm \$maxModTerm \$numModTerms]
+#                 [-modpot \$modElementName \$minModTerm \$maxModTerm
+#                          \$numModTerms]
 #                 [-subbasis \$basisSubOut \$basisSubIn [-subbasis ...]]
 #                 [-subpot \$potSubOut \$potSubIn [-subpot ...]]
-#                 [[[-scfkp \$a \$b \$c] [-pscfkp \$a \$b \$c] [-altkp \$a \$b \$c]]
-#                          | [-kp \$a \$b \$c]]
+#                 [[[-scfkp \$a \$b \$c] [-pscfkp \$a \$b \$c]
+#                   [-altkp \$a \$b \$c]] | [-kp \$a \$b \$c]]
 #                 [-xcmesh [-numvect \$numSampVectors]
 #                          [-weight \$xcInWeight \$xcOutWeight]
 #                          [-samp \$xcInSamp \$xcOutSamp \$xcSpacingSamp]]
@@ -293,6 +294,7 @@ use StructureControl;
 my $time;        # Record time of script events.
 my $pi;
 my $bohrRad;
+my $epsilon = 0.00001;
 
 # Directory locations.
 my $proj_home;   # Full path to project directory.
@@ -360,6 +362,8 @@ my $sigmaBOND;   # Gaussian broadening for BOND curves.
 my $eminBOND;    # Minimum energy to evaluate BOND at.
 my $emaxBOND;    # Maximum energy to evaluate BOND at.
 my $allAtomBOND; # Flag to force bond calculations for each atom=1; each type=0.
+my $BOND3C;      # Flag to compute the 3-Center bond order. default=0=no, 1=yes
+my $maxNeighborBOND; # Maximum number of neighbor bonds for a single atom.
 my $eDeltaPACS;  # Energy delta for ELNES/XANES evaluation.
 my $sigmaPACS;   # Gaussian broadening for ELNES/XANES curves.
 my $onsetSlackPACS; # Amount of slack in window before onset.
@@ -818,6 +822,8 @@ sub initDefaults
    $sigmaBOND=0.1;
    $eDeltaBOND=0.01;
    $allAtomBOND=1;
+   $BOND3C = 0;
+   $maxNeighborBOND = 20;
    
    # Default PACS options
    $eDeltaPACS=0.01;
@@ -1694,12 +1700,18 @@ sub groupBlock
    {
       # Set the status of this atom by determining if it is within the given
       #   borders.
-      if (($directABC_ref->[$atom][1] >= $blockBorders[1][1][$currentBlock]) &&
-          ($directABC_ref->[$atom][2] >= $blockBorders[2][1][$currentBlock]) &&
-          ($directABC_ref->[$atom][3] >= $blockBorders[3][1][$currentBlock]) &&
-          ($directABC_ref->[$atom][1] <= $blockBorders[1][2][$currentBlock]) &&
-          ($directABC_ref->[$atom][2] <= $blockBorders[2][2][$currentBlock]) &&
-          ($directABC_ref->[$atom][3] <= $blockBorders[3][2][$currentBlock]))
+      if (($directABC_ref->[$atom][1] >=
+           $blockBorders[1][1][$currentBlock]-$epsilon) &&
+          ($directABC_ref->[$atom][2] >= 
+           $blockBorders[2][1][$currentBlock]-$epsilon) &&
+          ($directABC_ref->[$atom][3] >= 
+           $blockBorders[3][1][$currentBlock]-$epsilon) &&
+          ($directABC_ref->[$atom][1] <= 
+           $blockBorders[1][2][$currentBlock]+$epsilon) &&
+          ($directABC_ref->[$atom][2] <= 
+           $blockBorders[2][2][$currentBlock]+$epsilon) &&
+          ($directABC_ref->[$atom][3] <= 
+           $blockBorders[3][2][$currentBlock]+$epsilon))
          {$status = 1;}
       else
          {$status = 0;}
@@ -2585,7 +2597,7 @@ sub printOLCAO
       if ($xanes == 1)
       {
          # Choose a name for the directory of this target atom.
-         $currentDirName = lc($currentName);
+         $currentDirName = $currentName;
 
          # Make sure that this directory does not yet exist.
          if (-e $currentDirName)
@@ -3193,6 +3205,8 @@ sub printOLCAOInput
    &printPot($fileSet);
 
    # Print the exchange correlation mesh definition.
+   print OLCAO "PRINT_XC_MESH\n";
+   print OLCAO "0\n"; # Default is to not print the XC mesh.
    print OLCAO "NUM_ANGULAR_SAMPLE_VECTORS\n";
    print OLCAO "$numSampVectors\n";
    print OLCAO "WTIN_WTOUT\n";
@@ -3216,8 +3230,10 @@ sub printOLCAOInput
    print OLCAO "@numStatesUsed[1..3]\n";
    print OLCAO "NUM_ELECTRONS\n";
    print OLCAO "$numElectrons\n";
-   print OLCAO "THERMAL_SMEARING_SIGMA\n";
-   print OLCAO "$thermSmearMAIN 0\n";
+   print OLCAO "THERMAL_SMEARING_SIGMA__SIGMA_CUTOFF\n"; # See input.f90 and
+   print OLCAO "$thermSmearMAIN 11.5\n"; # mathSubs.f90 docs for these vars.
+   print OLCAO "FERMI_LEVEL_SEARCH_LIMIT\n";
+   print OLCAO "13.6\n"; # (In eV) See populate.f90 docs (fermiSearchLimit).
 
    # Print data that is useful for the main portion of the calculation.
    print OLCAO "MAIN_INPUT_DATA\n";
@@ -3247,8 +3263,10 @@ sub printOLCAOInput
    print OLCAO "BOND_INPUT_DATA\n";
    print OLCAO "$maxLenBOND                     ! MAXIMUM BOND LENGTH\n";
    print OLCAO "$eDeltaBOND $sigmaBOND               ! BOND Delta Energy, BOND sigma broadening\n";
-   print OLCAO "$eminBOND $emaxBOND                 ! BOND EMIN and EMAX\n";
+   print OLCAO "$eminBOND $emaxBOND                  ! BOND EMIN and EMAX\n";
    print OLCAO "$allAtomBOND                        ! Flag for all atom BOND\n";
+   print OLCAO "$BOND3C                         ! Flag for 3C-BOND\n";
+   print OLCAO "$maxNeighborBOND                     ! Max # neighbor atoms\n";
 
    # Print data useful for the sybd portion of the calculation
    print OLCAO "SYBD_INPUT_DATA\n";
@@ -3860,6 +3878,7 @@ sub makeSubFile
    if ($xanes == 0)
    {
       print SUBFILE "source $OLCAO_DIR/.olcao\n";
+      print SUBFILE "export OMP_NUM_THREADS=1\n";
       print SUBFILE "cd $proj_dir\n";
       print SUBFILE "\$OLCAO_BIN/olcao -dos\n";
       print SUBFILE "\$OLCAO_BIN/olcao -bond\n";
@@ -3871,6 +3890,7 @@ sub makeSubFile
       print SUBFILE "source $OLCAO_DIR/.olcao\n";
       @values = StructureControl::prepLine("","$proj_dir",'\/');
       $basename = "/" . $values[$#values];
+      print SUBFILE "export OMP_NUM_THREADS=1\n";
       print SUBFILE "cd $proj_dir$basename\n";
       print SUBFILE "\$OLCAO_BIN/olcao -dos\n";
       print SUBFILE "\$OLCAO_BIN/olcao -bond\n";
@@ -3881,6 +3901,7 @@ sub makeSubFile
    {
       $proj_dir = "$proj_dir" . "/" . lc($currentName);
       print SUBFILE "source $OLCAO_DIR/.olcao\n";
+      print SUBFILE "export OMP_NUM_THREADS=1\n";
       print SUBFILE "cd $proj_dir\n";
       foreach $orbital (1..$numCoreXanes)
       {
