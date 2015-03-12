@@ -5,10 +5,10 @@
 ###########################################################
 
 #Define the current branch.
-export BRANCH="v29-pmirror"
+export BRANCH="olcao"
 
 #Root directory of the OLCAO program suite.
-export OLCAO_DIR="$HOME/CPG/cpg-repo/$BRANCH"
+export OLCAO_DIR="$HOME/$BRANCH"
 
 #Location of binary executables.
 export OLCAO_BIN="$OLCAO_DIR/bin"
