@@ -1,4 +1,4 @@
-#!/bin/env perl
+#!/usr/bin/env perl
 #Progam: appendCol
 #Last Updated:  Nov. 19, 2010
 #USAGE  appendCol -col $colNum -from $fromFile -to $toFile [-fromhead $fromHead]

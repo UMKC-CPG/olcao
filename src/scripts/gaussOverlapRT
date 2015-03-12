@@ -1,4 +1,4 @@
-#!/bin/env perl
+#!/usr/bin/env perl
 
 # PROGRAM:  gaussOverlapRT
 # PURPOSE:  This program will take a set of atomic orbital povray files and

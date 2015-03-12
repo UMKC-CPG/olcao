@@ -1,4 +1,4 @@
-#!/bin/env perl
+#!/usr/bin/env perl
 #This script will take a single argument.
 #The argument must be a directory (either exact or relative reference).  Then
 #this script will make a directory hierarchy if the given directories do not

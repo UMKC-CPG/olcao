@@ -1,4 +1,4 @@
-#!/bin/env perl
+#!/usr/bin/env perl
 
 #PROGRAM:  makePDOS
 #PURPOSE:  This program will read a raw PDOS data file for the purpose of

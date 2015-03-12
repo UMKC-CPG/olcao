@@ -1,4 +1,4 @@
-#!/bin/env perl
+#!/usr/bin/env perl
 # This script is written to allow you to reduce the number of columns in a
 #   symmetric band structure data file so that it can be more easily displayed
 #   in Origin.  (There is appearantly some column limitation of 2047 in Origin

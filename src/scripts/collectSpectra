@@ -1,4 +1,4 @@
-#!/bin/env perl
+#!/usr/bin/env perl
 #PROGRAM collectSpectra
 
 # The purpose of this program is to reduce the human labor necessary to collect

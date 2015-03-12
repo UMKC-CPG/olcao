@@ -1,4 +1,4 @@
-#!/bin/env perl
+#!/usr/bin/env perl
 ##############################################################################
 # PROGRAM:  batchChange
 # PURPOSE:  This program will attempt to modify each submission file present

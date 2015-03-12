@@ -1,4 +1,4 @@
-#!/bin/env perl
+#!/usr/bin/env perl
 #
 #PROGRAM:  rpdf
 #PURPOSE:  This program computes the radial pair distribution function.
