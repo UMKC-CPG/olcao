@@ -19,6 +19,12 @@ module O_PSCFBandHDF5
    integer(hsize_t), dimension (2) :: coreValeBand
    integer(hsize_t), dimension (1) :: statesBand
 
+   ! Define arrays that hold the dimensions of the chunks (if they might lead
+   !   to chunks that are too big).
+   integer(hsize_t), dimension (2) :: valeStatesBandChunk
+   integer(hsize_t), dimension (2) :: valeValeBandChunk
+   integer(hsize_t), dimension (2) :: coreValeBandChunk
+
    ! Define the file ID.
    integer(hid_t) :: band_fid
 
@@ -122,6 +128,40 @@ subroutine initPSCFBandHDF5(numStates,clp)
    coreValeBand(2)      = valeDim
    statesBand(1)        = numStates
 
+   ! Check that the chunk size is not too large (the assumption here is that
+   !   the number being stored are 8 byte reals and that we should not go over
+   !   2 billion bytes. Note that if x*y = >250M and we want a*b = 250M then
+   !   the additional requirement x/y = a/b leads to b = sqrt(250M/>250M)*y.
+   !   Thus a = 250M/b.
+   if (valeStatesBand(1) * valeStatesBand(2) > 250000000) then
+      valeStatesBandChunk(2) = int(sqrt(real(250000000/(valeStatesBand(1) * &
+            valeStatesBand(2)),double)) * valeStatesBand(2))
+      valeStatesBandChunk(1) = int(250000000 / valeStatesBandChunk(2))
+   else
+      valeStatesBandChunk(1) = valeStatesBand(1)
+      valeStatesBandChunk(2) = valeStatesBand(2)
+   endif
+
+   ! We will do a similar procedure for the coreValeBandChunk.
+   if (coreValeBand(1) * coreValeBand(2) > 250000000) then
+      coreValeBandChunk(2) = int(sqrt(real(250000000/(coreValeBand(1) * &
+            coreValeBand(2)),double)) * coreValeBand(2))
+      coreValeBandChunk(1) = int(250000000 / coreValeBandChunk(2))
+   else
+      coreValeBandChunk(1) = coreValeBand(1)
+      coreValeBandChunk(2) = coreValeBand(2)
+   endif
+
+   ! The procedure for valeValeBand is a bit different because the
+   !   valeValeBand(1) will always be 1 or 2.
+   if (valeValeBand(1) * valeValeBand(2) > 250000000) then
+      valeValeBandChunk(2) = int(250000000/valeValeBand(1))
+      valeValeBandChunk(1) = valeValeBand(1)
+   else
+      valeValeBandChunk(1) = valeValeBand(1)
+      valeValeBandChunk(2) = valeValeBand(2)
+   endif
+
    ! The symmetric band calculation will not use these HDF5 settings for output.
    if (clp%doSybd .eq. 0) then
 
@@ -185,11 +225,11 @@ subroutine initPSCFBandHDF5(numStates,clp)
       if (coreDim /= 0) then
          call h5pset_layout_f  (coreValeBand_plid,  H5D_CHUNKED_F,hdferr)
       endif
-      call h5pset_chunk_f   (valeStatesBand_plid,2,valeStatesBand,hdferr)
+      call h5pset_chunk_f   (valeStatesBand_plid,2,valeStatesBandChunk,hdferr)
       call h5pset_chunk_f   (statesBand_plid,1,statesBand,hdferr)
-      call h5pset_chunk_f   (valeValeBand_plid,2,valeValeBand,hdferr)
+      call h5pset_chunk_f   (valeValeBand_plid,2,valeValeBandChunk,hdferr)
       if (coreDim /= 0) then
-         call h5pset_chunk_f   (coreValeBand_plid,2,coreValeBand,hdferr)
+         call h5pset_chunk_f   (coreValeBand_plid,2,coreValeBandChunk,hdferr)
       endif
 !      call h5pset_shuffle_f (valeStatesBand_plid,hdferr)
 !      call h5pset_shuffle_f (statesBand_plid,    hdferr)

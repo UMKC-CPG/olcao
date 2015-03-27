@@ -38,8 +38,11 @@ module O_SetupIntegralsHDF5
    !   list.
    integer(hid_t) :: valeVale_plid
 
-   ! Define arrays that hold the dimensions of the datasets.
+   ! Define array that holds the dimensions of the dataset.
    integer(hsize_t), dimension (2) :: atomDims
+
+   ! Define array that holds the dimensions of the chunk.
+   integer (hsize_t), dimension (2) :: atomDimsChunk
 
    ! The number of datasets under each of the atomIntgGroup groups will
    !   vary depending on the problem.  (# of kpoints, potential dimension).
@@ -79,6 +82,19 @@ subroutine initSetupIntegralHDF5 (setup_fid)
    atomDims(1) = 1 ! Real needed only
 #endif
    atomDims(2) = valeDim*(valeDim+1)/2 ! Linear storage of 1/2 matrix.
+
+   ! Check that the chunk size is not too large (the assumption here is that
+   !   the number being stored are 8 byte reals and that we should not go over
+   !   2 billion bytes. Note that if x*y = >250M and we want a*b = 250M then
+   !   the additional requirement x/y = a/b leads to b = sqrt(250M/>250M)*y.
+   !   Thus a = 250M/b.
+   if (atomDims(1) * atomDims(2) > 250000000) then
+      atomDimsChunk(2) = int(250000000/atomDims(1))
+      atomDimsChunk(1) = atomDims(1)
+   else
+      atomDimsChunk(1) = atomDims(1)
+      atomDimsChunk(2) = atomDims(2)
+   endif
 
    ! Create the Integral group within the setup HDF5 file.
    call h5gcreate_f (setup_fid,"/atomIntgGroup",atomIntgGroup_gid,hdferr)
@@ -134,7 +150,7 @@ subroutine initSetupIntegralHDF5 (setup_fid)
    if (hdferr /= 0) stop 'Failed to create vale vale plid'
    call h5pset_layout_f  (valeVale_plid,H5D_CHUNKED_F,hdferr)
    if (hdferr /= 0) stop 'Failed to set vale vale plid layout'
-   call h5pset_chunk_f   (valeVale_plid,2,atomDims,hdferr)
+   call h5pset_chunk_f   (valeVale_plid,2,atomDimsChunk,hdferr)
    if (hdferr /= 0) stop 'Failed to set vale vale plid chunk size'
 !   call h5pset_shuffle_f (valeVale_plid,hdferr)
    call h5pset_deflate_f (valeVale_plid,1,hdferr)

@@ -155,7 +155,15 @@ subroutine computeBands(inDat,clp)
 !call flush (20)
 
    ! Loop over all kpoints and compute the solid state wave function and
-   !   energy eigen values for each.
+   !   energy eigen values for each. But first, ...
+   ! Record the fact that we are starting the k-point loop so that when
+   !   someone looks at the output file as the job is running they will
+   !   know that all the little dots represent a count of the number of
+   !   k-points. Then they can figure out the progress and progress rate.
+   write (20,*) "Beginning k-point loop."
+   if (numKPoints > 1) write (20,*) "Expecting ",numKPoints," iterations."
+   call flush (20)
+
    do i = 1, numKPoints
 !write (20,*) "current kpoints = ",i
 !call flush (20)
@@ -200,6 +208,18 @@ subroutine computeBands(inDat,clp)
             call restoreValeValeOL
          endif
       enddo
+
+      ! Record that this kpoint has been finished.
+      if (mod(i,10) .eq. 0) then
+         write (20,ADVANCE="NO",FMT="(a1)") "|"
+      else
+         write (20,ADVANCE="NO",FMT="(a1)") "."
+      endif
+      if (mod(i,50) .eq. 0) then
+         write (20,*) " ",i
+      endif
+      call flush (20)
+
    enddo
 
    ! Print the band results if necessary.

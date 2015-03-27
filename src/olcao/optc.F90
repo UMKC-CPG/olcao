@@ -584,6 +584,14 @@ subroutine computeTransitions(inDat,clp)
 
    do h = 1, spin
 
+      ! Record the fact that we are starting the k-point loop so that when
+      !   someone looks at the output file as the job is running they will
+      !   know that all the little dots represent a count of the number of
+      !   k-points. Then they can figure out the progress and progress rate.
+      write (20,*) "Beginning k-point loop."
+      if (numKPoints > 1) write (20,*) "Expecting ",numKPoints," iterations."
+      call flush (20)
+
       ! Begin a loop over the number of kpoints
       do i = 1, numKPoints
 
@@ -1233,8 +1241,8 @@ subroutine computeSigmaE (currentKPoint,xyzComponents,spinDirection,inDat)
       do j = firstFin, lastFin
 
          ! We don't want double counting or self interactions so we skip the
-         !   i<=j cases.
-         if (i <= j) cycle
+         !   i>=j cases.
+         if (i >= j) cycle
 
          ! Define the indices for the conjWaveMomSum and the momentum matrix
          !   elements.
@@ -1308,8 +1316,8 @@ subroutine computeSigmaE (currentKPoint,xyzComponents,spinDirection,inDat)
          do j = firstFin, lastFin
 
             ! We don't want double counting or self interactions so we skip the
-            !   i<=j cases.
-            if (i <= j) cycle
+            !   i>=j cases.
+            if (i >= j) cycle
 
             ! Increment the index number for the final states.
             finalStateIndex = finalStateIndex + 1
@@ -1330,7 +1338,7 @@ subroutine computeSigmaE (currentKPoint,xyzComponents,spinDirection,inDat)
                      & kPointFactor * exp(alphaFactor * ( &
                      & (energyScale(:) - energyEigenValues(i,currentKPoint,&
                      & spinDirection))**2 + &
-                     & (energyScale(:) - energyEigenValues(i,currentKPoint,&
+                     & (energyScale(:) - energyEigenValues(j,currentKPoint,&
                      & spinDirection))**2)) * transitionProb(k,&
                      & initialStateIndex,finalStateIndex)
             enddo
@@ -1354,8 +1362,8 @@ subroutine computeSigmaE (currentKPoint,xyzComponents,spinDirection,inDat)
          do j = firstFin, lastFin
 
             ! We don't want double counting or self interactions so we skip the
-            !   i<=j cases.
-            if (i <= j) cycle
+            !   i>=j cases.
+            if (i >= j) cycle
 
             ! Increment the index number for the final states.
             finalStateIndex = finalStateIndex + 1
@@ -1366,7 +1374,7 @@ subroutine computeSigmaE (currentKPoint,xyzComponents,spinDirection,inDat)
                   & kPointFactor * exp(alphaFactor * ( &
                   & (energyScale(:) - energyEigenValues(i,currentKPoint,&
                   & spinDirection))**2 + &
-                  & (energyScale(:) - energyEigenValues(i,currentKPoint,&
+                  & (energyScale(:) - energyEigenValues(j,currentKPoint,&
                   & spinDirection))**2)) * transitionProb(1,&
                   & initialStateIndex,finalStateIndex)
          enddo
