@@ -1180,10 +1180,17 @@ subroutine computeSigmaE (currentKPoint,xyzComponents,spinDirection,inDat)
 
    ! Compute the sum over all the energy states.
    do i = initComponent,finComponent
+
       finalStateIndex = 0
       do j = firstFin, lastFin
-         ! Increment the final state index for conjWaveMomSum
+
+         ! Increment the final state index for conjWaveMomSum. Note that this
+         !   will compute the conjWaveMomSumGamma for every possible final
+         !   state wihtin the firstFin - lastFin range. Later on, we may find
+         !   that for certain initial states we don't actually need every final
+         !   state. In those cases we will cycle past the final states.
          finalStateIndex = finalStateIndex + 1
+
          do k = 1, valeDim
             conjWaveMomSum(k,finalStateIndex,i) = &
                   & sum(conjg(valeVale(:,j,1,1) * valeValeMom(:,k,1,i)))
@@ -1204,7 +1211,11 @@ subroutine computeSigmaE (currentKPoint,xyzComponents,spinDirection,inDat)
       finalStateIndex = 0
       do j = firstFin, lastFin
 
-         ! Increment the final state index for conjWaveMomSum
+         ! Increment the final state index for conjWaveMomSumGamma. Note that
+         !   this will compute the conjWaveMomSumGamma for every possible final
+         !   state wihtin the firstFin - lastFin range. Later on, we may find
+         !   that for certain initial states we don't actually need every final
+         !   state. In those cases we will cycle past the final states.
          finalStateIndex = finalStateIndex + 1
 
          do k = 1, valeDim
@@ -1240,13 +1251,18 @@ subroutine computeSigmaE (currentKPoint,xyzComponents,spinDirection,inDat)
       finalStateIndex = 0
       do j = firstFin, lastFin
 
+         ! Define the indices for the conjWaveMomSum and the momentum matrix
+         !   elements. Note that we need to increment the index for every
+         !   j-loop iteration because we computed the conjWaveMomSum and
+         !   conjWaveMomSumGamma for every final state. We have to increment
+         !   the counter for every case, even if we don't use it.  (This note
+         !   is here because this was a point of confusion in the past when the
+         !   code was being developed.)
+         finalStateIndex = finalStateIndex + 1
+
          ! We don't want double counting or self interactions so we skip the
          !   i>=j cases.
          if (i >= j) cycle
-
-         ! Define the indices for the conjWaveMomSum and the momentum matrix
-         !   elements.
-         finalStateIndex   = finalStateIndex + 1
 
 #ifndef GAMMA
          ! Loop to obtain the wave function times the momentum integral.
@@ -1282,8 +1298,8 @@ subroutine computeSigmaE (currentKPoint,xyzComponents,spinDirection,inDat)
    ! Determine the weighting effect of this kpoint and include the normalizaion
    !   factor for the gaussian. We will actually be multiplying two Gaussians
    !   together so we need this squared.
-   kPointFactor = (kPointWeight(currentKPoint)/real(spin,double) / &
-         & sigmaSqrt2Pi)**2
+   kPointFactor = kPointWeight(currentKPoint)/real(spin,double) / &
+         & (sigmaSqrt2Pi)**2
 
    ! Now compute the exponential alpha factor which is -1/(2 * sigma^2).
    alphaFactor = -1.0_double / (2.0_double * inDat%sigmaSIGE**2)
@@ -1315,12 +1331,18 @@ subroutine computeSigmaE (currentKPoint,xyzComponents,spinDirection,inDat)
          finalStateIndex = 0
          do j = firstFin, lastFin
 
+            ! Increment the index number for the final states. Note that we
+            !   need to increment the index for every j-loop iteration because
+            !   we computed the conjWaveMomSum and conjWaveMomSumGamma for
+            !   every final state. We have to increment the counter for every
+            !   case, even if we don't use it.  (This note is here because this
+            !   was a point of confusion in the past when the code was being
+            !   developed.)
+            finalStateIndex = finalStateIndex + 1
+
             ! We don't want double counting or self interactions so we skip the
             !   i>=j cases.
             if (i >= j) cycle
-
-            ! Increment the index number for the final states.
-            finalStateIndex = finalStateIndex + 1
 
             ! Here we compute the product of two gaussians evaluated on a mesh.
             !   The kPointFactor is the square of (the kpoint weight divided by
@@ -1365,7 +1387,13 @@ subroutine computeSigmaE (currentKPoint,xyzComponents,spinDirection,inDat)
             !   i>=j cases.
             if (i >= j) cycle
 
-            ! Increment the index number for the final states.
+            ! Increment the index number for the final states. Note that we
+            !   need to increment the index for every j-loop iteration because
+            !   we computed the conjWaveMomSum and conjWaveMomSumGamma for
+            !   every final state. We have to increment the counter for every
+            !   case, even if we don't use it.  (This note is here because this
+            !   was a point of confusion in the past when the code was being
+            !   developed.)
             finalStateIndex = finalStateIndex + 1
 
             ! See notes for the above case.

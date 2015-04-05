@@ -1437,7 +1437,7 @@ sub initializeCell
       }
       $cellName = "cubic";
    }
-$kpShift = "0.0 0.0 0.0";
+
    # Move the files created by the space group program when the olcao.skl input
    #   was read in.
    &move("sginput","$inputTemp/sginput");

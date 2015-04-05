@@ -1141,8 +1141,8 @@ sub printOpenScad
       # We are going to print the sheets of atoms first.
 
       # Select the grid step size.
-      $xStepSize = 2.0*$maxAtomRadius+0.1*$maxAtomRadius;
-      $yStepSize = 2.0*$maxAtomRadius+0.1*$maxAtomRadius;
+      $xStepSize = 2.0*$maxAtomRadius+0.5*$maxAtomRadius;
+      $yStepSize = 2.0*$maxAtomRadius+0.5*$maxAtomRadius;
 
       # Determine the maximum number of atoms in the x and y directions based
       #   on the maximum atom radius.
@@ -1254,7 +1254,7 @@ sub printOpenScad
       $sheetPos2[3] = $bondRadius;
 
       # Select the grid step size.
-      $xStepSize = 2.0*$bondRadius + 0.1*$bondRadius;
+      $xStepSize = 2.0*$bondRadius + 0.5*$bondRadius;
       $yStepSize = $maxBondLength + 0.05*$maxBondLength;
 
       # Determine the maximum number of bonds that can be laid in the x and y
@@ -1458,6 +1458,7 @@ sub printTransSphereModule
    print $out "}\n";
 }
 
+# Print bonds and lattice vectors.
 sub printBAVModule
 {
    # Define passed paramters.
