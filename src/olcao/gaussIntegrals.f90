@@ -23538,9 +23538,9 @@ module O_GaussianIntegrals
 ! Generally, the solution to this integral is expressed numerically
 ! in terms of standard error functions (erf), but this closed form
 ! expression becomes numerically unstable if T = 0 or is very small 
-! (~10E-3 or less).  To avoid the large roundoff errors that occur
+! (~10E-2 or less).  To avoid the large roundoff errors that occur
 ! as a result of this, a check has to be performed on the value of T.  
-! If T <= 10E-3, the following formalism shown by Cook (referenced below) 
+! If T <= 10E-2, the following formalism shown by Cook (referenced below) 
 ! needs to be applied (Cook: p. 260):
 !
 ! F_N(T) = (1/2)*exp(-T)*sum[from i=0 to infinity]{gamma(N+1/2)/gamma(N+i+3/2)}
@@ -23580,11 +23580,11 @@ real (kind=double) :: a0, a1, a2, a3, a4, a5, a6, a7
 sqrt_pi = sqrt(pi) 
 erf_XX = erf(sqrt(XX))
 exp_XX = exp(-XX)
-! As stated earler, if XX is small (<= 10E-3), the closed form solution 
+! As stated earler, if XX is small (<= 10E-2), the closed form solution 
 ! to the Boys Function can't be used because it becomes numerically
 ! unstable.  Instead, the following expansion is used to approximate it for 
 ! small values (Cook: p. 260).  The loop defines the Nth degree Boys Function.
-if (XX <= 10E-3) then
+if (XX <= 10E-2) then
   do N = 0, 6
     ! These values (a0 through a7) are computed gamma(N + 0.5) values
     ! to be plugged into the following approximation of the Boys Function:
