@@ -58,6 +58,7 @@ my $rpdf_ref;
 my $elementCount_ref;
 my $elementList_ref;
 my $numElements;
+my $rpdfSigma;
 
 # Initialize the environment.
 &initEnv;
@@ -78,6 +79,9 @@ if ($zone != 0)
 # Set the choice of elements to consider if requested.
 if ($limitedPair == 1)
    {StructureControl::setRPDFSelectAtoms($atom1,$atom2);}
+
+# set the rpdf boradening factor
+StructureControl::setRPDFSigma($rpdfSigma);
 
 # Compute the radial pair distribution function.
 StructureControl::computeRPDF;
@@ -121,6 +125,9 @@ sub initEnv
 
    # Assume that there are no limitations for the atomic positions.
    $zone = 0;
+
+   # Assume that the default boradening factor
+   $rpdfSigma = 0.01
 }
 
 
@@ -173,6 +180,11 @@ sub parseCommandLine
       {
          $zone = $ARGV[$number+1];
          $number++;
+      }
+      elsif($ARGV[$number] eq "-broaden")
+      {
+          $rpdfSigma = $ARGV[$number+1];
+          $number++;
       }
       elsif ($ARGV[$number] eq "-help")
          {&printHelp;}

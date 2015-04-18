@@ -152,6 +152,7 @@ my @borderHigh;   # Higher border constraints.
 my $rpdfSelect=0; # Constrain certain calculations for the rpdf to only a
                   #   specific element pair.
 my @rpdfSelectAtoms; # Element names for atom pair to use for rpdf calculation.
+my $rpdfSigma;    # the RPDF broadening factor.
 my @rpdf;         # Array result of the RPDF calculation.
 #my @rpdfDistances; # Array holding all RPDF distances to be plotted (does not
 #                  # include any information for skipped pairs)
@@ -411,6 +412,11 @@ sub setRPDFSelectAtoms
    $rpdfSelect = 1;
    $rpdfSelectAtoms[1] = $_[0];
    $rpdfSelectAtoms[2] = $_[1];
+}
+
+sub setRPDFSigma
+{
+    $rpdfSigma = $_[0];
 }
 
 sub setYlm_l
@@ -3846,7 +3852,12 @@ sub finalizeInteractionData
       my @rpdfBroadened;
 
       # Apply Gaussian broadening to the points
-      my $rpdfSigma = 0.01;
+      # if the rpdfSigma variable is not set, set it here to the default
+      # value of '0.01'. this variable is used to broaden the gaussian
+      # at each point in the rpdf calculation to make the graph smoother.
+      if (not defined $rpdfSigma) {
+          $rpdfSigma = 0.01;
+      }
       &gaussianBroaden($rpdfSigma,1,1000,\@rpdf,\@rpdfBroadened);
 
       # Divide by r^2 to account for the effect of more atoms being
