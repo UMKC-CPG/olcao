@@ -1,14 +1,17 @@
 #!/usr/bin/env perl
+sub printHelp
+{
+   print <<ENDHELP;
 #
 #PROGRAM:  rpdf
 #PURPOSE:  This program computes the radial pair distribution function.
 #
-#USAGE:  rpdf [-i $inputFile] [-p $plotFile]
-#             [-dist $limitDist] [-pair $atom1 $atom2]
-#             [-limit $a1 $b1 $c1 $a2 $b2 $c2] [-limitzone $zone] | -help
+#USAGE:  rpdf [-i \$inputFile] [-p \$plotFile]
+#             [-dist \$limitDist] [-pair \$atom1 \$atom2] [-broaden \$rpdfSigma]
+#             [-limit \$a1 \$b1 \$c1 \$a2 \$b2 \$c2] [-limitzone \$zone] | -help
 #
 # The -i option allows the user to over-ride the default behavior of expecting
-#   the presence of a olcao.skl file.  The $inputFile file will be read
+#   the presence of a olcao.skl file.  The \$inputFile file will be read
 #   assuming the following format:  a,b,c lattice vectors on one line followed
 #   by all atoms with element name and a,b,c coordinates on one line each.
 # The -p option can be used to override the default output file name.  If not
@@ -17,8 +20,10 @@
 #   be computed.  If not given, then the default value is 10 A.
 # The -pair option is used to request that only atoms of certain elements be
 #   considered for the calculation.  In this way, for example, only Si-O pairs
-#   are considered.  The $atom1 and $atom2 are elements in either upper or
+#   are considered.  The \$atom1 and \$atom2 are elements in either upper or
 #   lower case.  The order does not matter.
+# The -broaden option allows one to broaden the rpdf by convoluting it with a
+#   Gaussian function with a full width half max of \$rpdfSigma.
 # The -limit option is used to exclude pairs where one atom originates from
 #   inside or outside the confines of the box defined by the given 6 points in
 #   the original cell.  The choice of inside or outside defaults to outside
@@ -26,11 +31,14 @@
 #   that these coordinates must be given in a,b,c fractional.  Please make sure
 #   that a1<a2 etc.
 # The -limitzone option is used to explicitly specify whether to exclude atoms
-#   from inside the box or outside the box.  If $zone==1, then atoms outside
-#   the box will be excluded.  If $zone==2 the atoms inside the box will be
+#   from inside the box or outside the box.  If \$zone==1, then atoms outside
+#   the box will be excluded.  If \$zone==2 the atoms inside the box will be
 #   excluded.
 # The -help option prints a brief help message.
 #
+ENDHELP
+   exit;
+}
 
 ###############################################
 # Begin program execution #####################
@@ -206,47 +214,6 @@ sub parseCommandLine
    print COMMANDLINE "\n";
    close(COMMANDLINE);
 }
-
-
-sub printHelp
-{
-   print <<ENDHELP;
-#
-#PROGRAM:  rpdf
-#PURPOSE:  This program computes the radial pair distribution function.
-#
-#USAGE:  rpdf [-i \$inputFile] [-p \$plotFile]
-#             [-dist \$limitDist] [-pair \$atom1 \$atom2]
-#             [-limit \$a1 \$b1 \$c1 \$a2 \$b2 \$c2] [-limitzone \$zone] | -help
-#
-# The -i option allows the user to over-ride the default behavior of expecting
-#   the presence of a olcao.skl file.  The \$inputFile file will be read
-#   assuming the following format:  a,b,c lattice vectors on one line followed
-#   by all atoms with element name and a,b,c coordinates on one line each.
-# The -p option can be used to override the default output file name.  If not
-#   given, then the file name is rpdf.plot.
-# The -dist option is used to define the distance for which the rpdf should be
-#   computed.  If not given, then the default value is 10 A.
-# The -pair option is used to request that only atoms of certain elements be
-#   considered for the calculation.  In this way, for example, only Si-O pairs
-#   are considered.  The \$atom1 and \$atom2 are elements in either upper or
-#   lower case.  The order does not matter.
-# The -limit option is used to exclude pairs where one atom originates from
-#   inside or outside the confines of the box defined by the given 6 points in
-#   the original cell.  The choice of inside or outside defaults to outside
-#   (i.e. if an atom originates outside the box it is NOT included).  Note also
-#   that these coordinates must be given in a,b,c fractional.  Please make sure
-#   that a1<a2 etc.
-# The -limitzone option is used to explicitly specify whether to exclude atoms
-#   from inside the box or outside the box.  If \$zone==1, then atoms outside
-#   the box will be excluded.  If \$zone==2 the atoms inside the box will be
-#   excluded.
-# The -help option prints a brief help message.
-#
-ENDHELP
-   exit;
-}
-
 
 
 sub printRPDF
