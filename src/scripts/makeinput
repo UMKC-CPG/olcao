@@ -1319,7 +1319,8 @@ sub initializeCell
    # to add a newline ("\n") to the title. In order to not mess up the 
    # cases where a title WAS given, we will chomp first then add a
    # newline.
-   $systemTitle_ref = chomp($systemTitle_ref) + "\n";
+   chomp(@{$systemTitle_ref});
+   push(@{$systemTitle_ref}, "\n");
 
    # Retrieve references to useful structural data.
    $realLattice_ref    = StructureControl::getRealLatticeRef();
