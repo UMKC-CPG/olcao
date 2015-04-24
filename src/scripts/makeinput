@@ -1313,6 +1313,15 @@ sub initializeCell
    # Get the system title.
    $systemTitle_ref = StructureControl::getSystemTitleRef();
 
+   # if the system does not have an explicit title, it could cause some
+   # issues down the line. in order to fix this, the default 
+   # systemTitle above is "empty". So, in order to catch such cases we need
+   # to add a newline ("\n") to the title. In order to not mess up the 
+   # cases where a title WAS given, we will chomp first then add a
+   # newline.
+   chomp(@{$systemTitle_ref});
+   push(@{$systemTitle_ref}, "\n");
+
    # Retrieve references to useful structural data.
    $realLattice_ref    = StructureControl::getRealLatticeRef();
    $realLatticeInv_ref = StructureControl::getRealLatticeInvRef();
