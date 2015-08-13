@@ -25,23 +25,17 @@ subroutine band
 
    ! Import the necessary modules.
    use O_Kinds
-   use O_Constants
-   use O_CommandLine
-   use O_Lattice
-   use O_KPoints
-   use O_Basis
-   use O_Input
    use O_TimeStamps
-   use O_Potential
-   use O_AtomicSites
-   use O_PSCFBandHDF5
-   use O_LAPACKParameters
+   use O_AtomicSites,      only: valeDim
+   use O_LAPACKParameters, only: setBlockSize
+   use O_Input,            only: numStates, parseInput
+   use O_CommandLine,      only: parseBandCommandLine, doSYBD
+   use O_PSCFBandHDF5,     only: initPSCFBandHDF5, closePSCFBandHDF5
+   use O_Lattice,          only: initializeLattice, initializeFindVec
+   use O_KPoints,          only: makePathKPoints, computePhaseFactors
 
    ! Make sure that there are no accidental variable declarations.
    implicit none
-
-   type(commandLineParameters) :: clp ! from O_CommandLine
-   type(inputData) :: inDat ! from O_Input
 
 
    ! Initialize the logging labels.
@@ -49,11 +43,11 @@ subroutine band
 
 
    ! Parse the command line parameters
-   call parseBandCommandLine(clp)
+   call parseBandCommandLine
 
 
    ! Read in the input to initialize all the key data structure variables.
-   call parseInput(inDat,clp)
+   call parseInput
 
 
    ! Find specific computational parameters not EXPLICITLY given in the input
@@ -70,7 +64,7 @@ subroutine band
    ! In the case of a symmetric band structure calculation we must modify the
    !   kpoints according to the lattice type information given in the
    !   olcao.dat input file.
-   if (clp%doSYBD == 1) then
+   if (doSYBD == 1) then
       call makePathKPoints
    endif
 
@@ -93,15 +87,15 @@ subroutine band
 
 
    ! Prepare the HDF5 files for the post SCF band structure calculation.
-   call initPSCFBandHDF5(inDat%numStates,clp)
+   call initPSCFBandHDF5(numStates)
 
 
    ! Compute the solid state wave function.
-   call computeBands(inDat,clp)
+   call computeBands
 
 
    ! Close the HDF5 band structure file.
-   call closePSCFBandHDF5(clp)
+   call closePSCFBandHDF5
 
 
    ! Open a file to signal completion of the program.
@@ -112,23 +106,26 @@ end subroutine band
 
 
 
-subroutine computeBands(inDat,clp)
+subroutine computeBands
 
    ! Use necessary modules.
    use O_Kinds
-   use O_CommandLine
    use O_TimeStamps
-   use O_Input
-   use O_KPoints
-   use O_AtomicSites
-   use O_IntegralsPSCF
-   use O_SecularEquation
-   use O_PSCFBandHDF5
-   use O_Potential
-
-   !Define passed variables
-   type(inputData) :: inDat ! from O_Input
-   type(commandLineParameters) :: clp ! from O_CommandLine
+   use O_Potential,     only: spin
+   use O_CommandLine,   only: doSYBD
+   use O_Input,         only: numStates
+   use O_KPoints,       only: numKPoints
+   use O_IntegralsPSCF, only: getIntgResults
+   use O_AtomicSites,   only: coreDim, valeDim
+   use O_PSCFBandHDF5,  only: valeValeBand, valeValeBand_did, saveCoreValeOL
+#ifndef GAMMA
+   use O_SecularEquation, only: valeVale, valeValeOL, energyEigenValues, &
+         & preserveValeValeOL, restoreValeValeOL, secularEqnOneKP
+#else
+   use O_SecularEquation, only: valeValeGamma, valeValeOLGamma, &
+         & energyEigenValues, preserveValeValeOL, restoreValeValeOL, &
+         & secularEqnOneKP
+#endif
 
    ! Define local variables.
    integer :: i,j
@@ -139,7 +136,7 @@ subroutine computeBands(inDat,clp)
 
    ! Allocate space to hold the energyEigenValues, coreValeOL, and valeVale
    !   matrices.
-   allocate (energyEigenValues(inDat%numStates,numKPoints,spin))
+   allocate (energyEigenValues(numStates,numKPoints,spin))
 #ifndef GAMMA
    allocate (valeVale(valeDim,valeDim,1,spin))
    allocate (valeValeOL(valeDim,valeDim,1,spin))
@@ -171,19 +168,19 @@ subroutine computeBands(inDat,clp)
       ! Read the overlap integral results and apply kpoints effects.
 #ifndef GAMMA
       call getIntgResults(valeValeOL(:,:,:,1),coreValeOL,i,1,&
-            & valeValeBand_did(i),valeValeBand,clp%doSYBD,1)
+            & valeValeBand_did(i),valeValeBand,doSYBD,1)
 #else
       call getIntgResults(valeValeOLGamma(:,:,1),coreValeOLGamma,1,&
-            & valeValeBand_did(i),valeValeBand,clp%doSYBD,1)
+            & valeValeBand_did(i),valeValeBand,doSYBD,1)
 #endif
 !write (20,*) "Got here 0"
 !call flush (20)
 
       ! Write the coreValeOL for later use by other programs (if needed).
 #ifndef GAMMA
-      call saveCoreValeOL (coreValeOL,i,clp)
+      call saveCoreValeOL (coreValeOL,i)
 #else
-      call saveCoreValeOL (coreValeOLGamma,i,clp)
+      call saveCoreValeOL (coreValeOLGamma,i)
 #endif
 
       ! Preserve the valeValeOL (if needed).
@@ -193,15 +190,15 @@ subroutine computeBands(inDat,clp)
 #ifndef GAMMA
          ! Read the hamiltonian integral results and apply kpoint effects.
          call getIntgResults(valeVale(:,:,:,j),coreValeOL,i,2,&
-               & valeValeBand_did(i),valeValeBand,clp%doSYBD,j)
+               & valeValeBand_did(i),valeValeBand,doSYBD,j)
 #else
          ! Read the hamiltonian integral results and apply kpoint effects.
          call getIntgResults(valeValeGamma(:,:,j),coreValeOLGamma,2,&
-               & valeValeBand_did(i),valeValeBand,clp%doSYBD,j)
+               & valeValeBand_did(i),valeValeBand,doSYBD,j)
 #endif
 
          ! Solve the wave equation for this kpoint.
-         call secularEqnOneKP(j,i,inDat%numStates,clp%doSYBD)
+         call secularEqnOneKP(j,i,numStates,doSYBD)
 
          ! Restore the valeValeOL (if needed).
          if (j == 1) then
@@ -223,8 +220,8 @@ subroutine computeBands(inDat,clp)
    enddo
 
    ! Print the band results if necessary.
-   if (clp%doSYBD == 1) then
-      call printSYBD(inDat,clp)
+   if (doSYBD == 1) then
+      call printSYBD
    endif
 
    ! Record the date and time we end.
@@ -233,30 +230,25 @@ subroutine computeBands(inDat,clp)
 end subroutine computeBands
 
 
-subroutine printSYBD(inDat,clp)
+subroutine printSYBD
 
    ! Use necessary modules.
-   use O_Constants
-   use O_KPoints
-   use O_Populate
-   use O_Input
-   use O_CommandLine
-   use O_SecularEquation
-   use O_Potential
-
-   ! define passed parameters
-   type(inputData), intent(in) :: inDat ! from O_Input
-   type(commandLineParameters), intent(in) :: clp ! from O_CommandLine
+   use O_Potential,       only: spin
+   use O_Constants,       only: hartree
+   use O_Input,           only: numStates
+   use O_KPoints,         only: numPathKP, pathKPointMag
+   use O_Populate,        only: occupiedEnergy, populateStates
+   use O_SecularEquation, only: energyEigenValues, shiftEnergyEigenValues
 
    ! Define local variables.
    integer :: i,j
    character*7 :: filename
 
    ! Obtain the fermi energy with the populate energy levels subroutine.
-   call populateStates(inDat,clp)
+   call populateStates
 
    ! Adjust the energyEigenValues down by the fermi level determined above.
-   call shiftEnergyEigenValues(occupiedEnergy,inDat%numStates)
+   call shiftEnergyEigenValues(occupiedEnergy,numStates)
 
    do i = 1, spin
 
@@ -267,7 +259,7 @@ subroutine printSYBD(inDat,clp)
       open (unit=30+i,file=filename,status='new',form='formatted')
 
       ! Record the number of kpoints and the number of states
-      write (30+i,*) numPathKP, inDat%numStates
+      write (30+i,*) numPathKP, numStates
 
       ! Record each kpoint's energy values
       do j = 1, numPathKP
@@ -276,7 +268,7 @@ subroutine printSYBD(inDat,clp)
          write (30+i,*) pathKPointMag(j)
 
          ! Record the energy values for this KPoint
-         write (30+i,fmt="(10f12.5)") energyEigenValues(:inDat%numStates,j,i)*hartree
+         write (30+i,fmt="(10f12.5)") energyEigenValues(:numStates,j,i)*hartree
       enddo
 
       ! Close the output file.
@@ -290,15 +282,14 @@ end subroutine printSYBD
 subroutine getImplicitInfo
 
    ! Import necessary modules.
-   use O_ExchangeCorrelation
-   use O_AtomicSites
-   use O_AtomicTypes
-   use O_PotSites
-   use O_PotTypes
-   use O_Lattice
-   use O_KPoints
-   use O_Potential
-   use O_Populate
+   use O_ExchangeCorrelation, only: makeSampleVectors
+   use O_AtomicSites,         only: getAtomicSiteImplicitInfo
+   use O_AtomicTypes,         only: getAtomicTypeImplicitInfo
+   use O_PotSites,            only: getPotSiteImplicitInfo
+   use O_PotTypes,            only: getPotTypeImplicitInfo
+   use O_Lattice,             only: getRecipCellVectors
+   use O_KPoints,             only: convertKPointsToXYZ
+   use O_Potential,           only: initPotStructures
    use O_TimeStamps
 
    implicit none

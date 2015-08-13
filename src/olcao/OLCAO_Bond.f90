@@ -2,23 +2,21 @@ program bond
 
 
    ! Use necessary modules.
-   use O_CommandLine
    use O_TimeStamps
-   use O_Bond
-   use O_Bond3C
-   use O_Input
-   use O_KPoints
-   use O_Populate
-   use O_SecularEquation
-   use O_PSCFBandHDF5
-   use O_Potential
+   use O_Potential,       only: spin
+   use O_KPoints,         only: numKPoints
+   use O_Bond,            only: computeBond
+   use O_Bond3C,          only: computeBond3C
+   use O_CommandLine,     only: parseBondCommandLine
+   use O_Populate,        only: occupiedEnergy, populateStates
+   use O_Input,           only: doBond3C, thermalSigma, numStates, parseInput
+   use O_PSCFBandHDF5,    only: accessPSCFBandHDF5, closeAccessPSCFBandHDF5
+   use O_SecularEquation, only: energyEigenValues, readEnergyEigenValuesBand, &
+         & shiftEnergyEigenValues
 
 
    ! Make sure that no funny variables are defined.
    implicit none
-
-   type(commandLineParameters) :: clp ! from O_CommandLine
-   type(inputData) :: inDat ! from O_Input
 
 
    ! Initialize the logging labels.
@@ -26,7 +24,7 @@ program bond
 
 
    ! Parse the command line parameters
-   call parseBondCommandLine(clp)
+   call parseBondCommandLine
 
 
    ! Open the bond files that will be written to.
@@ -34,7 +32,7 @@ program bond
    if (spin == 2) then
       open (unit=11,file='fort.11',status='new',form='formatted')
    endif
-   if (inDat%doBond3C == 1) then
+   if (doBond3C == 1) then
       open (unit=12,file='fort.12',status='new',form='formatted')
       if (spin == 2) then
          open (unit=13,file='fort.13',status='new',form='formatted')
@@ -42,12 +40,12 @@ program bond
    endif
 
    ! Read in the input to initialize all the key data structure variables.
-   call parseInput(inDat,clp)
+   call parseInput
 
    ! The bond calculation must be done without any smearing to determine
    !   the number of electrons for each atom.  So we set the thermal smearing
    !   factor to zero.
-   inDat%thermalSigma = 0.0_double
+   thermalSigma = 0.0_double
 
    ! Find specific computational parameters not EXPLICITLY given in the input
    !   file.  These values can, however, be easily determined from the input
@@ -56,41 +54,41 @@ program bond
 
 
    ! Access the HDF5 data stored by band.
-   call accessPSCFBandHDF5(inDat%numStates,clp)
+   call accessPSCFBandHDF5(numStates)
 
    ! Allocate space to store the energy eigen values, and then read them in.
-   allocate (energyEigenValues (inDat%numStates,numKPoints,spin))
-   call readEnergyEigenValuesBand(inDat%numStates)
+   allocate (energyEigenValues (numStates,numKPoints,spin))
+   call readEnergyEigenValuesBand(numStates)
 
    ! Populate the electron states to find the highest occupied state (Fermi
    !   energ for metals).
-   call populateStates(inDat,clp)
+   call populateStates
 
    ! Shift the energy eigen values according to the highest occupied state and
    !   convert them from au to eV.
-   call shiftEnergyEigenValues(occupiedEnergy,inDat%numStates)
+   call shiftEnergyEigenValues(occupiedEnergy,numStates)
 !   call convertEnergyEigenValuesToeV
 
    ! Call the bond subroutine to compute the bond order and effective charge.
-   call computeBond(inDat,clp)
+   call computeBond
 
    ! Compute the three center bond order if requested.
-   if (inDat%doBond3C == 1) then
-      call computeBond3C(inDat,clp)
+   if (doBond3C == 1) then
+      call computeBond3C
    endif
 
    ! Deallocate unnecesary matrices
    deallocate (energyEigenValues)
 
    ! Close access to the band HDF5 data.
-   call closeAccessPSCFBandHDF5(clp)
+   call closeAccessPSCFBandHDF5
 
    ! Close the BOND files that were written to.
    close (10)
    if (spin == 2) then
       close (11)
    endif
-   if (inDat%doBond3C == 1) then
+   if (doBond3C == 1) then
       close (12)
       if (spin == 2) then
          close (13)
@@ -107,16 +105,15 @@ end program bond
 subroutine getImplicitInfo
 
    ! Import necessary modules.
-   use O_ExchangeCorrelation
-   use O_AtomicSites
-   use O_AtomicTypes
-   use O_PotSites
-   use O_PotTypes
-   use O_Lattice
-   use O_KPoints
-   use O_Potential
-   use O_Populate
    use O_TimeStamps
+   use O_ExchangeCorrelation, only: makeSampleVectors
+   use O_AtomicSites,         only: getAtomicSiteImplicitInfo
+   use O_AtomicTypes,         only: getAtomicTypeImplicitInfo
+   use O_PotSites,            only: getPotSiteImplicitInfo
+   use O_PotTypes,            only: getPotTypeImplicitInfo
+   use O_Lattice,             only: getRecipCellVectors
+   use O_KPoints,             only: convertKPointsToXYZ
+   use O_Potential,           only: initPotStructures
 
    implicit none
 

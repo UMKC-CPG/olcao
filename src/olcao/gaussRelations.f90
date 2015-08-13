@@ -65,11 +65,9 @@ subroutine makeAlphaDist
 
    ! Import the necessary modules
    use O_Kinds
-   use O_Constants
-
-   ! Import necessary data modules
-   use O_AtomicTypes
-   use O_Lattice
+   use O_Lattice, only: logBasisFnThresh
+   use O_AtomicTypes, only: atomTypes, numAtomTypes, numElements, &
+         & maxNumAtomAlphas
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
@@ -138,12 +136,9 @@ subroutine makeAlphaPotDist
 
    ! Import the necessary modules
    use O_Kinds
-   use O_Constants
-
-   ! Import necessary data modules
-   use O_AtomicTypes
-   use O_PotTypes
-   use O_Lattice
+   use O_Lattice, only: logBasisFnThresh
+   use O_PotTypes, only: maxNumPotAlphas, numPotTypes, potTypes
+   use O_AtomicTypes, only: numElements, maxNumAtomAlphas
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
@@ -218,12 +213,9 @@ subroutine makeAlphaNucDist
 
    ! Import the necessary modules
    use O_Kinds
-   use O_Constants
-
-   ! Import necessary data modules
-   use O_AtomicTypes
-   use O_PotTypes
-   use O_Lattice
+   use O_Lattice, only: logBasisFnThresh
+   use O_PotTypes, only: numPotTypes, potTypes
+   use O_AtomicTypes, only: numElements, maxNumAtomAlphas
 
    ! Make sure that there are not accidental variable declarations.
    implicit none

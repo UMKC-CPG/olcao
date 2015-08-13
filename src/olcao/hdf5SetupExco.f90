@@ -27,18 +27,21 @@ module O_SetupExchCorrHDF5
    !   here is the max number of ray points.
    integer(hid_t) :: numPoints_dsid
    integer(hid_t) :: potPoints_dsid
+   integer(hid_t) :: potPot_dsid
    integer(hid_t) :: points_dsid
 
    ! Each of the below datasets will use one of these property lists.  They
    !   correspond to the above dataspaces.  The potPot_plid is not listed here,
    !   it is given in the elecStat module and imported when needed.
    integer(hid_t) :: potPoints_plid
+   integer(hid_t) :: potPot_plid
    integer(hid_t) :: points_plid
 
    ! Define arrays that hold the dimensions of the datasets.  The potDims2
    !   dimension set is not given here because it is predominantly used in the
    !   elecStat module.  Import it from there when needed.
    integer(hsize_t), dimension (2) :: potPoints
+   integer(hsize_t), dimension (2) :: potPot
    integer(hsize_t), dimension (1) :: points
    integer(hsize_t), dimension (1) :: numPoints
 
@@ -63,12 +66,12 @@ subroutine initSetupExchCorrHDF5 (setup_fid,maxNumRayPoints)
    use O_SetupElecStatHDF5 ! For potPot_plid and potPot_dsid
 
    ! Import necessary object modules.
-   use O_PotSites    ! For numPotSites
-   use O_Potential   ! For potDim
+   use O_PotSites, only: numPotSites
+   use O_Potential, only: potDim
 
    ! Define the passed parameters.
-   integer(hid_t) :: setup_fid
-   integer :: maxNumRayPoints
+   integer(hid_t), intent(in) :: setup_fid
+   integer, intent(in) :: maxNumRayPoints
 
    ! Define local variables.
    integer :: i
@@ -78,6 +81,8 @@ subroutine initSetupExchCorrHDF5 (setup_fid,maxNumRayPoints)
    ! Initialize data structure dimensions.
    potPoints(1)   = potDim
    potPoints(2)   = maxNumRayPoints
+   potPot(1)      = potDim
+   potPot(2)      = potDim
    points(1)      = maxNumRayPoints
    numPoints(1)   = 1
 
@@ -154,11 +159,11 @@ subroutine accessSetupExchCorrHDF5 (setup_fid)
    use HDF5
 
    ! Import necessary object modules.
-   use O_PotSites    ! For numPotSites
-   use O_Potential   ! For potDim
+   use O_PotSites, only: numPotSites
+   use O_Potential, only: potDim
 
    ! Define the passed parameters.
-   integer(hid_t) :: setup_fid
+   integer(hid_t), intent(in) :: setup_fid
 
    ! Define local variables.
    integer :: i
@@ -252,7 +257,7 @@ subroutine closeSetupExchCorrHDF5
    use HDF5
 
    ! Import necessary object modules.
-   use O_PotSites    ! For numPotSites
+   use O_PotSites, only: numPotSites
 
    ! Make sure that no variables are implicitly declared.
    implicit none

@@ -2,7 +2,6 @@ module O_CoreCharge
 
    ! Import necessary modules.
    use O_Kinds
-   use O_Constants
 
    ! Make sure that no funny variables are defined.
    implicit none
@@ -29,17 +28,17 @@ subroutine makeCoreRho
 
    ! Include the modules we need
    use O_Kinds
-   use O_Constants
-   use O_AtomicTypes
-   use O_AtomicSites
-   use O_PotTypes
-   use O_PotSites
-   use O_Potential
+   use O_Constants, only: pi, maxOrbitals
+   use O_AtomicTypes, only: atomTypes, maxNumAtomAlphas, maxNumCoreRadialFns
+   use O_AtomicSites, only: coreDim
+   use O_PotTypes, only: potTypes, maxNumPotAlphas
+   use O_PotSites, only: potSites, numPotSites
+   use O_Potential, only: potDim
    use O_TimeStamps
 
    ! Import the necessary HDF modules
    use HDF5
-   use O_SetupElecStatHDF5
+   use O_SetupElecStatHDF5, only: coreChargeDensity_did, pot
 
    ! Import the necessary external interfaces
    use O_LAPACKDPOSVX
@@ -561,7 +560,7 @@ subroutine makeCoreRho
 
    ! Write the core charge density to disk for use later.
    call h5dwrite_f(coreChargeDensity_did,H5T_NATIVE_DOUBLE, &
-         & coreChargeDensity(:),potDims1,hdferr)
+         & coreChargeDensity(:),pot,hdferr)
    if (hdferr /= 0) stop 'Failed to write core charge density'
 
    ! Deallocate the core charge density matrix since it is no longer needed.

@@ -80,15 +80,16 @@ subroutine gaussOverlapOL
 
    ! Import necessary modules.
    use O_Kinds
-   use O_Constants
-   use O_Lattice
-   use O_AtomicSites
-   use O_AtomicTypes
-   use O_KPoints
-   use O_Basis
+   use O_Constants, only: dim3
+   use O_KPoints, only: numKPoints
+   use O_GaussianRelations, only: alphaDist
+   use O_AtomicSites, only: valeDim, coreDim, numAtomSites, atomSites
+   use O_AtomicTypes, only: maxNumAtomAlphas, maxNumStates, atomTypes
+   use O_Lattice, only: numCellsReal, cellSizesReal, cellDimsReal, &
+         & findLatticeVector
+   use O_GaussianIntegrals, only: overlapInteg
+   use O_Basis, only: initializeAtomSite
    use O_IntgSaving
-   use O_GaussianRelations
-   use O_GaussianIntegrals
    use O_TimeStamps
 
    ! Make sure that there are not accidental variable declarations.
@@ -366,19 +367,19 @@ subroutine gaussOverlapOL
                   !   has been shown to exist.
                   contrib = .true.
 
-	       ! Calculate the opcode to do the correct set of integrals
-               ! for the current alpha pair
-                l1l2Switch = ishft(1,&
-                  &(powerOfTwo(currentlmAlphaIndex(alphaIndex(1),1))))&
-                  &+ ishft(16,&
-                  &(powerOfTwo(currentlmAlphaIndex(alphaIndex(2),2))))
+                  ! Calculate the opcode to do the correct set of integrals
+                  !   for the current alpha pair
+                  l1l2Switch = ishft(1,&
+                        &(powerOfTwo(currentlmAlphaIndex(alphaIndex(1),1))))&
+                        &+ ishft(16,&
+                        &(powerOfTwo(currentlmAlphaIndex(alphaIndex(2),2))))
 
-                ! We can proceed with the next step of the calculation.
-                !   This is the actual integral.             
-                call overlapInteg (currentAlphas(alphaIndex(1),1),&
-                  & currentAlphas(alphaIndex(2),2), &
-                  & currentPosition(:,1), shiftedAtomPos(:),&
-                  & l1l2Switch, oneAlphaPair)
+                  ! We can proceed with the next step of the calculation.
+                  !   This is the actual integral.             
+                  call overlapInteg (currentAlphas(alphaIndex(1),1),&
+                        & currentAlphas(alphaIndex(2),2), &
+                        & currentPosition(:,1), shiftedAtomPos(:),&
+                        & l1l2Switch, oneAlphaPair)
 
                   ! We can proceed with the next step of the calculation.
                   !   This is the actual integral.
@@ -484,16 +485,17 @@ subroutine gaussOverlapKE
 
    ! Import necessary modules.
    use O_Kinds
-   use O_Constants
-   use O_Lattice
-   use O_AtomicSites
-   use O_AtomicTypes
-   use O_KPoints
-   use O_Basis
-   use O_IntgSaving
-   use O_GaussianRelations
-   use O_GaussianIntegrals
    use O_TimeStamps
+   use O_Constants, only: dim3
+   use O_KPoints, only: numKPoints
+   use O_GaussianRelations, only: alphaDist
+   use O_AtomicSites, only: valeDim, coreDim, numAtomSites, atomSites
+   use O_AtomicTypes, only: maxNumAtomAlphas, maxNumStates, atomTypes
+   use O_Lattice, only: numCellsReal, cellSizesReal, cellDimsReal, &
+         & findLatticeVector
+   use O_GaussianIntegrals, only: KEInteg
+   use O_Basis, only: initializeAtomSite
+   use O_IntgSaving
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
@@ -893,16 +895,16 @@ subroutine gaussOverlapNP
 
    ! Import necessary modules.
    use O_Kinds
-   use O_Constants
-   use O_Lattice
-   use O_AtomicSites
-   use O_AtomicTypes
-   use O_KPoints
-   use O_Basis
-   use O_IntgSaving
-   use O_GaussianRelations
-   use O_GaussianIntegrals
    use O_TimeStamps
+   use O_Constants, only: dim3
+   use O_KPoints, only: numKPoints
+   use O_GaussianRelations, only: alphaDist
+   use O_AtomicSites, only: valeDim, coreDim, numAtomSites, atomSites
+   use O_AtomicTypes, only: maxNumAtomAlphas, maxNumStates, atomTypes
+   use O_Lattice, only: numCellsReal, cellSizesReal, cellDimsReal, &
+         & findLatticeVector
+   use O_Basis, only: initializeAtomSite
+   use O_IntgSaving
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
@@ -1282,16 +1284,17 @@ subroutine gaussOverlapEP
 
    ! Import necessary modules.
    use O_Kinds
-   use O_Constants
-   use O_Lattice
-   use O_AtomicSites
-   use O_AtomicTypes
-   use O_KPoints
-   use O_Basis
-   use O_IntgSaving
-   use O_GaussianRelations
-   use O_GaussianIntegrals
    use O_TimeStamps
+   use O_Constants, only: dim3
+   use O_KPoints, only: numKPoints
+   use O_GaussianRelations, only: alphaDist
+   use O_Lattice, only: numCellsReal, cellSizesReal, cellDimsReal, &
+         & findLatticeVector
+   use O_AtomicSites, only: valeDim, coreDim, numAtomSites, atomSites
+   use O_AtomicTypes, only: maxNumAtomAlphas, maxNumStates, atomTypes
+   use O_Basis, only: initializeAtomSite
+   use O_IntgSaving
+   use O_GaussianIntegrals
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
@@ -1688,12 +1691,12 @@ subroutine elecPotGaussOverlap
 
    ! Import the necessary modules
    use O_Kinds
-   use O_Lattice
-   use O_AtomicSites
-   use O_PotTypes
-   use O_PotSites
    use O_TimeStamps
    use HDF5
+   use O_Lattice, only: numCellsReal
+   use O_AtomicSites, only: numAtomSites
+   use O_PotTypes, only: potTypes
+   use O_PotSites, only: potSites, numPotSites
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
@@ -1837,12 +1840,13 @@ subroutine nuclearPE(contrib,alphaIndex,currentElements,currentlmAlphaIndex,&
 
    ! Use necessary modules
    use O_Kinds
-   use O_Constants
-   use O_PotSites
-   use O_Lattice
-   use O_Basis
-   use O_GaussianRelations
-   use O_GaussianIntegrals
+   use O_Constants, only: dim3, smallThresh
+   use O_PotSites, only: numPotSites
+   use O_GaussianRelations, only: alphaDist, alphaCenter, alphaNucDist
+   use O_Lattice, only: numCellsReal, cellSizesReal, cellDimsReal, &
+         & findLatticeVector
+   use O_Basis, only: initializePotSite
+   use O_GaussianIntegrals, only: nucPotInteg
 
    ! Make sure no funny variables are used.
    implicit none
@@ -2011,11 +2015,12 @@ subroutine electronicPE(contrib,alphaIndex,currentElements,currentlmAlphaIndex,&
 
    ! Use necessary modules
    use O_Kinds
-   use O_Constants
-   use O_PotSites
-   use O_Lattice
-   use O_GaussianRelations
-   use O_GaussianIntegrals
+   use O_Constants, only: dim3
+   use O_PotSites, only: potSites
+   use O_GaussianRelations, only: alphaDist, alphaCenter, alphaPotDist
+   use O_Lattice, only: numCellsReal, cellSizesReal, cellDimsReal, &
+         & findLatticeVector
+   use O_GaussianIntegrals, only: threeCentInteg
 
    ! Make sure no funny variables are used.
    implicit none
@@ -2138,17 +2143,17 @@ subroutine electronicPE(contrib,alphaIndex,currentElements,currentlmAlphaIndex,&
          !& currentPosition(:,1), shiftedAtomPos(:), &
          !& shiftedPotPos(:), oneAlphaPair, l1l2Switch)
 
-	 ! Calculate the opcode to do the correct set of integrals
+         ! Calculate the opcode to do the correct set of integrals
          ! for the current alpha pair
          l1l2Switch = ishft(1,&
-            &(powerOfTwo(currentlmAlphaIndex(alphaIndex(1),1))))&
-            &+ ishft(16,&                     
-            &(powerOfTwo(currentlmAlphaIndex(alphaIndex(2),2))))
+               &(powerOfTwo(currentlmAlphaIndex(alphaIndex(1),1))))&
+               &+ ishft(16,&                     
+               &(powerOfTwo(currentlmAlphaIndex(alphaIndex(2),2))))
 
-	       call threeCentInteg (currentAlphas(alphaIndex(1),1),&
-         & currentAlphas(alphaIndex(2),2),currPotAlpha,&
-         & currentPosition(:,1), shiftedAtomPos(:), &
-         & shiftedPotPos(:), l1l2Switch, oneAlphaPair)
+         call threeCentInteg (currentAlphas(alphaIndex(1),1),&
+               & currentAlphas(alphaIndex(2),2),currPotAlpha,&
+               & currentPosition(:,1), shiftedAtomPos(:), &
+               & shiftedPotPos(:), l1l2Switch, oneAlphaPair)
 
          !call threeCentInteg (oneAlphaPair,&
          !      & currentlmAlphaIndex (alphaIndex(1),1),&
@@ -2179,10 +2184,10 @@ subroutine orthoOL
 
    ! Use necessary modules.
    use O_Kinds
-   use O_AtomicSites
-   use O_KPoints
+   use O_AtomicSites, only: coreDim, valeDim
+   use O_KPoints, only: numKPoints
+   use O_SetupIntegralsHDF5, only: atomOverlap_did, atomDims
    use O_Orthogonalization
-   use O_SetupIntegralsHDF5
 
    ! Make sure that no funny variables are defined.
    implicit none
@@ -2286,11 +2291,12 @@ subroutine ortho (opCode)
 
    ! Use necessary modules.
    use O_Kinds
-   use O_PotTypes
-   use O_AtomicSites
-   use O_KPoints
+   use O_PotTypes, only: potTypes
+   use O_KPoints, only: numKPoints
+   use O_AtomicSites, only: coreDim, valeDim
+   use O_SetupIntegralsHDF5, only: atomKEOverlap_did, atomNucOverlap_did, &
+         & atomPotOverlap_did, atomDims
    use O_Orthogonalization
-   use O_SetupIntegralsHDF5
 
    ! Make sure that no funny variables are defined.
    implicit none

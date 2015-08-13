@@ -236,7 +236,7 @@ sub traverseDirectories
    my $submissionFile;
 
    # Open the list of batch directories.
-   open (BATCH,"<$batchList") || die "Can not open $batchList for reading.\n";
+   open (BATCH,"<$batchList") || die "Cannot open $batchList for reading.\n";
 
    # Proceed through the list, applying the changes to each submission file to
    #   that has been requested.
@@ -326,7 +326,7 @@ sub applySubmitMods
 
    # Open, read, close, and chomp the contents of the submission file.
    open (SUBMIT,"<$submissionFile") ||
-         die "Can not open $submissionFile for reading.\n";
+         die "Cannot open $submissionFile for reading.\n";
    @submission = <SUBMIT>;
    close (SUBMIT);
    chomp (@submission);
@@ -351,7 +351,7 @@ sub applySubmitMods
    }
 
    open (SUBMIT,">$submissionFile") ||
-         die "Can not open $submissionFile for writing.\n";
+         die "Cannot open $submissionFile for writing.\n";
    foreach $line (0..$#submission)
       {print SUBMIT "$submission[$line]\n";}
    close (SUBMIT);

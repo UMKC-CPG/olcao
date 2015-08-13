@@ -2,7 +2,6 @@ module O_ElectroStatics
 
    ! Import necessary modules.
    use O_Kinds
-   use O_Constants
 
    ! Make sure that no funny variables are defined.
    implicit none
@@ -61,16 +60,19 @@ subroutine neutralAndNuclearQPot
 
    ! Include the definition modules we need.
    use O_Kinds
-   use O_Constants
+   use O_Constants, only: dim3, smallThresh, pi
 
    ! Import the necessary HDF modules.
    use HDF5
-   use O_SetupElecStatHDF5
+   use O_SetupElecStatHDF5, only: potAlphaOverlap_did, nonLocalNeutQPot_did, &
+         & nonLocalNucQPot_did, localNeutQPot_did, localNucQPot_did, potPot, pot
 
    ! Import the necessary object modules.
-   use O_Lattice
-   use O_PotTypes
-   use O_PotSites
+   use O_Lattice, only: numCellsReal, cellDimsReal, logElecThresh, &
+         & findLatticeVector
+   use O_PotTypes, only: potTypes, maxNumPotAlphas
+   use O_PotSites, only: numPotSites, potSites
+   use O_Potential, only: potDim
 
    ! Import external subroutines.
    use O_MathSubs
@@ -614,19 +616,19 @@ subroutine neutralAndNuclearQPot
    deallocate (neutralQPotCoeff)
 
    call h5dwrite_f(potAlphaOverlap_did,H5T_NATIVE_DOUBLE, &
-         & potAlphaOverlap(:,:),potDims2,hdferr)
+         & potAlphaOverlap(:,:),potPot,hdferr)
    if (hdferr /= 0) stop 'Failed to write pot alpha overlap'
    call h5dwrite_f(nonLocalNeutQPot_did,H5T_NATIVE_DOUBLE, &
-         & nonLocalNeutQPot(:,:),potDims2,hdferr)
+         & nonLocalNeutQPot(:,:),potPot,hdferr)
    if (hdferr /= 0) stop 'Failed to write non local neut q pot'
    call h5dwrite_f(nonLocalNucQPot_did,H5T_NATIVE_DOUBLE, &
-         & nonLocalNucQPot(:),potDims1,hdferr)
+         & nonLocalNucQPot(:),pot,hdferr)
    if (hdferr /= 0) stop 'Failed to write non local nuc q pot'
    call h5dwrite_f(localNeutQPot_did,H5T_NATIVE_DOUBLE, &
-         & localNeutQPot(:,:),potDims2,hdferr)
+         & localNeutQPot(:,:),potPot,hdferr)
    if (hdferr /= 0) stop 'Failed to write local neut q pot'
    call h5dwrite_f(localNucQPot_did,H5T_NATIVE_DOUBLE, &
-         & localNucQPot(:),potDims1,hdferr)
+         & localNucQPot(:),pot,hdferr)
    if (hdferr /= 0) stop 'Failed to write local nuc q pot'
 
    ! Dellocate the variables from the global data structures that will not
@@ -643,16 +645,19 @@ subroutine residualQ
 
    ! Include the modules we need
    use O_Kinds
-   use O_Constants
+   use O_Constants, only: dim3, pi, smallThresh
 
    ! Import the necessary HDF modules
    use HDF5
-   use O_SetupElecStatHDF5
+   use O_SetupElecStatHDF5, only: nonLocalResidualQ_did, potTypesPot
 
    ! Import the necessary object modules.
-   use O_Lattice
-   use O_PotTypes
-   use O_PotSites
+   use O_Lattice, only: numCellsRecip, cellSizesRecip, cellDimsRecip, &
+         & logElecThresh, realCellVolume, numCellsReal, cellDimsReal, &
+         & findLatticeVector
+   use O_PotSites, only: numPotSites, potSites
+   use O_PotTypes, only: numPotTypes, potTypes, maxNumPotAlphas, minPotAlpha
+   use O_Potential, only: potDim
 
    ! Import external subroutines.
    use O_MathSubs

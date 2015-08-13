@@ -52,9 +52,6 @@ module O_AtomicSites
 
 subroutine readAtomicSites(readUnit,writeUnit)
 
-   ! Import necessary definition modules.
-   use O_Kinds
-
    ! Import necessary subroutine modules.
    use O_ReadDataSubs
 
@@ -73,13 +70,15 @@ subroutine readAtomicSites(readUnit,writeUnit)
    character*2 :: atomName
 
    ! Read the number of atomic sites.
-   call readData(readUnit,writeUnit,numAtomSites,len('NUM_ATOM_SITES'),'NUM_ATOM_SITES')
+   call readData(readUnit,writeUnit,numAtomSites,len('NUM_ATOM_SITES'),&
+         & 'NUM_ATOM_SITES')
 
    ! The number of atomic sites is known so we can allocate space to hold
    !   the site data structure.
    allocate (atomSites(numAtomSites))
 
-   call readAndCheckLabel(readUnit,writeUnit,len('NUM_TYPE_X_Y_Z_ELEM'),'NUM_TYPE_X_Y_Z_ELEM')
+   call readAndCheckLabel(readUnit,writeUnit,len('NUM_TYPE_X_Y_Z_ELEM'),&
+         & 'NUM_TYPE_X_Y_Z_ELEM')
 
    do i = 1, numAtomSites
       read (4,*)     counter,atomSites(i)%atomTypeAssn,atomSites(i)%cartPos,&
@@ -101,12 +100,8 @@ end subroutine readAtomicSites
 
 subroutine getAtomicSiteImplicitInfo
 
-   ! Include the modules we need
-   use O_Kinds ! Variable precision defined for intrinsic types
-   use O_Constants ! Universal constants and program constants
-
    ! Include necessary object modules.
-   use O_AtomicTypes ! For atomTypes
+   use O_AtomicTypes, only: atomTypes
 
    ! Make sure that there are not accidental variable declarations.
    implicit none

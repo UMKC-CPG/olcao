@@ -234,7 +234,7 @@ sub makeDirs
       {mkdir $atomicBDB;}
 
    # Go to the atomic basis function database location.
-   chdir $atomicBDB || die "Can not change directories to $atomicBDB\n";
+   chdir $atomicBDB || die "Cannot change directories to $atomicBDB\n";
 
    # Make the directory for each element only if it does not already exist.
    foreach $element ($elementInit..$elementFin)
@@ -275,7 +275,7 @@ sub makeAtomSCF
 
       # Open the atom scf input file.
       open (SCF,">atomSCF.dat") ||
-            die "Can not open atomSCF.dat for writing.\n";
+            die "Cannot open atomSCF.dat for writing.\n";
 
       # Write the title.
       print SCF "Default Atomic SCF Calculation\n";
@@ -424,7 +424,7 @@ sub makeContracts
       {
          # Open the contract file for writing.
          open (CONTRACT,">$fileName[$file]") ||
-               die "Can not open $fileName[$file] for writing.\n";
+               die "Cannot open $fileName[$file] for writing.\n";
 
          # Write the element info.
          print CONTRACT "ELEMENT_NAME\n";

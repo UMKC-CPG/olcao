@@ -6,35 +6,32 @@ subroutine mainSCF (totalEnergy, fromExternal)
 
    ! Import necessary modules.
    use O_Kinds
-   use O_Constants
-   use O_SetupHDF5
-   use O_MainHDF5
-   use O_CommandLine
-   use O_Input
-   use O_Potential
-   use O_PotentialUpdate
-   use O_AtomicSites ! For valeDim
-   use O_AtomicTypes
-   use O_PotSites
-   use O_PotTypes
-   use O_SecularEquation
-   use O_ValeCharge
-   use O_TimeStamps
-   use O_KPoints
-   use O_Lattice
-   use O_Populate
-   use O_LAPACKParameters
-   use O_LAPACKZHEGV
-   use O_ExchangeCorrelation
-   use O_DOS
-   use O_Bond
+   use O_SetupHDF5,       only: accessSetupHDF5, closeSetupHDF5
+   use O_MainHDF5,        only: initMainHDF5, closeMainHDF5
+   use O_CommandLine,     only: doDOS, doBond, parseMainCommandLine
+   use O_Input,           only: numStates, iterFlagTDOS, parseInput
+   use O_Potential,       only: converged, currIteration, lastIteration, spin, &
+                              & initPotCoeffs, cleanUpPotential
+   use O_PotentialUpdate, only: makeSCFPot
+   use O_AtomicSites,     only: valeDim, cleanUpAtomSites
+   use O_AtomicTypes,     only: cleanUpAtomTypes
+   use O_PotSites,        only: cleanUpPotSites
+   use O_PotTypes,        only: cleanUpPotTypes
+   use O_SecularEquation, only: secularEqnAllKP, cleanUpSecularEqn
+   use O_ValeCharge,      only: makeValenceRho
+   use O_KPoints,         only: cleanUpKPoints
+   use O_Populate,        only: populateStates
+   use O_LAPACKParameters, only: setBlockSize
+   use O_ExchangeCorrelation, only: cleanUpExchCorr
+   use O_DOS,  only: computeIterationTDOS, printIterationTDOS, computeDOS
+   use O_Bond, only: computeBond
+   use O_TimeStamps, only: initOperationLabels
+
+   ! Import the HDF5 module
    use HDF5
 
    ! Make sure that there are no accidental variable declarations.
    implicit none
-
-   type(commandLineParameters) :: clp ! from O_CommandLine
-   type(inputData) :: inDat ! from O_Input
 
    ! Define the parameters that are passed to this subroutine.
    real (kind=double) :: totalEnergy
@@ -65,21 +62,21 @@ subroutine mainSCF (totalEnergy, fromExternal)
 
 
    ! Parse the command line parameters
-   call parseMainCommandLine(clp)
+   call parseMainCommandLine
 
 
    ! Read in the input to initialize all the key data structure variables.
-   call parseInput(inDat,clp)
+   call parseInput
 
 
    ! Find specific computational parameters not EXPLICITLY given in the input
    !   file.  These values can, however, be easily determined from the input
    !   file.
-   call getImplicitInfo(clp)
+   call getImplicitInfo
 
 
    ! Prepare the HDF5 files for main.
-   call initMainHDF5(inDat%numStates)
+   call initMainHDF5(numStates)
 
 
    ! Access the setup hdf5 files.
@@ -114,27 +111,27 @@ subroutine mainSCF (totalEnergy, fromExternal)
 
       ! Solve the schrodinger equation
       do i = 1, spin
-         call secularEqnAllKP(i,inDat%numStates)
+         call secularEqnAllKP(i,numStates)
       enddo
 
 
       ! Find the Fermi level, and the number of occupied bands, and the
       !   number of electrons occupying each of those bands.
-      call populateStates(inDat,clp)
+      call populateStates
 
 
       ! Compute the TDOS if it was requested for each iteration.
-      if (inDat%iterFlagTDOS == 1) then
-         call computeIterationTDOS(inDat)
+      if (iterFlagTDOS == 1) then
+         call computeIterationTDOS
       endif
 
 
       ! Calculate the valence charge density
-      call makeValenceRho(inDat)
+      call makeValenceRho
 
 
       ! Compute the new self consistant potential
-      call makeSCFPot (totalEnergy,inDat)
+      call makeSCFPot(totalEnergy)
 
 
       ! Determine if the computation is complete
@@ -150,7 +147,7 @@ subroutine mainSCF (totalEnergy, fromExternal)
 
 
    ! Print the accumulated TDOS in a useful format if requested in the input.
-   if (inDat%iterFlagTDOS == 1) then
+   if (iterFlagTDOS == 1) then
       call printIterationTDOS
    endif
 
@@ -159,18 +156,18 @@ subroutine mainSCF (totalEnergy, fromExternal)
    ! Compute the final band structure if convergence was achieved or if the
    !   last iteration was done.  (I.e. we are out of the SCF loop.)
    do i = 1, spin
-      call secularEqnAllKP(i, inDat%numStates)
+      call secularEqnAllKP(i, numStates)
    enddo
 
    ! Find the Fermi level, the number of occupied bands, and the number of
    !   electrons occupying each of those bands.
-   if ((clp%doDOS .eq. 1) .or. (clp%doBond .eq. 1)) then
-      call populateStates(inDat,clp)
+   if ((doDOS .eq. 1) .or. (doBond .eq. 1)) then
+      call populateStates
    endif
 
    ! Compute the dos if it was requested.  For spin polarized calculations the
    !   spin up is in 60, 70, 80 and spin down is in 61, 71, 81.
-   if (clp%doDOS == 1) then
+   if (doDOS == 1) then
       open (unit=60,file='fort.60',status='new',form='formatted') ! TDOS
       open (unit=70,file='fort.70',status='new',form='formatted') ! PDOS
       open (unit=80,file='fort.80',status='new',form='formatted') ! LI
@@ -179,16 +176,16 @@ subroutine mainSCF (totalEnergy, fromExternal)
          open (unit=71,file='fort.71',status='new',form='formatted') !Spin PDOS
          open (unit=81,file='fort.81',status='new',form='formatted') !Spin LI
       endif
-      call computeDos(inDat,clp)
+      call computeDos
    endif
 
    ! Compute the bond order if it was requested.
-   if (clp%doBond == 1) then
+   if (doBond == 1) then
       open (unit=10,file='fort.10',status='new',form='formatted')
       if (spin == 2) then
          open (unit=11,file='fort.11',status='new',form='formatted')
       endif
-      call computeBond(inDat,clp)
+      call computeBond
    endif
 
    ! Close the HDF objects that were used.
@@ -224,25 +221,21 @@ subroutine mainSCF (totalEnergy, fromExternal)
 end subroutine mainSCF
 
 
-subroutine getImplicitInfo(clp)
+subroutine getImplicitInfo
 
    ! Import necessary modules.
-   use O_ExchangeCorrelation
-   use O_AtomicSites
-   use O_AtomicTypes
-   use O_PotSites
-   use O_PotTypes
-   use O_Lattice
-   use O_KPoints
-   use O_Potential
-   use O_Populate
    use O_TimeStamps
-   use O_CommandLine
+   use O_ExchangeCorrelation, only: makeSampleVectors
+   use O_AtomicTypes,         only: getAtomicTypeImplicitInfo
+   use O_AtomicSites,         only: getAtomicSiteImplicitInfo
+   use O_PotSites,            only: getPotSiteImplicitInfo
+   use O_PotTypes,            only: getPotTypeImplicitInfo
+   use O_Lattice,             only: getRecipCellVectors
+   use O_KPoints,             only: convertKPointsToXYZ
+   use O_Potential,           only: initPotStructures
+   use O_Populate,            only: initCoreStateStructures
 
    implicit none
-
-   ! define passed parameters
-   type(commandLineParameters), intent(in) :: clp ! from O_CommandLine
 
    call timeStampStart(2)
 
@@ -259,7 +252,7 @@ subroutine getImplicitInfo(clp)
 
    call initPotStructures
 
-   call initCoreStateStructures(clp)
+   call initCoreStateStructures
 
    call timeStampEnd(2)
 

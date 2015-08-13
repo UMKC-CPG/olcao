@@ -520,7 +520,7 @@ sub readBatchList
    my @values;
 
    #Open the submission list.
-   open (LIST,"<$batchFile") || die "Can not open $batchFile for reading.\n";
+   open (LIST,"<$batchFile") || die "Cannot open $batchFile for reading.\n";
 
    #Read whole list of directories
    @batchList = <LIST>;
@@ -1007,7 +1007,7 @@ sub checkGammaKP
    my @values;
 
    open (KP,"<$inputs/$kpointFile") ||
-         die "Can not open $inputs/$kpointFile for reading.\n";
+         die "Cannot open $inputs/$kpointFile for reading.\n";
    @values = StructureControl::prepLine(\*KP,$line,'\s+');
    @values = StructureControl::prepLine(\*KP,$line,'\s+');
    $numKP  = $values[0];
@@ -1934,9 +1934,9 @@ sub updatePACS
    chdir $proj_dir;
 
    open (INITMAIN,"<gs_$main$updateSCFBasis$out") ||
-         die "Can not open gs_$main$updateSCFBasis$out for reading.\n";
+         die "Cannot open gs_$main$updateSCFBasis$out for reading.\n";
    open (FINMAIN,"<$finMainEdge$main$updateSCFBasis$out") ||
-         die "Can not open $finMainEdge$main$updateSCFBasis$out for writing\n";
+         die "Cannot open $finMainEdge$main$updateSCFBasis$out for writing\n";
 
    # Find the total energy of the initial state.
    while ($line=<INITMAIN>)
@@ -1968,8 +1968,8 @@ sub updatePACS
    # It is assumed that the pacs input file already exists at this point.
    #   We are just going to replace the "UNKNOWN" values.
 
-   open (PACSOLD,"<$olcao$dat") || die "Can not open $olcao$dat for reading.\n";
-   open (PACSNEW,">pacs_temp") || die "Can not open pacs_temp for writing.\n";
+   open (PACSOLD,"<$olcao$dat") || die "Cannot open $olcao$dat for reading.\n";
+   open (PACSNEW,">pacs_temp") || die "Cannot open pacs_temp for writing.\n";
 
    $unknownFound=0;
    while($line=<PACSOLD>)

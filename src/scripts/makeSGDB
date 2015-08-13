@@ -101,7 +101,7 @@ sub makeDB
    my $numSubGroups;
 
    # Open the data file for reading.
-   open (INDATA,"<$spaceGroupInFile") || die "Can not open file for reading.\n";
+   open (INDATA,"<$spaceGroupInFile") || die "Cannot open file for reading.\n";
 
    while ($line = <INDATA>)
    {
@@ -125,7 +125,7 @@ sub makeDB
 
          # Open the file for this space group subgroup for writing.
          open (OUTDATA,">$outputFile") ||
-            die "Can not open $outputFile for writing.\n";
+            die "Cannot open $outputFile for writing.\n";
 
          # Write the title for this space group.
          print OUTDATA $spaceGroupTag;

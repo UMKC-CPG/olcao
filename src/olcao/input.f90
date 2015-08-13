@@ -12,81 +12,79 @@ module O_Input
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    ! Begin list of module data.!
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-   ! Define a type that holds various inputs needed in a typical run.
-   type inputData
-      ! Define shared control variables that are used by all (or most) programs.
-      integer :: numStates    ! The total number of states in the system.
-      integer :: numElectrons ! The number of electrons in the system.
 
-      ! Define control variables that apply only to the main program or its
-      !   population subroutine (used by many other programs).
-      integer :: iterFlagTDOS ! Compute TDOS with each SCF iteration.
-      real (kind=double) :: thermalSigma ! Thermal smearing in eV stored in a.u.
-         ! This is in units of eV which can be converted to K by multiplying by
-         !    11604.505.  Some frequently used values are 0.001eV ~= 12K,
-         !    0.005eV ~= 58K, 0.025eV ~= 290K, 0.05eV ~= 580K.
-      real (kind=double) :: maxThermalRange ! This is the maximum range (given
-         ! in eV and converted to au) that the thermal smearing will extend
-         ! over. Think of this as a cutoff.
-      real (kind=double) :: fermiSearchLimit ! See populate.f90 for docs. This
-         ! helps set the boundaries of the search for the fermi level.
+   ! Define shared control variables that are used by all (or most) programs.
+   integer :: numStates    ! The total number of states in the system.
+   integer :: numElectrons ! The number of electrons in the system.
 
-      ! Note that for all sigma values (e.g. sigmaDOS, sigmaBOND, etc.) the
-      !   expectation is that the user provides the FWHM in eV of the Gaussian
-      !   that they want used for broadening. We have the equation
-      !   FWHM = 2*sqrt(2*ln2)*sigma so that from the given value we can easily
-      !   compute the sigma to be used in the broadening subroutine. The sigma
-      !   value is equal to the standard deviation of g(r) = 1/(sigma sqrt(2Pi))
-      !   exp(-r^2 / 2 sigma^2).
+   ! Define control variables that apply only to the main program or its
+   !   population subroutine (used by many other programs).
+   integer :: iterFlagTDOS ! Compute TDOS with each SCF iteration.
+   real (kind=double) :: thermalSigma ! Thermal smearing in eV stored in a.u.
+      ! This is in units of eV which can be converted to K by multiplying by
+      !    11604.505.  Some frequently used values are 0.001eV ~= 12K,
+      !    0.005eV ~= 58K, 0.025eV ~= 290K, 0.05eV ~= 580K.
+   real (kind=double) :: maxThermalRange ! This is the maximum range (given
+      ! in eV and converted to au) that the thermal smearing will extend
+      ! over. Think of this as a cutoff.
+   real (kind=double) :: fermiSearchLimit ! See populate.f90 for docs. This
+      ! helps set the boundaries of the search for the fermi level.
 
-      ! Define control variables that apply only to the DOS program.
-      integer :: detailCodePDOS
-      real (kind=double) :: deltaDOS  ! Given in eV, stored in a.u.
-      real (kind=double) :: sigmaDOS  ! Given in eV, stored in a.u.
-      real (kind=double) :: eminDOS   ! Given in eV, stored in a.u.
-      real (kind=double) :: emaxDOS   ! Given in eV, stored in a.u.
+   ! Note that for all sigma values (e.g. sigmaDOS, sigmaBOND, etc.) the
+   !   expectation is that the user provides the FWHM in eV of the Gaussian
+   !   that they want used for broadening. We have the equation
+   !   FWHM = 2*sqrt(2*ln2)*sigma so that from the given value we can easily
+   !   compute the sigma to be used in the broadening subroutine. The sigma
+   !   value is equal to the standard deviation of g(r) = 1/(sigma sqrt(2Pi))
+   !   exp(-r^2 / 2 sigma^2).
 
-      ! Define control variables that apply only to the bond program.
-      integer :: detailCodeBond ! 0=old-style (by types) 1=new-style (all atom)
-      integer :: doBond3C ! 0=no 1=yes
-      integer :: maxNumNeighbors ! This is used to limit memory allocations. It
-            ! is the max # of bonding neighbors that a single atom can have.
-      real (kind=double) :: maxBL ! Given in Angstroms, stored in a.u.
-      real (kind=double) :: deltaBOND  ! Given in eV, stored in a.u.
-      real (kind=double) :: sigmaBOND  ! Given in eV, stored in a.u.
-      real (kind=double) :: eminBOND   ! Given in eV, stored in a.u.
-      real (kind=double) :: emaxBOND   ! Given in eV, stored in a.u.
+   ! Define control variables that apply only to the DOS program.
+   integer :: detailCodePDOS
+   real (kind=double) :: deltaDOS  ! Given in eV, stored in a.u.
+   real (kind=double) :: sigmaDOS  ! Given in eV, stored in a.u.
+   real (kind=double) :: eminDOS   ! Given in eV, stored in a.u.
+   real (kind=double) :: emaxDOS   ! Given in eV, stored in a.u.
 
-      ! Define control variables that apply to the PACS use of the optc program.
-      integer :: excitedAtomPACS ! Atom number of the excited atom.
-      integer :: firstInitStatePACS
-      integer :: lastInitStatePACS
-      real (kind=double) :: deltaPACS  ! Given in eV, stored in a.u.
-      real (kind=double) :: sigmaPACS  ! Given in eV, stored in a.u.
-      real (kind=double) :: onsetEnergySlackPACS ! Given in eV, stored in a.u.
-      real (kind=double) :: energyWindowPACS     ! Given in eV, stored in a.u.
-      real (kind=double) :: totalEnergyDiffPACS  ! Given in eV, stored in a.u.
+   ! Define control variables that apply only to the bond program.
+   integer :: detailCodeBond ! 0=old-style (by types) 1=new-style (all atom)
+   integer :: doBond3C ! 0=no 1=yes
+   integer :: maxNumNeighbors ! This is used to limit memory allocations. It
+         ! is the max # of bonding neighbors that a single atom can have.
+   real (kind=double) :: maxBL ! Given in Angstroms, stored in a.u.
+   real (kind=double) :: deltaBOND  ! Given in eV, stored in a.u.
+   real (kind=double) :: sigmaBOND  ! Given in eV, stored in a.u.
+   real (kind=double) :: eminBOND   ! Given in eV, stored in a.u.
+   real (kind=double) :: emaxBOND   ! Given in eV, stored in a.u.
 
-      ! Define control variables for the usual use of the optc program.
-      real (kind=double) :: deltaOPTC      ! Given in eV, stored in a.u.
-      real (kind=double) :: sigmaOPTC      ! Given in eV, stored in a.u.
-      real (kind=double) :: maxTransEnOPTC ! Given in eV, stored in a.u.
-      real (kind=double) :: cutoffEnOPTC   ! Given in eV, stored in a.u.
+   ! Define control variables that apply to the PACS use of the optc program.
+   integer :: excitedAtomPACS ! Atom number of the excited atom.
+   integer :: firstInitStatePACS
+   integer :: lastInitStatePACS
+   real (kind=double) :: deltaPACS  ! Given in eV, stored in a.u.
+   real (kind=double) :: sigmaPACS  ! Given in eV, stored in a.u.
+   real (kind=double) :: onsetEnergySlackPACS ! Given in eV, stored in a.u.
+   real (kind=double) :: energyWindowPACS     ! Given in eV, stored in a.u.
+   real (kind=double) :: totalEnergyDiffPACS  ! Given in eV, stored in a.u.
 
-      ! Define control variables that apply to the SIGE use of the optc program.
-      real (kind=double) :: deltaSIGE      ! Given in eV, stored in a.u.
-      real (kind=double) :: sigmaSIGE      ! Given in eV, stored in a.u.
-      real (kind=double) :: maxTransEnSIGE ! Given in eV, stored in a.u.
-      real (kind=double) :: cutoffEnSIGE   ! Given in eV, stored in a.u.
+   ! Define control variables for the usual use of the optc program.
+   real (kind=double) :: deltaOPTC      ! Given in eV, stored in a.u.
+   real (kind=double) :: sigmaOPTC      ! Given in eV, stored in a.u.
+   real (kind=double) :: maxTransEnOPTC ! Given in eV, stored in a.u.
+   real (kind=double) :: cutoffEnOPTC   ! Given in eV, stored in a.u.
 
-      ! Define control variables that apply only to the wave program.
-      integer :: doRho ! Flag indicating whether or not to include state
-            ! occupancy when making the plot.
-      integer :: styleWAVE ! Flag requesting the form of the output.  1=3D
-            ! OpenDX & 1D projections; 2=3D OpenDX only; 3=1D projections only.
-      real (kind=double) :: eminWAVE ! Given in eV, stored in a.u.
-      real (kind=double) :: emaxWAVE ! Given in eV, stored in a.u.
-   end type inputData
+   ! Define control variables that apply to the SIGE use of the optc program.
+   real (kind=double) :: deltaSIGE      ! Given in eV, stored in a.u.
+   real (kind=double) :: sigmaSIGE      ! Given in eV, stored in a.u.
+   real (kind=double) :: maxTransEnSIGE ! Given in eV, stored in a.u.
+   real (kind=double) :: cutoffEnSIGE   ! Given in eV, stored in a.u.
+
+   ! Define control variables that apply only to the wave program.
+   integer :: doRho ! Flag indicating whether or not to include state
+         ! occupancy when making the plot.
+   integer :: styleWAVE ! Flag requesting the form of the output.  1=3D
+         ! OpenDX & 1D projections; 2=3D OpenDX only; 3=1D projections only.
+   real (kind=double) :: eminWAVE ! Given in eV, stored in a.u.
+   real (kind=double) :: emaxWAVE ! Given in eV, stored in a.u.
 
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    ! Begin list of module subroutines.!
@@ -94,27 +92,22 @@ module O_Input
    contains
 
 
-subroutine parseInput(inDat,clp)
+subroutine parseInput
 
    ! Import necessary modules.
    use O_Kinds
-   use O_CommandLine
-   use O_Lattice
-   use O_AtomicTypes
-   use O_AtomicSites
-   use O_PotTypes
-   use O_PotSites
+   use O_Lattice, only: readRealCellVectors
+   use O_KPoints, only: readKPoints
+   use O_PotTypes, only: readPotTypes
+   use O_PotSites, only: readPotSites
+   use O_AtomicTypes, only: readAtomicTypes
+   use O_AtomicSites, only: readAtomicSites
+   use O_ExchangeCorrelation, only: readExchCorrMeshParameters
    use O_ReadDataSubs
-   use O_KPoints
-   use O_ExchangeCorrelation
    use O_TimeStamps
 
    ! Make sure no funny variables are defined.
    implicit none
-
-   ! define Passed parameters.
-   type(commandLineParameters) :: clp ! from O_CommandLine
-   type(inputData), intent(inout) :: inDat
 
    ! Define the variables that hold the file units for reading and writing.
    integer :: readUnit, writeUnit
@@ -134,7 +127,7 @@ subroutine parseInput(inDat,clp)
    call readTitle(readUnit,writeUnit)
 
    ! Read the atomic type (basis) information.
-   call readAtomicTypes(readUnit,writeUnit,clp)
+   call readAtomicTypes(readUnit,writeUnit)
 
    ! Read the potential type information.
    call readPotTypes(readUnit,writeUnit)
@@ -143,31 +136,31 @@ subroutine parseInput(inDat,clp)
    call readExchCorrMeshParameters(readUnit,writeUnit)
 
    ! Read shared control parameters:  
-   call readSharedControl(readUnit,writeUnit,inDat,clp)
+   call readSharedControl(readUnit,writeUnit)
 
    ! Read main input control parameters.
-   call readMainControl(readUnit,writeUnit,inDat)
+   call readMainControl(readUnit,writeUnit)
 
    ! Read pdos input control parameters.
-   call readDOSControl(readUnit,writeUnit,inDat)
+   call readDOSControl(readUnit,writeUnit)
 
    ! Read bond input control parameters.
-   call readBondControl(readUnit,writeUnit,inDat)
+   call readBondControl(readUnit,writeUnit)
 
    ! Read sybd input control parameters.
    call readSYBDControl(readUnit,writeUnit)
 
    ! Read PACS input control parameters.
-   call readPACSControl(readUnit,writeUnit,inDat,clp)
+   call readPACSControl(readUnit,writeUnit)
 
    ! Read optc input control parameters.
-   call readOptcControl(readUnit,writeUnit,inDat)
+   call readOptcControl(readUnit,writeUnit)
 
    ! Read sige input control parameters.
-   call readSigeControl(readUnit,writeUnit,inDat)
+   call readSigeControl(readUnit,writeUnit)
 
    ! Read wave input control parameters.
-   call readWaveControl(readUnit,writeUnit,inDat)
+   call readWaveControl(readUnit,writeUnit)
 
    ! Close the primary input file.
    close(5)
@@ -243,12 +236,13 @@ end subroutine readTitle
 
 
 
-subroutine readSharedControl(readUnit,writeUnit,inDat,clp)
+subroutine readSharedControl(readUnit,writeUnit)
 
    ! Import necessary modules.
    use O_Kinds
-   use O_CommandLine
-   use O_Lattice
+   use O_Constants, only: hartree
+   use O_CommandLine, only: basisCode
+   use O_Lattice, only: logBasisFnThresh, logElecThresh, setCutoffThresh
    use O_ReadDataSubs
 
    ! Make sure no funny variables are defined.
@@ -259,8 +253,6 @@ subroutine readSharedControl(readUnit,writeUnit,inDat,clp)
                                         ! we are reading.
    integer, intent(in)    :: writeUnit  ! The unit number of the file to which
                                         ! we are writing.
-   type(inputData), intent(inout) :: inDat
-   type(commandLineParameters), intent(inout) :: clp
 
    ! Define local variables.
    real (kind=double) :: basisFnConvgTemp, electroConvgTemp ! Input parameters
@@ -270,7 +262,8 @@ subroutine readSharedControl(readUnit,writeUnit,inDat,clp)
 
 
    ! Read the header for this input section.
-   call readAndCheckLabel(readUnit,writeUnit,len('SHARED_INPUT_DATA'),'SHARED_INPUT_DATA')
+   call readAndCheckLabel(readUnit,writeUnit,len('SHARED_INPUT_DATA'),&
+         & 'SHARED_INPUT_DATA')
 
 
    ! Read the cutoff values for integrals.  (Used by setup and intg.)
@@ -303,45 +296,47 @@ subroutine readSharedControl(readUnit,writeUnit,inDat,clp)
 
 
    ! Read the number of states to use for the command line given basis code.
-   call readData(readUnit,writeUnit,3,tempArray(:),len('NUM_STATES_TO_USE'),'NUM_STATES_TO_USE')
-   inDat%numStates = tempArray(clp%basisCode)
-   write (20,*) "Using ",inDat%numStates," states."
+   call readData(readUnit,writeUnit,3,tempArray(:),len('NUM_STATES_TO_USE'),&
+         & 'NUM_STATES_TO_USE')
+   numStates = tempArray(basisCode)
+   write (20,*) "Using ",numStates," states."
    call flush (20)
 
 
    ! Read the number of valence electrons in the system.
-   call readData(readUnit,writeUnit,inDat%numElectrons,len('NUM_ELECTRONS'),'NUM_ELECTRONS')
+   call readData(readUnit,writeUnit,numElectrons,len('NUM_ELECTRONS'),&
+      & 'NUM_ELECTRONS')
 
 
    ! Read the thermal smearing parameters.
-   call readData(readUnit,writeUnit,inDat%thermalSigma,inDat%maxThermalRange,&
+   call readData(readUnit,writeUnit,thermalSigma,maxThermalRange,&
          & len('THERMAL_SMEARING_SIGMA__SIGMA_CUTOFF'),&
          & 'THERMAL_SMEARING_SIGMA__SIGMA_CUTOFF')
 
    ! Apply convertion to atomic units.
-   inDat%thermalSigma = inDat%thermalSigma / hartree
+   thermalSigma = thermalSigma / hartree
 
    ! Read the value that helps set the upper and lower limit on the search for
    !   the fermi level during the thermal smearing operation.
-   call readData(readUnit,writeUnit,inDat%fermiSearchLimit,&
+   call readData(readUnit,writeUnit,fermiSearchLimit,&
          & len('FERMI_LEVEL_SEARCH_LIMIT'),&
          & 'FERMI_LEVEL_SEARCH_LIMIT')
 
    ! Apply convertion to atomic units.
-   inDat%fermiSearchLimit = inDat%fermiSearchLimit / hartree
+   fermiSearchLimit = fermiSearchLimit / hartree
 
 
 
 end subroutine readSharedControl
 
 
-subroutine readMainControl(readUnit,writeUnit,inDat)
+subroutine readMainControl(readUnit,writeUnit)
 
    ! Use necessary modules
    use O_Kinds
    use O_ReadDataSubs
-   use O_PotTypes
-   use O_Potential
+   use O_PotTypes, only: numPotTypes
+   use O_Potential, only: setPotControlParameters
 
    implicit none
 
@@ -350,13 +345,12 @@ subroutine readMainControl(readUnit,writeUnit,inDat)
                                         ! we are reading.
    integer, intent(in)    :: writeUnit  ! The unit number of the file to which
                                         ! we are writing.
-   type(inputData), intent(inout) :: inDat
 
    ! Define local variables.
    integer :: i
    integer :: lastIt
    integer :: fbLevel
-   integer :: XC_CODETemp
+   integer :: xcCodeTemp
    integer :: numSpltTps
    integer :: typeID
    real (kind=double) :: rlxFact
@@ -365,24 +359,30 @@ subroutine readMainControl(readUnit,writeUnit,inDat)
    real (kind=double), allocatable, dimension (:) :: typeSpinSplitTemp
 
 
-   call readAndCheckLabel(readUnit,writeUnit,len('MAIN_INPUT_DATA'),'MAIN_INPUT_DATA')
+   call readAndCheckLabel(readUnit,writeUnit,len('MAIN_INPUT_DATA'),&
+         & 'MAIN_INPUT_DATA')
 
-   call readData(readUnit,writeUnit,lastIt,len('LAST_ITERATION'),'LAST_ITERATION')
+   call readData(readUnit,writeUnit,lastIt,len('LAST_ITERATION'),&
+         & 'LAST_ITERATION')
 
-   call readData(readUnit,writeUnit,cTest,len('CONVERGENCE_TEST'),'CONVERGENCE_TEST')
+   call readData(readUnit,writeUnit,cTest,len('CONVERGENCE_TEST'),&
+         & 'CONVERGENCE_TEST')
 
-   call readData(readUnit,writeUnit,XC_CODETemp,len('XC_CODE'),'XC_CODE')
+   call readData(readUnit,writeUnit,xcCodeTemp,len('XC_CODE'),'XC_CODE')
 
-   call readData(readUnit,writeUnit,fbLevel,len('FEEDBACK_LEVEL'),'FEEDBACK_LEVEL')
+   call readData(readUnit,writeUnit,fbLevel,len('FEEDBACK_LEVEL'),&
+         & 'FEEDBACK_LEVEL')
 
-   call readData(readUnit,writeUnit,rlxFact,len('RELAXATION_FACTOR'),'RELAXATION_FACTOR')
+   call readData(readUnit,writeUnit,rlxFact,len('RELAXATION_FACTOR'),&
+         & 'RELAXATION_FACTOR')
 
-   call readData(readUnit,writeUnit,inDat%iterFlagTDOS,len('EACH_ITER_FLAGS__TDOS'),&
+   call readData(readUnit,writeUnit,iterFlagTDOS,len('EACH_ITER_FLAGS__TDOS'),&
          & 'EACH_ITER_FLAGS__TDOS')
 
    ! Read the default amount that all types will have their charge contribution
    !   split by in the case of a spin polarized calculation.
-   call readData(readUnit,writeUnit,numSpltTps,spltAmt,len('NUM_SPLIT_TYPES__DEFAULT_SPLIT'),&
+   call readData(readUnit,writeUnit,numSpltTps,spltAmt,&
+         & len('NUM_SPLIT_TYPES__DEFAULT_SPLIT'),&
          & 'NUM_SPLIT_TYPES__DEFAULT_SPLIT')
 
    ! Assign the default spin splitting for all types in the system.
@@ -399,7 +399,7 @@ subroutine readMainControl(readUnit,writeUnit,inDat)
       typeSpinSplitTemp(typeID) = spltAmt
    enddo
 
-   call setPotControlParameters(fbLevel,lastIt,XC_CODETemp,rlxFact,cTest,&
+   call setPotControlParameters(fbLevel,lastIt,xcCodeTemp,rlxFact,cTest,&
          & typeSpinSplitTemp)
 
    deallocate (typeSpinSplitTemp)
@@ -407,11 +407,11 @@ subroutine readMainControl(readUnit,writeUnit,inDat)
 end subroutine readMainControl
 
 
-subroutine readDOSControl(readUnit,writeUnit,inDat)
+subroutine readDOSControl(readUnit,writeUnit)
 
    ! Use necessary modules
+   use O_Constants, only: hartree
    use O_ReadDataSubs
-   use O_Constants
 
    implicit none
 
@@ -420,31 +420,30 @@ subroutine readDOSControl(readUnit,writeUnit,inDat)
                                         ! we are reading.
    integer, intent(in)    :: writeUnit  ! The unit number of the file to which
                                         ! we are writing.
-   type(inputData), intent(inout) :: inDat
 
    call readAndCheckLabel(readUnit,writeUnit,len('DOS_INPUT_DATA'),&
                               'DOS_INPUT_DATA')
 
    ! Read all the input data.
-   call readData(readUnit,writeUnit,inDat%deltaDOS,inDat%sigmaDOS,0,'')
-   call readData(readUnit,writeUnit,inDat%eminDOS,inDat%emaxDOS,0,'')
-   call readData(readUnit,writeUnit,inDat%detailCodePDOS,0,'')
+   call readData(readUnit,writeUnit,deltaDOS,sigmaDOS,0,'')
+   call readData(readUnit,writeUnit,eminDOS,emaxDOS,0,'')
+   call readData(readUnit,writeUnit,detailCodePDOS,0,'')
 
    ! Apply necessary conversions to the units.  (eV -> hartree atomic units)
-   inDat%deltaDOS = inDat%deltaDOS / hartree
-   inDat%sigmaDOS = inDat%sigmaDOS / hartree / (2.0_double * sqrt(2.0_double *&
+   deltaDOS = deltaDOS / hartree
+   sigmaDOS = sigmaDOS / hartree / (2.0_double * sqrt(2.0_double *&
          & log(2.0_double)))
-   inDat%eminDOS  = inDat%eminDOS  / hartree
-   inDat%emaxDOS  = inDat%emaxDOS  / hartree
+   eminDOS  = eminDOS  / hartree
+   emaxDOS  = emaxDOS  / hartree
 
 end subroutine readDOSControl
 
 
-subroutine readBondControl(readUnit,writeUnit,inDat)
+subroutine readBondControl(readUnit,writeUnit)
 
    ! Use necessary modules
+   use O_Constants, only: hartree, bohrRad
    use O_ReadDataSubs
-   use O_Constants
 
    implicit none
 
@@ -453,26 +452,26 @@ subroutine readBondControl(readUnit,writeUnit,inDat)
                                         ! we are reading.
    integer, intent(in)    :: writeUnit  ! The unit number of the file to which
                                         ! we are writing.
-   type(inputData), intent(inout) :: inDat
 
-   call readAndCheckLabel(readUnit,writeUnit,len('BOND_INPUT_DATA'),'BOND_INPUT_DATA')
+   call readAndCheckLabel(readUnit,writeUnit,len('BOND_INPUT_DATA'),&
+         & 'BOND_INPUT_DATA')
 
    ! Read the data.
-   call readData(readUnit,writeUnit,inDat%maxBL,0,'')
-   call readData(readUnit,writeUnit,inDat%deltaBOND,inDat%sigmaBOND,0,'')
-   call readData(readUnit,writeUnit,inDat%eminBOND,inDat%emaxBOND,0,'')
-   call readData(readUnit,writeUnit,inDat%detailCodeBond,0,'')
-   call readData(readUnit,writeUnit,inDat%doBond3C,0,'')
-   call readData(readUnit,writeUnit,inDat%maxNumNeighbors,0,'')
+   call readData(readUnit,writeUnit,maxBL,0,'')
+   call readData(readUnit,writeUnit,deltaBOND,sigmaBOND,0,'')
+   call readData(readUnit,writeUnit,eminBOND,emaxBOND,0,'')
+   call readData(readUnit,writeUnit,detailCodeBond,0,'')
+   call readData(readUnit,writeUnit,doBond3C,0,'')
+   call readData(readUnit,writeUnit,maxNumNeighbors,0,'')
 
    ! Apply necessary conversions to the units.  (Angstroms to bohrRadii a.u.
    !   and eV to hartree atomic units.)
-   inDat%maxBL     = inDat%maxBL     / bohrRad
-   inDat%deltaBOND = inDat%deltaBOND / hartree
-   inDat%sigmaBOND = inDat%sigmaBOND / hartree /(2.0_double*sqrt(2.0_double * &
+   maxBL     = maxBL     / bohrRad
+   deltaBOND = deltaBOND / hartree
+   sigmaBOND = sigmaBOND / hartree /(2.0_double*sqrt(2.0_double * &
          & log(2.0_double)))
-   inDat%eminBOND  = inDat%eminBOND  / hartree
-   inDat%emaxBOND  = inDat%emaxBOND  / hartree
+   eminBOND  = eminBOND  / hartree
+   emaxBOND  = emaxBOND  / hartree
 
 end subroutine readBondControl
 
@@ -481,7 +480,7 @@ subroutine readSYBDControl(readUnit,writeUnit)
 
    ! Use necessary modules
    use O_ReadDataSubs
-   use O_KPoints
+   use O_KPoints, only: readSYBDKPoints
 
    implicit none
 
@@ -496,13 +495,13 @@ subroutine readSYBDControl(readUnit,writeUnit)
 end subroutine readSYBDControl
 
 
-subroutine readPACSControl(readUnit,writeUnit,inDat,clp)
+subroutine readPACSControl(readUnit,writeUnit)
 
    ! Use necessary modules
    use O_Kinds
+   use O_Constants, only: hartree
+   use O_CommandLine, only: excitedQN_n, excitedQN_l
    use O_ReadDataSubs
-   use O_CommandLine
-   use O_Constants
 
    ! Make sure no unwanted variables are declared.
    implicit none
@@ -512,8 +511,6 @@ subroutine readPACSControl(readUnit,writeUnit,inDat,clp)
                                         ! we are reading.
    integer, intent(in)    :: writeUnit  ! The unit number of the file to which
                                         ! we are writing.
-   type(inputData), intent(inout) :: inDat
-   type(commandLineParameters), intent(inout) :: clp
 
    ! Define local variables.
    integer :: i
@@ -523,46 +520,47 @@ subroutine readPACSControl(readUnit,writeUnit,inDat,clp)
    integer :: QN_l
 
    ! Initialize the first and last initial states.
-   inDat%firstInitStatePACS = 0
-   inDat%lastInitStatePACS  = 0
+   firstInitStatePACS = 0
+   lastInitStatePACS  = 0
 
 
    ! Read the input control data for PACS calculations.
-   call readAndCheckLabel(readUnit,writeUnit,len('PACS_INPUT_DATA'),'PACS_INPUT_DATA')
+   call readAndCheckLabel(readUnit,writeUnit,len('PACS_INPUT_DATA'),&
+         & 'PACS_INPUT_DATA')
 
-   call readData(readUnit,writeUnit,inDat%excitedAtomPACS,0,'')
-   call readData(readUnit,writeUnit,inDat%deltaPACS,inDat%sigmaPACS,0,'')
-   call readData(readUnit,writeUnit,inDat%onsetEnergySlackPACS,&
-                  inDat%energyWindowPACS,0,'')
+   call readData(readUnit,writeUnit,excitedAtomPACS,0,'')
+   call readData(readUnit,writeUnit,deltaPACS,sigmaPACS,0,'')
+   call readData(readUnit,writeUnit,onsetEnergySlackPACS,&
+         & energyWindowPACS,0,'')
    call readData(readUnit,writeUnit,numCorePACS,0,'')
    do i = 1, numCorePACS
       call readData(readUnit,writeUnit,5,tempArray,0,'')
       QN_n = int(tempArray(1))
       QN_l = int(tempArray(2))
-      if ((QN_n == clp%excitedQN_n) .and. (QN_l == clp%excitedQN_l)) then
-         inDat%firstInitStatePACS = int(tempArray(3))
-         inDat%lastInitStatePACS  = int(tempArray(4))
-         inDat%totalEnergyDiffPACS = tempArray(5)
+      if ((QN_n == excitedQN_n) .and. (QN_l == excitedQN_l)) then
+         firstInitStatePACS = int(tempArray(3))
+         lastInitStatePACS  = int(tempArray(4))
+         totalEnergyDiffPACS = tempArray(5)
       endif
    enddo
 
    ! Apply necessary conversions of units.
-   inDat%deltaPACS = inDat%deltaPACS / hartree
-   inDat%sigmaPACS = inDat%sigmaPACS / hartree /(2.0_double*sqrt(2.0_double * &
+   deltaPACS = deltaPACS / hartree
+   sigmaPACS = sigmaPACS / hartree /(2.0_double*sqrt(2.0_double * &
          & log(2.0_double)))
-   inDat%onsetEnergySlackPACS = inDat%onsetEnergySlackPACS / hartree
-   inDat%energyWindowPACS     = inDat%energyWindowPACS / hartree
-   inDat%totalEnergyDiffPACS  = inDat%totalEnergyDiffPACS / hartree
+   onsetEnergySlackPACS = onsetEnergySlackPACS / hartree
+   energyWindowPACS     = energyWindowPACS / hartree
+   totalEnergyDiffPACS  = totalEnergyDiffPACS / hartree
 
 
 end subroutine readPACSControl
 
 
-subroutine readOptcControl(readUnit,writeUnit,inDat)
+subroutine readOptcControl(readUnit,writeUnit)
 
    ! Use necessary modules
+   use O_Constants, only: hartree
    use O_ReadDataSubs
-   use O_Constants
 
    implicit none
 
@@ -571,30 +569,30 @@ subroutine readOptcControl(readUnit,writeUnit,inDat)
                                         ! we are reading.
    integer, intent(in)    :: writeUnit  ! The unit number of the file to which
                                         ! we are writing.
-   type(inputData), intent(inout) :: inDat
 
    ! Read input OPTC control data.
-   call readAndCheckLabel(readUnit,writeUnit,len('OPTC_INPUT_DATA'),'OPTC_INPUT_DATA')
-   call readData(readUnit,writeUnit,inDat%cutoffEnOPTC,0,'')
-   call readData(readUnit,writeUnit,inDat%maxTransEnOPTC,0,'')
-   call readData(readUnit,writeUnit,inDat%deltaOPTC,0,'')
-   call readData(readUnit,writeUnit,inDat%sigmaOPTC,0,'')
+   call readAndCheckLabel(readUnit,writeUnit,len('OPTC_INPUT_DATA'),&
+         & 'OPTC_INPUT_DATA')
+   call readData(readUnit,writeUnit,cutoffEnOPTC,0,'')
+   call readData(readUnit,writeUnit,maxTransEnOPTC,0,'')
+   call readData(readUnit,writeUnit,deltaOPTC,0,'')
+   call readData(readUnit,writeUnit,sigmaOPTC,0,'')
 
    ! Apply necessary conversions to a.u.
-   inDat%cutoffEnOPTC   = inDat%cutoffEnOPTC / hartree
-   inDat%maxTransEnOPTC = inDat%maxTransEnOPTC / hartree
-   inDat%deltaOPTC = inDat%deltaOPTC / hartree
-   inDat%sigmaOPTC = inDat%sigmaOPTC / hartree /(2.0_double*sqrt(2.0_double * &
+   cutoffEnOPTC   = cutoffEnOPTC / hartree
+   maxTransEnOPTC = maxTransEnOPTC / hartree
+   deltaOPTC = deltaOPTC / hartree
+   sigmaOPTC = sigmaOPTC / hartree /(2.0_double*sqrt(2.0_double * &
          & log(2.0_double)))
 
 end subroutine readOptcControl
 
 
-subroutine readSigeControl(readUnit,writeUnit,inDat)
+subroutine readSigeControl(readUnit,writeUnit)
 
    ! Use necessary modules
+   use O_Constants, only: hartree
    use O_ReadDataSubs
-   use O_Constants
 
    implicit none
 
@@ -603,31 +601,31 @@ subroutine readSigeControl(readUnit,writeUnit,inDat)
                                         ! we are reading.
    integer, intent(in)    :: writeUnit  ! The unit number of the file to which
                                         ! we are writing.
-   type(inputData), intent(inout) :: inDat
 
    ! Read the input sigma(E) control variables.
-   call readAndCheckLabel(readUnit,writeUnit,len('SIGE_INPUT_DATA'),'SIGE_INPUT_DATA')
-   call readData(readUnit,writeUnit,inDat%cutoffEnSIGE,0,'')
-   call readData(readUnit,writeUnit,inDat%maxTransEnSIGE,0,'')
-   call readData(readUnit,writeUnit,inDat%deltaSIGE,0,'')
-   call readData(readUnit,writeUnit,inDat%sigmaSIGE,0,'')
+   call readAndCheckLabel(readUnit,writeUnit,len('SIGE_INPUT_DATA'),&
+         & 'SIGE_INPUT_DATA')
+   call readData(readUnit,writeUnit,cutoffEnSIGE,0,'')
+   call readData(readUnit,writeUnit,maxTransEnSIGE,0,'')
+   call readData(readUnit,writeUnit,deltaSIGE,0,'')
+   call readData(readUnit,writeUnit,sigmaSIGE,0,'')
 
    ! Apply necessary conversions to a.u.
-   inDat%cutoffEnSIGE   = inDat%cutoffEnSIGE / hartree
-   inDat%maxTransEnSIGE = inDat%maxTransEnSIGE / hartree
-   inDat%deltaSIGE = inDat%deltaSIGE / hartree
-   inDat%sigmaSIGE = inDat%sigmaSIGE / hartree /(2.0_double*sqrt(2.0_double * &
+   cutoffEnSIGE   = cutoffEnSIGE / hartree
+   maxTransEnSIGE = maxTransEnSIGE / hartree
+   deltaSIGE = deltaSIGE / hartree
+   sigmaSIGE = sigmaSIGE / hartree /(2.0_double*sqrt(2.0_double * &
          & log(2.0_double)))
 
 end subroutine readSigeControl
 
 
-subroutine readWaveControl(readUnit,writeUnit,inDat)
+subroutine readWaveControl(readUnit,writeUnit)
 
    ! Use necessary modules
-   use O_ReadDataSubs
    use O_Lattice
-   use O_Constants
+   use O_Constants, only: hartree
+   use O_ReadDataSubs
 
    implicit none
 
@@ -636,18 +634,18 @@ subroutine readWaveControl(readUnit,writeUnit,inDat)
                                         ! we are reading.
    integer, intent(in)    :: writeUnit  ! The unit number of the file to which
                                         ! we are writing.
-   type(inputData), intent(inout) :: inDat
 
    ! Read the input wave function / charge density plotting control variables.
-   call readAndCheckLabel(readUnit,writeUnit,len('WAVE_INPUT_DATA'),'WAVE_INPUT_DATA')
+   call readAndCheckLabel(readUnit,writeUnit,len('WAVE_INPUT_DATA'),&
+         & 'WAVE_INPUT_DATA')
    call readNumMeshPoints(readUnit,writeUnit)
-   call readData(readUnit,writeUnit,inDat%eminWAVE,inDat%emaxWAVE,0,'')
-   call readData(readUnit,writeUnit,inDat%doRho,0,'')
-   call readData(readUnit,writeUnit,inDat%styleWAVE,0,'')
+   call readData(readUnit,writeUnit,eminWAVE,emaxWAVE,0,'')
+   call readData(readUnit,writeUnit,doRho,0,'')
+   call readData(readUnit,writeUnit,styleWAVE,0,'')
 
    ! Apply the necessary conversions of the data to atomic units.
-   inDat%eminWAVE = inDat%eminWAVE / hartree
-   inDat%emaxWAVE = inDat%emaxWAVE / hartree
+   eminWAVE = eminWAVE / hartree
+   emaxWAVE = emaxWAVE / hartree
 
 end subroutine readWaveControl
 

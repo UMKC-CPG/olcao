@@ -204,7 +204,7 @@ sub addOrb
 
    # Open the orbital file.
    open (ORB,"<$orbFiles[$orbital]") || 
-         die "Can not open $orbFiles[$orbital] for reading.\n";
+         die "Cannot open $orbFiles[$orbital] for reading.\n";
 
    # Read to the point before the isosurface definition.
    while ($line = <ORB>)

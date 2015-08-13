@@ -316,7 +316,7 @@ sub readHeader
    my $line;
    my $abc;
 
-   open (MESH,"<$inFile") || die "Can not open $inFile.\n";
+   open (MESH,"<$inFile") || die "Cannot open $inFile.\n";
 
    # Get the total number of mesh points in each a,b,c direction.
    @values = StructureControl::prepLine(\*MESH,$line,'\s+');
@@ -377,7 +377,7 @@ sub readTarget
    my $currentIndex;
 
    # Open the target data file and read past the header information.
-   open (MESH,"<$targetFile") || die "Can not open $targetFile.\n";
+   open (MESH,"<$targetFile") || die "Cannot open $targetFile.\n";
    <MESH>;
    <MESH>;
    <MESH>;
@@ -449,7 +449,7 @@ sub computeSpectralData
 
 
    # Reopen the data file and read past the header information.
-   open (MESH,"<$inFile") || die "Can not open $inFile.\n";
+   open (MESH,"<$inFile") || die "Cannot open $inFile.\n";
    <MESH>;
    <MESH>;
    <MESH>;

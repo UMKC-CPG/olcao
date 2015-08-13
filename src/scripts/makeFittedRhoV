@@ -254,7 +254,7 @@ sub computeDiff
 
    # Open the input scf potential file.
    open (INPOT,"<$inFile") ||
-      die "Can not open $inFile for reading.\n";
+      die "Cannot open $inFile for reading.\n";
 
    # Read past the line that lists the number of types.  (This was already
    #   computed from the structure.dat file where the element data was also
@@ -269,7 +269,7 @@ sub computeDiff
 
       # Open the non-interacting potential file associated with this type.
       open (NONPOT,"<$isoCoeffFile") ||
-         die "Can not open $isoCoeffFile for reading.\n";
+         die "Cannot open $isoCoeffFile for reading.\n";
 
       # Read the number of terms from the isolated coefficient file and from
       #   the SCF potential file.
@@ -335,7 +335,7 @@ sub printTempData
 
    # Open the output file.
    open (OUTPOT,">$outFile") ||
-      die "Can not opent $outFile for writing.\n";
+      die "Cannot opent $outFile for writing.\n";
 
    foreach $term (1..$numTerms)
    {

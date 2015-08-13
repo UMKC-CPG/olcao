@@ -5,7 +5,7 @@
 ###########################################################
 
 #Define the current branch.
-export BRANCH="CPG/cpg-repo/v32-dev"
+export BRANCH="CPG/cpg-repo/v33-only"
 
 #Root directory of the OLCAO program suite.
 export OLCAO_DIR="$HOME/$BRANCH"
@@ -17,7 +17,7 @@ export OLCAO_BIN="$OLCAO_DIR/bin"
 export OLCAO_DATA="$OLCAO_DIR/share"
 
 #Location for all intermediate directories.
-export OLCAO_TEMP="$HOME/scratch/$BRANCH"
+export OLCAO_TEMP="$HOME/data/scratch/$BRANCH"
 
 export PATH=$OLCAO_BIN:$PATH
 export PERL5LIB=$OLCAO_BIN/perl5:$PERL5LIB
@@ -32,14 +32,9 @@ export OLCAO_TOUCH=0
 #This is needed for memory estimation.
 export OLCAO_DOUBLE=16
 
-#Define if the computer uses a pbs batch queueing system.
-export OLCAO_PBS=0
-
-#Define if the computer uses a lsf batch queueing system.
-export OLCAO_LSF=0
-
-#Define if the compute uses a simple bash submit script.
-export OLCAO_BASH=1
+#Define the type of queueing system used on this machine.
+# 0 = BASH SCRIPT; 1 = PBS; 2 = LSF; 3 = SLURM;
+export OLCAO_QUEUE=3
 
 #Define the location of the VASP pseudopotential database.
 export VASPPOT_DIR="$HOME/vasp"

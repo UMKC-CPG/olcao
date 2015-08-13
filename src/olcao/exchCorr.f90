@@ -2,7 +2,6 @@ module O_ExchangeCorrelation
 
    ! Import necessary modules.
    use O_Kinds
-   use O_Constants
 
    ! Make sure that no funny variables are defined.
    implicit none
@@ -65,10 +64,10 @@ subroutine getECMeshParameters
 
    ! Include the modules we need.
    use O_Kinds
-   use O_Constants
-   use O_Lattice
-   use O_PotSites
-   use O_PotTypes
+   use O_Constants, only: dim3, smallThresh
+   use O_Lattice, only: numCellsReal, cellDimsReal, findLatticeVector
+   use O_PotSites, only: numPotSites, potSites
+   use O_PotTypes, only: minPotAlpha, potTypes
    use O_TimeStamps
 
    ! Make certain that no implicit variables are accidently declared.
@@ -343,18 +342,18 @@ subroutine makeECMeshAndOverlap
 
    ! Include the modules we need
    use O_Kinds
-   use O_Constants
-   use O_Lattice
-   use O_PotSites
-   use O_PotTypes
-   use O_Potential
+   use O_Constants, only: dim3, smallThresh
+   use O_Lattice, only: logElecThresh, numCellsReal, cellSizesReal, &
+         & cellDimsReal, findLatticeVector
+   use O_PotSites, only: potSites, numPotSites
+   use O_PotTypes, only: potTypes, maxNumPotAlphas
+   use O_Potential, only: potDim
    use O_TimeStamps
 
    ! Import the necessary HDF modules
    use HDF5
-   use O_SetupHDF5
-   use O_SetupExchCorrHDF5
-   use O_SetupElecStatHDF5
+   use O_SetupExchCorrHDF5, only: numPoints_did, numPoints, radialWeight_did, &
+         & points, exchRhoOp_did, potPoints, exchCorrOverlap_did, potPot
 
    ! Make certain that no implicit variables are accidently declared.
    implicit none
@@ -709,7 +708,7 @@ subroutine makeECMeshAndOverlap
 
    ! Write the exchCorrOverlap to disk in HDF5 format.
    call h5dwrite_f(exchCorrOverlap_did,H5T_NATIVE_DOUBLE, &
-         & exchCorrOverlap(:,:),potDims2,hdferr)
+         & exchCorrOverlap(:,:),potPot,hdferr)
    if (hdferr /= 0) stop 'Failed to write exch corr overlap'
 
    ! Deallocate space for matrices and arrays that are used only locally.
@@ -731,9 +730,6 @@ subroutine readExchCorrMeshParameters(readUnit, writeUnit)
 
    ! Import necessary modules.
    use O_Kinds
-   use O_Constants
-
-   ! Use necessary library modules.
    use O_ReadDataSubs
 
    ! Make sure that no funny variables are defined.
@@ -778,7 +774,7 @@ subroutine makeSampleVectors
 
    ! Import necessary modules.
    use O_Kinds
-   use O_Constants
+   use O_Constants, only: pi, dim3
 
    ! Make sure that no funny variables are defined.
    implicit none
@@ -840,7 +836,7 @@ subroutine getMaxNumRayPoints(numPoints_did,numPoints)
    use HDF5
 
    ! Import necessary object modules.
-   use O_PotSites  ! For numPotSites
+   use O_PotSites, only: numPotSites
 
    ! Make sure no funny variables are defined.
    implicit none

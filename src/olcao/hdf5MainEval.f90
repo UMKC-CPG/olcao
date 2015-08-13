@@ -41,9 +41,8 @@ subroutine initMainEValHDF5 (main_fid,numStates)
    use HDF5
 
    ! Import necessary object modules.
-   use O_KPoints     ! For numKPoints
-   use O_CommandLine ! For spin (not anymore)
-   use O_Potential   ! For spin
+   use O_KPoints, only: numKPoints
+   use O_Potential, only: spin
 
    ! Define the passed parameters.
    integer(hid_t) :: main_fid
@@ -93,9 +92,8 @@ subroutine closeMainEValHDF5
    use HDF5
 
    ! Import necessary object modules.
-   use O_KPoints     ! For numKPoints
-   use O_CommandLine ! For spin (not anymore)
-   use O_Potential   ! For spin
+   use O_KPoints, only: numKPoints
+   use O_Potential, only: spin
 
    ! Make sure that no variables are implicitly declared.
    implicit none

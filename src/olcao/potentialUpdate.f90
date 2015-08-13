@@ -27,32 +27,37 @@ module O_PotentialUpdate
    contains
 
 
-subroutine makeSCFPot (totalEnergy,inDat)
+subroutine makeSCFPot (totalEnergy)
 
    ! Import necessary modules.
+   use HDF5
    use O_Kinds
-   use O_TimeStamps
-   use O_AtomicSites
-   use O_AtomicTypes
-   use O_PotSites
-   use O_PotTypes
-   use O_Potential
-   use O_Populate
-   use O_Input
-   use O_ElectroStatics
-   use O_ExchangeCorrelation
-   use O_CommandLine
    use O_LAPACKDPOSVX
-   use O_SetupExchCorrHDF5
-   use O_SetupElecStatHDF5
-   use O_ValeCharge
+   use O_TimeStamps
+   use O_Input, only: numElectrons
+   use O_Populate, only: occupiedEnergy
+   use O_Constants, only: smallThresh
+   use O_AtomicTypes, only: atomTypes
+   use O_AtomicSites, only: coreDim
+   use O_PotSites, only: numPotSites, potSites
+   use O_PotTypes, only: numPotTypes, potTypes
+   use O_ExchangeCorrelation, only: maxNumRayPoints, radialWeight, exchRhoOp, &
+         & exchCorrOverlap, numRayPoints
+   use O_ElectroStatics, only: nonLocalNeutQPot, localNeutQPot, localNucQPot, &
+         & nonLocalNucQPot, nonLocalResidualQ, potAlphaOverlap
+   use O_SetupExchCorrHDF5, only: numPoints_did, radialWeight_did, &
+         & exchRhoOp_did, exchCorrOverlap_did, numPoints, points, potPoints
+   use O_Potential, only: spin, potDim, intgConsts, spinSplitFactor, &
+         & potAlphas, potCoeffs, currIteration, lastIteration, feedbackLevel, &
+         & relaxFactor, xcCode, converged, convgTest
+   use O_SetupElecStatHDF5, only: potAlphaOverlap_did, coreChargeDensity_did, &
+         & nonLocalNeutQPot_did, localNeutQPot_did, localNucQPot_did, &
+         & nonLocalNucQPot_did, nonLocalResidualQ_did, pot, potPot, potTypesPot
+   use O_ValeCharge, only: potRho, chargeDensityTrace, nucPotTrace, &
+         & kineticEnergyTrace
 
    ! Make sure that no funny variables are defined.
    implicit none
-
-   ! Define passed parameters
-   type(inputData) :: inDat
-
 
    ! Define passed dummy variables.
    real (kind=double) :: totalEnergy
@@ -136,7 +141,7 @@ subroutine makeSCFPot (totalEnergy,inDat)
 
    ! Read the electrostatic potential overlap matrix
    call h5dread_f (potAlphaOverlap_did,H5T_NATIVE_DOUBLE,&
-         & potAlphaOverlap(:,:),potDims2,hdferr)
+         & potAlphaOverlap(:,:),potPot,hdferr)
    if (hdferr /= 0) stop 'Failed to read pot alpha overlap'
 
    ! Copy the upper triangle of the potAlphaOverlap matrix to prevent its
@@ -165,18 +170,18 @@ subroutine makeSCFPot (totalEnergy,inDat)
    ! Calculate the difference between the electron number and the fitted charge
    !   determined above.  This represents the difficulty of the Gaussians to
    !   accurately represent the true charge density.
-   electronDiff = inDat%numElectrons - fittedCharge
+   electronDiff = numElectrons - fittedCharge
 
    ! Record the electron fitting error.
    write (20,fmt="(a37,f12.8,a8,i12)") &
          & 'Unconstrained Vale Electron Fit Error',&
-         & electronDiff, ' Out Of ',inDat%numElectrons
+         & electronDiff, ' Out Of ',numElectrons
    call flush (20)
 
    ! Correct and store the valence charge coefficients in generalRho(:,2).
    !   This would overwrite the spin difference for spin polarized
    !   calculations, but that was already saved in generalRho(:,8).
-!generalRho(:potDim,2) = generalRho(:potDim,1)*inDat%numElectrons/fittedCharge
+!generalRho(:potDim,2) = generalRho(:potDim,1)*numElectrons/fittedCharge
    generalRho(:potDim,2) = generalRho(:potDim,1) + generalRho(:potDim,2) * &
          & electronDiff / sum(intgConsts(:potDim)*generalRho(:potDim,2))
 
@@ -202,7 +207,7 @@ subroutine makeSCFPot (totalEnergy,inDat)
    ! Read the core charge density into generalRho 3.
    if (coreDim /= 0) then
       call h5dread_f (coreChargeDensity_did,H5T_NATIVE_DOUBLE,&
-            & generalRho(:potDim,3),potDims1,hdferr)
+            & generalRho(:potDim,3),pot,hdferr)
       if (hdferr /= 0) stop 'Failed to read core charge density'
    else
       generalRho(:potDim,3) = 0.0_double
@@ -278,7 +283,7 @@ subroutine makeSCFPot (totalEnergy,inDat)
 
    ! Read the non-local real-space electrostatic operator.
    call h5dread_f (nonLocalNeutQPot_did,H5T_NATIVE_DOUBLE,&
-         & nonLocalNeutQPot(:,:),potDims2,hdferr)
+         & nonLocalNeutQPot(:,:),potPot,hdferr)
    if (hdferr /= 0) stop 'Failed to read non local neut q pot'
 
 
@@ -295,7 +300,7 @@ subroutine makeSCFPot (totalEnergy,inDat)
 
    ! Read the local real-space electrostatic operator.
    call h5dread_f (localNeutQPot_did,H5T_NATIVE_DOUBLE,&
-         & localNeutQPot(:,:),potDims2,hdferr)
+         & localNeutQPot(:,:),potPot,hdferr)
    if (hdferr /= 0) stop 'Failed to read local neut q pot'
 
 
@@ -311,14 +316,14 @@ subroutine makeSCFPot (totalEnergy,inDat)
 
    ! Read in the local nuclear integral vector
    call h5dread_f (localNucQPot_did,H5T_NATIVE_DOUBLE,&
-         & elecStatPot(:,5),potDims1,hdferr)
+         & elecStatPot(:,5),pot,hdferr)
    if (hdferr /= 0) stop 'Failed to read local nuc q pot'
 
 
 
    ! Read in the non local nuclear integral vector (gaussian screeneed)
    call h5dread_f (nonLocalNucQPot_did,H5T_NATIVE_DOUBLE,&
-         & elecStatPot(:,4),potDims1,hdferr)
+         & elecStatPot(:,4),pot,hdferr)
    if (hdferr /= 0) stop 'Failed to read non local nuc q pot'
 
 
@@ -476,7 +481,7 @@ subroutine makeSCFPot (totalEnergy,inDat)
       ! 151 = von Barth-Hedin
       ! 152 = unknown
 
-      if (XC_CODE == 100) then
+      if (xcCode == 100) then
             do j = 1, numRayPoints
                ! These functions have been converted to subroutines because the
                !   return value of the second array index value was 0.0 on the
@@ -489,7 +494,7 @@ subroutine makeSCFPot (totalEnergy,inDat)
                         & exchRhoOp(:potDim,j)
                enddo
             enddo
-      elseif (XC_CODE == 101) then
+      elseif (xcCode == 101) then
             do j = 1, numRayPoints
                call ceperleyAlderXC(exchCorrRho(1,j),currentExchCorrPot(1:2))
                call ceperleyAlderXCEnergy(exchCorrRho(2,j),&
@@ -500,7 +505,7 @@ subroutine makeSCFPot (totalEnergy,inDat)
                         & exchRhoOp(:potDim,j)
                enddo
             enddo
-      elseif (XC_CODE == 102) then
+      elseif (xcCode == 102) then
             do j = 1, numRayPoints
                call hedinLundqvistXC(exchCorrRho(1,j),&
                      & currentExchCorrPot(1:2))
@@ -512,7 +517,7 @@ subroutine makeSCFPot (totalEnergy,inDat)
                         & exchRhoOp(:potDim,j)
                enddo
             enddo
-      elseif (XC_CODE == 150) then
+      elseif (xcCode == 150) then
             ! Ceperley and Alder Exchange-Correlation (LSDA)
             do j = 1, numRayPoints
                call ceperleyAlderSP(exchCorrRho(1,j),exchCorrRho(3,j),&
@@ -524,7 +529,7 @@ subroutine makeSCFPot (totalEnergy,inDat)
                enddo
             enddo
 
-      elseif (XC_CODE == 151) then
+      elseif (xcCode == 151) then
             ! von Barth and Hedin Exchange-Correlation (LSDA)
             do j = 1, numRayPoints
                call vonBarthHedin(exchCorrRho(1,j),exchCorrRho(3,j),&
@@ -535,7 +540,7 @@ subroutine makeSCFPot (totalEnergy,inDat)
                         & exchRhoOp(:potDim,j)
                enddo
             enddo
-      elseif (XC_CODE == 152) then
+      elseif (xcCode == 152) then
             ! Old SPmain.for Exchange Correlation (LSDA) (Should be like the
             !   von barth and Hedin above.)
             do j = 1, numRayPoints
@@ -555,7 +560,7 @@ subroutine makeSCFPot (totalEnergy,inDat)
 
    ! Read the exchange correlation overlap.
    call h5dread_f (exchCorrOverlap_did,H5T_NATIVE_DOUBLE,&
-         & exchCorrOverlap(:,:),potDims2,hdferr)
+         & exchCorrOverlap(:,:),potPot,hdferr)
    if (hdferr /= 0) stop 'Failed to read exch corr overlap'
 
 
@@ -971,7 +976,7 @@ subroutine ceperleyAlderXC (rho,answer)
 
    ! Include kind definitions
    use O_Kinds
-   use O_Constants
+   use O_Constants, only: pi, smallThresh
 
    implicit none
 
@@ -1043,7 +1048,7 @@ subroutine ceperleyAlderXCEnergy (rho,answer)
 
    ! Include kind definitions
    use O_Kinds
-   use O_Constants
+   use O_Constants, only: pi, smallThresh
 
    implicit none
 
@@ -1106,7 +1111,7 @@ subroutine hedinLundqvistXC (rho,answer)
 
    ! Include kind definitions and the HL constants.
    use O_Kinds
-   use O_Constants
+   use O_Constants, only: pi, smallThresh
 
    implicit none
 
@@ -1156,7 +1161,7 @@ subroutine hedinLundqvistXCEnergy (rho,answer)
 
    ! Include kind definitions and the HL constants.
    use O_Kinds
-   use O_Constants
+   use O_Constants, only: pi, smallThresh
 
    implicit none
 
@@ -1198,7 +1203,7 @@ subroutine vonBarthHedin (totalRho,spinDiffRho,coreRho,answer)
 
    ! Include kind definitions and the spin polarized vBH constants
    use O_Kinds
-   use O_Constants
+   use O_Constants, only: pi
 
    implicit none
 
@@ -1507,7 +1512,7 @@ subroutine ceperleyAlderSP (totalRho,spinDiffRho,coreRho,answer)
 
    ! Include kind definitions and the spin polarized vBH constants
    use O_Kinds
-   use O_Constants
+   use O_Constants, only: pi, smallThresh
 
    implicit none
 
@@ -1676,7 +1681,6 @@ subroutine oldEXCORR(rh,sold,rhc,answer)
 
    ! Include kind definitions and the spin polarized vBH constants
    use O_Kinds
-   use O_Constants
 
 !   implicit none
    implicit real*8(a-h,o-z)

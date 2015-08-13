@@ -167,7 +167,7 @@ sub parseCLP
 
    #Record the command line used.
    open (COMMANDLINE,">>$commandLine") ||
-      die "Can not open $commandLine for writing.\n";
+      die "Cannot open $commandLine for writing.\n";
    print COMMANDLINE "insert3cbo ";
    foreach $argument (0..$#ARGV)
       {print COMMANDLINE "$ARGV[$argument] ";}

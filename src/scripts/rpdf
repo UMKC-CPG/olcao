@@ -243,7 +243,7 @@ sub printRPDF
    my $point;
    my $index;
 
-   open (RPDF,">$plotFile") || die "Can not open $plotFile for writing\n";
+   open (RPDF,">$plotFile") || die "Cannot open $plotFile for writing\n";
 
    foreach $point (1..1000)
    {

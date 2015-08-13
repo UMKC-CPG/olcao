@@ -2,7 +2,7 @@ module O_PotSites
 
    ! Import necessary modules.
    use O_Kinds
-   use O_Constants
+   use O_Constants, only: dim3
 
    ! Make sure that no funny variables are defined.
    implicit none
@@ -40,7 +40,6 @@ module O_PotSites
 subroutine readPotSites(readUnit, writeUnit)
 
    ! Import necessary modules.
-   use O_Kinds
    use O_ReadDataSubs
 
    ! Make sure that no funny variables are defined.
@@ -88,9 +87,6 @@ end subroutine readPotSites
 
 subroutine getPotSiteImplicitInfo
 
-   ! Import necessary modules.
-   use O_Kinds
-
    ! Make sure that no funny variables are defined.
    implicit none
 
@@ -120,9 +116,6 @@ end subroutine getPotSiteImplicitInfo
 
 
 subroutine getMultiplicities (multiplicities)
-
-   ! Import necessary modules.
-   use O_Kinds
 
    ! Make sure that no funny variables are defined.
    implicit none

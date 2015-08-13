@@ -1,1 +1,0 @@
-SUBDIRS = complex real auxiliary

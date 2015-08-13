@@ -122,7 +122,7 @@ sub readBatchList
    my @values;
 
    # Open the batch submission list.
-   open (LIST,"<$batchFile") || die "Can not open $batchFile for reading.\n";
+   open (LIST,"<$batchFile") || die "Cannot open $batchFile for reading.\n";
 
    # Read the whole list of directories.
    @batchList = <LIST>;

@@ -312,7 +312,7 @@ sub formAndPrintSpectra
    my $alpha;
    my $sigma;
 
-   open (OUTPUT,">$outFile") || die "Can not open $outFile for writing.\n";
+   open (OUTPUT,">$outFile") || die "Cannot open $outFile for writing.\n";
 
    # Compute the necessary alpha for the gaussian A*exp(-alpha*x^2) to have the
    #   requested FWHM.  We use alpha = 1/(2*sigma^2) and

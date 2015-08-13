@@ -556,7 +556,7 @@ sub parseCLP
 
    #Record the command line used.
    open (COMMANDLINE,">>$commandLine") ||
-      die "Can not open $commandLine for writing.\n";
+      die "Cannot open $commandLine for writing.\n";
    print COMMANDLINE "makeBOND ";
    foreach $argument (0..$#ARGV)
       {print COMMANDLINE "$ARGV[$argument] ";}
@@ -578,7 +578,7 @@ sub readData
    my $j;
 
    # Open the raw data file.
-   open (DATA,"<$dataFile") || die "Can not open $dataFile for writing.\n";
+   open (DATA,"<$dataFile") || die "Cannot open $dataFile for writing.\n";
 
    # Initialize the counter for the total number of bonds.
    $numSystemBonds = 0;
@@ -820,7 +820,7 @@ sub readControlFiles
       $numBLLimits=0;
 
       open (CONTROL,"<$bondControlFile") ||
-         die "Can not open $bondControlFile for reading.\n";
+         die "Cannot open $bondControlFile for reading.\n";
       while ($line = <CONTROL>)
       {
          chomp($line);
@@ -927,7 +927,7 @@ sub getSystemStructure
    my $i;
 
    open (POS,"<$posFile") ||
-      die "Can not open $posFile for reading.\n";  # e.g. structure.dat
+      die "Cannot open $posFile for reading.\n";  # e.g. structure.dat
    while ($line = <POS>)
    {
       if ($line =~ /CELL_VECTORS/)
@@ -1055,7 +1055,7 @@ sub printScatterData
    {
       # Open the file for this tag.
       open (ATOM,">ATOM_$uniqueAtomTag[$i].dat") ||
-         die "Can not open ATOM_$uniqueAtomTag[$i].dat for writing.\n";
+         die "Cannot open ATOM_$uniqueAtomTag[$i].dat for writing.\n";
 
       # Print the header for this file.
       print ATOM "atom  QStar MaxBL MinBL AVGBL MaxBO MinBO AVGBO     a     b     c\n";
@@ -1080,7 +1080,7 @@ sub printScatterData
 
       # Open the file for this tag.
       open (BOND,">$uniqueBondTag[$i].dat") ||
-         die "Can not open $uniqueBondTag[$i].dat for writing.\n";
+         die "Cannot open $uniqueBondTag[$i].dat for writing.\n";
 
       # Print the header for this file.
       print BOND "BO     BL(au)    #1    #2    a      b      c\n";
@@ -1192,7 +1192,7 @@ ENDATOMS
 
       # Open the openDX file to be made.
       open (DX,">$uniqueTagDX.dx") ||
-         die "Can not open $uniqueTagDX.dx for writing.\n";
+         die "Cannot open $uniqueTagDX.dx for writing.\n";
 
       # Now we need to print the qstar data starting with atom positions.  Note
       #   that the loop only goes to numAtomsDX because we only want to show
@@ -1682,7 +1682,7 @@ sub printBondProfile
 
    # Print out the results.
    open (BP,">$bondProfileFile") ||
-      die "Can not open $bondProfileFile for writing.\n";
+      die "Cannot open $bondProfileFile for writing.\n";
    $profileAxis = $profileAxis . "-axis";
    print BP "$profileAxis  bondProfile  bondOrder  numBonds\n";
    for ($i=1;$i<=$numPoints-1;$i++)

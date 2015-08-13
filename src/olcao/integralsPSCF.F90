@@ -37,18 +37,19 @@ subroutine intgAndOrMom(doINTG,doMOME)
 
    ! Import necessary modules.
    use O_Kinds
-   use O_Constants
    use O_TimeStamps
-   use O_CommandLine
-   use O_Potential
-   use O_Basis
-   use O_Lattice
-   use O_PotTypes
-   use O_PotSites
-   use O_AtomicSites
-   use O_AtomicTypes
-   use O_GaussianIntegrals
-   use O_PSCFIntgHDF5
+   use O_Constants,    only: dim3
+   use O_PotTypes,     only: potTypes
+   use O_AtomicSites,  only: numAtomSites
+   use O_Potential,    only: spin, potCoeffs
+   use O_PSCFIntgHDF5, only: targetChunkSize
+   use O_Basis,        only: initializeAtomSite
+   use O_PotSites,     only: numPotSites, potSites
+   use O_AtomicTypes,  only: maxNumAtomAlphas, maxNumStates
+   use O_GaussianIntegrals, only: overlapInteg, KEInteg, nucPotInteg, &
+         & threeCentInteg, MOMF
+   use O_Lattice, only: logBasisFnThresh, numCellsReal, cellSizesReal, &
+         & cellDimsReal, findLatticeVector
    use HDF5
 
    ! Make sure that there are not accidental variable declarations.
@@ -1008,16 +1009,16 @@ end subroutine intgAndOrMom
 subroutine initAtomHDF (i,doINTG,doMOME)
 
    ! Import the necessary modules
-   use O_Kinds
-   use O_Constants
-   use O_CommandLine
-   use O_Basis
-   use O_Lattice
-   use O_AtomicSites
-   use O_AtomicTypes
-   use O_PSCFIntgHDF5
    use HDF5
-   use O_Potential ! For spin
+   use O_Kinds
+   use O_Constants,   only: dim3
+   use O_Potential,   only: spin
+   use O_Basis,       only: initializeAtomSite
+   use O_AtomicSites, only: numAtomSites
+   use O_AtomicTypes, only: maxNumAtomAlphas, maxNumStates
+   use O_Lattice,     only: logBasisFnThresh, numCellsReal, cellSizesReal, &
+         & cellDimsReal, findLatticeVector
+   use O_PSCFIntgHDF5 ! Basically it needs almost everything from this so...
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
@@ -1488,11 +1489,10 @@ end subroutine initAtomHDF
 subroutine closeAtomHDF (doINTG,doMOME)
 
    ! Import the necessary modules
-   use O_Kinds
-   use O_CommandLine
-   use O_PSCFIntgHDF5
    use HDF5
-   use O_Potential ! For spin
+   use O_Kinds
+   use O_Potential, only: spin
+   use O_PSCFIntgHDF5 ! Basically it needs almost everything from here so...
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
@@ -1591,11 +1591,10 @@ end subroutine closeAtomHDF
 subroutine saveCurrentAccumulation(doINTG,doMOME)
 
    ! Import the necessary modules
-   use O_Kinds
-   use O_CommandLine
-   use O_PSCFIntgHDF5
    use HDF5
-   use O_Potential ! For spin
+   use O_Kinds
+   use O_Potential, only: spin
+   use O_PSCFIntgHDF5 ! It needs almost everything from here so...
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
@@ -1715,21 +1714,21 @@ subroutine getIntgResults (valeValeGamma,coreValeOLGamma,&
 #endif
 
    ! Import the necessary modules
-   use O_Kinds
-   use O_Constants
-
-   ! Import the necessary HDF5 modules
    use HDF5
-   use O_PSCFIntgHDF5
-
-   ! Import the necessary data modules
-   use O_AtomicSites
-   use O_AtomicTypes
-   use O_Lattice
+   use O_Kinds
+   use O_Constants, only: dim3
+   use O_PSCFIntgHDF5 ! It needs almost everything from here so...
+   use O_AtomicSites, only: coreDim, valeDim, numAtomSites, atomSites
+   use O_AtomicTypes, only: maxNumStates, atomTypes
+   use O_Lattice, only: findLatticeVector
    use O_KPoints
    use O_Orthogonalization
-   use O_IntgSaving
-
+#ifndef GAMMA
+   use O_IntgSaving, only: kPointLatticeOriginShift, saveCurrentPair, &
+         & applyPhaseFactors
+#else
+   use O_IntgSaving, only: saveCurrentPairGamma, applyPhaseFactorsGamma
+#endif
 
    ! Make sure that there are not accidental variable declarations.
    implicit none

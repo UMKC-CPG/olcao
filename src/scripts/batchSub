@@ -1,22 +1,27 @@
 #!/usr/bin/env perl
+sub printHelp
+{
+   print <<ENDHELP;
 ###############################################################################
 # PROGRAM:  batchSub
 # PURPOSE:  This program will submit a requested sequence of jobs.
 #
-# USAGE:    batchSub [-n $numJobs] [-b $batchFile] [-t $targetTag] | -help
+# USAGE:    batchSub [-n \$numJobs] [-b \$batchFile] [-t \$targetTag] | -help
 #
 # The -n option specifies the number of jobs from the batch list to be
 #   submitted.  If not given, then the default value of 5 is used.
 # The -b option specifies the name of the batch list file to use.  If not given
 #   then the default value of "batchList" is used.
 # The -t option specifies which tag number to apply the next series of
-#   submissions too.  (e.g. If the value given is a 0, then the next $numJobs
+#   submissions too.  (e.g. If the value given is a 0, then the next \$numJobs
 #   jobs that have the ID tag of "0" will be submitted and the ID tag for those
-#   jobs will be incremented.)  If not given then the default value of 0 is
+#   jobs will be incremented.) If not given, then the default value of 0 is
 #   used.
 # The -help option prints this friendly message.
 ###############################################################################
-
+ENDHELP
+   exit;
+}
 
 ##################################################
 # BEGIN EXECUTION ################################
@@ -103,31 +108,6 @@ sub parseCommandLine
 }
 
 
-sub printHelp
-{
-   print <<ENDHELP;
-###############################################################################
-# PROGRAM:  batchSub
-# PURPOSE:  This program will submit a requested sequence of jobs.
-#
-# USAGE:    batchSub [-n \$numJobs] [-b \$batchFile] [-t \$targetTag] | -help
-#
-# The -n option specifies the number of jobs from the batch list to be
-#   submitted.  If not given, then the default value of 1 is used.
-# The -b option specifies the name of the batch list file to use.  If not given
-#   then the default value of "batchList" is used.
-# The -t option specifies which tag number to apply the next series of
-#   submissions too.  (e.g. If the value given is a 0, then the next \$numJobs
-#   jobs that have the ID tag of "0" will be submitted and the ID tag for those
-#   jobs will be incremented.)
-# The -help option prints this friendly message.
-###############################################################################
-ENDHELP
-   exit;
-}
-
-
-
 sub readBatchList
 {
    # Define local variables.
@@ -135,7 +115,7 @@ sub readBatchList
    my @values;
 
    # Open the batch submission list.
-   open (LIST,"<$batchFile") || die "Can not open $batchFile for reading.\n";
+   open (LIST,"<$batchFile") || die "Cannot open $batchFile for reading.\n";
 
    # Read the whole list of directories.
    @batchList = <LIST>;
@@ -193,6 +173,8 @@ sub submit
       {system ("bsub < $dirName[$currJob]/lsf");}
    elsif (-e "$dirName[$currJob]/pbs")
       {system ("qsub $dirName[$currJob]/pbs");}
+   elsif (-e "$dirName[$currJob]/slurm")
+      {system ("sbatch $dirName[$currJob]/slurm");}
    elsif (-e "./$dirName[$currJob]/submit")
    {
       chdir ("$dirName[$currJob]");
@@ -218,7 +200,7 @@ sub printBatchList
 #   my $outFile = "testList";
 
    # Open the file for writing.
-   open (LIST,">$batchFile") || die "Can not open $batchFile for writing.\n";
+   open (LIST,">$batchFile") || die "Cannot open $batchFile for writing.\n";
 
    # Loop through all the directory names and print then and their new tag ID
    #   numbers.

@@ -69,7 +69,7 @@ sub initElementData
 
    # Open the element data file.
    open (EDATA,"<$OLCAO_DATA/elements.dat") ||
-         die "Can not open elements.dat, aborting.\n";
+         die "Cannot open elements.dat, aborting.\n";
 
    # Read the number of elements.
    <EDATA>; # Read past the header.

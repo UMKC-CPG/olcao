@@ -1,4 +1,7 @@
 #!/usr/bin/env perl
+sub printhelp
+{
+   print <<ENDHELP;
 #plotdata script v0.3  Paul Rulis
 #Last update Jan 03, 2007
 ######################################################################
@@ -10,13 +13,13 @@
 #USAGE:  plotgraph [-x n] [-y m1 [m2..m3] ... ] [-xrange xmin xmax]
 #		   [-yrange ymin ymax] [-c] [-total] [-noef] [-eos] [-sybd]
 #		   [-li] [-iter] [-pdos] [-title "TITLE"] [-mxtics x]
-#		   [-mytics y] [-points] [-shift $shift] $filename1 [$filename2]
+#		   [-mytics y] [-points] [-shift \$shift] [-log] \$filename1 [\$filename2]
 #OR:     plotgraph -help
 #
-#$filename1 is the name of the file in the current directory to be
-#	plotted.  If $filename2 is given then it is assumed you are
-#	plotting a spin-polarized PDOS.  In this case $filename1 is
-#	taken to be the UP-SPIN and $filename2 is the DOWN-SPIN.  They
+#\$filename1 is the name of the file in the current directory to be
+#	plotted.  If \$filename2 is given then it is assumed you are
+#	plotting a spin-polarized PDOS.  In this case \$filename1 is
+#	taken to be the UP-SPIN and \$filename2 is the DOWN-SPIN.  They
 #	will be plotted on the top/bottom respectivly.  Whatever
 #	settings you provide in terms of range and data columns to
 #	plot will be applied to both files.
@@ -60,7 +63,7 @@
 #	They must be given in that order.  If no filenames are given
 #	then the following files are assumed:  eos.plot eos.points.
 #The -title switch followed by a quoted string will be printed as a graph
-#       title in place of the usual "Printed by $USER"
+#       title in place of the usual "Printed by \$USER"
 #The -c switch will prevent the command used to call plotgraph from being
 #       printed as a part of the title.
 #The -mxtics switch followed by an integer number will produce minor tic
@@ -73,6 +76,7 @@
 #       point instead of connecting the data points with lines.
 #The -shift option takes one argument which is the amount to shift each line
 #       by in a multi-line plot.
+#The -log option will turn on a log plot for the y axis.
 #If the "-help" switch is given then the program will print some
 #	(hopefully) useful information about how to use it and
 #	then exit.
@@ -86,6 +90,9 @@
 #	Maybe in the future it will also accept the data to be stored
 #	in a subdirectory such as DOS for pdos plots.
 #
+ENDHELP
+   exit;
+}
 #
 ######################################################################
 #
@@ -120,6 +127,7 @@ $XRANGE=0;  #This RANGE variable is set to true (1) as soon as it is defined.
 $YRANGE=0;  #This RANGE variable is set to true (1) as soon as it is defined.
 $shiftSet=0;
 $shift=0;
+$log=0;
 $filename1="";
 $filename2="";
 $noEf=0;  #The default setting is to plot a fermi energy line.
@@ -229,6 +237,8 @@ while ( $ARGV[$number] ne "")
       $number++;
       $shiftSet=1;
    }
+   elsif ($ARGV[$number] eq "-log")
+      {$log=1;}
    else
    {
       if ($number < $#ARGV-2)
@@ -520,6 +530,8 @@ if("$TERM" eq "xterm")
 else
    {print OUT "set term kc_tek40xx\n";}
 print OUT "set timestamp \"%d/%m/%y %H:%M\" offset 80,-1 font \"Helvetica\"\n";
+if ($log == 1)
+   {print OUT "set logscale y\n";}
 print OUT "set tics out\n";
 print OUT "set mxtics $minorXTics\n";
 print OUT "set mytics $minorYTics\n";
@@ -644,93 +656,6 @@ print OUT "pause -1\n";
 system 'gnuplot', 'plotscript';
 if (-e "iteration_plot_data")
    {exec "rm -f iteration_plot_data";}
-
-######################################################################
-#
-#Step Zero(a):  This is the print help subroutine.
-#
-######################################################################
-#All this does is print out usage information and a helpful hint about
-#	each switch.
-sub printhelp
-{
-print <<ENDHELP;
-#\$filename1 is the name of the file in the current directory to be
-#	plotted.  If \$filename2 is given then it is assumed you are
-#	plotting a spin-polarized PDOS.  In this case \$filename1 is
-#	taken to be the UP-SPIN and \$filename2 is the DOWN-SPIN.  They
-#	will be plotted on the top/bottom respectivly.  Whatever
-#	settings you provide in terms of range and data columns to
-#	plot will be applied to both files.
-#If the "-x" option is given then n is the column number to be used as
-#	the x-axis in the graph.  If the "-y" option is given then m
-#	is the column number to be used as the y-axis in the graph.
-#	You can optionally give an "m2" or an "m2..m3" which will cause
-#	the program to also plot these columns or range of columns.  It
-#	is assumed that the data is formatted in space seperated columns
-#	of data.  If nether "-x" or "-y" are given then it is assumed
-#	that the first column will be the x-axis and that the second
-#	column will be the y-axis.
-#The -xrange parameter is pretty self explanitory.  If provided it will
-#       override the default behavior for deciding the range of the x axis to
-#       plot.  In the case of pdos and localization index plots the default is
-#       -25 to 25.  In the case of EOS plots the default is the maximum and
-#       minimum x values in the eos file with some added breathing room.  The
-#       default behavior otherwise is to use gnuplot autoscaling.
-#The -yrange is also pretty self explanitory.
-#	If it isn't given then the data files will be searched for
-#	the highest y value and the y-range will be 10% greater than
-#	that.  The exception is if the -EOS option is given.  In that
-#	case the y range is computed from the 2nd input file.  The other
-#       exception is for sybd plots.  In that case the default is -20 to 20.
-#If the -total command is given then it assumed that you have also
-#	given a second filename.  This will cause the plot to be
-#	the sum of the Up/Down Spin plotted above the axis.  (This is
-#	as opposed to having the UP-SPIN plotted above the x-axis
-#	and the DOWN-SPIN plotted below the x-axis).  Maybe this
-#	option doesn't have to be here.  It seems to make it look
-#	a bit messier, but I havn't thought of a better way yet.
-#	This option is not yet implemented.
-#The plotting program will assume that you wish to have a vertical
-#	line at the 0 mark.  This represents the Fermi Energy.  If
-#	you give the -noEf switch, then this line will not be
-#	there.  This line will not be there for the -EOS plots too.
-#The -EOS command tells the script that you want to plot energy
-#	vs. volume.  This requires two filenames.  One contains
-#	the data points for the curve made by the eos program, and
-#	the other contains the data points given to the eos program.
-#	They must be given in that order.  If no filenames are given
-#	then the following files are assumed:  eos.plot eos.points.
-#The -title switch followed by a quoted string will be printed as a graph
-#       title in place of the usual "Printed by \$USER"
-#The -c switch will prevent the command used to call plotgraph from being
-#       printed as a part of the title.
-#The -mxtics switch followed by an integer number will produce minor tic
-#	marks on the x axis.  The number integer number is the number of
-#	divisions, NOT the number of tics.  The default value is 10.  To
-#	not have any minor tic marks just give a value of 1.
-#The -mytics behaves exactly the same as -mxtics except it applies to the
-#	y axis instead.
-#The -shift option takes one argument which is the amount to shift each line
-#       by in a multi-line plot.
-#If the "-help" switch is given then the program will print some
-#	(hopefully) useful information about how to use it and
-#	then exit.
-#
-#USAGE:  plotgraph [-x n] [-y m1 [m2..m3] ... ] [-xrange xmin xmax]
-#		   [-yrange ymin ymax] [-c] [-total] [-noef] [-eos] [-sybd]
-#		   [-li] [-iter] [-pdos] [-title "TITLE"] [-mxtics x]
-#		   [-mytics y] [-shift \$shift] \$filename1 [\$filename2]
-#USAGE:  plotgraph [-x n] [-y m1 [m2..m3] ... ] [-xrange xmin xmax]
-#		   [-yrange ymin ymax] [-c] [-total] [-noef] [-eos] [-sybd]
-#		   [-li] [-iter] [-pdos] [-title "TITLE"] [-mxtics x]
-#		   [-mytics y] [-points] [-shift $shift] [-style $lineStyle]
-#		   $filename1 [$filename2]
-#OR:     plotgraph -help
-#
-ENDHELP
-   exit;
-}
 
 ######################################################################
 #

@@ -36,7 +36,7 @@ module O_Potential
    ! Define variables for controlling convergence of the potential.
    integer :: feedbackLevel
    integer :: lastIteration
-   integer :: XC_CODE
+   integer :: xcCode
    integer :: currIteration
    integer :: converged
    real (kind=double) :: relaxFactor
@@ -58,8 +58,8 @@ subroutine initPotStructures
 
    ! Use necessary modules.
    use O_Kinds
-   use O_Constants
-   use O_PotTypes
+   use O_Constants, only: pi
+   use O_PotTypes, only: numPotTypes, potTypes
 
    implicit none
 
@@ -97,11 +97,6 @@ subroutine initPotStructures
          intgConsts(j + potTypes(i)%cumulAlphaSum) = &
                & real(potTypes(i)%multiplicity,double) * &
                & pi32 / (potTypes(i)%alphas(j))**(3.0_double/2.0_double)
-
-! This is totally rediculous.  I don't know why this call to flush has to be
-!   here, but on the SGI altix system, if it isn't here, then the job will not
-!   run correctly.  THIS SHOULD BE FIXED IN THE FUTURE.
-!call flush (20)
       enddo
    enddo
 
@@ -127,21 +122,20 @@ subroutine setPotControlParameters (fbL,lastIt,corrCode,rlxFact,cTest,&
    real (kind=double), dimension(:) :: typeSpinSplitTemp
 
    integer :: i
-   !integer :: n
    integer :: info
    integer :: numCodes
-   integer :: XC_CodeParam
+   integer :: xcCodeParam
    integer :: spinParam
    integer :: relParam
    integer :: GGAParam
    character(len=25) :: functionalName
    character(len=100) :: dataDirectory
-   character(len=100) :: XC_CodeDataFile
+   character(len=100) :: xcCodeDataFile
 
    ! Set control parameters read from input.
    feedbacklevel   = fbL
    lastIteration   = lastIt
-   XC_CODE         = corrCode
+   xcCode          = corrCode
    relaxFactor     = rlxFact
    convgTest       = cTest
 
@@ -156,9 +150,9 @@ subroutine setPotControlParameters (fbL,lastIt,corrCode,rlxFact,cTest,&
 
    ! open the xc_code.dat file
    call get_environment_variable("OLCAO_DATA", dataDirectory, info)
-   XC_CodeDataFile=trim(dataDirectory)//"/xc_code.dat"
+   xcCodeDataFile=trim(dataDirectory)//"/xc_code.dat"
 
-   open (unit=9, file=XC_CodeDataFile)
+   open (unit=9, file=xcCodeDataFile)
 
    ! Read past the header line and then get the total number of codes.
    read (9,*)
@@ -167,9 +161,9 @@ subroutine setPotControlParameters (fbL,lastIt,corrCode,rlxFact,cTest,&
    ! Read each line(functional type). Once the correct one is found use
    ! it to set "spin", "rel", "GGA".
    do i = 1, numCodes
-      read (9,*) functionalName, XC_CodeParam, spinParam, &
+      read (9,*) functionalName, xcCodeParam, spinParam, &
                                      & relParam, GGAParam
-      if (XC_CodeParam.eq.XC_CODE) then
+      if (xcCodeParam.eq.xcCode) then
          spin = spinParam
          rel = relParam
          GGA = GGAParam
@@ -182,8 +176,7 @@ subroutine initPotCoeffs
 
    ! Include the necessary modules
    use O_Kinds
-   use O_CommandLine
-   use O_PotTypes
+   use O_PotTypes, only: numPotTypes, potTypes
 
    ! Define local variables
    integer :: i,j,k ! Loop index variables

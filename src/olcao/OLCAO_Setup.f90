@@ -8,23 +8,27 @@ subroutine setupSCF
    use O_Kinds
 
    ! Import the necessary modules.
-   use O_SetupHDF5
-   use O_CommandLine
-   use O_Input
-   use O_Lattice
-   use O_KPoints
-   use O_ElectroStatics
-   use O_ExchangeCorrelation
-   use O_GaussianRelations
-   use O_IntegralsSCF
-   use O_Basis
-   use O_AtomicSites
-   use O_AtomicTypes
-   use O_PotSites
-   use O_PotTypes
-   use O_Potential
-   use O_CoreCharge
-   use O_TimeStamps
+   use O_SetupHDF5,   only: initSetupHDF5, closeSetupHDF5
+   use O_CommandLine, only: parseSetupCommandLine
+   use O_Input,       only: parseInput
+   use O_Lattice,     only: initializeLattice, initializeFindVec, cleanUpLattice
+   use O_KPoints,     only: numKPoints, computePhaseFactors, cleanUpKPoints
+   use O_Basis,       only: renormalizeBasis, cleanUpBasis
+   use O_ExchangeCorrelation, only: maxNumRayPoints, getECMeshParameters, &
+                                  & makeECMeshAndOverlap, cleanUpExchCorr
+   use O_ElectroStatics,      only: makeElectrostatics
+   use O_GaussianRelations,   only: makeAlphaDist, makeAlphaNucDist, &
+                                  & makeAlphaPotDist, cleanUpGaussRelations
+   use O_IntegralsSCF,        only: allocateIntegralsSCF, gaussOverlapOL, &
+                                  & gaussOverlapKE, gaussOverlapNP, &
+                                  & elecPotGaussOverlap, cleanUpIntegralsSCF
+   use O_AtomicSites, only: coreDim, valeDim, cleanUpAtomSites
+   use O_AtomicTypes, only: cleanUpRadialFns, cleanUpAtomTypes
+   use O_PotSites,    only: cleanUpPotSites
+   use O_PotTypes,    only: cleanUpPotTypes
+   use O_Potential,   only: cleanUpPotential
+   use O_CoreCharge,  only: makeCoreRho
+   use O_TimeStamps,  only: initOperationLabels
 
    ! Import the HDF5 module.
    use HDF5
@@ -34,9 +38,6 @@ subroutine setupSCF
 
    ! Make sure that there are no accidental variable declarations.
    implicit none
-
-   type(commandLineParameters) :: clp ! from O_CommandLine
-   type(inputData) :: inDat ! from O_Input
 
    ! Define global mpi parameters
 !   integer :: myWorldPid
@@ -68,11 +69,11 @@ subroutine setupSCF
    call initOperationLabels
 
    ! Parse the command line parameters
-   call parseSetupCommandLine(clp)
+   call parseSetupCommandLine
 
 
    ! Read in the input to initialize all the key data structure variables.
-   call parseInput(inDat,clp)
+   call parseInput
 
 
    ! Find specific computational parameters not EXPLICITLY given in the input
@@ -210,8 +211,8 @@ subroutine getImplicitInfo
 
    ! Import necessary modules.
    use O_ExchangeCorrelation
-   use O_AtomicSites
    use O_AtomicTypes
+   use O_AtomicSites
    use O_PotSites
    use O_PotTypes
    use O_Lattice

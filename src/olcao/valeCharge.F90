@@ -27,33 +27,35 @@ module O_ValeCharge
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    contains
 
-subroutine makeValenceRho(inDat)
+subroutine makeValenceRho
 
    ! Import the necessary modules.
    use O_Kinds
-   use O_Constants
    use O_TimeStamps
-   use O_SecularEquation
-   use O_CommandLine
-   use O_KPoints
-   use O_Input
-   use O_Populate
-   use O_Potential
-   use O_AtomicSites
-   use O_MatrixSubs
-   use O_MainEVectHDF5
-   use O_SetupIntegralsHDF5
+   use O_AtomicSites,     only: valeDim
+   use O_Input,           only: numStates
+   use O_KPoints,         only: numKPoints
+   use O_Constants,       only: smallThresh
+   use O_Potential,       only: spin, potDim, potCoeffs
+   use O_MainEVecHDF5,    only: valeStates, eigenVectors_did
+   use O_Populate,        only: electronPopulation, cleanUpPopulation
+   use O_SetupIntegralsHDF5, only: atomOverlap_did, atomKEOverlap_did, &
+         & atomNucOverlap_did, atomPotOverlap_did, atomDims
 #ifndef GAMMA
    use O_BLASZHER
+   use O_SecularEquation, only: valeVale, cleanUpSecularEqn, energyEigenValues
+   use O_MatrixSubs, only: readMatrix, readPackedMatrix, matrixElementMult, &
+         & packMatrix
 #else
    use O_BLASDSYR
+   use O_SecularEquation, only: valeValeGamma, cleanUpSecularEqn, &
+         & energyEigenValues
+   use O_MatrixSubs, only: readMatrixGamma, readPackedMatrix, &
+         & matrixElementMultGamma, packMatrixGamma
 #endif
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
-
-   ! Define passed parameters
-   type(inputData) :: inDat
 
    ! Define the local variables used in this subroutine.
    integer :: i,j,k ! Loop index variables
@@ -116,7 +118,7 @@ chargeDensityTrace(:) = 0.0_double
    ! Allocate space to hold the currentPopulation based on spin
    allocate (currentPopulation (spin))
    allocate (electronEnergy    (spin))
-   allocate (structuredElectronPopulation (inDat%numStates,numKPoints,spin))
+   allocate (structuredElectronPopulation (numStates,numKPoints,spin))
 
    ! Initialize variables from data modules.
    potRho(:,:)           = 0.0_double
@@ -136,7 +138,7 @@ chargeDensityTrace(:) = 0.0_double
    energyLevelCounter=0
    do i = 1, numKPoints
       do j = 1, spin
-         do k = 1, inDat%numStates
+         do k = 1, numStates
             energyLevelCounter = energyLevelCounter + 1
             structuredElectronPopulation (k,i,j) = &
                   & electronPopulation(energyLevelCounter)
@@ -158,7 +160,7 @@ chargeDensityTrace(:) = 0.0_double
 
          ! Skip any kpoints with a negligable contribution for each state.
          skipKP = 0
-         do j = 1, inDat%numStates
+         do j = 1, numStates
             if (sum(abs(structuredElectronPopulation(j,i,:)))>smallThresh) then
                skipKP = 1
                exit
@@ -176,14 +178,14 @@ chargeDensityTrace(:) = 0.0_double
          !   wave function to disk and so the valeVale *still* holds it from
          !   the diagonalization call.  Therefore we are stuck using the same
          !   name even in the >1 kpoint case.)
-         allocate (tempRealValeVale(valeDim,inDat%numStates))
-         allocate (tempImagValeVale(valeDim,inDat%numStates))
+         allocate (tempRealValeVale(valeDim,numStates))
+         allocate (tempImagValeVale(valeDim,numStates))
          do j = 1, spin
             call readMatrix (eigenVectors_did(:,i,j),&
-                  & valeVale(:,:inDat%numStates,1,j),&
-                  & tempRealValeVale(:,:inDat%numStates),&
-                  & tempImagValeVale(:,:inDat%numStates),&
-                  & valeStates,valeDim,inDat%numStates)
+                  & valeVale(:,:numStates,1,j),&
+                  & tempRealValeVale(:,:numStates),&
+                  & tempImagValeVale(:,:numStates),&
+                  & valeStates,valeDim,numStates)
          enddo
          deallocate (tempRealValeVale)
          deallocate (tempImagValeVale)
@@ -201,7 +203,7 @@ chargeDensityTrace(:) = 0.0_double
 
       ! Accumulate the valeValeRho matrix upper triangle and electron energy.
 #ifndef GAMMA
-      do j = 1, inDat%numStates
+      do j = 1, numStates
          currentPopulation(:) = structuredElectronPopulation(j,i,:)
 
          if (sum(abs(currentPopulation(:))) < smallThresh) cycle
@@ -223,7 +225,7 @@ chargeDensityTrace(:) = 0.0_double
                & valeDim)
       enddo
 #else
-      do j = 1, inDat%numStates
+      do j = 1, numStates
          currentPopulation(:) = structuredElectronPopulation(j,i,:)
          if (sum(abs(currentPopulation(:))) < smallThresh) cycle
 

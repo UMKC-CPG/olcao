@@ -37,9 +37,9 @@ subroutine initSetupHDF5 (maxNumRayPoints)
    use HDF5
 
    ! Use the subsection object modules for setup.
-   use O_SetupIntegralsHDF5
-   use O_SetupExchCorrHDF5
-   use O_SetupElecStatHDF5
+   use O_SetupIntegralsHDF5, only: initSetupIntegralHDF5
+   use O_SetupElecStatHDF5,  only: initSetupElecStatHDF5
+   use O_SetupExchCorrHDF5,  only: initSetupExchCorrHDF5
 
    ! Make sure that no funny variables are defined.
    implicit none
@@ -94,9 +94,9 @@ subroutine accessSetupHDF5
    use HDF5
 
    ! Use the subsection object modules for setup.
-   use O_SetupIntegralsHDF5
-   use O_SetupExchCorrHDF5
-   use O_SetupElecStatHDF5
+   use O_SetupIntegralsHDF5, only: accessSetupIntegralHDF5
+   use O_SetupExchCorrHDF5, only: accessSetupExchCorrHDF5
+   use O_SetupElecStatHDF5, only: accessSetupElecStatHDF5
 
    ! Make sure that no funny variables are defined.
    implicit none
@@ -135,9 +135,9 @@ subroutine closeSetupHDF5
    use HDF5
 
    ! Use the subsection object modules for setup.
-   use O_SetupIntegralsHDF5
-   use O_SetupExchCorrHDF5
-   use O_SetupElecStatHDF5
+   use O_SetupIntegralsHDF5, only: closeSetupIntegralHDF5
+   use O_SetupExchCorrHDF5,  only: closeSetupExchCorrHDF5
+   use O_SetupElecStatHDF5,  only: closeSetupElecStatHDF5
 
    ! Make sure that no funny variables are defined.
    implicit none

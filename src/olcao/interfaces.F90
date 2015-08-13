@@ -74,7 +74,7 @@ subroutine solveZHEGV(N,resultDim,A,B,eigenValues)
 
    ! Use necessary modules.
    use O_Kinds
-   use O_LAPACKParameters
+   use O_LAPACKParameters, only: blockSize
 
    ! Make sure no funny variables are defined.
    implicit none
@@ -154,7 +154,7 @@ subroutine solveDSYGV(valeDim,numStates,valeValeGamma,valeValeOLGamma,&
 
    ! Use necessary modules.
    use O_Kinds
-   use O_LAPACKParameters
+   use O_LAPACKParameters, only: blockSize
 
    ! Make sure no funny variables are defined.
    implicit none
@@ -237,7 +237,6 @@ subroutine solveDPOSVX (N, NRHS, A, LD, B)
 
    ! Use necessary modules.
    use O_Kinds
-   use O_LAPACKParameters
 
    ! Make sure no funny variables are defined.
    implicit none

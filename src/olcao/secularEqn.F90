@@ -33,23 +33,23 @@ module O_SecularEquation
 subroutine secularEqnAllKP(spinDirection, numStates)
 
    ! Import necessary modules.
-   use O_Kinds
-   use O_KPoints
-   use O_Input
-   use O_Potential
-   use O_AtomicSites
-   use O_TimeStamps
-   use O_MatrixSubs
-   use O_CommandLine
-   use O_SetupIntegralsHDF5
-   use O_MainHDF5
-   use O_MainEValHDF5
-   use O_MainEVectHDF5
    use HDF5
+   use O_Kinds
+   use O_TimeStamps
+   use O_KPoints, only: numKPoints
+   use O_Potential, only: spin, potDim, potCoeffs
+   use O_AtomicSites, only: valeDim
+   use O_MainEValHDF5, only: eigenValues_did, states
+   use O_MainEVecHDF5, only: eigenVectors_did, valeStates
+   use O_SetupIntegralsHDF5, only: atomDims, atomOverlap_did, &
+         & atomKEOverlap_did, atomNucOverlap_did, atomPotOverlap_did
 #ifndef GAMMA
    use O_LAPACKZHEGV
+   use O_MatrixSubs, only: readPackedMatrix, readPackedMatrixAccum, unpackMatrix
 #else
    use O_LAPACKDSYGV
+   use O_MatrixSubs, only: readPackedMatrix, readPackedMatrixAccum, &
+         & unpackMatrixGamma
 #endif
 
    ! Make sure that no funny variables are defined.
@@ -205,16 +205,12 @@ end subroutine secularEqnAllKP
 subroutine secularEqnOneKP (spinDirection,choiceKP,numStates,doSYBD)
 
    ! Import necessary modules.
-   use O_Kinds
-   use O_Input
-   use O_KPoints
-   use O_Potential
-   use O_AtomicSites
-   use O_TimeStamps
-   use O_MatrixSubs
-   use O_CommandLine
-   use O_PSCFBandHDF5
    use HDF5
+   use O_Kinds
+   use O_TimeStamps
+   use O_AtomicSites, only: valeDim
+   use O_PSCFBandHDF5, only: valeStatesBand, statesBand, eigenVectorsBand_did, &
+         & eigenValuesBand_did
 #ifndef GAMMA
    use O_LAPACKZHEGV
 #else
@@ -275,14 +271,11 @@ end subroutine secularEqnOneKP
 
 subroutine shiftEnergyEigenValues(energyShift,numStates)
 
-   ! Use necessary modules.
-   use O_Input
-
    ! Make sure that no funny variables are defined.
    implicit none
 
    ! define vriables passed to this subroutine
-   integer :: numStates
+   integer, intent (in) :: numStates
 
    ! Define passed dummy parameters.
    real (kind=double) :: energyShift
@@ -312,13 +305,11 @@ end subroutine shiftEnergyEigenValues
 subroutine readEnergyEigenValuesBand(numStates)
 
    ! Use necessary modules
-   use O_Kinds
-   use O_Input
-   use O_CommandLine
-   use O_KPoints
-   use O_PSCFBandHDF5
    use HDF5
-   use O_Potential
+   use O_Kinds
+   use O_KPoints, only: numKPoints
+   use O_Potential, only: spin
+   use O_PSCFBandHDF5, only: statesBand, eigenValuesBand_did
 
    ! Make sure that no funny variables are defined.
    implicit none
@@ -357,13 +348,11 @@ end subroutine readEnergyEigenValuesBand
 subroutine appendExcitedEnergyEigenValuesBand (firstStateIndex,numStates)
 
    ! Use necessary modules
-   use O_Kinds
-   use O_Input
-   use O_CommandLine
-   use O_KPoints
-   use O_PSCFBandHDF5
    use HDF5
-   use O_Potential
+   use O_Kinds
+   use O_KPoints, only: numKPoints
+   use O_Potential, only: spin
+   use O_PSCFBandHDF5, only: statesBand, eigenValuesBand2_did
 
    ! Make sure that no funny variables are defined.
    implicit none
@@ -408,9 +397,8 @@ end subroutine appendExcitedEnergyEigenValuesBand
 subroutine preserveValeValeOL
 
    ! Use necessary modules.
-   use O_AtomicSites
-   use O_CommandLine
-   use O_Potential
+   use O_Potential, only: spin
+   use O_AtomicSites, only: valeDim
 
    ! Make sure that no funny variables are defined.
    implicit none
@@ -445,9 +433,8 @@ end subroutine preserveValeValeOL
 subroutine restoreValeValeOL
 
    ! Use necessary modules.
-   use O_AtomicSites
-   use O_CommandLine
-   use O_Potential
+   use O_Potential, only: spin
+   use O_AtomicSites, only: valeDim
 
    ! Make sure that no funny variables are defined.
    implicit none
@@ -472,13 +459,15 @@ end subroutine restoreValeValeOL
 subroutine readDataSCF(h,i,numStates)
 
    ! Import necessary data modules.
-   use O_Input
-   use O_KPoints
-   use O_AtomicSites
-   use O_MatrixSubs
-   use O_SetupIntegralsHDF5
-   use O_MainEVectHDF5
-   use O_MainEValHDF5
+   use O_KPoints, only: numKPoints
+   use O_AtomicSites, only: valeDim
+   use O_SetupIntegralsHDF5, only: atomDims, atomOverlap_did
+   use O_MainEVecHDF5, only: valeStates, eigenVectors_did
+#ifndef GAMMA
+   use O_MatrixSubs, only: readMatrix, readPackedMatrix, unpackMatrix
+#else
+   use O_MatrixSubs, only: readPackedMatrix, unpackMatrixGamma
+#endif
 
    ! Define passed parameters.
    integer :: h ! Spin variable.
@@ -542,10 +531,15 @@ end subroutine readDataSCF
 subroutine readDataPSCF(h,i,numStates)
 
    ! Use necessary modules.
-   use O_Input
-   use O_AtomicSites
-   use O_MatrixSubs
-   use O_PSCFBandHDF5
+   use O_AtomicSites, only: valeDim
+   use O_PSCFBandHDF5, only: valeStatesBand, valeValeBand, &
+         & eigenVectorsBand_did, valeValeBand_did
+#ifndef GAMMA
+   use O_MatrixSubs, only: readMatrix, readPackedMatrix, unpackMatrix
+#else
+   use O_MatrixSubs, only: readMatrixGamma, readPackedMatrix, &
+         & unpackMatrixGamma
+#endif
 
    ! Define passed parameters.
    integer :: h ! Spin variable.

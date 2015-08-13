@@ -319,6 +319,7 @@ my $structure;   # File with cell parameters and atomic and potential positions.
 # File names for running jobs, structure analysis, job tracking, etc.
 my $pbs_sub;       # File for submitting jobs on systems with pbs.
 my $lsf_sub;       # File for submitting jobs on systems with lsf.
+my $slurm_sub;     # File for submitting jobs on systems with slurm.
 my $bash_sub;      # File for submitting jobs on systems without pbs or lsf.
 my $commandLine;   # File for recording all commands given on the command line.
 my $summary;       # Contains a summary of the input for olcao calculation.
@@ -331,11 +332,9 @@ my $pdb_ext; # Extension for protein data bank files.
 my $cif_ext; # Extension for crystallographic interchange format files.
 
 # Flags to create or not create specific files.
-my $pdb; # Make a pdb structure file = 1; Don't = 0.
-my $cif; # Make a cif structure file = 1; Don't = 0.
-my $pbs; # Make a pbs queue submission file = 1; Don't = 0.
-my $lsf; # Make a lsf queue submission file = 1; Don't = 0.
-# Note that if both $pbs and $lsf are 0, then a bash "submit" file is created.
+my $pdb;   # Make a pdb structure file = 1; Don't = 0.
+my $cif;   # Make a cif structure file = 1; Don't = 0.
+my $queue; # Make a bash (0); pbs (1); lsf (2); or slurm (3) file.
 
 # Variables that define the exchange correlation mesh.
 my $xcInWeight;    # Weighting of points within the radial cutoff.
@@ -763,6 +762,7 @@ sub initNames
    # Outputs used for running, structure analysis, job tracking, etc.
    $pbs_sub        = "pbs";
    $lsf_sub        = "lsf";
+   $slurm_sub      = "slurm";
    $bash_sub       = "submit";
    $commandLine    = "command";
    $summary        = "summary";
@@ -791,8 +791,7 @@ sub initDefaults
    #   Which extra files to print?
    $pdb=0;
    $cif=0;
-   $pbs=$OLCAO_PBS;
-   $lsf=$OLCAO_LSF;
+   $queue=$OLCAO_QUEUE; # 0=bash; 1=pbs; 2=lsf; 3=slurm
 
    # Default cutoff criteria (exponent) for negligable gaussian interations.
    $bfCutoff=16;
@@ -2110,7 +2109,7 @@ sub groupReduce
    # Define passed parameters.
    my $currentReduce = $_[0];
 
-   open (REDUCE,">reduceSummary") || die "Can not open reduceSummary ".
+   open (REDUCE,">reduceSummary") || die "Cannot open reduceSummary ".
                                          "for writing.\n";
 
    # Define local variables.
@@ -2707,7 +2706,7 @@ sub printKPInFile
       {$doGamma = 0;}
 
    # Open the kpoint file for printing.
-   open(KP,">$kpInFile") || die "Can not open $kpInFile for writing.\n";
+   open(KP,">$kpInFile") || die "Cannot open $kpInFile for writing.\n";
 
    # Print the lattice parameters to the file.
    foreach $abcAxis (1..3)
@@ -2719,7 +2718,7 @@ sub printKPInFile
 
    # Obtain and print the space group data to the file.
    open(SPACE,"<$spaceDB/$spaceGroupName") ||
-         die "Can not open space group $spaceDB/$spaceGroupName for reading.\n";
+         die "Cannot open space group $spaceDB/$spaceGroupName for reading.\n";
    @spaceOps = <SPACE>;
    print KP @spaceOps;
    close (SPACE);
@@ -3112,7 +3111,7 @@ sub printStructure
 
    # Open the structure file for writing.
    open (STRUCTURE,">$inputs/$structure") ||
-         die "Can not open $inputs/$structure for writing $fileSet\n";
+         die "Cannot open $inputs/$structure for writing $fileSet\n";
 
    # Print the cell parameters label.
    print STRUCTURE "CELL_VECTORS\n";
@@ -3183,7 +3182,7 @@ sub printOLCAOInput
 
    # Open the olcao input file.
    open (OLCAO,">$inputs/$olcao_in") ||
-         die "Can not open $inputs/$olcao_in for writing.\n";
+         die "Cannot open $inputs/$olcao_in for writing.\n";
 
    # Make the title header for the olcao input file.
    print OLCAO "TITLE\n";
@@ -3401,7 +3400,7 @@ sub printBasisSet
       # Retrieve the datafile and append it to the olcao input file, then
       #   reset the read cursor to the beginning to parse for important data.
       open (BASIS,"<$inputTemp/$currBasisFile") ||
-            die "Can not open $inputTemp/$currBasisFile for reading.\n";
+            die "Cannot open $inputTemp/$currBasisFile for reading.\n";
       @values = <BASIS>;
       print OLCAO @values;
       seek(BASIS,0,0);
@@ -3467,7 +3466,7 @@ sub printBasisSet
       if ($isXanes == 1)
       {
          open (BASIS,"<$inputTemp/$inclCoreBasisFile") ||
-               die "Can not open $inputTemp/$inclCoreBasisFile for reading.\n";
+               die "Cannot open $inputTemp/$inclCoreBasisFile for reading.\n";
 
          # Position the read cursor by the num core orbital data and get the
          #   number of core orbitals.
@@ -3629,7 +3628,7 @@ sub printPot
 
       # Retrieve the potential function definition.
       open (POT,"<$inputTemp/$currPotFile") ||
-            die "Can not open $inputTemp/$currPotFile for reading.\n";
+            die "Cannot open $inputTemp/$currPotFile for reading.\n";
 
       # Parse the file and possibly modify it as requested on the command line.
       $line = <POT>;
@@ -3679,7 +3678,7 @@ sub printPot
 
       # Open the pot coeff definition file.
       open (COEFF,"<$inputTemp/$currCoeffFile") ||
-            die "Can not open $inputTemp/$currCoeffFile for reading.\n";
+            die "Cannot open $inputTemp/$currCoeffFile for reading.\n";
 
       @tempCoeffs = <COEFF>;
 
@@ -3694,13 +3693,14 @@ sub printPot
          {
 	         foreach $term (1..($#tempCoeffs-$numModTerms))
 		         {pop @tempCoeffs;}
-               $tempCoeffs[0]=" $numModTerms\n";
+            $tempCoeffs[0]=" $numModTerms\n";
       	}
          elsif ($numModTerms > $#tempCoeffs)
          {
             foreach $term (($#tempCoeffs)..($numModTerms-1))
-               {push (@tempCoeffs, "    0.00000000        0.00000000 0.0 0.0 0.0\n");}
-               $tempCoeffs[0]=" $numModTerms\n";
+               {push (@tempCoeffs, 
+                "    0.00000000        0.00000000 0.0 0.0 0.0\n");}
+            $tempCoeffs[0]=" $numModTerms\n";
          }
       }
 
@@ -3844,7 +3844,7 @@ sub makeSubFile
    chomp $proj_dir;
 
    # Initialize values that are dependent on the submission method.
-   if ($pbs == 1)
+   if ($queue == 1)
    {
       open (SUBFILE,">$subDir/$pbs_sub") ||
             die "Cannot open $subDir/$pbs_sub for writing.\n";
@@ -3852,7 +3852,7 @@ sub makeSubFile
       $subHeader[1] = "\#PBS -l cput=100:0:0,ncpus=1\n";
       $subHeader[2] = "\#\n";
    }
-   elsif ($lsf == 1)
+   elsif ($queue == 2)
    {
       open (SUBFILE,">$subDir/$lsf_sub") ||
             die "Cannot open $subDir/$lsf_sub for writing.\n";
@@ -3861,6 +3861,20 @@ sub makeSubFile
       $subHeader[2] = "\#BSUB -eo $proj_name.e\%J\n";
       $subHeader[3] = "\#BSUB -c 100:0\n";
       $subHeader[4] = "\#\n";
+   }
+   elsif ($queue == 3)
+   {
+      open (SUBFILE,">$subDir/$slurm_sub") ||
+            die "Cannot open $subDir/$slurm_sub for writing.\n";
+      $subHeader[0] = "#!/bin/bash\n";
+      $subHeader[1] = "\#SBATCH -p general\n";
+      $subHeader[2] = "\#SBATCH -J $proj_name\n";
+      $subHeader[3] = "\#SBATCH -o $proj_name.o\%J\n";
+      $subHeader[4] = "\#SBATCH -e $proj_name.e\%J\n";
+      $subHeader[5] = "\#SBATCH -n 1\n";
+      $subHeader[6] = "\#SBATCH -t 60\n";
+      $subHeader[7] = "\#SBATCH --mem=10G\n";
+      $subHeader[8] = "\#\n";
    }
    else
    {
@@ -3926,7 +3940,7 @@ sub makeSubFile
    close (SUBFILE);
 
    # If bash was used, then make the submission file executable.
-   if (($lsf == 0) && ($pbs == 0))
+   if ($queue == 0)
       {system ("chmod u+x $subDir/$bash_sub");}
 }
 

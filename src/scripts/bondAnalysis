@@ -571,7 +571,7 @@ sub openOutput
          {$outFile = "bondAnalysis.scad";}
    }
 
-   open (OUT,">$outFile") || die "Can not open $outFile for writing\n";
+   open (OUT,">$outFile") || die "Cannot open $outFile for writing\n";
 }
 
 
@@ -761,7 +761,7 @@ sub printBondOO
    my $atom;
    my $bond;
 
-   open (OUT,">$outFile") || die "Can not open $outFile for writing\n";
+   open (OUT,">$outFile") || die "Cannot open $outFile for writing\n";
 
    # Print the number of atoms in the model.
    print OUT "$numAtoms\n";
@@ -1059,6 +1059,8 @@ sub printOpenScad
    @returnValue = &getBondsToShow;
    $reducedBondInfoExt_ref = $returnValue[0];
    $reducedNumBondsExt = $returnValue[1];
+
+print STDOUT "reducedNumBondsExt=$reducedNumBondsExt\n";
 
    # Scale the bond lengths.
    foreach $bond (1..$reducedNumBondsExt)

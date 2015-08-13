@@ -88,21 +88,20 @@ module O_PSCFBandHDF5
 
 contains
 
-subroutine initPSCFBandHDF5(numStates,clp)
+subroutine initPSCFBandHDF5(numStates)
 
    ! Import the necessary HDF modules
    use HDF5
 
    ! Import the necessary data modules.
-   use O_KPoints
-   use O_Input
-   use O_CommandLine
-   use O_AtomicSites
-   use O_Potential
+   use O_Kinds
+   use O_Potential,   only: spin
+   use O_CommandLine, only: doSYBD
+   use O_KPoints,     only: numKPoints
+   use O_AtomicSites, only: coreDim, valeDim
 
    ! Make sure that no variables are implicitly declared.
    implicit none
-   type(commandLineParameters), intent(inout) :: clp
 
    ! Define passed parameters.
    integer, intent(in) :: numStates
@@ -163,7 +162,7 @@ subroutine initPSCFBandHDF5(numStates,clp)
    endif
 
    ! The symmetric band calculation will not use these HDF5 settings for output.
-   if (clp%doSybd .eq. 0) then
+   if (doSybd .eq. 0) then
 
       ! Create the property list for the band hdf5 file and turn off
       !   chunk caching.
@@ -310,21 +309,18 @@ subroutine initPSCFBandHDF5(numStates,clp)
 
 end subroutine initPSCFBandHDF5
 
-subroutine closePSCFBandHDF5(clp)
+subroutine closePSCFBandHDF5
 
    ! Import the necessary HDF data modules
    use HDF5
 
    ! Import the necessary data modules.
-   use O_KPoints
-   use O_Input
-   use O_CommandLine
-   use O_AtomicSites
-   use O_Potential
+   use O_Potential,   only: spin
+   use O_CommandLine, only: doSYBD, stateSet
+   use O_KPoints,     only: numKPoints
 
    ! Make sure that no variables are implicitly declared.
    implicit none
-   type(commandLineParameters), intent(inout) :: clp
 
    ! Define local loop control and error control variables
    integer :: i,j
@@ -334,7 +330,7 @@ subroutine closePSCFBandHDF5(clp)
    !   only if the symmetric band calculation was not done since it does not
    !   use any of these.
 
-   if (clp%doSybd .eq. 0) then
+   if (doSybd .eq. 0) then
 
       ! Close the band dataspaces first (only if this was a band calculation
       !   where data was written and not a dos, optc, bond, wave, etc type of
@@ -402,7 +398,7 @@ subroutine closePSCFBandHDF5(clp)
       ! In the case that we are closing access to the band hdf5 file from a
       !   PACS type calculation we need to also close the second file that was
       !   opened for the excited state.
-      if (clp%stateSet == 1) then
+      if (stateSet == 1) then
 
          ! Close the overlap datasets in the second band file.
          do i = 1, numKPoints
@@ -439,24 +435,22 @@ subroutine closePSCFBandHDF5(clp)
 end subroutine closePSCFBandHDF5
 
 
-subroutine accessPSCFBandHDF5(numStates,clp)
+subroutine accessPSCFBandHDF5(numStates)
 
    ! Import necessary HDF5 modules.
    use HDF5
 
    ! Import the necessary data modules.
-   use O_CommandLine
-   use O_KPoints
-   use O_Input
-   use O_AtomicSites
-   use O_Potential
+   use O_Potential,   only: spin
+   use O_CommandLine, only: stateSet
+   use O_KPoints,     only: numKPoints
+   use O_AtomicSites, only: coreDim, valeDim
 
    ! Make sure that no variables are implicitly declared.
    implicit none
 
    ! Define passed parameters
    integer, intent(in) :: numStates
-   type(commandLineParameters), intent(inout) :: clp
 
    ! Define the local variables.
    integer :: i,j
@@ -545,7 +539,7 @@ subroutine accessPSCFBandHDF5(numStates,clp)
       enddo
    enddo
 
-   if (clp%stateSet == 1) then  ! Doing a PACS type optc calculation.
+   if (stateSet == 1) then  ! Doing a PACS type optc calculation.
 
       ! Create the property list for the band hdf5 file and turn off
       !   chunk caching.
@@ -602,21 +596,18 @@ subroutine accessPSCFBandHDF5(numStates,clp)
 end subroutine accessPSCFBandHDF5
 
 
-subroutine closeAccessPSCFBandHDF5(clp)
+subroutine closeAccessPSCFBandHDF5
 
    ! Import the necessary HDF data modules
    use HDF5
 
    ! Import the necessary data modules.
-   use O_KPoints
-   use O_Input
-   use O_CommandLine
-   use O_AtomicSites
-   use O_Potential
+   use O_Potential,   only: spin
+   use O_CommandLine, only: stateSet
+   use O_KPoints,     only: numKPoints
 
    ! Make sure that no variables are implicitly declared.
    implicit none
-   type(commandLineParameters), intent(inout) :: clp
 
    ! Define local loop control and error control variables
    integer :: i,j
@@ -686,7 +677,7 @@ subroutine closeAccessPSCFBandHDF5(clp)
    ! In the case that we are closing access to the band hdf5 file from a
    !   PACS type calculation we need to also close the second file that was
    !   opened for the excited state.
-   if (clp%stateSet == 1) then
+   if (stateSet == 1) then
 
       ! Close the overlap datasets in the second band file.
       do i = 1, numKPoints
@@ -733,16 +724,16 @@ end subroutine closeAccessPSCFBandHDF5
 
 
 #ifndef GAMMA
-subroutine saveCoreValeOL (coreValeOL,i,clp)
+subroutine saveCoreValeOL (coreValeOL,i)
 #else
-subroutine saveCoreValeOL (coreValeOLGamma,i,clp)
+subroutine saveCoreValeOL (coreValeOLGamma,i)
 #endif
 
    ! Use necessary modules.
-   use O_Input
-   use O_CommandLine
-   use O_AtomicSites
    use HDF5
+   use O_Kinds
+   use O_CommandLine, only: doSYBD
+   use O_AtomicSites, only: coreDim, valeDim
 
    ! Define passed dummy parameters.
 #ifndef GAMMA
@@ -751,12 +742,11 @@ subroutine saveCoreValeOL (coreValeOLGamma,i,clp)
    real (kind=double), dimension (:,:)      :: coreValeOLGamma
 #endif
    integer :: i ! Current KPoint index number.
-   type(commandLineParameters), intent(inout) :: clp
    
    ! Define local variables.
    integer :: hdferr
 
-   if ((clp%doSYBD == 0) .and. (coreDim /= 0)) then
+   if ((doSYBD == 0) .and. (coreDim /= 0)) then
 #ifndef GAMMA
       call h5dwrite_f (coreValeBand_did(1,i),H5T_NATIVE_DOUBLE,&
             & real(coreValeOL(:coreDim,:valeDim,1),double),coreValeBand,hdferr)

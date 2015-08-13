@@ -150,7 +150,7 @@ sub makeDirs
       {mkdir $atomicPDB;}
 
    # Go to the atomic potential function database location.
-   chdir $atomicPDB || die "Can not change directories to $atomicPDB\n";
+   chdir $atomicPDB || die "Cannot change directories to $atomicPDB\n";
 
    # Make the directory for each element only if it does not already exist.
    foreach $element ($elementInit..$elementFin)
@@ -191,7 +191,7 @@ sub makePotDefinition
 
       # Open the potential definition file.
       open (POT,">pot1") ||
-            die "Can not open pot in $elementNames_ref->[$element]\n";
+            die "Cannot open pot in $elementNames_ref->[$element]\n";
 
       # Write the potential definition.
       print  POT "NUCLEAR_CHARGE__ALPHA\n";
@@ -260,12 +260,12 @@ sub makePotCoeffs
          #   the contracting process.  (READING)  Note that this potential file
          #   is from the atomic contraction.
          open (NUMPOT,"<$atomicBDB/$elementNames_ref->[$element]/$potData") ||
-               die "Can not read $potData in $elementNames_ref->[$element]\n";
+               die "Cannot read $potData in $elementNames_ref->[$element]\n";
 
          # Open the numerical potential file to be fitted linearly to create the
          #   initial potential coefficients.
          open (FITPOT,">$potData") ||
-               die "Can not write $potData in $elementNames_ref->[$element]\n";
+               die "Cannot write $potData in $elementNames_ref->[$element]\n";
 
          # Read and modify the header information.
          $line = <NUMPOT>;

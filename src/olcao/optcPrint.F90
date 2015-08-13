@@ -2,24 +2,20 @@ module O_OptcPrint
 
 contains
 
-subroutine printOptcResults(inDat,clp)
+subroutine printOptcResults
 
    ! Import necessary data modules.
    use O_Kinds
-   use O_Constants
-   use O_KPoints
-   use O_Input
-   use O_Lattice
-   use O_CommandLine
-   use O_OptcTransitions
-   use O_Potential
+   use O_Potential,       only: spin
+   use O_CommandLine,     only: stateSet
+   use O_Lattice,         only: realCellVolume
+   use O_KPoints,         only: numKPoints, kPointWeight
+   use O_OptcTransitions, only: maxTransEnergy, energyMin, energyScale
+   use O_Input,           only: sigmaOPTC, deltaOPTC, sigmaPACS, deltaPACS
+   use O_Constants,       only: dim3, pi, auTime, eCharge, hPlank, hartree
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
-
-   ! Define passed parameters
-   type(inputData) :: inDat ! from O_Input
-   type(commandLineParameters), intent(in) :: clp ! from O_CommandLine
 
    ! Define local variables
    integer :: i ! Loop index variables
@@ -34,14 +30,14 @@ subroutine printOptcResults(inDat,clp)
 
 
    ! Initialize variables.
-   if (clp%stateSet == 0) then ! Standard optical properties calculation.
-      sigma           = inDat%sigmaOPTC
-      energyDelta     = inDat%deltaOPTC
-      energyMin       = inDat%deltaOPTC ! Start as close to 0 as possible.
+   if (stateSet == 0) then ! Standard optical properties calculation.
+      sigma           = sigmaOPTC
+      energyDelta     = deltaOPTC
+      energyMin       = deltaOPTC ! Start as close to 0 as possible.
       numEnergyPoints = maxTransEnergy / energyDelta + 1
    else ! PACS calculation, Sigma(E) calculations never call this subroutine.
-      sigma           = inDat%sigmaPACS
-      energyDelta     = inDat%deltaPACS
+      sigma           = sigmaPACS
+      energyDelta     = deltaPACS
       ! The energyMin was already determined for PACS calculations.
       numEnergyPoints = (maxTransEnergy - energyMin) / energyDelta + 1
    endif ! Sigma(E) calculations never call this subroutine.
@@ -156,7 +152,7 @@ subroutine printOptcResults(inDat,clp)
 
 
    ! Output the computed results.
-   if (clp%stateSet == 1) then ! Doing PACS calculation.
+   if (stateSet == 1) then ! Doing PACS calculation.
       call printXAS(numEnergyPoints, optcCond, conversionFactor)
    else
       call printCond (numEnergyPoints, optcCond, conversionFactor)
@@ -166,16 +162,14 @@ subroutine printOptcResults(inDat,clp)
 end subroutine printOptcResults
 
 
-subroutine getOptcCond (numEnergyPoints, optcCond, kPointFactor, &
-      & sigma)
+subroutine getOptcCond (numEnergyPoints, optcCond, kPointFactor, sigma)
 
    ! Import the necessary data modules.
    use O_Kinds
-   use O_Input
-   use O_KPoints
-   use O_CommandLine
-   use O_OptcTransitions
-   use O_Potential
+   use O_Potential,       only: spin
+   use O_KPoints,         only: numKPoints
+   use O_OptcTransitions, only: energyScale, energyDiff, transCounter, &
+         & transitionProb
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
@@ -223,10 +217,9 @@ subroutine printXAS (numEnergyPoints, optcCond, conversionFactor)
 
    ! Include the modules we need.
    use O_Kinds
-   use O_Constants
-   use O_CommandLine
-   use O_OptcTransitions
-   use O_Potential
+   use O_Potential,       only: spin
+   use O_Constants,       only: hartree
+   use O_OptcTransitions, only: energyScale
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
@@ -263,10 +256,9 @@ subroutine printCond (numEnergyPoints, optcCond, conversionFactor)
 
    ! Include the modules we need
    use O_Kinds
-   use O_Constants
-   use O_CommandLine
-   use O_OptcTransitions
-   use O_Potential
+   use O_Potential,       only: spin
+   use O_Constants,       only: hartree
+   use O_OptcTransitions, only: energyScale
 
    ! Define the dummy variables passed to this subroutine.
    integer :: numEnergyPoints
@@ -300,10 +292,9 @@ subroutine printEps2 (numEnergyPoints, optcCond, conversionFactorEps2)
 
    ! Include the modules we need
    use O_Kinds
-   use O_Constants
-   use O_CommandLine
-   use O_OptcTransitions
-   use O_Potential
+   use O_Potential,       only: spin
+   use O_OptcTransitions, only: energyScale
+   use O_Constants,       only: dim3, hartree
 
    ! Define the dummy variables passed to this subroutine.
    integer :: numEnergyPoints

@@ -8,29 +8,30 @@ module O_Bond
 
    contains
 
-subroutine computeBond(inDat,clp)
+subroutine computeBond
 
    ! Import necessary modules.
    use O_Kinds
-   use O_Constants
-   use O_Input
-   use O_CommandLine
-   use O_SecularEquation
-   use O_Lattice
-   use O_AtomicTypes
-   use O_AtomicSites
-   use O_Potential
-   use O_Populate
-   use O_KPoints
    use O_TimeStamps
-   use O_MatrixSubs
+   use O_Potential,   only: spin
+   use O_CommandLine, only: doBond
+   use O_Lattice,     only: realVectors
+   use O_AtomicTypes, only: numAtomTypes, atomTypes
+   use O_KPoints,     only: numKPoints, kPointWeight
+   use O_AtomicSites, only: valeDim, numAtomSites, atomSites
+   use O_Constants,   only: pi, hartree, bigThresh, smallThresh
+   use O_Input,       only: numStates, sigmaBOND, eminBOND, emaxBOND, &
+         & deltaBOND, maxBL, detailCodeBond, excitedAtomPACS, maxNumNeighbors
+#ifndef GAMMA
+   use O_SecularEquation, only: valeVale, valeValeOL, readDataSCF, &
+         & readDataPSCF, energyEigenValues
+#else
+   use O_SecularEquation, only: valeValeGamma, valeValeOLGamma, readDataSCF, &
+         & readDataPSCF, energyEigenValues
+#endif
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
-
-   ! Define passed variables
-   type(inputData) :: inDat
-   type(commandLineParameters), intent(in) :: clp ! from O_CommandLine
 
    ! Define local variables.
    integer :: h,i,j,k,l,m,n,o ! Loop index variables
@@ -76,7 +77,7 @@ subroutine computeBond(inDat,clp)
    real (kind=double), allocatable, dimension (:)      :: energyScale
    real (kind=double), allocatable, dimension (:)      :: bondOrderEnergyDep !
          ! Energy dep. bond order for the *target atom* in a PACS calculations.
-         ! Index range is inDat%maxNumNeighbors.
+         ! Index range is maxNumNeighbors.
    real (kind=double), allocatable, dimension (:)      :: bondOrderAllEnergy
    real (kind=double), allocatable, dimension (:)      :: totalCalcBondOrder
    real (kind=double), allocatable, dimension (:,:)    :: bondLength
@@ -95,7 +96,7 @@ subroutine computeBond(inDat,clp)
 
 
    ! Compute local factors for broadening the energy dependent bond order.
-   sigmaSqrtPi = sqrt(pi) * inDat%sigmaBOND
+   sigmaSqrtPi = sqrt(pi) * sigmaBOND
 
    ! Allocate arrays and matrices for this computation.
    allocate (numOrbIndex     (numAtomTypes + 1))
@@ -103,14 +104,14 @@ subroutine computeBond(inDat,clp)
    allocate (numAtomStates   (numAtomSites))
 #ifndef GAMMA
    allocate (waveFnSqrd (valeDim))
-   if (clp%doBond .eq. 0) then
-      allocate (valeVale   (valeDim,inDat%numStates,1,1))
+   if (doBond .eq. 0) then
+      allocate (valeVale   (valeDim,numStates,1,1))
       allocate (valeValeOL (valeDim,valeDim,1,1))
    endif
 #else
    allocate (waveFnSqrdGamma (valeDim))
-   if (clp%doBond .eq. 0) then
-      allocate (valeValeGamma   (valeDim,inDat%numStates,1))
+   if (doBond .eq. 0) then
+      allocate (valeValeGamma   (valeDim,numStates,1))
       allocate (valeValeOLGamma (valeDim,valeDim,1))
    endif
 #endif
@@ -172,27 +173,27 @@ subroutine computeBond(inDat,clp)
 
    ! Determine the number of energy points to be computed for in the case of
    !   the energy dependent bond order calculation.
-   numEnergyPoints = (inDat%emaxBOND - inDat%eminBOND ) / inDat%deltaBOND
+   numEnergyPoints = (emaxBOND - eminBOND ) / deltaBOND
 
    ! Allocate space to hold the bondorder and charge results
-   allocate (bondOrderEnergyDep (inDat%maxNumNeighbors))
+   allocate (bondOrderEnergyDep (maxNumNeighbors))
    allocate (bondOrder          (numAtomSites,numAtomSites))
    allocate (bondLength         (numAtomSites,numAtomSites))
    allocate (atomCharge         (numAtomSites))
-   if (inDat%excitedAtomPACS .ne. 0) then
+   if (excitedAtomPACS .ne. 0) then
       allocate (energyScale         (numEnergyPoints))
-      allocate (bondCompleteAtom    (numEnergyPoints,inDat%maxNumNeighbors))
-      allocate (bondOrderAllEnergy  (inDat%maxNumNeighbors))
-      allocate (bondedAtomID        (inDat%maxNumNeighbors))
-      allocate (bondedTypeID        (inDat%maxNumNeighbors))
-      allocate (totalCalcBondOrder  (inDat%maxNumNeighbors))
+      allocate (bondCompleteAtom    (numEnergyPoints,maxNumNeighbors))
+      allocate (bondOrderAllEnergy  (maxNumNeighbors))
+      allocate (bondedAtomID        (maxNumNeighbors))
+      allocate (bondedTypeID        (maxNumNeighbors))
+      allocate (totalCalcBondOrder  (maxNumNeighbors))
    endif
 
 
    ! Assign values to the energy scale if necessary.
-   if (inDat%excitedAtomPACS .ne. 0) then
+   if (excitedAtomPACS .ne. 0) then
       do i = 1, numEnergyPoints
-         energyScale(i) = inDat%eminBOND + (i-1) * inDat%deltaBOND
+         energyScale(i) = eminBOND + (i-1) * deltaBOND
       enddo
    endif
 
@@ -202,7 +203,7 @@ subroutine computeBond(inDat,clp)
       bondOrder          (:,:) = 0.0_double
       bondLength         (:,:) = 0.0_double
       atomCharge         (:)   = 0.0_double
-      if (inDat%excitedAtomPACS .ne. 0) then
+      if (excitedAtomPACS .ne. 0) then
          bondCompleteAtom    (:,:) = 0.0_double
          bondOrderAllEnergy  (:)   = 0.0_double
          bondedAtomCounter       = 0
@@ -215,21 +216,21 @@ subroutine computeBond(inDat,clp)
 
 
          ! Determine if we are doing bond+Q* in a post-SCF calculation, or
-         !   within an SCF calculation.  (The clp%doBond flag is only set to
+         !   within an SCF calculation.  (The doBond flag is only set to
          !   true within an SCF calculation because that is the only place that
          !   this option makes sense to use.  In a post-SCF case, the bond job
          !   was explicitly asked for by the user and so this request flag is
          !   not used.)
-         if (clp%doBond == 1) then
+         if (doBond == 1) then
             ! Read necessary data from SCF (setup,main) data structures.
-            call readDataSCF(h,i,inDat%numStates)
+            call readDataSCF(h,i,numStates)
          else
             ! Read necessary data from post SCF (intg,band) data structures.
-            call readDataPSCF(h,i,inDat%numStates)
+            call readDataPSCF(h,i,numStates)
          endif
 
 
-         do j = 1, inDat%numStates
+         do j = 1, numStates
 
             ! Initialize the bond order for energy dependency.
             bondOrderEnergyDep (:) = 0.0_double
@@ -239,7 +240,7 @@ subroutine computeBond(inDat,clp)
             !   If the excited atom in the bond order input is set to zero, then
             !   this part of the computation does not proceed.
 
-            if (inDat%excitedAtomPACS .ne. 0) then
+            if (excitedAtomPACS .ne. 0) then
 
                ! Initialize the indices of the first atom. (1) = init, (2) = fin
                atom1Index(1) = 0
@@ -247,7 +248,7 @@ subroutine computeBond(inDat,clp)
 
                ! Loop over all atoms up to the excited atom to determine the
                !   atom1Index of the excited atom.
-               do k = 1, inDat%excitedAtomPACS
+               do k = 1, excitedAtomPACS
 
                   ! Identify the indices of the current atom from loop (k).
                   atom1Index(1) = atom1Index(2) + 1
@@ -287,7 +288,7 @@ subroutine computeBond(inDat,clp)
 
                      ! Compute seperation vector for the atoms in this combo.
                      currentDistance(:) = &
-                           & atomSites(inDat%excitedAtomPACS)%cartPos(:) - &
+                           & atomSites(excitedAtomPACS)%cartPos(:) - &
                            & atomSites(l)%cartPos(:) - &
                            & m * realVectors(:,1) - &
                            & n * realVectors(:,2) - &
@@ -310,7 +311,7 @@ subroutine computeBond(inDat,clp)
                      !   overlap.  This effect is not really implemented yet
                      !   because the minDistMag will have to track all the
                      !   nearest atoms, not just the closest one.
-                     if (currentDistMag < inDat%maxBL .and. &
+                     if (currentDistMag < maxBL .and. &
                            & abs(currentDistMag) > smallThresh) then
                         minDistCount = minDistCount + 1
                      endif
@@ -333,7 +334,7 @@ subroutine computeBond(inDat,clp)
                      bondedAtomID(bondedAtomCounter) = l
 
                      ! Store the determined minimum bond length for this pair.
-                     bondLength(inDat%excitedAtomPACS,l) = minDistMag
+                     bondLength(excitedAtomPACS,l) = minDistMag
 
                      ! Loop over the atom 1 states against the atom 2 states
                      !   for this band.
@@ -392,7 +393,7 @@ subroutine computeBond(inDat,clp)
 
                   ! Compute the exponential alpha for broadening this point.
                   expAlpha = ((energyEigenValues(j,i,h) - &
-                        & energyScale(l)) / inDat%sigmaBOND)**2
+                        & energyScale(l)) / sigmaBOND)**2
 
                   ! If the exponential alpha is less than 50 apply broadening.
                   if (expAlpha < 50) then
@@ -508,7 +509,7 @@ subroutine computeBond(inDat,clp)
                      !   overlap.  This effect is not really implemented yet
                      !   since the minDistMag will have to track all the
                      !   nearest atoms, not just the closest one.
-                     if (currentDistMag < inDat%maxBL .and. &
+                     if (currentDistMag < maxBL .and. &
                            & abs(currentDistMag) > smallThresh) then
                         minDistCount = minDistCount + 1
                      endif
@@ -709,7 +710,7 @@ subroutine computeBond(inDat,clp)
 
       ! Compute the total bond order for the excited atom as an energy
       !   dependent function for each species it is bonded to.
-      if (inDat%excitedAtomPACS .ne. 0) then
+      if (excitedAtomPACS .ne. 0) then
 
          ! First the total bond order is computed for each bonded atom as an
          !   integration of the bond energy dependent bond order.  Simply
@@ -717,7 +718,7 @@ subroutine computeBond(inDat,clp)
          do i = 1, bondedAtomCounter
             totalCalcBondOrder(i) = sum(&
                   & bondCompleteAtom(1:numEnergyPoints-1,i) + &
-                  & bondCompleteAtom(2:numEnergyPoints,i)) * inDat%deltaBOND * &
+                  & bondCompleteAtom(2:numEnergyPoints,i)) * deltaBOND * &
                   & 0.5_double
          enddo
 
@@ -787,7 +788,7 @@ subroutine computeBond(inDat,clp)
 
       ! Begin recording the energy dependent bond order results to disk, making
       !   sure to convert the energy scale to eV.
-      if (inDat%excitedAtomPACS .ne. 0) then
+      if (excitedAtomPACS .ne. 0) then
          write (16,ADVANCE="NO",FMT="(a12,a12)") "Energy      ","Total       "
          do i = 1, bondedAtomCounter
             write (16,ADVANCE="NO",FMT="(a2,a10)") "  ",&
@@ -802,7 +803,7 @@ subroutine computeBond(inDat,clp)
       endif
 
       ! Begin recording general bond order results to disk.
-      if (inDat%detailCodeBond == 0) then
+      if (detailCodeBond == 0) then
          do i = 1, numAtomTypes
 
             write (9+h,fmt="(2x,a10,i5,a3,a18)") 'Atom type:',i,' - ',&
@@ -918,18 +919,18 @@ subroutine computeBond(inDat,clp)
    deallocate (atomCharge)
 #ifndef GAMMA
    deallocate (waveFnSqrd)
-   if (clp%doBond == 0) then
+   if (doBond == 0) then
       deallocate (valeVale)
       deallocate (valeValeOL)
    endif
 #else
    deallocate (waveFnSqrdGamma)
-   if (clp%doBond == 0) then
+   if (doBond == 0) then
       deallocate (valeValeGamma)
       deallocate (valeValeOLGamma)
    endif
 #endif
-   if (inDat%excitedAtomPACS /= 0) then
+   if (excitedAtomPACS /= 0) then
       deallocate (energyScale)
       deallocate (bondCompleteAtom)
       deallocate (bondOrderAllEnergy)

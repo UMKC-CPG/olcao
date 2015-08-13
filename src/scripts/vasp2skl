@@ -185,7 +185,8 @@ sub readVASP
 
    &getValues;
    @atomCounts = @values;
-   if ($atomCounts[0] * 1 eq $atomCounts[0])
+#   if ($atomCounts[0] * 1 eq $atomCounts[0])
+   if ($atomCounts[0] !~ /[a-zA-Z]/)
       {print "CONTCAR file from VASP 4.6\n";}
    else
    {
@@ -309,30 +310,3 @@ sub getValues
    if ($values[0] eq "")
       {shift @values;}
 }
-
-
-sub printHelp
-{
-   print <<ENDHELP;
-###############################################################################
-#Program:  vasp2skl
-#Purpose:  This program will read in a vasp output data file and produce a
-#          skl input file.
-#Written by:  Paul Rulis
-#Last Modified:  July 18, 2006
-#
-#USAGE:  vasp2skl [-i \$inputFile] [-a \$atomFile] [-o \$outputFile] [-help]
-#
-#The -i option takes the name of the input file which is the vasp atomic
-#   position file after relaxation.  By default, if this option is
-#   not given then the value of \$inputFile is "CONTCAR".
-#The -a option takes the name of the file that contains the names of the
-#   elements as they appear in the vasp CONTCAR.  By default, if this option is
-#   not given then the value of \$atomFile is "POTCAR".
-#The -o option takes the name of the output file.  By default, if this option
-#   is not given then the value of \$outputFile is "skl.dat".
-###############################################################################
-ENDHELP
-   exit;
-}
-

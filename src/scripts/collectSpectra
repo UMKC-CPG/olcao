@@ -726,7 +726,7 @@ sub formTotal
       {@normFileList=`ls -1 *_*.norm`;}
    else
    {
-      open (ALT,"<alternate") || die "Can not open alternate for reading\n";
+      open (ALT,"<alternate") || die "Cannot open alternate for reading\n";
       @normFileList = <ALT>;
       close (ALT);
    }

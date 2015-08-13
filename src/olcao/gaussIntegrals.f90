@@ -48,7 +48,7 @@ module O_GaussianIntegrals
       subroutine nucPotInteg(a1,a2,a3,A,B,C,l1l2Switch,g)
 
       use O_Kinds
-      use O_Constants
+      use O_Constants, only: pi
 
       implicit none
 ! c
@@ -61,11 +61,11 @@ module O_GaussianIntegrals
 ! c     18,xxx; 19,yyy; 20,zzz
 ! c 
       ! define the dummy variables passed to this subroutine.
-      real (kind=double), dimension (16,16) :: g
-      real (kind=double) :: a1, a2, a3
-      real (kind=double), dimension (3) :: A, B, C
-      integer, intent(in) :: l1l2Switch
-      
+      real (kind=double), dimension (16,16), intent (out) :: g
+      real (kind=double), intent (in) :: a1, a2, a3
+      real (kind=double), dimension (3), intent (in) :: A, B, C
+      integer, intent (in) :: l1l2Switch
+
       ! define local variables
       real (kind=double), dimension(20,20) :: nuc
       real (kind=double) :: F0, F1, F2, F3, F4, F5, F6, XX
@@ -23567,11 +23567,11 @@ module O_GaussianIntegrals
 ! ****************************************************************
 subroutine Boys(XX,F0,F1,F2,F3,F4,F5,F6)
 use o_kinds
-use o_constants
+use o_constants, only: pi
 implicit none
 
 ! Define passed parameters
-real (kind=double) :: F0,F1,F2,F3,F4,F5,F6,XX
+real (kind=double), intent (inout) :: F0,F1,F2,F3,F4,F5,F6,XX
 ! Define local variables
 real (kind=double) :: sqrt_pi, erf_XX, exp_XX
 real (kind=double), dimension(8) :: S
@@ -23705,7 +23705,7 @@ end subroutine Boys
       subroutine threeCentInteg(a1,a2,a3,A,B,C,l1l2switch,g)
 
       use O_Kinds
-      use O_Constants
+      use O_Constants, only: pi
 
       implicit none
 ! c
@@ -23718,10 +23718,10 @@ end subroutine Boys
 ! c     18,xxx; 19,yyy; 20,zzz
 ! c 
       ! define the dummy variables passed to this subroutine.
-      real (kind=double), dimension (16,16) :: g
-      real (kind=double) :: a1, a2, a3
-      real (kind=double), dimension (3) :: A, B, C
-      integer, intent(in) :: l1l2switch
+      real (kind=double), dimension (16,16), intent (out) :: g
+      real (kind=double), intent (in) :: a1, a2, a3
+      real (kind=double), dimension (3), intent (in) :: A, B, C
+      integer, intent (in) :: l1l2switch
 
       ! define local variables
       real (kind=double) :: Y, preFactor, expFactor
@@ -27758,7 +27758,7 @@ end subroutine Boys
       subroutine KEInteg(a1,a2,A,B,l1l2switch,g)
 
       use O_Kinds
-      use O_Constants
+      use O_Constants, only: pi
 
       implicit none
 ! c
@@ -27771,10 +27771,10 @@ end subroutine Boys
 ! c     18,xxx; 19,yyy; 20,zzz
 ! c 
       ! define the dummy variables passed to this subroutine.
-      real (kind=double), dimension (16,16) :: g
-      real (kind=double) :: a1, a2
-      real (kind=double), dimension (3) :: A, B
-      integer, intent(in) :: l1l2switch
+      real (kind=double), dimension (16,16), intent (out) :: g
+      real (kind=double), intent (in) :: a1, a2
+      real (kind=double), dimension (3), intent (in) :: A, B
+      integer, intent (in) :: l1l2switch
 
       ! define local variables
       real (kind=double), dimension (20,20) :: wo
@@ -37384,7 +37384,7 @@ end subroutine Boys
       subroutine overlapInteg(a1,a2,A,B,l1l2switch,g)
 
       use O_Kinds
-      use O_Constants
+      use O_Constants, only: pi
 
       implicit none
 ! c
@@ -37397,10 +37397,10 @@ end subroutine Boys
 ! c     18,xxx; 19,yyy; 20,zzz
 ! c 
       ! define the dummy variables passed to this subroutine.
-      real (kind=double), dimension (16,16) :: g
-      real (kind=double) :: a1, a2
-      real (kind=double), dimension (3) :: A, B
-      integer, intent(in) :: l1l2switch
+      real (kind=double), dimension (16,16), intent (out) :: g
+      real (kind=double), intent (in) :: a1, a2
+      real (kind=double), dimension (3), intent (in) :: A, B
+      integer, intent (in) :: l1l2switch
 
       ! define local variables
       real (kind=double), dimension (20,20) :: wo
@@ -41404,14 +41404,14 @@ end subroutine Boys
       subroutine momf(a1,a2,A,B,l1l2switch,g)
 
       use O_Kinds
-      use O_Constants
+      use O_Constants, only: pi
       implicit none
 
       ! Define passed parameters
-      real (kind=double) :: a1, a2
-      real (kind=double), dimension (16,16,3) :: g
-      real (kind=double), dimension (3) :: A, B
-      integer, intent(in) :: l1l2switch
+      real (kind=double), intent (in) :: a1, a2
+      real (kind=double), dimension (16,16,3), intent (out) :: g
+      real (kind=double), dimension (3), intent (in) :: A, B
+      integer, intent (in) :: l1l2switch
       
       ! Define local variables
       real (kind=double), dimension (20,20) :: Mom_x, Mom_y, Mom_z

@@ -34,9 +34,9 @@ module O_SetupElecStatHDF5
    integer(hid_t) :: pot_plid
 
    ! Define arrays that hold the dimensions of the datasets.
-   integer(hsize_t), dimension (2) :: potDims2
    integer(hsize_t), dimension (2) :: potTypesPot
-   integer(hsize_t), dimension (1) :: potDims1
+   integer(hsize_t), dimension (2) :: potPot
+   integer(hsize_t), dimension (1) :: pot
 
    ! Define the dataset IDs under elecStatGroup_gid.  There are no
    !   dynamically given dataset IDs.
@@ -68,11 +68,11 @@ subroutine initSetupElecStatHDF5 (setup_fid)
    integer :: hdferr
 
    ! Initialize data structure dimensions.
-   potDims2(1)    = potDim
-   potDims2(2)    = potDim
+   potPot(1)    = potDim
+   potPot(2)    = potDim
    potTypesPot(1) = numPotTypes
    potTypesPot(2) = potDim
-   potDims1(1)    = potDim
+   pot(1)    = potDim
 
    ! Create the electrostatic group within the HDF5 file.
    call h5gcreate_f (setup_fid,"/elecStatGroup",elecStatGroup_gid,hdferr)
@@ -82,9 +82,9 @@ subroutine initSetupElecStatHDF5 (setup_fid)
    !   elecStatGroup.
    call h5screate_simple_f (2,potTypesPot,potTypesPot_dsid,hdferr)
    if (hdferr /= 0) stop 'Failed to create potTypesPot dsid'
-   call h5screate_simple_f (2,potDims2,potPot_dsid,hdferr)
+   call h5screate_simple_f (2,potPot,potPot_dsid,hdferr)
    if (hdferr /= 0) stop 'Failed to create potPot dsid'
-   call h5screate_simple_f (1,potDims1,pot_dsid,hdferr)
+   call h5screate_simple_f (1,pot,pot_dsid,hdferr)
    if (hdferr /= 0) stop 'Failed to create pot dsid'
 
    ! Create the property lists first.  Then set the properties for each list
@@ -103,9 +103,9 @@ subroutine initSetupElecStatHDF5 (setup_fid)
    if (hdferr /= 0) stop 'Failed to set pot chunked layout'
    call h5pset_chunk_f   (potTypesPot_plid,2,potTypesPot,hdferr)
    if (hdferr /= 0) stop 'Failed to set potTypesPot chunked property'
-   call h5pset_chunk_f   (potPot_plid,2,potDims2,hdferr)
+   call h5pset_chunk_f   (potPot_plid,2,potPot,hdferr)
    if (hdferr /= 0) stop 'Failed to set potPot chunked property'
-   call h5pset_chunk_f   (pot_plid,1,potDims1,hdferr)
+   call h5pset_chunk_f   (pot_plid,1,pot,hdferr)
    if (hdferr /= 0) stop 'Failed to set pot chunked property'
 !   call h5pset_shuffle_f (potTypesPot_plid,hdferr)
 !   call h5pset_shuffle_f (potPot_plid,hdferr)
@@ -159,11 +159,11 @@ subroutine accessSetupElecStatHDF5 (setup_fid)
    integer :: hdferr
 
    ! Initialize data structure dimensions.
-   potDims2(1)    = potDim
-   potDims2(2)    = potDim
+   potPot(1)      = potDim
+   potPot(2)      = potDim
    potTypesPot(1) = numPotTypes
    potTypesPot(2) = potDim
-   potDims1(1)    = potDim
+   pot(1)         = potDim
 
    ! Open the electrostatic group within the HDF5 file.
    call h5gopen_f (setup_fid,"/elecStatGroup",elecStatGroup_gid,hdferr)

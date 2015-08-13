@@ -45,8 +45,8 @@ module O_KPoints
 subroutine readKPoints(readUnit, writeUnit)
 
    ! Include the modules we need
-   use O_Kinds ! Variable precision defined for intrinsic types
-   use O_Constants
+   use O_Kinds
+   use O_Constants, only: dim3
 
    ! Import necessary subroutine modules.
    use O_ReadDataSubs
@@ -65,20 +65,22 @@ subroutine readKPoints(readUnit, writeUnit)
    integer :: counter ! Dummy variable to read the kpoint index number.
 
    ! Read the number of kpoints.
-   call readData(readUnit,writeUnit,numKPoints,len('NUM_BLOCH_VECTORS'),'NUM_BLOCH_VECTORS')
+   call readData(readUnit,writeUnit,numKPoints,len('NUM_BLOCH_VECTORS'),&
+         & 'NUM_BLOCH_VECTORS')
 
    ! Allocate space to hold the kpoints and their weighting factors.
    allocate (kPoints(dim3,numKPoints))
    allocate (kPointWeight(numKPoints))
 
    ! Read past the 'NUM_WEIGHT_KA_KB_KC' header.
-   call readAndCheckLabel(readUnit,writeUnit,len('NUM_WEIGHT_KA_KB_KC'),'NUM_WEIGHT_KA_KB_KC')
+   call readAndCheckLabel(readUnit,writeUnit,len('NUM_WEIGHT_KA_KB_KC'),&
+         & 'NUM_WEIGHT_KA_KB_KC')
 
    ! Note that the values read in here are in terms of a,b,c fractional
    !   coordinates.  Later, after the reciprocal lattice has been initialized
    !   these values will be changed into x,y,z cartesian coordinates.
    do i = 1, numKPoints
-      read (15,*)     counter, kPointWeight(i), kPoints(:dim3,i)
+      read (15,*)    counter, kPointWeight(i), kPoints(:dim3,i)
       write (20,100) counter, kPointWeight(i), kPoints(:dim3,i)
    enddo
    call flush (20)
@@ -91,10 +93,8 @@ end subroutine readKPoints
 subroutine readSYBDKPoints(readUnit, writeUnit)
 
    ! Include the modules we need
-   use O_Kinds ! Variable precision defined for intrinsic types
-   use O_Constants
-
-   ! Import necessary subroutine modules.
+   use O_Kinds
+   use O_Constants, only: dim3
    use O_ReadDataSubs
 
    ! Make sure that there are not accidental variable declarations.
@@ -135,8 +135,8 @@ end subroutine readSYBDKPoints
 subroutine convertKPointsToXYZ
 
    ! Include the modules we need
-   use O_Kinds ! Variable precision defined for intrinsic types
-   use O_Lattice
+   use O_Kinds
+   use O_Lattice, only: recipVectors
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
@@ -167,10 +167,8 @@ end subroutine convertKPointsToXYZ
 subroutine computePhaseFactors
 
    ! Include the modules we need
-   use O_Kinds ! Variable precision defined for intrinsic types
-
-   ! Include object modules.
-   use O_Lattice
+   use O_Kinds
+   use O_Lattice, only: numCellsReal, cellDimsReal
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
@@ -195,14 +193,10 @@ end subroutine computePhaseFactors
 
 subroutine makePathKPoints
 
-   ! Import the precision variables
+   ! Import necessary modules
    use O_Kinds
-
-   ! Import program constants
-   use O_Constants
-
-   ! Import necessary objects.
-   use O_Lattice
+   use O_Constants, only: dim3
+   use O_Lattice, only: recipVectors
    use O_TimeStamps
 
    ! Make sure that there are not accidental variable declarations.

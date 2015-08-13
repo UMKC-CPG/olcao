@@ -57,29 +57,29 @@ module O_Bond3C
 
    contains
 
-subroutine computeBond3C(inDat,clp)
+subroutine computeBond3C
 
    ! Import necessary modules.
    use O_Kinds
-   use O_Constants
-   use O_Input
-   use O_CommandLine
-   use O_SecularEquation
-   use O_Lattice, only: realVectors
-   use O_AtomicTypes
-   use O_AtomicSites
-   use O_Potential
-   use O_Populate
-   use O_KPoints
    use O_TimeStamps
-   use O_MatrixSubs
+   use O_Potential,   only: spin
+   use O_CommandLine, only: doBond
+   use O_Input,       only: numStates
+   use O_Constants,   only: smallThresh
+   use O_Lattice,     only: realVectors
+   use O_Populate,    only: electronPopulation
+   use O_KPoints,     only: numKPoints, kPointWeight
+   use O_AtomicSites, only: valeDim, numAtomSites, atomSites
+   use O_AtomicTypes, only: numAtomTypes, atomTypes, maxNumValeStates
+#ifndef GAMMA
+   use O_SecularEquation, only: valeVale, valeValeOL, readDataSCF, readDataPSCF
+#else
+   use O_SecularEquation, only: valeValeGamma, valeValeOLGamma, readDataSCF, &
+         & readDataPSCF
+#endif
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
-
-   ! Define passed variables
-   type(inputData) :: inDat
-   type(commandLineParameters), intent(in) :: clp ! from O_CommandLine
 
    ! Define local variables.
    integer :: h,i,j,k,l,m,n,o ! Loop index variables
@@ -133,14 +133,14 @@ subroutine computeBond3C(inDat,clp)
    allocate (numAtomStates   (numAtomSites))
 #ifndef GAMMA
    allocate (waveFnSqrd (maxNumValeStates))
-   if (clp%doBond .eq. 0) then
-      allocate (valeVale   (valeDim,inDat%numStates,1,1))
+   if (doBond .eq. 0) then
+      allocate (valeVale   (valeDim,numStates,1,1))
       allocate (valeValeOL (valeDim,valeDim,1,1))
    endif
 #else
    allocate (waveFnSqrdGamma (maxNumValeStates))
-   if (clp%doBond .eq. 0) then
-      allocate (valeValeGamma   (valeDim,inDat%numStates,1))
+   if (doBond .eq. 0) then
+      allocate (valeValeGamma   (valeDim,numStates,1))
       allocate (valeValeOLGamma (valeDim,valeDim,1))
    endif
 #endif
@@ -289,7 +289,7 @@ subroutine computeBond3C(inDat,clp)
          atom2Index(2) = atom2Index(1) + numAtomStates(l) - 1
 
          ! Compute distance from atom1 to atom2 and cycle if out of range.
-         call getMinDist(inDat,k,l,minDistCount,latticeIndices(:,1),&
+         call getMinDist(k,l,minDistCount,latticeIndices(:,1),&
                & currentMinDist(1))
          if (minDistCount == 0) cycle
 
@@ -339,12 +339,12 @@ subroutine computeBond3C(inDat,clp)
             atom3Index(2) = atom3Index(1) + numAtomStates(m) - 1
 
             ! Compute distance from atom1 to atom3 and cycle if out of range.
-            call getMinDist(inDat,k,m,minDistCount,latticeIndices(:,2),&
+            call getMinDist(k,m,minDistCount,latticeIndices(:,2),&
                   & currentMinDist(1))
             if (minDistCount == 0) cycle
 
             ! Compute distance from atom2 to atom3 and cycle if out of range.
-            call getMinDist(inDat,l,m,minDistCount,latticeIndices(:,3),&
+            call getMinDist(l,m,minDistCount,latticeIndices(:,3),&
                   & currentMinDist(2))
             if (minDistCount == 0) cycle
 
@@ -405,21 +405,21 @@ subroutine computeBond3C(inDat,clp)
       do i = 1, numKPoints
 
          ! Determine if we are doing bond+Q* in a post-SCF calculation, or
-         !   within an SCF calculation.  (The clp%doBond flag is only set to
+         !   within an SCF calculation.  (The doBond flag is only set to
          !   true within an SCF calculation because that is the only place that
          !   this option makes sense to use.  In a post-SCF case, the bond job
          !   was explicitly asked for by the user and so this request flag is
          !   not used.)
-         if (clp%doBond == 1) then
+         if (doBond == 1) then
             ! Read necessary data from SCF (setup,main) data structures.
-            call readDataSCF(h,i,inDat%numStates)
+            call readDataSCF(h,i,numStates)
          else
             ! Read necessary data from post SCF (intg,band) data structures.
-            call readDataPSCF(h,i,inDat%numStates)
+            call readDataPSCF(h,i,numStates)
          endif
 
          ! Begin collecting the three center bond order.
-         do j = 1, inDat%numStates
+         do j = 1, numStates
 
             ! Skip energy states that are not occupied. We do this by first
             !   determining the array index value of the current spin-kpoint-
@@ -427,7 +427,7 @@ subroutine computeBond3C(inDat,clp)
             !   beginning of the population subroutine. Then we check if the
             !   population of this state is less than smallThresh. If so, then
             !   it is deemed a non-populated state and we can exit the j loop.
-            orderedIndex = j+inDat%numStates*(h-1)+inDat%numStates*spin*(i-1)
+            orderedIndex = j+numStates*(h-1)+numStates*spin*(i-1)
             if (electronPopulation(orderedIndex) < smallThresh) exit
 
             ! We have found a state with at least some electron population in
@@ -592,13 +592,13 @@ endif
    deallocate (numAtomStates)
 #ifndef GAMMA
    deallocate (waveFnSqrd)
-   if (clp%doBond == 0) then
+   if (doBond == 0) then
       deallocate (valeVale)
       deallocate (valeValeOL)
    endif
 #else
    deallocate (waveFnSqrdGamma)
-   if (clp%doBond == 0) then
+   if (doBond == 0) then
       deallocate (valeValeGamma)
       deallocate (valeValeOLGamma)
    endif
@@ -617,20 +617,19 @@ endif
 end subroutine computeBond3C
 
 
-subroutine getMinDist (inDat,i,j,minDistCount,latticeIndices,minDist)
+subroutine getMinDist (i,j,minDistCount,latticeIndices,minDist)
 
    ! Import necessary modules.
    use O_Kinds
-   use O_Input
-   use O_Constants, only: bigThresh, smallThresh
+   use O_Input,       only: maxBL
    use O_AtomicSites, only: atomSites
-   use O_Lattice, only: realVectors
+   use O_Lattice,     only: realVectors
+   use O_Constants,   only: bigThresh, smallThresh
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
 
    ! Define passed parameters
-   type(inputData), intent (in) :: inDat
    integer, intent (in)  :: i
    integer, intent (in)  :: j
    integer, intent (out) :: minDistCount
@@ -681,7 +680,7 @@ subroutine getMinDist (inDat,i,j,minDistCount,latticeIndices,minDist)
       !   overlap.  This effect is not really implemented yet since the
       !   minDist will have to track all the nearest atoms, not just the
       !   closest one.
-      if ((currentDist < inDat%maxBL) .and. &
+      if ((currentDist < maxBL) .and. &
             & (abs(currentDist) > smallThresh)) then
          minDistCount = minDistCount + 1
       endif
@@ -697,9 +696,11 @@ subroutine compute3CBO (kPointWeight,spin,scaleFactor,j,index2Mag,index1,&
 
    ! Import necessary modules.
    use O_Kinds
-   use O_Constants
-   use O_AtomicSites
-   use O_SecularEquation
+#ifndef GAMMA
+   use O_SecularEquation, only: valeVale, valeValeOL
+#else
+   use O_SecularEquation, only: valeValeGamma, valeValeOLGamma
+#endif
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
@@ -763,8 +764,7 @@ subroutine computeBondCentroid(k,l,m,latticeIndices2,latticeIndices3,&
 
    ! Import necessary modules.
    use O_Kinds
-   use O_Constants
-   use O_AtomicSites
+   use O_AtomicSites, only: atomSites
    use O_Lattice, only: realVectors, invRealVectors
 
    ! Make sure that there are not accidental variable declarations.

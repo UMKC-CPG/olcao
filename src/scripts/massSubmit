@@ -1,5 +1,7 @@
 #!/usr/bin/env perl
-
+sub printHelp
+{
+   print <<ENDHELP;
 ##############################################################################
 #
 # Program: massSubmit
@@ -8,12 +10,16 @@
 #          creates a submission script that will submit a specified number of
 #          jobs at a time and wait before submitting any new jobs.
 #
-# USAGE:   massSubmit [-n $jobsPer] | -help
+# USAGE:   massSubmit [-n \$jobsPer] | -help
 #
 #          The -n option specifies how many jobs the script should submit
 #            before issueing a 'wait'.  If not set, the default value is 5.
 #
 ##############################################################################
+#
+ENDHELP
+   exit;
+}
 
 
 #########################################
@@ -24,6 +30,7 @@
 use strict;
 use warnings;
 use Env;
+use lib "$OLCAO_BIN/perl5";
 use StructureControl;
 
 
@@ -36,6 +43,7 @@ my @tagNumber;
 
 # Initialize the environment.
 &initEnv;
+
 # Parse the command line.
 &parseCommandLine;
 
@@ -97,7 +105,7 @@ sub readBatchList
     my @values;
 
     #Open the submission list.
-    open (LIST,"<$batchFile") || die "Can not open $batchFile for reading.\n";
+    open (LIST,"<$batchFile") || die "Cannot open $batchFile for reading.\n";
 
     #Read whole list of directories
     @batchList = <LIST>;
@@ -150,25 +158,3 @@ sub writeBashSub
     system ("chmod 755 $proj_dir/mSubmit");
 }
 
-
-sub printHelp
-{
-    print <<ENDHELP;
-##############################################################################
-#
-# Program: massSubmit
-# Purpose: This program creates a bash submission script for OLCAO on the
-#          Sirius system.  The program reads in from a file 'batchList' and
-#          creates a submission script that will submit a specified number of
-#          jobs at a time and wait before submitting any new jobs.
-#
-# USAGE:   massSubmit [-n \$jobsPer] | -help
-#
-#          The -n option specifies how many jobs the script should submit
-#            before issueing a 'wait'.  If not set, the default value is 5.
-#
-##############################################################################
-#
-ENDHELP
-    exit;
-}

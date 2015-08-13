@@ -2,7 +2,6 @@ module O_ElementData
 
    ! Use any necessary modules.
    use O_Kinds
-   use O_Constants
 
    ! Make sure no implicit variables are defined.
    implicit none
@@ -30,7 +29,7 @@ subroutine initElementData
 
    ! Use any necessary modules.
    use O_Kinds
-   use O_Constants
+   use O_Constants, only: maxOrbitals
 
    ! Make sure no implicit variables are defined.
    implicit none

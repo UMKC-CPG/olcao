@@ -6,21 +6,17 @@ subroutine intgPSCF
 
    ! Import the necessary modules.
    use O_Kinds
-   use O_Constants
-   use O_CommandLine
-   use O_Lattice
-   use O_Basis
-   use O_Input
    use O_TimeStamps
-   use O_Potential
-   use O_PSCFIntgHDF5
-   use O_IntegralsPSCF
+   use O_Input,         only: parseInput
+   use O_Potential,     only: initPotCoeffs
+   use O_Basis,         only: renormalizeBasis
+   use O_CommandLine,   only: doMOME, parseIntgCommandLine
+   use O_IntegralsPSCF, only: intgAndOrMom
+   use O_PSCFIntgHDF5,  only: initPSCFIntgHDF5, closePSCFIntgHDF5, setMOMEStatus
+   use O_Lattice,       only: initializeLattice, initializeFindVec
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
-
-   type(commandLineParameters) :: clp ! from O_commandLine
-   type(inputData) :: inDat ! from O_input
 
    ! Open the potential file that will be read from in this program.
    open (unit=8,file='fort.8',status='old',form='formatted')
@@ -31,11 +27,11 @@ subroutine intgPSCF
 
 
    ! Parse the command line parameters
-   call parseIntgCommandLine(clp)
+   call parseIntgCommandLine
 
 
    ! Read in the input to initialize all the key data structure variables.
-   call parseInput(inDat,clp)
+   call parseInput
 
 
    ! Find specific computational parameters not EXPLICITLY given in the input
@@ -82,12 +78,12 @@ subroutine intgPSCF
    !   only the MME need to be computed.  In that case the same subroutine can
    !   be used, except that only the MME are computed, not the overlap and
    !   hamiltonian.
-   call intgAndOrMom(1,clp%doMOME)
+   call intgAndOrMom(1,doMOME)
 
 
    ! Record to the HDF5 file an attribute that says whether or not the MOME
    !   were computed.
-   call setMOMEStatus(clp%doMOME)
+   call setMOMEStatus(doMOME)
 
 
    ! Close the HDF5 PSCF integrals file.
@@ -103,13 +99,12 @@ end subroutine intgPSCF
 subroutine getImplicitInfo
 
    ! Import necessary modules.
-   use O_AtomicSites
-   use O_AtomicTypes
-   use O_PotSites
-   use O_PotTypes
-   use O_Lattice
-   use O_KPoints
-   use O_Potential
+   use O_AtomicSites, only: getAtomicSiteImplicitInfo
+   use O_AtomicTypes, only: getAtomicTypeImplicitInfo
+   use O_PotSites, only: getPotSiteImplicitInfo
+   use O_PotTypes, only: getPotTypeImplicitInfo
+   use O_Lattice, only: getRecipCellVectors
+   use O_Potential, only: initPotStructures
    use O_TimeStamps
 
    implicit none

@@ -104,7 +104,7 @@ subroutine readDouble (readUnit,writeUnit,doubleVar,length,lookLabel)
 end subroutine readDouble
 
 subroutine read2Double (readUnit,writeUnit,doubleVar1,doubleVar2,length,&
-            lookLabel)
+      & lookLabel)
 
    use O_Kinds
 
@@ -133,7 +133,7 @@ subroutine read2Double (readUnit,writeUnit,doubleVar1,doubleVar2,length,&
 end subroutine read2Double
 
 subroutine read3Double (readUnit,writeUnit,doubleVar1,doubleVar2,doubleVar3,&
-            length,lookLabel)
+      & length,lookLabel)
 
    use O_Kinds
 
@@ -162,7 +162,8 @@ subroutine read3Double (readUnit,writeUnit,doubleVar1,doubleVar2,doubleVar3,&
 
 end subroutine read3Double
 
-subroutine readDoubleArray (readUnit,writeUnit,numValues,doubleArray,length,lookLabel)
+subroutine readDoubleArray (readUnit,writeUnit,numValues,doubleArray,length,&
+      & lookLabel)
 
    use O_Kinds
 
@@ -197,7 +198,7 @@ end subroutine readDoubleArray
 
 
 subroutine readDoubleMatrix (readUnit,writeUnit,numValues1,numValues2,&
-            doubleMatrix,length,lookLabel)
+      & doubleMatrix,length,lookLabel)
 
    use O_Kinds
 
@@ -288,7 +289,8 @@ subroutine readInt (readUnit,writeUnit,integerVar,length,lookLabel)
 end subroutine readInt
 
 
-subroutine read3Int (readUnit,writeUnit,intVar1,intVar2,intVar3,length,lookLabel)
+subroutine read3Int (readUnit,writeUnit,intVar1,intVar2,intVar3,length,&
+      & lookLabel)
 
    use O_Kinds
 

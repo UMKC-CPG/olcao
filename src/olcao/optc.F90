@@ -60,24 +60,23 @@ module O_OptcTransitions
 
 contains
 
-subroutine getEnergyStatistics(inDat,clp)
+subroutine getEnergyStatistics
 
    ! Import necessary modules.
    use O_Kinds
-   use O_Constants
-   use O_KPoints
-   use O_Input
-   use O_CommandLine
-   use O_SecularEquation
-   use O_Potential
-   use O_Populate
+   use O_Potential,       only: spin
+   use O_CommandLine,     only: stateSet
+   use O_SecularEquation, only: energyEigenValues
+   use O_Populate,        only: electronPopulation
+   use O_KPoints,         only: numKPoints, kPointWeight
+   use O_Constants,       only: dim3, smallThresh, bigThresh, hartree
+   use O_Input, only: numStates, cutoffEnOPTC, maxTransEnOPTC, &
+         & totalEnergyDiffPACS, energyWindowPACS, firstInitStatePACS, &
+         & lastInitStatePACS, onsetEnergySlackPACS, cutoffEnSIGE, &
+         & maxTransEnSIGE
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
-
-   ! define passed parameters
-   type(inputData), intent(in) :: inDat ! from O_Input
-   type(commandLineParameters), intent(in) :: clp ! from O_CommandLine
 
    ! Define local variables.
    integer :: h,i,j,k ! Loop index variables.
@@ -92,14 +91,14 @@ subroutine getEnergyStatistics(inDat,clp)
    integer :: orderedIndex
 
    ! Pull variables out of imported modules.
-   if (clp%stateSet == 0) then      ! Standard optical properties calculation.
+   if (stateSet == 0) then      ! Standard optical properties calculation.
       ! The energy onset for standard optical properties calculations is the
       !   band gap width in eV.  The energy scale for evaluating the
       !   accumulated (and broadened) transitions will begin as close to 0 eV
       !   as conveniently possible.
-      energyCutoff   = inDat%cutoffEnOPTC
-      maxTransEnergy = inDat%maxTransEnOPTC
-   elseif (clp%stateSet == 1) then  ! PACS type calculation
+      energyCutoff   = cutoffEnOPTC
+      maxTransEnergy = maxTransEnOPTC
+   elseif (stateSet == 1) then  ! PACS type calculation
       ! PACS calculations have the interesting feature that the energy onset is
       !   at some very high energy that is dependent on the particular target
       !   atom being excited (elemental dependency).  This is because the
@@ -121,14 +120,14 @@ subroutine getEnergyStatistics(inDat,clp)
       !   the lowest energy in the output data set (no transitions at this
       !   energy though).  Then, we add the energy window we want to compute
       !   for to get the maximum transition energy.
-      energyMin = inDat%totalEnergyDiffPACS - &
-            & mod(inDat%totalEnergyDiffPACS,inDat%onsetEnergySlackPACS)
-      maxTransEnergy = energyMin + inDat%energyWindowPACS
-!write (20,*) maxTransEnergy,energyMin,inDat%deltaPACS
+      energyMin = totalEnergyDiffPACS - &
+            & mod(totalEnergyDiffPACS,onsetEnergySlackPACS)
+      maxTransEnergy = energyMin + energyWindowPACS
+!write (20,*) maxTransEnergy,energyMin,deltaPACS
 !call flush (20)
    else                         ! Sigma(E) type calculation
-      energyCutoff   = inDat%cutoffEnSIGE
-      maxTransEnergy = inDat%maxTransEnSIGE
+      energyCutoff   = cutoffEnSIGE
+      maxTransEnergy = maxTransEnSIGE
    endif
 
 
@@ -207,12 +206,12 @@ subroutine getEnergyStatistics(inDat,clp)
       !   to the difference in orbital energies from the ground and excited
       !   states.  To find the amount of the shift we initialize the search
       !   number.
-      if (clp%stateSet == 1) then  ! Doing PACS calculation.
+      if (stateSet == 1) then  ! Doing PACS calculation.
          orbitalDiff = bigThresh
       endif
 
       do i = 1, numKPoints
-         do j = 2, inDat%numStates
+         do j = 2, numStates
 
             ! Find the last occupied state for this KPoint and spin. Also note
             !   that this will deal with degenerate highest occupied states.
@@ -239,7 +238,7 @@ subroutine getEnergyStatistics(inDat,clp)
             ! Determine the array index value of the current spin-kpoint-state
             !   as defined by the tempEnergyEigenValues loop near the beginning
             !   of the population subroutine.
-            orderedIndex = j+inDat%numStates*(h-1)+inDat%numStates*spin*(i-1)
+            orderedIndex = j+numStates*(h-1)+numStates*spin*(i-1)
 
             ! Note that we should anticipate that the following "if" statement
             !   will never be true when j=1. This means that the electron
@@ -266,8 +265,8 @@ subroutine getEnergyStatistics(inDat,clp)
                !   occupied because we have pulled an electron out of them.
                !   These states will never be final states and so we have to
                !   skip them.
-               if (clp%stateSet == 1) then
-                  if (j <= inDat%lastInitStatePACS) cycle
+               if (stateSet == 1) then
+                  if (j <= lastInitStatePACS) cycle
                endif
 
                ! We have found a state that is either partially or fully
@@ -365,18 +364,18 @@ subroutine getEnergyStatistics(inDat,clp)
          !   the input file (olcao.dat)).
          ! Note that this search only needs to be done once per kpoint so this
          !   is why we are doing it after the numStates loop.
-         if (clp%stateSet == 2) then
+         if (stateSet == 2) then
 
             ! Loop higher than the last occupied state to find the
             !   lowest unoccupied state that is *greater* than the maximum
             !   transition energy from the Fermi level.
-            do k = lastOccupiedState(i,h), inDat%numStates
+            do k = lastOccupiedState(i,h), numStates
                if (energyEigenValues(k,i,h) > maxTransEnergy) then
                    lastUnoccupiedState(i,h) = k
                    exit
                endif
-               if (k == inDat%numStates) then
-                  lastUnoccupiedState(i,h) = inDat%numStates
+               if (k == numStates) then
+                  lastUnoccupiedState(i,h) = numStates
                endif
             enddo
 
@@ -406,17 +405,17 @@ subroutine getEnergyStatistics(inDat,clp)
          !   around the Fermi level to consider (defined by the user) and the
          !   determination above.
 
-         if (clp%stateSet == 0) then ! Normal optical properties calculation.
+         if (stateSet == 0) then ! Normal optical properties calculation.
             firstOccupiedState(i,h) = 1
             ! lastOccupiedState determined above.
             ! firstUnoccupiedState determined above.
-            lastUnoccupiedState(i,h) = inDat%numStates
-         elseif (clp%stateSet == 1) then ! Doing a PACS calculation.
-            firstOccupiedState(i,h) = inDat%firstInitStatePACS ! From O_Input
-            lastOccupiedState(i,h)  = inDat%lastInitStatePACS  ! From O_Input
+            lastUnoccupiedState(i,h) = numStates
+         elseif (stateSet == 1) then ! Doing a PACS calculation.
+            firstOccupiedState(i,h) = firstInitStatePACS ! From O_Input
+            lastOccupiedState(i,h)  = lastInitStatePACS  ! From O_Input
             ! firstUnoccupiedState determined above.
-            lastUnoccupiedState(i,h) = inDat%numStates
-         elseif (clp%stateSet == 2) then ! Doing a Sigma(E) calculation.
+            lastUnoccupiedState(i,h) = numStates
+         elseif (stateSet == 2) then ! Doing a Sigma(E) calculation.
             ! firstOccupiedState determined above.
             ! lastOccupiedState determined above.
             ! firstUnoccupiedState determined above.
@@ -432,14 +431,12 @@ subroutine getEnergyStatistics(inDat,clp)
          firstFin  = firstUnoccupiedState(i,h)
          lastFin   = lastUnoccupiedState(i,h)
 
-         if (clp%stateSet == 1) then ! Doing PACS calculation.
+         if (stateSet == 1) then ! Doing PACS calculation.
             ! Determine the orbital energy difference for this kpoint and
             !   compare it to the smallest difference yet obtained.
             orbitalDiff = min(orbitalDiff,&
                   & energyEigenValues(firstFin,i,h) - &
                   & energyEigenValues(lastInit,i,h))
-!write (20,*) "orbitalDiff=",orbitalDiff
-!call flush (20)
          endif
 
          ! Loop over all the possible transitions for this kpoint to determine
@@ -521,7 +518,7 @@ subroutine getEnergyStatistics(inDat,clp)
 
    ! Now that the number of transitions for each kpoint are known we can 
    !   allocate space to hold information based on the number transitions.
-   if (clp%stateSet /= 2) then  ! Not doing a Sigma(E) calculation.
+   if (stateSet /= 2) then  ! Not doing a Sigma(E) calculation.
       allocate (energyDiff (maxPairs,numKPoints,spin))
       allocate (transitionProb  (dim3,maxPairs,numKPoints,spin))
 
@@ -534,31 +531,32 @@ end subroutine getEnergyStatistics
 
 
 
-subroutine computeTransitions(inDat,clp)
+subroutine computeTransitions
 
 
    ! Import the necessary modules.
+   use HDF5
    use O_Kinds
    use O_TimeStamps
-   use O_Input
-   use O_KPoints
-   use O_CommandLine
-   use O_MatrixSubs
-   use O_SecularEquation
-   use O_AtomicSites
-   use O_IntegralsPSCF
-   use O_Potential
-
-   ! Import the necessary HDF data.
-   use HDF5
-   use O_PSCFBandHDF5
+   use O_Potential,     only: spin
+   use O_KPoints,       only: numKPoints
+   use O_IntegralsPSCF, only: getIntgResults
+   use O_AtomicSites,   only: coreDim, valeDim
+   use O_CommandLine,   only: stateSet, serialXYZ
+   use O_Input,         only: numStates, totalEnergyDiffPACS
+   use O_PSCFBandHDF5,  only: valeValeBand, coreValeBand, valeStatesBand, &
+         & eigenVectorsBand_did, eigenVectorsBand2_did, coreValeBand_did, &
+         & valeValeBand_did
+#ifndef GAMMA
+   use O_SecularEquation, only: valeVale
+   use O_MatrixSubs,      only: readMatrix, readPartialWaveFns
+#else
+   use O_SecularEquation, only: valeValeGamma
+   use O_MatrixSubs,      only: readMatrixGamma, readPartialWaveFnsGamma
+#endif
 
    ! Make sure that there are no accidental variable declarations.
    implicit none
-
-   ! define passed parameters
-   type(inputData), intent(in) :: inDat ! from O_Input
-   type(commandLineParameters), intent(inout) :: clp ! from O_CommandLine
 
    ! Define local variables.
    integer :: h,i,j ! Loop index variables
@@ -574,10 +572,10 @@ subroutine computeTransitions(inDat,clp)
 
    ! Allocate the matrix to hold the wave functions and initialize it.
 #ifndef GAMMA
-   allocate (valeVale (valeDim,inDat%numStates,1,1))
+   allocate (valeVale (valeDim,numStates,1,1))
    valeVale(:,:,1,1) = cmplx(0.0_double,0.0_double,double)
 #else
-   allocate (valeValeGamma(valeDim,inDat%numStates,1))
+   allocate (valeValeGamma(valeDim,numStates,1))
    valeValeGamma(:,:,1) = 0.0_double
 #endif
 
@@ -598,22 +596,22 @@ subroutine computeTransitions(inDat,clp)
 
          ! Allocate temporary reading matrices.
 #ifndef GAMMA
-         allocate (tempRealValeVale(valeDim,inDat%numStates))
-         allocate (tempImagValeVale(valeDim,inDat%numStates))
+         allocate (tempRealValeVale(valeDim,numStates))
+         allocate (tempImagValeVale(valeDim,numStates))
 #else
-         allocate (tempRealValeVale(valeDim,inDat%numStates))
+         allocate (tempRealValeVale(valeDim,numStates))
 #endif
 
-         if (clp%stateSet /= 1) then  ! Not doing a PACS calculation.
+         if (stateSet /= 1) then  ! Not doing a PACS calculation.
 
             ! Read the datasets for this kpoint.
 #ifndef GAMMA
             call readMatrix(eigenVectorsBand_did(:,i,h),valeVale(:,:,1,1),&
                   & tempRealValeVale(:,:),tempImagValeVale(:,:),&
-                  & valeStatesBand,valeDim,inDat%numStates)
+                  & valeStatesBand,valeDim,numStates)
 #else
             call readMatrixGamma(eigenVectorsBand_did(1,i,h),&
-                  & valeValeGamma(:,:,1),valeStatesBand,valeDim,inDat%numStates)
+                  & valeValeGamma(:,:,1),valeStatesBand,valeDim,numStates)
 #endif
          else
 
@@ -623,28 +621,26 @@ subroutine computeTransitions(inDat,clp)
                   & valeVale(:,:,1,1),tempRealValeVale(:,:),&
                   & tempImagValeVale(:,:),valeStatesBand,&
                   & firstOccupiedState(i,h),lastOccupiedState(i,h),&
-                  & valeDim,inDat%numStates)
+                  & valeDim,numStates)
 
             ! Read the data for the excited state for this kpoint.
             call readPartialWaveFns(eigenVectorsBand2_did(:,i,h),&
                   & valeVale(:,:,1,1),tempRealValeVale(:,:),&
                   & tempImagValeVale(:,:),valeStatesBand,&
-!                  & firstUnoccupiedState(i,h),lastUnoccupiedState(i,h),&
                   & lastOccupiedState(i,h)+1,lastUnoccupiedState(i,h),&
-                  & valeDim,inDat%numStates)
+                  & valeDim,numStates)
 #else
             ! Read the data for the ground state for this kpoint.
             call readPartialWaveFnsGamma(eigenVectorsBand_did(1,i,h),&
                   & valeValeGamma(:,:,1),tempRealValeVale(:,:),valeStatesBand,&
                   & firstOccupiedState(i,h),lastOccupiedState(i,h),&
-                  & valeDim,inDat%numStates)
+                  & valeDim,numStates)
 
             ! Read the data for the excited state for this kpoint.
             call readPartialWaveFnsGamma(eigenVectorsBand2_did(1,i,h),&
                   & valeValeGamma(:,:,1),tempRealValeVale(:,:),valeStatesBand,&
-!                  & firstUnoccupiedState(i,h),lastUnoccupiedState(i,h),&
                   & lastOccupiedState(i,h)+1,lastUnoccupiedState(i,h),&
-                  & valeDim,inDat%numStates)
+                  & valeDim,numStates)
 #endif
          endif
 
@@ -675,7 +671,7 @@ subroutine computeTransitions(inDat,clp)
 
 
          ! Perform the computations in serial or all together.
-         if (clp%serialXYZ == 0) then
+         if (serialXYZ == 0) then
 #ifndef GAMMA
 
             allocate   (valeValeMom (valeDim,valeDim,1,3))
@@ -701,10 +697,10 @@ subroutine computeTransitions(inDat,clp)
             deallocate (coreValeOLGamma)
 #endif
 
-            if (clp%stateSet /= 2) then  ! Not doing a Sigma(E) calculation.
-               call computePairs (i,0,h,inDat,clp)
+            if (stateSet /= 2) then  ! Not doing a Sigma(E) calculation.
+               call computePairs (i,0,h)
             else
-               call computeSigmaE (i,0,h,inDat)
+               call computeSigmaE (i,0,h)
             endif
 
          else
@@ -721,10 +717,10 @@ subroutine computeTransitions(inDat,clp)
                      & j+2,valeValeBand_did(i),valeValeBand,0,1)
 #endif
 
-               if (clp%stateSet /= 2) then  ! Not doing a Sigma(E) calc.
-                  call computePairs (i,j,h,inDat,clp)
+               if (stateSet /= 2) then  ! Not doing a Sigma(E) calc.
+                  call computePairs (i,j,h)
                else
-                  call computeSigmaE (i,j,h,inDat)
+                  call computeSigmaE (i,j,h)
                endif
             enddo
 
@@ -759,8 +755,8 @@ subroutine computeTransitions(inDat,clp)
       !   energy values.  The amount of the shift is equal to the difference
       !   between (the total energy difference between the ground and excited
       !   states) and (the calculated LUMO,core difference).
-      if (clp%stateSet == 1) then  ! Doing PACS calculation.
-         energyShift = inDat%totalEnergyDiffPACS - orbitalDiff
+      if (stateSet == 1) then  ! Doing PACS calculation.
+         energyShift = totalEnergyDiffPACS - orbitalDiff
          energyDiff(:,:,h) = energyDiff(:,:,h) + energyShift
       endif
    enddo ! (h spin)
@@ -786,18 +782,23 @@ end subroutine computeTransitions
 
 
 
-subroutine computePairs (currentKPoint,xyzComponents,spinDirection,inDat,clp)
+subroutine computePairs (currentKPoint,xyzComponents,spinDirection)
 
    ! Import the necessary modules.
    use O_Kinds
-   use O_KPoints
-   use O_SortSubs
-   use O_Input
-   use O_Populate
-   use O_Potential
-   use O_CommandLine
-   use O_AtomicSites
-   use O_SecularEquation
+   use O_Constants,   only: dim3
+   use O_Potential,   only: spin
+   use O_AtomicSites, only: valeDim
+   use O_CommandLine, only: stateSet
+   use O_SortSubs,    only: mergeSort
+   use O_Input,       only: numStates
+   use O_KPoints,     only: kPointWeight
+   use O_Populate,    only: electronPopulation
+#ifndef GAMMA
+   use O_SecularEquation, only: energyEigenValues, valeVale
+#else
+   use O_SecularEquation, only: energyEigenValues, valeValeGamma
+#endif
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
@@ -806,8 +807,6 @@ subroutine computePairs (currentKPoint,xyzComponents,spinDirection,inDat,clp)
    integer :: currentKPoint
    integer :: xyzComponents ! 0=all, 1=x, 2=y, 3=z
    integer :: spinDirection
-   type(inputData), intent(in) :: inDat ! from O_Input
-   type(commandLineParameters), intent(inout) :: clp ! from O_CommandLine
 
    ! Define local variables.
    integer :: i,j,k ! Loop index variables
@@ -980,13 +979,13 @@ subroutine computePairs (currentKPoint,xyzComponents,spinDirection,inDat,clp)
          ! Determine the array index value of the current initial (index i)
          !   spin-kpoint-state as defined by the tempEnergyEigenValues loop
          !   near the beginning of the population subroutine.
-         orderedIndex = i + inDat%numStates*(spinDirection-1) + &
-               & inDat%numStates*spin*(currentKPoint-1)
+         orderedIndex = i + numStates*(spinDirection-1) + &
+               & numStates*spin*(currentKPoint-1)
 
          ! Use the normal state factor for non-PACS calculations. For PACS
          !   calculations the initStateFactor is always 1 even though the
          !   initial core state(s) will have an electron missing.
-         if (clp%stateSet /= 1) then
+         if (stateSet /= 1) then
             initStateFactor = electronPopulation(orderedIndex) / &
                   & (kPointWeight(currentKPoint)/real(spin,double))
          else
@@ -996,8 +995,8 @@ subroutine computePairs (currentKPoint,xyzComponents,spinDirection,inDat,clp)
          ! Determine the array index value of the current final (index j)
          !   spin-kpoint-state as defined by the tempEnergyEigenValues loop
          !   near the beginning of the population subroutine.
-         orderedIndex = j + inDat%numStates*(spinDirection-1) + &
-               & inDat%numStates*spin*(currentKPoint-1)
+         orderedIndex = j + numStates*(spinDirection-1) + &
+               & numStates*spin*(currentKPoint-1)
 
          finStateFactor = 1.0_double - electronPopulation(orderedIndex) / &
                & (kPointWeight(currentKPoint)/real(spin,double))
@@ -1084,18 +1083,22 @@ end subroutine computePairs
 
 
 
-subroutine computeSigmaE (currentKPoint,xyzComponents,spinDirection,inDat)
+subroutine computeSigmaE (currentKPoint,xyzComponents,spinDirection)
 
    ! Import the necessary data modules.
    use O_Kinds
-   use O_Constants
-   use O_KPoints
+   use O_Constants, only: dim3, pi, auTime, lightFactor, hartree
+   use O_KPoints, only: numKPoints, kPointWeight
    use O_SortSubs
-   use O_Input
-   use O_Lattice
-   use O_Potential ! For spin
-   use O_AtomicSites
-   use O_SecularEquation
+   use O_Input, only: maxTransEnSIGE, deltaSIGE, sigmaSIGE
+   use O_Lattice, only: realCellVolume
+   use O_Potential, only: spin
+   use O_AtomicSites, only: valeDim
+#ifndef GAMMA
+   use O_SecularEquation, only: valeVale, energyEigenValues
+#else
+   use O_SecularEquation, only: valeValeGamma, energyEigenValues
+#endif
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
@@ -1104,7 +1107,6 @@ subroutine computeSigmaE (currentKPoint,xyzComponents,spinDirection,inDat)
    integer :: currentKPoint
    integer :: xyzComponents
    integer :: spinDirection
-   type(inputData) :: inDat
 
    ! Define local variables.
    integer :: i,j,k ! Loop index variables
@@ -1135,10 +1137,10 @@ subroutine computeSigmaE (currentKPoint,xyzComponents,spinDirection,inDat)
 #endif
 
    ! Compute the number of energy points to evaluate.
-   numEnergyPoints = int((inDat%maxTransEnSIGE * 2) / inDat%deltaSIGE + 1)
+   numEnergyPoints = int((maxTransEnSIGE * 2.0_double) / deltaSIGE + 1)
 
    ! Define constants for normalizing the broadening gaussian.
-   sigmaSqrt2Pi = inDat%sigmaSIGE * sqrt(2.0_double * pi)
+   sigmaSqrt2Pi = sigmaSIGE * sqrt(2.0_double * pi)
 
    ! Obtain the state bounds for this kpoint.
    firstInit =   firstOccupiedState(currentKPoint,spinDirection)
@@ -1160,7 +1162,7 @@ subroutine computeSigmaE (currentKPoint,xyzComponents,spinDirection,inDat)
 
       allocate (energyScale (numEnergyPoints))
       do i = 1, numEnergyPoints
-         energyScale(i) = -inDat%maxTransEnSIGE + inDat%deltaSIGE * (i-1)
+         energyScale(i) = -maxTransEnSIGE + deltaSIGE * (i-1)
       enddo
    endif
 
@@ -1302,7 +1304,7 @@ subroutine computeSigmaE (currentKPoint,xyzComponents,spinDirection,inDat)
          & (sigmaSqrt2Pi)**2
 
    ! Now compute the exponential alpha factor which is -1/(2 * sigma^2).
-   alphaFactor = -1.0_double / (2.0_double * inDat%sigmaSIGE**2)
+   alphaFactor = -1.0_double / (2.0_double * sigmaSIGE**2)
 
    ! Now we fill up the sigmaEAccumulator.  There are two scenarios in which
    !   this may happen, the xyz all at once (xyzComponents==0) case, and the
@@ -1439,7 +1441,7 @@ subroutine computeSigmaE (currentKPoint,xyzComponents,spinDirection,inDat)
       !   equal to one.  (Note that we do not divide by three here since we
       !   will perform the averaging later.  We also do not change the units of
       !   the cell volume since that will be accounted for next.)
-      conversionFactor = 2 * pi / realCellVolume
+      conversionFactor = 2.0_double * pi / realCellVolume
 
 
       ! The units of the KGF in a.u. are seen as:
