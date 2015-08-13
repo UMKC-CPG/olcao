@@ -5105,15 +5105,6 @@ information.
 
 =head1 SYNOPSIS
 
-  use StructureControl;
-
-  &readGulp();
-  &readPDB();
-  &readABC();
-  &abcAlphaBetaGamma();
-  &getDirectXYZ();
-  
-
 
 =head1 DESCRIPTION
 

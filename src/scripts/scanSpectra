@@ -87,7 +87,7 @@ my $gaussianFWHM;
 # Read the input file.
 StructureControl::readInputFile("olcao.skl", 0);
 
-# Read the OLCAO species from the gulp.mi file.
+# Read the OLCAO species from the olcao.mi file.
 StructureControl::readOLCAOSpecies;
 
 # Set the limit for atom interaction.  (Radius of inclusion)

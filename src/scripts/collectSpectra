@@ -140,7 +140,7 @@ sub parseCommandLine
       $number++;
    }
 
-   # Record the command line used to shift the gulp data.
+   # Record the command line used to shift the olcao data.
    open (COMMANDLINE,">>$commandLine");
    print COMMANDLINE "collectSpectra ";
    $number = 0;
@@ -263,11 +263,11 @@ sub obtainStructure
 
    # We will open olcao.mi, parse the information, and store the data for use
    #   later on when we consider making the weighted sums of the xanes spectra.
-   open (GULPMI,"<$projectDir/$projectName/inputs/olcao.mi") || 
+   open (OLCAOMI,"<$projectDir/$projectName/inputs/olcao.mi") || 
         die "Cannot open olcao.mi for reading.\n";
 
    # Position the cursor to the point of reading the atom information.
-   while ($line = <GULPMI>)
+   while ($line = <OLCAOMI>)
    {
       if (($line =~ /fract/) || ($line =~ /cart/))
          {last;}
@@ -275,7 +275,7 @@ sub obtainStructure
 
    # Read the atomic element/species information and abort when we read the
    #   spacegroup, supercell, or bond distance cutoff value.
-   while ($line = <GULPMI>)
+   while ($line = <OLCAOMI>)
    {
       # Abort when we have read the last atom.
       if (($line =~ /supercell/) || ($line =~ /space/) || ($line =~ /dist/))
@@ -293,7 +293,7 @@ sub obtainStructure
       # Store the atom in lower case.
       $atomList[$numAtoms] = lc($values[0]);
    }
-   close (GULPMI);
+   close (OLCAOMI);
 
    # Initialize the first array index of atomList to an empty value.  This will
    #   get rid of warnings about uninitialized values in the sort.
