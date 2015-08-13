@@ -1,0 +1,198 @@
+#!/usr/bin/env perl
+sub printHelp
+{
+   print <<ENDHELP;
+##############################################################################
+#
+# Program: massPrep
+# Purpose: Given an olcao.skl input file and a control file, this program will
+#          create a set of directories that contain individual OLCAO jobs and
+#          a single submission file to execute them all.
+#
+# USAGE:   massPrep [-n \$jobsPer] [-parallel] | -help
+#
+#          The -n option specifies how many jobs the script should submit
+#            before issueing a 'wait'.  If not set, the default value is 5.
+#          The -parallel option indicates that each job should be submitted
+#            as a parallel job.
+#
+##############################################################################
+#
+ENDHELP
+   exit;
+}
+
+#########################################
+# BEGIN EXECUTION #######################
+#########################################
+
+# Necessary modules.
+use strict;
+use warnings;
+use Env;
+use lib "$OLCAO_BIN/perl5";
+use StructureControl;
+
+
+# Global variables.
+my $jobsPer;
+my $subFile;
+my @memberName;
+my $numMembers;
+
+# Initialize the environment.
+&initEnv;
+
+# Parse the command line.
+&parseCommandLine;
+
+# Prepare the list of set members.
+&prepMemberName;
+
+# Prepare the directories for the set members.
+&prepInput;
+
+# Make the submission file.
+&makeSubmit;
+
+###################################################
+# End Execution ###################################
+###################################################
+
+sub initEnv
+{
+    $jobsPer=5;
+    if ($OLCAO_QUEUE == 0)
+       {$subFile = "submit";}
+    elsif ($OLCAO_QUEUE == 1)
+       {$subFile = "pbs";}
+    elsif ($OLCAO_QUEUE == 2)
+       {$subFile = "lsf";}
+    elsif ($OLCAO_QUEUE == 3)
+       {$subFile = "slurm";}
+}
+
+sub parseCommandLine
+{
+    #Local Variables
+    my $number = 0;
+    my $commandLine = "command";
+    my $argument;
+
+    while($number < scalar(@ARGV))
+    {
+        if($ARGV[$number] eq "-n")
+          {$jobsPer = $ARGV[++$number];}
+        elsif ($ARGV[$number] eq "-help")
+          {&printHelp;}
+        else
+        {
+            print STDOUT "UNKOWN COMMAND LINE PARAMETER $ARGV[$number].\n";
+            exit
+        }
+        $number++;
+    }
+
+    #Record the comand line used to create this set of input files.
+    open (COMMANDLINE,">>$commandLine");
+    print COMMANDLINE "massPrep ";
+    foreach $argument (0..$#ARGV)
+        {print COMMANDLINE "$ARGV[$argument] ";}
+    print COMMANDLINE "\n";
+    close (COMMANDLINE);
+}
+
+sub prepMemberName
+{
+   # Define local variables.
+   my $distance;
+
+   # Initialize the distance and the number of members.
+   $distance = 5.5;
+   $numMembers = 0;
+
+   while ($distance >= 0.5)
+   {
+      $memberName[$numMembers++] = sprintf "%.1f",$distance;
+      $distance -= 0.1;
+   }
+   
+}
+
+sub prepInput
+{
+   # Define local variables
+   my $setMember;
+
+   foreach $setMember (@memberName)
+   {
+      # Make and enter the directory for this member.
+      mkdir "$setMember";
+      chdir "$setMember";
+
+      # Make the skeleton for this member.
+      open (SKL,">olcao.skl") || die "Cannot open olcao.skl for writing.\n";
+      print SKL "title\n";
+      print SKL "Skeleton file for $setMember\n";
+      print SKL "end\n";
+      print SKL "cell\n";
+      print SKL "20.000 20.000 20.000 90.000 90.000 90.000\n";
+      print SKL "cartesian 2\n";
+      print SKL "H 0.000 0.000 0.000\n";
+      printf SKL "H 0.000 0.000 %.3f\n",$setMember;
+      print SKL "space 1_a\n";
+      print SKL "supercell 1 1 1\n";
+      print SKL "full\n";
+      close (SKL);
+
+      # Make the full input file for this member.
+      system ("makeinput");
+
+      # Return to parent directory
+      chdir "..";
+   }
+}
+
+sub makeSubmit
+{
+   # Define local variables
+   my $setMember;
+   my $jobCount;
+
+   # Open the submit file.
+   open (SUB,">$subFile") || die "Cannot open $subFile for writing.\n";
+
+   print SUB <<ENDSUB;
+#!/bin/bash
+#SBATCH -p general
+#SBATCH -J 5.x
+#SBATCH -o 5.x.o%J
+#SBATCH -e 5.x.e%J
+#SBATCH -n 51
+#SBATCH -t 20
+#SBATCH --mem=10G
+#
+source /home/prulis/CPG/cpg-repo/v33-only/.olcao
+export OMP_NUM_THREADS=1
+ENDSUB
+
+   # Initialize the count of jobs in a batch.
+   $jobCount = 0;
+
+   foreach $setMember (@memberName)
+   {
+      $jobCount++;
+      print SUB "cd \$SLURM_SUBMIT_DIR/$setMember\n";
+      print SUB "\$OLCAO_BIN/olcao &\n";
+      if ($jobCount == $jobsPer)
+      {
+         $jobCount = 0;
+         print SUB "wait\n";
+      }
+   }
+   print SUB "wait\n";
+
+   # Close the submit file.
+   close (SUB);
+
+}

@@ -1,0 +1,155 @@
+#!/usr/bin/env perl
+sub printHelp
+{
+   print <<ENDHELP;
+##############################################################################
+#
+# Program: massGather
+# Purpose: This is a crude program to collect data from a set of similar jobs
+#          and compile it into a single file.
+#
+# USAGE:   massGather -help
+#
+##############################################################################
+#
+ENDHELP
+   exit;
+}
+
+#########################################
+# BEGIN EXECUTION #######################
+#########################################
+
+# Necessary modules.
+use strict;
+use warnings;
+use Env;
+use lib "$OLCAO_BIN/perl5";
+use StructureControl;
+
+
+# Global variables.
+my @memberName;
+my $numMembers;
+my $hdf5File;
+
+# Initialize the environment.
+&initEnv;
+
+# Parse the command line.
+&parseCommandLine;
+
+# Prepare the list of set members.
+&prepMemberName;
+
+# Collect the data.
+&collect;
+
+###################################################
+# End Execution ###################################
+###################################################
+
+sub initEnv
+{
+    # Initialize file names.
+    $hdf5File = "gs_main-fb.hdf5";
+}
+
+sub parseCommandLine
+{
+    #Local Variables
+    my $number = 0;
+    my $commandLine = "command";
+    my $argument;
+
+    while($number < scalar(@ARGV))
+    {
+        if ($ARGV[$number] eq "-help")
+          {&printHelp;}
+        else
+        {
+            print STDOUT "UNKOWN COMMAND LINE PARAMETER $ARGV[$number].\n";
+            exit
+        }
+        $number++;
+    }
+
+    #Record the comand line used to create this set of input files.
+    open (COMMANDLINE,">>$commandLine");
+    print COMMANDLINE "massGather ";
+    foreach $argument (0..$#ARGV)
+        {print COMMANDLINE "$ARGV[$argument] ";}
+    print COMMANDLINE "\n";
+    close (COMMANDLINE);
+}
+
+sub prepMemberName
+{
+   # Define local variables.
+   my $distance;
+
+   # Initialize the distance and the number of members.
+   $distance = 5.5;
+   $numMembers = 0;
+
+   while ($distance >= 0.5)
+   {
+      $memberName[$numMembers++] = sprintf "%.1f",$distance;
+      $distance -= 0.1;
+   }
+   
+}
+
+sub collect
+{
+   # Define local variables.
+   my $setMember;
+   my $eValue;
+   my $lineNum;
+   my $numEValues;
+   my $index;
+   my $proj_dir;
+   my @eData;
+   my @values;
+   my @allData;
+
+   $index = 0;
+
+   foreach $setMember (@memberName)
+   {
+      $proj_dir = `pwd`;
+
+      @eData = `h5dump -w 1 -g eigenValues $setMember/intermediate/$hdf5File`;
+
+      foreach $lineNum (0..$#eData)
+      {
+         if ($eData[$lineNum] =~ /DATASPACE/)
+         {
+            @values = StructureControl::prepLine("",$eData[$lineNum],'\s+');
+            $numEValues = $values[4];
+         }
+
+         if ($eData[$lineNum] =~ /DATA /)
+         {
+            foreach $eValue (0..$numEValues-1)
+            {
+               @values = StructureControl::prepLine("",
+                     $eData[$lineNum+$eValue+1],'\s+');
+               chop $values[$#values];
+               $allData[$index][$eValue] = $values[$#values];
+            }
+            last;
+         }
+      }
+
+      $index++;
+   }
+
+   foreach $index (0..$numMembers-1)
+   {
+      print STDOUT "$index";
+      foreach $eValue (0..$numEValues-1)
+         {print STDOUT " $allData[$index][$eValue]";}
+      print STDOUT "\n";
+   }
+}

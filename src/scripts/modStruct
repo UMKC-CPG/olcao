@@ -1,0 +1,1049 @@
+#!/usr/bin/env perl
+#
+sub printHelp
+{
+   print <<ENDHELP;
+# PROGRAM:  modStruct
+# PURPOSE:  To modify an atomic structure input file according to some requests
+#           such as supercell generation, translation, rotation, bond-valence
+#           analysis, etc.
+#
+# The -i option allows the user to specify an alternate input file.  If not
+#   given, then the default value of "gulp.dat" will be used.
+# The -o opiton allows the user to specify an alternate output file.  If not
+#   given, then the default value of "gulp.new" will be used.
+# The -t option allows the user to specify a title to be included in the newly
+#   created \$outFile.  The \$title should be contained within quotes if it
+#   has any whitespace characters.
+# The -abcxyz option defines the orientation of the a,b,c lattice vectors with
+#   respect to the x,y,z axes.  The idea is that \$abc[1] will be aligned with
+#   \$xyz[1] and that \$abc[2] will be in the \$xyz[1],\$xyz[2] plane so that
+#   \$abc[3] can be in an arbitrary x,y,z direction.  The default values if this
+#   option is not given are 1 1 2 2 which will cause a to align with x, and b
+#   to be in the x,y plane so that c is in an arbitrary x,y,z direction.  This
+#   option can only be applied once at the present time.  Don't get too crazy
+#   with it either.  ^_^
+# The -sc option requests the creation of a supercell where the a,b,c axis are
+#   replicated \$sc[1], \$sc[2], and \$sc[3] times.  The values for 
+#   \$mirror[1,2,3] must each be either a 0 or a 1.  If it is a 0 then simple 
+#   supercells are created for that axis.  If it is a 1, then every other
+#   supercell will be a mirror image of the previous cell.  I.e. the first new
+#   cell will have reversed positions, the second  will not, the third will,
+#   etc.  If this option is given then it will override any value given within
+#   the "supercell" line of the input file.
+# The -trans option requests that the atomic positions in the atomic structure
+#   file be linearly translated by \$trans[1], \$trans[2], and \$trans[3] in those
+#   specific XYZ directions.  (At present the translations are only in the XYZ
+#   directions and so trans[1..3] must be in XYZ direct coordinates.
+# The -rotA option requests that the atomic positions in the atomic structure
+#   file be rotated given the *A*xis of rotation.  The \$rot[1], \$rot[2], and
+#   \$rot[3] values are a vector specifying the axis of rotation in directXYZ
+#   coordinates.  Then, the \$rotAngle specifies the amount of the rotation in
+#   degrees.  Periodic boundary conditions are retained so that atoms rotated
+#   out of the cell are effectively rotated back into the cell from the other
+#   side.  The default origin for the normal vector is the origin, but that can
+#   be changed with the -orig subopiton.  If -orig is given, then the origin of
+#   the normal vector is given by its parameters in directXYZ coordinates. The
+#   the -pbc suboption decides the nature of the periodic boundary conditions
+#   (PBCs). The default (no -pbc option given) implies that the model does not
+#   represent a system that adheres to PBCs. (I.e. it is an isolated molecule
+#   instead of a crystal of some kind. Thus, if atoms are rotated out of the
+#   cell, then relatively simple PBCs will shift atoms back into the cell.)
+# The -rotP option requests that the atomic positions in the atomic structure
+#   file be rotated given three points that define a *P*lane and which thus
+#   defines a normal vector which is the axis of rotation. Periodic boundary
+#   conditions are still retained as with -rotA. Further the origin will follow
+#   the same rule of defaulting to the origin (0,0,0). Note that for this
+#   definition, the amount to rotate by is determined either by explicitly
+#   giving an angle or by letting the program compute an angle. The angle is
+#   computed as the angle between the 2nd and 3rd points.  Often times the
+#   first point will be 0,0,0. The -pbc suboption is the same as in -rotA.
+# The -filter option will eliminate certain atoms from the model that are too
+#   close to other atoms.  If an atom is found to be with \$minDistFilter of
+#   another atom, then it is removed.  THIS DOES NOT REALLY WORK YET.
+# The -addvac option will increase the cell size but retain atomic direct
+#   space coordinates so that a region of vacuum is created in the model.  The
+#   \$vacAxis can be a, b, or c.  The \$vacAmt is the amount of vacuum to add in
+#   angstroms.  The vacuum will be added to only one side so that a translation
+#   must be performed to move the atoms into the center of the cell "between"
+#   the two vacuum layers.  Further, to choose the plane of the surface it is
+#   necessary to perform a translation before the addvac option is used. Also,
+#   the ABC Vectors in XYZ format will be reobtained after extending the ABC
+#   magnitudes only. Thus, at present, the directions of ABC may change. The
+#   assumption is that a is in the x direction, b is in the xy plane, etc.
+#   See getABCVectors subroutine in StructureControl for details.
+# The -ortho option will convert the lattice type of the given cell to an
+#   orthorhombic type.  This should only be used for cells that have been
+#   carefully analyzed.  At present only hexagonal cells can be converted to
+#   orthorhombic type and then only after they have been made into a supercell
+#   that doubles the cell size along the direction of the axis to be changed.
+# The -perturb option will apply a small shift to the atomic positions of each
+#   atom in the model.  The \$maxPertMag is the magnitude of the shift measured
+#   in angstroms.
+# The [...] indicates that it is possible to apply each operation in a sequence
+#   and that the steps are modular and can be applied in any desired sequence
+#   any number of times.
+# The -sc, -trans, -rot, and -filter options can be repeated as many times as
+#   needed and the operations will be performed in the order given on the
+#   command line.
+# The -help option gives this help.
+#
+# USAGE:    modStruct [-i \$infile] [-o \$outFile] [-t \$title]
+#                     [-abcxyz \$abc[1] \$xyz[1] \$abc[2] \$xyz[2]]
+#                     [[-sc \$sc[1] \$sc[2] \$sc[3] 
+#                           \$mirror[1] \$mirror[2] \$mirror[3]]
+#                      [-trans \$trans[1] \$trans[2] \$trans[3]]
+#                      [-rotA \$rot[1] \$rot[2] \$rot[3] \$rotAngle [-pbc]
+#                             [-orig \$orig[1] \$orig[2] \$orig[3]]]
+#                      [-rotP \$p1[1] \$p1[2] \$p1[3]
+#                             \$p2[1] \$p2[2] \$p2[3]
+#                             \$p3[1] \$p3[2] \$p3[3]
+#                             [-angle \$rotAngle] [-pbc]
+#                             [-orig \$orig[1] \$orig[2] \$orig[3]]]
+#                      [-filter \$minDistFilter]
+#                      [-addvac \$vacAxis \$vacAmt]
+#                      [-ortho] [-perturb \$maxPertMag] [...]]
+#                     [-help]
+ENDHELP
+   exit;
+}
+#
+###############################################
+# Begin program execution #####################
+###############################################
+
+# Use necessary modules.
+use strict;
+use warnings;
+use Env;
+use lib "$OLCAO_BIN/perl5";
+use StructureControl;
+use ElementData;
+use Math::MatrixReal;
+
+# Declare global variables.
+my $pi = 3.1415926535897932384626433832795;
+my $inFile;     # Input file.
+my $outFile;    # Output file.
+my $title;      # Title for output file.
+my @abc;        # List ordering a,b,c axes for relation to x,y,z axes.
+my @xyz;        # List ordering x,y,z axes used to relate a,b,c axes. See above.
+my @sc;         # Supercell directions and times of multiplication.
+my @mirror;     # Mirror the supercells (1) or not (0).
+my @trans;      # Directions and amounts of linear translation.
+my $rotPBC;     # Flag for rotation periodic boundary conditions (1) or not (0).
+my @rot;        # Axis of rotation.
+my @p1;         # Plane of rotation point 1.
+my @p2;         # Plane of rotation point 2.
+my @p3;         # Plane of rotation point 3.
+my @rotAngle;   # Degree of rotation.
+my @rotOrig;    # Origin of the normal vector (axis of rotation).
+my @vacAxis;    # Axis on which to create a vacuum.
+my @vacAmt;     # Amount of vacuum to add in Angstroms.
+my @maxPertMag; # Maximum magnitued of the applied perturbation.
+my $numOps;     # Number of operations to perform.
+my @ops;        # Code of operations to perform.  (1=sc,2=trans,3=rot).
+my @minDistFilter; # Distance within which to filter.
+my $operation;
+
+# Initialize the environment.
+&initEnv;
+
+# Read the command line parameters.
+&parseCommandLine;
+
+# Set the lattice vector orientations according to the command line.
+StructureControl::setABCXYZAssignmentOrder(\@abc,\@xyz);
+
+# Read the input file.
+StructureControl::readInputFile($inFile,1);
+
+# Loop through all operations and apply them.
+foreach my $op (1..$numOps)
+{
+   if ($ops[$op] == 1)
+      {StructureControl::applySupercell(@{$sc[$op]}[1..3],
+                                        @{$mirror[$op]}[1..3]);}
+   elsif ($ops[$op] == 2)
+      {StructureControl::translateAtoms(\@{$trans[$op]});}
+   elsif ($ops[$op] == 3)
+      {StructureControl::rotateAllAtoms(\@{$rotOrig[$op]},\@{$rot[$op]},
+                                        $rotAngle[$op]);}
+   elsif ($ops[$op] == 4)
+      {StructureControl::applyFilter($minDistFilter[$op]);}
+   elsif ($ops[$op] == 5)
+      {StructureControl::insertVacuum($vacAxis[$op],$vacAmt[$op]);}
+   elsif ($ops[$op] == 6)
+      {StructureControl::makeOrtho;}
+   elsif ($ops[$op] == 7)
+      {StructureControl::applyPerturbation($maxPertMag[$op]);}
+}
+
+open(OUT,">$outFile");
+StructureControl::printOLCAO(\*OUT,$title,"cart");
+
+###############################################
+# End program execution #######################
+###############################################
+
+sub initEnv
+{
+   my $hostname;
+
+   $hostname = `uname -n`;
+   chomp $hostname;
+
+   # Initialize the input and output files to their default values.
+   $inFile  = "olcao.skl";
+   $outFile = "olcao.skl.new";
+
+   # Create an initial title based on the current location and the machine name.
+   $title = `pwd`;
+   chomp $title;
+   $title = $hostname . $title;
+
+   # Initialize the order of axis assignment.
+   $abc[1] = 1; $abc[2] = 2; $abc[3] = 3;
+   $xyz[1] = 1; $xyz[2] = 2; $xyz[3] = 3;
+
+   # Initialize the number of operations to do to zero.
+   $numOps = 0;
+}
+
+sub parseCommandLine
+{
+   # Declare local variables
+   my $number;
+   my $argument;
+   my $normalizer;
+   my $commandLine = "command";
+
+   # Initialize the index counter for the command line parameters.
+   $number=0;
+
+   # Loop through the command line parameters checking for each option.
+   while ($number < scalar(@ARGV))
+   {
+      if ($ARGV[$number] eq "-i")
+         {$inFile = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-o")
+         {$outFile = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-t")
+         {$title = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-abcxyz")
+      {
+         $abc[1] = $ARGV[++$number];
+         $xyz[1] = $ARGV[++$number];
+         $abc[2] = $ARGV[++$number];
+         $xyz[2] = $ARGV[++$number];
+         $abc[3] = abs($abc[1]+$abc[2]-6);  # |1+2-6|=3; |1+3-6|=2; |2+3-6|=1
+         $xyz[3] = abs($xyz[1]+$xyz[2]-6);  # |1+2-6|=3; |1+3-6|=2; |2+3-6|=1
+      }
+      elsif ($ARGV[$number] eq "-sc")
+      {
+         $ops[++$numOps] = 1;
+         $sc[$numOps][1] = $ARGV[++$number];
+         $sc[$numOps][2] = $ARGV[++$number];
+         $sc[$numOps][3] = $ARGV[++$number];
+         $mirror[$numOps][1] = $ARGV[++$number];
+         $mirror[$numOps][2] = $ARGV[++$number];
+         $mirror[$numOps][3] = $ARGV[++$number];
+      }
+      elsif ($ARGV[$number] eq "-trans")
+      {
+         $ops[++$numOps] = 2;
+         $trans[$numOps][1] = $ARGV[++$number];
+         $trans[$numOps][2] = $ARGV[++$number];
+         $trans[$numOps][3] = $ARGV[++$number];
+      }
+      elsif ($ARGV[$number] eq "-rotA")
+      {
+         $ops[++$numOps] = 3;
+         $rot[$numOps][1] = $ARGV[++$number];
+         $rot[$numOps][2] = $ARGV[++$number];
+         $rot[$numOps][3] = $ARGV[++$number];
+         $rotAngle[$numOps] = $ARGV[++$number] * $pi/180.0; # Convert to Rad.
+
+         # Make the rotation normal vector a unit vector.
+         $normalizer = sqrt($rot[$numOps][1]**2 + $rot[$numOps][2]**2 +
+               $rot[$numOps][3]**2);
+         $rot[$numOps][1] /= $normalizer;
+         $rot[$numOps][2] /= $normalizer;
+         $rot[$numOps][3] /= $normalizer;
+
+         # Assume that the origin for the axis of rotation is the origin.
+         $rotOrig[$numOps][1] = 0.0;
+         $rotOrig[$numOps][2] = 0.0;
+         $rotOrig[$numOps][3] = 0.0;
+
+         # Assume that the model does not already adhere to periodic boundary
+         #   conditions. (It is a molecule in a big empty box or something like
+         #   that.) Thus, if something is rotated outside of the cell, it
+         #   *will* be *simply* reset, shifted, and then re-rotated to put
+         #   whatever part rotated outside the cell back into the cell (but
+         #   -using periodic boundary conditions- back on the other side of
+         #   the cell.) Yeah, confusing. It still uses PBCs when the model
+         #   is representing something that doesn't need PBCs.
+         # This is set to 1 in the case that the model already *does* adhere to
+         #   periodic boundary conditions.  (It is a crystal with a specific
+         #   cell size that actually carries meaning, unlike for the molecule
+         #   case above.) Then, if something is rotated, the cell size will
+         #   need to change accordingly.
+         $rotPBC = 0;
+
+         # Look through the other possible sub-options and act accordingly.
+         foreach my $suboption (1..2)
+         {
+            if (($#ARGV > $number+1) && ($ARGV[$number+1] eq "-orig"))
+            {
+               $number++;
+               $rotOrig[$numOps][1] = $ARGV[++$number];
+               $rotOrig[$numOps][2] = $ARGV[++$number];
+               $rotOrig[$numOps][3] = $ARGV[++$number];
+            }
+            if (($#ARGV > $number+1) && ($ARGV[$number+1] eq "-pbc"))
+               {$rotPBC = 1;}
+         }
+      }
+      elsif ($ARGV[$number] eq "-rotP")
+      {
+         $ops[++$numOps] = 3; # Note that this is the same operation as -rotA.
+         $p1[1] = $ARGV[++$number];
+         $p1[2] = $ARGV[++$number];
+         $p1[3] = $ARGV[++$number];
+         $p2[1] = $ARGV[++$number];
+         $p2[2] = $ARGV[++$number];
+         $p2[3] = $ARGV[++$number];
+         $p3[1] = $ARGV[++$number];
+         $p3[2] = $ARGV[++$number];
+         $p3[3] = $ARGV[++$number];
+
+         # Find the axis of rotation.
+         @{$rot[$numOps]} = StructureControl::getPlaneNormal(\@p1,\@p2,\@p3);
+
+         # Make the rotation normal vector a unit vector.
+         $normalizer = sqrt($rot[$numOps][1]**2 + $rot[$numOps][2]**2 +
+               $rot[$numOps][3]**2);
+         $rot[$numOps][1] /= $normalizer;
+         $rot[$numOps][2] /= $normalizer;
+         $rot[$numOps][3] /= $normalizer;
+
+         # See note above for this line. Assume PBCs are not on.
+         $rotPBC = 0;
+
+         # Assume that the angle for this operation is going to be the angle
+         #   between the 2nd and 3rd points. Note that rotations are positive
+         #   in the counterclockwise direction.
+         $rotAngle[$numOps] = -90.0 + atan2($p3[3] - $p2[3],
+               sqrt(($p3[1]-$p2[1])**2 + ($p3[2]-$p2[2])**2))*180.0/$pi;
+
+         # Assume that the origin for the axis of rotation is the origin.
+         $rotOrig[$numOps][1] = 0.0;
+         $rotOrig[$numOps][2] = 0.0;
+         $rotOrig[$numOps][3] = 0.0;
+
+         # Look through the other possible sub-options and act accordingly.
+         foreach my $suboption (1..3)
+         {
+            if (($#ARGV > $number+1) && ($ARGV[$number+1] eq "-angle"))
+            {
+               $number++;
+               $rotAngle[$numOps] = $ARGV[++$number];
+            }
+            if (($#ARGV > $number+1) && ($ARGV[$number+1] eq "-orig"))
+            {
+               $number++;
+               $rotOrig[$numOps][1] = $ARGV[++$number];
+               $rotOrig[$numOps][2] = $ARGV[++$number];
+               $rotOrig[$numOps][3] = $ARGV[++$number];
+            }
+            if (($#ARGV > $number+1) && ($ARGV[$number+1] eq "-pbc"))
+               {$rotPBC = 1;}
+         }
+
+         # Demand that the angle is in radians.
+         $rotAngle[$numOps] *= $pi/180.0;
+      }
+      elsif ($ARGV[$number] eq "-filter")
+      {
+         $ops[++$numOps] = 4;
+         $minDistFilter[$numOps] = $ARGV[++$number];
+      }
+      elsif ($ARGV[$number] eq "-addvac")
+      {
+         $ops[++$numOps] = 5;
+         $vacAxis[$numOps] = $ARGV[++$number];
+         $vacAmt[$numOps]  = $ARGV[++$number];
+         if ($vacAxis[$numOps] eq "a")
+            {$vacAxis[$numOps] = 1;}
+         elsif ($vacAxis[$numOps] eq "b")
+            {$vacAxis[$numOps] = 2;}
+         elsif ($vacAxis[$numOps] eq "c")
+            {$vacAxis[$numOps] = 3;}
+         else
+            {die "Unacceptable axis specification.  Need a, b, or c.\n";}
+      }
+      elsif ($ARGV[$number] eq "-ortho")
+         {$ops[++$numOps] = 6;}
+      elsif ($ARGV[$number] eq "-perturb")
+      {
+         $ops[++$numOps] = 7;
+         $maxPertMag[$numOps] = $ARGV[++$number];
+      }
+      elsif ($ARGV[$number] eq "-help")
+         {&printHelp;}
+      else
+      {
+         print STDOUT "UNKNOWN COMMAND LINE PARAMETER $ARGV[$number].";
+         print STDOUT " ABORTING.\n";
+         exit;
+      }
+      $number++;
+   }
+
+   #Record the command line used to create this set of input files.
+   open (COMMANDLINE,">>$commandLine");
+   print COMMANDLINE "modStruct ";
+   foreach $argument (0..$#ARGV)
+      {print COMMANDLINE "$ARGV[$argument] ";}
+   print COMMANDLINE "\n";
+   close (COMMANDLINE);
+}
+
+#sub applyTranslation
+#{
+#   # Define passed parameters.
+#   my $op = $_[0];
+#
+#   # Define local variables.
+#   my $atom;
+#   my $axis;
+#   my $numAtoms;
+#   my $directXYZ_ref;
+#   my $fractABC_ref;
+#
+#   # Get the number of atoms in the system and the direct XYZ coordinates.
+#   $numAtoms = StructureControl::getNumAtoms();
+#   $directXYZ_ref = StructureControl::getDirectXYZRef();
+#
+#   # For each atom in the model, we will apply the necessary translation.  Note
+#   #   that these values will be adjusted for periodicity and will be
+#   #   propogated to the other representations in the StructureControl module.
+#   foreach $atom (1..$numAtoms)
+#   {
+#      foreach $axis (1..3)
+#         {$directXYZ_ref->[$atom][$axis] += $trans[$op][$axis];}
+#
+#      # Propogate to other representations.
+#      StructureControl::getDirectABC($atom);
+#      StructureControl::getFractABC($atom);
+#   }
+#
+#   # Make sure that all atoms are inside the simulation box.
+#   &checkBoundingBox(0,$numAtoms);
+#}
+
+#sub applyRotation
+#{
+#   # Define passed parameters.
+#   my $op = $_[0];
+#
+#   # Define local variables.
+#   my $atom;
+#   my $axis;
+#   my $numAtoms;
+#   my $directXYZ_ref;
+#   my @directXYZCopy;
+#   my $fractABC_ref;
+#   my $atomPos;
+#   my $rotAtomPos;
+#   my $rotMatrix;
+#   my $c; # cos angle
+#   my $s; # sin angle
+#   my $t; # 1-cos angle
+#
+#   # Get the number of atoms in the system and the direct XYZ coordinates.
+#   $numAtoms = StructureControl::getNumAtoms();
+#   $directXYZ_ref = StructureControl::getDirectXYZRef();
+#
+#   # Create the rotation matrix shown
+#   #   here:  http://mathworld.wolfram.com/RotationFormula.html
+#   #   here:  http://www.gamedev.net/reference/articles/article1199.asp
+#   #      There is an error in the final matrix of the above reference, but it
+#   #      has the complete derivation without errors so I kept it here.  The
+#   #      error is the row 1 col 3 term.  It should be txz-sy NOT txz-xy.
+#   #   here:  http://www.fastgraph.com/makegames/3drotation/
+#   $c = cos($rotAngle[$op]);
+#   $s = sin($rotAngle[$op]);
+#   $t = 1.0-cos($rotAngle[$op]);
+#   $rotMatrix = new Math::MatrixReal(3,3);
+#   $rotMatrix->assign(1,1,$t*$rot[$op][1]**2 + $c);
+#   $rotMatrix->assign(1,2,$t*$rot[$op][1]*$rot[$op][2] + $s*$rot[$op][3]);
+#   $rotMatrix->assign(1,3,$t*$rot[$op][1]*$rot[$op][3] - $s*$rot[$op][2]);
+#   $rotMatrix->assign(2,1,$t*$rot[$op][1]*$rot[$op][2] - $s*$rot[$op][3]);
+#   $rotMatrix->assign(2,2,$t*$rot[$op][2]**2 + $c);
+#   $rotMatrix->assign(2,3,$t*$rot[$op][2]*$rot[$op][3] + $s*$rot[$op][1]);
+#   $rotMatrix->assign(3,1,$t*$rot[$op][1]*$rot[$op][3] + $s*$rot[$op][2]);
+#   $rotMatrix->assign(3,2,$t*$rot[$op][2]*$rot[$op][3] - $s*$rot[$op][1]);
+#   $rotMatrix->assign(3,3,$t*$rot[$op][3]**2 + $c);
+#
+#   # Make a copy of the directXYZ locations in case any atoms need to be
+#   #   re-rotated because they went outside the simulation box.
+#   foreach $atom (1..$numAtoms)
+#   {
+#      foreach $axis (1..3)
+#         {$directXYZCopy[$atom][$axis] = $directXYZ_ref->[$atom][$axis];}
+#   }
+#
+#   # For each atom in the model rotate it in the requested plane by the
+#   #   requested number of degrees.
+#   foreach $atom (1..$numAtoms)
+#   {
+#      # Apply the rotation matrix to the current atom.
+#      &rotateOneAtom($atom,$rotMatrix,$directXYZ_ref,$op);
+#
+#      # Propogate to other representations.
+#      StructureControl::getDirectABC($atom);
+#      StructureControl::getFractABC($atom);
+#   }
+#
+#   # It is almost certain that some atoms will be outside the simulation box
+#   #   after the rotation.  These need to be properly addressed since we cannot
+#   #   simply shift them to the other side of the box and claim the application
+#   #   of periodic boundary conditions.  We must instead do the following:
+#   # (1) Restore the atom to its original position.
+#   # (2) Shift the atom by one lattice length in the direction of the offense.
+#   # (3) Reapply the rotation.
+#
+#   # (Essentially the trick is this:  Save a copy of the original XYZ positions,
+#   #   apply the requested rotation to all coordinate systems (directABC,
+#   #   fractABC, directXYZ, but not the copy of the original).  Then restore
+#   #   ONLY the directXYZ to its original value (before rotation).  Then check
+#   #   to see which atoms are outside the box ***according to the now rotated
+#   #   fractABC***.  If an atom is outside the box, then use the restored
+#   #   directXYZ to get the original fractABC.  This original fractABC is then
+#   #   shifted so that when the rotation is reapplied it will remain in the
+#   #   box.  Once the original fractABC is shifted, the directXYZ and
+#   #   directABC are derived from it.)  Ugly.
+#
+#   # Restore the original positions of the directXYZ positions for all atoms.
+#   foreach $atom (1..$numAtoms)
+#   {
+#      foreach $axis (1..3)
+#         {$directXYZ_ref->[$atom][$axis] = $directXYZCopy[$atom][$axis];}
+#   }
+#
+#   # Make sure that all atoms are inside the simulation box and shift properly.
+#   #   This will address (1) and (2) above.
+#   &checkBoundingBox(1,$numAtoms);
+#
+#   # Repeat the rotation.  (3) from above.
+#   foreach $atom (1..$numAtoms)
+#   {
+#      # Apply the rotation matrix to the current atom.
+#      &rotateOneAtom($atom,$rotMatrix,$directXYZ_ref,$op);
+#
+#      # Propogate to other representations.
+#      StructureControl::getDirectABC($atom);
+#      StructureControl::getFractABC($atom);
+#   }
+#
+#   # At this point there should be no atoms outside the simulation box at all.
+#}
+
+#sub rotateOneAtom
+#{
+#   # Define passed parameters.
+#   my $atom = $_[0];
+#   my $rotMatrix = $_[1];
+#   my $directXYZ_ref = $_[2];
+#   my $op = $_[3];
+#
+#   # Define local variables.
+#   my $atomPos;
+#   my $rotAtomPos;
+#
+#   # Extract the current atomic position and shift it according to the
+#   #   requested origin for the rotation normal.
+#   $atomPos = Math::MatrixReal->new_from_rows(
+#         [[$directXYZ_ref->[$atom][1]-$rotOrig[$op][1],
+#           $directXYZ_ref->[$atom][2]-$rotOrig[$op][2],
+#           $directXYZ_ref->[$atom][3]-$rotOrig[$op][3]]]);
+#
+#   # Apply rotation matrix.
+#   $rotAtomPos = $atomPos->multiply($rotMatrix);
+#
+#   # Save the new position.
+#   $directXYZ_ref->[$atom][1] = $rotAtomPos->element(1,1)+$rotOrig[$op][1];
+#   $directXYZ_ref->[$atom][2] = $rotAtomPos->element(1,2)+$rotOrig[$op][2];
+#   $directXYZ_ref->[$atom][3] = $rotAtomPos->element(1,3)+$rotOrig[$op][3];
+#
+#}
+
+#sub checkBoundingBox
+#{
+#   # Define the passed parameters.
+#   my $shiftStyle = $_[0];  # 0=translation; 1=rotation.
+#   my $numAtoms = $_[1];
+#
+#   # Define local variables.
+#   my $atom;
+#   my $axis;
+#   my $move;
+#   my @doMove;
+#   my $fractABC_ref;
+#
+#   # Check that each direction of the abc fractional representation is inside
+#   #   the simulation box.   If it is not, then we will have to move the atom
+#   #   and re-propogate the position.  The rotation situation is very ugly
+#   #   because the directXYZ has already been reset to the original non-rotated
+#   #   position because it must be re-rotated after certain atoms are shifted
+#   #   to NOT go out of the simulation box when the rotation is applied.  The
+#   #   effect is that the fractABC used to determine if the atom is outside
+#   #   the box is NOT the coordinate position that must be shifted by +,-1.
+#   #   The coordinate position to shift is in the directXYZ now and must be
+#   #   retrieved through the directABC to fractABC first.  Ugly.
+#
+#   # Get all the abc fractional positions.
+#   $fractABC_ref = StructureControl::getFractABCRef();
+#
+#   # Check all the atoms.
+#   foreach $atom (1..$numAtoms)
+#   {
+#      # Assume that the atom will not be moved along any axis.
+#      @doMove = (0,0,0,0);  # The first value is never used.
+#
+#      # Identify which axes the atom should be moved along and in which
+#      #   direction (+ or -).
+#      foreach $axis (1..3)
+#      {
+#         if($fractABC_ref->[$atom][$axis] > 1.0)
+#            {$doMove[$axis] = 1;}
+#         elsif($fractABC_ref->[$atom][$axis] < 0.0)
+#            {$doMove[$axis] = -1;}
+#      }
+#
+#      # For the shiftStyle of 0 we can simply move the atom along each axis
+#      #   directly.  However, for shiftStyle 1 we are not going to shift this
+#      #   atom to a periodic cell because the problem was that the atom was
+#      #   rotated outside the box, not shifted outside the box.  Therefor, we
+#      #   will restore the original fractABC from a saved directXYZ copy and
+#      #   then shift that original fractABC so that when the rotation is
+#      #   reapplied it **will not** become shifted outside the box.  Annoying.
+#      if ($shiftStyle == 1)
+#      {
+#         StructureControl::getDirectABC($atom);
+#         StructureControl::getFractABC($atom);
+#      }
+#
+#      # Now we can apply the shifts to each axis.
+#      foreach $axis (1..3)
+#      {
+#         if($doMove[$axis] == 1)
+#            {$fractABC_ref->[$atom][$axis] -= 1.0;}
+#         elsif($doMove[$axis] == -1)
+#            {$fractABC_ref->[$atom][$axis] += 1.0;}
+#      }
+#
+#      foreach $move (@doMove)
+#      {
+#         if ($move != 0)
+#         {
+#            StructureControl::getDirectXYZ($atom);
+#            StructureControl::getDirectABC($atom);
+#            StructureControl::getFractABC($atom);
+#            last;
+#         }
+#      }
+#   }
+#}
+
+#sub applySupercell
+#{
+#   # Define passed parameters.
+#   my $op = $_[0];
+#
+#   # Define local variables.
+#   my $axis;
+#   my $atom;
+#   my $cell;
+#   my $numAtoms;
+#   my $newNumAtoms;
+#   my $atomAxis;
+#   my $mag_ref;
+#   my $fractABC_ref;
+#   my $atomElementName_ref;
+#   my $atomElementID_ref;
+#   my $atomSpeciesID_ref;
+#   my @fractABC;        # Local collection of data for forming new atom list.
+#   my @atomElementName; # Local collection of data for forming new atom list.
+#   my @atomElementID;   # Local collection of data for forming new atom list.
+#   my @atomSpeciesID;   # Local collection of data for forming new atom list.
+#   # It may be necessary to add the atomicZ, moleculeName, etc. if we allow
+#   #   the reading of data files other than gulp.dat style in the future for
+#   #   these types of structure modifications.
+#
+#   # Obtain references to the cell lattice parameters and magnitudes.
+#   $mag_ref = StructureControl::getMagRef;
+#
+#   # Get the number of atoms in the cell.
+#   $numAtoms = StructureControl::getNumAtoms;
+#
+#   # Get the fractional positions of all the atoms.
+#   $fractABC_ref = StructureControl::getFractABCRef;
+#
+#   # Get the atomic naming data.
+#   $atomElementName_ref = StructureControl::getAtomElementNameRef;
+#   $atomElementID_ref   = StructureControl::getAtomElementIDRef;
+#   $atomSpeciesID_ref   = StructureControl::getAtomSpeciesIDRef;
+#
+#   # Apply the supercell requests along each axis in order.
+#   foreach $axis (1..3)
+#   {
+#      # No need to replicate atoms if the supercell request in this direction
+#      #   is equal to one.
+#      if ($sc[$op][$axis] == 1)
+#         {next;}
+#
+#      # Increase the dimensions of the model along the current axis by a
+#      #   factor of the number of cells in the direction of the axis.
+#      $mag_ref->[$axis] *= $sc[$op][$axis];
+#
+#
+#      $newNumAtoms = 0;
+#      foreach $atom (1..$numAtoms)
+#      {
+#         foreach $cell (1..$sc[$op][$axis])
+#         {
+#            $newNumAtoms++;
+#            foreach $atomAxis (1..3)
+#            {
+#               if ($atomAxis == $axis)
+#               {
+#                  if (($mirror[$op] == 0) || ($cell % 2 == 1))
+#                  {
+#                     $fractABC[$newNumAtoms][$atomAxis] =
+#                           $fractABC_ref->[$atom][$atomAxis] *
+#                           1.0 / $sc[$op][$atomAxis] +
+#                           ($cell-1.0) / $sc[$op][$atomAxis];
+#                  }
+#                  else
+#                  {
+#                     $fractABC[$newNumAtoms][$atomAxis] =
+#                           (1.0-$fractABC_ref->[$atom][$atomAxis]) *
+#                           1.0 / $sc[$op][$atomAxis] +
+#                           ($cell-1.0) / $sc[$op][$atomAxis];
+#                  }
+#               }
+#               else
+#               {
+#                  $fractABC[$newNumAtoms][$atomAxis] =
+#                        $fractABC_ref->[$atom][$atomAxis];
+#               }
+#               $atomElementName[$newNumAtoms] = $atomElementName_ref->[$atom];
+#               $atomElementID[$newNumAtoms] = $atomElementID_ref->[$atom];
+#               $atomSpeciesID[$newNumAtoms] = $atomSpeciesID_ref->[$atom];
+#            }
+#         }
+#      }
+#      
+#
+#      # Update the number of atoms in the system.
+#      StructureControl::setNumAtoms($newNumAtoms);
+#      $numAtoms = $newNumAtoms;
+#
+#      # Save these new atom positions in the referenced fractABC.
+#      foreach $atom (1..$numAtoms)
+#      {
+#         foreach $atomAxis (1..3)
+#            {$fractABC_ref->[$atom][$atomAxis] = $fractABC[$atom][$atomAxis];}
+#         $atomElementName_ref->[$atom] = $atomElementName[$atom];
+#         $atomElementID_ref->[$atom] = $atomElementID[$atom];
+#         $atomSpeciesID_ref->[$atom] = $atomSpeciesID[$atom];
+#      }
+#   }
+#
+#   # Obtain the ABC vectors form of the lattice parameters.
+#   StructureControl::getABCVectors;
+#
+#   # Propogate the atomic positions changes to the other representations.
+#   foreach $atom (1..$numAtoms)
+#   {
+#      StructureControl::getDirectXYZ($atom);
+#      StructureControl::getDirectABC($atom);
+#   }
+#}
+
+#sub applyFilter
+#{
+#   # Define passed parameters.
+#   my $op = $_[0];
+#
+#   # Define local variables.
+#   my $axis;
+#   my $atom;
+#   my $neighborAtom;
+#   my $rejectAtom;
+#   my $numAtoms;
+#   my $numAtomsExt;
+#   my $newNumAtoms;
+#   my $numRejected;
+#   my @rejectedAtoms;
+#   my $minDist_ref;
+#   my $fractABC_ref;
+#   my $atomElementName_ref;
+#   my $atomElementID_ref;
+#   my $atomSpeciesID_ref;
+#   my $ext2CentralAtomMap_ref;
+#   my @fractABC;        # Local collection of data for forming new atom list.
+#   my @atomElementName; # Local collection of data for forming new atom list.
+#   my @atomElementID;   # Local collection of data for forming new atom list.
+#   my @atomSpeciesID;   # Local collection of data for forming new atom list.
+#   # This subroutine does not preserve all the information in the
+#   #   StructureControl module.  In particular, the maps and some extended
+#   #   positions will not be preserved and may need to be recalculated if they
+#   #   are going to be used.
+#
+#   # Get the number of atoms in the model.
+#   $numAtoms = StructureControl::getNumAtoms;
+#
+#   # Set the limitDist value for periodic cell interaction using the minDist
+#   #   interaction factor for this operation.
+#   StructureControl::setLimitDist($minDist[$op]);
+#
+#   # Create the minimal distance matrix and get a reference for it and the map
+#   #   from extended atom positions to central cell positions.
+#   StructureControl::createMinDistMatrix;
+#   $numAtomsExt = StructureControl::getNumAtomsExt;
+#   $minDist_ref = StructureControl::getMinDistRef;
+#   $ext2CentralAtomMap_ref = StructureControl::getExt2CentralAtomMapRef;
+#
+#   # Get the fractional positions of all the atoms.
+#   $fractABC_ref = StructureControl::getFractABCRef;
+#
+#   # Get the atomic naming data.
+#   $atomElementName_ref = StructureControl::getAtomElementNameRef;
+#   $atomElementID_ref   = StructureControl::getAtomElementIDRef;
+#   $atomSpeciesID_ref   = StructureControl::getAtomSpeciesIDRef;
+#
+#   # Initialize the new number of atoms in the model.
+#   $newNumAtoms = 0;
+#
+#   # Initialize the number of atoms that have been rejected from the model.
+#   $numRejected = 0;
+#
+#   # Consider each atom in turn and determine if it has any neighbors that
+#   #   are too close.  Any neighbor that is too close is recorded and
+#   #   considered to be removed from the system.
+#ATOM: foreach $atom (1..$numAtoms)
+#   {
+#      # Print a running count of progress on the screen so the user does not
+#      #   get too bored waiting.  This process can take a while for large
+#      #   systems.
+#      if ($atom%10 == 0)
+#         {print STDOUT "|";}
+#      else
+#         {print STDOUT ".";}
+#
+#      if ($atom%50 == 0)
+#         {print STDOUT " $atom\n";}
+#
+#      # Determine if this atom has already been rejected.  If so, then we skip
+#      #   to the next atom.
+#      foreach $rejectAtom (1..$numRejected)
+#      {
+#         if ($rejectedAtoms[$rejectAtom] == $atom)
+#            {next ATOM;}
+#      }
+#
+#      # Increment the number of atoms in the model and record the pertanent
+#      #   information to the local copies of data.
+#      $newNumAtoms++;
+#      foreach $axis (1..3)
+#         {$fractABC[$newNumAtoms][$axis] = $fractABC_ref->[$atom][$axis];}
+#      $atomElementName[$newNumAtoms] = $atomElementName_ref->[$atom];
+#      $atomElementID[$newNumAtoms] = $atomElementID_ref->[$atom];
+#      $atomSpeciesID[$newNumAtoms] = $atomSpeciesID_ref->[$atom];
+#
+#      # Determine if there are any atoms that are too close to the current one
+#      #   and must therefore be rejected from the model.
+#      foreach $neighborAtom ($atom+1..$numAtomsExt)
+#      {
+#         if ($minDist_ref->[$atom][$neighborAtom] <= $minDist[$op])
+#         {
+#print STDOUT "Rejecting $ext2CentralAtomMap_ref->[$neighborAtom]\n";
+#            $rejectedAtoms[++$numRejected] =
+#                  $ext2CentralAtomMap_ref->[$neighborAtom];
+#         }
+#      }
+#   }
+#
+#   if ($numAtoms%50 != 0)
+#      {print STDOUT "\n";}
+#
+#   # Update the number of atoms in the system.
+#   StructureControl::setNumAtoms($newNumAtoms);
+#   $numAtoms = $newNumAtoms;
+#
+#   # Save these new atom positions in the referenced fractABC and propogate
+#   #   them to the other representations.  Also, record the necessary naming
+#   #   data.
+#   foreach $atom (1..$numAtoms)
+#   {
+#      foreach $axis (1..3)
+#         {$fractABC_ref->[$atom][$axis] = $fractABC[$atom][$axis];}
+#      StructureControl::getDirectXYZ($atom);
+#      StructureControl::getDirectABC($atom);
+#      $atomElementName_ref->[$atom] = $atomElementName[$atom];
+#      $atomElementID_ref->[$atom] = $atomElementID[$atom];
+#      $atomSpeciesID_ref->[$atom] = $atomSpeciesID[$atom];
+#   }
+#}
+
+
+#sub applyVacuum
+#{
+#   # Define passed parameters.
+#   my $op = $_[0];
+#
+#   # Define local variables.
+#   my $axis;
+#   my $atom;
+#   my $mag_ref;
+#   my $numAtoms;
+#
+#   # Get the number of atoms in the system and the direct XYZ coordinates.
+#   $numAtoms = StructureControl::getNumAtoms();
+#
+#   # Get a reference to the magnitudes of the lattice vectors (a,b,c).
+#   $mag_ref = StructureControl::getMagRef();
+#
+#   # Increase the magnitude of the requested lattice direction.
+#   $mag_ref->[$vacAxis] += $vacAmt;
+#
+#   # Get new ABC vectors (in XYZ form) based on the new lattice vectors.
+#   StructureControl::getABCVectors();
+#
+#   # Get new fractional ABC atomic positions based on the old direct space
+#   #   ABC atomic positions which are still the same.  Note that the direct
+#   #   space XYZ atomic coordinates are also still the same.
+#   foreach $atom (1..$numAtoms)
+#      {StructureControl::getFractABC($atom);}
+#}
+
+# The goal of this subroutine is to take a crystal in its given lattice and
+#   deduce from it a set of orthorhombic lattice parameters that retains
+#   periodic boundary conditions.  Essentially we will make a=x, b=y, and c=z
+#   while retaining the magnitudes of the ax, by, and cz components for a, b,
+#   and c.  This can only be done for hexagonal lattices now that have already
+#   been doubled (via the -sc option) in the direction of the lattice vector
+#   that will be modified.  (i.e. you have to plan ahead to use this, it won't
+#   do everything automatically.)
+#sub makeOrtho
+#{
+#   # Define passed parameters
+#    my $op = $_[0];
+#
+#   # Define local variables.
+#   my $numAtoms;
+#   my $axisABC;
+#   my $axisXYZ;
+#   my $atom;
+#   my $angle;
+#   my $angle_ref;
+#   my $mag_ref;
+#   my $realLattice_ref;
+#
+#   # Get the number of atoms in the model.
+#   $numAtoms = StructureControl::getNumAtoms();
+#
+#   # Get references for the lattice parameters in a,b,c, alpha,beta,gamma form.
+#   $mag_ref   = StructureControl::getMagRef();
+#   $angle_ref = StructureControl::getAngleRef();
+#
+#   # Get a references for the lattice parameters in a,b,c, x,y,z vector form.
+#   $realLattice_ref = StructureControl::getRealLatticeRef();
+#
+#   # Clearly, all the angles will have to be 90 degrees (= pi/2 radians).
+#   foreach $angle (1..3)
+#      {$angle_ref->[$angle] = $pi/2.0;}
+#
+#   # Further, the magnitudes of the ABC vectors will be the values currently
+#   #   in the ax, by, and cz indices.
+#   foreach $axisABC (1..3)
+#      {$mag_ref->[$axisABC] = $realLattice_ref->[$axisABC][$axisABC];}
+#
+#   # Eliminate components that are off axis (i.e. not ax, by, or cz.)
+#   foreach $axisABC (1..3)
+#   {
+#      foreach $axisXYZ (1..3)
+#      {
+#         # The ABC axis and XYZ axis *should* be colinear so we don't need to
+#         #   adjust this vector.
+#         if ($axisABC==$axisXYZ)
+#            {next;}
+#
+#         # It is necessary to make this ABC,XYZ axis pair orthogonal.
+#         $realLattice_ref->[$axisABC][$axisXYZ] = 0.0;
+#      }
+#   }
+#
+#   # Finally, it is necessary to make sure that all atoms in the model are
+#   #   within the simulation box.  This is done by first recomputing the
+#   #   directABC and fractABC atomic coordinates from the directXYZ coordinates
+#   #   and the newly defined lattice.  Then we simply call the checkBoundingBox
+#   #   subroutine above to do the rest.
+#   foreach $atom (1..$numAtoms)
+#   {
+#      StructureControl::getDirectABC($atom);
+#      StructureControl::getFractABC($atom);
+#   }
+#
+#   &checkBoundingBox(0,$numAtoms);
+#}
+
+#sub applyPerturbation
+#{
+#   # Define passed parameters
+#    my $op = $_[0];
+#
+#   # Define local variables.
+#   my $numAtoms;
+#   my $directXYZ_ref;
+#   my $atom;
+#   my $axis;
+#   my @perturbRThetaPhi; # [1]=R; [2]=Theta; [3]=Phi
+#   my @perturbXYZ;  # [1] = X; [2] = Y; [3] = Z;
+#
+#   # Get the number of atoms in the system and the direct XYZ coordinates.
+#   $numAtoms = StructureControl::getNumAtoms();
+#   $directXYZ_ref = StructureControl::getDirectXYZRef();
+#
+#   # For each atom in the model, we will apply the necessary translation.  Note
+#   #   that these values will be adjusted for periodicity and will be
+#   #   propogated to the other representations in the StructureControl module.
+#   foreach $atom (1..$numAtoms)
+#   {
+#      # Compute the XYZ perturbation for this atom based on random R, Theta,
+#      #   and Phi values where the maximum R value was defined on the command
+#      #   line in angstroms.
+#      $perturbRThetaPhi[1] = rand($maxPertMag);
+#      $perturbRThetaPhi[2] = rand($pi);
+#      $perturbRThetaPhi[3] = rand(2.0*$pi);
+#      $perturbXYZ[1] = $perturbRThetaPhi[1] * sin($perturbRThetaPhi[2]) *
+#                       cos($perturbRThetaPhi[3]);
+#      $perturbXYZ[2] = $perturbRThetaPhi[1] * sin($perturbRThetaPhi[2]) *
+#                       sin($perturbRThetaPhi[3]);
+#      $perturbXYZ[3] = $perturbRThetaPhi[1] * cos($perturbRThetaPhi[2]);
+#
+#      foreach $axis (1..3)
+#         {$directXYZ_ref->[$atom][$axis] += $perturbXYZ[$axis];}
+#
+#      # Propogate to other representations.
+#      StructureControl::getDirectABC($atom);
+#      StructureControl::getFractABC($atom);
+#   }
+#
+#   # Make sure that all atoms are inside the simulation box.
+#   &checkBoundingBox(0,$numAtoms);
+#}

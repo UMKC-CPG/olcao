@@ -1,0 +1,449 @@
+#!/usr/bin/env perl
+sub printHelp {
+   print <<ENDHELP;
+#################################################
+# PROGRAM: dump2skl
+# PURPOSE: This program takes a LAMMPS xyz coordinate dump file as input and
+#       writes an OLCAO skeleton file of a specified timestep.
+# UPDATED: May 3, 2013
+# USAGE: This program takes a LAMMPS dump file as input (specified with the
+#       -d or -dump command line switch) and writes a file called olcao.skl.
+#       The user should specify either a timestep number (using -t or
+#       -timestep) or a frame number (using -f or -frame) to be used.
+#       Timesteps correspond to those values listed in the dump file under
+#       "ITEM: TIMESTEP" and frame numbers are integers from 1 through the
+#       number of frames (timesteps printed in the file). You can use a
+#       negative frame number to specify a frame counted backwards from the
+#       final frame, e.g. -f=-1 to mean the last frame. Note that you have
+#       to use the "=" sign between the -f (or -frame) and the negative
+#       number or the program will think the number is another command line
+#       switch and -f has no argument.
+#           COMMAND LINE OPTIONS:
+#       -d | -dump : specify the path to the LAMMPS dump file
+#       -f | -frame : specify the number of the desired frame, from 1 to
+#           \$totFrames, or from -1 backwards
+#       -t | -timestep : specify the number of the desired timestep
+#       [-h | -help] : print help information
+#       [-n | -name] : specify a name for the system. This will be printed in
+#           the skeleton file's header.
+#       [-np | -nonPeriodic] : add padding around the system to make it
+#           act like a non-periodic system
+#################################################
+ENDHELP
+   exit;
+}
+
+#################################################
+# USE MODULES ###################################
+#################################################
+use strict;
+use warnings;
+use diagnostics;
+use Getopt::Long;
+
+#################################################
+# DEFINE GLOBAL VARIABLES #######################
+#################################################
+
+# General variables
+my $help;
+my @values;
+my $date;
+my $name = 'name';
+my $dumpFile;
+
+# Frame/timestep variables
+my $frame;
+my $timestep;
+my $totFrames = 0;
+my @timesteps;
+
+# Atom variables
+my $totAtoms;
+my $atomID;
+my @atomTypes;
+
+my @elements;
+my @atomCoords;
+
+# Cell definition variables
+my $angleA = 90;
+my $angleB = 90;
+my $angleC = 90;
+
+my @boxBounds; #First index=x,y,z, second index=lo,hi
+
+my $xlo;
+my $xhi;
+my $xShift;
+
+my $ylo;
+my $yhi;
+my $yShift;
+
+my $zlo;
+my $zhi;
+my $zShift;
+
+my $nonPeriodic;
+
+#################################################
+# DEFINE ATOM TYPES #############################
+#################################################
+
+# Edit this section as needed
+# The indices correspond to LAMMPS atom type numbers
+
+$elements[1] = "B";
+$elements[2] = "B";
+$elements[3] = "H";
+$elements[4] = "H";
+$elements[5] = "H";
+$elements[6] = "H";
+$elements[7] = "H";
+$elements[8] = "C";
+$elements[9] = "C";
+$elements[10] = "C";
+$elements[11] = "C";
+
+#################################################
+# DEFINE SUBROUTINES ############################
+#################################################
+
+sub inBounds
+{
+   my @boxLength; # x,y,z
+
+   foreach my $axis (0..2)
+   {
+      $boxLength[$axis] = $boxBounds[$axis][1] - $boxBounds[$axis][0];
+      foreach $atomID (1..$totAtoms)
+      {
+         # If the atom is beyond the box for this axis in the positive
+         #   direction, then we need to shift the atom back by the length of
+         #   the box along this axis.
+         if ($atomCoords[$atomID][$axis] > $boxBounds[$axis][1])
+            {$atomCoords[$atomID][$axis] -= $boxLength[$axis];}
+
+         # Similarly, if the atom is beyond the box for this axis in the
+         #   negative direction, then we need to shift the atom forward by the
+         #   length of the box along this axis.
+         if ($atomCoords[$atomID][$axis] < $boxBounds[$axis][0])
+            {$atomCoords[$atomID][$axis] += $boxLength[$axis];}
+      }
+   }
+}
+
+# A subroutine to find the maximum coordinate value
+sub maxCoord {
+    #Takes an axis number as input
+    #0 is the x-axis
+    #1 is the y-axis
+    #2 is the z-axis
+    my $axis = shift(@_);
+    #Compare all the coordinate values in the column for that axis and find
+    #the maximum
+    my $max_so_far = $atomCoords[1][$axis];
+    foreach $atomID (1..$totAtoms) {
+        if ($atomCoords[$atomID][$axis] > $max_so_far) {
+            $max_so_far = $atomCoords[$atomID][$axis];
+        }
+    }
+    #Return a scalar value: the maximum coordinate value for the specified
+    #axis
+    return $max_so_far;
+}
+
+# A subroutine to find the minimum coordinate value
+sub minCoord {
+    #Takes an axis number as input
+    #0 is the x-axis
+    #1 is the y-axis
+    #2 is the z-axis
+    my $axis = shift(@_);
+    #Compare all the coordinate values in the column for that axis and find
+    #the minimum
+    my $min_so_far = $atomCoords[1][$axis];
+    foreach $atomID (1..$totAtoms) {
+        if ($atomCoords[$atomID][$axis] < $min_so_far) {
+            $min_so_far = $atomCoords[$atomID][$axis];
+        }
+    }
+    #Return a scalar value: the minimum coordinate value for the specified
+    #axis
+    return $min_so_far;
+}
+
+#################################################
+#***********************************************#
+#################################################
+# BEGIN PROGRAM EXECUTION #######################
+#################################################
+#***********************************************#
+#################################################
+
+# Read command line arguments
+GetOptions ('d|dump=s' => \$dumpFile, 'n|name:s' => \$name,
+    'f|frame:s' => \$frame, 't|timestep:s' => \$timestep,
+    'np|nonPeriodic' => \$nonPeriodic, 'h|help' => \$help);
+
+# Print help information if requested
+if ($help) { &printHelp; }
+
+
+#################################################
+# Read the dump file ############################
+#################################################
+
+# Open the dump file for reading
+if (! open DUMPFILE, '<', $dumpFile) {
+    die "Could not open dump file $dumpFile for reading.\n";
+}
+
+# Find the total number of atoms
+while (my $line = <DUMPFILE>) {
+    chomp($line);
+    if ($line =~ /NUMBER OF ATOMS/) {
+        last;
+    }
+}
+
+# The next line tells the number of atoms
+$totAtoms = <DUMPFILE>;
+chomp($totAtoms);
+
+# Go back to the beginning of the dump file
+seek(DUMPFILE,0,0);
+
+# Find the total number of frames and match them with their timestep numbers
+# in @timesteps (the frame number is the index and the timestep number is
+# the value)
+my $sawTimestep = 0;
+while (my $line = <DUMPFILE>) {
+    if ($line =~ /TIMESTEP/) {
+        $totFrames++;
+        $sawTimestep = 1;
+    } elsif ($sawTimestep == 1) {
+        chomp($line);
+        $timesteps[$totFrames] = $line;
+        $sawTimestep = 0;
+    }
+}
+
+# Check the requested timestep or frame number and put either in terms of both
+# the frame number and the timestep (i.e. set both $frame and $timestep to the
+# correct values
+if ($frame) {
+    if (($frame > $totFrames) || ($frame < 0 - $totFrames)) {
+        die "Frame out of range\n";
+    }
+
+    #If a negative frame number is given
+    if ($frame =~ /\A-/) {
+        $frame = $totFrames + ($frame + 1);
+        $timestep = $timesteps[$frame];
+    }
+
+    #If a positive fram number is given
+    $timestep = $timesteps[$frame];
+
+} elsif ($timestep) {
+    my $found = 0;
+    foreach my $step (1..$totFrames) {
+        if ($timesteps[$step] == $timestep) {
+            $frame = $step;
+            $found = 1;
+        }
+    }
+    if (!$found) {
+        die "Timestep $timestep not found\n";
+    }
+} else {
+    die "Must specify either a timestep or a frame number\n";
+}
+
+# Go back to the beginning of the dump file
+seek(DUMPFILE,0,0);
+
+# Read the requested timestep/frame
+
+# Move the read cursor to the correct timestep in the dumpfile
+while (my $line = <DUMPFILE>) {
+    if ($line =~ /\A$timestep\Z/) { last; }
+}
+
+# Move the cursor down to the start of the box bounds section for that
+# timestep
+while (my $line = <DUMPFILE>) {
+    if ($line =~ /\AITEM: BOX BOUNDS/) { last; }
+}
+
+# Read the box bounds
+{
+    my $line = <DUMPFILE>;
+    @values = split(/\s+/, $line);
+    $boxBounds[0][0] = $values[0];
+    $boxBounds[0][1] = $values[1];
+
+    $line = <DUMPFILE>;
+    @values = split(/\s+/, $line);
+    $boxBounds[1][0] = $values[0];
+    $boxBounds[1][1] = $values[1];
+
+    $line = <DUMPFILE>;
+    @values = split(/\s+/, $line);
+    $boxBounds[2][0] = $values[0];
+    $boxBounds[2][1] = $values[1];
+}
+
+# Move the cursor down to the start of the atom coords section for that
+# timestep
+while (my $line = <DUMPFILE>) {
+    if ($line =~ /\AITEM: ATOMS/) { last; }
+}
+
+# Read to the end of the timestep
+while (my $line = <DUMPFILE>) {
+    chomp($line);
+    if ($line =~ /TIMESTEP/) { last; } #End loop at beginning of next frame
+
+    @values = split(/\s+/, $line);
+
+    $atomID = $values[0];
+    $atomTypes[$atomID] = $values[1];
+
+    $atomCoords[$atomID][0] = $values[2];
+    $atomCoords[$atomID][1] = $values[3];
+    $atomCoords[$atomID][2] = $values[4];
+}
+
+# Close the dump file
+close DUMPFILE;
+
+#################################################
+# Check the box boundaries ######################
+#################################################
+
+# Make sure the box bounds completely encompass all the atom coords.
+
+&inBounds;
+
+$xhi = &maxCoord(0);
+$yhi = &maxCoord(1);
+$zhi = &maxCoord(2);
+
+$xlo = &minCoord(0);
+$ylo = &minCoord(1);
+$zlo = &minCoord(2);
+
+# Compare with LAMMPS-defined box bounds and redefine if needed
+if ($boxBounds[0][1] > $xhi) {
+    $xhi = $boxBounds[0][1];
+}
+if ($boxBounds[1][1] > $yhi) {
+    $yhi = $boxBounds[1][1];
+}
+if ($boxBounds[2][1] > $zhi) {
+    $zhi = $boxBounds[2][1];
+}
+
+if ($boxBounds[0][0] < $xlo) {
+    $xlo = $boxBounds[0][0];
+}
+if ($boxBounds[1][0] < $ylo) {
+    $ylo = $boxBounds[1][0];
+}
+if ($boxBounds[2][0] < $zlo) {
+    $zlo = $boxBounds[2][0];
+}
+
+# If the non-periodic command line argument has been selected, add padding
+# space to the cell to prevent interactions due to periodicity
+if ($nonPeriodic) {
+    $xhi += 100;
+    $yhi += 100;
+    $zhi += 100;
+
+    $xlo -= 100;
+    $ylo -= 100;
+    $zlo -= 100;
+}
+
+# Shift coordinates so that all box boundaries go from 0 to some positive
+# number
+
+$xShift = 0 - $xlo;
+$yShift = 0 - $ylo;
+$zShift = 0 - $zlo;
+
+foreach my $atom (1..$totAtoms) {
+    $atomCoords[$atom][0] = $atomCoords[$atom][0] + $xShift;
+    $atomCoords[$atom][1] = $atomCoords[$atom][1] + $yShift;
+    $atomCoords[$atom][2] = $atomCoords[$atom][2] + $zShift;
+}
+
+# Redefine max and min coordinates along each axis now that they have
+# been shifted
+$xhi += $xShift;
+$yhi += $yShift;
+$zhi += $zShift;
+
+$xlo = 0;
+$ylo = 0;
+$zlo = 0;
+
+# Rewrite atom coordinates in fractional form
+
+foreach my $atom (1..$totAtoms) {
+        $atomCoords[$atom][0] = $atomCoords[$atom][0] / $xhi;
+        $atomCoords[$atom][1] = $atomCoords[$atom][1] / $yhi;
+        $atomCoords[$atom][2] = $atomCoords[$atom][2] / $zhi;
+}
+
+#################################################
+# Write the .skl file ###########################
+#################################################
+
+# Open the skl file
+open SKL, '>', 'olcao.skl';
+
+# Get the date
+$date = `date`;
+chomp($date);
+
+# Write header information
+print SKL "title\n";
+print SKL "$name\n";
+print SKL "timestep $timestep\n";
+print SKL "$date\n";
+print SKL "end\n";
+
+# Write cell information
+print SKL "cell\n";
+printf (SKL "%.4f %.4f %.4f ", $xhi, $yhi, $zhi);
+printf (SKL "%.4f %.4f %.4f\n", $angleA, $angleB, $angleC);
+
+# Write atom information
+print SKL "fractional $totAtoms\n";
+
+foreach my $atom (1..$totAtoms) {
+    printf (SKL "%-10s", ($elements[$atomTypes[$atom]]));
+    printf (SKL "%-15.10f", $atomCoords[$atom][0]);
+    printf (SKL "%-15.10f", $atomCoords[$atom][1]);
+    printf (SKL "%-15.10f", $atomCoords[$atom][2]);
+    print SKL "\n";
+}
+
+# Print spacegroup, etc. information
+print SKL "space P1\nsupercell 1 1 1\nfull\n";
+
+# Close the skl file
+close SKL;
+
+#################################################
+# ********************************************* #
+#################################################
+# END PROGRAM EXECUTION #########################
+#################################################
+# ********************************************* #
+#################################################
