@@ -36,8 +36,17 @@ export OLCAO_DOUBLE=16
 # 0 = BASH SCRIPT; 1 = PBS; 2 = LSF; 3 = SLURM;
 export OLCAO_QUEUE=3
 
-#Define the location of the VASP pseudopotential database.
-export VASPPOT_DIR="$HOME/vasp"
+#Define the head location of the VASP pseudopotential database.
+export VASPPOT_DIR="/share/sq/vasp/5.3.5"
+
+# Define the location of each type of VASP potential.
+export VASPPOT_USPP_LDA="$VASPPOT_DIR/potUSPP_LDA"
+export VASPPOT_USPP_GGA="$VASPPOT_DIR/potUSPP_GGA"
+export VASPPOT_PAW_LDA="$VASPPOT_DIR/potpaw_LDA"
+export VASPPOT_PAW_GGA="$VASPPOT_DIR/potpaw_GGA"
+export VASPPOT_PAW_PBE="$VASPPOT_DIR/potpaw_PBE"
+export VASPPOT_PAW_LDA5x="$VASPPOT_DIR/potpaw_LDA.52"
+export VASPPOT_PAW_PBE5x="$VASPPOT_DIR/potpaw_PBE.52"
 
 ###########################################################
 #END SCRIPT VARIABLES

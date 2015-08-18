@@ -3147,10 +3147,8 @@ sub printVASP
    {
       print STDOUT "The VASP potential database variable is not defined.\n\n";
       print STDOUT "Please define \$VASPPOT_DIR in the environment and have\n";
-      print STDOUT "   it point to the directory that contains the new 5.x\n";
-      print STDOUT "   potpaw potential directories and another directory\n";
-      print STDOUT "   called pseudo that contains the other potential sub\n";
-      print STDOUT "   directories.\n";
+      print STDOUT "   it point to the directory that contains directories\n";
+      print STDOUT "   for the other potentials.\n";
    }
 
    # Clear previous data.
@@ -3166,19 +3164,20 @@ sub printVASP
          {$currElement = ucfirst($currElement);}
 
       # Start looking for the requested potential file's directory.
-      $potDir = $VASPPOT_DIR;
       if ($potType eq "pot")
-         {$potDir = $potDir . "/pseudo/vasp/pot/elements";}
+         {$potDir = $VASPPOT_USPP_LDA;}
       elsif ($potType eq "potGGA")
-         {$potDir = $potDir . "/pseudo/vasp/pot_GGA/elements";}
-      elsif ($potType eq "potpaw")
-         {$potDir = $potDir . "/pseudo/vasp/potpaw";}
-      elsif ($potType eq "potpawGGA")
-         {$potDir = $potDir . "/pseudo/vasp/potpaw_GGA";}
+         {$potDir = $VASPPOT_USPP_GGA;}
       elsif ($potType eq "potpawLDA")
-         {$potDir = $potDir . "/potpaw_LDA";}
+         {$potDir = $VASPPOT_PAW_LDA;}
+      elsif ($potType eq "potpawGGA")
+         {$potDir = $VASPPOT_PAW_GGA;}
       elsif ($potType eq "potpawPBE")
-         {$potDir = $potDir . "/potpaw_PBE";}
+         {$potDir = $VASPPOT_PAW_PBE;}
+      elsif ($potType eq "potpawLDA5x")
+         {$potDir = $VASPPOT_PAW_LDA5x;}
+      elsif ($potType eq "potpawPBE5x")
+         {$potDir = $VASPPOT_PAW_PBE5x;}
 
       # Check for the existence of the requested sub potential type directory.
       $subPotDir = $potDir . "/" . $currElement . $subPotType;
@@ -3187,28 +3186,14 @@ sub printVASP
       else
       {
          # First check for the existence of the potential without the sub type.
-         #   If it is found, then use it.  If it isn't found, then that means
-         #   that we are attempting to use the newer PAW potentials and this
-         #   element does not yet exist in their listing. Thus, we need to
-         #   shift back to the appropriate older choice.
+         #   If it is found, then use it.  If it isn't found, then die.
          $subPotDir = $potDir . "/" . $currElement;
+         print STDOUT "Attempting a potential of the $subPotDir type.\n";
 
          if (-d $subPotDir)
             {system("zcat $subPotDir/POTCAR.Z >> POTCAR");}
          else
-         {
-            $potDir = $VASPPOT_DIR . "/pseudo/vasp";
-            if ($potType eq "potpawLDA")
-            {
-               $subPotDir = $potDir . "/potpaw/" . $currElement;
-               system("zcat $subPotDir/POTCAR.Z >> POTCAR");
-            }
-            elsif ($potType eq "potpawPBE")
-            {
-               $subPotDir = $potDir . "/potpaw_PBE/" . $currElement;
-               system("zcat $subPotDir/POTCAR.Z >> POTCAR");
-            }
-         }
+            {die "Cannot find a potential of the $subPotDir type.\n";}
       }
    }
 

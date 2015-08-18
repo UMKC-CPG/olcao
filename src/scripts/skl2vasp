@@ -8,9 +8,6 @@ sub printHelp
 #          collection of input files for executing a vasp calculation with
 #          a few intelligent options.
 #
-# USAGE:   skl2vasp [-j \$jobType] [-p \$potType [-s \$potSubType]] [-GW] [-G]
-#                   [-t \$cellType] [-help]
-#
 # The -j option defines the type of calculation that you would like to run with
 #   vasp.  The idea is that this will choose optimal parameters for some of the
 #   input files for that particular type of job.  Possible options for \$jobType
@@ -20,15 +17,17 @@ sub printHelp
 # The -p option defines the base type of potential that will be used. Then,
 #   depending on the selection, there are a number of possible subtypes that
 #   can be selected.  Possible values for \$potType are:
-#   "pot"       = Ultrasoft LDA
-#   "potGGA"    = Ultrasoft GGA
-#   "potpaw"    = Projector Augmented Wave LDA (From VASP 4.x)
-#   "potpawGGA" = Projector Augmented Wave GGA (From VASP 4.x)
-#   "potpawLDA" = Projector Augmented Wave LDA (From VASP 5.x)
-#   "potpawPBE" = Projector Augmented Wave PBE (VASP 5.x potentials preferred)
-#   The default value if no option is given is "potpaw" which will give LDA
-#   potentials from VASP version 5.2 for all elements for which such potentials
-#   exist and it will give VASP version 4.6 potpaw potentials for all others.
+#   "potLDA"      = Ultrasoft LDA Pseudopotentials
+#   "potGGA"      = Ultrasoft GGA Pseudopotentials
+#   "potpawLDA"   = Projector Augmented Wave LDA (From VASP 4.x)
+#   "potpawGGA"   = Projector Augmented Wave GGA (From VASP 4.x)
+#   "potpawPBE"   = Projector Augmented Wave PBE (From VASP 4.x)
+#   "potpawLDA5x" = Projector Augmented Wave LDA (From VASP 5.x)
+#   "potpawPBE5x" = Projector Augmented Wave PBE (From VASP 5.x)
+#   NOTE: Do not put a number in place of the "x" for the last two options.
+#   it should be left as the actual character "x".
+#
+#   The default value if no option is given is "potpawLDA5x".
 #
 # The -s suboption to the -p option defines the sub type to the potential.
 #   There is a wide variety of potential sub types and many of these options
@@ -56,6 +55,9 @@ sub printHelp
 #   for \$cellType will be determined from the space group number in the
 #   olcao.skl file. Valid options are: "tric", "mono", "ortho", "tet", "trig",
 #   "hex", "sc", "bcc", and "fcc".
+#
+# USAGE:   skl2vasp [-j \$jobType] [-p \$potType [-s \$potSubType]] [-GW] [-G]
+#                   [-t \$cellType] [-help]
 ENDHELP
    exit(0);
 }
