@@ -2,20 +2,20 @@ program DOS
 
 
    ! Use necessary modules.
-   use O_CommandLine
    use O_TimeStamps
-   use O_DOS
-   use O_Input
-   use O_KPoints
-   use O_Populate
-   use O_SecularEquation
-   use O_PSCFBandHDF5
-   use O_Potential
+   use O_Potential,       only: spin
+   use O_DOS,             only: computeDOS
+   use O_KPoints,         only: numKPoints
+   use O_CommandLine,     only: parseDOSCommandLine
+   use O_Input,           only: numStates, parseInput
+   use O_Populate,        only: occupiedEnergy, populateStates
+   use O_PSCFBandHDF5,    only: accessPSCFBandHDF5, closeAccessPSCFBandHDF5
+   use O_SecularEquation, only: energyEigenValues, readEnergyEigenValuesBand, &
+         & shiftEnergyEigenValues
 
 
    ! Make sure that no funny variables are defined.
    implicit none
-
 
    ! Initialize the logging labels.
    call initOperationLabels
@@ -49,11 +49,11 @@ program DOS
 
 
    ! Access the HDF5 data stored by band.
-   call accessPSCFBandHDF5
+   call accessPSCFBandHDF5(numStates)
 
    ! Allocate space to store the energy eigen values, and then read them in.
    allocate (energyEigenValues (numStates,numKPoints,spin))
-   call readEnergyEigenValuesBand
+   call readEnergyEigenValuesBand(numStates)
 
    ! Populate the electron states to find the highest occupied state (Fermi
    !   energ for metals).
@@ -61,7 +61,7 @@ program DOS
 
    ! Shift the energy eigen values according to the highest occupied state and
    !   convert them from au to eV.
-   call shiftEnergyEigenValues(occupiedEnergy)
+   call shiftEnergyEigenValues(occupiedEnergy,numStates)
 !   call convertEnergyEigenValuesToeV
 
    ! Call the DOS subroutine to compute the total and partial density of states
@@ -84,16 +84,15 @@ end program DOS
 subroutine getImplicitInfo
 
    ! Import necessary modules.
-   use O_ExchangeCorrelation
-   use O_AtomicSites
-   use O_AtomicTypes
-   use O_PotSites
-   use O_PotTypes
-   use O_Lattice
-   use O_KPoints
-   use O_Potential
-   use O_Populate
    use O_TimeStamps
+   use O_ExchangeCorrelation, only: makeSampleVectors
+   use O_AtomicSites,         only: getAtomicSiteImplicitInfo
+   use O_AtomicTypes,         only: getAtomicTypeImplicitInfo
+   use O_PotSites,            only: getPotSiteImplicitInfo
+   use O_PotTypes,            only: getPotTypeImplicitInfo
+   use O_Lattice,             only: getRecipCellVectors
+   use O_KPoints,             only: convertKPointsToXYZ
+   use O_Potential,           only: initPotStructures
 
    implicit none
 

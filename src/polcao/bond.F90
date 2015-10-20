@@ -12,18 +12,23 @@ subroutine computeBond
 
    ! Import necessary modules.
    use O_Kinds
-   use O_Constants
-   use O_Input
-   use O_CommandLine
-   use O_SecularEquation
-   use O_Lattice
-   use O_AtomicTypes
-   use O_AtomicSites
-   use O_Potential
-   use O_Populate
-   use O_KPoints
    use O_TimeStamps
-   use O_MatrixSubs
+   use O_Potential,   only: spin
+   use O_CommandLine, only: doBond
+   use O_Lattice,     only: realVectors
+   use O_AtomicTypes, only: numAtomTypes, atomTypes
+   use O_KPoints,     only: numKPoints, kPointWeight
+   use O_AtomicSites, only: valeDim, numAtomSites, atomSites
+   use O_Constants,   only: pi, hartree, bigThresh, smallThresh
+   use O_Input,       only: numStates, sigmaBOND, eminBOND, emaxBOND, &
+         & deltaBOND, maxBL, detailCodeBond, excitedAtomPACS, maxNumNeighbors
+#ifndef GAMMA
+   use O_SecularEquation, only: valeVale, valeValeOL, readDataSCF, &
+         & readDataPSCF, energyEigenValues
+#else
+   use O_SecularEquation, only: valeValeGamma, valeValeOLGamma, readDataSCF, &
+         & readDataPSCF, energyEigenValues
+#endif
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
@@ -70,7 +75,9 @@ subroutine computeBond
    real (kind=double), allocatable, dimension (:)      :: bondOrderTotal
    real (kind=double), allocatable, dimension (:)      :: bondLengthTotal
    real (kind=double), allocatable, dimension (:)      :: energyScale
-   real (kind=double), allocatable, dimension (:)      :: bondOrderEnergyDep
+   real (kind=double), allocatable, dimension (:)      :: bondOrderEnergyDep !
+         ! Energy dep. bond order for the *target atom* in a PACS calculations.
+         ! Index range is maxNumNeighbors.
    real (kind=double), allocatable, dimension (:)      :: bondOrderAllEnergy
    real (kind=double), allocatable, dimension (:)      :: totalCalcBondOrder
    real (kind=double), allocatable, dimension (:,:)    :: bondLength
@@ -169,18 +176,17 @@ subroutine computeBond
    numEnergyPoints = (emaxBOND - eminBOND ) / deltaBOND
 
    ! Allocate space to hold the bondorder and charge results
-   allocate (bondOrderEnergyDep (30)) ! There shouldn't be more than 30 atoms
-                                      !   bonded to any given atom.
+   allocate (bondOrderEnergyDep (maxNumNeighbors))
    allocate (bondOrder          (numAtomSites,numAtomSites))
    allocate (bondLength         (numAtomSites,numAtomSites))
    allocate (atomCharge         (numAtomSites))
    if (excitedAtomPACS .ne. 0) then
       allocate (energyScale         (numEnergyPoints))
-      allocate (bondCompleteAtom    (numEnergyPoints,30))
-      allocate (bondOrderAllEnergy  (30))
-      allocate (bondedAtomID        (30))
-      allocate (bondedTypeID        (30))
-      allocate (totalCalcBondOrder  (30))
+      allocate (bondCompleteAtom    (numEnergyPoints,maxNumNeighbors))
+      allocate (bondOrderAllEnergy  (maxNumNeighbors))
+      allocate (bondedAtomID        (maxNumNeighbors))
+      allocate (bondedTypeID        (maxNumNeighbors))
+      allocate (totalCalcBondOrder  (maxNumNeighbors))
    endif
 
 
@@ -210,17 +216,17 @@ subroutine computeBond
 
 
          ! Determine if we are doing bond+Q* in a post-SCF calculation, or
-         !   within an SCF calculation.  (The doBond flag is only set to true
-         !   within an SCF calculation because that is the only place that this
-         !   option makes sense to use.  In a post-SCF case, the bond job was
-         !   explicitly asked for by the user and so this request flag is not
-         !   used.)
+         !   within an SCF calculation.  (The doBond flag is only set to
+         !   true within an SCF calculation because that is the only place that
+         !   this option makes sense to use.  In a post-SCF case, the bond job
+         !   was explicitly asked for by the user and so this request flag is
+         !   not used.)
          if (doBond == 1) then
             ! Read necessary data from SCF (setup,main) data structures.
-            call readDataSCF(h,i)
+            call readDataSCF(h,i,numStates)
          else
             ! Read necessary data from post SCF (intg,band) data structures.
-            call readDataPSCF(h,i)
+            call readDataPSCF(h,i,numStates)
          endif
 
 

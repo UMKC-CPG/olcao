@@ -36,13 +36,10 @@ subroutine initSetupHDF5 (maxNumRayPoints)
    ! Use the HDF5 module.
    use HDF5
 
-   ! Use the MPI module
-   use MPI
-
    ! Use the subsection object modules for setup.
-   use O_SetupIntegralsHDF5
-   use O_SetupExchCorrHDF5
-   use O_SetupElecStatHDF5
+   use O_SetupIntegralsHDF5, only: initSetupIntegralHDF5
+   use O_SetupElecStatHDF5,  only: initSetupElecStatHDF5
+   use O_SetupExchCorrHDF5,  only: initSetupExchCorrHDF5
 
    ! Make sure that no funny variables are defined.
    implicit none
@@ -52,10 +49,6 @@ subroutine initSetupHDF5 (maxNumRayPoints)
 
    ! Declare local variables.
    integer :: hdferr
-
-   integer :: comm, info
-   comm = MPI_COMM_WORLD
-   info = MPI_INFO_NULL
 
    ! Log the time we start to setup the HDF5 files.
    call timeStampStart(6)
@@ -74,10 +67,8 @@ subroutine initSetupHDF5 (maxNumRayPoints)
    call h5pset_cache_f (setup_plid,mdc_nelmts,0_size_t,0_size_t,rdcc_w0,hdferr)
    if (hdferr /= 0) stop 'Failed to set setup plid cache settings.'
 
-   ! Add the MPI property to the list
-!   call h5pset_fapl_mpio_f(setup_plid,comm,info,hdferr)
-!   if (hdferr /= 0) stop 'Failed to set setup plid MPI settings.'
-
+   ! Turn on a strong close so that when a close is requested all open objects
+   !   in the file are also closed.
    call h5pset_fclose_degree_f(setup_plid, H5F_CLOSE_STRONG_F, hdferr)
    if (hdferr /= 0) stop 'Failed to set fclose degree'
 
@@ -107,9 +98,9 @@ subroutine accessSetupHDF5
    use HDF5
 
    ! Use the subsection object modules for setup.
-   use O_SetupIntegralsHDF5
-   use O_SetupExchCorrHDF5
-   use O_SetupElecStatHDF5
+   use O_SetupIntegralsHDF5, only: accessSetupIntegralHDF5
+   use O_SetupExchCorrHDF5, only: accessSetupExchCorrHDF5
+   use O_SetupElecStatHDF5, only: accessSetupElecStatHDF5
 
    ! Make sure that no funny variables are defined.
    implicit none
@@ -148,11 +139,9 @@ subroutine closeSetupHDF5
    use HDF5
 
    ! Use the subsection object modules for setup.
-   use O_SetupIntegralsHDF5
-   use O_SetupExchCorrHDF5
-   use O_SetupElecStatHDF5
-
-   use MPI
+   use O_SetupIntegralsHDF5, only: closeSetupIntegralHDF5
+   use O_SetupExchCorrHDF5,  only: closeSetupExchCorrHDF5
+   use O_SetupElecStatHDF5,  only: closeSetupElecStatHDF5
 
    ! Make sure that no funny variables are defined.
    implicit none

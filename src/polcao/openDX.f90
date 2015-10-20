@@ -5,10 +5,8 @@ module O_OpenDX
 subroutine printODXFieldHead(numFields)
 
    ! Import the necessary data modules.
-   use O_Kinds
-   use O_Constants
-   use O_Lattice
-   use O_CommandLine
+   use O_Constants, only: bohrRad
+   use O_Lattice,   only: realVectors, realFractStrideLength, numMeshPoints
 
    ! Make sure that no variables are accidentally defined.
    implicit none
@@ -50,9 +48,6 @@ end subroutine printODXFieldHead
 
 subroutine printODXFieldTail(numFields)
 
-   ! Import the necessary data modules.
-   use O_Kinds
-   use O_CommandLine
 
    ! Make sure that no variables are accidentally defined.
    implicit none
@@ -87,9 +82,8 @@ end subroutine printODXFieldTail
 subroutine printODXLattice
 
    ! Import the necessary modules.
-   use O_Kinds
-   use O_Constants
-   use O_Lattice
+   use O_Constants, only: bohrRad
+   use O_Lattice,   only: realVectors
 
    ! Make sure that no variables are accidentally defined.
    implicit none
@@ -127,10 +121,10 @@ subroutine printODXAtomPos
 
    ! Import the necessary modules.
    use O_Kinds
-   use O_Constants
-   use O_ElementData
-   use O_AtomicSites
-   use O_PotTypes
+   use O_Constants,   only: bohrRad
+   use O_PotTypes,    only: potTypes
+   use O_ElementData, only: colorDX, covalRadii
+   use O_AtomicSites, only: numAtomSites, atomSites
 
    ! Make sure that no variables are accidentally defined.
    implicit none
@@ -158,7 +152,7 @@ subroutine printODXAtomPos
          & numAtomSites," data follows"
    do i = 1, numAtomSites
       currType = atomSites(i)%atomTypeAssn
-      write (56,fmt='(e16.8)') colorDX(potTypes(currType)%nucCharge)
+      write (56,fmt='(e16.8)') colorDX(int(potTypes(currType)%nucCharge))
    enddo
    write (56,fmt='(a)') 'attribute "dep" string "positions"'
    write (56,*)
@@ -170,7 +164,7 @@ subroutine printODXAtomPos
          & numAtomSites, " data follows"
    do i = 1, numAtomSites
       currType = atomSites(i)%atomTypeAssn
-      write (56,fmt='(e16.8)') covalRadii(potTypes(currType)%nucCharge)
+      write (56,fmt='(e16.8)') covalRadii(int(potTypes(currType)%nucCharge))
    enddo
    write (56,fmt='(a)') 'attribute "dep" string "positions"'
    write (56,*)

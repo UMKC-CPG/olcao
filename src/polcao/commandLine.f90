@@ -12,7 +12,6 @@ module O_CommandLine
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    ! Begin list of module data.!
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
    ! Integer to track which number command line argument is to be read in next.
    integer :: nextArg
 
@@ -27,10 +26,8 @@ module O_CommandLine
    integer :: doDOS  ! Tack on a DOS calculation (1) or not (0).
    integer :: doBond ! Tack on a bond order calculation (1) or not (0).
 
-   ! Variables used by intg only.
+   ! Variables used by pscf only.
    integer :: doMOME ! Include computation of the momentum matrix elements.
-
-   ! Variables used by band only.
    integer :: doSYBD ! Do (1) a symmetric band structure calculation along a
                      !   path in the BZ, or do a normal band structure
                      !   calculation (0).
@@ -124,7 +121,7 @@ subroutine parseMainCommandLine
 end subroutine parseMainCommandLine
 
 
-subroutine parseIntgCommandLine
+subroutine parsePSCFCommandLine
 
    ! Use necessary modules.
    use O_TimeStamps
@@ -148,42 +145,14 @@ subroutine parseIntgCommandLine
 
    call readBasisCode
 
+   call readExcitedQN
+
    ! Read a flag indicating that the momentum matrix elements should also be
    !   calculated.
    call getarg(nextArg,commandBuffer)
    nextArg = nextArg + 1
    read (commandBuffer,*) doMOME
    write (20,*) "doMOME = ",doMOME
-
-   ! Record the date and time that we end.
-   call timeStampEnd (24)
-
-end subroutine parseIntgCommandLine
-
-
-subroutine parseBandCommandLine
-
-   ! Use necessary modules.
-   use O_TimeStamps
-
-   ! Make sure that there are not accidental variable declarations.
-   implicit none
-
-   ! Define the local variables that will be used to parse the command line.
-   character*25 :: commandBuffer
-
-   ! Open the file that will be written to as output for this program.
-   open(20,file='fort.20',status='unknown',form='formatted')
-
-   ! Record the date and time that we start.
-   call timeStampStart (24)
-
-   ! Initialize all the command line parameters.
-   call initCLP
-
-   ! Begin Parsing the command line.
-
-   call readBasisCode
 
    ! Read a flag indicating whether we should do a band structure calculation
    !   using the given kpoints or a symmetric band calculation on a path
@@ -193,13 +162,10 @@ subroutine parseBandCommandLine
    read (commandBuffer,*) doSYBD
    write (20,*) "doSYBD = ",doSYBD
 
-   call readExcitedQN
-
    ! Record the date and time that we end.
    call timeStampEnd (24)
 
-end subroutine parseBandCommandLine
-
+end subroutine parsePSCFCommandLine
 
 
 subroutine parseDOSCommandLine
@@ -220,7 +186,6 @@ subroutine parseDOSCommandLine
    call initCLP
 
    ! Begin Parsing the command line.
-
    call readBasisCode
 
    call readExcitedQN

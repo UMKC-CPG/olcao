@@ -6,18 +6,20 @@ subroutine computeOptc
 
 
    ! Use necessary modules.
-   use O_CommandLine
    use O_TimeStamps
-   use O_OptcTransitions
-   use O_OptcPrint
-   use O_Input
-   use O_KPoints
-   use O_Lattice
-   use O_Populate
-   use O_SecularEquation
-   use O_PSCFBandHDF5
-   use O_PSCFIntgHDF5
-   use O_Potential
+   use O_Potential,       only: spin
+   use O_PSCFIntgHDF5,    only: getMOMEStatus
+   use O_OptcPrint,       only: printOptcResults
+   use O_CommandLine,     only: parseOptcCommandLine, stateSet
+   use O_KPoints,         only: numKPoints, computePhaseFactors
+   use O_Populate,        only: occupiedEnergy, populateStates
+   use O_Lattice,         only: initializeLattice, initializeFindVec
+   use O_Input,           only: numStates, lastInitStatePACS, parseInput
+   use O_PSCFBandHDF5,    only: accessPSCFBandHDF5, closeAccessPSCFBandHDF5
+   use O_OptcTransitions, only: transCounter, energyDiff, transitionProb, &
+         & getEnergyStatistics, computeTransitions
+   use O_SecularEquation, only: energyEigenValues, readEnergyEigenValuesBand, &
+         & appendExcitedEnergyEigenValuesBand, shiftEnergyEigenValues
 
 
    ! Make sure that no funny variables are defined.
@@ -52,7 +54,6 @@ subroutine computeOptc
    ! Read in the input to initialize all the key data structure variables.
    call parseInput
 
-
    ! Find specific computational parameters not EXPLICITLY given in the input
    !   file.  These values can, however, be easily determined from the input
    !   file.
@@ -77,26 +78,25 @@ subroutine computeOptc
    endif
 
    ! Access the HDF5 data stored by band.
-   call accessPSCFBandHDF5
+   call accessPSCFBandHDF5(numStates)
 
    ! Allocate space to store the energy eigen values, and then read them in.
    allocate (energyEigenValues (numStates,numKPoints,spin))
-   call readEnergyEigenValuesBand
+   call readEnergyEigenValuesBand(numStates)
 
    ! Populate the electron states to find the highest occupied state (Fermi
    !   energ for metals).
    call populateStates
 
-   if (stateSet == 1) then ! Doing PACS calculation and we need to modify the
-                           ! energy eigen values and their position.
-
-      ! Now that the occupied energy is known we can append the unoccupied
-      !   excited states.
-      call appendExcitedEnergyEigenValuesBand(occupiedEnergy)
+   if (stateSet == 1) then ! Doing PACS calculation and we need to modify
+      ! the energy eigen values and their position. Now that the occupied
+      ! energy is known we can append the unoccupied excited states.
+      call appendExcitedEnergyEigenValuesBand(lastInitStatePACS+1,&
+            & numStates)
    endif
 
    ! Shift the energy eigen values according to the highest occupied state.
-   call shiftEnergyEigenValues(occupiedEnergy)
+   call shiftEnergyEigenValues(occupiedEnergy,numStates)
 
    ! Compute some statistics and variables concerning the energy values.
    call getEnergyStatistics
@@ -114,7 +114,7 @@ subroutine computeOptc
    deallocate (transCounter)
    if (stateSet /= 2) then  ! Not doing a sigma(E) calculation.
       deallocate (energyDiff)
-      deallocate (energyMom)
+      deallocate (transitionProb)
    endif
 
    ! Close access to the band HDF5 data.
@@ -129,16 +129,15 @@ end subroutine computeOptc
 subroutine getImplicitInfo
 
    ! Import necessary modules.
-   use O_ExchangeCorrelation
-   use O_AtomicSites
-   use O_AtomicTypes
-   use O_PotSites
-   use O_PotTypes
-   use O_Lattice
-   use O_KPoints
-   use O_Potential
-   use O_Populate
    use O_TimeStamps
+   use O_ExchangeCorrelation, only: makeSampleVectors
+   use O_AtomicSites,         only: getAtomicSiteImplicitInfo
+   use O_AtomicTypes,         only: getAtomicTypeImplicitInfo
+   use O_PotSites,            only: getPotSiteImplicitInfo
+   use O_PotTypes,            only: getPotTypeImplicitInfo
+   use O_Lattice,             only: getRecipCellVectors
+   use O_KPoints,             only: convertKPointsToXYZ
+   use O_Potential,           only: initPotStructures
 
    implicit none
 
@@ -175,8 +174,8 @@ subroutine addOnMOME
    ! Make sure that no variables are implicitly declared.
    implicit none
 
-   ! Set the doMOME command line parameter to 1 (even though it was not given
-   !   on the command line).  This will allow us to use the intgAndOrMom
+   ! Set the doMOME command line parameter to 1 (even though it was not
+   !   given on the command line).  This will allow us to use the intgAndOrMom
    !   subroutine.
    doMOME = 1
 
@@ -187,10 +186,10 @@ subroutine addOnMOME
    call openMOMEPSCFIntgHDF5
 
    ! Compute momentum matrix integrals and add them to the integral HDF5 file.
-   call intgAndOrMom(0)
+   call intgAndOrMom(0,doMOME)
 
    ! Record that the momentum matrix elements were calculated.
-   call setMOMEStatus(1)
+   call setMOMEStatus(doMOME)
 
    ! Close the integral HDF5 file so that the rest of optc can proceed as if
    !   this never happened (except now of course the file has the momentum

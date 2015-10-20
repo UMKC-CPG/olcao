@@ -130,12 +130,12 @@ module O_AtomicTypes
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    contains
 
-subroutine readAtomicTypes
+subroutine readAtomicTypes(readUnit,writeUnit)
 
    ! Bring in necessary modules.
    use O_Kinds
-   use O_Constants
-   use O_CommandLine
+   use O_Constants, only: maxOrbitals
+   use O_CommandLine, only: basisCode
 
    ! Import necessary subroutine modules.
    use O_ReadDataSubs
@@ -143,13 +143,20 @@ subroutine readAtomicTypes
    ! Make sure that no funny variables are defined.
    implicit none
 
+   ! passed parameters
+   integer, intent(in)    :: readUnit   ! The unit number of the file from which
+                                        ! we are reading.
+   integer, intent(in)    :: writeUnit  ! The unit number of the file to which
+                                        ! we are writing.
+
    ! Define local variables.
    integer :: i,j
    integer, dimension (4) :: typeIDs
    integer, dimension (3) :: tempIntArray
 
    ! Read the number of atomic types.
-   call readData (numAtomTypes,len('NUM_ATOM_TYPES'),'NUM_ATOM_TYPES')
+   call readData(readUnit,writeUnit,numAtomTypes,len('NUM_ATOM_TYPES'),&
+         & 'NUM_ATOM_TYPES')
 
    ! At this point we can allocate space for the atom type array and point the
    !   derived type pointer to it.
@@ -164,7 +171,8 @@ subroutine readAtomicTypes
       !   number one...)
 
       ! Read the element/species/type ID numbers for this atom type.
-      call readData (4,typeIDs,len('ATOM_TYPE_ID__SEQUENTIAL_NUMBER'),&
+      call readData(readUnit,writeUnit,4,typeIDs,&
+            & len('ATOM_TYPE_ID__SEQUENTIAL_NUMBER'),&
             & 'ATOM_TYPE_ID__SEQUENTIAL_NUMBER')
       atomTypes(i)%elementID = typeIDs(1)
       atomTypes(i)%speciesID = typeIDs(2)
@@ -178,19 +186,20 @@ subroutine readAtomicTypes
       endif
 
       ! Read the type label for the atom type and adjust the spacing.
-      call readData (70,atomTypes(i)%typeLabel,len('ATOM_TYPE_LABEL'),&
-            'ATOM_TYPE_LABEL')
+      call readData(readUnit,writeUnit,70,atomTypes(i)%typeLabel,&
+            & len('ATOM_TYPE_LABEL'),'ATOM_TYPE_LABEL')
       atomTypes(i)%typeLabel = trim (atomTypes(i)%typeLabel)
 
       ! Read the number of gaussian terms for the s,p,d,f radial basis
       !   functions.  They are indexed as 'alphas' from exp(-alpha*r^2).
-      call readData (maxOrbitals,atomTypes(i)%numOrbAlphas(1:maxOrbitals),&
+      call readData(readUnit,writeUnit,maxOrbitals,&
+            & atomTypes(i)%numOrbAlphas(1:maxOrbitals),&
             & len('NUM_ALPHA_S_P_D_F'),'NUM_ALPHA_S_P_D_F')
 
       ! Check that the number of alphas is monotonically decreasing.
       do j=1,maxOrbitals-1
          if (atomTypes(i)%numOrbAlphas(j) < &
-               &atomTypes(i)%numOrbAlphas(j+1)) then
+               & atomTypes(i)%numOrbAlphas(j+1)) then
             write (20,*) 'Num of alphas not monotonically decreasing.'
             stop
          endif
@@ -201,13 +210,14 @@ subroutine readAtomicTypes
       allocate (atomTypes(i)%alphas(atomTypes(i)%numOrbAlphas(1)))
 
       ! Read the alphas for this atomic type.
-      call readData (atomTypes(i)%numOrbAlphas(1),atomTypes(i)%alphas(:&
-            & atomTypes(i)%numOrbAlphas(1)),len('ALPHAS'),'ALPHAS')
+      call readData(readUnit,writeUnit,atomTypes(i)%numOrbAlphas(1),&
+            & atomTypes(i)%alphas(:atomTypes(i)%numOrbAlphas(1)),&
+            & len('ALPHAS'),'ALPHAS')
 
 
       ! Read in the number of core radial basis functions for this atomic type.
-      call readData (3,tempIntArray(1:3),len('NUM_CORE_RADIAL_FNS'),&
-            & 'NUM_CORE_RADIAL_FNS')
+      call readData(readUnit,writeUnit,3,tempIntArray(1:3),&
+            & len('NUM_CORE_RADIAL_FNS'),'NUM_CORE_RADIAL_FNS')
       atomTypes(i)%numCoreRadialFns = tempIntArray(basisCode)
 
       ! Allocate space to hold the QN_n, QN_l, & QN_2j for each radial function.
@@ -223,7 +233,7 @@ subroutine readAtomicTypes
       !   subroutine because the procedure for reading in the functions
       !   for the core and valence is the same.  They just record the data
       !   to different data structures.
-      call readRadialFns(tempIntArray(3),&
+      call readRadialFns(readUnit, writeUnit,tempIntArray(3),&
                        & atomTypes(i)%numOrbAlphas,&
                        & atomTypes(i)%coreQN_nList,&
                        & atomTypes(i)%coreQN_lList,&
@@ -231,8 +241,8 @@ subroutine readAtomicTypes
                        & atomTypes(i)%coreRadialFns)
 
       ! Read in the num of valence radial basis functions for this atomic type.
-      call readData (3,tempIntArray(1:3),len('NUM_VALE_RADIAL_FNS'),&
-            & 'NUM_VALE_RADIAL_FNS')
+      call readData(readUnit,writeUnit,3,tempIntArray(1:3),&
+            & len('NUM_VALE_RADIAL_FNS'),'NUM_VALE_RADIAL_FNS')
       atomTypes(i)%numValeRadialFns = tempIntArray(basisCode)
 
       ! Allocate space to hold the QN_l for each radial function.
@@ -245,7 +255,7 @@ subroutine readAtomicTypes
               & atomTypes(i)%numValeRadialFns))
 
       ! Read in the valence radial basis functions.
-      call readRadialFns(tempIntArray(3),&
+      call readRadialFns(readUnit,writeUnit,tempIntArray(3),&
                        & atomTypes(i)%numOrbAlphas,&
                        & atomTypes(i)%valeQN_nList,&
                        & atomTypes(i)%valeQN_lList,&
@@ -256,13 +266,13 @@ subroutine readAtomicTypes
 end subroutine readAtomicTypes
 
 
-subroutine readRadialFns(numRadialFns,numOrbAlphas,QN_nList,QN_lList,&
-      & QN_2jList,radialFns)
+subroutine readRadialFns(readUnit,writeUnit,numRadialFns,numOrbAlphas,&
+            QN_nList,QN_lList,QN_2jList,radialFns)
 
    ! Import the necessary modules.
    use O_Kinds
-   use O_Constants
-   use O_CommandLine
+   use O_Constants, only: maxOrbitals
+   use O_CommandLine, only: basisCode
 
    ! Import necessary subroutine modules.
    use O_ReadDataSubs
@@ -278,6 +288,10 @@ subroutine readRadialFns(numRadialFns,numOrbAlphas,QN_nList,QN_lList,&
    integer, dimension (:)              :: QN_lList
    integer, dimension (:)              :: QN_2jList
    real (kind=double), dimension (:,:) :: radialFns
+   integer, intent(in)    :: readUnit   ! The unit number of the file from which
+                                        ! we are reading.
+   integer, intent(in)    :: writeUnit  ! The unit number of the file to which
+                                        ! we are writing.
 
 
    ! Define the local variables used in this routine
@@ -295,7 +309,8 @@ subroutine readRadialFns(numRadialFns,numOrbAlphas,QN_nList,QN_lList,&
 
    if (numRadialFns /= 0) then
 
-      call readAndCheckLabel(len('NL_RADIAL_FUNCTIONS'),'NL_RADIAL_FUNCTIONS')
+      call readAndCheckLabel(readUnit,writeUnit,len('NL_RADIAL_FUNCTIONS'),&
+            & 'NL_RADIAL_FUNCTIONS')
 
       i = 0
       do j = 1, numRadialFns
@@ -303,7 +318,7 @@ subroutine readRadialFns(numRadialFns,numOrbAlphas,QN_nList,QN_lList,&
          !   identifier for which basis set this radial function is a part of.
          !   At present, there can be only 1 component, and the basis set
          !   numbers are used as follows:  1=mb,fb,eb; 2=fb,eb; 3=eb
-         call readData(2,tempIntArray(1:2),0,'')
+         call readData(readUnit,writeUnit,2,tempIntArray(1:2),0,'')
 
          ! Check if this radial function is in the requested basis.
          if (tempIntArray(2) <= basisCode) then
@@ -314,19 +329,19 @@ subroutine readRadialFns(numRadialFns,numOrbAlphas,QN_nList,QN_lList,&
             ! Read in the identifiers for this radial component.
             !  (QN_n, QN_l, QN_j*2, numStates in component, component index.)
             !  At present, only the QN_n and QN_l are used.
-            call readData(5,tempIntArray(1:5),0,'')
+            call readData(readUnit,writeUnit,5,tempIntArray(1:5),0,'')
             QN_nList(i)  = tempIntArray(1)
             QN_lList(i)  = tempIntArray(2)
             QN_2jList(i) = tempIntArray(3)
 
             ! Read in the radial function coeffs for this n,l combination.
-            call readData (numOrbAlphas(QN_lList(i)+1),&
+            call readData(readUnit,writeUnit,numOrbAlphas(QN_lList(i)+1),&
                   & radialFns(1:numOrbAlphas(QN_lList(i)+1),i),0,'')
          else
             ! Read past this radial function information and do not record it
             !   because it is used for a "higher" basis.
-            call readData(5,tempIntArray(1:5),0,'')
-            call readData (numOrbAlphas(tempIntArray(2)+1),&
+            call readData(readUnit,writeUnit,5,tempIntArray(1:5),0,'')
+            call readData(readUnit,writeUnit,numOrbAlphas(tempIntArray(2)+1),&
                   & tempRealArray(1:numOrbAlphas(QN_lList(i)+1)),0,'')
          endif
       enddo
@@ -339,11 +354,7 @@ end subroutine readRadialFns
 
 subroutine getAtomicTypeImplicitInfo
 
-   ! Include global definition modules.
-   use O_Kinds   ! Variable precision defined for intrinsic types
-   use O_Constants     ! Universal constants and program constants
-
-   ! Include function library modules.
+   ! Include necessary modules.
    use O_StringSubs
 
    ! Make sure that there are not accidental variable declarations.

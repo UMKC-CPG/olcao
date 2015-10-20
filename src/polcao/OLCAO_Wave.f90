@@ -6,20 +6,19 @@ program waveFnPlotDX
 
    ! Import the necessary modules.
    use O_Kinds
-   use O_Constants
-   use O_ElementData
-   use O_CommandLine
    use O_TimeStamps
-   use O_Input
-   use O_KPoints
-   use O_Lattice
-   use O_Basis
-   use O_Populate
-   use O_Potential
-   use O_SecularEquation
-   use O_PSCFBandHDF5
-   use O_Wave
-   use O_OpenDX
+   use O_ElementData,     only: initElementData
+   use O_Populate,        only: populateStates
+   use O_Basis,           only: renormalizeBasis
+   use O_Potential,       only: spin, initPotCoeffs
+   use O_CommandLine,     only: parseWaveCommandLine
+   use O_Input,           only: numStates, parseInput
+   use O_Wave,            only: computeWaveFnMesh, cleanUpWave
+   use O_KPoints,         only: numKPoints, computePhaseFactors
+   use O_PSCFBandHDF5,    only: accessPSCFBandHDF5, closeAccessPSCFBandHDF5
+   use O_SecularEquation, only: energyEigenValues, readEnergyEigenValuesBand
+   use O_Lattice,         only: initializeLattice, initializeFindVec, &
+         & initialize3DMesh
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
@@ -51,7 +50,7 @@ program waveFnPlotDX
 
 
    ! Access the HDF5 data stored by band.
-   call accessPSCFBandHDF5
+   call accessPSCFBandHDF5(numStates)
 
 
    ! Create real-space and reciprocal-space super lattices out of the primitive
@@ -81,7 +80,7 @@ program waveFnPlotDX
 
    ! Allocate space to store the energy eigen values, and then read them in.
    allocate (energyEigenValues (numStates,numKPoints,spin))
-   call readEnergyEigenValuesBand
+   call readEnergyEigenValuesBand(numStates)
 
 
    ! Populate the electron states to find the highest occupied state (Fermi
@@ -109,16 +108,15 @@ end program waveFnPlotDX
 subroutine getImplicitInfo
 
    ! Import necessary modules.
-   use O_ExchangeCorrelation
-   use O_AtomicSites
-   use O_AtomicTypes
-   use O_PotSites
-   use O_PotTypes
-   use O_Lattice
-   use O_KPoints
-   use O_Potential
-   use O_Populate
    use O_TimeStamps
+   use O_ExchangeCorrelation, only: makeSampleVectors
+   use O_AtomicSites,         only: getAtomicSiteImplicitInfo
+   use O_AtomicTypes,         only: getAtomicTypeImplicitInfo
+   use O_PotSites,            only: getPotSiteImplicitInfo
+   use O_PotTypes,            only: getPotTypeImplicitInfo
+   use O_Lattice,             only: getRecipCellVectors
+   use O_KPoints,             only: convertKPointsToXYZ
+   use O_Potential,           only: initPotStructures
 
    implicit none
 

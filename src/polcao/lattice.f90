@@ -2,7 +2,7 @@ module O_Lattice  ! Lattice and superlattice object.
 
    ! Import necessary modules.
    use O_Kinds
-   use O_Constants
+   use O_Constants, only: dim3
 
    ! Make sure that no funny variables are defined.
    implicit none
@@ -120,29 +120,42 @@ module O_Lattice  ! Lattice and superlattice object.
    contains
 
 ! This subroutine will read the real space lattice vectors.
-subroutine readRealCellVectors
+subroutine readRealCellVectors(readUnit,writeUnit)
 
    ! Use necessary modules.
    use O_ReadDataSubs
 
    ! Make sure no funny variables are defined.
-   implicit none
+   implicit none 
 
-   call readData (3,3,realVectors(:,:),len('CELL_VECTORS'),'CELL_VECTORS')
+   ! passed parameters.
+   integer, intent(in)    :: readUnit   ! The unit number of the file from which
+                                        ! we are reading.
+   integer, intent(in)    :: writeUnit  ! The unit number of the file to which
+                                        ! we are writing.
+
+   call readData(readUnit,writeUnit,3,3,realVectors(:,:),&
+      & len('CELL_VECTORS'),'CELL_VECTORS')
 
 end subroutine readRealCellVectors
 
 ! This subroutine will read the definition for a 3D mesh that can be used to
 !   evaluate and display the charge density or specific wave function states.
-subroutine readNumMeshPoints
+subroutine readNumMeshPoints(readUnit,writeUnit)
 
    ! Use necessary modules.
    use O_ReadDataSubs
 
    ! Make sure no funny variables are defined.
    implicit none
+   
+   ! passed parameters.
+   integer, intent(in)    :: readUnit   ! The unit number of the file from which
+                                        ! we are reading.
+   integer, intent(in)    :: writeUnit  ! The unit number of the file to which
+                                        ! we are writing.
 
-   call readData (3,numMeshPoints(:),0,'')
+   call readData(readUnit,writeUnit,3,numMeshPoints(:),0,'')
 
 end subroutine readNumMeshPoints
 
@@ -154,7 +167,7 @@ subroutine getRecipCellVectors
 
    ! Include the modules we need
    use O_Kinds
-   use O_Constants
+   use O_Constants, only: dim3, pi
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
@@ -188,11 +201,15 @@ subroutine getRecipCellVectors
          realCellVolume = realCellVolume + recipVectors(j,i) * realVectors(j,i)
       enddo
 
-      recipVectors(:,i) = 2.0_double * Pi * recipVectors(:,i) / realCellVolume
+      recipVectors(:,i) = 2.0_double * pi * recipVectors(:,i) / realCellVolume
    enddo
 
    realCellVolume = abs(realCellVolume) ! Volume is always positive
-   recipCellVolume = ((2.0_double*Pi)**3)/realCellVolume
+   recipCellVolume = ((2.0_double*pi)**3)/realCellVolume
+
+   ! Also, since we're here, let's compute the inverse of the real lattice
+   !   vector matrix.
+   invRealVectors(:,:) = recipVectors(:,:) / (2.0_double * pi)
 
    write (20,100) 'The real  cell volume is: ',realCellVolume
    write (20,100) 'The recip cell volume is: ',recipCellVolume
@@ -278,12 +295,10 @@ end subroutine setCutoffThresh
 subroutine initializeLattice (doRecip)
 
    ! Include the modules we need
-   use O_Kinds ! Variable precision defined for intrinsic types
-   use O_Constants ! Universal constants and program constants
-
-   ! Include the necessary modules.
-   use O_AtomicTypes
-   use O_PotTypes
+   use O_Kinds
+   use O_Constants, only: dim3
+   use O_AtomicTypes, only: minAtomicAlpha
+   use O_PotTypes, only: minPotAlpha
    use O_TimeStamps
 
    ! Make certain that no implicit variables are accidently declared.
@@ -388,9 +403,6 @@ subroutine initializeLattice (doRecip)
          & negligLimitReal,realVectors)
 
 
-   
-
-
    if (doRecip .eq. 1) then
 
       call getNumCells(primRepsRecip,numCellsRecip,negligLimitRecip,&
@@ -441,8 +453,8 @@ end subroutine initialize3DMesh
 subroutine getNumCells (primReps,numCells,negligLimit,vectors)
 
    ! Include the modules we need
-   use O_Kinds ! Variable precision defined for intrinsic types
-   use O_Constants   ! Universal constants and program constants
+   use O_Kinds
+   use O_Constants, only: dim3, bigThresh
 
    ! Make certain that no implicit variables are accidently declared.
    implicit none
@@ -544,11 +556,9 @@ subroutine makeLattice (primReps,numCells,cellSizes,cellDims,negligLimit,&
       & vectors)
 
    ! Include the modules we need
-   use O_Kinds ! Variable precision defined for intrinsic types
-   use O_Constants ! Universal constants and program constants
-
-   ! Include the necessary modules
-   use O_SortSubs ! Subroutines for sorting in various ways.
+   use O_Kinds
+   use O_Constants, only: dim3
+   use O_SortSubs ! Subroutines for mergesort sorting.
 
    ! Define the dummy variables passed to this subroutine.
    integer, dimension(dim3) :: primReps
@@ -659,8 +669,8 @@ subroutine cellBorderCheck (vectors, tempDimensions, negligLimit, &
       & isWithinNegligLimit)
 
    ! Include the modules we need
-   use O_Kinds ! Variable precision defined for intrinsic types
-   use O_Constants ! Universal constants and program constants
+   use O_Kinds
+   use O_Constants, only: dim3
 
    ! Define the dummy variables passed to this subroutine.
    real (kind=double), dimension(dim3,dim3) :: vectors
@@ -738,7 +748,7 @@ subroutine findLatticeVector (arbitraryVector, latticeVector)
 
    ! Include the modules we need
    use O_Kinds
-   use O_Constants
+   use O_Constants, only: dim3, bigThresh
 
    ! Make certain that no implicit variables are accidently declared.
    implicit none
@@ -845,8 +855,8 @@ end subroutine findLatticeVector
 subroutine initializeFindVec
 
    ! Include the modules we need
-   use O_Kinds ! Variable precision defined for intrinsic types
-   use O_Constants ! Universal constants and program constants
+   use O_Kinds
+   use O_Constants, only: dim3, pi
    use O_TimeStamps
 
    ! Make certain that no implicit variables are accidently declared.
@@ -1056,8 +1066,8 @@ end subroutine initializeFindVec
 subroutine createUnitVectors (rootCellSizes,cellUnitDims)
 
    ! Include the modules we need.
-   use O_Kinds ! Variable precision defined for intrinsic types
-   use O_Constants ! Universal constants and program constants
+   use O_Kinds
+   use O_Constants, only: dim3
 
 
    ! Make certain that no implicit variables are accidently declared.
@@ -1091,7 +1101,7 @@ subroutine dotProductMatrix (vectorArray1,vectorArray2,matrix)
 
    ! Include the necessary modules.
    use O_Kinds
-   use O_Constants
+   use O_Constants, only: dim3
 
    ! Make certain that no implicit variables are accidently declared.
    implicit none
@@ -1116,11 +1126,11 @@ subroutine dotProductMatrix (vectorArray1,vectorArray2,matrix)
 end subroutine dotProductMatrix
 
 subroutine intersectionTest (unitDims, unitDotMatrix, rootSizes, cellCounter,&
-                            &numVectors, identTrap)
+                            & numVectors, identTrap)
 
    ! Include the necessary modules.
    use O_Kinds
-   use O_Constants
+   use O_Constants, only: smallThresh
 
    ! Make certain that no implicit variables are accidently declared.
    implicit none
@@ -1317,10 +1327,6 @@ end subroutine intersectionTest
 
 subroutine minimalBorderCheck (cellCounter,numWignerSegments,maxWignerCell)
 
-   ! Include the modules we need
-   use O_Kinds
-   use O_Constants
-
    ! Make certain that no implicit variables are accidently declared.
    implicit none
 
@@ -1358,7 +1364,6 @@ subroutine minimalBorderRecord (cellCounter,cellUnitDims,rootCellSizes,&
 
    ! Include the modules we need
    use O_Kinds
-   use O_Constants
 
    ! Make certain that no implicit variables are accidently declared.
    implicit none
@@ -1398,10 +1403,6 @@ end subroutine minimalBorderRecord
 
 subroutine sharedVolumeCheck (cellCounter,latticePointIndex,octantIndex,&
                              &numWignerCellsNeeded,overlappingWignerCells)
-
-   ! Include the modules we need
-   use O_Kinds
-   use O_Constants
 
    ! Make certain that no implicit variables are accidently declared.
    implicit none
@@ -1444,7 +1445,7 @@ subroutine defineOctant (invRealVectors,octantUnitDims,rootOctantSizes,&
 
    ! Include the modules we need
    use O_Kinds
-   use O_Constants
+   use O_Constants, only: dim3
 
    ! Make certain that no implicit variables are accidently declared.
    implicit none
@@ -1485,7 +1486,7 @@ subroutine defineOctant (invRealVectors,octantUnitDims,rootOctantSizes,&
 
       ! Assign the distances.  Remember that these vectors are normals to
       !   planes that define the octant.
-      rootOctantSizes(currentIndex)   = 0.5 * unitDotProduct / unitDistance
+      rootOctantSizes(currentIndex)   = 0.5_double*unitDotProduct/unitDistance
       rootOctantSizes(currentIndex-1) = 0.0_double
    enddo
 
@@ -1497,7 +1498,6 @@ subroutine combineWignerAndOctants(wignerUnitDims,rootWignerSizes,&
 
    ! Include the modules we need
    use O_Kinds
-   use O_Constants
 
    ! Make certain that no implicit variables are accidently declared.
    implicit none
@@ -1544,7 +1544,7 @@ subroutine compareOctantsAndWignerCells(wignerUnitDims,rootWignerSizes,&
 
    ! Include the modules we need
    use O_Kinds
-   use O_Constants
+   use O_Constants, only: dim3
 
    ! Make certain that no implicit variables are accidently declared.
    implicit none
@@ -1647,7 +1647,7 @@ subroutine compareOctantsAndWignerCells(wignerUnitDims,rootWignerSizes,&
       do j = 1, dim3
          octantTranslation(j) = 0.0_double
          do k = 1, dim3
-            octantTranslation(j) = octantTranslation(j) - 0.5 * &
+            octantTranslation(j) = octantTranslation(j) - 0.5_double * &
                & real((mod(i - 1,2**k) / 2**(k-1)) * realVectors(j,k),double)
          enddo
       enddo
@@ -1669,7 +1669,7 @@ subroutine compareOctantsAndWignerCells(wignerUnitDims,rootWignerSizes,&
          ! Do not consider lattice points that are more than three maximum
          !   length Wigner-Seitz cells away since they will certainly not have
          !   a shared volume with any octet.
-         if (cellSizesReal(j) > 3.0 * cellSizesReal(maxWignerCell)) exit
+         if (cellSizesReal(j) > 3.0_double * cellSizesReal(maxWignerCell)) exit
 
          ! Shift the Wigner-Seitz cell to the current lattice point.
          do k = 1, numWignerBorders

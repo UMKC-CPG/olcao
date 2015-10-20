@@ -2,7 +2,6 @@ module O_ExchangeCorrelation
 
    ! Import necessary modules.
    use O_Kinds
-   use O_Constants
 
    ! Make sure that no funny variables are defined.
    implicit none
@@ -15,6 +14,7 @@ module O_ExchangeCorrelation
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
    ! Exchange Correlation mesh definition.
+   integer :: printXCMesh ! 0 = Do not print the mesh; 1 = Print it.
    integer :: numSampleVectors ! How many vectors to use.
    real (kind=double), dimension (2) :: angSampleWeights ! This holds the
          !   weighting factor coefficients that are applied to the vectors.
@@ -36,9 +36,6 @@ module O_ExchangeCorrelation
    real (kind=double) :: rSampleSpace ! This is the spacing of the sample
          !   points.
 
-!   real (kind=double), allocatable, dimension (:)   :: radialWeight
-!   real (kind=double), allocatable, dimension (:,:) :: exchCorrOverlap
-!   real (kind=double), allocatable, dimension (:,:) :: exchRhoOp
    integer :: numRayPoints    ! Number of ray points for a specific potential
                               !   site.  Also used to determine the max.
    integer :: maxNumRayPoints ! Max number of ray points of all the potential
@@ -60,14 +57,15 @@ module O_ExchangeCorrelation
    contains
 
 
-subroutine getECMeshParameters
+subroutine getECMeshParameters()
 
    ! Include the modules we need.
+   use MPI
    use O_Kinds
-   use O_Constants
-   use O_Lattice
-   use O_PotSites
-   use O_PotTypes
+   use O_Constants, only: dim3, smallThresh
+   use O_Lattice, only: numCellsReal, cellDimsReal, findLatticeVector
+   use O_PotSites, only: numPotSites, potSites
+   use O_PotTypes, only: minPotAlpha, potTypes
    use O_TimeStamps
 
    ! Make certain that no implicit variables are accidently declared.
@@ -111,10 +109,16 @@ subroutine getECMeshParameters
    ! Local factors and coefficients updated through loop iterations
    real (kind=double) :: covalentRadiusFactor
 
+   ! Define local mpi parameters.
+   integer :: mpiRank
+   integer :: mpiErr
 
    ! Start collecting the exchange correlation mesh point counts.
    call timeStampStart(5)
 
+   ! Get the process rank to avoid having every process write out the
+   !   exchCorr mesh if that is requested.
+   call MPI_Comm_rank(MPI_COMM_WORLD,mpiRank,mpiErr)
 
    ! Determine the number of cell replications that must be considered to find
    !   the exchange correlation matrix parameters.  (i.e. can the real super
@@ -129,10 +133,22 @@ subroutine getECMeshParameters
    allocate(potLatticeSep       (dim3,numPotSites))
    allocate(siteSampleMaxRadius (numSampleVectors,numPotSites))
 
+   ! In the event that someone wants the exchange correlation mesh printed
+   !   for visualization, then this is where that starts.
+   if ((printXCMesh == 1) .and. (mpiRank == 0)) then
+      write (200,*) numPotSites
+      write (200,*) numSampleVectors
+   endif
 
    ! For every replicated cell, compile a list of the distances from the system
    !   origin to each potential site.
    do i = 1, numPotSites
+
+      ! If requested, print the position of the potential site for plotting of
+      !   the XC mesh.
+      if ((printXCMesh == 1) .and. (mpiRank == 0)) then
+         write (200,*) potSites(i)%cartPos(:)
+      endif
 
       ! Determine if this potential site contributes to the exchange
       !   correlation potential.  If not, then skip this site.
@@ -144,7 +160,7 @@ subroutine getECMeshParameters
 
       ! Store the difference in distance between the nearest lattice
       !   vector, and the potential site vector.
-      potLatticeSep(:,i) = potSites(i)%cartPos - latticeVector
+      potLatticeSep(:,i) = potSites(i)%cartPos(:) - latticeVector
 
       ! Determine the distance from the origin to each replication of the
       !   current potential site within real super lattice or its truncated
@@ -246,6 +262,12 @@ subroutine getECMeshParameters
          ! Initialize the radius of the first sample point on this ray
          currentPointRadius = currentMaxRadius
 
+         ! If requested, print the unit vector describing the current ray
+         !   direction and the radius of that ray.  (For XCMesh)
+         if ((printXCMesh == 1) .and. (mpiRank == 0)) then
+            write (200,*) currentAngleVector(:), currentPointRadius
+         endif
+
          ! Initialize the choice of weighting factor
          weightingIndex = 2
 
@@ -275,7 +297,18 @@ subroutine getECMeshParameters
 
             ! Multiply the radius by a factor to reduce its distance.
             currentPointRadius = currentPointRadius * rSampleSpace
+
+            ! If requested, print the radius of the current point on the ray.
+            if ((printXCMesh == 1) .and. (mpiRank == 0)) then
+               write (200,*) currentPointRadius
+            endif
          enddo
+
+         ! If the request to print the XCMesh is true, then we are done doing
+         !   it for this ray and we print "END" to signify that.
+         if ((printXCMesh == 1) .and. (mpiRank == 0)) then
+            write (200,*) "END"
+         endif
       enddo
 
       ! Determine the maximum number of ray points required so far.  This will
@@ -292,8 +325,7 @@ subroutine getECMeshParameters
       if (mod(i,50) .eq. 0) then
          write (20,*) " ",i
       endif
-      flush(20)
-      !call flush (20)
+      call flush (20)
    enddo
 
    ! At this point, the numRayPoints is the maximum possible number of points
@@ -310,26 +342,22 @@ subroutine getECMeshParameters
 end subroutine getECMeshParameters
 
 
-!subroutine makeECMeshAndOverlap(ga_exchCorrOverlap)
 subroutine makeECMeshAndOverlap()
 
    ! Include the modules we need
-   use O_Kinds
-   use O_Constants
-   use O_Lattice
-   use O_PotSites
-   use O_PotTypes
-   use O_Potential
-   use O_TimeStamps
-
-   ! Import the necessary HDF modules
    use HDF5
-   use O_SetupHDF5
-   use O_SetupExchCorrHDF5
-   use O_SetupElecStatHDF5
-
-   ! Import subroutines making parallelism possible
+   use MPI
+   use O_Kinds
+   use O_Constants, only: dim3, smallThresh
+   use O_Lattice, only: logElecThresh, numCellsReal, cellSizesReal, &
+         & cellDimsReal, findLatticeVector
+   use O_PotSites, only: potSites, numPotSites
+   use O_PotTypes, only: potTypes, maxNumPotAlphas
+   use O_Potential, only: potDim, GGA
+   use O_TimeStamps
    use O_ParallelSubs
+   use O_SetupExchCorrHDF5, only: numPoints_did, numPoints, radialWeight_did, &
+         & points, exchRhoOp_did, potPoints, exchCorrOverlap_did, potPot
 
    ! Make certain that no implicit variables are accidently declared.
    implicit none
@@ -387,7 +415,7 @@ subroutine makeECMeshAndOverlap()
    real (kind=double) :: radialmagnitude
    real (kind=double) :: currentAlphaMagnitude
 
-
+   ! Define the main data structures.
    real (kind=double), allocatable, dimension (:)   :: radialWeight
    real (kind=double), allocatable, dimension (:,:) :: exchCorrOverlap
    real (kind=double), allocatable, dimension (:,:,:) :: exchRhoOp
@@ -406,12 +434,12 @@ subroutine makeECMeshAndOverlap()
 
    ! Define variables for MPI
    integer :: maxSite, minSite
-   integer :: ga_exchCorrOverlap,ga_radWeight
-   integer :: ga_exchRhoOP,ga_numRayPoints
-   integer :: mpiSize, mpierr, mpiRank
+   integer :: mpiSize,mpiRank,mpiErr
 
-   ! Global arrays needs to know if we are doing GGA or LDA
-   integer :: exchCorrOpCode
+   ! We need to know the size of the last dimension in the exchRhoOp matrix.
+   !   This value is determined by whether or not we are doing an LDA (1) or a
+   !   GGA (10) based calculation.
+   integer :: numOpValues
 
    ! Start making the exchange correlation matrices and mesh points.
    call timeStampStart(7)
@@ -423,16 +451,12 @@ subroutine makeECMeshAndOverlap()
    ! Allocate space for matrices that will be pointed to by global data
    !   structures later.
    allocate (radialWeight    (maxNumRayPoints))
-   ! When onGGA only space for the rho operator is allocated
-   ! For GGA space is also allocated for first and second derivatives
-   ! of the rho operator
-   if (GGA .eq. 0) then
-     allocate (exchRhoOp       (potDim,maxNumRayPoints,1))
-     exchCorrOpCode = 1
-   else
-     allocate (exchRhoOp       (potDim,maxNumRayPoints,10))
-     exchCorrOpCode = 10
+   if (GGA == 0) then ! Doing LDA
+      numOpValues = 1
+   else ! Doing GGA
+      numOpValues = 10
    endif
+   allocate (exchRhoOp       (potDim,maxNumRayPoints,numOpValues))
    allocate (exchCorrOverlap (potDim,potDim))
 
 
@@ -448,15 +472,14 @@ subroutine makeECMeshAndOverlap()
    currentNegligLimit  = 0.0_double
    currentNumPotAlphas = 0
 
-   call gaSetupExchCorr(ga_exchCorrOverlap, ga_radWeight, ga_exchRhoOP,&
-      & ga_numRayPoints, maxNumRayPoints, numPotSites,potDim,exchCorrOpCode)
-   call MPI_Comm_size(MPI_COMM_WORLD,mpiSize,mpierr)
-   call MPI_Comm_rank(MPI_COMM_WORLD,mpiRank,mpierr)
-   call loadBalMPI(numPotSites,minSite,maxSite,mpiSize)
+   call MPI_Comm_size(MPI_COMM_WORLD,mpiSize,mpiErr)
+   call MPI_Comm_rank(MPI_COMM_WORLD,mpiRank,mpiErr)
+   call loadBalMPI(numPotSites,minSite,maxSite,mpiRank,mpiSize)
 
-   do i=minSite,maxSite
-!   do i = 1, numPotSites
-      
+   do i = minSite, maxSite
+
+      ! Initialize the exchCorrOverlap to zero so that it may be accumulated
+      !   through ga calls.
       exchCorrOverlap(:,:) = 0.0_double
 
       ! Initialize the radialWeight to zero for each potential iteration.
@@ -647,22 +670,24 @@ subroutine makeECMeshAndOverlap()
                currentNegligLimitPlus = currentNegligLimit + &
                      & latticeOffsetMagSqrd + 2.0_double * &
                      & sqrt(currentNegligLimit * latticeOffsetMagSqrd)
+
                ! These are the distances used when calculating the first
                ! derivatives (xdistance,ydistance,zdistance) and the second
                ! derivatives (xxdistance,xydistance,xzdistance,yydistance
                ! yzdistance,zzdistane) for the exchange rho op value as
-               ! a gaussian function
+               ! a gaussian function.
                if (GGA.eq.1) then
-                 xdistance = latticeOffset(1)-cellDimsReal(1,m)
-                 ydistance = latticeOffset(1)-cellDimsReal(2,m)
-                 zdistance = latticeOffset(1)-cellDimsReal(3,m)
-                 xxdistance = xdistance ** 2
-                 xydistance = xdistance * ydistance
-                 xzdistance = xdistance * zdistance
-                 yydistance = ydistance ** 2
-                 yzdistance = ydistance * zdistance
-                 zzdistance = zdistance ** 2
+                  xdistance = latticeOffset(1)-cellDimsReal(1,m)
+                  ydistance = latticeOffset(1)-cellDimsReal(2,m)
+                  zdistance = latticeOffset(1)-cellDimsReal(3,m)
+                  xxdistance = xdistance ** 2
+                  xydistance = xdistance * ydistance
+                  xzdistance = xdistance * zdistance
+                  yydistance = ydistance ** 2
+                  yzdistance = ydistance * zdistance
+                  zzdistance = zdistance ** 2
                endif
+
 
                ! Begin a loop over all the replicated cells.
                do m = 1, numCellsReal
@@ -691,46 +716,56 @@ subroutine makeECMeshAndOverlap()
                      ! Increment the index for which alpha we are dealing with
                      !   out of all alphas in the whole system
                      currentPotAlphaIndex = initPotAlphaIndex + n
-                     ! If nonGGA then save the exchange rho op value for
-                     ! this point and alpha. For GGA save the rho op value,
-                     ! and its first and second derivatives, for this point
-                     ! and alpha.
-                     if (GGA.eq.0) then
-                       ! Save the exchange rho op value for this point and alpha.
-                       exchRhoOp(n+initPotAlphaIndex,k,1) = &
-                             & exchRhoOp(n+initPotAlphaIndex,k,1) + &
-                             & exp(-currentAlphaMagnitude)
+
+                     ! Save the exchange rho op value for this point and alpha.
+                     !   If we are doing a GGA calculation then we also need to
+                     !   save the first (x,y,z) derivatives and the second (xx,
+                     !   xy, xz, yy, yz, zz).
+                     if (GGA == 0) then
+                        ! Save just this point.
+                        exchRhoOp(n+initPotAlphaIndex,k,1) = &
+                              & exchRhoOp(n+initPotAlphaIndex,k,1) + &
+                              & exp(-currentAlphaMagnitude)
                      else
-                       exchRhoOp(n+initPotAlphaIndex,k,1) = &
-                             & exchRhoOp(n+initPotAlphaIndex,k,1) + &
-                             & exp(-currentAlphaMagnitude)
-                       exchRhoOp(n+initPotAlphaIndex,k,2) = &
-                           & currentPotAlphas(n) * exchRhoOp(n+initPotAlphaIndex,k,2) + &
-                           & xdistance*exp(-currentAlphaMagnitude)
-                       exchRhoOp(n+initPotAlphaIndex,k,3) = &
-                          & currentPotAlphas(n) * exchRhoOp(n+initPotAlphaIndex,k,3) + &
-                          & ydistance*exp(-currentAlphaMagnitude)
-                       exchRhoOp(n+initPotAlphaIndex,k,4) = &
-                          & currentPotAlphas(n) * exchRhoOp(n+initPotAlphaIndex,k,4) + &
-                          & zdistance*exp(-currentAlphaMagnitude)
-                       exchRhoOp(n+initPotAlphaIndex,k,5) = &
-                          & (currentPotAlphas(n)**2) * exchRhoOp(n+initPotAlphaIndex,k,5) + &
-                          & xxdistance*exp(-currentAlphaMagnitude)
-                       exchRhoOp(n+initPotAlphaIndex,k,6) = &
-                          & (currentPotAlphas(n)**2) * exchRhoOp(n+initPotAlphaIndex,k,6) + &
-                          & xydistance*exp(-currentAlphaMagnitude)
-                       exchRhoOp(n+initPotAlphaIndex,k,7) = &
-                          & (currentPotAlphas(n)**2) * exchRhoOp(n+initPotAlphaIndex,k,7) + &
-                          & xzdistance*exp(-currentAlphaMagnitude)
-                       exchRhoOp(n+initPotAlphaIndex,k,8) = &
-                          & (currentPotAlphas(n)**2) * exchRhoOp(n+initPotAlphaIndex,k,8) + &
-                          & yydistance*exp(-currentAlphaMagnitude)
-                       exchRhoOp(n+initPotAlphaIndex,k,9) = &
-                          & (currentPotAlphas(n)**2) * exchRhoOp(n+initPotAlphaIndex,k,9) + &
-                          & yzdistance*exp(-currentAlphaMagnitude)
-                       exchRhoOp(n+initPotAlphaIndex,k,10) = &
-                          & (currentPotAlphas(n)**2) * exchRhoOp(n+initPotAlphaIndex,k,10) + &
-                          & zzdistance*exp(-currentAlphaMagnitude)
+                        exchRhoOp(n+initPotAlphaIndex,k,1) = &
+                              & exchRhoOp(n+initPotAlphaIndex,k,1) + &
+                              & exp(-currentAlphaMagnitude)
+                        exchRhoOp(n+initPotAlphaIndex,k,2) = &
+                              & currentPotAlphas(n) * &
+                              & exchRhoOp(n+initPotAlphaIndex,k,2) + &
+                              & xdistance*exp(-currentAlphaMagnitude)
+                        exchRhoOp(n+initPotAlphaIndex,k,3) = &
+                              & currentPotAlphas(n) * &
+                              & exchRhoOp(n+initPotAlphaIndex,k,3) + &
+                              & ydistance*exp(-currentAlphaMagnitude)
+                        exchRhoOp(n+initPotAlphaIndex,k,4) = &
+                              & currentPotAlphas(n) * &
+                              & exchRhoOp(n+initPotAlphaIndex,k,4) + &
+                              & zdistance*exp(-currentAlphaMagnitude)
+                        exchRhoOp(n+initPotAlphaIndex,k,5) = &
+                              & (currentPotAlphas(n)**2) * &
+                              & exchRhoOp(n+initPotAlphaIndex,k,5) + &
+                              & xxdistance*exp(-currentAlphaMagnitude)
+                        exchRhoOp(n+initPotAlphaIndex,k,6) = &
+                              & (currentPotAlphas(n)**2) * &
+                              & exchRhoOp(n+initPotAlphaIndex,k,6) + &
+                              & xydistance*exp(-currentAlphaMagnitude)
+                        exchRhoOp(n+initPotAlphaIndex,k,7) = &
+                              & (currentPotAlphas(n)**2) * &
+                              & exchRhoOp(n+initPotAlphaIndex,k,7) + &
+                              & xzdistance*exp(-currentAlphaMagnitude)
+                        exchRhoOp(n+initPotAlphaIndex,k,8) = &
+                              & (currentPotAlphas(n)**2) * &
+                              & exchRhoOp(n+initPotAlphaIndex,k,8) + &
+                              & yydistance*exp(-currentAlphaMagnitude)
+                        exchRhoOp(n+initPotAlphaIndex,k,9) = &
+                              & (currentPotAlphas(n)**2) * &
+                              & exchRhoOp(n+initPotAlphaIndex,k,9) + &
+                              & yzdistance*exp(-currentAlphaMagnitude)
+                        exchRhoOp(n+initPotAlphaIndex,k,10) = &
+                              & (currentPotAlphas(n)**2) * &
+                              & exchRhoOp(n+initPotAlphaIndex,k,10) + &
+                              & zzdistance*exp(-currentAlphaMagnitude)
                      endif
                   enddo
                enddo
@@ -739,8 +774,6 @@ subroutine makeECMeshAndOverlap()
       enddo
 
 
-!      print *, "fort accum"
-!      flush(6)
       ! Accumulate values in the exchange correlation overlap matrix here
       do j = 1, numRayPoints
          do k = 1, potDim
@@ -748,90 +781,103 @@ subroutine makeECMeshAndOverlap()
             exchRhoOp(k,j,1) * exchRhoOp(1:k,j,1) * radialWeight(j)
          enddo
       enddo
-      call ga_acc(ga_exchCorrOverlap, 1,potDim,1,potDim,exchCorrOverlap, &
-        & potDim, 1.0d0)
 
-      ! Store the matrices in global arrays so rank 0 can write later
-      call nga_put(ga_numRayPoints,(/i/),(/i/),numRayPoints,numPotSites)
-      
-      call nga_put(ga_radWeight,(/1,i/),(/maxNumRayPoints,i/),&
-          & radialWeight,maxNumRayPoints)
-      
-      call nga_put(ga_exchRhoOP,(/1,1,1,i/), &
-          & (/potDim,maxNumRayPoints,exchCorrOpCode,i/), &
-          & exchRhoOP,(/potDim,maxNumRayPoints,exchCorrOpCode/))
-      
-      ! Save values calculated from this potential site loop.
-!      if (mpiRank==0) then
-!      ! Write the values for the radialWeight and exchRhoOp in HDF5 format.
-!      call h5dwrite_f(numPoints_did(i),H5T_NATIVE_INTEGER, &
-!            & numRayPoints,numPoints,hdferr)
-!      if (hdferr /= 0) stop 'Failed to write num ray points'
-!      call h5dwrite_f(radialWeight_did(i),H5T_NATIVE_DOUBLE, &
-!            & radialWeight(:),points,hdferr)
-!      if (hdferr /= 0) stop 'Failed to write radial weights'
-!      call h5dwrite_f(exchRhoOp_did(i),H5T_NATIVE_DOUBLE, &
-!            & exchRhoOp(:,:),potPoints,hdferr)
-!      if (hdferr /= 0) stop 'Failed to write exchange rho operator'
-!      endif
+      ! Accumulate the exchCorrOverlap results into the global array.
+      call MPI_REDUCE(exchCorrOverlap(:,:),exchCorrOverlap(:,:),potDim*potDim,&
+            & MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,mpiErr)
 
-      ! Record the progress so far.
-      if (mod(i,10) .eq. 0) then
-         write (20,ADVANCE="NO",FMT="(a1)") "|"
+      ! Have process zero store its own results in HDF5 format and then collect
+      !   results for the radialWeight and exchRhoOp one at a time and store
+      !   them to disk in HDF5 format.
+      call MPI_BARRIER (MPI_COMM_WORLD,mpiErr)
+      if (mpiRank == 0) then
+         call h5dwrite_f(numPoints_did(i),H5T_NATIVE_INTEGER,numRayPoints,&
+               & numPoints,hdferr)
+         if (hdferr /= 0) stop 'Failed to write num ray points'
+         call h5dwrite_f(radialWeight_did(i),H5T_NATIVE_DOUBLE, &
+               & radialWeight(:),points,hdferr)
+         if (hdferr /= 0) stop 'Failed to write radial weights'
+         call h5dwrite_f(exchRhoOp_did(i),H5T_NATIVE_DOUBLE, &
+               & exchRhoOp(:,:,:),potPoints,hdferr)
+         if (hdferr /= 0) stop 'Failed to write exchange rho operator'
+
+         do j = 1, mpiSize-1
+
+            ! Get the index number of the potSite loop (i) from the MPI process.
+            call MPI_RECV (mpi_i,1,MPI_INTEGER,j,0,MPI_COMM_WORLD,&
+                  & MPI_STATUS_IGNORE,mpiErr)
+
+            ! Receive the number of ray points from process j and write to disk.
+            call MPI_RECV (numPoints,1,MPI_INTEGER,j,1,MPI_COMM_WORLD,&
+                  & MPI_STATUS_IGNORE,mpiErr)
+            call h5dwrite_f(numPoints_did(mpi_i),H5T_NATIVE_INTEGER,&
+                  & numRayPoints,numPoints,hdferr)
+            if (hdferr /= 0) stop 'Failed to write num ray points'
+
+            ! Receive the radial weights for those ray points and write to disk.
+            call MPI_RECV (radialWeight(1:numPoints),numPoints,&
+                  & MPI_DOUBLE_PRECISION,j,2,MPI_COMM_WORLD,MPI_STATUS_IGNORE,&
+                  & mpiErr)
+            call h5dwrite_f(radialWeight_did(mpi_i),H5T_NATIVE_DOUBLE, &
+                  & radialWeight(:),points,hdferr)
+            if (hdferr /= 0) stop 'Failed to write radial weights'
+
+            ! Receive the exchRhoOp from process j and write to disk.
+            call MPI_RECV (exchRhoOp(:,:,:),potDim*maxNumRayPoints*numOpValues,&
+                  & MPI_DOUBLE_PRECISION,j,3,MPI_COMM_WORLD,MPI_STATUS_IGNORE,&
+                  & mpiErr)
+            call h5dwrite_f(exchRhoOp_did(mpi_i),H5T_NATIVE_DOUBLE, &
+                  & exchRhoOp(:,:,:),potPoints,hdferr)
+            if (hdferr /= 0) stop 'Failed to write radial weights'
+         enddo
       else
-         write (20,ADVANCE="NO",FMT="(a1)") "."
+
+         ! Send the results to process 0.
+
+         ! Send the index number of the potSite loop (i) to process zero.
+         call MPI_SEND (i,1,MPI_INTEGER,0,0,MPI_COMM_WORLD,mpiErr)
+
+         ! Send the number of ray points to process zero.
+         call MPI_SEND (numPoints,1,MPI_INTEGER,0,1,MPI_COMM_WORLD,mpiErr)
+
+         ! Send the radial weights of those ray points to process zero.
+         call MPI_SEND (radialWeight(1:numPoints),numPoints,&
+               & MPI_DOUBLE_PRECISION,0,2,MPI_COMM_WORLD,mpiErr)
+
+         ! Send the exchRhoOp to process zero.
+         call MPI_RECV (exchRhoOp(:,:,:),potDim*maxNumRayPoints*numOpValues,&
+               & MPI_DOUBLE_PRECISION,0,3,MPI_COMM_WORLD,mpiErr)
       endif
-      if (mod(i,50) .eq. 0) then
-         write (20,*) " ",i
-      endif
-      !call flush (20)
+
+! This needs to be modified to work in a parallel environment. Perhaps send
+!   progress reports to process 0 and then let only process 0 write.
+!      ! Record the progress so far.
+!      if (mod(i,10) .eq. 0) then
+!         write (20,ADVANCE="NO",FMT="(a1)") "|"
+!      else
+!         write (20,ADVANCE="NO",FMT="(a1)") "."
+!      endif
+!      if (mod(i,50) .eq. 0) then
+!         write (20,*) " ",i
+!      endif
+!      call flush (20)
    enddo
 
-   call ga_sync()
-   ! Accumulate each processes piece of exchCorrOverlap into the global
-   ! array
-!   call ga_acc(ga_exchCorrOverlap, 1,potDim,1,potDim,exchCorrOverlap, &
-!     & potDim, 1.0d0)
+   ! Save to disk the overlap that was accumulated through each loop
 
-   ! Have process 0 pull down information and write to disk.
-   if (mpiRank==0) then
-     call ga_get(ga_exchCorrOverlap,1,potDim,1,potDim,exchCorrOverlap, &
-        & potDim)
-     ! Save to disk the overlap that was accumulated through each loop
-     
-     ! Write the exchCorrOverlap to disk in HDF5 format.
-     call h5dwrite_f(exchCorrOverlap_did,H5T_NATIVE_DOUBLE, &
-           & exchCorrOverlap(:,:),potDims2,hdferr)
-     if (hdferr /= 0) stop 'Failed to write exch corr overlap'
+   ! Synchronize all processes so that we can be sure it is okay for process
+   !   number 0 to write the results to disk via HDF5.
+   call MPI_BARRIER(MPI_COMM_WORLD,mpiErr)
 
-     ! Write the 3 other accumulated global arrays
-     ! Write the values for the radialWeight and exchRhoOp in HDF5 format.
-     do i=1,numPotSites
-       call nga_get(ga_numRayPoints,(/i/),(/i/),numRayPoints,numPotSites)
-       call h5dwrite_f(numPoints_did(i),H5T_NATIVE_INTEGER, &
-             & numRayPoints,numPoints,hdferr)
-       if (hdferr /= 0) stop 'Failed to write num ray points'
-       
-       call nga_get(ga_radWeight,(/1,i/),(/maxNumRayPoints,i/),&
-           & radialWeight(:),maxNumRayPoints)
-       call h5dwrite_f(radialWeight_did(i),H5T_NATIVE_DOUBLE, &
-             & radialWeight(:),points,hdferr)
-       if (hdferr /= 0) stop 'Failed to write radial weights'
-       
-       call nga_get(ga_exchRhoOP,(/1,1,1,i/),&
-          & (/potDim,maxNumRayPoints,exchCorrOpCode,i/),&
-          & exchRhoOP,(/potDim,maxNumRayPoints,exchCorrOpCode/))
-       call h5dwrite_f(exchRhoOp_did(i),H5T_NATIVE_DOUBLE, &
-             & exchRhoOp(:,:,:),potPoints,hdferr)
-       if (hdferr /= 0) stop 'Failed to write exchange rho operator'
-     enddo
+   if (mpiRank == 0) then
+
+      ! Write the exchCorrOverlap to disk in HDF5 format.
+      call h5dwrite_f(exchCorrOverlap_did,H5T_NATIVE_DOUBLE, &
+            & exchCorrOverlap(:,:),potPot,hdferr)
+      if (hdferr /= 0) stop 'Failed to write exch corr overlap'
+
    endif
 
-   ! Sync before destroying global arrays for this section
-   call ga_sync()
-   ! Deallocate Global Arrays exchange corr matrix
-   call destroyExchCorr(ga_exchCorrOverlap, ga_radWeight, &
-      & ga_exchRhoOP, ga_numRayPoints)
    ! Deallocate space for matrices and arrays that are used only locally.
    deallocate (currentPotAlphas)
    deallocate (exchangePointRadius)
@@ -840,7 +886,6 @@ subroutine makeECMeshAndOverlap()
    deallocate (radialWeight)
    deallocate (exchRhoOp)
    deallocate (exchCorrOverlap)
-  
 
    ! Log the date and time we end.
    call timeStampEnd(7)
@@ -848,31 +893,39 @@ subroutine makeECMeshAndOverlap()
 end subroutine makeECMeshAndOverlap
 
 
-subroutine readExchCorrMeshParameters
+subroutine readExchCorrMeshParameters(readUnit, writeUnit)
 
    ! Import necessary modules.
    use O_Kinds
-   use O_Constants
-
-   ! Use necessary library modules.
    use O_ReadDataSubs
 
    ! Make sure that no funny variables are defined.
    implicit none
 
+   ! Define passed parameters.
+   integer, intent(in) :: readUnit ! The unit number of the file from which we
+                                   ! are reading.
+   integer, intent(in) :: writeUnit ! The unit number of the file to which we
+                                    ! are writing.
+
    ! Define local variables.
    real (kind=double), dimension(3) :: tempData
 
+   ! Read the flag requesting that the XC mesh be printed or not.
+   call readData(readUnit,writeUnit,printXCMesh,len('PRINT_XC_MESH'),&
+         & 'PRINT_XC_MESH')
+
    ! Read the number of angular sample vectors.
-   call readData(numSampleVectors,len('NUM_ANGULAR_SAMPLE_VECTORS'),&
-         & 'NUM_ANGULAR_SAMPLE_VECTORS')
+   call readData(readUnit,writeUnit,numSampleVectors,&
+         & len('NUM_ANGULAR_SAMPLE_VECTORS'),'NUM_ANGULAR_SAMPLE_VECTORS')
 
    ! Read the inner and outer weighting factors.
-   call readData(2,angSampleWeights(:),len('WTIN_WTOUT'),'WTIN_WTOUT')
+   call readData(readUnit,writeUnit,2,angSampleWeights(:),&
+         & len('WTIN_WTOUT'),'WTIN_WTOUT')
 
    ! Read the parameters for sampling.
-   call readData(3,tempData(:),len('RADIAL_SAMPLE-IN_OUT_SPACING'),&
-         & 'RADIAL_SAMPLE-IN_OUT_SPACING')
+   call readData(readUnit,writeUnit,3,tempData(:),&
+         & len('RADIAL_SAMPLE-IN_OUT_SPACING'),'RADIAL_SAMPLE-IN_OUT_SPACING')
    rSampleIn    = tempData(1)
    rSampleOut   = tempData(2)
    rSampleSpace = tempData(3)
@@ -888,7 +941,7 @@ subroutine makeSampleVectors
 
    ! Import necessary modules.
    use O_Kinds
-   use O_Constants
+   use O_Constants, only: pi, dim3
 
    ! Make sure that no funny variables are defined.
    implicit none
@@ -898,7 +951,6 @@ subroutine makeSampleVectors
    real (kind=double), allocatable, dimension (:) :: thetaK;
    real (kind=double), allocatable, dimension (:) :: phiK;
    real (kind=double), allocatable, dimension (:) :: hK;
-   real (kind=double) :: distance
 
    ! Allocate space to hold the angular sample vectors.
    allocate (angSampleVectors(dim3,numSampleVectors))
@@ -935,9 +987,6 @@ subroutine makeSampleVectors
       angSampleVectors(1,k) = sin(thetaK(k)) * cos(phiK(k))
       angSampleVectors(2,k) = sin(thetaK(k)) * sin(phiK(k))
       angSampleVectors(3,k) = cos(thetaK(k))
-
-      distance = sqrt(angSampleVectors(1,k)**2 + angSampleVectors(2,k)**2 &
-        & + angSampleVectors(3,k)**2)
    enddo
 
    ! Deallocate the space that held thetaK, phiK and hK.
@@ -954,7 +1003,7 @@ subroutine getMaxNumRayPoints(numPoints_did,numPoints)
    use HDF5
 
    ! Import necessary object modules.
-   use O_PotSites  ! For numPotSites
+   use O_PotSites, only: numPotSites
 
    ! Make sure no funny variables are defined.
    implicit none

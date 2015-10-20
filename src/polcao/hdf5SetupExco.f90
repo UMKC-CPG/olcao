@@ -26,23 +26,22 @@ module O_SetupExchCorrHDF5
    !   same as the one in the elecStatGroup, potPot_dsid.  The "points"
    !   here is the max number of ray points.
    integer(hid_t) :: numPoints_dsid
-   integer(hid_t) :: potPoints_dsid
+   integer(hid_t) :: potPointsGGA_dsid
+   integer(hid_t) :: potPot_dsid
    integer(hid_t) :: points_dsid
 
    ! Each of the below datasets will use one of these property lists.  They
    !   correspond to the above dataspaces.  The potPot_plid is not listed here,
    !   it is given in the elecStat module and imported when needed.
-   integer(hid_t) :: potPoints_plid
+   integer(hid_t) :: potPointsGGA_plid
+   integer(hid_t) :: potPot_plid
    integer(hid_t) :: points_plid
-
-   ! Create file transfer property lists
-   integer(hid_t) :: potPoints_xferpid
-   integer(hid_t) :: points_xferpid
 
    ! Define arrays that hold the dimensions of the datasets.  The potDims2
    !   dimension set is not given here because it is predominantly used in the
    !   elecStat module.  Import it from there when needed.
-   integer(hsize_t), dimension (3) :: potPoints
+   integer(hsize_t), dimension (3) :: potPointsGGA
+   integer(hsize_t), dimension (2) :: potPot
    integer(hsize_t), dimension (1) :: points
    integer(hsize_t), dimension (1) :: numPoints
 
@@ -64,21 +63,15 @@ subroutine initSetupExchCorrHDF5 (setup_fid,maxNumRayPoints)
 
    ! Import any necessary definition modules.
    use HDF5
-   use O_SetupElecStatHDF5 ! For potPot_plid and potPot_dsid
-
-   ! Import the MPI module
-   use MPI
+   use O_SetupElecStatHDF5, only: potPot_plid, potPot_dsid
 
    ! Import necessary object modules.
-   use O_PotSites    ! For numPotSites
-   use O_Potential   ! For potDim
-
-   ! Make sure no funny variables are declared
-   implicit none
+   use O_PotSites, only: numPotSites
+   use O_Potential, only: potDim, GGA
 
    ! Define the passed parameters.
-   integer(hid_t) :: setup_fid
-   integer :: maxNumRayPoints
+   integer(hid_t), intent(in) :: setup_fid
+   integer, intent(in) :: maxNumRayPoints
 
    ! Define local variables.
    integer :: i
@@ -86,18 +79,17 @@ subroutine initSetupExchCorrHDF5 (setup_fid,maxNumRayPoints)
    character*30 :: currentName
 
    ! Initialize data structure dimensions.
-   potPoints(1)   = potDim
-   potPoints(2)   = maxNumRayPoints
-   ! For nonGGA only the rho op value is stored.
-   ! For GGA the first and second derivatives, as well as
-   ! the rho op value are stored.
-   if (GGA.eq.0) then
-     potPoints(3) = 1
+   potPointsGGA(1)    = potDim
+   potPointsGGA(2)    = maxNumRayPoints
+   if (GGA == 0) then
+      potPointsGGA(3) = 1
    else
-     potPoints(3) = 10
+      potPointsGGA(3) = 10
    endif
-   points(1)      = maxNumRayPoints
-   numPoints(1)   = 1
+   potPot(1)          = potDim
+   potPot(2)          = potDim
+   points(1)          = maxNumRayPoints
+   numPoints(1)       = 1
 
    ! Create the exchange correlation group within the setup_fid.
    call h5gcreate_f (setup_fid,"/exchCorrGroup",exchCorrGroup_gid,hdferr)
@@ -109,41 +101,31 @@ subroutine initSetupExchCorrHDF5 (setup_fid,maxNumRayPoints)
    !   exchCorrGroup.
    call h5screate_simple_f(1,numPoints,numPoints_dsid,hdferr)
    if (hdferr /= 0) stop 'Failed to create numPoints dsid.'
-   call h5screate_simple_f(3,potPoints,potPoints_dsid,hdferr)
-   if (hdferr /= 0) stop 'Failed to create potPoints dsid.'
+   call h5screate_simple_f(3,potPointsGGA,potPointsGGA_dsid,hdferr)
+   if (hdferr /= 0) stop 'Failed to create potPointsGGA dsid.'
    call h5screate_simple_f(1,points,points_dsid,hdferr)
    if (hdferr /= 0) stop 'Failed to create points dsid.'
 
    ! Create the property list first.  Then set the properties one at a time.
-   call h5pcreate_f(H5P_DATASET_CREATE_F,potPoints_plid,hdferr)
-   if (hdferr /= 0) stop 'Failed to create potPoints plid.'
+   call h5pcreate_f(H5P_DATASET_CREATE_F,potPointsGGA_plid,hdferr)
+   if (hdferr /= 0) stop 'Failed to create potPointsGGA plid.'
    call h5pcreate_f(H5P_DATASET_CREATE_F,points_plid,hdferr)
    if (hdferr /= 0) stop 'Failed to create points plid.'
-   call h5pset_layout_f(potPoints_plid,H5D_CHUNKED_F,hdferr)
-   if (hdferr /= 0) stop 'Failed to set potPoints chunked layout.'
+   call h5pset_layout_f(potPointsGGA_plid,H5D_CHUNKED_F,hdferr)
+   if (hdferr /= 0) stop 'Failed to set potPointsGGA chunked layout.'
    call h5pset_layout_f(points_plid,H5D_CHUNKED_F,hdferr)
    if (hdferr /= 0) stop 'Failed to set points chunked layout.'
-   call h5pset_chunk_f(potPoints_plid,3,potPoints,hdferr)
-   if (hdferr /= 0) stop 'Failed to set potPoints chunked property.'
+   call h5pset_chunk_f(potPointsGGA_plid,3,potPointsGGA,hdferr)
+   if (hdferr /= 0) stop 'Failed to set potPointsGGA chunked property.'
    call h5pset_chunk_f(points_plid,1,points,hdferr)
    if (hdferr /= 0) stop 'Failed to set points chunked property.'
-!   call h5pset_shuffle_f(potPoints_plid,hdferr)
+!   call h5pset_shuffle_f(potPointsGGA_plid,hdferr)
 !   call h5pset_shuffle_f(points_plid,hdferr)
-   call h5pset_deflate_f   (potPoints_plid,1,hdferr)
-   if (hdferr /= 0) stop 'Failed to set potPoints deflate property.'
+   call h5pset_deflate_f   (potPointsGGA_plid,1,hdferr)
+   if (hdferr /= 0) stop 'Failed to set potPointsGGA deflate property.'
    call h5pset_deflate_f   (points_plid,1,hdferr)
    if (hdferr /= 0) stop 'Failed to set points deflate property.'
 
-!   ! Create and set MPI file transfer property lists
-!   call h5pcreate_f (H5P_DATASET_XFER_F,potPoints_xferpid,hdferr)
-!   if (hdferr /= 0) stop 'Failed to create potPoints xfer property list'
-!   call h5pcreate_f (H5P_DATASET_XFER_F,points_xferpid,hdferr)
-!   if (hdferr /= 0) stop 'Failed to create points xfer property list'
-!   call h5pset_dxpl_mpio_f(potPoints_xferpid,H5FD_MPIO_INDEPENDENT_F,hdferr)
-!   if (hdferr /= 0) stop 'Failed to set MPI potPoints xfer property'
-!   call h5pset_dxpl_mpio_f(points_xferpid,H5FD_MPIO_INDEPENDENT_F,hdferr)
-!   if (hdferr /= 0) stop 'Failed to set MPI points xfer property'
-!
    ! Allocate space to hold the IDs for the datasets in the exchCorrGroup.
    allocate (numPoints_did(numPotSites))
    allocate (exchRhoOp_did(numPotSites))
@@ -168,7 +150,7 @@ subroutine initSetupExchCorrHDF5 (setup_fid,maxNumRayPoints)
       write (currentName,*) i,"eRO"
       currentName = trim (currentName)
       call h5dcreate_f(exchCorrGroup_gid,currentName,H5T_NATIVE_DOUBLE,&
-            & potPoints_dsid,exchRhoOp_did(i),hdferr,potPoints_plid)
+            & potPointsGGA_dsid,exchRhoOp_did(i),hdferr,potPointsGGA_plid)
       if (hdferr /= 0) stop 'Failed to create the exchRhoOp did.'
    enddo
 
@@ -182,11 +164,11 @@ subroutine accessSetupExchCorrHDF5 (setup_fid)
    use HDF5
 
    ! Import necessary object modules.
-   use O_PotSites    ! For numPotSites
-   use O_Potential   ! For potDim
+   use O_PotSites, only: numPotSites
+   use O_Potential, only: potDim, GGA
 
    ! Define the passed parameters.
-   integer(hid_t) :: setup_fid
+   integer(hid_t), intent(in) :: setup_fid
 
    ! Define local variables.
    integer :: i
@@ -238,7 +220,7 @@ subroutine accessSetupExchCorrHDF5 (setup_fid)
 
    ! Obtain the property lists.  Read note for integrals and plid numbers in
    !   accessSetupIntegralHDF5.
-   call h5dget_create_plist_f (exchRhoOp_did(1),potPoints_plid,hdferr)
+   call h5dget_create_plist_f (exchRhoOp_did(1),potPointsGGA_plid,hdferr)
    if (hdferr /= 0) stop 'Failed to obtain pot points plid'
    call h5dget_create_plist_f (radialWeight_did(1),points_plid,hdferr)
    if (hdferr /= 0) stop 'Failed to obtain points plid'
@@ -248,8 +230,8 @@ subroutine accessSetupExchCorrHDF5 (setup_fid)
    !   accessSetupIntegralHDF5.
    call h5dget_space_f(numPoints_did(1),numPoints_dsid,hdferr)
    if (hdferr /= 0) stop 'Failed to obtain numPoints dsid.'
-   call h5dget_space_f(exchRhoOp_did(1),potPoints_dsid,hdferr)
-   if (hdferr /= 0) stop 'Failed to obtain potPoints dsid.'
+   call h5dget_space_f(exchRhoOp_did(1),potPointsGGA_dsid,hdferr)
+   if (hdferr /= 0) stop 'Failed to obtain potPointsGGA dsid.'
    call h5dget_space_f(radialWeight_did(1),points_dsid,hdferr)
    if (hdferr /= 0) stop 'Failed to obtain points dsid.'
 
@@ -266,15 +248,12 @@ subroutine accessSetupExchCorrHDF5 (setup_fid)
    enddo
 
    ! Define the dimensions of the remaining HDF5 stored matrices.
-   potPoints(1) = potDim
-   potPoints(2) = tempMaxNumRayPoints
-   ! For nonGGA only the rho op value is stored.
-   ! For GGA the first and second derivatives, as well as
-   ! the rho op value are stored.
-   if (GGA.eq.0) then
-     potPoints(3) = 1
+   potPointsGGA(1) = potDim
+   potPointsGGA(2) = tempMaxNumRayPoints
+   if (GGA == 0) then
+      potPointsGGA(3) = 1
    else
-     potPoints(3) = 10
+      potPointsGGA(3) = 10
    endif
    points(1)    = tempMaxNumRayPoints
 
@@ -287,11 +266,8 @@ subroutine closeSetupExchCorrHDF5
    ! Import any necessary definition modules.
    use HDF5
 
-   ! Import MPI module
-   use MPI
-
    ! Import necessary object modules.
-   use O_PotSites    ! For numPotSites
+   use O_PotSites, only: numPotSites
 
    ! Make sure that no variables are implicitly declared.
    implicit none
@@ -304,16 +280,10 @@ subroutine closeSetupExchCorrHDF5
    !   for setup.
 
    ! Close the property lists first.
-   call h5pclose_f (potPoints_plid,hdferr)
-   if (hdferr /= 0) stop 'Failed to close potPoints_plid.'
+   call h5pclose_f (potPointsGGA_plid,hdferr)
+   if (hdferr /= 0) stop 'Failed to close potPointsGGA_plid.'
    call h5pclose_f (points_plid,hdferr)
    if (hdferr /= 0) stop 'Failed to close points_plid.'
-
-   ! Close MPI property lists
-   call h5pclose_f (potPoints_xferpid, hdferr)
-   if (hdferr /= 0) stop 'Failed to close potPoints_xferpid'
-   call h5pclose_f (points_xferpid, hdferr)
-   if (hdferr /= 0) stop 'Failed to close points_xferpid'
 
    ! Close the datasets next.
    do i = 1, numPotSites
@@ -326,8 +296,8 @@ subroutine closeSetupExchCorrHDF5
    enddo
 
    ! Close the data spaces next.
-   call h5sclose_f (potPoints_dsid,hdferr)
-   if (hdferr /= 0) stop 'Failed to close potPoints_dsid.'
+   call h5sclose_f (potPointsGGA_dsid,hdferr)
+   if (hdferr /= 0) stop 'Failed to close potPointsGGA_dsid.'
    call h5sclose_f (points_dsid,hdferr)
    if (hdferr /= 0) stop 'Failed to close points_dsid.'
 

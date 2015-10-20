@@ -115,7 +115,6 @@ subroutine initPSCFIntgHDF5
 
    ! Import necessary modules.
    use O_Kinds
-   use O_CommandLine
    use HDF5
 
    ! Make sure that no variables are implicitly declared.
@@ -128,15 +127,9 @@ subroutine initPSCFIntgHDF5
    call h5open_f(hdferr)
    if (hdferr /= 0) stop 'Failed to open HDF5 interface'
 
-!write (20,*) "Got here a"
-!call flush (20)
-
    ! Define the memory foot print parameter.  This controls the maximum amount
    !   of memory that is allocated in the post SCF integral calculation.
    maxMemory = 10000000
-
-!write (20,*) "Got here b1"
-!call flush (20)
 
    
    ! Create the property list for the intg hdf5 file and turn off
@@ -144,19 +137,12 @@ subroutine initPSCFIntgHDF5
    call h5pcreate_f    (H5P_FILE_ACCESS_F,intg_plid,hdferr)
    if (hdferr /= 0) stop 'Failed to create property list for intg file.'
 
-!write (20,*) "Got here b2 ",hdferr
-!call flush (20)
    call h5pget_cache_f (intg_plid,mdc_nelmts,rdcc_nelmts,rdcc_nbytes,rdcc_w0,&
          & hdferr)
    if (hdferr /= 0) stop 'Failed to get default cache settings for intg file.'
 
-!write (20,*) "Got here b3 ",hdferr
-!call flush (20)
    call h5pset_cache_f (intg_plid,mdc_nelmts,0_size_t,0_size_t,rdcc_w0,hdferr)
    if (hdferr /= 0) stop 'Failed to set cache settings for intg file.'
-
-!write (20,*) "Got here c ",hdferr
-!call flush (20)
 
 
    ! Create the HDF5 file that will hold the computed intg results.  This will
@@ -166,8 +152,6 @@ subroutine initPSCFIntgHDF5
          & H5P_DEFAULT_F,intg_plid)
    if (hdferr /= 0) stop 'Failed to create PSCF intg hdf5 file.'
 
-!write (20,*) "Got here d"
-!call flush (20)
 
    ! Then create all the groups.  (The momentum matrix elements are only
    !   computed if it is requested, but the group is always made so that the
@@ -184,29 +168,19 @@ subroutine initPSCFIntgHDF5
    if (hdferr /= 0) stop 'Failed to create momentumZ_gid'
    call h5gcreate_f (intg_fid,"loopIndices",loopIndices_gid,hdferr)
    if (hdferr /= 0) stop 'Failed to create loopIndices_gid'
-!write (20,*) "Got here e"
-!call flush (20)
 
    ! Set the dimension of the attribute dataspace.
    attribIntDims(1) = 1
 
-!write (20,*) "Got here f"
-!call flush (20)
-
    ! Create the dataspace for the momentumX_gid computed status attribute.
    call h5screate_simple_f(1,attribIntDims,attribInt_dsid,hdferr)
    if (hdferr /= 0) stop 'Failed to create attribInt_dsid.'
-
-!write (20,*) "Got here g"
-!call flush (20)
 
    ! Create the computed status attribute for the momentumX_gid.
    call h5acreate_f (momentumX_gid,"computed",H5T_NATIVE_INTEGER,&
          & attribInt_dsid,momentumX_aid,hdferr)
    if (hdferr /= 0) stop 'Failed to create momentumX_aid.'
 
-!write (20,*) "Got here h"
-!call flush (20)
 
 end subroutine initPSCFIntgHDF5
 
@@ -215,7 +189,6 @@ subroutine openMOMEPSCFIntgHDF5
 
    ! Import the necessary HDF modules
    use HDF5
-   use O_CommandLine
 
    ! Make sure that no variables are implicitly declared.
    implicit none
@@ -305,7 +278,6 @@ subroutine closePSCFIntgHDF5
 
    ! Import the necessary HDF modules
    use HDF5
-   use O_CommandLine
 
    ! Make sure that no variables are implicitly declared.
    implicit none
@@ -455,8 +427,6 @@ subroutine initReadIntgHDF5 (runCode)
    loopIndexDims(1) = 2
    loopIndexDims(2) = 0
 
-!write (20,*) "got here 0b"
-!call flush (20)
    ! Create the property list for the intg hdf5 file and turn off
    !   chunk caching.
    call h5pcreate_f    (H5P_FILE_ACCESS_F,intg_plid,hdferr)
@@ -467,8 +437,6 @@ subroutine initReadIntgHDF5 (runCode)
    ! Open the HDF5 file that holds the results of the intg calculation.
    call h5fopen_f ("intg-temp.hdf5",H5F_ACC_RDONLY_F,intg_fid,hdferr,intg_plid)
 
-!write (20,*) "got here 1b"
-!call flush (20)
 
    ! Open the top level group in the HDF5 file that hold the individual
    !   calculated components from intg.
@@ -490,8 +458,6 @@ subroutine initReadIntgHDF5 (runCode)
       if (hdferr /= 0) stop 'Failed to open momentumZ group.'
    end select
 
-!write (20,*) "got here 2b"
-!call flush (20)
 
    ! There is one dataset in the above groups for each atom.  They will be
    !   opened and closed in the appropriate loops.  They hold the data from

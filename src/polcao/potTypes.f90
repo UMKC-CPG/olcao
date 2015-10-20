@@ -2,7 +2,6 @@ module O_PotTypes
 
    ! Import necessary modules.
    use O_Kinds
-   use O_Constants
 
    ! Make sure that no funny variables are defined.
    implicit none
@@ -84,7 +83,7 @@ module O_PotTypes
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    contains
 
-subroutine readPotTypes
+subroutine readPotTypes(readUnit, writeUnit)
 
    ! Bring in necessary modules.
    use O_Kinds
@@ -93,13 +92,20 @@ subroutine readPotTypes
    ! Make sure that no funny variables are defined.
    implicit none
 
+   ! passed parameters
+   integer, intent(in)    :: readUnit   ! The unit number of the file from which
+                                        ! we are reading.
+   integer, intent(in)    :: writeUnit  ! The unit number of the file to which
+                                        ! we are writing.
+
    ! Define local variables.
    integer :: i
    integer, dimension (4) :: typeIDs
    real (kind=double), dimension (2) :: tempRealArray
 
    ! Read the number of potential types.
-   call readData (numPotTypes,len('NUM_POTENTIAL_TYPES'),'NUM_POTENTIAL_TYPES')
+   call readData(readUnit,writeUnit,numPotTypes,len('NUM_POTENTIAL_TYPES'),&
+         & 'NUM_POTENTIAL_TYPES')
 
    ! At this point we can allocate space for the potential type array.
    allocate (potTypes(numPotTypes))
@@ -112,7 +118,8 @@ subroutine readPotTypes
       !   number one...)
 
       ! Read the element/species/type ID numbers for this potential type.
-      call readData (4,typeIDs,len('POTENTIAL_TYPE_ID__SEQUENTIAL_NUMBER'),&
+      call readData(readUnit,writeUnit,4,typeIDs,&
+            & len('POTENTIAL_TYPE_ID__SEQUENTIAL_NUMBER'),&
             & 'POTENTIAL_TYPE_ID__SEQUENTIAL_NUMBER')
       potTypes(i)%elementID = typeIDs(1)
       potTypes(i)%speciesID = typeIDs(2)
@@ -126,28 +133,31 @@ subroutine readPotTypes
       endif
 
       ! Read the type label for the potential type and adjust the spacing.
-      call readData (70,potTypes(i)%typeLabel,len('POTENTIAL_TYPE_LABEL'),&
-            'POTENTIAL_TYPE_LABEL')
+      call readData(readUnit,writeUnit,70,potTypes(i)%typeLabel,&
+            & len('POTENTIAL_TYPE_LABEL'),&
+            & 'POTENTIAL_TYPE_LABEL')
       potTypes(i)%typeLabel = trim (potTypes(i)%typeLabel)
 
       ! Read the nuclear charge and alpha for this type.
-      call readData (2,tempRealArray(1:2),len('NUCLEAR_CHARGE__ALPHA'),&
-            & 'NUCLEAR_CHARGE__ALPHA')
+      call readData(readUnit,writeUnit,2,tempRealArray(1:2),&
+            & len('NUCLEAR_CHARGE__ALPHA'),'NUCLEAR_CHARGE__ALPHA')
       potTypes(i)%nucCharge = tempRealArray(1)
       potTypes(i)%nucAlpha  = tempRealArray(2)
 
       ! Read the covalent radius for this type.
-      call readData (potTypes(i)%covalentRadius,len('COVALENT_RADIUS'),&
-            & 'COVALENT_RADIUS')
+      call readData(readUnit,writeUnit,potTypes(i)%covalentRadius,&
+            & len('COVALENT_RADIUS'),'COVALENT_RADIUS')
 
       ! Read the number of electronic potential alphas for this type.
-      call readData (potTypes(i)%numAlphas,len('NUM_ALPHAS'),'NUM_ALPHAS')
+      call readData(readUnit,writeUnit,potTypes(i)%numAlphas,&
+            & len('NUM_ALPHAS'),'NUM_ALPHAS')
 
       ! Allocate space needed for the alphas for this type.
       allocate (potTypes(i)%alphas(potTypes(i)%numAlphas))
 
       ! Read the min and max alphas for this type into local temp variables.
-      call readData (2,tempRealArray(1:2),len('ALPHAS'),'ALPHAS')
+      call readData(readUnit, writeUnit,2,tempRealArray(1:2),&
+            & len('ALPHAS'),'ALPHAS')
 
       ! Create the list of alphas using a geometric series.
       call makePotAlphas(potTypes(i)%numAlphas,potTypes(i)%alphas,&
@@ -181,23 +191,14 @@ subroutine makePotAlphas(numAlphas,alphas,minAlpha,maxAlpha)
          & (1.0_double/real(numAlphas-1,double))) ** (i-1)
    enddo
 
-!   write (20,fmt='(4e18.8)') alphas(:numAlphas)
-!   call flush (20)
-
 end subroutine makePotAlphas
 
 
 subroutine getPotTypeImplicitInfo
 
-   ! Include global definition modules.
-   use O_Kinds   ! Variable precision defined for intrinsic types
-   use O_Constants     ! Universal constants and program constants
-
-   ! Include function library modules.
+   ! Include necessary modules.
    use O_StringSubs
-
-   ! Include object modules.
-   use O_PotSites
+   use O_PotSites ! For getMultiplicities subroutine
 
    ! Make sure that there are not accidental variable declarations.
    implicit none

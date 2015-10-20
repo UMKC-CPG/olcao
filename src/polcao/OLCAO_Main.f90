@@ -6,28 +6,28 @@ subroutine mainSCF (totalEnergy, fromExternal)
 
    ! Import necessary modules.
    use O_Kinds
-   use O_Constants
-   use O_SetupHDF5
-   use O_MainHDF5
-   use O_CommandLine
-   use O_Input
-   use O_Potential
-   use O_PotentialUpdate
-   use O_AtomicSites ! For valeDim
-   use O_AtomicTypes
-   use O_PotSites
-   use O_PotTypes
-   use O_SecularEquation
-   use O_ValeCharge
-   use O_TimeStamps
-   use O_KPoints
-   use O_Lattice
-   use O_Populate
-   use O_LAPACKParameters
-   use O_LAPACKZHEGV
-   use O_ExchangeCorrelation
-   use O_DOS
-   use O_Bond
+   use O_SetupHDF5,       only: accessSetupHDF5, closeSetupHDF5
+   use O_MainHDF5,        only: initMainHDF5, closeMainHDF5
+   use O_CommandLine,     only: doDOS, doBond, parseMainCommandLine
+   use O_Input,           only: numStates, iterFlagTDOS, parseInput
+   use O_Potential,       only: converged, currIteration, lastIteration, spin, &
+                              & initPotCoeffs, cleanUpPotential
+   use O_PotentialUpdate, only: makeSCFPot
+   use O_AtomicSites,     only: valeDim, cleanUpAtomSites
+   use O_AtomicTypes,     only: cleanUpAtomTypes
+   use O_PotSites,        only: cleanUpPotSites
+   use O_PotTypes,        only: cleanUpPotTypes
+   use O_SecularEquation, only: secularEqnAllKP, cleanUpSecularEqn
+   use O_ValeCharge,      only: makeValenceRho
+   use O_KPoints,         only: cleanUpKPoints
+   use O_Populate,        only: populateStates
+   use O_LAPACKParameters, only: setBlockSize
+   use O_ExchangeCorrelation, only: cleanUpExchCorr
+   use O_DOS,  only: computeIterationTDOS, printIterationTDOS, computeDOS
+   use O_Bond, only: computeBond
+   use O_TimeStamps, only: initOperationLabels
+
+   ! Import the HDF5 module
    use HDF5
 
    ! Make sure that there are no accidental variable declarations.
@@ -76,7 +76,7 @@ subroutine mainSCF (totalEnergy, fromExternal)
 
 
    ! Prepare the HDF5 files for main.
-   call initMainHDF5
+   call initMainHDF5(numStates)
 
 
    ! Access the setup hdf5 files.
@@ -111,7 +111,7 @@ subroutine mainSCF (totalEnergy, fromExternal)
 
       ! Solve the schrodinger equation
       do i = 1, spin
-         call secularEqnAllKP(i)
+         call secularEqnAllKP(i,numStates)
       enddo
 
 
@@ -131,7 +131,7 @@ subroutine mainSCF (totalEnergy, fromExternal)
 
 
       ! Compute the new self consistant potential
-      call makeSCFPot (totalEnergy)
+      call makeSCFPot(totalEnergy)
 
 
       ! Determine if the computation is complete
@@ -156,7 +156,7 @@ subroutine mainSCF (totalEnergy, fromExternal)
    ! Compute the final band structure if convergence was achieved or if the
    !   last iteration was done.  (I.e. we are out of the SCF loop.)
    do i = 1, spin
-      call secularEqnAllKP(i)
+      call secularEqnAllKP(i, numStates)
    enddo
 
    ! Find the Fermi level, the number of occupied bands, and the number of
@@ -224,16 +224,16 @@ end subroutine mainSCF
 subroutine getImplicitInfo
 
    ! Import necessary modules.
-   use O_ExchangeCorrelation
-   use O_AtomicSites
-   use O_AtomicTypes
-   use O_PotSites
-   use O_PotTypes
-   use O_Lattice
-   use O_KPoints
-   use O_Potential
-   use O_Populate
    use O_TimeStamps
+   use O_ExchangeCorrelation, only: makeSampleVectors
+   use O_AtomicTypes,         only: getAtomicTypeImplicitInfo
+   use O_AtomicSites,         only: getAtomicSiteImplicitInfo
+   use O_PotSites,            only: getPotSiteImplicitInfo
+   use O_PotTypes,            only: getPotTypeImplicitInfo
+   use O_Lattice,             only: getRecipCellVectors
+   use O_KPoints,             only: convertKPointsToXYZ
+   use O_Potential,           only: initPotStructures
+   use O_Populate,            only: initCoreStateStructures
 
    implicit none
 

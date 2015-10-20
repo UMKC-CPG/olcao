@@ -25,22 +25,51 @@ subroutine band
 
    ! Import the necessary modules.
    use O_Kinds
-   use O_Constants
-   use O_CommandLine
-   use O_Lattice
-   use O_KPoints
-   use O_Basis
-   use O_Input
    use O_TimeStamps
-   use O_Potential
-   use O_AtomicSites
-   use O_PSCFBandHDF5
-   use O_LAPACKParameters
+   use O_AtomicSites,      only: valeDim
+   use O_LAPACKParameters, only: setBlockSize
+   use O_Input,            only: numStates, parseInput
+   use O_CommandLine,      only: parseBandCommandLine, doSYBD
+   use O_PSCFBandHDF5,     only: initPSCFBandHDF5, closePSCFBandHDF5
+   use O_Lattice,          only: initializeLattice, initializeFindVec
+   use O_KPoints,          only: makePathKPoints, computePhaseFactors
+   use MPI
+   use HDF5
 
    ! Make sure that there are no accidental variable declarations.
    implicit none
 
+!Include necessary global arrays libraries
+#include "mafdecls.fh"
+#include "global.fh"
 
+   ! Define error detectors for hdf, tau, and mpi.
+   integer :: hdferr
+!   integer :: tauerr
+   integer :: mpiErr
+   integer :: mpiRank
+   integer :: mpiSize
+
+   ! Define Global Arrays and MA variables
+   logical :: gastat
+   integer :: stack, heap
+
+   ! Set the GA stack and heap size
+!   stack = 4294967295
+!   heap = 4294967295
+   stack = 30000000
+   heap =  30000000
+
+   ! Initialize the MPI interface
+   call MPI_INIT (mpierr)
+   call MPI_COMM_RANK (MPI_COMM_WORLD,mpiRank,mpierr)
+   call MPI_COMM_SIZE (MPI_COMM_WORLD,mpiSize,mpierr)
+
+   ! Initialize the Global Arrays Interface
+   call ga_initialize()
+
+   ! Initialize the Memory Allocator Interface
+   gastat = MA_init(MT_F_DCPL, stack, heap)
 
    ! Initialize the logging labels.
    call initOperationLabels
@@ -91,7 +120,10 @@ subroutine band
 
 
    ! Prepare the HDF5 files for the post SCF band structure calculation.
-   call initPSCFBandHDF5
+   if (mpiRank == 0) then
+      call initPSCFBandHDF5(numStates)
+   endif
+   call ga_sync()
 
 
    ! Compute the solid state wave function.
@@ -99,11 +131,31 @@ subroutine band
 
 
    ! Close the HDF5 band structure file.
-   call closePSCFBandHDF5
+   if (mpiRank == 0) then
+      call closePSCFBandHDF5
+   endif
 
+   ! Close the output file.
+   close (20)
 
    ! Open a file to signal completion of the program.
-   open (unit=2,file='fort.2',status='new')
+   if (mpiRank == 0) then
+      open (unit=2,file='fort.2',status='new')
+      close (2)
+   endif
+
+   ! Close the HDF5 interface.
+   if (mpiRank == 0) then
+      call h5close_f (hdferr)
+      if (hdferr /= 0) stop 'Failed to close the HDF5 interface.'
+   endif
+
+   ! Close the GA interface
+   call ga_sync()
+   call ga_terminate()
+
+   ! End the MPI interface
+   call MPI_FINALIZE (mpierr)
 
 
 end subroutine band
@@ -114,15 +166,23 @@ subroutine computeBands
 
    ! Use necessary modules.
    use O_Kinds
-   use O_CommandLine
    use O_TimeStamps
-   use O_Input
-   use O_KPoints
-   use O_AtomicSites
-   use O_IntegralsPSCF
-   use O_SecularEquation
-   use O_PSCFBandHDF5
-   use O_Potential
+   use O_Potential,     only: spin
+   use O_CommandLine,   only: doSYBD
+   use O_Input,         only: numStates
+   use O_KPoints,       only: numKPoints
+   use O_IntegralsPSCF, only: getIntgResults
+   use O_AtomicSites,   only: coreDim, valeDim
+   use O_PSCFBandHDF5,  only: valeValeBand, valeValeBand_did, saveCoreValeOL
+#ifndef GAMMA
+   use O_SecularEquation, only: valeVale, valeValeOL, energyEigenValues, &
+         & preserveValeValeOL, restoreValeValeOL, secularEqnOneKP
+#else
+   use O_SecularEquation, only: valeValeGamma, valeValeOLGamma, &
+         & energyEigenValues, preserveValeValeOL, restoreValeValeOL, &
+         & secularEqnOneKP
+#endif
+   use MPI
 
    ! Define local variables.
    integer :: i,j
@@ -144,15 +204,19 @@ subroutine computeBands
    allocate (coreValeOLGamma(coreDim,valeDim))
 #endif
 
-!write (20,*) "numKPoints=",numKPoints
-!write (20,*) "valeDim=",valeDim
-!call flush (20)
-
    ! Loop over all kpoints and compute the solid state wave function and
-   !   energy eigen values for each.
+   !   energy eigen values for each. But first, ...
+   ! Record the fact that we are starting the k-point loop so that when
+   !   someone looks at the output file as the job is running they will
+   !   know that all the little dots represent a count of the number of
+   !   k-points. Then they can figure out the progress and progress rate.
+   if (mpiRank == 0) then
+      write (20,*) "Beginning k-point loop."
+      if (numKPoints > 1) write (20,*) "Expecting ",numKPoints," iterations."
+      call flush (20)
+   endif
+
    do i = 1, numKPoints
-!write (20,*) "current kpoints = ",i
-!call flush (20)
 
       ! Read the overlap integral results and apply kpoints effects.
 #ifndef GAMMA
@@ -162,8 +226,6 @@ subroutine computeBands
       call getIntgResults(valeValeOLGamma(:,:,1),coreValeOLGamma,1,&
             & valeValeBand_did(i),valeValeBand,doSYBD,1)
 #endif
-!write (20,*) "Got here 0"
-!call flush (20)
 
       ! Write the coreValeOL for later use by other programs (if needed).
 #ifndef GAMMA
@@ -171,13 +233,9 @@ subroutine computeBands
 #else
       call saveCoreValeOL (coreValeOLGamma,i)
 #endif
-!write (20,*) "Got here 1"
-!call flush (20)
 
       ! Preserve the valeValeOL (if needed).
       call preserveValeValeOL
-!write (20,*) "Got here 2"
-!call flush (20)
 
       do j = 1, spin
 #ifndef GAMMA
@@ -189,36 +247,32 @@ subroutine computeBands
          call getIntgResults(valeValeGamma(:,:,j),coreValeOLGamma,2,&
                & valeValeBand_did(i),valeValeBand,doSYBD,j)
 #endif
-!write (20,*) "Got here 3"
-!call flush (20)
 
          ! Solve the wave equation for this kpoint.
-         call secularEqnOneKP(j,i)
-!write (20,*) "Got here 4"
-!call flush (20)
+         call secularEqnOneKP(j,i,numStates,doSYBD)
 
          ! Restore the valeValeOL (if needed).
          if (j == 1) then
             call restoreValeValeOL
          endif
-!write (20,*) "Got here 5"
-!call flush (20)
       enddo
-      if (numKPoints > 1) then
-        write (writeBuff,*) i,"/"
-        write (temp,*) numKPoints
-        writeBuff = trim(adjustl(writeBuff)) // trim(adjustl(temp)) // &
-          & " KPoints" 
-        write (20,*) writeBuff
+
+      ! Record that this kpoint has been finished.
+      if (mod(i,10) .eq. 0) then
+         write (20,ADVANCE="NO",FMT="(a1)") "|"
+      else
+         write (20,ADVANCE="NO",FMT="(a1)") "."
       endif
-      call flush(20)
+      if (mod(i,50) .eq. 0) then
+         write (20,*) " ",i
+      endif
+      call flush (20)
+
    enddo
 
    ! Print the band results if necessary.
    if (doSYBD == 1) then
       call printSYBD
-!write (20,*) "Got here 6"
-!call flush (20)
    endif
 
    ! Record the date and time we end.
@@ -230,13 +284,12 @@ end subroutine computeBands
 subroutine printSYBD
 
    ! Use necessary modules.
-   use O_Constants
-   use O_KPoints
-   use O_Populate
-   use O_Input
-   use O_CommandLine
-   use O_SecularEquation
-   use O_Potential
+   use O_Potential,       only: spin
+   use O_Constants,       only: hartree
+   use O_Input,           only: numStates
+   use O_KPoints,         only: numPathKP, pathKPointMag
+   use O_Populate,        only: occupiedEnergy, populateStates
+   use O_SecularEquation, only: energyEigenValues, shiftEnergyEigenValues
 
    ! Define local variables.
    integer :: i,j
@@ -246,7 +299,7 @@ subroutine printSYBD
    call populateStates
 
    ! Adjust the energyEigenValues down by the fermi level determined above.
-   call shiftEnergyEigenValues(occupiedEnergy)
+   call shiftEnergyEigenValues(occupiedEnergy,numStates)
 
    do i = 1, spin
 
@@ -280,15 +333,14 @@ end subroutine printSYBD
 subroutine getImplicitInfo
 
    ! Import necessary modules.
-   use O_ExchangeCorrelation
-   use O_AtomicSites
-   use O_AtomicTypes
-   use O_PotSites
-   use O_PotTypes
-   use O_Lattice
-   use O_KPoints
-   use O_Potential
-   use O_Populate
+   use O_ExchangeCorrelation, only: makeSampleVectors
+   use O_AtomicSites,         only: getAtomicSiteImplicitInfo
+   use O_AtomicTypes,         only: getAtomicTypeImplicitInfo
+   use O_PotSites,            only: getPotSiteImplicitInfo
+   use O_PotTypes,            only: getPotTypeImplicitInfo
+   use O_Lattice,             only: getRecipCellVectors
+   use O_KPoints,             only: convertKPointsToXYZ
+   use O_Potential,           only: initPotStructures
    use O_TimeStamps
 
    implicit none

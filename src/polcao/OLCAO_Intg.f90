@@ -6,22 +6,31 @@ subroutine intgPSCF
 
    ! Import the necessary modules.
    use O_Kinds
-   use O_Constants
-   use O_CommandLine
-   use O_Lattice
-   use O_Basis
-   use O_Input
    use O_TimeStamps
-   use O_Potential
-   use O_PSCFIntgHDF5
-   use O_IntegralsPSCF
+   use O_Input,         only: parseInput
+   use O_Potential,     only: initPotCoeffs
+   use O_Basis,         only: renormalizeBasis
+   use O_CommandLine,   only: doMOME, parseIntgCommandLine
+   use O_IntegralsPSCF, only: intgAndOrMom
+   use O_PSCFIntgHDF5,  only: initPSCFIntgHDF5, closePSCFIntgHDF5, setMOMEStatus
+   use O_Lattice,       only: initializeLattice, initializeFindVec
+   use MPI
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
 
+   ! Define global mpi parameters
+   integer :: mpiRank
+   integer :: mpiSize
+   integer :: mpiErr
+
    ! Open the potential file that will be read from in this program.
    open (unit=8,file='fort.8',status='old',form='formatted')
 
+   ! Initialize the MPI interface
+   call MPI_INIT (mpierr)
+   call MPI_COMM_RANK (MPI_COMM_WORLD,mpiRank,mpierr)
+   call MPI_COMM_SIZE (MPI_COMM_WORLD,mpiSize,mpierr)
 
    ! Initialize the logging labels.
    call initOperationLabels
@@ -60,7 +69,9 @@ subroutine intgPSCF
 !call flush (20)
 
    ! Prepare the HDF5 files for the post SCF integrals.
-   call initPSCFIntgHDF5
+   if (mpiRank == 0) then
+      call initPSCFIntgHDF5
+   endif
 
 !write (20,*) "Got here 1"
 !call flush (20)
@@ -79,20 +90,30 @@ subroutine intgPSCF
    !   only the MME need to be computed.  In that case the same subroutine can
    !   be used, except that only the MME are computed, not the overlap and
    !   hamiltonian.
-   call intgAndOrMom(1)
+   call intgAndOrMom(1,doMOME)
 
 
    ! Record to the HDF5 file an attribute that says whether or not the MOME
    !   were computed.
-   call setMOMEStatus(doMOME)
+   if (mpiRank == 0) then
+      call setMOMEStatus(doMOME)
+   endif
 
 
    ! Close the HDF5 PSCF integrals file.
-   call closePSCFIntgHDF5
+   if (mpiRank == 0) then
+      call closePSCFIntgHDF5
+   endif
 
 
    ! Open a file to signal completion of the program.
-   open (unit=2,file='fort.2',status='new')
+   if (mpiRank == 0) then
+      open (unit=2,file='fort.2',status='new')
+      close (2)
+   endif
+
+   ! End the MPI interface
+   call MPI_FINALIZE (mpierr)
 
 end subroutine intgPSCF
 
@@ -100,13 +121,12 @@ end subroutine intgPSCF
 subroutine getImplicitInfo
 
    ! Import necessary modules.
-   use O_AtomicSites
-   use O_AtomicTypes
-   use O_PotSites
-   use O_PotTypes
-   use O_Lattice
-   use O_KPoints
-   use O_Potential
+   use O_AtomicSites, only: getAtomicSiteImplicitInfo
+   use O_AtomicTypes, only: getAtomicTypeImplicitInfo
+   use O_PotSites, only: getPotSiteImplicitInfo
+   use O_PotTypes, only: getPotTypeImplicitInfo
+   use O_Lattice, only: getRecipCellVectors
+   use O_Potential, only: initPotStructures
    use O_TimeStamps
 
    implicit none

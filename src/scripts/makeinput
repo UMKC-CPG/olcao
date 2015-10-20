@@ -1368,73 +1368,124 @@ sub initializeCell
    #   (conventional, primitive).  If an fcc cubic system is given and the
    #   primitive cell is used, then the reciprocal lattice of the primitive
    #   cell is also used and so the high symmetry points must come from the
-   #   fcc recipricol primitive lattice.  In an fcc cubic system is given and
+   #   fcc reciprocal primitive lattice.  In an fcc cubic system is given and
    #   the conventional (full) cell is used, then the reciprocal lattice of the
    #   conventional (full) cell is also used and so the high symmetry points
-   #   must come from the simple cubic recipricol primitive lattice.  This
+   #   must come from the simple cubic reciprocal primitive lattice.  This
    #   holds for the other crystal systems too.
-   if ($spaceGroupNum <= 2)
+   # There are two cases that must be considered. The first is that no command
+   #   line parameters were given and the second is that a command line
+   #   request was given for a specific set of symmetric kpoints.
+   if ($sybdPath eq "")
    {
-      $sybdPath = "tric";
-      $cellName = "triclinic";
-      $kpShift  = "0.5 0.5 0.5";
-   }
-   elsif ($spaceGroupNum <= 15)
-   {
-      $sybdPath = "mono";
-      $cellName = "monoclinic";
-      $kpShift  = "0.5 0.5 0.5";
-   }
-   elsif ($spaceGroupNum <= 74)
-   {
-      $sybdPath = "ortho";
-      $cellName = "orthorhombic";
-      $kpShift  = "0.5 0.5 0.5";
-   }
-   elsif ($spaceGroupNum <= 142)
-   {
-      $sybdPath = "tet";
-      $cellName = "tetragonal";
-      $kpShift  = "0.5 0.5 0.5";
-   }
-   elsif ($spaceGroupNum <= 167)
-   {
-      $sybdPath = "trig";
-      $cellName = "trigonal";
-      $kpShift  = "0.5 0.5 0.5";
-   }
-   elsif ($spaceGroupNum <= 194)
-   {
-      $sybdPath = "hex";
-      $cellName = "hexagonal";
-      $kpShift  = "0.3333333333333333 0.3333333333333333 0.25";
-   }
-   elsif ($spaceGroupNum <= 230)
-   {
-      if ($doFullCell == 1)
+      if ($spaceGroupNum <= 2)
       {
-         $sybdPath = "sc";
-         $kpShift  = "0.25 0.25 0.25";
+         $sybdPath = "tric";
+         $cellName = "triclinic";
+         $kpShift  = "0.5 0.5 0.5";
       }
-      else
+      elsif ($spaceGroupNum <= 15)
       {
-         if ($spaceGroupName =~ /^F/)
-         {
-            $sybdPath = "fcc";
-            $kpShift  = "0.25 0.25 0.25";
-         }
-         elsif ($spaceGroupName =~ /^I/)
-         {
-            $sybdPath = "bcc";
-            $kpShift  = "0.5 0.5 0.5";
-         }
-         else
+         $sybdPath = "mono";
+         $cellName = "monoclinic";
+         $kpShift  = "0.5 0.5 0.5";
+      }
+      elsif ($spaceGroupNum <= 74)
+      {
+         $sybdPath = "ortho";
+         $cellName = "orthorhombic";
+         $kpShift  = "0.5 0.5 0.5";
+      }
+      elsif ($spaceGroupNum <= 142)
+      {
+         $sybdPath = "tet";
+         $cellName = "tetragonal";
+         $kpShift  = "0.5 0.5 0.5";
+      }
+      elsif ($spaceGroupNum <= 167)
+      {
+         $sybdPath = "trig";
+         $cellName = "trigonal";
+         $kpShift  = "0.5 0.5 0.5";
+      }
+      elsif ($spaceGroupNum <= 194)
+      {
+         $sybdPath = "hex";
+         $cellName = "hexagonal";
+         $kpShift  = "0.3333333333333333 0.3333333333333333 0.25";
+      }
+      elsif ($spaceGroupNum <= 230)
+      {
+         if ($doFullCell == 1)
          {
             $sybdPath = "sc";
             $kpShift  = "0.25 0.25 0.25";
          }
+         else
+         {
+            if ($spaceGroupName =~ /^F/)
+            {
+               $sybdPath = "fcc";
+               $kpShift  = "0.25 0.25 0.25";
+            }
+            elsif ($spaceGroupName =~ /^I/)
+            {
+               $sybdPath = "bcc";
+               $kpShift  = "0.5 0.5 0.5";
+            }
+            else
+            {
+               $sybdPath = "sc";
+               $kpShift  = "0.25 0.25 0.25";
+            }
+         }
+         $cellName = "cubic";
       }
-      $cellName = "cubic";
+   }
+   else
+   {
+      if ($sybdPath eq "tric")
+      {
+         $cellName = "triclinic";
+         $kpShift  = "0.5 0.5 0.5";
+      }
+      elsif ($sybdPath eq "mono")
+      {
+         $cellName = "monoclinic";
+         $kpShift  = "0.5 0.5 0.5";
+      }
+      elsif ($sybdPath eq "ortho")
+      {
+         $cellName = "orthorhombic";
+         $kpShift  = "0.5 0.5 0.5";
+      }
+      elsif ($sybdPath eq "tet")
+      {
+         $cellName = "tetragonal";
+         $kpShift  = "0.5 0.5 0.5";
+      }
+      elsif ($sybdPath eq "trig")
+      {
+         $cellName = "trigonal";
+         $kpShift  = "0.5 0.5 0.5";
+      }
+      elsif ($sybdPath eq "hex")
+      {
+         $cellName = "hexagonal";
+         $kpShift  = "0.3333333333333333 0.3333333333333333 0.25";
+      }
+      else # Nothing but cubic systems from here on.
+      {
+         $cellName = "cubic";
+         if ($sybdPath eq "zb")
+            {$kpShift  = "0.25 0.25 0.25";}
+         elsif ($sybdPath eq "sc")
+            {$kpShift  = "0.25 0.25 0.25";}
+         elsif ($sybdPath eq "fcc")
+            {$kpShift  = "0.25 0.25 0.25";}
+         elsif ($sybdPath eq "bcc")
+            {$kpShift  = "0.5 0.5 0.5";}
+      }
    }
 
    # Move the files created by the space group program when the olcao.skl input

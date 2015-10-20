@@ -2,7 +2,6 @@ module O_CoreCharge
 
    ! Import necessary modules.
    use O_Kinds
-   use O_Constants
 
    ! Make sure that no funny variables are defined.
    implicit none
@@ -29,17 +28,17 @@ subroutine makeCoreRho
 
    ! Include the modules we need
    use O_Kinds
-   use O_Constants
-   use O_AtomicTypes
-   use O_AtomicSites
-   use O_PotTypes
-   use O_PotSites
-   use O_Potential
+   use O_Constants, only: pi, maxOrbitals
+   use O_AtomicTypes, only: atomTypes, maxNumAtomAlphas, maxNumCoreRadialFns
+   use O_AtomicSites, only: coreDim
+   use O_PotTypes, only: potTypes, maxNumPotAlphas
+   use O_PotSites, only: potSites, numPotSites
+   use O_Potential, only: potDim
    use O_TimeStamps
 
    ! Import the necessary HDF modules
    use HDF5
-   use O_SetupElecStatHDF5
+   use O_SetupElecStatHDF5, only: coreChargeDensity_did, pot
 
    ! Import the necessary external interfaces
    use O_LAPACKDPOSVX
@@ -62,14 +61,6 @@ subroutine makeCoreRho
    integer, allocatable, dimension (:) :: currCoreQN_lList
    real (kind=double), allocatable, dimension (:) :: currPotAlphas
    real (kind=double), allocatable, dimension (:) :: currAtomAlphas
-   real (kind=double), allocatable, dimension (:,:) :: coreBasisOverlap ! This
-      ! is used to store integrals representing the overlap between all core
-      ! atomic orbitals and each Gaussian (i).  The index is over i.  This is
-      ! the I vector described below.  (Upon calling DPOSVX the contents of
-      ! this vector will be overwritten with the solution.  This solution is
-      ! then copied to the coreCoeffs for easier understanding.)  NOTE
-      ! that the second index is always 1.  This is because the DPOSVX
-      ! interface requires a multidimensional array.
    real (kind=double), allocatable, dimension (:) :: coreIntegrals ! This is
       ! used to store integrals of each Gaussian (i).  The index is over i.
       ! This is the I' vector described below.
@@ -80,10 +71,19 @@ subroutine makeCoreRho
    real (kind=double), allocatable, dimension (:) :: coreCoeffsCorrected ! This
       ! is used to store the coefficients after they have been corrected to
       ! produce the exact core charge.
+   real (kind=double), allocatable, dimension (:,:) :: coreBasisOverlap ! This
+      ! is used to store integrals representing the overlap between all core
+      ! atomic orbitals and each Gaussian (i).  The index is over i.  This is
+      ! the I vector described below.  (Upon calling DPOSVX the contents of
+      ! this vector will be overwritten with the solution.  This solution is
+      ! then copied to the coreCoeffs for easier understanding.)  NOTE
+      ! that the second index is always 1.  This is because the DPOSVX
+      ! interface requires a multidimensional array.
    real (kind=double), allocatable, dimension (:,:) :: gaussSelfOverlap ! This
       ! stores the overlap between pairs of Gaussian functions used to
       ! represent the core charge.
    real (kind=double) :: maxAlphaRange
+   real (kind=double) :: delta ! Lagrange multiplier
    real (kind=double) :: currNumCoreElectrons ! Current core charge exactly.
    real (kind=double) :: currFittedCharge ! Core charge using initial fit. 
    real (kind=double), dimension (4) :: factor ! Integration constants for
@@ -190,7 +190,7 @@ subroutine makeCoreRho
    allocate (coreChargeDensity(potDim))
 
    ! Allocate space for the local arrays and matrices
-   allocate (coreBasisOverlap       (maxNumPotAlphas,1))
+   allocate (coreBasisOverlap       (maxNumPotAlphas,2))
    allocate (coreIntegrals          (maxNumPotAlphas))
    allocate (coreCoeffs             (maxNumPotAlphas))
    allocate (coreCoeffsCorrected    (maxNumPotAlphas))
@@ -209,13 +209,28 @@ subroutine makeCoreRho
 
    ! Initialize the core basis overlap, integrals, initial core coefficients,
    !   and corrected core coefficients.
-   coreBasisOverlap    (:,1) = 0.0_double
+   coreBasisOverlap    (:,1:2) = 0.0_double
    coreIntegrals       (:)   = 0.0_double
    coreCoeffs          (:)   = 0.0_double
    coreCoeffsCorrected (:)   = 0.0_double
 
    ! Initialize the coreChargeDensity array.
    coreChargeDensity (:) = 0.0_double
+
+   ! Initialize the gaussSelfOverlap.
+   gaussSelfOverlap (:,:) = 0.0_double
+
+! OKAY, at present you can just ignore all of the following comments (in this
+!   section).  This does not appear to be the way that things should work, but
+!   I don't yet understand why.....UGH! The evidence is that the total energy
+!   calculations are off by a bit now and this messes with the alignment of
+!   XANES/ELNES spectra from different types (of the same element) in a given
+!   system (e.g. alpha-Boron) such that the combination of the two spectra do
+!   not line up to match experiment as well. Therefore, the code now has gone
+!   back to the old implementation of the Lagrange Multiplier method.  I will
+!   detail the math when I have time.  ^_^  (It isn't 100% wrong at all, but
+!   there is some subtle detail that needs to be fleshed out. Proceed with some
+!   care.)
 
    ! Our overall goal is to compute the charge density distribution of the core
    !   orbitals of the atomic basis functions and then use a sum of Gaussian
@@ -399,13 +414,11 @@ subroutine makeCoreRho
 
       do j = 1, currNumPotAlphas
 
-         ! Compute the integral of the current Gaussian function that is used
-         !   to help represent the core charge distribution.  This is (I').
-         coreIntegrals(j)      = piXX32 / currPotAlphas(j)**1.5_double
-
          ! Initialize the data structure for calculating the core charge
          !   atomic orbital basis overlap.  This is used to make (I).
          coreBasisOverlap(j,1) = 0.0_double
+         coreBasisOverlap(j,2) = piXX32 / currPotAlphas(j)**1.5_double
+         coreIntegrals(j)      = coreBasisOverlap(j,2)
 
          ! Fill out a two dimensional matrix of coefficients that will be
          !    used to detemine the core basis overlap below.  The efficiency
@@ -453,16 +466,16 @@ subroutine makeCoreRho
 
             ! Accumulate the cross product terms.
             do l = 1, atomTypes(currType)%numOrbAlphas(currAngMomIndex)
-               do m = l+1, atomTypes(currType)%numOrbAlphas(currAngMomIndex)
+               do m = l, atomTypes(currType)%numOrbAlphas(currAngMomIndex)
                   coreBasisOverlap(j,1) = coreBasisOverlap(j,1) + &
                         & alphaFactor(m,l,currAngMomIndex) * &
                         & atomTypes(currType)%coreRadialFns(l,k) * &
                         & atomTypes(currType)%coreRadialFns(m,k)
                enddo
 
-               ! Add in the squared terms removing the factor of two that had
-               !   been preincluded in "factor(k)" above.
-               coreBasisOverlap(j,1) = coreBasisOverlap(j,1) + &
+               ! Subtract off the factor of two that had been preincluded in
+               !   "factor(k)" above.
+               coreBasisOverlap(j,1) = coreBasisOverlap(j,1) - &
                      & alphaFactor(l,l,currAngMomIndex) * &
                      & atomTypes(currType)%coreRadialFns(l,k) * &
                      & atomTypes(currType)%coreRadialFns(l,k) * 0.5_double
@@ -472,9 +485,10 @@ subroutine makeCoreRho
          ! Calculate the upper triangle of the Gaussian function self overlap
          !   matrix.  Only the upper triangle is needed because the matrix is
          !   symmetric.
-         do k = 1, j
-            gaussSelfOverlap(k,j) = piXX32 / (currPotAlphas(j) + &
+         do k = j, currNumPotAlphas
+            gaussSelfOverlap(j,k) = piXX32 / (currPotAlphas(j) + &
                   & currPotAlphas(k))**1.5_double
+            gaussSelfOverlap(k,j) = gaussSelfOverlap(j,k)
          enddo
       enddo
 
@@ -482,10 +496,9 @@ subroutine makeCoreRho
       ! Use the linear equation solver from lapack to get a least squares fit.
       !   This is a very precise fitting but it will not produce coefficients
       !   that will reproduce the total core charge of this site.
-      call solveDPOSVX (currNumPotAlphas,1,&
+      call solveDPOSVX (currNumPotAlphas,2,&
             & gaussSelfOverlap(:currNumPotAlphas,:currNumPotAlphas),&
-            & currNumPotAlphas,coreBasisOverlap(:currNumPotAlphas,1))
-
+            & currNumPotAlphas,coreBasisOverlap(:currNumPotAlphas,1:2))
 
       ! Copy the solution to a better named array.  (This is (G).)  Note that
       !   the above call to solveDPOSVX destroyed the prior contents of
@@ -518,11 +531,19 @@ subroutine makeCoreRho
             & coreCoeffsCorrected(:currNumPotAlphas), &
             & coreIntegrals(:currNumPotAlphas))
 
+      ! Find the lagrange multiplier for exact charge
+      delta = (currNumCoreElectrons - &
+         & sum(coreBasisOverlap(:currNumPotAlphas,1) * &
+         & coreIntegrals(:currNumPotAlphas))) / &
+         & sum(coreBasisOverlap(:currNumPotAlphas,2) * &
+         & coreIntegrals(:currNumPotAlphas))
+
       ! Save the exactly normalized charge density.
       coreChargeDensity&
          & (potTypes(currType)%cumulAlphaSum + 1: &
          &  potTypes(currType)%cumulAlphaSum + currNumPotAlphas) = &
-         & coreCoeffsCorrected(:currNumPotAlphas)
+         & coreBasisOverlap(:currNumPotAlphas,1) + delta * &
+         & coreBasisOverlap(:currNumPotAlphas,2)
    enddo ! Potential site index i
 
    ! Deallocate the local data structures used in this subroutine
@@ -539,7 +560,7 @@ subroutine makeCoreRho
 
    ! Write the core charge density to disk for use later.
    call h5dwrite_f(coreChargeDensity_did,H5T_NATIVE_DOUBLE, &
-         & coreChargeDensity(:),potDims1,hdferr)
+         & coreChargeDensity(:),pot,hdferr)
    if (hdferr /= 0) stop 'Failed to write core charge density'
 
    ! Deallocate the core charge density matrix since it is no longer needed.

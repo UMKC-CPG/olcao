@@ -30,26 +30,26 @@ module O_SecularEquation
    contains
 
 
-subroutine secularEqnAllKP(spinDirection)
+subroutine secularEqnAllKP(spinDirection, numStates)
 
    ! Import necessary modules.
-   use O_Kinds
-   use O_KPoints
-   use O_Input
-   use O_Potential
-   use O_AtomicSites
-   use O_TimeStamps
-   use O_MatrixSubs
-   use O_CommandLine
-   use O_SetupIntegralsHDF5
-   use O_MainHDF5
-   use O_MainEValHDF5
-   use O_MainEVectHDF5
    use HDF5
+   use O_Kinds
+   use O_TimeStamps
+   use O_KPoints, only: numKPoints
+   use O_Potential, only: spin, potDim, potCoeffs
+   use O_AtomicSites, only: valeDim
+   use O_MainEValHDF5, only: eigenValues_did, states
+   use O_MainEVecHDF5, only: eigenVectors_did, valeStates
+   use O_SetupIntegralsHDF5, only: atomDims, atomOverlap_did, &
+         & atomKEOverlap_did, atomNucOverlap_did, atomPotOverlap_did
 #ifndef GAMMA
    use O_LAPACKZHEGV
+   use O_MatrixSubs, only: readPackedMatrix, readPackedMatrixAccum, unpackMatrix
 #else
    use O_LAPACKDSYGV
+   use O_MatrixSubs, only: readPackedMatrix, readPackedMatrixAccum, &
+         & unpackMatrixGamma
 #endif
 
    ! Make sure that no funny variables are defined.
@@ -57,19 +57,14 @@ subroutine secularEqnAllKP(spinDirection)
 
    ! Define the passed parameters.
    integer :: spinDirection
+   integer :: numStates
 
    ! Define the local variables used in this subroutine.
    integer :: i,j ! Loop index variables
    integer :: hdferr
+   integer :: dim1
    real    (kind=double), allocatable, dimension (:,:)   :: packedValeVale
    real    (kind=double), allocatable, dimension (:,:)   :: tempPackedValeVale
-   real (kind=double), allocatable, dimension (:,:) :: eVects
-   character*128 :: writeBuff
-   character*128 :: temp
-    
-#ifdef GAMMA
-   integer :: dim1
-#endif
 
    ! Record the date and time that we start.
    call timeStampStart (15)
@@ -77,6 +72,7 @@ subroutine secularEqnAllKP(spinDirection)
    ! Initialize the dimension of the packed matrices to include two components
    !   (real,imaginary) or just a real component.
 #ifndef GAMMA
+   dim1 = 2
 #else
    dim1 = 1
 #endif
@@ -93,7 +89,6 @@ subroutine secularEqnAllKP(spinDirection)
       allocate(energyEigenValues (numStates,numKPoints,spin))
 #ifndef GAMMA
       allocate(valeVale          (valeDim,valeDim,1,spin)) ! Complex
-      allocate(eVects          (valeDim,numStates))
 #else
       allocate(valeValeGamma     (valeDim,valeDim,spin)) ! Real
 #endif
@@ -105,10 +100,8 @@ subroutine secularEqnAllKP(spinDirection)
 #else
    allocate(valeValeOLGamma    (valeDim,valeDim,spin)) ! Real
 #endif
-!   allocate(packedValeVale     (dim1,valeDim*(valeDim+1)/2))
-!   allocate(tempPackedValeVale (dim1,valeDim*(valeDim+1)/2))
-   allocate(packedValeVale     (valeDim,valeDim))
-   allocate(tempPackedValeVale (valeDim,valeDim))
+   allocate(packedValeVale     (dim1,valeDim*(valeDim+1)/2))
+   allocate(tempPackedValeVale (dim1,valeDim*(valeDim+1)/2))
 
 
    ! Begin loop over all kpoints.
@@ -124,17 +117,20 @@ subroutine secularEqnAllKP(spinDirection)
       valeValeGamma(:,:,spinDirection) = 0.0_double
       valeValeOLGamma(:,:,spinDirection) = 0.0_double
 #endif
+
       ! Read the nuclear potential term into packed hamiltonian.
       call readPackedMatrix(atomNucOverlap_did(i),packedValeVale,&
-            & atomDims,valeDim,valeDim)
+            & atomDims,dim1,valeDim)
+
       ! Read the kinetic energy term into the still packed hamiltonian.
       call readPackedMatrixAccum(atomKEOverlap_did(i),packedValeVale,&
-            & tempPackedValeVale,atomDims,0.0_double,valeDim,valeDim)
+            & tempPackedValeVale,atomDims,0.0_double,dim1,valeDim)
+
       ! Read the atomic potential terms into the still packed hamiltonian.
       do j = 1, potDim
-        call readPackedMatrixAccum(atomPotOverlap_did(i,j),packedValeVale,&
+         call readPackedMatrixAccum(atomPotOverlap_did(i,j),packedValeVale,&
                & tempPackedValeVale,atomDims,potCoeffs(j,spinDirection),&
-               & valeDim,valeDim)
+               & dim1,valeDim)
       enddo
 
 
@@ -148,7 +144,7 @@ subroutine secularEqnAllKP(spinDirection)
 
       ! Read the atomic overlap matrix. 
       call readPackedMatrix(atomOverlap_did(i),packedValeVale,&
-            & atomDims,valeDim,valeDim)
+            & atomDims,dim1,valeDim)
 
       ! Unpack the overlap matrix.
 #ifndef GAMMA
@@ -158,20 +154,16 @@ subroutine secularEqnAllKP(spinDirection)
 #endif
 
 
-!      print *, "valeVale:"
-!      print *, valeVale
-!      print *, "valeValeOL: "
-!      print *, valeValeOL
+
       ! Solve the eigen problem with a LAPACK routine.
 #ifndef GAMMA
       call solveZHEGV(valeDim,numStates,valeVale(:,:,1,spinDirection),&
             & valeValeOL(:,:,1,1),energyEigenValues(:,i,spinDirection))
-!      print *, "energyEigenValues: "
-!      print *, energyEigenValues
 #else
       call solveDSYGV(valeDim,numStates,valeValeGamma(:,:,spinDirection),&
             & valeValeOLGamma(:,:,1),energyEigenValues(:,i,spinDirection))
 #endif
+
       ! Write the energy eigenValues onto disk in HDF5 format in a.u.
       call h5dwrite_f (eigenValues_did(i,spinDirection),H5T_NATIVE_DOUBLE,&
             & energyEigenValues(:numStates,i,spinDirection),states,hdferr)
@@ -183,30 +175,19 @@ subroutine secularEqnAllKP(spinDirection)
       if (numKPoints >= 1) then
          ! Write the eigenVectors onto disk in HDF5 format for this
          !   kpoint and spin direction.
-         eVects = real(valeVale(:,:numStates,1,spinDirection))
-
          call h5dwrite_f(eigenVectors_did(1,i,spinDirection),&
-               & H5T_NATIVE_DOUBLE,eVects,valeStates,hdferr)
+               & H5T_NATIVE_DOUBLE,real(valeVale(:,:numStates,1,&
+               & spinDirection),double),valeStates,hdferr)
          if (hdferr /= 0) stop 'Can not write real energy eigen vectors.'
-
-         eVects = aimag(valeVale(:,:numStates,1,spinDirection))
          call h5dwrite_f(eigenVectors_did(2,i,spinDirection),&
-               & H5T_NATIVE_DOUBLE,eVects,valeStates,hdferr)
+               & H5T_NATIVE_DOUBLE,aimag(valeVale(:,:numStates,1,&
+               & spinDirection)),valeStates,hdferr)
          if (hdferr /= 0) stop 'Can not write imag energy eigen vectors.'
       endif
 #endif
-      if (numKPoints > 1) then
-        write (writeBuff,*) i,"/"
-        write (temp,*) numKPoints
-        writeBuff = trim(adjustl(writeBuff)) // trim(adjustl(temp)) // &
-          & " KPoints"
-        write (20,*) writeBuff
-        call flush(20)
-      endif
    enddo
 
    ! Deallocate unnecessary arrays and matrices.
-   deallocate (eVects)
    deallocate (packedValeVale)
    deallocate (tempPackedValeVale)
 #ifndef GAMMA
@@ -221,19 +202,15 @@ subroutine secularEqnAllKP(spinDirection)
 end subroutine secularEqnAllKP
 
 
-subroutine secularEqnOneKP (spinDirection,choiceKP)
+subroutine secularEqnOneKP (spinDirection,choiceKP,numStates,doSYBD)
 
    ! Import necessary modules.
-   use O_Kinds
-   use O_Input
-   use O_KPoints
-   use O_Potential
-   use O_AtomicSites
-   use O_TimeStamps
-   use O_MatrixSubs
-   use O_CommandLine
-   use O_PSCFBandHDF5
    use HDF5
+   use O_Kinds
+   use O_TimeStamps
+   use O_AtomicSites, only: valeDim
+   use O_PSCFBandHDF5, only: valeStatesBand, statesBand, eigenVectorsBand_did, &
+         & eigenValuesBand_did
 #ifndef GAMMA
    use O_LAPACKZHEGV
 #else
@@ -246,6 +223,8 @@ subroutine secularEqnOneKP (spinDirection,choiceKP)
    ! Define the passed parameters.
    integer :: spinDirection
    integer :: choiceKP
+   integer :: numStates
+   integer :: doSYBD
 
    ! Define the local variables used in this subroutine.
    integer :: hdferr
@@ -290,13 +269,13 @@ subroutine secularEqnOneKP (spinDirection,choiceKP)
 end subroutine secularEqnOneKP
 
 
-subroutine shiftEnergyEigenValues(energyShift)
-
-   ! Use necessary modules.
-   use O_Input
+subroutine shiftEnergyEigenValues(energyShift,numStates)
 
    ! Make sure that no funny variables are defined.
    implicit none
+
+   ! define vriables passed to this subroutine
+   integer, intent (in) :: numStates
 
    ! Define passed dummy parameters.
    real (kind=double) :: energyShift
@@ -323,64 +302,81 @@ end subroutine shiftEnergyEigenValues
 !end subroutine convertEnergyEigenValuesToeV
 
 
-subroutine readEnergyEigenValuesBand
+subroutine readEnergyEigenValuesPSCF
 
    ! Use necessary modules
-   use O_Kinds
-   use O_Input
-   use O_CommandLine
-   use O_KPoints
-   use O_PSCFBandHDF5
    use HDF5
-   use O_Potential
+   use MPI
+   use O_Kinds
+   use O_Input,   only: numStates
+   use O_KPoints, only: numKPoints
+   use O_Potential, only: spin
+   use O_PSCFBandHDF5, only: statesBand, eigenValuesBand_did
 
    ! Make sure that no funny variables are defined.
    implicit none
 
    ! Define local variables used in this subroutine.
    integer :: i,j
-   integer :: hdferr
+   integer :: hdferr, mpiRank, mpiErr
    real (kind=double), allocatable, dimension (:)   :: energyValuesTemp
 
-   ! Allocate space for a reading buffer.
-   allocate (energyValuesTemp (numStates))
+   ! Get MPI rank.
+   call MPI_COMM_RANK (MPI_COMM_WORLD,mpiRank,mpierr)
 
-   ! Read the ground state energy eigen values.
+   if (mpiRank == 0) then
 
-   ! Loop over each kpoint and spin direction to read the energy values.
+      ! Allocate space for a reading buffer.
+      allocate (energyValuesTemp (numStates))
+   
+      ! Read the ground state energy eigen values.
+   
+      ! Loop over each kpoint and spin direction to read the energy values.
+      do i = 1, numKPoints
+         do j = 1, spin
+            call h5dread_f (eigenVal_did(i,j),H5T_NATIVE_DOUBLE,&
+                  & energyValuesTemp(:numStates),statesBand,hdferr)
+            if (hdferr /= 0) stop 'Failed to read energy eigen values'
+   
+            ! Copy the necessary values into the final array.
+            energyEigenValues(:numStates,i,j) = energyValuesTemp(:numStates)
+         enddo
+      enddo
+   
+      ! Deallocate the reading buffer
+      deallocate (energyValuesTemp)
+
+   endif
+
+   ! Get everyone together
+   MPI_BARRIER(MPI_COMM_WORLD,mpiErr)
+
+   ! Broadcast the potential coefficients to the other processes.
    do i = 1, numKPoints
       do j = 1, spin
-         call h5dread_f (eigenValuesBand_did(i,j),H5T_NATIVE_DOUBLE,&
-               & energyValuesTemp(:numStates),statesBand,hdferr)
-         if (hdferr /= 0) stop 'Failed to read energy eigen values'
-
-         ! Copy the necessary values into the final array.
-         energyEigenValues(:numStates,i,j) = energyValuesTemp(:numStates)
+         MPI_BCAST(energyEigenValues(:numStates,i,j),numStates,&
+               & MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,mpiErr)
       enddo
    enddo
 
-   ! Deallocate the reading buffer
-   deallocate (energyValuesTemp)
-
-end subroutine readEnergyEigenValuesBand
+end subroutine readEnergyEigenValuesPSCF
 
 
-subroutine appendExcitedEnergyEigenValuesBand (occupiedEnergy)
+subroutine appendExcitedEnergyEigenValuesBand (firstStateIndex,numStates)
 
    ! Use necessary modules
-   use O_Kinds
-   use O_Input
-   use O_CommandLine
-   use O_KPoints
-   use O_PSCFBandHDF5
    use HDF5
-   use O_Potential
+   use O_Kinds
+   use O_KPoints, only: numKPoints
+   use O_Potential, only: spin
+   use O_PSCFBandHDF5, only: statesBand, eigenValuesBand2_did
 
    ! Make sure that no funny variables are defined.
    implicit none
 
    ! Define variables passed to this subroutine.
-   real (kind=double) :: occupiedEnergy
+   integer :: firstStateIndex
+   integer :: numStates
 
    ! Define local variables used in this subroutine.
    integer :: i,j,k
@@ -403,26 +399,9 @@ subroutine appendExcitedEnergyEigenValuesBand (occupiedEnergy)
                & energyValuesTemp(:numStates),statesBand,hdferr)
          if (hdferr /= 0) stop 'Failed to read excited energy eigen values'
 
-         ! Search for the occupied energy level for this spin and kpoint.  Note
-         !   that since the occupied energy was just obtained exactly we don't
-         !   have to look for (abs(x-y)<epsilon).  The first state of any
-         !   kpoint greater than the occupied energy is the first unoccupied
-         !   state (note that this also includes degenerate highest occupied
-         !   states).
-         do k = 1, numStates
-            if (energyValuesTemp(k) > occupiedEnergy) then
+         energyEigenValues(firstStateIndex:numStates,i,j) = &
+               & energyValuesTemp(firstStateIndex:numStates)
 
-               firstUnoccupiedState = k
-
-               ! Paste the conduction band values from the excited state over
-               !   the conduction band values from the ground state.
-               energyEigenValues(firstUnoccupiedState:numStates,i,j) = &
-                     & energyValuesTemp(firstUnoccupiedState:numStates)
-
-               ! Exit the loop because this spin,kpoint combination is done.
-               exit
-            endif
-         enddo
       enddo
    enddo
 
@@ -435,9 +414,8 @@ end subroutine appendExcitedEnergyEigenValuesBand
 subroutine preserveValeValeOL
 
    ! Use necessary modules.
-   use O_AtomicSites
-   use O_CommandLine
-   use O_Potential
+   use O_Potential, only: spin
+   use O_AtomicSites, only: valeDim
 
    ! Make sure that no funny variables are defined.
    implicit none
@@ -472,9 +450,8 @@ end subroutine preserveValeValeOL
 subroutine restoreValeValeOL
 
    ! Use necessary modules.
-   use O_AtomicSites
-   use O_CommandLine
-   use O_Potential
+   use O_Potential, only: spin
+   use O_AtomicSites, only: valeDim
 
    ! Make sure that no funny variables are defined.
    implicit none
@@ -496,20 +473,23 @@ end subroutine restoreValeValeOL
 
 
 
-subroutine readDataSCF(h,i)
+subroutine readDataSCF(h,i,numStates)
 
    ! Import necessary data modules.
-   use O_Input
-   use O_KPoints
-   use O_AtomicSites
-   use O_MatrixSubs
-   use O_SetupIntegralsHDF5
-   use O_MainEVectHDF5
-   use O_MainEValHDF5
+   use O_KPoints, only: numKPoints
+   use O_AtomicSites, only: valeDim
+   use O_SetupIntegralsHDF5, only: atomDims, atomOverlap_did
+   use O_MainEVecHDF5, only: valeStates, eigenVectors_did
+#ifndef GAMMA
+   use O_MatrixSubs, only: readMatrix, readPackedMatrix, unpackMatrix
+#else
+   use O_MatrixSubs, only: readPackedMatrix, unpackMatrixGamma
+#endif
 
    ! Define passed parameters.
    integer :: h ! Spin variable.
    integer :: i ! KPoint variable
+   integer :: numStates
 
    ! Define local variables.
    integer :: dim1
@@ -526,11 +506,11 @@ subroutine readDataSCF(h,i)
 #endif
 
    ! Allocate space to read the packed overlap matrix.
-   allocate (packedValeVale(valeDim,valeDim))
+   allocate (packedValeVale(dim1,valeDim*(valeDim+1)/2))
 
    ! Read the overlap matrix.  The tempPackedMatrix is not used.
    call readPackedMatrix(atomOverlap_did(i),packedValeVale,&
-         & atomDims,valeDim,valeDim)
+         & atomDims,dim1,valeDim)
 
    ! Unpack the matrix.
 #ifndef GAMMA
@@ -565,17 +545,23 @@ end subroutine readDataSCF
 
 
 
-subroutine readDataPSCF(h,i)
+subroutine readDataPSCF(h,i,numStates)
 
    ! Use necessary modules.
-   use O_Input
-   use O_AtomicSites
-   use O_MatrixSubs
-   use O_PSCFBandHDF5
+   use O_AtomicSites, only: valeDim
+   use O_PSCFBandHDF5, only: valeStatesBand, valeValeBand, &
+         & eigenVectorsBand_did, valeValeBand_did
+#ifndef GAMMA
+   use O_MatrixSubs, only: readMatrix, readPackedMatrix, unpackMatrix
+#else
+   use O_MatrixSubs, only: readMatrixGamma, readPackedMatrix, &
+         & unpackMatrixGamma
+#endif
 
    ! Define passed parameters.
    integer :: h ! Spin variable.
    integer :: i ! KPoint variable
+   integer :: numStates
 
    ! Define local variables.
    integer :: dim1

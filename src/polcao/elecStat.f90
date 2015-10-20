@@ -2,7 +2,6 @@ module O_ElectroStatics
 
    ! Import necessary modules.
    use O_Kinds
-   use O_Constants
 
    ! Make sure that no funny variables are defined.
    implicit none
@@ -15,18 +14,6 @@ module O_ElectroStatics
    ! Begin list of module data.!
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-!   real (kind=double), allocatable, dimension (:,:) :: nonLocalResidualQ
-!   real (kind=double), allocatable, dimension (:,:) :: nonLocalNeutQPot
-!   real (kind=double), allocatable, dimension (:)   :: nonLocalNucQPot
-!   real (kind=double), allocatable, dimension (:)   :: localNucQPot
-!   real (kind=double), allocatable, dimension (:,:) :: localNeutQPot
-!   real (kind=double), allocatable, dimension (:,:) :: potAlphaOverlap ! This
-      ! matrix is potDim x potDim in size and is used for multiple purposes.
-      ! It represents the overlap between all pairs of the Gaussian functions
-      ! that are used for the electronic potential and valence charge density.
-      ! The all pairs includes neighboring cells.  Note that the coefficients
-      ! in front of the Gaussian functions are not included because they are
-      ! still unknown for both the potential and valence charge density.
 
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    ! Begin list of module subroutines.!
@@ -35,8 +22,6 @@ module O_ElectroStatics
 
 
 subroutine makeElectrostatics()
-!subroutine makeElectrostatics(ga_nlNeut,ga_locNeut,ga_nlNuc,ga_locNuc,&
-!    & ga_potAlphaOL,ga_nonLocResidQ)
 
    ! Use necessary modules.
    use O_TimeStamps
@@ -44,16 +29,13 @@ subroutine makeElectrostatics()
    ! Make certain that no implicit variables are accidently declared.
    implicit none
 
-!   integer,intent(inout) :: ga_nlNeut,ga_locNeut,ga_nlNuc
-!   integer,intent(inout) :: ga_locNuc,ga_potAlphaOL,ga_nonLocResidQ
-
    ! Start making the matrices
    call timeStampStart(14)
 
    ! Create the real space matrices
    call neutralAndNuclearQPot()
 
-  ! Create the reciprocal space matrices
+   ! Create the reciprocal space matrices
    call residualQ()
 
    ! Log the date and time we end.
@@ -65,23 +47,20 @@ end subroutine makeElectrostatics
 subroutine neutralAndNuclearQPot()
 
    ! Include the definition modules we need.
-   use O_Kinds
-   use O_Constants
-
-   ! Import the necessary HDF modules.
    use HDF5
-   use O_SetupElecStatHDF5
-
-   ! Import the necessary object modules.
-   use O_Lattice
-   use O_PotTypes
-   use O_PotSites
+   use MPI
+   use O_Kinds
+   use O_Constants, only: dim3, smallThresh, pi
+   use O_SetupElecStatHDF5, only: potAlphaOverlap_did, nonLocalNeutQPot_did, &
+         & nonLocalNucQPot_did, localNeutQPot_did, localNucQPot_did, potPot, pot
+   use O_Lattice, only: numCellsReal, cellDimsReal, logElecThresh, &
+         & findLatticeVector
+   use O_PotTypes, only: potTypes, maxNumPotAlphas
+   use O_PotSites, only: numPotSites, potSites
+   use O_Potential, only: potDim
 
    ! Import external subroutines.
-   use O_MathSubs
-
-   ! Subroutines that enable parallelism
-   Use MPI
+   use O_MathSubs, only: erf
    use O_ParallelSubs
 
    ! Make certain that no implicit variables are accidently declared.
@@ -102,7 +81,6 @@ subroutine neutralAndNuclearQPot()
       ! The all pairs includes neighboring cells.  Note that the coefficients
       ! in front of the Gaussian functions are not included because they are
       ! still unknown for both the potential and valence charge density.
-
 
 
    ! Iteration dependent variables.  For each pair of potential sites these
@@ -180,11 +158,10 @@ subroutine neutralAndNuclearQPot()
    real (kind=double) :: coeff ! The same as the above applies to this.
    real (kind=double) :: potMagnitude
 
-   ! Parallel Variables
-   integer :: minSite,maxSite
-   integer :: ga_nlNeut,ga_locNeut,ga_nlNuc
-   integer :: ga_locNuc,ga_potAlphaOL
-   integer :: mpiSize,mpiErr,mpiRank
+   ! Parallel variables
+   integer :: minSite, maxSite ! The min and max potential site for this
+                               ! process.
+   integer :: mpiSize, mpiErr, mpiRank
 
    ! Allocate space for the coulomb potential matrices that are created here.
    allocate (nonLocalNeutQPot (potDim,potDim))
@@ -201,6 +178,7 @@ subroutine neutralAndNuclearQPot()
    allocate (neutralQPotCoeff    (maxNumPotAlphas,maxNumPotAlphas))
    allocate (currentAlphas       (maxNumPotAlphas,2))
    allocate (currentAlphasSqrt   (maxNumPotAlphas,2))
+
    ! Initialize any factors not taken from the constants module.
    x2Pi        = 2.0_double * pi
    sqrtPi      = sqrt(pi)
@@ -326,38 +304,38 @@ subroutine neutralAndNuclearQPot()
    !   map to atomic sites too.  Still, we will keep this current algorithm
    !   because it isn't all that bad even for our now simpler case of no
    !   auxiliary functions.
-  ! for processes that are starting in the middle of the work to be done
-  ! they need to play catchup on the finAlphaIndex in order to calculate
-  ! correctly
 
-  call gaSetupNeutAndNucQPot(ga_nlNeut,ga_locNeut,ga_nlNuc,ga_locNuc, &
-      & ga_potAlphaOL, potDim)
-  call MPI_Comm_Size(MPI_COMM_WORLD,mpiSize,mpierr)
-  call loadBalMPI(numPotSites, minSite,maxSite,mpiSize)
-!  print *, minSite,maxSite
-!  flush(6)
-  if (minSite>1) then
-    do i=1,minSite-1
-      if (potSites(i)%firstPotType==1)then
-       ! Assign local copies of the potential type assignment of
-       ! the current potential site, and the number of alphas for that type.
-       currentType(1)         = potSites(i)%potTypeAssn
-       currentNumAlphas(1)    = potTypes(currentType(1))%numAlphas
-       currentAlphas(:currentNumAlphas(1),1) = &
-             & potTypes(currentType(1))%alphas(:currentNumAlphas(1))
-       currentAlphasSqrt(:currentNumAlphas(1),1) = &
-             & sqrt(currentAlphas(:currentNumAlphas(1),1))
-      
-       ! Update the indices for which alphas we are dealing with
-       ! out of all the alphas in the whole system.
-       initAlphaIndex(1) = finAlphaIndex(1)
-       finAlphaIndex(1)  = finAlphaIndex(1) + currentNumAlphas(1)
-      endif
-    enddo
+   ! Initialize variables and data structures for parallel computation.
+   call MPI_Comm_Size(MPI_COMM_WORLD,mpiSize,mpiErr)
+   call MPI_Comm_Rank(MPI_COMM_WORLD,mpiRank,mpiErr)
+   call loadBalMPI(numPotSites,minSite,maxSite,mpiRank,mpiSize)
+
+   ! For parallel calculation, the processes that have a minSite>1 will need
+   !   to compute the current status of a number of variables *as if* the
+   !   algorithm had been running in serial. In the future, this should be
+   !   replaced with a direct and intelligent assignment.
+   if (minSite > 1) then
+      do i = 1, minSite-1
+         if (potSites(i)%firstPotType == 1) then
+            ! Assign local copies of the potential type based variables.
+            currentType(1)      = potSites(i)%potTypeAssn
+            currentNumAlphas(1) = potTypes(currentType(1))%numAlphas
+            currentAlphas(:currentNumAlphas(1),1) = &
+               & potTypes(currentType(1))%alphas(:currentNumAlphas(1))
+            currentAlphasSqrt(:currentNumAlphas(1),1) = &
+               & sqrt(currentAlphas(:currentNumAlphas(1),1))
+
+            ! Establish the beginning and ending indices for the set of
+            !   alphas (potential terms) that we are dealing with out of
+            !   all of the alphas in the whole system.
+            initAlphaIndex(1)   = finAlphaIndex(1)
+            finAlphaIndex(1)    = finAlphaIndex(1) + currentNumAlphas(1)
+         endif
+      enddo
    endif
 
-!   print *, minSite, maxSite, initAlphaIndex(1),finAlphaIndex(1)
-   do i = minSite,maxSite
+   ! Begin computing over the assigned range of sites for this process.
+   do i = minSite, maxSite
       if (potSites(i)%firstPotType == 1) then
 
          ! Assign local copies of the potential type assignment of the current
@@ -663,59 +641,34 @@ subroutine neutralAndNuclearQPot()
    enddo
 
    ! Deallocate the variables that will not be used later.
-!   print *, 'dealloc'
-!   flush(6)
    deallocate (potOverlapCoeff)
    deallocate (reducedPotAlpha)
    deallocate (reducedPotAlphaSqrt)
    deallocate (currentAlphas)
    deallocate (currentAlphasSqrt)
    deallocate (neutralQPotCoeff)
-!   print *, 'before accum get'
-!   flush(6)
-   call ga_sync()
-   call ga_acc(ga_nlNeut,1,potDim,1,potDim,nonLocalNeutQPot,&
-    & (/potDim,potDim/), 1.0d0)
-   nonLocalNeutQPot(:,:) = 0.0d0
-   call ga_acc(ga_locNeut,1,potDim,1,potDim,localNeutQPot,&
-    & (/potDim,potDim/), 1.0d0)
-   localNeutQPot(:,:) = 0.0d0
-   call ga_acc(ga_nlNuc,1,potDim,1,1,nonLocalNucQPot,&
-    & (/potDim/), 1.0d0)
-   nonLocalNucQPot(:) = 0.0d0
-   call ga_acc(ga_locNuc,1,potDim,1,1,localNucQPot,&
-    & (/potDim/), 1.0d0)
-   localNucQPot(:) = 0.0d0
-   call ga_acc(ga_potAlphaOL,1,potDim,1,potDim,potAlphaOverlap,&
-    & (/potDim,potDim/), 1.0d0)
-   potAlphaOverlap(:,:) = 0.0d0
 
-   call ga_sync()
-   call MPI_Comm_rank(MPI_COMM_WORLD,mpiRank,mpierr)
+   ! Accumulate the results using MPI_REDUCE. In the future the bounds of the
+   !   local buffer that were actually used should be sent explicitly so that
+   !   we don't spend extra time sending and accumulating a bunch of zeros.
+   call MPI_BARRIER(MPI_COMM_WORLD,mpiErr)
+   call MPI_REDUCE(nonLocalNeutQPot(:,:),nonLocalNeutQPot(:,:),potDim*potDim,&
+         & MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,mpiErr)
+   call MPI_BARRIER(MPI_COMM_WORLD,mpiErr)
+   call MPI_REDUCE(localNeutQPot(:,:),localNeutQPot(:,:),potDim*potDim,&
+         & MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,mpiErr)
+   call MPI_BARRIER(MPI_COMM_WORLD,mpiErr)
+   call MPI_REDUCE(nonLocalNucQPot(:),nonLocalNucQPot(:),potDim,&
+         & MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,mpiErr)
+   call MPI_BARRIER(MPI_COMM_WORLD,mpiErr)
+   call MPI_REDUCE(localNucQPot(:),localNucQPot(:),potDim,&
+         & MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,mpiErr)
+   call MPI_BARRIER(MPI_COMM_WORLD,mpiErr)
+   call MPI_REDUCE(potAlphaOverlap(:,:),potAlphaOverlap(:,:),potDim*potDim,&
+         & MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,mpiErr)
+
+   call MPI_BARRIER(MPI_COMM_WORLD,mpiErr)
    if (mpiRank==0) then
-     call ga_get(ga_nlNeut,1,potDim,1,potDim, &
-      & nonLocalNeutQPot,(/potDim,potDim/))
-  
-     call ga_get(ga_locNeut,1,potDim,1,potDim, &
-      & localNeutQPot,(/potDim,potDim/))
-  
-     call ga_get(ga_nlNuc,1,potDim,1,1, &
-      & nonLocalNucQPot,(/potDim/))
-  
-     call ga_get(ga_locNuc,1,potDim,1,1, &
-      & localNucQPot,(/potDim/))
-  
-     call ga_get(ga_potAlphaOL,1,potDim,1,potDim, &
-      & potAlphaOverlap,(/potDim,potDim/))
-  !   print *, 'after accum get'
-  !   print *, 'PotDims 1',potDims1
-  !   print *, 'PotDims 2',potDims2
-  !   flush(6)
-  !   print *, "Rank",mpiRank,"PotAlphaOverlap:",potAlphaOverlap
-  !   print *, "Rank",mpiRank,"nonLocalNeutQPot:",nonLocalNeutQPot
-  !   print *, "Rank",mpiRank,"nonLocalNucQPot:",nonLocalNucQPot
-  !   print *, "Rank",mpiRank,"localNeutQPot:",localNeutQPot
-  !   print *, "Rank",mpiRank,"localNucQPot:",localNucQPot
      call h5dwrite_f(potAlphaOverlap_did,H5T_NATIVE_DOUBLE, &
            & potAlphaOverlap(:,:),potDims2,hdferr)
      if (hdferr /= 0) stop 'Failed to write pot alpha overlap'
@@ -734,9 +687,6 @@ subroutine neutralAndNuclearQPot()
    endif
    ! Dellocate the variables from the global data structures that will not
    !   be used later.
-   call ga_sync()
-   call destroyNeutAndNucQPot(ga_nlNeut,ga_locNeut,ga_nlNuc,&
-    &ga_locNuc,ga_potAlphaOL)
    deallocate (nonLocalNeutQPot)
    deallocate (nonLocalNucQPot)
    deallocate (localNucQPot)
@@ -748,22 +698,20 @@ end subroutine neutralAndNuclearQPot
 subroutine residualQ()
 
    ! Include the modules we need
-   use O_Kinds
-   use O_Constants
-
-   ! Import the necessary HDF modules
    use HDF5
-   use O_SetupElecStatHDF5
-
-   ! Import the necessary object modules.
-   use O_Lattice
-   use O_PotTypes
-   use O_PotSites
+   use MPI
+   use O_Kinds
+   use O_Constants, only: dim3, pi, smallThresh
+   use O_SetupElecStatHDF5, only: nonLocalResidualQ_did, potTypesPot
+   use O_Lattice, only: numCellsRecip, cellSizesRecip, cellDimsRecip, &
+         & logElecThresh, realCellVolume, numCellsReal, cellDimsReal, &
+         & findLatticeVector
+   use O_PotSites, only: numPotSites, potSites
+   use O_PotTypes, only: numPotTypes, potTypes, maxNumPotAlphas, minPotAlpha
+   use O_Potential, only: potDim
 
    ! Import external subroutines.
-   use O_MathSubs
-
-   ! Subroutines that enable parallelism
+   use O_MathSubs, only: erf
    use O_ParallelSubs
 
    ! Make certain that no implicit variables are accidently declared.
@@ -773,7 +721,9 @@ subroutine residualQ()
    integer :: i,j,k,l ! Loop variables.  loop1=i, nestedloop2=j ...
    integer :: hdferr
 
+   ! Primary data structure for the results of this subroutine.
    real (kind=double), allocatable, dimension (:,:) :: nonLocalResidualQ
+
    ! Iteration dependent variables.  For each pair of potential sites these
    !   values will change when the potential type of either site changes.
    integer, dimension (2) :: currentType ! This stores the type number of the
@@ -809,7 +759,6 @@ subroutine residualQ()
          ! site 1 to potential site 2 offset by the lattice Vector.
    real (kind=double) :: potSiteOffsetSqrd ! This is the square of the above
          ! value.
-!   real (kind=double) :: currentRecipDistance ! This is
 
    ! Misc. intermediate factors and coefficients.
    real (kind=double) :: minReducedAlpha ! This is the relation between the
@@ -829,7 +778,6 @@ subroutine residualQ()
    real (kind=double), allocatable, dimension (:) :: minReducedAlphaSqrt ! Sqrt
          ! of the above minReducedAlpha for each potential alpha of a type.
    real (kind=double), allocatable, dimension (:,:) :: recipCellExp
-!   real (kind=double) :: phase
 
    ! Misc. factors that are derived from values in the constants module.
    real (kind=double) :: piXX3       ! Pi**3
@@ -840,8 +788,8 @@ subroutine residualQ()
    ! Parallel Variables
    integer :: minSite,maxSite
    integer :: ga_nonLocResidQ
-   integer :: mpiSize,mpiErr,mpiRank
-   
+   integer :: mpiSize,mpiRank,mpiErr
+
    ! Allocate space for the coulomb potential matrices that are created here.
    allocate (nonLocalResidualQ (numPotTypes,potDim))
 
@@ -878,63 +826,63 @@ subroutine residualQ()
    ! Initialize the current element to zero.
    currentElement = 0
 
-   ! Begin with nested loops over the potential alphas of each potential site.
-   call gaSetupResidQ(ga_nonLocResidQ,numPotTypes,potDim)
-   call MPI_Comm_size(MPI_COMM_WORLD,mpiSize,mpiErr)
-   call loadBalMPI(numPotSites, minSite,maxSite,mpiSize)
-!
-!   ! for processes that are starting in the middle of the work to be done
-!   ! they need to play catchup on the finAlphaIndex in order to calculate
-!   ! correctly
-   if (minSite>1) then
-     do i=1,minSite-1
-       if (potSites(i)%firstPotType==1)then
-        ! Assign local copies of the potential type assignment of the current
-        !   potential site, and the number of alphas for that type.
-        currentType(1)           = potSites(i)%potTypeAssn
-        currentNumAlphas(1)      = potTypes(currentType(1))%numAlphas
-        currentAlphas(:currentNumAlphas(1),1) = &
-              & potTypes(currentType(1))%alphas(:currentNumAlphas(1))
-        currentAlphasSqrt(:currentNumAlphas(1),1) = &
-              & sqrt(currentAlphas(:currentNumAlphas(1),1))
-        currentAlphasFactor(:currentNumAlphas(1),1) = piXX32 / &
-              & (currentAlphas(:currentNumAlphas(1),1) * &
-              & currentAlphasSqrt(:currentNumAlphas(1),1))
-        lastElement    = currentElement
-        currentElement = potTypes(currentType(1))%elementID
-  
-        ! Update the indices for which alphas we are dealing with out of all
-        !   the alphas in the whole system.
-        initAlphaIndex = finAlphaIndex
-        finAlphaIndex  = finAlphaIndex + currentNumAlphas(1)
-        if (lastElement /= currentElement) then
-           do j = 1, currentNumAlphas(1)
+   ! Initialize the parallel data structures and variables.
+   call MPI_Comm_Size(MPI_COMM_WORLD,mpiSize,mpiErr)
+   call MPI_Comm_Rank(MPI_COMM_WORLD,mpiRank,mpiErr)
+   call loadBalMPI(numPotSites,minSite,maxSite,mpiRank,mpiSize)
 
-              ! Get the potential alpha overlap between the current alpha and
-              !   the minimal potential alpha of the whole system.
-              minReducedAlpha = currentAlphas(j,1) * minPotAlpha / &
-                           &(currentAlphas(j,1) + minPotAlpha)
+   ! For parallel calculation, the processes that have a minSite>1 will need
+   !   to compute the current status of a number of variables *as if* the
+   !   algorithm had been running in serial. In the future, this should be
+   !   replaced with a direct and intelligent assignment.
+   if (minSite > 1) then
+      do i = 1, minSite-1
+         if (potSites(i)%firstPotType == 1) then
+            ! Assign local copies of the potential type based variables.
+            currentType(1)      = potSites(i)%potTypeAssn
+            currentNumAlphas(1) = potTypes(currentType(1))%numAlphas
+            currentAlphasSqrt(:currentNumAlphas(1),1) = &
+                  & sqrt(currentAlphas(:currentNumAlphas(1),1))
+            currentAlphasFactor(:currentNumAlphas(1),1) = piXX32 / &
+                  & (currentAlphas(:currentNumAlphas(1),1) * &
+                  & currentAlphasSqrt(:currentNumAlphas(1),1))
+            lastElement    = currentElement
+            currentElement = potTypes(currentType(1))%elementID
 
-              ! Square root of the above
-              minReducedAlphaSqrt(j) = sqrt(minReducedAlpha)
+            ! Establish the beginning and ending indices for the set of
+            !   alphas (potential terms) that we are dealing with out of
+            !   all of the alphas in the whole system.
+            initAlphaIndex(1)   = finAlphaIndex(1)
+            finAlphaIndex(1)    = finAlphaIndex(1) + currentNumAlphas(1)
 
-              ! One fourth of the inverse of minReducedAlpha
-              inv4MinReducedAlpha = 0.25_double / minReducedAlpha
+            if (lastElement /= currentElement) then
+               do j = 1, currentNumAlphas(1)
+                  ! Get the potential alpha overlap between the current alpha
+                  !   and the minimal potential alpha of the whole system.
+                  minReducedAlpha = currentAlphas(j,1) * minPotAlpha / &
+                        & (currentAlphas(j,1) + minPotAlpha)
+
+                  ! Square root of the above
+                  minReducedAlphaSqrt(j) = sqrt(minReducedAlpha)
+
+                  ! One fourth of the inverse of minReducedAlpha
+                  inv4MinReducedAlpha = 0.25_double / minReducedAlpha
 
 
-              ! Compute the exp decay factor for the reciprocal space cells.
-              recipCellExp(2:,j) = exp(-cellSizesRecip(2:) * &
-                    & inv4MinReducedAlpha) / cellSizesRecip(2:)
-           enddo
-        endif
-       endif
-     enddo
+                  ! Compute the exp decay factor for the reciprocal space cells.
+                  recipCellExp(2:,j) = exp(-cellSizesRecip(2:) * &
+                        & inv4MinReducedAlpha) / cellSizesRecip(2:)
+               enddo
+            endif
+         endif
+      enddo
    endif
 
-   do i=minSite,maxSite
-!   do i = 1, numPotSites
-      
+   ! Begin computing over the assigned range of sites for this process.
+   do i = minSite, maxSite
+
       if (potSites(i)%firstPotType == 1) then
+
          ! Assign local copies of the potential type assignment of the current
          !   potential site, and the number of alphas for that type.
          currentType(1)           = potSites(i)%potTypeAssn
@@ -978,6 +926,7 @@ subroutine residualQ()
                      & inv4MinReducedAlpha) / cellSizesRecip(2:)
             enddo
          endif
+
       endif
 
       ! Initialize the matrix index counter for the second nested loop.
@@ -1098,7 +1047,6 @@ subroutine residualQ()
 
             ! The second term (in the parenthesis and after the sum) is the
             !   zero point value for the reciprocal summation.
-!            print *, "Rank:",mpiRank,"matrix 1, 2",matrixIndex(1),matrixIndex(2)
             nonLocalResidualQ(matrixIndex(2),matrixIndex(1)) = &
                   & nonLocalResidualQ(matrixIndex(2),matrixIndex(1)) + &
                   & alphaVolumeFactor * (sum(recipCellExp(2:numCellsRecip,k) * &
@@ -1122,12 +1070,11 @@ subroutine residualQ()
       if (mod(i,50) .eq. 0) then
          write (20,*) " ",i
       endif
-      flush(20)
-!      call flush (20)
+      call flush (20)
 
    enddo
-!   write (20,*)
-!   print *, 'Rank: ',mpiRank,'matrix:',nonLocalResidualQ
+   write (20,*)
+
    ! Deallocate the variables that will not be used later.
    deallocate (reducedPotAlphaSqrt)
    deallocate (currentAlphas)
@@ -1138,27 +1085,26 @@ subroutine residualQ()
    deallocate (phase)
    deallocate (recipCellExp)
    deallocate (minReducedAlphaSqrt)
-   call ga_acc(ga_nonLocResidQ,1,numPotTypes,1,potDim,nonLocalResidualQ,&
-    & (/numPotTypes,potDim/), 1.0d0)
-   nonLocalResidualQ(:,:) = 0.0d0
-   call MPI_Comm_rank(MPI_COMM_WORLD,mpiRank,mpierr)
-   call ga_sync()
+
+   ! Accumulate the results into the distributed global array. In the future
+   !   the bounds of the local buffer that were actually used should be sent
+   !   to the ga_accumulation subroutine so that we don't spend extra time
+   !   sending and accumulating a bunch of zeros.
+   call MPI_BARRIER(MPI_COMM_WORLD,mpiErr)
+   call MPI_REDUCE(nonLocalResidualQ(:,:),nonLocalResidualQ(:,:),&
+         & numPotTypes*potDim,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,&
+         & mpiErr)
+
+   call MPI_BARRIER(MPI_COMM_WORLD,mpiErr)
    if (mpiRank==0) then
-     call ga_get(ga_nonLocResidQ,1,numPotTypes,1,potDim, &
-      & nonLocalResidualQ,(/numPotTypes,potDim/))
-     ! NO actual need for global arrays here, 
-     ! just need to figure out the hyperslab to write to. Maybe?
-  
-     ! Write to disk the matrices that will be used by main later.
-     call h5dwrite_f(nonLocalResidualQ_did,H5T_NATIVE_DOUBLE, &
-           & nonLocalResidualQ(:,:),potTypesPot,hdferr, &
-           & xfer_prp=pot_xferpid)
-     if (hdferr /= 0) stop 'Failed to write non local residual charge'
+      ! Write to disk the matrices that will be used by main later.
+      call h5dwrite_f(nonLocalResidualQ_did,H5T_NATIVE_DOUBLE, &
+            & nonLocalResidualQ(:,:),potTypesPot,hdferr, &
+            & xfer_prp=pot_xferpid)
+      if (hdferr /= 0) stop 'Failed to write non local residual charge'
    endif
-   ! Deallocate matrix from a global data structure that will not be used
-   !   later.
-   call ga_sync()
-   call destroyResidQ(ga_nonLocResidQ)
+
+   ! Deallocate matrix that will not be used later.
    deallocate (nonLocalResidualQ)
 
 end subroutine residualQ

@@ -28,27 +28,29 @@ module O_PotentialUpdate
 
 
 subroutine makeSCFPot (totalEnergy)
-   ! HEY!@~!!@$!$#$! ARE YOU PARALLELIZING ME?!?!?!?!?!?!!?
-   ! Remember to ad the variables from O_Electrostatics because they
-   ! Are just used here as declarations and is unnecessary and lazy to
-   ! include for just that reason
+
    ! Import necessary modules.
+   use HDF5
    use O_Kinds
-   use O_TimeStamps
-   use O_AtomicSites
-   use O_AtomicTypes
-   use O_PotSites
-   use O_PotTypes
-   use O_Potential
-   use O_Populate
-   use O_Input
-!   use O_ElectroStatics !!!!SEE NOTE ABOVE
-!   use O_ExchangeCorrelation !!!Same as ElectroStatics
-   use O_CommandLine
    use O_LAPACKDPOSVX
-   use O_SetupExchCorrHDF5
-   use O_SetupElecStatHDF5
-   use O_ValeCharge
+   use O_TimeStamps
+   use O_Input, only: numElectrons
+   use O_Populate, only: occupiedEnergy
+   use O_Constants, only: smallThresh
+   use O_AtomicTypes, only: atomTypes
+   use O_AtomicSites, only: coreDim
+   use O_PotSites, only: numPotSites, potSites
+   use O_PotTypes, only: numPotTypes, potTypes
+   use O_SetupExchCorrHDF5, only: numPoints_did, radialWeight_did, &
+         & exchRhoOp_did, exchCorrOverlap_did, numPoints, points, potPoints
+   use O_Potential, only: spin, potDim, intgConsts, spinSplitFactor, &
+         & potAlphas, potCoeffs, currIteration, lastIteration, feedbackLevel, &
+         & relaxFactor, xcCode, converged, convgTest
+   use O_SetupElecStatHDF5, only: potAlphaOverlap_did, coreChargeDensity_did, &
+         & nonLocalNeutQPot_did, localNeutQPot_did, localNucQPot_did, &
+         & nonLocalNucQPot_did, nonLocalResidualQ_did, pot, potPot, potTypesPot
+   use O_ValeCharge, only: potRho, chargeDensityTrace, nucPotTrace, &
+         & kineticEnergyTrace
 
    ! Make sure that no funny variables are defined.
    implicit none
@@ -59,6 +61,7 @@ subroutine makeSCFPot (totalEnergy)
    ! Define the local variables used in this subroutine.
    integer :: i,j,k ! Loop index variables
    integer :: hdferr
+   integer :: numOpValues
    integer :: currentType
    integer :: currentNumAlphas
    integer :: currentCumulAlphaSum
@@ -78,7 +81,7 @@ subroutine makeSCFPot (totalEnergy)
    real (kind=double) :: coreSum
    real (kind=double) :: spinDiffSum
    real (kind=double) :: nonCoreTotalSum
-   real (kind=double) :: SX 
+   real (kind=double) :: SX ! All of these need to be defined.
    real (kind=double) :: SY
    real (kind=double) :: SZ
    real (kind=double) :: SXX
@@ -98,8 +101,7 @@ subroutine makeSCFPot (totalEnergy)
    real (kind=double) :: SZZC
    real (kind=double) :: SXS
    real (kind=double) :: SYS
-   real (kind=double) :: SZS
-
+   real (kind=double) :: SZS ! Down to here.
    real (kind=double) :: testableDelta
    real (kind=double) :: radialWeightSum
    real (kind=double) :: weightedPotDiff
@@ -128,7 +130,7 @@ subroutine makeSCFPot (totalEnergy)
    real (kind=double) :: det
    real (kind=double), allocatable, dimension (:) :: drl1,drl2
    real (kind=double), allocatable, dimension (:) :: rl0,rl1,rl2
-   
+
    ! Matrix declarations of ELectroStatic Matrices
    real (kind=double), allocatable, dimension (:,:)   :: nonLocalResidualQ
    real (kind=double), allocatable, dimension (:,:)   :: nonLocalNeutQPot
@@ -140,10 +142,9 @@ subroutine makeSCFPot (totalEnergy)
    ! Declarations from ExchCorr
    integer :: maxNumRayPoints
    integer :: numRayPoints
-   real (kind=double), allocatable, dimension(:)   :: radialWeight
-   real (kind=double), allocatable, dimension(:,:) :: exchCorrOverlap
+   real (kind=double), allocatable, dimension(:)     :: radialWeight
+   real (kind=double), allocatable, dimension(:,:)   :: exchCorrOverlap
    real (kind=double), allocatable, dimension(:,:,:) :: exchRhoOp
-
 
 
    ! Log the date and time we start.
@@ -161,13 +162,10 @@ subroutine makeSCFPot (totalEnergy)
 
    ! Copy the electrostatic potential constants of integration and the 
    !   charge density potential (potRho) into a data structure
-!   print *, "why twice?"
-!   print *, "potRho"
-!   print *, potRho
-!   flush(6)
    generalRho(:,1)     = potRho(:,1)  ! (Spin up + Spin down) or total
+   generalRho(:,2)     = intgConsts(:)
    if (spin == 2) then
-      generalRho(:,2)  = potRho(:,2)  !  Spin up - Spin down
+      generalRho(:,3)  = potRho(:,2)  !  Spin up - Spin down
    endif
 
    ! Deallocate the potRho since it will not be needed until the
@@ -179,7 +177,7 @@ subroutine makeSCFPot (totalEnergy)
 
    ! Read the electrostatic potential overlap matrix
    call h5dread_f (potAlphaOverlap_did,H5T_NATIVE_DOUBLE,&
-         & potAlphaOverlap(:,:),potDims2,hdferr)
+         & potAlphaOverlap(:,:),potPot,hdferr)
    if (hdferr /= 0) stop 'Failed to read pot alpha overlap'
 
    ! Copy the upper triangle of the potAlphaOverlap matrix to prevent its
@@ -191,25 +189,18 @@ subroutine makeSCFPot (totalEnergy)
    ! Solve the linear set of equations with LAPACK to get the coefficients for
    !   total valence charge and (for spin polarized calcs.) the spin difference
    !   of the valence charge.
-!   print *, "Lapack dposvx spin: ",potDim
-!   print *, "Spin: ", spin
-!   print *, "tempOverlap"
-!   print *, tempOverlap
-!   print *, "generalRho"
-!   print *, generalRho
-!   flush(6)
-   call solveDPOSVX (potDim,spin,tempOverlap,potDim,generalRho(:,:spin))
+   call solveDPOSVX (potDim,spin+1,tempOverlap,potDim,generalRho(:,:spin+1))
 
    ! Compute the fitted valence charge.  (Up + Down for spin polarized calcs.)
    fittedCharge = dot_product(intgConsts(:potDim),generalRho(:potDim,1))
    if (spin == 2) then
       ! Compute the fitted valence charge difference.  (Up - Down)
       fittedSpinDiffCharge = dot_product(intgConsts(:potDim),&
-            & generalRho(:potDim,2))
+            & generalRho(:potDim,3))
 
       ! Preserve the spin (UP-DOWN) charge density coefficients in 
       !   generalRho(:,8).
-      generalRho(:potDim,8) = generalRho(:potDim,2)
+      generalRho(:potDim,8) = generalRho(:potDim,3)
    endif
 
    ! Calculate the difference between the electron number and the fitted charge
@@ -226,7 +217,9 @@ subroutine makeSCFPot (totalEnergy)
    ! Correct and store the valence charge coefficients in generalRho(:,2).
    !   This would overwrite the spin difference for spin polarized
    !   calculations, but that was already saved in generalRho(:,8).
-   generalRho(:potDim,2) = generalRho(:potDim,1)*numElectrons/fittedCharge
+!generalRho(:potDim,2) = generalRho(:potDim,1)*numElectrons/fittedCharge
+   generalRho(:potDim,2) = generalRho(:potDim,1) + generalRho(:potDim,2) * &
+         & electronDiff / sum(intgConsts(:potDim)*generalRho(:potDim,2))
 
    ! Demonstrate that the constrained fit will produce an exact valence charge.
    write (20,*) "Constrained fit num e- = ",dot_product(intgConsts(:potDim), &
@@ -250,7 +243,7 @@ subroutine makeSCFPot (totalEnergy)
    ! Read the core charge density into generalRho 3.
    if (coreDim /= 0) then
       call h5dread_f (coreChargeDensity_did,H5T_NATIVE_DOUBLE,&
-            & generalRho(:potDim,3),potDims1,hdferr)
+            & generalRho(:potDim,3),pot,hdferr)
       if (hdferr /= 0) stop 'Failed to read core charge density'
    else
       generalRho(:potDim,3) = 0.0_double
@@ -326,7 +319,7 @@ subroutine makeSCFPot (totalEnergy)
 
    ! Read the non-local real-space electrostatic operator.
    call h5dread_f (nonLocalNeutQPot_did,H5T_NATIVE_DOUBLE,&
-         & nonLocalNeutQPot(:,:),potDims2,hdferr)
+         & nonLocalNeutQPot(:,:),potPot,hdferr)
    if (hdferr /= 0) stop 'Failed to read non local neut q pot'
 
 
@@ -343,7 +336,7 @@ subroutine makeSCFPot (totalEnergy)
 
    ! Read the local real-space electrostatic operator.
    call h5dread_f (localNeutQPot_did,H5T_NATIVE_DOUBLE,&
-         & localNeutQPot(:,:),potDims2,hdferr)
+         & localNeutQPot(:,:),potPot,hdferr)
    if (hdferr /= 0) stop 'Failed to read local neut q pot'
 
 
@@ -359,14 +352,14 @@ subroutine makeSCFPot (totalEnergy)
 
    ! Read in the local nuclear integral vector
    call h5dread_f (localNucQPot_did,H5T_NATIVE_DOUBLE,&
-         & elecStatPot(:,5),potDims1,hdferr)
+         & elecStatPot(:,5),pot,hdferr)
    if (hdferr /= 0) stop 'Failed to read local nuc q pot'
 
 
 
    ! Read in the non local nuclear integral vector (gaussian screeneed)
    call h5dread_f (nonLocalNucQPot_did,H5T_NATIVE_DOUBLE,&
-         & elecStatPot(:,4),potDims1,hdferr)
+         & elecStatPot(:,4),pot,hdferr)
    if (hdferr /= 0) stop 'Failed to read non local nuc q pot'
 
 
@@ -435,8 +428,6 @@ subroutine makeSCFPot (totalEnergy)
    enddo
 
    ! Solve with LAPACK dposvx
-!   print *, "Lapack dposvx 2 N: ",potDim
-!   flush(6)
    call solveDPOSVX (potDim,2,tempOverlap,potDim,elecStatPot(:,:2))
 
 
@@ -449,27 +440,24 @@ subroutine makeSCFPot (totalEnergy)
    ! Allocate space to hold the exchange-correlation potential, exchange
    !   correlation radial weights, Rho Matrix Operator, and the resultant Rho.
    allocate (exchCorrPot  (potDim,2+spin))
+   allocate (radialWeight (maxNumRayPoints))
    ! If running GGA calculation space is allocated for the first and second
    ! derivatives of the exchange rho operator
    if (GGA.eq.0) then
-      allocate (exchCorrRho (1,maxNumRayPoints))
-      allocate (exchCorrRhoCore (1,maxNumRayPoints))
-      allocate (exchRhoOp    (potDim,maxNumRayPoints,1))
+      numOpValues = 1
    else
-      allocate (exchCorrRho (10,maxNumRayPoints))
-      allocate (exchCorrRhoCore (10,maxNumRayPoints))
-      allocate (exchRhoOp    (potDim,maxNumRayPoints,10))
+      numOpValues = 10
    endif
+      allocate (exchCorrRho     (numOpValues,maxNumRayPoints))
+      allocate (exchCorrRhoCore (numOpValues,maxNumRayPoints))
+      allocate (exchRhoOp       (potDim,maxNumRayPoints,numOpValues))
 
    if (spin == 1) then
       allocate (exchCorrRhoSpin  (1,maxNumRayPoints))
    else
-      allocate (exchCorrRhoSpin (4,maxNumRayPoints))
+      allocate (exchCorrRhoSpin  (4,maxNumRayPoints))
    endif
 
-!   allocate (exchCorrRho  (1+spin,maxNumRayPoints))
-   allocate (radialWeight (maxNumRayPoints))
-!   allocate (exchRhoOp    (potDim,maxNumRayPoints))
 
 
    ! Initialize the exchange-correlation potential accumulator
@@ -499,51 +487,63 @@ subroutine makeSCFPot (totalEnergy)
       ! The exchange correlation matrix times the charge vector produces the
       !   the real space charge
       do j = 1, numRayPoints
-!         coreSum         = sum(exchRhoOp(:potDim,j) * generalRho(:potDim,3))
-!         nonCoreTotalSum = sum(exchRhoOp(:potDim,j) * generalRho(:potDim,1))
+         coreSum         = sum(exchRhoOp(:potDim,j,1) * generalRho(:potDim,3))
+         nonCoreTotalSum = sum(exchRhoOp(:potDim,j,1) * generalRho(:potDim,1))
 
          if (spin == 2) then
             spinDiffSum = sum(exchRhoOp(:potDim,j,1) * generalRho(:potDim,8))
             exchCorrRhoSpin(1,j) = spinDiffSum  ! Valence spin difference
          else
-            exchCorrRhoSpin(1,j) = 0
+            exchCorrRhoSpin(1,j) = 0.0_double  ! Valence spin difference
          endif
 
-         coreSum         = sum(exchRhoOp(:potDim,j,1) * generalRho(:potDim,3))
-         nonCoreTotalSum = sum(exchRhoOp(:potDim,j,1) * generalRho(:potDim,1))
-      
          if (GGA.eq.1) then
-            SX = -1.0_double * sum(2.0_double * exchRhoOp(:potDim,j,2) * generalRho(:potDim,1))
-            SY = -1.0_double * sum(2.0_double * exchRhoOp(:potDim,j,3) * generalRho(:potDim,1))
-            SZ = -1.0_double * sum(2.0_double * exchRhoOp(:potDim,j,4) * generalRho(:potDim,1))
+            SX = -1.0_double * sum(2.0_double * exchRhoOp(:potDim,j,2) * &
+                  & generalRho(:potDim,1))
+            SY = -1.0_double * sum(2.0_double * exchRhoOp(:potDim,j,3) * &
+                  & generalRho(:potDim,1))
+            SZ = -1.0_double * sum(2.0_double * exchRhoOp(:potDim,j,4) * &
+                  & generalRho(:potDim,1))
             SXX = sum(4.0_double * exchRhoOp(:potDim,j,5) &
-                  & - 2.0_double * exchRhoOp(:potDim,j,1) * generalRho(:potDim,1))
+                  & - 2.0_double * exchRhoOp(:potDim,j,1) * &
+                  & generalRho(:potDim,1))
             SXY = sum(4.0_double * exchRhoOp(:potDim,j,6))
             SXZ = sum(4.0_double * exchRhoOp(:potDim,j,7))
             SYY = sum(4.0_double * exchRhoOp(:potDim,j,8) &
-                  &- 2.0_double * exchRhoOp(:potDim,j,1) * generalRho(:potDim,1))
+                  &- 2.0_double * exchRhoOp(:potDim,j,1) * &
+                  & generalRho(:potDim,1))
             SYZ = sum(4.0_double * exchRhoOp(:potDim,j,9))
             SZZ = sum(4.0_double * exchRhoOp(:potDim,j,10) &
-                  &- 2.0_double * exchRhoOp(:potDim,j,1) * generalRho(:potDim,1))
+                  &- 2.0_double * exchRhoOp(:potDim,j,1) * &
+                  & generalRho(:potDim,1))
 
 
-            SXC = -1.0_double * sum(2.0_double * exchRhoOp(:potDim,j,2) * generalRho(:potDim,3))
-            SYC = -1.0_double * sum(2.0_double * exchRhoOp(:potDim,j,3) * generalRho(:potDim,3))
-            SZC = -1.0_double * sum(2.0_double * exchRhoOp(:potDim,j,4) * generalRho(:potDim,3))
+            SXC = -1.0_double * sum(2.0_double * exchRhoOp(:potDim,j,2) * &
+                  & generalRho(:potDim,3))
+            SYC = -1.0_double * sum(2.0_double * exchRhoOp(:potDim,j,3) * &
+                  & generalRho(:potDim,3))
+            SZC = -1.0_double * sum(2.0_double * exchRhoOp(:potDim,j,4) * &
+                  & generalRho(:potDim,3))
             SXXC = sum(4.0_double * exchRhoOp(:potDim,j,5) &
-                  & - 2.0_double * exchRhoOp(:potDim,j,1) * generalRho(:potDim,3))
+                  & - 2.0_double * exchRhoOp(:potDim,j,1) * &
+                  & generalRho(:potDim,3))
             SXYC = sum(4.0_double * exchRhoOp(:potDim,j,6))
             SXZC = sum(4.0_double * exchRhoOp(:potDim,j,7))
             SYYC = sum(4.0_double * exchRhoOp(:potDim,j,8) &
-                  &- 2.0_double * exchRhoOp(:potDim,j,1) * generalRho(:potDim,3))
+                  &- 2.0_double * exchRhoOp(:potDim,j,1) * &
+                  & generalRho(:potDim,3))
             SYZC = sum(4.0_double * exchRhoOp(:potDim,j,9))
             SZZC = sum(4.0_double * exchRhoOp(:potDim,j,10) &
-                  &- 2.0_double * exchRhoOp(:potDim,j,1) * generalRho(:potDim,3))
+                  &- 2.0_double * exchRhoOp(:potDim,j,1) * &
+                  & generalRho(:potDim,3))
 
             if (spin == 2) then
-               SXS = -1.0_double * sum(2.0_double * exchRhoOp(:potDim,j,2) * generalRho(:potDim,8))
-               SYS = -1.0_double * sum(2.0_double * exchRhoOp(:potDim,j,3) * generalRho(:potDim,8))
-               SZS = -1.0_double * sum(2.0_double * exchRhoOp(:potDim,j,4) * generalRho(:potDim,8))
+               SXS = -1.0_double * sum(2.0_double * exchRhoOp(:potDim,j,2) * &
+                     & generalRho(:potDim,8))
+               SYS = -1.0_double * sum(2.0_double * exchRhoOp(:potDim,j,3) * &
+                     & generalRho(:potDim,8))
+               SZS = -1.0_double * sum(2.0_double * exchRhoOp(:potDim,j,4) * &
+                     & generalRho(:potDim,8))
             endif
 
          endif
@@ -577,9 +577,6 @@ subroutine makeSCFPot (totalEnergy)
            endif
          endif
 
-!         if (coreSum < 0.0_double) then
-!            coreSum = 0.0_double
-!         endif
          if (nonCoreTotalSum < smallThresh) then
 ! This is totally ridiculous.  If the following statement is not present, then
 !   the program will not work.  The values for nonCoreTotalSum will not be
@@ -602,12 +599,11 @@ subroutine makeSCFPot (totalEnergy)
 !call flush (20)
          endif
 
-         exchCorrRho (1,j) = nonCoreTotalSum
+         exchCorrRho (1,j)     = nonCoreTotalSum
          exchCorrRhoCore (1,j) = coreSum
 
-         
          ! Note that the indexing scheme has changed from the one used
-         ! in exchRhoOp(:,:,10) in order to incorporate coreSum and spinDiffSum
+         ! in exchRhoOp(:,:,10) in order to incorporate coreSum and spinDiffSum.
          if (GGA.eq.1) then
             exchCorrRho (2,j) = SX
             exchCorrRho (3,j) = SY
@@ -644,76 +640,77 @@ subroutine makeSCFPot (totalEnergy)
       ! 150 = Ceperley-Alder
       ! 151 = von Barth-Hedin
       ! 152 = unknown
+      ! 200 = PBE96 (Perdew, Burke, and Enzerhof)
 
-      if (XC_CODE == 100) then
+      if (xcCode == 100) then
             do j = 1, numRayPoints
                ! These functions have been converted to subroutines because the
                !   return value of the second array index value was 0.0 on the
                !   ia64 HP-UX machine sirius.  This seems to work.
                call wignerXC(exchCorrRho(1,j),currentExchCorrPot(1:2))
-               call wignerXCEnergy(exchCorrRhoCore(1,j),currentExchCorrPot(3))
+               call wignerXCEnergy(exchCorrRho(2,j),currentExchCorrPot(3))
                do k = 1,3
                   exchCorrPot(:potDim,k) = exchCorrPot(:potDim,k) + &
                         & radialWeight(j) * currentExchCorrPot(k) * &
-                        & exchRhoOp(:potDim,j,1)
+                        & exchRhoOp(:potDim,j)
                enddo
             enddo
-      elseif (XC_CODE == 101) then
+      elseif (xcCode == 101) then
             do j = 1, numRayPoints
                call ceperleyAlderXC(exchCorrRho(1,j),currentExchCorrPot(1:2))
-               call ceperleyAlderXCEnergy(exchCorrRhoCore(1,j),&
+               call ceperleyAlderXCEnergy(exchCorrRho(2,j),&
                      & currentExchCorrPot(3))
                do k = 1,3
                   exchCorrPot(:potDim,k) = exchCorrPot(:potDim,k) + &
                         & radialWeight(j) * currentExchCorrPot(k) * &
-                        & exchRhoOp(:potDim,j,1)
+                        & exchRhoOp(:potDim,j)
                enddo
             enddo
-      elseif (XC_CODE == 102) then
+      elseif (xcCode == 102) then
             do j = 1, numRayPoints
                call hedinLundqvistXC(exchCorrRho(1,j),&
                      & currentExchCorrPot(1:2))
-               call hedinLundqvistXCEnergy(exchCorrRhoCore(1,j),&
+               call hedinLundqvistXCEnergy(exchCorrRho(2,j),&
                      & currentExchCorrPot(3))
                do k = 1,3
                   exchCorrPot(:potDim,k) = exchCorrPot(:potDim,k) + &
                         & radialWeight(j) * currentExchCorrPot(k) * &
-                        & exchRhoOp(:potDim,j,1)
+                        & exchRhoOp(:potDim,j)
                enddo
             enddo
-      elseif (XC_CODE == 150) then
+      elseif (xcCode == 150) then
             ! Ceperley and Alder Exchange-Correlation (LSDA)
             do j = 1, numRayPoints
-               call ceperleyAlderSP(exchCorrRho(1,j),exchCorrRhoSpin(1,j),&
-                     & exchCorrRhoCore(1,j),currentExchCorrPot(1:4))
+               call ceperleyAlderSP(exchCorrRho(1,j),exchCorrRho(3,j),&
+                     & exchCorrRho(2,j),currentExchCorrPot(1:4))
                do k = 1,4
                   exchCorrPot(:potDim,k) = exchCorrPot(:potDim,k) + &
                         & radialWeight(j) * currentExchCorrPot(k) * &
-                        & exchRhoOp(:potDim,j,1)
+                        & exchRhoOp(:potDim,j)
                enddo
             enddo
 
-      elseif (XC_CODE == 151) then
+      elseif (xcCode == 151) then
             ! von Barth and Hedin Exchange-Correlation (LSDA)
             do j = 1, numRayPoints
-               call vonBarthHedin(exchCorrRho(1,j),exchCorrRhoSpin(1,j),&
-                     & exchCorrRhoCore(1,j),currentExchCorrPot(1:4))
+               call vonBarthHedin(exchCorrRho(1,j),exchCorrRho(3,j),&
+                     & exchCorrRho(2,j),currentExchCorrPot(1:4))
                do k = 1,4
                   exchCorrPot(:potDim,k) = exchCorrPot(:potDim,k) + &
                         & radialWeight(j) * currentExchCorrPot(k) * &
-                        & exchRhoOp(:potDim,j,1)
+                        & exchRhoOp(:potDim,j)
                enddo
             enddo
-      elseif (XC_CODE == 152) then
+      elseif (xcCode == 152) then
             ! Old SPmain.for Exchange Correlation (LSDA) (Should be like the
             !   von barth and Hedin above.)
             do j = 1, numRayPoints
-               call oldEXCORR(exchCorrRho(1,j),exchCorrRhoSpin(1,j),&
-                     & exchCorrRhoCore(1,j),currentExchCorrPot(1:4))
+               call oldEXCORR(exchCorrRho(1,j),exchCorrRho(3,j),&
+                     & exchCorrRho(2,j),currentExchCorrPot(1:4))
                do k = 1,4
                   exchCorrPot(:potDim,k) = exchCorrPot(:potDim,k) + &
                         & radialWeight(j) * currentExchCorrPot(k) * &
-                        & exchRhoOp(:potDim,j,1)
+                        & exchRhoOp(:potDim,j)
                enddo
             enddo
       elseif (XC_CODE == 200) then
@@ -775,13 +772,11 @@ subroutine makeSCFPot (totalEnergy)
 
    ! Read the exchange correlation overlap.
    call h5dread_f (exchCorrOverlap_did,H5T_NATIVE_DOUBLE,&
-         & exchCorrOverlap(:,:),potDims2,hdferr)
+         & exchCorrOverlap(:,:),potPot,hdferr)
    if (hdferr /= 0) stop 'Failed to read exch corr overlap'
 
 
    ! Solve the linear set of equations with LAPACK
-!   print *, "Lapack dposvx 2+spin N: ",potDim
-!   flush(6)
    call solveDPOSVX (potDim,2+spin,exchCorrOverlap,potDim,&
          & exchCorrPot(:,:2+spin))
 
@@ -1195,7 +1190,7 @@ subroutine ceperleyAlderXC (rho,answer)
 
    ! Include kind definitions
    use O_Kinds
-   use O_Constants
+   use O_Constants, only: pi, smallThresh
 
    implicit none
 
@@ -1267,7 +1262,7 @@ subroutine ceperleyAlderXCEnergy (rho,answer)
 
    ! Include kind definitions
    use O_Kinds
-   use O_Constants
+   use O_Constants, only: pi, smallThresh
 
    implicit none
 
@@ -1330,7 +1325,7 @@ subroutine hedinLundqvistXC (rho,answer)
 
    ! Include kind definitions and the HL constants.
    use O_Kinds
-   use O_Constants
+   use O_Constants, only: pi, smallThresh
 
    implicit none
 
@@ -1380,7 +1375,7 @@ subroutine hedinLundqvistXCEnergy (rho,answer)
 
    ! Include kind definitions and the HL constants.
    use O_Kinds
-   use O_Constants
+   use O_Constants, only: pi, smallThresh
 
    implicit none
 
@@ -1422,7 +1417,7 @@ subroutine vonBarthHedin (totalRho,spinDiffRho,coreRho,answer)
 
    ! Include kind definitions and the spin polarized vBH constants
    use O_Kinds
-   use O_Constants
+   use O_Constants, only: pi
 
    implicit none
 
@@ -1465,16 +1460,16 @@ subroutine vonBarthHedin (totalRho,spinDiffRho,coreRho,answer)
    answer(:) = 0.0_double
 
    ! Initialize some variables
-   alpha = (4.0_double/(9.0_double*pi))**0.33333333
-   rs = (3.0_double/(4.0_double*pi*totalRho))**0.33333333
+   alpha = (4.0_double/(9.0_double*pi))**0.33333333_double
+   rs = (3.0_double/(4.0_double*pi*totalRho))**0.33333333_double
    a = 2.0_double**(-1.0_double/3.0_double)
    gamma = 4.0_double/3.0_double * a / (1.0_double - a)
-   two13 = 2.0**(0.3333333333)
+   two13 = 2.0**(0.3333333333_double)
 
-   rP = 21.0
-   rF = 2.0**(4.0/3.0)*rP
-   cP = 0.045
-   cF = cP/2.0
+   rP = 21.0_double
+   rF = 2.0_double**(4.0_double/3.0_double)*rP
+   cP = 0.045_double
+   cF = cP/2.0_double
 
    ! Abort if the incoming total charge is sufficiently large, then compute the
    !   exchange correlation for it.
@@ -1505,11 +1500,11 @@ subroutine vonBarthHedin (totalRho,spinDiffRho,coreRho,answer)
          x = 1.0_double
       endif
 
-      epsxP = -3.0/(2.0 * pi * alpha) / rs
+      epsxP = -3.0_double/(2.0_double * pi * alpha) / rs
 
       epsxF = two13 * epsxP
 
-      muxP = 4.0/3.0 * epsxP
+      muxP = 4.0_double/3.0_double * epsxP
 
 !      muxF = two13 * muxP
 
@@ -1731,7 +1726,7 @@ subroutine ceperleyAlderSP (totalRho,spinDiffRho,coreRho,answer)
 
    ! Include kind definitions and the spin polarized vBH constants
    use O_Kinds
-   use O_Constants
+   use O_Constants, only: pi, smallThresh
 
    implicit none
 
@@ -1900,7 +1895,6 @@ subroutine oldEXCORR(rh,sold,rhc,answer)
 
    ! Include kind definitions and the spin polarized vBH constants
    use O_Kinds
-   use O_Constants
 
 !   implicit none
    implicit real*8(a-h,o-z)
@@ -2222,6 +2216,7 @@ subroutine GCOR2(A,A1,B1,B2,B3,B4,RTRS,GG,GGRS)
    
 end subroutine GCOR2
 
+
 !
 !*************************************************************
 !
@@ -2271,7 +2266,6 @@ subroutine cleanUpPotentialUpdate
    endif
 
 end subroutine cleanUpPotentialUpdate
-
 
 
 end module O_PotentialUpdate

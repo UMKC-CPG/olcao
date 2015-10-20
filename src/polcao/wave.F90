@@ -35,22 +35,31 @@ subroutine computeWaveFnMesh
 
    ! Import the necessary modules.
    use O_Kinds
-   use O_Constants
    use O_TimeStamps
-   use O_Input
-   use O_CommandLine
-   use O_Lattice
-   use O_Kpoints
-   use O_Basis
-   use O_MatrixSubs
-   use O_OpenDX
-   use O_SecularEquation
-   use O_AtomicSites
-   use O_AtomicTypes
-   use O_PotTypes
-   use O_Populate
-   use O_Potential
-   use O_PSCFBandHDF5
+   use O_Potential,    only: spin, potCoeffs
+   use O_Basis,        only: initializeAtomSite
+   use O_Populate,     only: electronPopulation
+   use O_Constants,    only: smallThresh, hartree
+   use O_PotTypes,     only: maxNumPotAlphas, potTypes
+   use O_AtomicSites,  only: valeDim, numAtomSites, atomSites
+   use O_PSCFBandHDF5, only: eigenVectorsBand_did, valeStatesBand
+   use O_Kpoints,      only: numKPoints, kPointWeight, phaseFactor
+   use O_Input,        only: numStates, styleWAVE, eminWAVE, emaxWAVE, doRho, &
+         & numElectrons
+   use O_OpenDX,       only: printODXFieldHead, printODXFieldTail, &
+         & printODXAtomPos, printODXLattice
+   use O_AtomicTypes,  only: numAtomTypes, atomTypes, maxNumAtomAlphas, &
+         & maxNumStates, maxNumValeRadialFns
+   use O_Lattice,      only: logBasisFnThresh, numCellsReal, cellSizesReal, &
+         & cellDimsReal, numMeshPoints, realVectors, realFractStrideLength, &
+         & findLatticeVector
+#ifndef GAMMA
+   use O_MatrixSubs,      only: readMatrix
+   use O_SecularEquation, only: valeVale, energyEigenValues
+#else
+   use O_MatrixSubs,      only: readMatrixGamma
+   use O_SecularEquation, only: valeValeGamma, energyEigenValues
+#endif
 
    ! Make sure that no variables are accidentally defined.
    implicit none
@@ -319,7 +328,7 @@ accumChargeKP = 0.0_double
 
 currNumElec(i,j) = sum(structuredElectronPopulation(&
       & minStateIndex:maxStateIndex,i,j))
-write (20,*) "i,j,currNumElec(i,j) = ",i,j,currNumElec(i,j)
+!write (20,*) "i,j,currNumElec(i,j) = ",i,j,currNumElec(i,j)
 !write (20,*) "minStateIndex=",minStateIndex
 !write (20,*) "maxStateIndex=",maxStateIndex
 #ifndef GAMMA
@@ -350,7 +359,7 @@ write (20,*) "i,j,currNumElec(i,j) = ",i,j,currNumElec(i,j)
             accumWaveFnCoeffs(:,j,i) = accumWaveFnCoeffs(:,j,i) + &
                   & currentPopulation * valeVale(:,k,1,j)
          enddo
-write (20,*) "accumCharge=",accumCharge(j,i)
+!write (20,*) "accumCharge=",accumCharge(j,i)
 accumChargeKP = accumChargeKP + accumCharge(j,i)
 !write (20,*) "before divide aWFC=",accumWaveFnCoeffs(:,j,i)
 !tempPointValue(1)=cmplx(0.0_double,0.0_double)
@@ -395,7 +404,7 @@ accumChargeKP = accumChargeKP + accumCharge(j,i)
       enddo
    enddo
 
-write (20,*) "accumChargeKP=",accumChargeKP
+!write (20,*) "accumChargeKP=",accumChargeKP
 
    ! Save special coefficients to represent the neutral non-interacting
    !   electronic distribution for each atom.
@@ -832,7 +841,7 @@ write (20,*) "accumChargeKP=",accumChargeKP
    enddo
    enddo
    enddo
-write (20,*) "accumCharge(1,:)=",accumCharge(1,:)
+!write (20,*) "accumCharge(1,:)=",accumCharge(1,:)
 
    ! Finalize printing of the OpenDX field data.
    if ((styleWAVE == 1) .or. (styleWAVE == 2)) then
@@ -889,8 +898,7 @@ end subroutine computeWaveFnMesh
 subroutine initEnv
 
    ! Use necessary modules
-   use O_CommandLine
-   use O_Potential ! For spin
+   use O_Potential, only: spin
 
    ! Make sure that no variables are accidentally defined.
    implicit none
@@ -917,10 +925,10 @@ subroutine printProfileData
 
    ! Use necessary modules
    use O_Kinds
-   use O_Constants
-   use O_CommandLine
-   use O_Lattice
-   use O_Potential ! For spin
+   use O_Potential, only: spin
+   use O_Constants, only: hartree, bohrRad
+   use O_Lattice,   only: realMag, realFractCrossArea, realFractStrideLength, &
+         & realPlaneAngles, numMeshPoints
 
    ! Make sure that no variables are accidentally defined.
    implicit none
@@ -1009,14 +1017,13 @@ subroutine makeNeutralCoeffs
 
    ! Import any necessary modules.
    use O_Kinds
-   use O_CommandLine
-   use O_Basis
-   use O_ElementData
-   use O_KPoints
-   use O_AtomicSites
-   use O_AtomicTypes
-   use O_PotTypes
-   use O_Potential ! For spin
+   use O_Constants,   only: maxOrbitals
+   use O_ElementData, only: coreCharge, valeCharge
+   use O_KPoints,     only: numKPoints
+   use O_AtomicSites, only: valeDim, numAtomSites, atomSites
+   use O_AtomicTypes, only: atomTypes
+   use O_PotTypes,    only: potTypes
+   use O_Potential,   only: spin
 
    ! Make sure no implicit variables are created.
    implicit none
@@ -1027,7 +1034,7 @@ subroutine makeNeutralCoeffs
    integer :: currQN_l
    integer :: totalStateCount
    real (kind=double) :: electronsPerQN_m
-   real (kind=double), dimension(4) :: localValeCharge
+   real (kind=double), dimension(maxOrbitals) :: localValeCharge
    real (kind=double), allocatable, dimension(:) :: neutralCoeffs
 
    ! Allocate temp space to hold the neutral coefficients before copying them

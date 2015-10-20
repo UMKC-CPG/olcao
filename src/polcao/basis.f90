@@ -2,7 +2,6 @@ module O_Basis
 
    ! Import necessary modules.
    use O_Kinds
-   use O_Constants
 
    ! Make sure that no funny variables are defined.
    implicit none
@@ -57,10 +56,8 @@ subroutine renormalizeBasis
 
    ! Include the modules we need
    use O_Kinds
-   use O_Constants
-
-   ! Import the necessary data modules
-   use O_AtomicTypes
+   use O_AtomicTypes, only: numAtomTypes, maxNumStates, maxNumAtomAlphas, &
+         & atomTypes
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
@@ -263,11 +260,10 @@ subroutine initializeAtomSite (atomNumber,atomIndex,atomType,currentElements,&
 
    ! Include the modules we need
    use O_Kinds
-   use O_Constants
-
-   ! Import necessary data modules
-   use O_AtomicSites
-   use O_AtomicTypes
+   use O_Constants, only: dim3
+   use O_AtomicSites, only: numAtomSites, atomSites
+   use O_AtomicTypes, only: maxNumAtomAlphas, maxNumStates, numAtomTypes, &
+         & atomTypes
 
    ! Input variables that request which atom to extract info from, and where
    !   to put it.
@@ -347,11 +343,9 @@ subroutine initializePotSite (potNumber,potType,potElement,zFactor,nucAlpha,&
 
    ! Include the modules we need
    use O_Kinds
-   use O_Constants
-
-   ! Import necessary modules
-   use O_PotSites
-   use O_PotTypes
+   use O_Constants, only: dim3
+   use O_PotSites, only: numPotSites, potSites
+   use O_PotTypes, only: numPotTypes, potTypes
 
    ! Input variables that request which atom to extract info from, and where
    !   to put it.

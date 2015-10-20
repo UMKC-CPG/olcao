@@ -2,7 +2,7 @@ module O_PotSites
 
    ! Import necessary modules.
    use O_Kinds
-   use O_Constants
+   use O_Constants, only: dim3
 
    ! Make sure that no funny variables are defined.
    implicit none
@@ -37,28 +37,35 @@ module O_PotSites
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    contains
 
-subroutine readPotSites
+subroutine readPotSites(readUnit, writeUnit)
 
    ! Import necessary modules.
-   use O_Kinds
    use O_ReadDataSubs
 
    ! Make sure that no funny variables are defined.
-   implicit none
+   implicit none 
+
+   ! passed parameters
+   integer, intent(in)    :: readUnit   ! The unit number of the file from which
+                                        ! we are reading.
+   integer, intent(in)    :: writeUnit  ! The unit number of the file to which
+                                        ! we are writing.
 
    ! Define local variables.
    integer :: i
    integer :: counter
    character*2 :: atomName
 
-   ! Read the number of potential types.
-   call readData (numPotSites,len('NUM_POTENTIAL_SITES'),'NUM_POTENTIAL_SITES')
+   ! Read the number of potential sites.
+   call readData(readUnit,writeUnit,numPotSites,len('NUM_POTENTIAL_SITES'),&
+         & 'NUM_POTENTIAL_SITES')
 
    ! The number of potential sites is known so we can allocate space to hold
    !   the potential type associations, equivalencies, and coordinates.
    allocate (potSites(numPotSites))
 
-   call readAndCheckLabel(len('NUM_TYPE_X_Y_Z_ELEM'),'NUM_TYPE_X_Y_Z_ELEM')
+   call readAndCheckLabel(readUnit,writeUnit,len('NUM_TYPE_X_Y_Z_ELEM'),&
+         & 'NUM_TYPE_X_Y_Z_ELEM')
 
    do i = 1, numPotSites
       read (4,*)     counter,potSites(i)%potTypeAssn,potSites(i)%cartPos,&
@@ -79,9 +86,6 @@ end subroutine readPotSites
 
 
 subroutine getPotSiteImplicitInfo
-
-   ! Import necessary modules.
-   use O_Kinds
 
    ! Make sure that no funny variables are defined.
    implicit none
@@ -112,9 +116,6 @@ end subroutine getPotSiteImplicitInfo
 
 
 subroutine getMultiplicities (multiplicities)
-
-   ! Import necessary modules.
-   use O_Kinds
 
    ! Make sure that no funny variables are defined.
    implicit none

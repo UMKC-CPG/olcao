@@ -2,7 +2,6 @@ module O_SetupElecStatHDF5
 
    ! Import necessary modules.
    use HDF5
-   use O_Potential
 
    ! Make sure that no funny variables are defined.
    implicit none
@@ -33,15 +32,10 @@ module O_SetupElecStatHDF5
    integer(hid_t) :: potPot_plid
    integer(hid_t) :: pot_plid
 
-   ! Create a file transfer property list for the datasets
-   integer(hid_t) :: potTypesPot_xferpid
-   integer(hid_t) :: potPot_xferpid
-   integer(hid_t) :: pot_xferpid
-
    ! Define arrays that hold the dimensions of the datasets.
-   integer(hsize_t), dimension (2) :: potDims2
    integer(hsize_t), dimension (2) :: potTypesPot
-   integer(hsize_t), dimension (1) :: potDims1
+   integer(hsize_t), dimension (2) :: potPot
+   integer(hsize_t), dimension (1) :: pot
 
    ! Define the dataset IDs under elecStatGroup_gid.  There are no
    !   dynamically given dataset IDs.
@@ -63,14 +57,8 @@ subroutine initSetupElecStatHDF5 (setup_fid)
    ! Import any necessary definition modules.
    use HDF5
 
-   ! Import the MPI module
-   use MPI
-
    ! Import necessary object modules.
-   use O_PotTypes    ! For potDim, numPotTypes
-
-   ! Make sure no funny variables are declared.
-   implicit none
+   use O_PotTypes, only: potDim, numPotTypes
 
    ! Define the passed parameters.
    integer(hid_t) :: setup_fid
@@ -79,11 +67,11 @@ subroutine initSetupElecStatHDF5 (setup_fid)
    integer :: hdferr
 
    ! Initialize data structure dimensions.
-   potDims2(1)    = potDim
-   potDims2(2)    = potDim
+   potPot(1)    = potDim
+   potPot(2)    = potDim
    potTypesPot(1) = numPotTypes
    potTypesPot(2) = potDim
-   potDims1(1)    = potDim
+   pot(1)    = potDim
 
    ! Create the electrostatic group within the HDF5 file.
    call h5gcreate_f (setup_fid,"/elecStatGroup",elecStatGroup_gid,hdferr)
@@ -93,9 +81,9 @@ subroutine initSetupElecStatHDF5 (setup_fid)
    !   elecStatGroup.
    call h5screate_simple_f (2,potTypesPot,potTypesPot_dsid,hdferr)
    if (hdferr /= 0) stop 'Failed to create potTypesPot dsid'
-   call h5screate_simple_f (2,potDims2,potPot_dsid,hdferr)
+   call h5screate_simple_f (2,potPot,potPot_dsid,hdferr)
    if (hdferr /= 0) stop 'Failed to create potPot dsid'
-   call h5screate_simple_f (1,potDims1,pot_dsid,hdferr)
+   call h5screate_simple_f (1,pot,pot_dsid,hdferr)
    if (hdferr /= 0) stop 'Failed to create pot dsid'
 
    ! Create the property lists first.  Then set the properties for each list
@@ -114,9 +102,9 @@ subroutine initSetupElecStatHDF5 (setup_fid)
    if (hdferr /= 0) stop 'Failed to set pot chunked layout'
    call h5pset_chunk_f   (potTypesPot_plid,2,potTypesPot,hdferr)
    if (hdferr /= 0) stop 'Failed to set potTypesPot chunked property'
-   call h5pset_chunk_f   (potPot_plid,2,potDims2,hdferr)
+   call h5pset_chunk_f   (potPot_plid,2,potPot,hdferr)
    if (hdferr /= 0) stop 'Failed to set potPot chunked property'
-   call h5pset_chunk_f   (pot_plid,1,potDims1,hdferr)
+   call h5pset_chunk_f   (pot_plid,1,pot,hdferr)
    if (hdferr /= 0) stop 'Failed to set pot chunked property'
 !   call h5pset_shuffle_f (potTypesPot_plid,hdferr)
 !   call h5pset_shuffle_f (potPot_plid,hdferr)
@@ -127,22 +115,6 @@ subroutine initSetupElecStatHDF5 (setup_fid)
    if (hdferr /= 0) stop 'Failed to set potPot deflate property'
    call h5pset_deflate_f   (pot_plid,1,hdferr)
    if (hdferr /= 0) stop 'Failed to set pot deflate property'
-
-
-   ! Create and assign properties for MPI
-!   call h5pcreate_f (H5P_DATASET_XFER_F, potTypesPot_xferpid, hdferr)
-!   if (hdferr /= 0) stop 'Failed to create potTypesPot xfer property list'
-!   call h5pcreate_f (H5P_DATASET_XFER_F, potPot_xferpid, hdferr)
-!   if (hdferr /= 0) stop 'Failed to create potPot xfer property list'
-!   call h5pcreate_f (H5P_DATASET_XFER_F, pot_xferpid, hdferr)
-!   if (hdferr /= 0) stop 'Failed to create pot xfer property list'
-!   call h5pset_dxpl_mpio_f(potTypesPot_xferpid,H5FD_MPIO_INDEPENDENT_F,hdferr)
-!   if (hdferr /= 0) stop 'Failed to set potTypesPot xfer properties'
-!   call h5pset_dxpl_mpio_f(potPot_xferpid,H5FD_MPIO_INDEPENDENT_F,hdferr)
-!   if (hdferr /= 0) stop 'Failed to set potPot xfer properties'
-!   call h5pset_dxpl_mpio_f(pot_xferpid,H5FD_MPIO_INDEPENDENT_F,hdferr)
-!   if (hdferr /= 0) stop 'Failed to set pot MPI property'
-
 
    ! Create the datasets that will be used for the elecStatGroup.
    call h5dcreate_f(elecStatGroup_gid,"potAlphaOverlap",H5T_NATIVE_DOUBLE,&
@@ -177,7 +149,7 @@ subroutine accessSetupElecStatHDF5 (setup_fid)
    use HDF5
 
    ! Import necessary object modules.
-   use O_PotTypes    ! For potDim, numPotTypes
+   use O_PotTypes, only: potDim, numPotTypes
 
    ! Define the passed parameters.
    integer(hid_t) :: setup_fid
@@ -186,11 +158,11 @@ subroutine accessSetupElecStatHDF5 (setup_fid)
    integer :: hdferr
 
    ! Initialize data structure dimensions.
-   potDims2(1)    = potDim
-   potDims2(2)    = potDim
+   potPot(1)      = potDim
+   potPot(2)      = potDim
    potTypesPot(1) = numPotTypes
    potTypesPot(2) = potDim
-   potDims1(1)    = potDim
+   pot(1)         = potDim
 
    ! Open the electrostatic group within the HDF5 file.
    call h5gopen_f (setup_fid,"/elecStatGroup",elecStatGroup_gid,hdferr)
@@ -242,9 +214,6 @@ subroutine closeSetupElecStatHDF5
    ! Import any necessary definition modules.
    use HDF5
 
-   ! Import MPI module
-   use MPI
-
    ! Make sure that no variables are implicitly declared.
    implicit none
 
@@ -253,13 +222,6 @@ subroutine closeSetupElecStatHDF5
 
    ! Close all access to the electrostatic calculation parts of the HDF file
    !   for setup.
-   ! Close MPI property lists
-   call h5pclose_f (potTypesPot_xferpid,hdferr)
-   if (hdferr /= 0) stop 'Failed to close potTypesPot_xferpid.'
-   call h5pclose_f (potPot_xferpid,hdferr)
-   if (hdferr /= 0) stop 'Failed to close potPot_xferpid.'
-   call h5pclose_f (pot_xferpid,hdferr)
-   if (hdferr /= 0) stop 'Failed to close pot_xferpid.'
 
    ! Close the property lists first.
    call h5pclose_f (potTypesPot_plid,hdferr)
@@ -268,7 +230,6 @@ subroutine closeSetupElecStatHDF5
    if (hdferr /= 0) stop 'Failed to close potPot_plid.'
    call h5pclose_f (pot_plid,hdferr)
    if (hdferr /= 0) stop 'Failed to close pot_plid.'
-
 
    ! Close the datasets next.
    call h5dclose_f (potAlphaOverlap_did,hdferr)

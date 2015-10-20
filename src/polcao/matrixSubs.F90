@@ -19,60 +19,23 @@ subroutine matrixElementMult(summation,matrix1,matrix2,dim1,dim2)
    real (kind=double), intent(inout) :: summation
    integer, intent(in) :: dim1
    integer, intent(in) :: dim2
-   real (kind=double), intent(in), dimension (dim1,dim2) :: matrix1
-   real (kind=double), intent(in), dimension (dim1,dim2) :: matrix2
+   real (kind=double), dimension (dim1,dim2), intent(in) :: matrix1
+   real (kind=double), dimension (dim1,dim2), intent(in) :: matrix2
 
    ! Define the local variables
    integer :: i,j
-   integer :: diagonalIndex
    real (kind=double) :: tempSummation
 
-   ! Initialize the tempSummation so that we do not interfere with the previous
-   !   kpoint's result when we multiply by 2 at the end.
-!   tempSummation = 0.0_double
-
    do i=1,dim1
-     tempSummation = 0.0_double
-     do j=i+1,dim2
+      tempSummation = 0.0_double
+      do j=i+1,dim2
          tempSummation = tempSummation &
-         & + matrix1(i,j) * matrix2(i,j) &
-         & + matrix1(j,i) * matrix2(j,i)
+               & + matrix1(i,j) * matrix2(i,j) &
+               & + matrix1(j,i) * matrix2(j,i)
      enddo
-       summation = summation + tempSummation * 2.0_double &
-        & + matrix1(i,i)*matrix2(i,i)
+     summation = summation + tempSummation * 2.0_double &
+           & + matrix1(i,i)*matrix2(i,i)
    enddo
-   !print *, 'tempSum', summation
-
-   ! Initialize the counter for when the loop is at the diagonal indices of the
-   !   packed matrix.
-!   diagonalIndex = 0
-!
-!   if (dim1 == 2) then
-!
-!      do i = 1,dim2
-!         do j = diagonalIndex+1, diagonalIndex+i-1
-!            tempSummation = tempSummation + &
-!                  & matrix1(1,j)*matrix2(1,j) + matrix1(2,j)*matrix2(2,j)
-!         enddo
-!         diagonalIndex = diagonalIndex + i
-!         tempSummation = tempSummation + matrix1(1,diagonalIndex) * &
-!               & matrix2(1,diagonalIndex) / 2.0_double
-!      enddo
-!   else
-!
-!      do i = 1,dim2
-!         do j = diagonalIndex+1, diagonalIndex+i-1
-!            tempSummation = tempSummation + matrix1(1,j)*matrix2(1,j)
-!         enddo
-!         diagonalIndex = diagonalIndex + i
-!         tempSummation = tempSummation + matrix1(1,diagonalIndex) * &
-!               & matrix2(1,diagonalIndex) / 2.0_double
-!      enddo
-!   endif
-!
-!
-!   ! Multiply by two for the lower half of the hermitian matrix.
-!   summation = summation + tempSummation * 2.0_double
 
 end subroutine matrixElementMult
 
@@ -87,32 +50,24 @@ subroutine matrixElementMultGamma(summation,matrix1,matrix2,dim1,dim2)
    implicit none
 
    ! Define the passed parameters.
-   real (kind=double) :: summation
-   integer :: dim1
-   integer :: dim2
-   real (kind=double), dimension (dim1,dim2*(dim2+1)/2) :: matrix1
-   real (kind=double), dimension (dim1,dim2*(dim2+1)/2) :: matrix2
+   real (kind=double), intent(inout) :: summation
+   integer, intent(in) :: dim1
+   integer, intent(in) :: dim2
+   real (kind=double), dimension (dim1,dim2), intent(in) :: matrix1
+   real (kind=double), dimension (dim1,dim2), intent(in) :: matrix2
 
    ! Define the local variables
    integer :: i
    integer :: diagonalIndex
 
-   ! Here, we do not have to have a tempSummation or initialize the summation
-   !   because there is only 1 kpoint and the summation were already
-   !   initialized at the beginning of valeCharge.
-
-   do i = 1, dim2*(dim2+1)/2
-      summation = summation + matrix1(1,i)*matrix2(1,i)
-   enddo
-
-   ! Multiply by two for the lower half of the hermitian matrix.
-   summation = summation * 2.0_double
-
-   ! Correct for the fact that the diagonal does not need to be multiplied by 2.
-   diagonalIndex = 0
-   do i = 1, dim2
-      diagonalIndex = diagonalIndex + i
-      summation = summation - matrix1(1,diagonalIndex)*matrix2(1,diagonalIndex)
+   do i=1,dim1
+      tempSummation = 0.0_double
+      do j=i+1,dim2
+         tempSummation = tempSummation &
+               & + matrix1(j,i) * matrix2(j,i)
+     enddo
+     summation = summation + tempSummation * 2.0_double &
+           & + matrix1(i,i)*matrix2(i,i)
    enddo
 end subroutine matrixElementMultGamma
 
@@ -130,16 +85,19 @@ subroutine readPartialWaveFns (datasetIDs,matrix,tempRealMatrix,&
    ! Make sure that there are not accidental variable declarations.
    implicit none
 
-   ! Define the passed parameters.
-   integer :: dim1
-   integer :: dim2
-   integer (hid_t), dimension (2) :: datasetIDs
-   complex (kind=double), dimension (dim1,dim2) :: matrix
-   real (kind=double), dimension (dim1,dim2) :: tempRealMatrix
-   real (kind=double), dimension (dim1,dim2) :: tempImagMatrix
-   integer (hsize_t), dimension (2) :: matrixDims
-   integer :: init
-   integer :: fin
+   ! Define the passed parameters. (Note that the temp matrices could
+   !   have been defined as local variables, but then we would need to
+   !   repeatedly create and destroy them.  By using the current approach
+   !   we just allocate once and then pass it to this subroutine a few times.
+   integer, intent(in) :: dim1
+   integer, intent(in) :: dim2
+   integer (hid_t), dimension (2), intent(in) :: datasetIDs
+   complex (kind=double), dimension (dim1,dim2), intent(inout) :: matrix
+   real (kind=double), dimension (dim1,dim2), intent(out) :: tempRealMatrix
+   real (kind=double), dimension (dim1,dim2), intent(out) :: tempImagMatrix
+   integer (hsize_t), dimension (2), intent(in) :: matrixDims
+   integer, intent(in) :: init
+   integer, intent(in) :: fin
 
    ! Define local variables
    integer :: hdferr
@@ -173,15 +131,16 @@ subroutine readPartialWaveFnsGamma (datasetID,matrix,tempRealMatrix,&
    ! Make sure that there are not accidental variable declarations.
    implicit none
 
-   ! Define the passed parameters.
-   integer :: dim1
-   integer :: dim2
-   integer (hid_t) :: datasetID
-   real (kind=double), dimension (dim1,dim2) :: matrix
-   real (kind=double), dimension (dim1,dim2) :: tempRealMatrix
-   integer (hsize_t), dimension (2) :: matrixDims
-   integer :: init
-   integer :: fin
+   ! Define the passed parameters. (See note about temp matrix in
+   !   readPartialWaveFns.)
+   integer, intent(in) :: dim1
+   integer, intent(in) :: dim2
+   integer (hid_t), intent(in) :: datasetID
+   real (kind=double), dimension (dim1,dim2), intent(inout) :: matrix
+   real (kind=double), dimension (dim1,dim2), intent(out) :: tempRealMatrix
+   integer (hsize_t), dimension (2), intent(in) :: matrixDims
+   integer, intent(in) :: init
+   integer, intent(in) :: fin
 
    ! Define local variables
    integer :: hdferr
@@ -211,14 +170,14 @@ subroutine readMatrix (datasetIDs,matrix,tempRealMatrix,tempImagMatrix,&
    ! Make sure that there are not accidental variable declarations.
    implicit none
 
-   ! Define the passed parameters.
-   integer :: dim1
-   integer :: dim2
-   integer (hid_t), dimension (2) :: datasetIDs
-   complex (kind=double), dimension (dim1,dim2) :: matrix
-   real (kind=double), dimension (dim1,dim2) :: tempRealMatrix
-   real (kind=double), dimension (dim1,dim2) :: tempImagMatrix
-   integer (hsize_t), dimension (2) :: matrixDims
+   ! Define the passed parameters. (See note above about temp matrix.)
+   integer, intent(in) :: dim1
+   integer, intent(in) :: dim2
+   integer (hid_t), dimension (2), intent(in) :: datasetIDs
+   complex (kind=double), dimension (dim1,dim2), intent(inout) :: matrix
+   real (kind=double), dimension (dim1,dim2), intent(out) :: tempRealMatrix
+   real (kind=double), dimension (dim1,dim2), intent(out) :: tempImagMatrix
+   integer (hsize_t), dimension (2), intent(in) :: matrixDims
 
    ! Define local variables
    integer :: hdferr
@@ -250,11 +209,11 @@ subroutine readMatrixGamma (datasetID,matrix,matrixDims,dim1,dim2)
    implicit none
 
    ! Define the passed parameters.
-   integer :: dim1
-   integer :: dim2
-   integer (hid_t) :: datasetID
-   real (kind=double), dimension (dim1,dim2) :: matrix
-   integer (hsize_t), dimension (2) :: matrixDims
+   integer, intent(in) :: dim1
+   integer, intent(in) :: dim2
+   integer (hid_t), intent(in) :: datasetID
+   real (kind=double), dimension (dim1,dim2), intent(inout) :: matrix
+   integer (hsize_t), dimension (2), intent(in) :: matrixDims
 
    ! Define local variables
    integer :: hdferr
@@ -280,15 +239,13 @@ subroutine readPackedMatrixAccum (datasetID,packedMatrix,tempPackedMatrix,&
    implicit none
 
    ! Define the passed parameters.
-   integer :: dim1
-   integer :: dim2
-   integer (hid_t) :: datasetID
-!   real (kind=double), dimension (dim1,dim2*(dim2+1)/2) :: packedMatrix
-!   real (kind=double), dimension (dim1,dim2*(dim2+1)/2) :: tempPackedMatrix
-   real (kind=double), dimension (dim1,dim2) :: packedMatrix
-   real (kind=double), dimension (dim1,dim2) :: tempPackedMatrix
-   integer (hsize_t), dimension (2) :: matrixDims
-   real (kind=double) :: multFactor
+   integer, intent(in) :: dim1
+   integer, intent(in) :: dim2
+   integer (hid_t), intent(in) :: datasetID
+   real (kind=double), dimension (dim1,dim2), intent(inout) :: packedMatrix
+   real (kind=double), dimension (dim1,dim2), intent(out) :: tempPackedMatrix
+   integer (hsize_t), dimension (2), intent(in) :: matrixDims
+   real (kind=double), intent(in) :: multFactor
 
    ! Define local variables
    integer :: hdferr
@@ -320,21 +277,17 @@ subroutine readPackedMatrix (datasetID,packedMatrix,matrixDims,dim1,dim2)
    implicit none
 
    ! Define the passed parameters.
-   integer :: dim1
-   integer :: dim2
+   integer, intent(in) :: dim1
+   integer, intent(in) :: dim2
    integer (hid_t) :: datasetID
-!   real (kind=double), dimension (dim1,dim2*(dim2+1)/2) :: packedMatrix
-   real (kind=double), dimension (dim1,dim2) :: packedMatrix
-   integer (hsize_t), dimension (2) :: matrixDims
+   real (kind=double), dimension (dim1,dim2), intent(out) :: packedMatrix
+   integer (hsize_t), dimension (2), intent(in) :: matrixDims
 
    ! Define local variables
    integer :: hdferr
 
-   integer :: i,j
-
    ! Read the matrix directly.
    call h5dread_f (datasetID,H5T_NATIVE_DOUBLE,packedMatrix,matrixDims,hdferr)
-
    if (hdferr /= 0) stop 'Failed to read packed matrix'
 
 end subroutine readPackedMatrix
@@ -350,46 +303,43 @@ subroutine unpackMatrix (matrix,packedMatrix,dim2,fullFlag)
    implicit none
 
    ! Define the passed parameters.
-   integer :: dim2
-   complex (kind=double), dimension (dim2,dim2) :: matrix
-!   real (kind=double), dimension (2,dim2*(dim2+1)/2) :: packedMatrix
-   real (kind=double), dimension (dim2,dim2) :: packedMatrix
-   integer :: fullFlag
+   integer, intent(in) :: dim2
+   complex (kind=double), dimension (dim2,dim2), intent(out) :: matrix
+   real (kind=double), dimension (dim2,dim2), intent(in) :: packedMatrix
+   integer, intent(in) :: fullFlag ! The meaning of this flag is that when 0
+         ! we only need to fill the upper triangle of matrix. When 1 we will
+         ! fill the entire matrix.
+
+   ! Recall that the packed matrix is stored as a single real matrix that
+   !   represents a complex Hermitian matrix. The upper triangle of the packed
+   !   matrix is the upper triangle of the real part of matrix(:,:). The lower
+   !   triangle of the packed matrix is the upper triangle of the imaginary
+   !   part of matrix(:,:).
 
    ! Define local variables.
-   integer :: i,j,currentIndex
+   integer :: i,j
 
    ! Initialize the index counter for the packed matrix.
    currentIndex = 0
 
-   if (fullFlag == 0) then
+   if (fullFlag == 0) then ! We only fill the upper triangle of matrix(:,:).
+      ! Iterate over the upper triangle of matrix(:,:).
       do i = 1, dim2
-         do j = 1,i
-!            currentIndex = currentIndex + 1
-            if (i==j) then
-              matrix(j,i) = cmplx(packedMatrix(j,i),0.0_double,double)
-            else
-              matrix(j,i) = cmplx(packedMatrix(j,i),&
-                              & packedMatrix(i,j),double)
-            endif
+         do j = 1,i-1
+            matrix(j,i) = cmplx(packedMatrix(j,i),packedMatrix(i,j),double)
          enddo
+         matrix(i,i) = cmplx(packedMatrix(i,i),0.0_double,double)
       enddo
    else
+      ! Iterate over the upper triangle of matrix(:,:).
       do i = 1, dim2
-         do j = 1,i
-!            currentIndex = currentIndex + 1
-            if (i==j) then
-              matrix(j,i) = cmplx(packedMatrix(j,i),0.0_double,double)
-            else
-              matrix(j,i) = cmplx(packedMatrix(j,i),&
-                              & packedMatrix(i,j),double)
-              matrix(i,j) = conjg(cmplx(packedMatrix(j,i),&
-                              & packedMatrix(i,j),double))
-            endif
+         do j = 1,i-1
+            matrix(j,i) = cmplx(packedMatrix(j,i),packedMatrix(i,j),double)
+            matrix(i,j) = conjg(cmplx(packedMatrix(j,i),packedMatrix(i,j),&
+                  & double))
          enddo
-!         matrix(i,i) = matrix(i,i)/2.0_double
+         matrix(i,i) = cmplx(packedMatrix(i,i),0.0_double,double)
       enddo
-!      matrix(:,:) = matrix(:,:) + transpose(conjg(matrix(:,:)))
    endif
 end subroutine unpackMatrix
 
@@ -404,34 +354,26 @@ subroutine unpackMatrixGamma (matrix,packedMatrix,dim2,fullFlag)
    implicit none
 
    ! Define the passed parameters.
-   integer :: dim2
-   real (kind=double), dimension (dim2,dim2) :: matrix
-   real (kind=double), dimension (1,dim2*(dim2+1)/2) :: packedMatrix
-   integer :: fullFlag
+   integer, intent(in) :: dim2
+   real (kind=double), dimension (dim2,dim2), intent(out) :: matrix
+   real (kind=double), dimension (dim2,dim2), intent(in) :: packedMatrix
+   integer, intent(in) :: fullFlag
 
    ! Define local variables.
-   integer :: i,j,currentIndex
-
-   ! Initialize the index counter for the packed matrix.
-   currentIndex = 0
+   integer :: i,j
 
    if (fullFlag == 0) then
       do i = 1, dim2
          do j = 1,i
-            currentIndex = currentIndex + 1
-            matrix(j,i) = packedMatrix(1,currentIndex)
+            matrix(j,i) = packedMatrix(j,i)
          enddo
       enddo
    else
       do i = 1, dim2
-         do j = 1,i
-            currentIndex = currentIndex + 1
-            matrix(j,i) = packedMatrix(1,currentIndex)
-            matrix(i,j) = packedMatrix(1,currentIndex)
+         do j = 1,dim2
+            matrix(j,i) = packedMatrix(j,i)
          enddo
-!         matrix(i,i) = matrix(i,i)/2.0_double
       enddo
-!      matrix(:,:) = matrix(:,:) + transpose(matrix(:,:))
    endif
 end subroutine unpackMatrixGamma
 
@@ -449,29 +391,25 @@ subroutine packMatrix (matrix,packedMatrix,dim2)
 
    ! Define the passed parameters.
    integer, intent(in) :: dim2
-   complex (kind=double), intent(in), dimension (dim2,dim2) :: matrix
-!   real (kind=double), intent(inout), dimension (2,dim2*(dim2+1)/2) :: packedMatrix
-   real (kind=double), intent(inout), dimension (dim2,dim2) :: packedMatrix
+   complex (kind=double), dimension (dim2,dim2), intent(in) :: matrix
+   real (kind=double), dimension (dim2,dim2), intent(out) :: packedMatrix
 
-   ! Define local variables.
-   integer :: i,j,currentIndex
+   ! Note that the order in which the assignment is made makes a difference.
+   !   The imaginary must be assigned first so that the real value will
+   !   appear on the diagonal.  (The complex values on the diagonal are always
+   !   equal to zero so they don't need to be stored explicitly.)
 
-   ! Initialize the index counter for the packed matrix.
-   currentIndex = 0
+   ! As mentioned in unpackMatrix above, the packed matrix will store the real
+   !   upper triangle of matrix(:,:) in its upper triangle (including the
+   !   diagonal). The packed matrix will store the strict upper triangle of
+   !   the imaginary part in its lower part.
+   ! Loop over the upper triangle of matrix(:,:).
    do i = 1, dim2
-      do j = i, dim2
-           packedMatrix(j,i) = aimag(matrix(i,j))
-           packedMatrix(i,j) = real(matrix(i,j))
+      do j = 1,i
+         packedMatrix(i,j) = aimag(matrix(j,i))
+         packedMatrix(j,i) =  real(matrix(j,i))
       enddo
    enddo
-
-!   do i = 1, dim2
-!      do j = 1,i
-!         currentIndex = currentIndex + 1
-!         packedMatrix(1,currentIndex) =  real(matrix(j,i),double)
-!         packedMatrix(2,currentIndex) = aimag(matrix(j,i))
-!      enddo
-!   enddo
 end subroutine packMatrix
 
 #else
@@ -485,71 +423,32 @@ subroutine packMatrixGamma (matrix,packedMatrix,dim2)
    implicit none
 
    ! Define the passed parameters.
-   integer :: dim2
-   real (kind=double), dimension (dim2,dim2) :: matrix
-   real (kind=double), dimension (1,dim2*(dim2+1)/2) :: packedMatrix
+   integer, intent(in) :: dim2
+   real (kind=double), dimension (dim2,dim2), intent(in) :: matrix
+   real (kind=double), dimension (dim2,dim2), &
+         & intent(out) :: packedMatrix
 
    ! Define local variables.
-   integer :: i,j,currentIndex
-
-   ! Initialize the index counter for the packed matrix.
-   currentIndex = 0
-
+   integer :: i,j
+   ! Initialize the lower triangle to zero. The upper triangle will be
+   !   filled by the upper triangle of matrix(:,:). The reason to do
+   !   this is to ensure that the matrix has a lot of (easily compressible)
+   !   zeros in it before it is saved. I'm not sure if every compiler
+   !   would ensure that, and thus if we tried to compress and save the
+   !   matrix *without* doing this, we might be saving a lot of random
+   !   noise which doesn't compress so well.
+   do i = 1, dim2
+      do j = i+1, dim2
+         packedMatrix(j,i) = 0.0_double
+      enddo
+   enddo
    do i = 1, dim2
       do j = 1,i
-         currentIndex = currentIndex + 1
-         packedMatrix(1,currentIndex) =  matrix(j,i)
+         packedMatrix(j,i) =  matrix(j,i)
       enddo
    enddo
 end subroutine packMatrixGamma
 
 #endif
-
-
-! This is currently not used by any program.
-!subroutine unfold (inMatrix, outMatrix, matrixSize, addFlag)
-!
-!   ! Import the precision variables
-!   use O_Kinds
-!
-!   ! Make sure that there are not accidental variable declarations.
-!   implicit none
-!
-!   ! Define the dummy variables that are passed to this subroutine.
-!   real    (kind=double), dimension (:,:) :: inMatrix
-!   complex (kind=double), dimension (:,:) :: outMatrix
-!   integer :: matrixSize
-!   integer :: addFlag
-!
-!   ! Define local variables used for unfolding the matrix.
-!   integer :: i,j ! Loop index variables
-!
-!   if (addFlag == 0) then
-!      do i = 1, matrixSize - 1
-!         do j = i + 1, matrixSize
-!            outMatrix(i,j) = cmplx(inMatrix(i,j),-inMatrix(j,i),double)
-!            outMatrix(j,i) = cmplx(inMatrix(i,j), inMatrix(j,i),double)
-!         enddo
-!         outMatrix(i,i) = cmplx(inMatrix(i,i),0.0_double,double)
-!      enddo
-!      outMatrix(matrixSize,matrixSize) = cmplx(inMatrix(matrixSize,matrixSize),&
-!            & 0.0_double,double)
-!   else
-!      do i = 1, matrixSize - 1
-!         do j = i + 1, matrixSize
-!            outMatrix(i,j) = outMatrix(i,j) + &
-!                  & cmplx(inMatrix(i,j),-inMatrix(j,i),double)
-!            outMatrix(j,i) = outMatrix(j,i) + &
-!                  & cmplx(inMatrix(i,j), inMatrix(j,i),double)
-!         enddo
-!         outMatrix(i,i) = outMatrix(i,i) + &
-!               & cmplx(inMatrix(i,i),0.0_double,double)
-!      enddo
-!      outMatrix(matrixSize,matrixSize) = outMatrix(matrixSize,matrixSize) + &
-!            & cmplx(inMatrix(matrixSize,matrixSize),0.0_double,double)
-!   endif
-!
-!end subroutine unfold
-
 
 end module O_MatrixSubs

@@ -28,15 +28,18 @@ module O_MainHDF5
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    contains
 
-subroutine initMainHDF5
+subroutine initMainHDF5(numStates)
 
    ! Use the HDF5 module.
    use HDF5
-   use O_MainEValHDF5
-   use O_MainEVectHDF5
+   use O_MainEValHDF5, only: initMainEValHDF5
+   use O_MainEVecHDF5, only: initMainEVecHDF5
 
    ! Make sure that no funny variables are defined.
    implicit none
+
+   ! Define passed variable.
+   integer, intent(inout) :: numStates
 
    ! Define local variables.
    integer :: hdferr
@@ -67,8 +70,8 @@ subroutine initMainHDF5
 
 
    ! Then create the necessary subgroups of the main hdf5 file.
-   call initMainEVectHDF5 (main_fid)
-   call initMainEValHDF5  (main_fid)
+   call initMainEVecHDF5 (main_fid,numStates)
+   call initMainEValHDF5  (main_fid,numStates)
 
 end subroutine initMainHDF5
 
@@ -77,8 +80,8 @@ subroutine closeMainHDF5
 
    ! Use the HDF5 module.
    use HDF5
-   use O_MainEValHDF5
-   use O_MainEVectHDF5
+   use O_MainEValHDF5, only: closeMainEValHDF5
+   use O_MainEVecHDF5, only: closeMainEVecHDF5
 
    ! Make sure that no funny variables are defined.
    implicit none
@@ -95,7 +98,7 @@ subroutine closeMainHDF5
    if (hdferr /= 0) stop 'Failed to close the main_fid'
 
    ! Close the subgroups of the main hdf5 file.
-   call closeMainEVectHDF5
+   call closeMainEVecHDF5
    call closeMainEValHDF5
 
 end subroutine closeMainHDF5

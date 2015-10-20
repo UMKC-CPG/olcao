@@ -10,13 +10,6 @@ module O_MathSubs
    ! Define access
    public
 
-   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-   ! Begin list of module data.!
-   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
-   ! Range of the step function.
-   real (kind=double) :: stepFnRange
-
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    ! Begin list of module subroutines.!
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -165,11 +158,19 @@ function erf(x)
 end function erf
 
 
-function stepFunction (x)
+function stepFunction (x,stepFnRange)
    use O_Kinds
    implicit none
-   real (kind=double) :: x
+   real (kind=double), intent(in) :: x
+   real (kind=double), intent(in) :: stepFnRange
    real (kind=double) :: stepFunction
+
+   ! Note regarding the value of the step function range. The default input
+   !   value is currently 11.5. This will cause the fermi function to cut
+   !   off (and not evaluate the exponential) when the fermi function would
+   !   evaluate to something any closer to 1.0 than 0.99999 or any closer to
+   !   0.0 than 0.00001. This can be seen by solving the stepFunction for x
+   !   x=ln(1/stepFn - 1) and putting 0.99999 or 0.00001 in for stepFn.
 
    if     (x >  stepFnRange) then
       stepFunction = 0.0_double
@@ -179,23 +180,6 @@ function stepFunction (x)
       stepFunction = 1.0_double / (1.0_double + exp(x))
    endif
 end function stepFunction
-
-
-subroutine setStepFnRange(givenRange)
-
-   ! Import necessary modules.
-   use O_Kinds
-
-   ! Make sure nothing funny is declared.
-   implicit none
-
-   ! Delare passed parameters.
-   real (kind=double) :: givenRange
-
-   ! Assing the value of the step function range.
-   stepFnRange = givenRange
-
-end subroutine setStepFnRange
 
 
 subroutine crossProduct (answer, vector1, vector2)

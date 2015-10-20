@@ -6,13 +6,13 @@ subroutine printOptcResults
 
    ! Import necessary data modules.
    use O_Kinds
-   use O_Constants
-   use O_KPoints
-   use O_Input
-   use O_Lattice
-   use O_CommandLine
-   use O_OptcTransitions
-   use O_Potential
+   use O_Potential,       only: spin
+   use O_CommandLine,     only: stateSet
+   use O_Lattice,         only: realCellVolume
+   use O_KPoints,         only: numKPoints, kPointWeight
+   use O_OptcTransitions, only: maxTransEnergy, energyMin, energyScale
+   use O_Input,           only: sigmaOPTC, deltaOPTC, sigmaPACS, deltaPACS
+   use O_Constants,       only: dim3, pi, auTime, eCharge, hPlank, hartree
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
@@ -162,16 +162,14 @@ subroutine printOptcResults
 end subroutine printOptcResults
 
 
-subroutine getOptcCond (numEnergyPoints, optcCond, kPointFactor, &
-      & sigma)
+subroutine getOptcCond (numEnergyPoints, optcCond, kPointFactor, sigma)
 
    ! Import the necessary data modules.
    use O_Kinds
-   use O_Input
-   use O_KPoints
-   use O_CommandLine
-   use O_OptcTransitions
-   use O_Potential
+   use O_Potential,       only: spin
+   use O_KPoints,         only: numKPoints
+   use O_OptcTransitions, only: energyScale, energyDiff, transCounter, &
+         & transitionProb
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
@@ -204,7 +202,7 @@ subroutine getOptcCond (numEnergyPoints, optcCond, kPointFactor, &
                !   complete the broadening for this set because it will not have
                !   a significant effect.
                if (expAlpha < 50.0_double) then
-                  optcCond(:,k,h) = optcCond(:,k,h) + energyMom(:,j,i,h) * &
+                  optcCond(:,k,h) = optcCond(:,k,h)+transitionProb(:,j,i,h) * &
                         & exp(-expAlpha) * kPointFactor(i)
                endif
             enddo
@@ -219,10 +217,9 @@ subroutine printXAS (numEnergyPoints, optcCond, conversionFactor)
 
    ! Include the modules we need.
    use O_Kinds
-   use O_Constants
-   use O_CommandLine
-   use O_OptcTransitions
-   use O_Potential
+   use O_Potential,       only: spin
+   use O_Constants,       only: hartree
+   use O_OptcTransitions, only: energyScale
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
@@ -259,10 +256,9 @@ subroutine printCond (numEnergyPoints, optcCond, conversionFactor)
 
    ! Include the modules we need
    use O_Kinds
-   use O_Constants
-   use O_CommandLine
-   use O_OptcTransitions
-   use O_Potential
+   use O_Potential,       only: spin
+   use O_Constants,       only: hartree
+   use O_OptcTransitions, only: energyScale
 
    ! Define the dummy variables passed to this subroutine.
    integer :: numEnergyPoints
@@ -296,10 +292,9 @@ subroutine printEps2 (numEnergyPoints, optcCond, conversionFactorEps2)
 
    ! Include the modules we need
    use O_Kinds
-   use O_Constants
-   use O_CommandLine
-   use O_OptcTransitions
-   use O_Potential
+   use O_Potential,       only: spin
+   use O_OptcTransitions, only: energyScale
+   use O_Constants,       only: dim3, hartree
 
    ! Define the dummy variables passed to this subroutine.
    integer :: numEnergyPoints

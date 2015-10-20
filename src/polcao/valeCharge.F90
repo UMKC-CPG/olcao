@@ -31,22 +31,27 @@ subroutine makeValenceRho
 
    ! Import the necessary modules.
    use O_Kinds
-   use O_Constants
    use O_TimeStamps
-   use O_SecularEquation
-   use O_CommandLine
-   use O_KPoints
-   use O_Input
-   use O_Populate
-   use O_Potential
-   use O_AtomicSites
-   use O_MatrixSubs
-   use O_MainEVectHDF5
-   use O_SetupIntegralsHDF5
+   use O_AtomicSites,     only: valeDim
+   use O_Input,           only: numStates
+   use O_KPoints,         only: numKPoints
+   use O_Constants,       only: smallThresh
+   use O_Potential,       only: spin, potDim, potCoeffs
+   use O_MainEVecHDF5,    only: valeStates, eigenVectors_did
+   use O_Populate,        only: electronPopulation, cleanUpPopulation
+   use O_SetupIntegralsHDF5, only: atomOverlap_did, atomKEOverlap_did, &
+         & atomNucOverlap_did, atomPotOverlap_did, atomDims
 #ifndef GAMMA
    use O_BLASZHER
+   use O_SecularEquation, only: valeVale, cleanUpSecularEqn, energyEigenValues
+   use O_MatrixSubs, only: readMatrix, readPackedMatrix, matrixElementMult, &
+         & packMatrix
 #else
    use O_BLASDSYR
+   use O_SecularEquation, only: valeValeGamma, cleanUpSecularEqn, &
+         & energyEigenValues
+   use O_MatrixSubs, only: readMatrixGamma, readPackedMatrix, &
+         & matrixElementMultGamma, packMatrixGamma
 #endif
 
    ! Make sure that there are not accidental variable declarations.
@@ -92,7 +97,7 @@ subroutine makeValenceRho
 #endif
 
    ! Allocate a temporary packed valeVale matrix with a spin component.
-   allocate (packedValeValeSpin(valeDim,valeDim,spin))
+   allocate (packedValeValeSpin(dim1,valeDim*(valeDim+1)/2,spin))
 
    ! Allocate a temporary holder for the charge density for the case that the
    !   calculation is spin polarized.  This is needed when rewriting the charge
@@ -219,8 +224,6 @@ chargeDensityTrace(:) = 0.0_double
          call packMatrix(valeValeRho(:,:,j),packedValeValeSpin(:,:,j),&
                & valeDim)
       enddo
-!      print *, 'packedValeValeSpin'
-!      print *, packedValeValeSpin
 #else
       do j = 1, numStates
          currentPopulation(:) = structuredElectronPopulation(j,i,:)
@@ -248,7 +251,6 @@ chargeDensityTrace(:) = 0.0_double
       !   need to convert the values in the packedValeValeSpin density matrix
       !   from being spin up and spin down to being spin up + spin down and
       !   spin up - spin down.  This is accomplished with a temporary variable.
-      ! NOTE! Watch out for this guy, It hasn't been edited for new HDF5
       if (spin == 2) then
          do j = 1, valeDim*(valeDim+1)/2
             tempDensity(:) = packedValeValeSpin(:,j,1)
@@ -261,71 +263,64 @@ chargeDensityTrace(:) = 0.0_double
       !   multiplication with the density matrix for each term.
 
       ! Allocate space to hold the matrix to read in.
-      allocate (packedValeVale(valeDim,valeDim))
+      allocate (packedValeVale(dim1,valeDim*(valeDim+1)/2))
 
 ! Compute the integration of the charge density to show that <Psi|Psi> is
-!   actually equal to the expected number of eletrons.
+!   actually equal to the expected number of eletrons. Note that in the spin
+!   polarized case the first index will refer to the total number of electrons
+!   and the second index will refer to the spin difference.
 call readPackedMatrix (atomOverlap_did(i),packedValeVale,&
-      & atomDims,valeDim,valeDim)
-
+      & atomDims,dim1,valeDim)
 do j = 1, spin
 #ifndef GAMMA
    call matrixElementMult (chargeDensityTrace(j),packedValeVale,&
-         & packedValeValeSpin(:,:,j),valeDim,valeDim)
+         & packedValeValeSpin(:,:,j),dim1,valeDim)
 #else
    call matrixElementMultGamma (chargeDensityTrace(j),packedValeVale,&
          & packedValeValeSpin(:,:,j),dim1,valeDim)
 #endif
 enddo
-!      print *, 'charge density'
-!      print *, chargeDensityTrace
 
       ! Nuclear potential term first.
       call readPackedMatrix (atomNucOverlap_did(i),packedValeVale,&
-            & atomDims,valeDim,valeDim)
+            & atomDims,dim1,valeDim)
       do j = 1, spin
 #ifndef GAMMA
          call matrixElementMult (nucPotTrace(j),packedValeVale,&
-               & packedValeValeSpin(:,:,j),valeDim,valeDim)
+               & packedValeValeSpin(:,:,j),dim1,valeDim)
 #else
          call matrixElementMultGamma (nucPotTrace(j),packedValeVale,&
                & packedValeValeSpin(:,:,j),dim1,valeDim)
 #endif
       enddo
-!      print *, 'nuc'
-!      print *, nucPotTrace
 
       ! Kinetic Energy term next.
       call readPackedMatrix (atomKEOverlap_did(i),packedValeVale,&
-            & atomDims,valeDim,valeDim)
+            & atomDims,dim1,valeDim)
       do j = 1, spin
 #ifndef GAMMA
          call matrixElementMult (kineticEnergyTrace(j),packedValeVale,&
-               & packedValeValeSpin(:,:,j),valeDim,valeDim)
+               & packedValeValeSpin(:,:,j),dim1,valeDim)
 #else
          call matrixElementMultGamma (kineticEnergyTrace(j),packedValeVale,&
                & packedValeValeSpin(:,:,j),dim1,valeDim)
 #endif
       enddo
-!      print *, 'kinetic'
-!      print *, kineticEnergyTrace
 
       ! Loop over atomic potential terms next.
       do j = 1, potDim
          call readPackedMatrix (atomPotOverlap_did(i,j),packedValeVale,&
-               & atomDims,valeDim,valeDim)
+               & atomDims,dim1,valeDim)
          do k = 1, spin
 #ifndef GAMMA
             call matrixElementMult (potRho(j,k),packedValeVale,&
-                  & packedValeValeSpin(:,:,k),valeDim,valeDim)
+                  & packedValeValeSpin(:,:,k),dim1,valeDim)
 #else
             call matrixElementMultGamma (potRho(j,k),packedValeVale,&
                   & packedValeValeSpin(:,:,k),dim1,valeDim)
 #endif
          enddo
       enddo
-!      print *, 'potRho'
-!      print *, potRho
 
       ! Deallocate the space no longer needed.
       deallocate (packedValeVale)
@@ -333,7 +328,11 @@ enddo
    enddo ! i   numKPoints
 
 write (20,*) "Total number of electrons from <psi|psi> = ",&
-      & sum(chargeDensityTrace(:))
+      & chargeDensityTrace(1)
+if (spin == 2) then
+   write (20,*) "Electron spin difference from <psi|psi> = ",&
+         & chargeDensityTrace(2)
+endif
 
    if (spin == 1) then
 
