@@ -1,0 +1,47 @@
+#A lammps command file for minimizing and obtaining cohesive
+#energy.  Modeled after the work of Mark Tschopp, 2010.
+
+#Initialize simulation
+
+clear
+units metal
+dimension 3
+boundary p p p
+atom_style atomic
+#atom_modify map array sort 10000 0.0 #May improve perform.
+
+#Read in the system configuration
+
+read_data polycryst.dat
+
+#Define the interatomic potential
+
+pair_style eam/alloy
+pair_coeff * * XXX.lammps.eam ni
+neighbor 2.0 bin
+neigh_modify delay 10 check yes
+
+#Define compute settings
+
+compute eng all pe/atom
+compute eatoms all reduce sum c_eng
+dump coords all atom 100 polycryst.dump
+
+#Execution code
+
+reset_timestep 0
+fix 1 all box/relax iso 0.0 vmax 0.001
+thermo 10
+thermo_style custom step pe lx ly lz press pxx pyy pzz c_eatoms
+min_style cg
+minimize 1e-25 1e-25 5000 10000
+
+variable natoms equal "count(all)"
+variable teng equal "c_eatoms"
+variable length equal "lx"
+variable ecoh equal "v_teng/v_natoms"
+
+print "Total energy (eV) = ${teng};"
+print "Number of atoms = ${natoms};"
+print "Lattice constant (Angstroms) = ${length};"
+print "Cohesive energy (eV) = ${ecoh};"

@@ -1,0 +1,16 @@
+#!/bin/bash
+#SBATCH -p general
+#SBATCH -J temp
+#SBATCH -o temp.o%J
+#SBATCH -e temp.e%J
+#SBATCH -n 1
+#SBATCH -t 60
+#SBATCH --mem=10G
+#
+source /home/prulis/CPG/cpg-repo/v33-only/.olcao
+export OMP_NUM_THREADS=1
+cd /misc/ibfs1/home/prulis/CPG/cpg-repo/v33-only/src/polycryst/temp
+$OLCAO_BIN/olcao -dos
+$OLCAO_BIN/olcao -bond
+$OLCAO_BIN/olcao -sybd
+$OLCAO_BIN/olcao -optc

@@ -1,0 +1,20 @@
+    a =  70.00000000 A;       b =  70.00000000 A;        c =  70.00000000 A
+alpha =  90.00000000 Deg.; beta =  90.00000000 Deg.; gamma =  90.00000000 Deg.
+    132.28082695      0.00000000      0.00000000 ax ay az a.u.
+      0.00000000    132.28082695      0.00000000 bx by bz a.u.
+      0.00000000      0.00000000    132.28082695 cx cy cz a.u.
+Dimensions: Vale        = 67688 219986 372284
+Dimensions: Core        = 84610 84610 84610
+Dimension:  Pot         =  16
+Number of Atoms         =  16922
+Number of Electrons     =  67688
+Number of States        = 67688 169220 169220
+Number of SCF KPoints  =  1    (General)  [1 1 1]
+Number of PSCF KPoints =  1    (General)  [1 1 1]
+Number of ALT KPoints  =  1    (General)  [1 1 1]
+Convergence Limit       =  0.0001
+Thermal Sigma           =  0
+DOS  Sigma              =  0.1
+OPTC Sigma              =  0.1
+SIGE Sigma              =  0.1
+Number of Types         =  1   (For the temp case)

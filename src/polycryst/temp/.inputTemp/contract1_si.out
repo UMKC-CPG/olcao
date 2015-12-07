@@ -1,0 +1,43 @@
+ELEMENT_NAME
+ si
+NUM_CORE_ORBITALS
+   2   1   0   0
+NUM_VALE_ORBITALS_MB
+   1   1   0   0
+NUM_VALE_ORBITALS_FB
+   1   1   1   0
+NUM_VALE_ORBITALS_EB
+   1   1   1   0
+MAX_NUM_GAUSSIANS
+             21
+MIN_MAX_ALPHAS
+              0.12000000E+00              0.20000000E+06
+ATOMIC_NUMBER
+    0.14000000E+02
+NUCLEAR_ALPHA
+    0.20000000E+02
+S_GAUSSIAN_LIST
+   1   1   1   1   1   1   1   1   1   1   1   1   1   1   1   1   1   1   1   1   1
+P_GAUSSIAN_LIST
+   1   1   1   1   1   1   1   1   1   1   1   1   1   1   1   1   1   1   1   1   1
+D_GAUSSIAN_LIST
+   1   1   1   1   1   1   1   1   1   1   1   1   0   0   0   0   0   0   0   0   0
+CALCULATE_CHARGE
+              0
+  Eigenvalues for s states.
+  -65.149842   -5.057943   -0.398476    0.195812    1.340182
+  Eigenvalues for p states.
+   -3.497555   -0.151448    0.286184    1.295141
+  Eigenvalues for d states.
+    0.115345    0.494754
+ QN_l=           0  orbIndex=           1  Norm=  0.999999999999999     
+ QN_l=           0  orbIndex=           2  Norm=  0.999999999999999     
+ QN_l=           0  orbIndex=           3  Norm=   1.00000000000000     
+ QN_l=           0  orbIndex=           4  Norm=   1.00000000000001     
+ QN_l=           0  orbIndex=           5  Norm=   1.00000000000001     
+ QN_l=           1  orbIndex=           1  Norm=   1.00000000000000     
+ QN_l=           1  orbIndex=           2  Norm=   1.00000000000000     
+ QN_l=           1  orbIndex=           3  Norm=   1.00000000000000     
+ QN_l=           1  orbIndex=           4  Norm=   1.00000000000000     
+ QN_l=           2  orbIndex=           1  Norm=   1.00000000000000     
+ QN_l=           2  orbIndex=           2  Norm=   1.00000000000000     
