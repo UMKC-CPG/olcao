@@ -17,7 +17,7 @@ read_data polycryst.dat
 #Define the interatomic potential
 
 pair_style eam/alloy
-pair_coeff * * XXX.lammps.eam ca ca p o o o f
+pair_coeff * * XXX.lammps.eam ti o
 neighbor 2.0 bin
 neigh_modify delay 10 check yes
 

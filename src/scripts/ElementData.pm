@@ -29,6 +29,7 @@ our $VERSION = '0.01';
 
 
 # Define the arrays that hold elemental data.
+my @atomicMasses;    # Atomic mass of each element in atomic mass units.
 my @covalRadii;      # Covalent radii of each element in Angstroms.
 my @coreCharge;      # Number of core electrons in each s,p,d,f.
 my @valeCharge;      # Number of valence electrons in each s,p,d,f.
@@ -87,6 +88,14 @@ sub initElementData
    {
       @values = &prepLine(\*EDATA,$line,'\s+');
       $elementNames[$element] = $values[0];
+   }
+
+   # Read the atomic masses.
+   <EDATA>; # Read past the header.
+   foreach $element (1..$numElements)
+   {
+      @values = &prepLine(\*EDATA,$line,'\s+');
+      $atomicMasses[$element] = $values[0];
    }
 
    # Read the covalent radii.
@@ -2257,6 +2266,9 @@ sub getMinTermPot
 
 sub getMaxTermPot
    {return $maxTermPot[$_[0]];}
+
+sub getAtomicMassesRef
+   {return \@atomicMasses;}
 
 sub getCovalRadiiRef
    {return \@covalRadii;}

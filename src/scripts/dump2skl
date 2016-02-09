@@ -5,9 +5,10 @@ sub printHelp {
 # PROGRAM: dump2skl
 # PURPOSE: This program takes a LAMMPS xyz coordinate dump file as input and
 #       writes an OLCAO skeleton file of a specified timestep.
-# UPDATED: May 3, 2013
-# USAGE: This program takes a LAMMPS dump file as input (specified with the
-#       -d or -dump command line switch) and writes a file called olcao.skl.
+# UPDATED: Jan. 4, 2016
+# USAGE: This program takes a LAMMPS dump file and an associated data file
+#       as input (specified with the -d or -dump command line switch and the -a
+#       or -data command line switch) and writes a file called olcao.skl.
 #       The user should specify either a timestep number (using -t or
 #       -timestep) or a frame number (using -f or -frame) to be used.
 #       Timesteps correspond to those values listed in the dump file under
@@ -17,9 +18,10 @@ sub printHelp {
 #       final frame, e.g. -f=-1 to mean the last frame. Note that you have
 #       to use the "=" sign between the -f (or -frame) and the negative
 #       number or the program will think the number is another command line
-#       switch and -f has no argument.
+#       switch and that -f has no argument.
 #           COMMAND LINE OPTIONS:
 #       -d | -dump : specify the path to the LAMMPS dump file
+#       -a | -data : specify the path to the LAMMPS data file
 #       -f | -frame : specify the number of the desired frame, from 1 to
 #           \$totFrames, or from -1 backwards
 #       -t | -timestep : specify the number of the desired timestep
@@ -38,6 +40,10 @@ ENDHELP
 #################################################
 use strict;
 use warnings;
+use Env;
+use lib "$OLCAO_BIN/perl5";
+use ElementData;
+use StructureControl;
 use diagnostics;
 use Getopt::Long;
 
@@ -51,6 +57,7 @@ my @values;
 my $date;
 my $name = 'name';
 my $dumpFile;
+my $dataFile;
 
 # Frame/timestep variables
 my $frame;
@@ -60,6 +67,7 @@ my @timesteps;
 
 # Atom variables
 my $totAtoms;
+my $numAtomTypes;
 my $atomID;
 my @atomTypes;
 
@@ -88,25 +96,6 @@ my $zShift;
 my $nonPeriodic;
 
 #################################################
-# DEFINE ATOM TYPES #############################
-#################################################
-
-# Edit this section as needed
-# The indices correspond to LAMMPS atom type numbers
-
-$elements[1] = "B";
-$elements[2] = "B";
-$elements[3] = "H";
-$elements[4] = "H";
-$elements[5] = "H";
-$elements[6] = "H";
-$elements[7] = "H";
-$elements[8] = "C";
-$elements[9] = "C";
-$elements[10] = "C";
-$elements[11] = "C";
-
-#################################################
 # DEFINE SUBROUTINES ############################
 #################################################
 
@@ -130,6 +119,75 @@ sub inBounds
          #   length of the box along this axis.
          if ($atomCoords[$atomID][$axis] < $boxBounds[$axis][0])
             {$atomCoords[$atomID][$axis] += $boxLength[$axis];}
+      }
+   }
+}
+
+# Determine the element for each lammps type.
+sub getLammpsTypes
+{
+   # Define local variables.
+   my $line;
+   my @values;
+   my $atomType;
+   my $element;
+   my $currentMass;
+   my $numElements;
+   my $atomicMasses_ref;
+   my $elementNames_ref;
+   my $minDiff; # Minimum difference between a lammps mass and a database mass.
+   my $minDiffIndex; # Index number (i.e. Z number) of that element.
+
+   # Create the element database and get the masses and number of elements.
+   StructureControl::setupDataBaseRef;
+   $numElements = ElementData::getNumElements;
+   $elementNames_ref = ElementData::getElementNamesRef;
+   $atomicMasses_ref = ElementData::getAtomicMassesRef;
+
+   # Open the data file for reading.
+   open (DATAFILE, "<$dataFile") || die 
+         "Could not open data file $dataFile for reading.\n";
+
+   # Read to the element masses.
+   while (1)
+   {
+      # Read the current line.
+      @values = StructureControl::prepLine(\*DATAFILE,"",'\s+');
+
+      # Act according to the content of the current line.
+
+      # If we find the number of atomic types, then we record it.
+      if (($#values > 1) and ($values[1] eq "atom") and ($values[2] eq "types"))
+         {$numAtomTypes = $values[0];}
+
+      # If we find the masses, then read them. (Assume that there is a blank
+      #   line between the "Masses" tag and the first line of data.)
+      if ($values[0] eq "Masses")
+      {
+         <DATAFILE>;
+         foreach $atomType (1..$numAtomTypes)
+         {
+            # Get the mass of this atom type.
+            @values = StructureControl::prepLine(\*DATAFILE,"",'\s+');
+            $currentMass = $values[1];
+
+            # Compare this mass to all masses in the database and find the
+            #   one with the smallest difference. This defines the element.
+            $minDiff = 1000.0;
+            $minDiffIndex = 0;
+            foreach $element (1..$numElements)
+            {
+               if (abs($currentMass - $atomicMasses_ref->[$element]) < $minDiff)
+               {
+                  $minDiff = abs($currentMass - $atomicMasses_ref->[$element]);
+                  $minDiffIndex = $element;
+               }
+            }
+
+            # Assign the element to this atomic type.
+            $elements[$atomType] = $elementNames_ref->[$minDiffIndex];
+         }
+         last;
       }
    }
 }
@@ -183,13 +241,15 @@ sub minCoord {
 #################################################
 
 # Read command line arguments
-GetOptions ('d|dump=s' => \$dumpFile, 'n|name:s' => \$name,
-    'f|frame:s' => \$frame, 't|timestep:s' => \$timestep,
+GetOptions ('d|dump=s' => \$dumpFile, 'a|data:s' => \$dataFile,
+    'n|name:s' => \$name,'f|frame:s' => \$frame, 't|timestep:s' => \$timestep,
     'np|nonPeriodic' => \$nonPeriodic, 'h|help' => \$help);
 
 # Print help information if requested
 if ($help) { &printHelp; }
 
+# Read the data file.
+&getLammpsTypes;
 
 #################################################
 # Read the dump file ############################
@@ -199,18 +259,6 @@ if ($help) { &printHelp; }
 if (! open DUMPFILE, '<', $dumpFile) {
     die "Could not open dump file $dumpFile for reading.\n";
 }
-
-# Find the total number of atoms
-while (my $line = <DUMPFILE>) {
-    chomp($line);
-    if ($line =~ /NUMBER OF ATOMS/) {
-        last;
-    }
-}
-
-# The next line tells the number of atoms
-$totAtoms = <DUMPFILE>;
-chomp($totAtoms);
 
 # Go back to the beginning of the dump file
 seek(DUMPFILE,0,0);
@@ -244,7 +292,7 @@ if ($frame) {
         $timestep = $timesteps[$frame];
     }
 
-    #If a positive fram number is given
+    #If a positive frame number is given
     $timestep = $timesteps[$frame];
 
 } elsif ($timestep) {
@@ -272,11 +320,13 @@ while (my $line = <DUMPFILE>) {
     if ($line =~ /\A$timestep\Z/) { last; }
 }
 
-# Move the cursor down to the start of the box bounds section for that
-# timestep
-while (my $line = <DUMPFILE>) {
-    if ($line =~ /\AITEM: BOX BOUNDS/) { last; }
-}
+# Find the total number of atoms
+<DUMPFILE>;
+$totAtoms = <DUMPFILE>;
+chomp($totAtoms);
+
+# Move the cursor down to the start of the box bounds section for that timestep
+<DUMPFILE>;
 
 # Read the box bounds
 {
@@ -303,6 +353,7 @@ while (my $line = <DUMPFILE>) {
 }
 
 # Read to the end of the timestep
+my $highestID = 0;
 while (my $line = <DUMPFILE>) {
     chomp($line);
     if ($line =~ /TIMESTEP/) { last; } #End loop at beginning of next frame
@@ -310,12 +361,33 @@ while (my $line = <DUMPFILE>) {
     @values = split(/\s+/, $line);
 
     $atomID = $values[0];
+    if ($atomID > $highestID)
+    {
+       foreach my $atom ($highestID+1..$atomID-1)
+          {$atomTypes[$atom] = -1;}
+       $highestID = $atomID;
+    }
     $atomTypes[$atomID] = $values[1];
 
     $atomCoords[$atomID][0] = $values[2];
     $atomCoords[$atomID][1] = $values[3];
     $atomCoords[$atomID][2] = $values[4];
 }
+print STDOUT "highestID = $highestID\n";
+my $currentID = 1;
+foreach $atomID (1..$highestID)
+{
+    if ($atomTypes[$atomID] >= 0)
+    {
+       $atomTypes[$currentID] = $atomTypes[$atomID];
+       $atomCoords[$currentID][0] = $atomCoords[$atomID][0];
+       $atomCoords[$currentID][1] = $atomCoords[$atomID][1];
+       $atomCoords[$currentID][2] = $atomCoords[$atomID][2];
+       $currentID++;
+    }
+}
+print "currentID = $currentID\n";
+print "totAtoms = $totAtoms\n";
 
 # Close the dump file
 close DUMPFILE;
@@ -335,6 +407,9 @@ $zhi = &maxCoord(2);
 $xlo = &minCoord(0);
 $ylo = &minCoord(1);
 $zlo = &minCoord(2);
+
+print STDOUT "$xhi $yhi $zhi\n";
+print STDOUT "$xlo $ylo $zlo\n";
 
 # Compare with LAMMPS-defined box bounds and redefine if needed
 if ($boxBounds[0][1] > $xhi) {
@@ -375,6 +450,8 @@ if ($nonPeriodic) {
 $xShift = 0 - $xlo;
 $yShift = 0 - $ylo;
 $zShift = 0 - $zlo;
+
+print STDOUT "$xShift $yShift $zShift\n";
 
 foreach my $atom (1..$totAtoms) {
     $atomCoords[$atom][0] = $atomCoords[$atom][0] + $xShift;
@@ -435,7 +512,7 @@ foreach my $atom (1..$totAtoms) {
 }
 
 # Print spacegroup, etc. information
-print SKL "space P1\nsupercell 1 1 1\nfull\n";
+print SKL "space 1_a\nsupercell 1 1 1\nfull\n";
 
 # Close the skl file
 close SKL;

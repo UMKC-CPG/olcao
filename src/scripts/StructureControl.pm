@@ -26,15 +26,11 @@ our @ISA = qw(Exporter);
 # This allows declaration	use StructureControl ':all';
 # If you do not need this, moving things directly into @EXPORT or @EXPORT_OK
 # will save memory.
-our %EXPORT_TAGS = ( 'all' => [ qw(
-	
-) ] );
+our %EXPORT_TAGS = ( 'all' => [ qw() ] );
 
 our @EXPORT_OK = ( @{ $EXPORT_TAGS{'all'} } );
 
-our @EXPORT = qw(
-	
-);
+our @EXPORT = qw();
 
 
 # Preloaded methods go here.
@@ -44,7 +40,10 @@ our @EXPORT = qw(
 
 # Constants
 my $pi = 3.1415926535897932384626433832795;
-my $epsilon = 0.00000000001;
+#my $epsilon = 0.00000000001;
+my $epsilon = 0.00001;
+my $bigInt = 1000000000;
+my $bigReal = 1000000000.0;
 my $bohrRad = 0.5291772180;
 my $hartree = 27.21138386;
 
@@ -109,6 +108,9 @@ my @angle;           # Alpha(b,c),beta(a,c),gamma(a,b) in @realLattice. Radians
 my @angleDeg;        # Alpha(b,c),beta(a,c),gamma(a,b) in @realLattice. Degrees
 my @abcOrder;        # Order in which abc lattice vectors relate to @xyzOrder.
 my @xyzOrder;        # Order in which xyz axes are used by @abcOrder;
+my $realCellVolume;  # Volume of the real space cell in angstroms.
+my $recipCellVolume; # Volume of the reciprocal space cell in angstroms.
+
 
 # Extra lattice data and replicated cell data.
 my $doFullCell;      # Flag requesting to use the conventional (full) cell.
@@ -605,6 +607,8 @@ sub readInputFile
       {&readHIN(@_);}
    elsif ($inputFile =~ /cif/)
       {&readCIF(@_);}
+   elsif ($inputFile =~ /lmp/)
+      {&readLMP(@_);}
    else
    {
       print STDOUT "Unknown file type $inputFile.  Aborting\n";
@@ -742,7 +746,7 @@ sub readOLCAOSkl
       # Obtain the inverse of the real lattice.  This must be done now so that
       #   we can get the abc coordinates of atoms if we are given xyz.  It must
       #   be done again later after applying the spacegroup and supercell.
-      &makeRealLatticeInv;
+      &makeLatticeInv(\@realLattice,\@realLatticeInv,0);
 
       # Obtain the sine function of each angle.
       &getAngleSine(\@angle);
@@ -763,7 +767,7 @@ sub readOLCAOSkl
       # Obtain the inverse of the real lattice.  This must be done now so that
       #   we can get the abc coordinates of atoms if we are given xyz.  It must
       #   be done again later after applying the spacegroup and supercell.
-      &makeRealLatticeInv;
+      &makeLatticeInv(\@realLattice,\@realLatticeInv,0);
 
       # Obtain the sine function of each angle.
       &getAngleSine(\@angle);
@@ -1394,6 +1398,37 @@ sub readHIN
 }
 
 
+# Read a lammps dump file while also pulling information from an associated
+#   lammps data file.
+sub readLMP
+{
+   # Declare passed parameters.
+   my $inFile = $_[0];
+   my $useFileSpecies = $_[1];
+
+   # Declare local parameters.
+   my $line;
+   my @values;
+   my @tempTags;
+   my $axisABC;
+
+   # Open the file for reading.
+   open (INFILE,"<$inFile") || die "Could not open $inFile for reading\n";
+
+   # Assume space group 1.
+   $spaceGroup = 1;
+
+   # Get the title.
+   @values = &prepLine(\*INFILE,"",'\s+');
+   @values = split(/data_/,$values[0]);
+   $systemTitle[0] = "$values[1]";
+
+   # Read up to the cell parameters.
+   <INFILE>;
+   <INFILE>;
+   <INFILE>;
+}
+
 sub addConnectionAtoms
 {
    # Define local variables.
@@ -1705,9 +1740,9 @@ sub rotateOnePoint
 
    # Create a vector from the point position.
    $pointVector = Math::MatrixReal->new_from_rows(
-         [[$point_ref->[1]-$orig_ref->[1],
-           $point_ref->[2]-$orig_ref->[2],
-           $point_ref->[3]-$orig_ref->[3]]]);
+         [[$point_ref->[1] - $orig_ref->[1],
+           $point_ref->[2] - $orig_ref->[2],
+           $point_ref->[3] - $orig_ref->[3]]]);
 
    # Apply the rotation matrix.
    $rotPointVector = $pointVector->multiply($rotMatrix);
@@ -1797,6 +1832,640 @@ sub rotateAllAtoms
    }
 
    # At this point there should be no atoms outside the simulation box at all.
+}
+
+sub prepSurface
+{
+   # Define passed parameters.
+   my $hkl_ref = $_[0];
+
+   # Define the local variables.
+   my $i;
+   my $j;
+   my $k;
+   my $l;
+   my $m;
+   my $found;
+   my $product;
+   my $outside;
+   my $same;
+   my $onFace;
+   my @tempFractABC;
+   my $rotAngle;
+   my @rotAxis;
+   my $normalizer;
+   my @diagonal;
+   my $diagonalMag;
+   my $atom;
+   my $newAtom;
+   my $face;
+   my @faceNormal;
+   my @faceCenter;
+   my @face2Atom;
+   my @face2CellCenter;
+   my $hklIndex;
+   my $leastCommonMult;
+   my @maxRep;
+   my @currentRep;
+   my $cell;
+   my $numCells;
+   my @cellDims;
+   my @cellDist;
+   my @lattPointTemp;
+   my $xyzAxis;            # An axis iterator over xyz axes.
+   my $abcAxis;            # An axis iterator over abc axes.
+   my $uvwMag;
+   my @uvw;                # Real space vector associated with hkl.
+   my @uvwNormalLattice;
+   my @uvwRealLattice;     # Lattice of a real cell defining @uvw vector.
+   my @newRealLattice;     # Actual new lattice for simulation.
+   my @newRealLatticeCenter;
+   my @maxXYZ;
+   my @origin;             # Vector for the origin (0,0,0).
+   my @xAxis;              # Vector for the x-axis (1,0,0).
+   my @yAxis;              # Vector for the y-axis (0,1,0).
+   my @yzProj;             # Vector for the yz projection of a real lat. vect.
+   my $newNumAtoms;        # Local version to replace old one.
+   my @newMag;             # Local version to replace old one.
+   my @newAtomElementName; # Local version to replace old one.
+   my @newAtomElementID;   # Local version to replace old one.
+   my @newAtomSpeciesID;   # Local version to replace old one.
+   my @newDirectXYZ;       # Local version to replace old one.
+   my @newAtomTag;         # Local version to replace old one.
+   my @hklRecipLattice;
+   my @tempVector;
+   my @sortedIndices;  # Index=current sorted atom; value=where it came from.
+
+   # Pre-compute the diagonal of the current cell. It is used later.
+   @diagonal = (0,0,0,0); #Uses 1..3
+   foreach $abcAxis (1..3)
+   {
+      foreach $xyzAxis (1..3)
+         {$diagonal[$xyzAxis] += $realLattice[$abcAxis][$xyzAxis];}
+   }
+   $diagonalMag = sqrt($diagonal[1]**2 + $diagonal[2]**2 + $diagonal[3]**2);
+
+   # We are given a reciprocal space hkl. This defines a plane in real space
+   #   that intercepts the primitive real space cell at a1/h a2/k a3/l.
+   #   However, we need to find the real space lattice vector uvw that defines
+   #   a plane with the same orientation but for which the normal vector is
+   #   longer. In fact, the length must be such that it points to a specific
+   #   real space lattice site. (I.e. the vector components are integral
+   #   multiples of the real space lattice vector components.)
+   # Therefore, we first compute the least common multiple of the hkl values
+   #   with the caveat that an hkl value of zero will not be used to compute
+   #   the least common multiple.
+   $leastCommonMult = 0;
+   $product = 1;
+   foreach $abcAxis (1..3)
+   {
+      if ($hkl_ref->[$abcAxis] != 0)
+         {$product *= $hkl_ref->[$abcAxis];}
+   }
+   foreach $i (1..$product)
+   {
+      # Assume that this will be *the* $i that is the least common multiple.
+      $found = 1;
+
+      # Check each hkl to see if it is equal to zero. Only then do we check if
+      #   this $i can be divided by the hkl value.
+      foreach $hklIndex (1..3)
+      {
+         if ($hkl_ref->[$hklIndex] != 0)
+         {
+            if ($i % $hkl_ref->[$hklIndex] != 0)
+               {$found = 0; last;}
+         }
+      }
+
+      # If all of the hkl values evenly divide into $i, then $i is the least
+      #   common multiple we are looking for. (Obviously ignoring the hkl=0
+      #   values.)
+      if ($found == 1)
+         {$leastCommonMult = $i; last;}
+   }
+
+   # Create two similar expressions. The first is called the uvwNormalLattice.
+   #   The uvwNormalLattice takes the form of three abc vectors, each expressed
+   #   in Cartesian xyz coordinates. The sum of the three vectors is the vector
+   #   that is normal to the hkl defined plane. Note that the uvwNormalLattice
+   #   makes use of integer multiples of the original realLattice vectors. The
+   #   uvwNormalLattice is created by multiplying by 1/hkl of the appropriate
+   #   hkl vector *and* the least common multiple of the hkl values that was
+   #   determined above. The exception to that process is the case where one
+   #   of the hkl values is zero. In that case the associated uvwNormalLattice
+   #   vector is set to zero as well. Essentially, the resultant uvw vector
+   #   (R = ua_1 + va_2 + wa_3) will be the normal to the plane defined by the
+   #   hkl vector: K = hb_1 + kb_2 + lb_3 where b_1,2,3 are reciprocal lattice
+   #   primitive vectors (expressed in xyz coordinates).
+   # Second, create a uvwRealLattice (abc vectors expressed in xyz coordinates)
+   #   that is the exact same as the uvwNormalLattice except for the cases
+   #   where the hkl value is zero. In this case the uvwRealLattice will have
+   #   a value equal to the original realLattice vector.
+   # So, in effect the uvwNormalLattice defines a normal vector while the
+   #   uvwRealLattice defines an actual lattice.
+   foreach $abcAxis (1..3)
+   {
+      foreach $xyzAxis (1..3)
+      {
+         if ($hkl_ref->[$abcAxis] == 0)
+         {
+            $uvwNormalLattice[$abcAxis][$xyzAxis] = 0.0;
+            $uvwRealLattice[$abcAxis][$xyzAxis] =
+                  $realLattice[$abcAxis][$xyzAxis];
+         }
+         else
+         {
+            $uvwNormalLattice[$abcAxis][$xyzAxis] = $leastCommonMult * 
+                  $realLattice[$abcAxis][$xyzAxis] / $hkl_ref->[$abcAxis];
+            $uvwRealLattice[$abcAxis][$xyzAxis] = $leastCommonMult * 
+                  $realLattice[$abcAxis][$xyzAxis] / $hkl_ref->[$abcAxis];
+         }
+      }
+   }
+
+   # The accumulated sum of the uvwNormal vectors (in xyz coordinates) is
+   #   the normal vector for the plane defined by the hkl reciprocal lattice
+   #   vector.
+   @uvw = (0,0,0,0);
+   foreach $xyzAxis (1..3)
+   {
+      $uvw[$xyzAxis] = 0.0;
+      foreach $abcAxis (1..3)
+         {$uvw[$xyzAxis] += $uvwNormalLattice[$abcAxis][$xyzAxis];}
+   }
+   $uvwMag = sqrt($uvw[1]**2 + $uvw[2]**2 + $uvw[3]**2);
+
+   # However, the new a and b axes are a bit trickier. The essential question
+   #   is the following: Given a lattice point defined by the uvwRealLattice,
+   #   what is the minimal distance that one needs to "travel" in the plane
+   #   perpendicular to the new c-axis before encounting that lattice point
+   #   again? This direction and distance will be the a-axis for our new real
+   #   lattice. This question must be answered a second time in some different
+   #   direction to determine the b-axis for the new real lattice.
+   # In one case the question is very easy to answer. That is the case where
+   #   the one of the hkl values is 0 because the lattice in that direction
+   #   will be unchanged (except that it may be rotated). As an example,
+   #   consider (1 1 0) as the hkl values. The original cell will be rotated
+   #   such that the vector from 0,0,0 to 1,1,0 becomes the new (0 0 |c|) axis.
+   #   Thus, if we make the old z-axis become the new a-axis, then the a-axis
+   #   will have a value of (|old z mag| 0 0). After that, we need to find
+   #   the magnitude of the b-axis in a similar way as will be described below.
+   # If we don't have the easy case, then we need to look for two other lattice
+   #   points that are not all co-linear with the uvw vector point but which
+   #   are positioned on the plane defined by the uvw vector. (In the easy
+   #   case we just need one and can ignore searching in the direction of the
+   #   easy lattice vector.)
+   # We will find the lattice points by executing a spiral search out from the
+   #   origin in steps of uvwRealLattice. This follows the same algorithm as
+   #   the makeLattice subroutine in lattice.f90 of the olcao code. Note that
+   #   uvwRealMatrix has dimensions [abc][xyz] while in the f90 code the
+   #   matrix has dimensions [xyz][abc]. To begin the spiral search we first
+   #   need to define the limits of the spiral.
+   foreach $i (1..3)
+   {
+      if ($hkl_ref->[$i] == 0)
+         {$maxRep[$i] = 5;}
+      else
+         {$maxRep[$i] = 100;}  # Assuming for now that this will be big enough.
+   }
+
+   # 
+   $numCells = 0;
+   foreach $i (0..$maxRep[1]+1)
+   {
+      $currentRep[1] = $i - int((1+$maxRep[1])/2);
+      foreach $j (0..$maxRep[2]+1)
+      {
+         $currentRep[2] = $j - int((1+$maxRep[2])/2);
+         foreach $k (0..$maxRep[3]+1)
+         {
+            $currentRep[3] = $k - int((1+$maxRep[3])/2);
+
+            # Create a lattice point for the current set of lattice repititions
+            #   by summing the xyz contributions of the uvwRealLattice times
+            #   the appropriate repitiiion number.
+            @lattPointTemp = (0,0,0,0);
+            foreach $l (1..3) # $abcAxis
+            {
+               foreach $m (1..3) # xyzAxis
+                  {$lattPointTemp[$m] += ($uvwRealLattice[$l][$m] * 
+                                          $currentRep[$l]);}
+            }
+
+            # Store the result for later sorting and analysis.
+            $numCells += 1;
+            $cellDist[$numCells] = sqrt($lattPointTemp[1]**2 +
+                                        $lattPointTemp[2]**2 +
+                                        $lattPointTemp[3]**2);
+            $cellDims[1][$numCells] = $lattPointTemp[1];
+            $cellDims[2][$numCells] = $lattPointTemp[2];
+            $cellDims[3][$numCells] = $lattPointTemp[3];
+         }
+      }
+   }
+
+   # Sort the cells according to the magnitude of their distance from the
+   #   origin. (First shift the cellDist to make sorting correct.)
+   shift(@cellDist);
+   @sortedIndices = sort {$cellDist[$a] <=> $cellDist[$b]}
+         0..$#cellDist;
+
+   # Adjust the indices to match the indices that start from 1.
+   unshift (@cellDist,"");
+   unshift (@sortedIndices,"");
+   foreach $cell (1..$numCells)
+      {$sortedIndices[$cell]++;}
+
+   # Apply this set of indices to the ordered list of cellDims.
+   &applySort(\@{$cellDims[1]},\@sortedIndices);
+   &applySort(\@{$cellDims[2]},\@sortedIndices);
+   &applySort(\@{$cellDims[3]},\@sortedIndices);
+   &applySort(\@cellDist,\@sortedIndices);
+
+   # Now we can finally establish the newRealLattice and newMag. We do this by
+   #   checking each of the lattice points in cellDims to determine if the
+   #   vector defined by that lattice point is perpendicular to the uvw vector.
+   #   (Obviously we skip the trivial (0,0,0) case.)  When we find the first
+   #   cellDims vector that is perpendicular to uvw we can identify the
+   #   distance to this lattice point as newMag[2] and the vector as the new
+   #   b-axis vector for newRealLattice. Any future lattice point that is found
+   #   must be perpendicular to uvw *and* non-colinear with the first
+   #   discovered lattice point. The second vector that is found that satisfies
+   #   the criteria will be the new c-axis and the distance to it will be the
+   #   newMag[3] value.
+   @newMag = (0,0,0,0);
+   foreach $cell (2..$numCells) # Start at 2 to skip (0,0,0).
+   {
+      @tempVector = (0,$cellDims[1][$cell],$cellDims[2][$cell],
+                       $cellDims[3][$cell]);
+      if (abs(&dotProduct(\@tempVector,\@uvw)) < $epsilon)
+      {
+         if ($newMag[2] == 0)
+         {
+            $newMag[2] = $cellDist[$cell];
+            $newRealLattice[2][1] = $cellDims[1][$cell];
+            $newRealLattice[2][2] = $cellDims[2][$cell];
+            $newRealLattice[2][3] = $cellDims[3][$cell];
+         }
+         elsif (abs(&crossProductMag(\@tempVector,\@{$newRealLattice[2]})) >
+                    $epsilon)
+         {
+            $newMag[3] = $cellDist[$cell];
+            $newRealLattice[3][1] = $cellDims[1][$cell];
+            $newRealLattice[3][2] = $cellDims[2][$cell];
+            $newRealLattice[3][3] = $cellDims[3][$cell];
+            last;
+         }
+      }
+   }
+
+   # We reserve the a-axis to be the axis perpendicular to the plane of the
+   #   surface. Later, the cell will be rotated so that this axis is co-linear
+   #   with the Cartesean x-axis.
+   $newMag[1] = $uvwMag;
+   $newRealLattice[1][1] = $uvw[1];
+   $newRealLattice[1][2] = $uvw[2];
+   $newRealLattice[1][3] = $uvw[3];
+
+
+   # At this point we can put the newRealLattice parameters into realLattice,
+   #   and similarly for the lattice vector magnitudes. We do this here becaues
+   #   we need to get some directABC coordinates of atoms to eleiminate
+   #   duplicates.  Many part of the remainder of this subroutine do not
+   #   refer yet to the realLattice, but still refer to the newRealLattice.
+   #   That can be changed in the future.
+   foreach $abcAxis (1..3)
+   {
+      foreach $xyzAxis (1..3)
+      {
+         $realLattice[$abcAxis][$xyzAxis] =
+               $newRealLattice[$abcAxis][$xyzAxis];
+      }
+      $mag[$abcAxis] = $newMag[$abcAxis];
+   }
+
+   # Obtain the inverse lattice, the reciprocal lattice vectors, and the
+   #   angles between the lattice vectors. Note that this is only temporary
+   #   and that these will need to be re-obtained later after the lattice
+   #   goes through a series of rotations later. We do this now though to make
+   #   the process of identifying duplicate atoms in the new cell easier.
+   &makeLatticeInv(\@realLattice,\@realLatticeInv,0);
+   &makeLatticeInv(\@realLattice,\@recipLattice,1);
+   &abcAlphaBetaGamma;
+
+   # At this point our new real lattice is defined with its periodic boundary
+   #   conditions matching up with lattice points of the original real lattice.
+   #   What we want to do now is fill this new lattice with atoms from a super
+   #   lattice (made from the original real lattice). The approach for the time
+   #   being will be to iterate through each of the lattices defined by the
+   #   cellDims points and iterate through each atom in each of those cells
+   #   checking to see if the selected atom is inside the new real lattice. A
+   #   future (better) approach would figure out a way to reduce the number of
+   #   cells to have to check. Note that this is tricky because one could
+   #   conceivably have an oddly shaped cell that passes through the new cell
+   #   but which doesn't have any lattice points within the new cell. At any
+   #   rate...
+   # The procedure for doing the check is the following:
+   # First: compute the center point of the new real lattice.
+   # Second: compute the center point of each face of the new real lattice.
+   # Third: make a set of normal vectors for each face of the new real lattice
+   #   with the condition that the normals point outward.
+   # Fourth: iterate through each atom of each replicated cell and:
+   # Fourth': compute a difference vector that points from the center of each
+   #   face to the selected atomic point.
+   # Fourth'': compute the dot product of the difference vector and the normal
+   #   vector of each face. If any of the dot products has a negative sign,
+   #   then the atom is outside of the cell.
+
+   # Compute position of the center point of the new real lattice.
+   foreach $xyzAxis (1..3)
+   {
+      $newRealLatticeCenter[$xyzAxis] = ($newRealLattice[1][$xyzAxis] + 
+                                         $newRealLattice[2][$xyzAxis] +
+                                         $newRealLattice[3][$xyzAxis])/2.0
+   }
+
+
+   # Compute the position of the center of each face of the new real lattice.
+   foreach $xyzAxis (1..3)
+   {
+      $faceCenter[1][$xyzAxis] = ($newRealLattice[1][$xyzAxis] +
+                                  $newRealLattice[2][$xyzAxis]) / 2.0;
+      $faceCenter[2][$xyzAxis] = $faceCenter[1][$xyzAxis] +
+                                 $newRealLattice[3][$xyzAxis];
+      $faceCenter[3][$xyzAxis] = ($newRealLattice[1][$xyzAxis] +
+                                  $newRealLattice[3][$xyzAxis]) / 2.0;
+      $faceCenter[4][$xyzAxis] = $faceCenter[3][$xyzAxis] +
+                                 $newRealLattice[2][$xyzAxis];
+      $faceCenter[5][$xyzAxis] = ($newRealLattice[2][$xyzAxis] +
+                                  $newRealLattice[3][$xyzAxis]) / 2.0;
+      $faceCenter[6][$xyzAxis] = $faceCenter[5][$xyzAxis] +
+                                 $newRealLattice[1][$xyzAxis];
+   }
+
+   # Compute normal vectors for each face.
+   @origin = (0,0,0,0); # Uses indices 1..3.
+   @{$faceNormal[1]} = &getPlaneNormal(\@origin,\@{$newRealLattice[1]},
+                                    \@{$newRealLattice[2]});
+   @{$faceNormal[3]} = &getPlaneNormal(\@origin,\@{$newRealLattice[1]},
+                                    \@{$newRealLattice[3]});
+   @{$faceNormal[5]} = &getPlaneNormal(\@origin,\@{$newRealLattice[2]},
+                                    \@{$newRealLattice[3]});
+   foreach $xyzAxis (1..3)
+   {
+      $faceNormal[2][$xyzAxis] = -1.0*$faceNormal[1][$xyzAxis];
+      $faceNormal[4][$xyzAxis] = -1.0*$faceNormal[3][$xyzAxis];
+      $faceNormal[6][$xyzAxis] = -1.0*$faceNormal[5][$xyzAxis];
+   }
+
+   # Make sure that the normal vectors point out. Because d = |a||b|*cos(theta)
+   #   we have that the sign of d is determined by whether or not the two
+   #   vectors face the same direction. Therefore, we create a vector that
+   #   points from the face center to the cell center and compare it to the
+   #   face normals computed above. If the sign is positive, then the normal
+   #   should be reversed in sign (because it too is pointing "in" like the
+   #   vector from the face to the center). If the sign is negative, then the
+   #   normal can stay as it is.
+   foreach $face (1..6)
+   {
+      # Compute a vector pointing from the face center to the cell center.
+      foreach $xyzAxis (1..3)
+         {$face2CellCenter[$xyzAxis] = $newRealLatticeCenter[$xyzAxis] - 
+                                       $faceCenter[$face][$xyzAxis];}
+
+      # Compute the dot product, compare, and flip if needed.
+      $product = &dotProduct(\@{$faceNormal[$face]},\@face2CellCenter);
+      if ($product > 0.0)
+      {
+         foreach $xyzAxis (1..3)
+            {$faceNormal[$face][$xyzAxis] = -1.0*$faceNormal[$face][$xyzAxis];}
+      }
+
+      # Make the face normal a unit vector.
+      $normalizer = sqrt($faceNormal[$face][1]**2 + $faceNormal[$face][2]**2 +
+                         $faceNormal[$face][3]**2);
+      foreach $xyzAxis (1..3)
+         {$faceNormal[$face][$xyzAxis] /= $normalizer;}
+   }
+
+
+   # Now we have the tools to check if each atom in a replicated original cell
+   #   is (or is not) inside of the new cell for the surface model. Note that
+   #   we can avoid checking the atoms of a given cell if the magnitude of the
+   #   distance from the origin to cell lattice point is greater than the
+   #   magnitude of the diagonal of the original cell. Additionally, we will
+   #   pre-compute the maximum xyz values to help eliminate duplicate atoms.
+   $newNumAtoms = 0;
+   foreach $cell (1..$numCells)
+   {
+      if ($cellDist[$cell] > $diagonalMag)
+         {next;}
+
+      foreach $atom (1..$numAtoms)
+      {
+         # Assume that this atom will be included.
+         $newNumAtoms++;
+
+         # Compute the position of this atom of this replicated cell.
+         foreach $xyzAxis (1..3)
+            {$newDirectXYZ[$newNumAtoms][$xyzAxis] =
+                  $directXYZ[$atom][$xyzAxis] + $cellDims[$xyzAxis][$cell];}
+
+         # Assume that the atom is inside the new cell and the check. If it is
+         #   actually outside, then we abort on this atom and go to the next.
+         $outside = 0;
+         foreach $face (1..6)
+         {
+            # Compute a vector from each new cell face to the position of this
+            #   replicated atom. Then apply the same dot product test as above
+            #   to determine if the atom is inside or outside of the cell.
+            foreach $xyzAxis (1..3)
+               {$face2Atom[$xyzAxis] = $newDirectXYZ[$newNumAtoms][$xyzAxis] - 
+                                       $faceCenter[$face][$xyzAxis];}
+
+            $product = &dotProduct(\@{$faceNormal[$face]},\@face2Atom);
+            if ($product > $epsilon)
+               {$outside = 1; last;}
+         }
+         if ($outside == 1)
+            {$newNumAtoms--; next;}
+
+         # Now we need to prevent the inclusion of atoms that copy another atom
+         #   by being on a face. That is, consider an atom at 0,0,0 and another
+         #   atom at 0,0,c. These are the same atom and one of them must be
+         #   eliminated. We will achieve this goal by setting the appropriate
+         #   x, y, or z coordinate equal to zero for any atomic coordinate that
+         #   is equal to the maximum allowed xyz coordinate. Then, the next bit
+         #   of code will remove any duplicate.
+         $onFace = 0;
+         @tempFractABC = &directXYZ2fractABC(\@{$newDirectXYZ[$newNumAtoms]},
+               \@realLatticeInv);
+         unshift(@tempFractABC,"");
+         foreach $abcAxis (1..3)
+         {
+            if (abs(abs($tempFractABC[$abcAxis]) - 1.0) < $epsilon)
+               {$onFace = 1; last;}
+         }
+         if ($onFace == 1)
+            {$newNumAtoms--; next;}
+
+
+         # Check if this atom is an exact copy of an already included newAtom.
+         $same = 0;
+         foreach $newAtom (1..$newNumAtoms-1)
+         {
+            if ((abs($newDirectXYZ[$newAtom][1] -
+                     $newDirectXYZ[$newNumAtoms][1]) < $epsilon) &&
+                (abs($newDirectXYZ[$newAtom][2] -
+                     $newDirectXYZ[$newNumAtoms][2]) < $epsilon) && 
+                (abs($newDirectXYZ[$newAtom][3] -
+                     $newDirectXYZ[$newNumAtoms][3]) < $epsilon))
+               {$same = 1; last;}
+         }
+         if ($same == 1)
+            {$newNumAtoms--; next;}
+
+         # If we make it this far, then we will keep the atom.
+         $newAtomElementName[$newNumAtoms] = $atomElementName[$atom];
+         $newAtomElementID[$newNumAtoms]   = $atomElementID[$atom];
+         $newAtomSpeciesID[$newNumAtoms]   = $atomSpeciesID[$atom];
+         $newAtomTag[$newNumAtoms]         = $atomTag[$atom];
+      }
+   }
+
+   # Update the system information.
+   undef (@directXYZ);
+   undef (@atomElementName);
+   undef (@atomElementID);
+   undef (@atomSpeciesID);
+   undef (@atomTag);
+   $numAtoms        = $newNumAtoms;
+   @directXYZ       = @newDirectXYZ;
+   @atomElementName = @newAtomElementName;
+   @atomElementID   = @newAtomElementID;
+   @atomSpeciesID   = @newAtomSpeciesID;
+   @atomTag         = @newAtomTag;
+   undef (@newDirectXYZ);
+   undef (@newAtomElementName);
+   undef (@newAtomElementID);
+   undef (@newAtomSpeciesID);
+   undef (@newAtomTag);
+   undef (@cellDims);
+   undef (@cellDist);
+
+
+   # Now we are going to rotate the lattice so that the a-axis is perpendicular
+   #   to the plane of the surface and co-linear with the Cartesean x-axis.
+
+   # Compute a vector that is perpendicular to the plane formed by the new real
+   #   space vector (@uvw) and the cartesian x-axis. This will be the axis of
+   #   rotation.
+   @xAxis  = (0,1,0,0); # Uses indices 1..3.
+   @rotAxis = &getPlaneNormal(\@origin,\@xAxis,\@uvw);
+
+   # Make the rotation vector a unit vector.
+   $normalizer = sqrt($rotAxis[1]**2 + $rotAxis[2]**2 + $rotAxis[3]**2);
+   foreach $xyzAxis (1..3)
+      {$rotAxis[$xyzAxis] /= $normalizer;}
+
+   # Compute the angle of rotation between the real space vector and the x-axis.
+   $rotAngle = &getVectorAngle(\@uvw,\@xAxis);
+
+   # In the event that the uvw vector is pointing into any positive y quadrant
+   #   then we need to rotate *back* to the x-axis. In that case we invert the
+   #   rotation axis.
+   if ($uvw[2] > 0.0)
+   {
+      foreach $xyzAxis (1..3)
+         {$rotAxis[$xyzAxis] = -1.0*$rotAxis[$xyzAxis];}
+   }
+
+   # Establish the rotation matrix.
+   &defineRotMatrix($rotAngle,\@rotAxis);
+
+   # Apply the rotation matrix to the current lattice vectors.
+   &rotateOnePoint(\@{$realLattice[1]},\@origin);
+   &rotateOnePoint(\@{$realLattice[2]},\@origin);
+   &rotateOnePoint(\@{$realLattice[3]},\@origin);
+   foreach $abcAxis (1..3)
+   {
+      foreach $xyzAxis (1..3)
+      {
+         if (abs($realLattice[$abcAxis][$xyzAxis]) < $epsilon)
+            {$realLattice[$abcAxis][$xyzAxis] = 0.0;}
+      }
+   }
+
+   # For each atom in the model rotate it in the requested plane by the
+   #   requested number of degrees (associated with the defined rotation
+   #   matrix).
+   foreach $atom (1..$numAtoms)
+      {&rotateOnePoint(\@{$directXYZ[$atom]},\@origin);}
+
+   # Now we need to rotate the b-axis so that it lies in the Cartesean x-y
+   #   plane with zero component in the z-axis.
+
+   # The rotation axis will be the current a-axis (which is also the current
+   #   x-axis).
+   @rotAxis  = (0,1,0,0); # Uses indices 1..3.
+
+   # Compute the angle of rotation between the current y-z component of the
+   #   b-axis and the Cartesean x-y plane. This is a bit tricky. Just recall
+   #   by this point we have the lattice a-axis and x-axis aligned, but that
+   #   the b-axis is pointing in some xyz direction. We want to rotate it into
+   #   the x-y plane so that it has zero z-component. Thus, the angle that it
+   #   needs to rotate through is the same as the angle between the y-axis
+   #   and the vector that is a projection of the b-axis onto the y-z plane.
+   # If we just tried to compute the angle between the b-axis and the y-axis
+   #   then we would get a totally bogus angle if the b-axis was already in
+   #   the x-y plane but not aligned with the y-axis. We would not need to
+   #   rotate the b-axis in that case, but we would have computed a non-zero
+   #   angle for the rotation.
+   @yzProj = (0,0,$realLattice[2][2],$realLattice[2][3]); # Uses indices 1..3
+   @yAxis  = (0,0,1,0); # Uses indices 1..3
+   $rotAngle = &getVectorAngle(\@yzProj,\@yAxis);
+
+   # In the event that the yzProj vector is pointing into any positive z
+   #   quadrant then we need to rotate *back* to the y-axis. In that case we
+   #   invert the rotation axis.
+   if ($yzProj[2] > 0.0)
+      {@rotAxis = (0,-1,0,0);}
+
+   # Establish the rotation matrix.
+   &defineRotMatrix($rotAngle,\@rotAxis);
+
+   # Apply the rotation matrix to the current lattice vectors.
+   &rotateOnePoint(\@{$realLattice[1]},\@origin);
+   &rotateOnePoint(\@{$realLattice[2]},\@origin);
+   &rotateOnePoint(\@{$realLattice[3]},\@origin);
+   foreach $abcAxis (1..3)
+   {
+      foreach $xyzAxis (1..3)
+      {
+         if (abs($realLattice[$abcAxis][$xyzAxis]) < $epsilon)
+            {$realLattice[$abcAxis][$xyzAxis] = 0.0;}
+      }
+   }
+
+   # For each atom in the model rotate it in the requested plane by the
+   #   requested number of degrees (associated with the defined rotation
+   #   matrix).
+   foreach $atom (1..$numAtoms)
+      {&rotateOnePoint(\@{$directXYZ[$atom]},\@origin);}
+
+   # Reobtain the inverse lattice and the reciprocal lattice vectors.
+   &makeLatticeInv(\@realLattice,\@realLatticeInv,0);
+   &makeLatticeInv(\@realLattice,\@recipLattice,1);
+   &abcAlphaBetaGamma;
+
+   # Obtain the directABC and fractABC coordinates of the atoms in the model
+   #   such that they match the directXYZ.
+   foreach $atom (1..$numAtoms)
+   {
+      &getDirectABC($atom);
+      &getFractABC($atom);
+   }
 }
 
 sub applySpaceGroup
@@ -2020,8 +2689,8 @@ sub applySupercell
    }
 
    # Reobtain the inverse lattice and the reciprocal lattice vectors.
-   &makeRealLatticeInv;
-   &makeRecipLattice;
+   &makeLatticeInv(\@realLattice,\@realLatticeInv,0);
+   &makeLatticeInv(\@realLattice,\@recipLattice,1);
    &abcAlphaBetaGamma;
 
    # Obtain the directABC and directXYZ coordinates of the atoms in the model
@@ -2170,7 +2839,7 @@ sub computeCrystalParameters
    &getABCVectors;
 
    # Generate the inverse of the real space lattice.
-   &makeRealLatticeInv;
+   &makeLatticeInv(\@realLattice,\@realLatticeInv,0);
 
    # Demand that there be no atoms with negative positions and that the
    #   system be centered.
@@ -2264,15 +2933,20 @@ sub getABCVectors
    {
       foreach $xyzAxis (1..3)
       {
-         if (abs($realLattice[$abcAxis][$xyzAxis]) < 0.000000001)
+         if (abs($realLattice[$abcAxis][$xyzAxis]) < $epsilon)
             {$realLattice[$abcAxis][$xyzAxis] = 0.0;}
       }
    }
 }
 
 
-sub makeRealLatticeInv
+sub makeLatticeInv
 {
+   # Define passed parameters.
+   my $inLattice_ref = $_[0];
+   my $outLattice_ref = $_[1];
+   my $piFactor = $_[2];
+
    # Define local variables.
    my $string;
    my $matrix;
@@ -2283,38 +2957,48 @@ sub makeRealLatticeInv
    # Initialize the matrix string.
    $string = "";
 
-   # Copy the real lattice matrix to $matrix.
+   # Copy the in lattice matrix to $matrix.
    foreach $axisABC (1..3)
-      {$string = $string . "\[ $realLattice[$axisABC][1] ".
-                              "$realLattice[$axisABC][2] ".
-                              "$realLattice[$axisABC][3] \]\n";}
+      {$string = $string . "\[ $inLattice_ref->[$axisABC][1] ".
+                              "$inLattice_ref->[$axisABC][2] ".
+                              "$inLattice_ref->[$axisABC][3] \]\n";}
    $matrix = Math::MatrixReal->new_from_string($string);
 
    # Invert it.
    $matrixInv = $matrix->inverse();
 
-   # Copy it to the standard (lame?) form used in the rest of this program.
+   # Copy it to the standard form used in the rest of this program and include
+   #   the factor of 2Pi if requested.
    foreach $axisXYZ (1..3)
    {
       foreach $axisABC (1..3)
       {
-         $realLatticeInv[$axisXYZ][$axisABC] =
+         $outLattice_ref->[$axisXYZ][$axisABC] =
                $matrixInv->element($axisXYZ,$axisABC);
+         if ($piFactor == 1)
+            {$outLattice_ref->[$axisXYZ][$axisABC] *= (2.0 * $pi);}
+         elsif ($piFactor == -1)
+            {$outLattice_ref->[$axisXYZ][$axisABC] /= (2.0 * $pi);}
       }
    }
 }
 
-
-sub makeRecipLattice
+# Given some (real/reciprocal) set of lattice vectors, this subroutine will
+#   produce the lattice volume.
+sub makeLatticeVolume
 {
+   # Define passed paramenters.
+   my $inLattice_ref = $_[0];
+
    # Define local variables.
-   my $cellVolume;
    my $i;
    my $iCycle1;
    my $iCycle2;
    my $j;
    my $jCycle1;
    my $jCycle2;
+   my @tempLattice;
+   my $cellVolume;
 
    for ($i=1;$i<=3;$i++)
    {
@@ -2325,19 +3009,20 @@ sub makeRecipLattice
       {
          $jCycle1 = ($j % 3) + 1;
          $jCycle2 = (($j+1) % 3) + 1;
-         $recipLattice[$j][$i] = $realLattice[$jCycle1][$iCycle1] *
-                                 $realLattice[$jCycle2][$iCycle2] -
-                                 $realLattice[$jCycle2][$iCycle1] *
-                                 $realLattice[$jCycle1][$iCycle2];
-         $cellVolume = $cellVolume + $recipLattice[$j][$i] *
-                                     $realLattice[$j][$i];
+         $tempLattice[$j][$i] = $inLattice_ref->[$jCycle1][$iCycle1] *
+                                $inLattice_ref->[$jCycle2][$iCycle2] -
+                                $inLattice_ref->[$jCycle2][$iCycle1] *
+                                $inLattice_ref->[$jCycle1][$iCycle2];
+         $cellVolume = $cellVolume + $inLattice_ref->[$j][$i] *
+                                     $tempLattice[$j][$i];
       }
       for ($j=1;$j<=3;$j++)
-         {$recipLattice[$j][$i] = 2.0 * $pi * $recipLattice[$j][$i] / 
-                                  $cellVolume;}  # In Angstroms!
+         {$tempLattice[$j][$i] = 2.0 * $pi * $tempLattice[$j][$i] / 
+                                 $cellVolume;}  # In Angstroms!
    }
-}
 
+   return $cellVolume;
+}
 
 
 sub getMinMaxXYZ
@@ -2346,9 +3031,9 @@ sub getMinMaxXYZ
    my $atom;
    my $axis;
 
-   $maxPos[1] = -100000;  $minPos[1] = 100000;  # x
-   $maxPos[2] = -100000;  $minPos[2] = 100000;  # y
-   $maxPos[3] = -100000;  $minPos[3] = 100000;  # z
+   $maxPos[1] = -$bigReal;  $minPos[1] = $bigReal;  # x
+   $maxPos[2] = -$bigReal;  $minPos[2] = $bigReal;  # y
+   $maxPos[3] = -$bigReal;  $minPos[3] = $bigReal;  # z
    foreach $atom (1..$numAtoms)
    {
       foreach $axis (1..3)
@@ -2450,13 +3135,44 @@ sub getDirectABC
                $realLatticeInv[$xyzAxis][$abcAxis];
       }
 
-      # Note that we now also have the fractional ABC coordinates but we are
-      #   not going to do anything with them now because I don't want to mess
-      #   stuff up by making things confusing (any more than they already are).
+      # Note that we now have the fractional ABC coordinates but we are not
+      #   going to do anything with them now because I don't want to mess stuff
+      #   up by making things confusing (any more than they already are).
 
       # Multiply by the lattice magnitude to get the direct space ABC coords.
       $directABC[$currentAtom][$abcAxis] *= $mag[$abcAxis];
    }
+}
+
+sub directXYZ2fractABC
+{
+   # Define passed parameters.
+   my $posXYZ_ref = $_[0];
+   my $realLatticeInv_ref = $_[1];
+
+   # Define local variables.
+   my @posABC;
+   my $abcAxis;
+   my $xyzAxis;
+
+   # Pxyz = atom position in xyz orthogonal coordinates.
+   # Pabc = atom position in abc direct space coordinates.
+   # L-1  = Real lattice matrix inverse.
+   # Pabc = Pxyz L-1
+
+   foreach $abcAxis (1..3)
+   {
+      # Initialize the direct space ABC coordinate for this axis.
+      $posABC[$abcAxis] = 0;
+
+      foreach $xyzAxis (1..3)
+      {
+         $posABC[$abcAxis] += $posXYZ_ref->[$xyzAxis] *
+               $realLatticeInv_ref->[$xyzAxis][$abcAxis];
+      }
+   }
+
+   return (@posABC[1..3]);
 }
 
 sub directXYZ2directABC
@@ -2485,6 +3201,9 @@ sub directXYZ2directABC
          $posABC[$abcAxis] += $posXYZ_ref->[$xyzAxis] *
                $realLatticeInv_ref->[$xyzAxis][$abcAxis];
       }
+
+      # Multiply by the lattice magnitude to get the direct space ABC coords.
+      $posABC[$abcAxis] *= $mag[$abcAxis];
    }
 
    return (@posABC[1..3]);
@@ -2613,8 +3332,8 @@ sub insertVacuum
    &getABCVectors;
 
    # Reobtain the inverse lattice and the reciprocal lattice vectors.
-   &makeRealLatticeInv;
-   &makeRecipLattice;
+   &makeLatticeInv(\@realLattice,\@realLatticeInv,0);
+   &makeLatticeInv(\@realLattice,\@recipLattice,1);
    &abcAlphaBetaGamma;
 
    # Get new fractional ABC atomic positions based on the old direct space
@@ -2622,6 +3341,253 @@ sub insertVacuum
    #   space XYZ atomic coordinates are also still the same.
    foreach $atom (1..$numAtoms)
       {&getFractABC($atom);}
+}
+
+# The purpose of this subroutine is to remove a designated set of atoms from
+#   the currently stored model. The basic algorithm is to make a duplicate
+#   list of all the atoms that contains only those that should not be cut.
+#   Then, any data structures that need to be updated will be.
+sub cutBlock
+{
+   # Define local variables for passed parameters.
+   my $zone = $_[0];
+   my $abcxyzFlag = $_[1];
+   my $blockBorder_ref = $_[2];
+
+   # Define local variables.
+   my $atom;
+   my $axis;
+   my $cut;
+   my $foundInside;
+   my $newNumAtoms;        # Local version to replace old one.
+   my @newAtomElementName; # Local version to replace old one.
+   my @newAtomElementID;   # Local version to replace old one.
+   my @newAtomSpeciesID;   # Local version to replace old one.
+   my @newFractABC;        # Local version to replace old one.
+   my @newDirectABC;       # Local version to replace old one.
+   my @newDirectXYZ;       # Local version to replace old one.
+   my @newAtomTag;         # Local version to replace old one.
+   my @currentCoords;
+
+   # Note that the block borders could have been defined to have a letter as
+   #   the "to" value. This indicates a request for the maximum. Check and
+   #   modify accordingly.
+   if ($blockBorder_ref->[1][2] eq "a")
+      {$blockBorder_ref->[1][2] = $mag[1];}
+   if ($blockBorder_ref->[2][2] eq "b")
+      {$blockBorder_ref->[2][2] = $mag[2];}
+   if ($blockBorder_ref->[3][2] eq "c")
+      {$blockBorder_ref->[3][2] = $mag[3];}
+
+   # Initialize the new count of the number of atoms.
+   $newNumAtoms = 0;
+
+   # Loop over each atom and determine if it should be kept or not.
+   foreach $atom (1..$numAtoms)
+   {
+      # Set a variable that defines whether or not this atom is found inside
+      #   the selected region.  The default is to assume it is inside.
+      $foundInside = 1;
+
+      # We can check versus abc or xyz axes. Make that determination here and
+      #   gather the coordinates we will use for comparison.
+      if ($abcxyzFlag == 0) # abc
+      {
+         foreach $axis (1..3)
+            {$currentCoords[$axis] = $directABC[$atom][$axis];}
+      }
+      else
+      {
+         foreach $axis (1..3)
+            {$currentCoords[$axis] = $directXYZ[$atom][$axis];}
+      }
+
+      # Determine if the current atom is "inside" the block.
+      foreach $axis (1..3)
+      {
+         if (($currentCoords[$axis] < $blockBorder_ref->[$axis][1]) ||
+             ($currentCoords[$axis] > $blockBorder_ref->[$axis][2]))
+            {$foundInside = 0;}
+      }
+
+      # If the inside zone (0) is the zone to cut and the atom is found inside
+      #   then we turn on $cut. If the outside zone is the zone to cut, and
+      #   the atom is found outside, the we also turn on $cut. Otherwise, we
+      #   leave $cut off.
+      if (($zone == 0) && ($foundInside == 1)) # Cutting inside, found inside
+         {$cut = 1;}
+      elsif (($zone == 1) && ($foundInside == 0)) # Cutting outside, found out
+         {$cut = 1;}
+      else
+         {$cut = 0;}
+
+      # Act, if we have decided to keep this atom.
+      if ($cut == 0)
+      {
+         $newNumAtoms++;
+
+         foreach $axis (1..3)
+         {
+            $newFractABC[$newNumAtoms][$axis]  = $fractABC[$atom][$axis];
+            $newDirectABC[$newNumAtoms][$axis] = $directABC[$atom][$axis];
+            $newDirectXYZ[$newNumAtoms][$axis] = $directXYZ[$atom][$axis];
+         }
+         $newAtomElementName[$newNumAtoms] = $atomElementName[$atom];
+         $newAtomElementID[$newNumAtoms]   = $atomElementID[$atom];
+         $newAtomSpeciesID[$newNumAtoms]   = $atomSpeciesID[$atom];
+         $newAtomTag[$newNumAtoms]         = $atomTag[$atom];
+      }
+   }
+
+   # Update the system information.
+   undef (@fractABC);
+   undef (@directABC);
+   undef (@directXYZ);
+   undef (@atomElementName);
+   undef (@atomElementID);
+   undef (@atomSpeciesID);
+   undef (@atomTag);
+   $numAtoms        = $newNumAtoms;
+   @fractABC        = @newFractABC;
+   @directABC       = @newDirectABC;
+   @directXYZ       = @newDirectXYZ;
+   @atomElementName = @newAtomElementName;
+   @atomElementID   = @newAtomElementID;
+   @atomSpeciesID   = @newAtomSpeciesID;
+   @atomTag         = @newAtomTag;
+   undef (@newFractABC);
+   undef (@newDirectABC);
+   undef (@newDirectXYZ);
+   undef (@newAtomElementName);
+   undef (@newAtomElementID);
+   undef (@newAtomSpeciesID);
+   undef (@newAtomTag);
+}
+
+# The purpose of this subroutine is to remove a designated set of atoms from
+#   the currently stored model. The basic algorithm is to make a duplicate
+#   list of all the atoms that contains only those that should not be cut.
+#   Then, any data structures that need to be updated will be.
+sub cutSphere
+{
+   # Define local variables for passed parameters.
+   my $zone          = $_[0];
+   my $abcxyzFlag    = $_[1];
+   my $sphereRad     = $_[2];
+   my $targetAtom    = $_[3];
+   my $sphereLoc_ref = $_[4];
+
+   # Define local variables.
+   my $atom;
+   my $axis;
+   my $cut;
+   my $foundInside;
+   my $distance;
+   my $newNumAtoms;        # Local version to replace old one.
+   my @newAtomElementName; # Local version to replace old one.
+   my @newAtomElementID;   # Local version to replace old one.
+   my @newAtomSpeciesID;   # Local version to replace old one.
+   my @newFractABC;        # Local version to replace old one.
+   my @newDirectABC;       # Local version to replace old one.
+   my @newDirectXYZ;       # Local version to replace old one.
+   my @newAtomTag;         # Local version to replace old one.
+   my @currentCoords;
+
+   # In the case that a particular atom site was give, we will define the
+   #   sphere location in XYZ coordinates according to the atom position.
+   if ($targetAtom != 0)
+   {
+      # Copy the XYZ coordinates of the targeted atom into the sphere location.
+      foreach $axis (1..3)
+         {$sphereLoc_ref->[$axis] = $directXYZ[$targetAtom][$axis];}
+
+      # Make sure that the program knows we want to use XYZ coordinates.
+      $abcxyzFlag = 1;
+   }
+
+   # Initialize the new count of the number of atoms.
+   $newNumAtoms = 0;
+
+   # Loop over each atom and determine if it should be kept or not.
+   foreach $atom (1..$numAtoms)
+   {
+      # Set a variable that defines whether or not this atom is found inside
+      #   the selected region.  The default is to assume it is inside.
+      $foundInside = 1;
+
+      # We can check versus abc or xyz axes. Make that determination here and
+      #   gather the coordinates we will use for comparison.
+      if ($abcxyzFlag == 0) # abc
+      {
+         foreach $axis (1..3)
+            {$currentCoords[$axis] = $directABC[$atom][$axis];}
+      }
+      else
+      {
+         foreach $axis (1..3)
+            {$currentCoords[$axis] = $directXYZ[$atom][$axis];}
+      }
+
+      # Determine if the current atom is "inside" the sphere. First compute
+      #   the distance and then compare to the sphere radius.
+      $distance = sqrt(($currentCoords[1]-$sphereLoc_ref->[1])**2 +
+                       ($currentCoords[2]-$sphereLoc_ref->[2])**2 +
+                       ($currentCoords[3]-$sphereLoc_ref->[3])**2);
+      if ($distance > $sphereRad)
+         {$foundInside = 0;}
+
+      # If the inside zone (0) is the zone to cut and the atom is found inside
+      #   then we turn on $cut. If the outside zone is the zone to cut, and
+      #   the atom is found outside, the we also turn on $cut. Otherwise, we
+      #   leave $cut off.
+      if (($zone == 0) && ($foundInside == 1)) # Cutting inside, found inside
+         {$cut = 1;}
+      elsif (($zone == 1) && ($foundInside == 0)) # Cutting outside, found out
+         {$cut = 1;}
+      else
+         {$cut = 0;}
+
+      # Act, if we have decided to keep this atom.
+      if ($cut == 0)
+      {
+         $newNumAtoms++;
+
+         foreach $axis (1..3)
+         {
+            $newFractABC[$newNumAtoms][$axis]  = $fractABC[$atom][$axis];
+            $newDirectABC[$newNumAtoms][$axis] = $directABC[$atom][$axis];
+            $newDirectXYZ[$newNumAtoms][$axis] = $directXYZ[$atom][$axis];
+         }
+         $newAtomElementName[$newNumAtoms] = $atomElementName[$atom];
+         $newAtomElementID[$newNumAtoms]   = $atomElementID[$atom];
+         $newAtomSpeciesID[$newNumAtoms]   = $atomSpeciesID[$atom];
+         $newAtomTag[$newNumAtoms]         = $atomTag[$atom];
+      }
+   }
+
+   # Update the system information.
+   undef (@fractABC);
+   undef (@directABC);
+   undef (@directXYZ);
+   undef (@atomElementName);
+   undef (@atomElementID);
+   undef (@atomSpeciesID);
+   undef (@atomTag);
+   $numAtoms        = $newNumAtoms;
+   @fractABC        = @newFractABC;
+   @directABC       = @newDirectABC;
+   @directXYZ       = @newDirectXYZ;
+   @atomElementName = @newAtomElementName;
+   @atomElementID   = @newAtomElementID;
+   @atomSpeciesID   = @newAtomSpeciesID;
+   @atomTag         = @newAtomTag;
+   undef (@newFractABC);
+   undef (@newDirectABC);
+   undef (@newDirectXYZ);
+   undef (@newAtomElementName);
+   undef (@newAtomElementID);
+   undef (@newAtomSpeciesID);
+   undef (@newAtomTag);
 }
 
 # The goal of this subroutine is to take a crystal in its given lattice and
@@ -3009,9 +3975,9 @@ sub printOLCAO
    print $fileHandle "end\n";
    print $fileHandle "cell\n";
    foreach $axis (1..3)
-      {printf $fileHandle "%10.6f",$mag[$axis];}
+      {printf $fileHandle "%13.8f",$mag[$axis];}
    foreach $axis (1..3)
-      {printf $fileHandle "%10.6f",$angleDegrees[$axis];}
+      {printf $fileHandle "%13.8f",$angleDegrees[$axis];}
    print $fileHandle "\n$style $numAtoms\n";
 
    # Print the atomic positions in the appropriate style.
@@ -3182,7 +4148,14 @@ sub printVASP
       # Check for the existence of the requested sub potential type directory.
       $subPotDir = $potDir . "/" . $currElement . $subPotType;
       if (-d $subPotDir)
-         {system("zcat $subPotDir/POTCAR.Z >> POTCAR");}
+      {
+         if (-f "$subPotDir/POTCAR.Z")
+            {system("zcat $subPotDir/POTCAR.Z >> POTCAR");}
+         elsif (-f "$subPotDir/POTCAR")
+            {system("cat $subPotDir/POTCAR >> POTCAR");}
+         else
+            {die "Cannot find the POTCAR in $subPotDir\n";}
+      }
       else
       {
          # First check for the existence of the potential without the sub type.
@@ -3191,9 +4164,14 @@ sub printVASP
          print STDOUT "Attempting a potential of the $subPotDir type.\n";
 
          if (-d $subPotDir)
-            {system("zcat $subPotDir/POTCAR.Z >> POTCAR");}
-         else
-            {die "Cannot find a potential of the $subPotDir type.\n";}
+         {
+            if (-f "$subPotDir/POTCAR.Z")
+               {system("zcat $subPotDir/POTCAR.Z >> POTCAR");}
+            elsif (-f "$subPotDir/POTCAR")
+               {system("cat $subPotDir/POTCAR >> POTCAR");}
+            else
+               {die "Cannot find the POTCAR in $subPotDir\n";}
+         }
       }
    }
 
@@ -3930,7 +4908,7 @@ sub obtainAtomicInteraction
 #         $distance = sqrt($diff[1]*$diff[1] +
 #                          $diff[2]*$diff[2] +
 #                          $diff[3]*$diff[3]);
-if ($distance == 1000000.0)
+if ($distance == $bigReal)
    {next;}
 
          # Record the requested information based on these relative
@@ -3992,14 +4970,14 @@ sub initializeInteractionData
 
       # Initialize the self minimal distance to a very large number.
       foreach $item (1..$numItems1)
-         {$selfMinDist[$item] = 1000000.0;}
+         {$selfMinDist[$item] = $bigReal;}
 
       # Initialize the minimal distances between central cell items to very
       #   large numbers.
       foreach $item1 (1..$numItems1)
       {
          foreach $item2 ($item1..$numItems1)
-            {$minDist[$item1][$item2] = 1000000.0;}
+            {$minDist[$item1][$item2] = $bigReal;}
       }
    }
    elsif ($interactionType == 2) # check for extended bonding
@@ -4099,7 +5077,7 @@ sub initializeInteractionData
       foreach $item1 (1..$numItems1)
       {
          foreach $item2 (1..$numItems2)
-            {$extScanDist[$item1][$item2] = 1000000.0;}
+            {$extScanDist[$item1][$item2] = $bigReal;}
       }
    }
    else
@@ -4639,7 +5617,7 @@ sub getPlaneNormal
 
    # Determine the normal to this plane.  This is obtained from the cross
    #   product of two vectors.  The first vector is the difference between
-   #   point2 and point1 while the second vetor is the difference between
+   #   point2 and point1 while the second vector is the difference between
    #   point3 and point1.
 
    $vectorDiff1[1] = $point2_ref->[1] - $point1_ref->[1];
@@ -4657,6 +5635,99 @@ sub getPlaneNormal
    return (@normal);
 }
 
+
+sub dotProduct
+{
+   # Define passed parameters.
+   my $vector1_ref = $_[0];
+   my $vector2_ref = $_[1];
+
+   # Define local variables.
+   my $product;
+
+   $product = $vector1_ref->[1]*$vector2_ref->[1] +
+              $vector1_ref->[2]*$vector2_ref->[2] +
+              $vector1_ref->[3]*$vector2_ref->[3];
+
+   return $product;
+}
+
+
+sub crossProduct
+{
+   # Define passed parameters.
+   my $vector1_ref = $_[0];
+   my $vector2_ref = $_[1];
+
+   # Define local variables.
+   my @product;
+
+   $product[0] = 0.0;
+   $product[1] = $vector1_ref->[2]*$vector2_ref->[3] - 
+                 $vector1_ref->[3]*$vector2_ref->[2];
+   $product[2] = $vector1_ref->[3]*$vector2_ref->[1] - 
+                 $vector1_ref->[1]*$vector2_ref->[3];
+   $product[3] = $vector1_ref->[1]*$vector2_ref->[2] - 
+                 $vector1_ref->[2]*$vector2_ref->[1];
+
+   return @product;
+}
+
+
+sub crossProductMag
+{
+   # Define passed parameters.
+   my $vector1_ref = $_[0];
+   my $vector2_ref = $_[1];
+
+   # Define local variables.
+   my @crossProductVector;
+   my $productMag;
+
+   @crossProductVector = &crossProduct($vector1_ref,$vector2_ref);
+
+   $productMag = sqrt($crossProductVector[1]**2 +
+                      $crossProductVector[2]**2 +
+                      $crossProductVector[3]**2);
+
+   return $productMag;
+}
+
+
+sub getVectorAngle
+{
+   # Define passed parameters.
+   my $vector1_ref = $_[0];
+   my $vector2_ref = $_[1];
+
+   # Define local variables.
+   my $angle;
+   my $mag1;
+   my $mag2;
+
+   # Compute the magnitudes of the two vectors.
+   $mag1 = sqrt($vector1_ref->[1]*$vector1_ref->[1] +
+                $vector1_ref->[2]*$vector1_ref->[2] +
+                $vector1_ref->[3]*$vector1_ref->[3]);
+   $mag2 = sqrt($vector2_ref->[1]*$vector2_ref->[1] +
+                $vector2_ref->[2]*$vector2_ref->[2] +
+                $vector2_ref->[3]*$vector2_ref->[3]);
+
+   # Compute the angle between the vectors from:
+   #   theta = arccos(v1 . v2) / (|v1| |v2|).
+
+   $angle = &acos(($vector1_ref->[1]*$vector2_ref->[1] +
+                   $vector1_ref->[2]*$vector2_ref->[2] +
+                   $vector1_ref->[3]*$vector2_ref->[3]) / ($mag1*$mag2));
+
+   # Correct for slight deviations from 90 degrees which may occur because
+   #   we do not express some vector elements as infinity. Instead they are
+   #   expressed as large numbers.
+   if (abs($angle - $pi/2.0) < $epsilon)
+      {$angle = $pi/2.0;}
+
+   return $angle;
+}
 
 # This subroutine will take any array reference and will create and return a
 #   new array that contains only the unique elements of the original array.

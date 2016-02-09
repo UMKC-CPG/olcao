@@ -58,7 +58,8 @@ Line 2: 1 integer, 1 real number, 2 integers, 1 real number. The first number
    1 to indicate that the information for the crystalline cell is in units of
    Angstroms and it is a 0 to indicate that it is in units of Bohr radii. The
    final real number is a proximity control. It is always in units of Angstroms
-   and it will
+   and it will be used to determine whether or not an atom is in a grain
+   boundary or not.
 Line 3: The x, y, z components of the a lattice vector. Must be x, 0, 0 in
    units given by the angst variable in Line 2.
 Line 4: The x, y, z components of the b lattice vector. Must be 0, y, 0 in

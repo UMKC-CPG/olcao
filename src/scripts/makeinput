@@ -3305,7 +3305,7 @@ sub printOLCAOInput
 
    # Print data useful for the dos portion of the calculation
    print OLCAO "DOS_INPUT_DATA\n";
-   print OLCAO "$eDeltaDOS $sigmaDOS               ! DOS Delta Energy, DOS sigma broadening\n";
+   print OLCAO "$eDeltaDOS $sigmaDOS               ! DOS Delta Energy, DOS sigma broadening (FWHM)\n";
    print OLCAO "$eminDOS $emaxDOS                 ! DOS EMIN and EMAX\n";
    print OLCAO "$allAtomPDOS                       ! Flag for all atom PDOS\n";
 

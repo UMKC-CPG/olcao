@@ -133,8 +133,9 @@ subroutine initPSCFBandHDF5(numStates)
    !   the additional requirement x/y = a/b leads to b = sqrt(250M/>250M)*y.
    !   Thus a = 250M/b.
    if (valeStatesBand(1) * valeStatesBand(2) > 250000000) then
-      valeStatesBandChunk(2) = int(sqrt(real(250000000/(valeStatesBand(1) * &
-            valeStatesBand(2)),double)) * valeStatesBand(2))
+      valeStatesBandChunk(2) = int(sqrt(real(250000000,double) / &
+            & real(valeStatesBand(1) * valeStatesBand(2),double)) * &
+            & valeStatesBand(2))
       valeStatesBandChunk(1) = int(250000000 / valeStatesBandChunk(2))
    else
       valeStatesBandChunk(1) = valeStatesBand(1)
@@ -143,8 +144,9 @@ subroutine initPSCFBandHDF5(numStates)
 
    ! We will do a similar procedure for the coreValeBandChunk.
    if (coreValeBand(1) * coreValeBand(2) > 250000000) then
-      coreValeBandChunk(2) = int(sqrt(real(250000000/(coreValeBand(1) * &
-            coreValeBand(2)),double)) * coreValeBand(2))
+      coreValeBandChunk(2) = int(sqrt(real(250000000,double) / &
+            & real(coreValeBand(1) * coreValeBand(2),double)) * &
+            & coreValeBand(2))
       coreValeBandChunk(1) = int(250000000 / coreValeBandChunk(2))
    else
       coreValeBandChunk(1) = coreValeBand(1)

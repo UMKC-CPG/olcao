@@ -37,7 +37,7 @@ export OLCAO_DOUBLE=16
 export OLCAO_QUEUE=3
 
 #Define the head location of the VASP pseudopotential database.
-export VASPPOT_DIR="/share/sq/vasp/5.3.5"
+export VASPPOT_DIR="/share/sw/vasp/5.3.5"
 
 # Define the location of each type of VASP potential.
 export VASPPOT_USPP_LDA="$VASPPOT_DIR/potUSPP_LDA"

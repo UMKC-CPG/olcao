@@ -649,17 +649,21 @@ subroutine computeDOS
 
                ! If the exponential term is less than 50 we apply the
                !   broadening.
-               if (expTerm < 50) then
+               if (expTerm < 50.0_double) then
 
                   ! Compute the exponential factor.  It is at this point that
                   !   the kpoint weighting factor is applied to make the energy
                   !   bucket we are considering be filled with the right number
                   !   of electrons.  The pdosAccum below already has the
                   !   1/spin factor included.  Note that the hartree conversion
-                  !   must be included here because the sigmaDOS was in units
-                  !   of hartree, but the expTerm was not (because the energy
-                  !   values were also in hartree).  This left a hartree factor
-                  !   that was uncompensated for in the sigmaSqrtPi.
+                  !   must be included here because the sigmaDOS (that was used
+                  !   to make sigmaSqrtPi) is in units of hartree and the
+                  !   exponential and kPointWeights are unitless. Thus, if we
+                  !   want to get States / [eV Cell] then we need to convert
+                  !   the sigmaSqrtPi back to eV. Because it is in the
+                  !   denominator we need to divide the whole expression by
+                  !   eV/hartree to get a final energy unit of eV. Recall that
+                  !   the hartree variable equals 27.211... eV/hartree.
                   expFactor = exp(-expTerm) / sigmaSqrtPi / hartree * &
                         & kPointWeight(i)
 

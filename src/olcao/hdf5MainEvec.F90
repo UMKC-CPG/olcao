@@ -69,8 +69,8 @@ subroutine initMainEVecHDF5 (main_fid,numStates)
    !   the additional requirement x/y = a/b leads to b = sqrt(250M/>250M)*y.
    !   Thus a = 250M/b.
    if (valeStates(1) * valeStates(2) > 250000000) then
-      valeStatesChunk(2) = int(sqrt(real(250000000/(valeStates(1) * &
-            & valeStates(2)),double)) * valeStates(2))
+      valeStatesChunk(2) = int(sqrt(real(250000000,double) / &
+            & real(valeStates(1) * valeStates(2),double)) * valeStates(2))
       valeStatesChunk(1) = int(250000000 / valeStatesChunk(2))
    else
       valeStatesChunk(1) = valeStates(1)

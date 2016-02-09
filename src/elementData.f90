@@ -9,6 +9,8 @@ module O_ElementData
    ! Define module data.
    character*3, allocatable, dimension (:)          :: elementNames ! The
          ! abbreviated names of the elements from the periodic table.
+   real (kind=double), allocatable, dimension (:)   :: atomicMass ! Atomic mass
+         ! of each unique element.
    real (kind=double), allocatable, dimension (:)   :: covalRadii ! Covalent
          ! radius of each unique element.
    real (kind=double), allocatable, dimension (:,:) :: coreCharge ! Number of
@@ -68,6 +70,7 @@ subroutine initElementData
 
    ! Allocate arrays for holding data.
    allocate (elementNames(numUniqueElements))
+   allocate (atomicMass(numUniqueElements))
    allocate (covalRadii(numUniqueElements))
    allocate (coreCharge(maxOrbitals,numUniqueElements))
    allocate (valeCharge(maxOrbitals,numUniqueElements))
@@ -78,6 +81,12 @@ subroutine initElementData
    read (313,*)
    do i = 1, numUniqueElements
       read (313,*) elementNames(i)
+   enddo
+
+   ! Atomic mass of each element.
+   read (313,*)
+   do i = 1, numUniqueElements
+      read (313,*) atomicMass(i)
    enddo
 
    ! Covalent Radii of each element.
@@ -199,6 +208,7 @@ subroutine deallocateElementData
 
    ! Deallocate arrays used to hold data.
    deallocate (elementNames)
+   deallocate (atomicMass)
    deallocate (covalRadii)
    deallocate (coreCharge)
    deallocate (valeCharge)
