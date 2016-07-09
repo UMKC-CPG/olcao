@@ -632,7 +632,7 @@ subroutine createIsoUnion(i,j,k,fileUnit,orbitalCount)
       write (fileUnit,fmt="(a)") '      function {'
 
       do m = 1, numBasisTerms(i)
-         write (fileUnit,advance="NO",fmt="(a8,a3,e12.5,a2,a,a7,e8.3,a19)") &
+         write (fileUnit,advance="NO",fmt="(a8,a3,e12.5,a2,a,a7,e10.3,a19)") &
                & '        ',&
                & orbSign,hamiltonianME(m,j,i)*normalization,'*(',&
                & lmType,')*exp(-',basisAlphas(m),'*(x*x + y*y + z*z))'

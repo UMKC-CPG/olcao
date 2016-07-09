@@ -1494,7 +1494,7 @@ subroutine computeSigmaE (currentKPoint,xyzComponents,spinDirection)
             & sum(sigmaEAccumulator(i,:))/3.0_double,sigmaEAccumulator(i,:)
       enddo
 
-      ! Accumulate the total electronic contribution to the thermal conductivity.
+      ! Accumulate the total electronic contribution to thermal conductivity.
       totalSigma = sum(sigmaEAccumulator(:,:)) / 3.0_double
       write (20,*) "The total sigma is: ",totalSigma
 

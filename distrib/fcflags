@@ -1,2 +1,0 @@
-blacklight:  -O3 -warn all
-Ubuntu-gfortran:  -fimplicit-none -Wall -O3

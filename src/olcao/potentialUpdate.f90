@@ -807,12 +807,12 @@ subroutine makeSCFPot (totalEnergy)
 
             ! Write the term.
             if (spin == 1) then
-               write (8,fmt="(2(1x,e16.10),3(1x,e12.6))") &
+               write (8,fmt="(2(1x,e17.10),3(1x,e13.6))") &
                      & potCoeffs(potTermCount,i),potAlphas(potTermCount),&
                      & generalRho(potTermCount,1),generalRho(potTermCount,2),&
                      & 0.0_double
             else
-               write (8,fmt="(2(1x,e16.10),3(1x,e12.6))") &
+               write (8,fmt="(2(1x,e17.10),3(1x,e13.6))") &
                      & potCoeffs(potTermCount,i),potAlphas(potTermCount),&
                      & generalRho(potTermCount,1),generalRho(potTermCount,2),&
                      & generalRho(potTermCount,8)

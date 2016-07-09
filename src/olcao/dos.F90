@@ -835,12 +835,12 @@ subroutine computeDOS
             !   all orbitals for this type.  (TDOS for this type.)  The next
             !   values are the QN_nl resolved PDOS for this type.
             do j = 1, numEnergyPoints
-               write (69+h,ADVANCE="NO",fmt="(e12.6,1x)") &
+               write (69+h,ADVANCE="NO",fmt="(e13.6,1x)") &
                   & sum(pdosComplete(initIndex:finIndex,j))
                numCols = 1
                do k = initIndex,finIndex
                   numCols = numCols + 1
-                  write (69+h,ADVANCE="NO",fmt="(e12.6,1x)") pdosComplete(k,j)
+                  write (69+h,ADVANCE="NO",fmt="(e13.6,1x)") pdosComplete(k,j)
                   if (mod(numCols,6) == 0) then
                     write (69+h,*)
                   endif
@@ -953,12 +953,12 @@ subroutine computeDOS
             !   for this atom.  The other values are the QN_nl resolved PDOS
             !   for this atom.
             do j = 1, numEnergyPoints
-               write (69+h,ADVANCE="NO",fmt="(e12.6,1x)") &
+               write (69+h,ADVANCE="NO",fmt="(e13.6,1x)") &
                      & sum(pdosComplete(initIndex:finIndex,j))
                numCols = 1
                do k = initIndex,finIndex
                   numCols = numCols + 1
-                  write (69+h,ADVANCE="NO",fmt="(e12.6,1x)") pdosComplete(k,j)
+                  write (69+h,ADVANCE="NO",fmt="(e13.6,1x)") pdosComplete(k,j)
                   if (mod(numCols,6) == 0) then
                     write (69+h,*)
                   endif
@@ -1046,12 +1046,12 @@ subroutine computeDOS
             !   for this atom.  The other values are the QN_nlm resolved PDOS
             !   for this atom.
             do j = 1, numEnergyPoints
-               write (69+h,ADVANCE="NO",fmt="(e12.6,1x)") &
+               write (69+h,ADVANCE="NO",fmt="(e13.6,1x)") &
                      & sum(pdosComplete(initIndex:finIndex,j))
                numCols = 1
                do k = initIndex,finIndex
                   numCols = numCols + 1
-                  write (69+h,ADVANCE="NO",fmt="(e12.6,1x)") pdosComplete(k,j)
+                  write (69+h,ADVANCE="NO",fmt="(e13.6,1x)") pdosComplete(k,j)
                   if (mod(numCols,6) == 0) then
                     write (69+h,*)
                   endif
