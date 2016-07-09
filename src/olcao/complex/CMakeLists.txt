@@ -1,7 +1,7 @@
-# CMake file for OLCAO application: real OLCAO
+# CMake file for OLCAO application: complex OLCAO
 
 # Document the current location
-message("At the real OLCAO application.")
+message("At the complex OLCAO application.")
 
 add_executable(OLCAOsetup ../../kinds.f90 ../../constants.f90
    ../../readData.f90 ../stringSubs.f90 ../mathSubs.f90 ../sortSubs.f90

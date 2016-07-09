@@ -89,5 +89,10 @@ add_executable(gOLCAOwave ../../kinds.f90 ../../constants.f90
    ../input.f90 ../secularEqn.F90 ../populate.F90 ../openDX.f90 ../wave.F90
    ../OLCAO_Wave.f90)
 
+# At this point we need to add the -DGAMMA preprocessor definition to the
+#   compile command for these gamma k-point executables. This addition applies
+#   only to the current directory.
+add_definitions(-DGAMMA)
+
 install(TARGETS gOLCAOsetup gOLCAOmain gOLCAOintg gOLCAOband gOLCAOdos
    gOLCAObond gOLCAOoptc gOLCAOwave DESTINATION bin)
