@@ -910,12 +910,17 @@ sub readPDB
    # Declare local parameters.
    my $line;
    my $recordName;
+   my $found;
    my @values;
    my $explicitABC;
    my $axis;
    my $atom;
+   my $species;
    my $element;
+   my $currElementID;
    my $tempTag;
+   my @pdbAtomTag; # An analog to the @atomTag, but specific for PDB files.
+   my @pdbSpeciesList;
 
    # Assume the file will not contain an explicit set of lattice parameters.
    $explicitABC = 0;
@@ -961,41 +966,51 @@ sub readPDB
          # Increment the number of atoms in the system.
          $numAtoms++;
 
-         # Extract the tag for this atom.  This gets one more character than
-         #   defined in the PDB standard because some files rudely use this
+         # Extract the pdb atom tag for this atom. This gets one more character
+         #   than defined in the PDB standard because some files rudely use this
          #   extra character when they are not supposed to. This grabs from
          #   columns 12 through 16.  Note that column 12 has no specified value
          #   and so could be used by either the atom name or the serial number
          #   field which is before the atom name field.  Thus, for poorly
-         #   generated PDB files or those that are not to the standard this
+         #   generated PDB files or those that do not follow the standard this
          #   particular read my get part of a number (if someone used column
-         #   12 for the serial number when they shouldn't).
-         $atomTag[$numAtoms] = lc(substr($line,11,5,"12345"));
+         #   12 for the serial number when they shouldn't) and will break.
+         # We should also note that the pdbAtomTag is very different than the
+         #   atomTag used in other input files. It will never be an element +
+         #   species number combination.
+         $tempTag = lc(substr($line,11,5,"12345"));
 
-         # If the element symbol is specified, then we record the element name
-         #   according to it.  Otherwise, we record the element name according
-         #   to some decomposition of the atomTag.
+         # We are now going to try to create an atom tag that is an element
+         #   name + species number combination. First we need to get rid of
+         #   the leading spaces and trailing spaces from the tempTag before
+         #   we store it in the pdbAtomTag.
+         @values = split(/\s+/,$tempTag); # Get rid of trailing spaces.
+         if ($values[0] eq "") # Get rid of leading spaces (if any).
+            {shift @values;}
+         $pdbAtomTag[$numAtoms] = shift @values;
+
+         # Now, if the element symbol is provided on this ATOM line of the PDB
+         #   file, then we get that name and use it to construct the atomTag.
+         #   If the element symbol is *not* provided, then we make a guess as
+         #   to the element name on the basis of the pdbAtomTag. Essentially,
+         #   we will only guess correctly if the element symbol is one
+         #   character. We will fail if it is two characters. I'm not sure at
+         #   this point about how to fix this issue.
          $element = lc(substr($line,76,2,"12"));
-         if (("$element" ne "  ") && ("$element" ne ""))
-            {$atomElementName[$numAtoms] = $element;}
-         else
+         @values = split(/\s+/,$element); # Get rid of trailing spaces.
+         if ($values[0] eq "") # Get rid of leading spaces (if any).
+            {shift @values;}
+         if ($values[0] ne "") # Save the remaining element name.
+            {$atomElementName[$numAtoms] = $values[0];}
+         else # Or get the element name from the pdbAtomTag.
          {
-            # Get rid of the leading spaces.
-            @values = split(/\s+/,$atomTag[$numAtoms]);
-            if ($values[0] eq "")
-               {shift @values;}
-
-            # Store the tag in a temp name.
-            $tempTag = shift @values;
-
             # Get the leading character and call that the element name.  NOTE
             #   that this does not work for elements with two letters in their
             #   name because the tag could be something like "CA" and we can't
             #   necessarily tell if this is Calcium or Carbon Type 'A'.
             #   Presently we just assume that there are no atoms like calcium
             #   in the model.
-            @values = split(//,$tempTag);
-
+            @values = split(//,$pdbAtomTag[$numAtoms]);
             $atomElementName[$numAtoms] = lc($values[0]);
          }
 
@@ -1016,8 +1031,11 @@ sub readPDB
          $directXYZ[$numAtoms][2] = substr($line,38,8,"12345678");
          $directXYZ[$numAtoms][3] = substr($line,46,8,"12345678");
 
-         # Assume that the species for this atom is 1.
+         # Assume that the species for this atom is 1 and create a temporary
+         #   atomTag based on that assumption. This will be used to construct
+         #   other element information later.
          $atomSpeciesID[$numAtoms] = 1;
+         $atomTag[$numAtoms] = "$atomElementName[$numAtoms]" . "1";
       }
    }
 
@@ -1032,13 +1050,57 @@ sub readPDB
       &getFractABC($atom);
    }
 
-   # In the case that useFileSpecies is true, we obtain the species as given
-   #   in the input file.
-   if ($useFileSpecies)
+   # Now, if we want to use the species as defined in the pdb file we need to
+   #   extract the species number from the uniqueness of the pdbAtomTag values
+   #   for each element. This is very much like the createSpeciesData
+   #   subroutine except that we don't have valid atomTag values. Instead we
+   #   have pdbAtomTag values that don't represent element+IDnumber pairs.
+   #   Thus, we are faced with a problem. Do we modify the createSpeciesData
+   #   subroutine to accept a pdbAtomTag array as an edge case or do we just
+   #   repeat essentially the same subroutine here. I am going to replicate the
+   #   subroutine here to create the atomTag array and then just call the
+   #   createSpeciesData subroutine as it normally would be called.
+   &createElementList;
+   if ($useFileSpecies == 1)
    {
-      &createElementList;
-      &computeSpeciesFromTags;
+      # Initialize the count of the number of unique species for each element.
+      foreach $element (1..$numElements)
+         {$numSpecies[$element] = 0;}
+
+      foreach $atom (1..$numAtoms)
+      {
+         # Define the current element ID.
+         $currElementID = $atomElementID[$atom];
+
+         # Determine if the pdbAtomTag associated with the element for this
+         #   atom already exists.
+         $found = 0;
+         foreach $species (1..$numSpecies[$currElementID])
+         {
+            if ($pdbAtomTag[$atom] eq $pdbSpeciesList[$currElementID][$species])
+            {
+               $found = $species;
+               last;
+            }
+         }
+
+         if ($found == 0)
+         {
+            $numSpecies[$currElementID]++;
+            $pdbSpeciesList[$currElementID][$numSpecies[$currElementID]] =
+                  $pdbAtomTag[$atom];
+            $atomSpeciesID[$atom] = $numSpecies[$currElementID];
+            $atomTag[$atom] = "$atomElementName[$atom]"
+                  . "$numSpecies[$currElementID]";
+         }
+         else
+         {
+            $atomSpeciesID[$atom] = $found;
+            $atomTag[$atom] = "$atomElementName[$atom]" . "$found";
+         }
+      }
    }
+   &createSpeciesData($useFileSpecies);
 }
 
 
@@ -1074,7 +1136,7 @@ sub readXYZ
    foreach $atom (1..$numAtoms)
    {
       @values = &prepLine(\*INFILE,"",'\s+');
-      $atomTag[$atom] = lc($values[0]);
+      $atomTag[$atom] = lc($values[0]); # Assume: 1 or 2 letter abbreviation
       $atomElementName[$atom] = lc($values[0]);
       $directXYZ[$atom][1] = $values[1];
       $directXYZ[$atom][2] = $values[2];
@@ -1104,13 +1166,11 @@ sub readXYZ
       &getFractABC($atom);
    }
 
-   # In the case that useFileSpecies is true, we obtain the species as given
-   #   in the input file.
-   if ($useFileSpecies)
-   {
-      &createElementList;
-      &computeSpeciesFromTags;
-   }
+   # Create a set of data structures that contain information about the
+   #   relationship between atom numbers, elements, and species.  Also make
+   #   lists of the elements in the system and species for each element.
+   &createElementList;
+   &createSpeciesData($useFileSpecies);
 }
 
 
@@ -1183,13 +1243,11 @@ sub readABC
    }
    close (INFILE);
 
-   # In the case that useFileSpecies is true, we obtain the species as given
-   #   in the input file.
-   if ($useFileSpecies)
-   {
-      &createElementList;
-      &computeSpeciesFromTags;
-   }
+   # Create a set of data structures that contain information about the
+   #   relationship between atom numbers, elements, and species.  Also make
+   #   lists of the elements in the system and species for each element.
+   &createElementList;
+   &createSpeciesData($useFileSpecies);
 }
 
 # At present this will only read cif files that are symmetry P1 and in the
@@ -1388,13 +1446,11 @@ sub readHIN
       &getFractABC($atom);
    }
 
-   # In the case that useFileSpecies is true, we obtain the species as given
-   #   in the input file.
-   if ($useFileSpecies)
-   {
-      &createElementList;
-      &computeSpeciesFromTags;
-   }
+   # Create a set of data structures that contain information about the
+   #   relationship between atom numbers, elements, and species.  Also make
+   #   lists of the elements in the system and species for each element.
+   &createElementList;
+   &createSpeciesData($useFileSpecies);
 }
 
 
@@ -2788,7 +2844,7 @@ sub createElementList
       @values = &prepLine("","$atomTag[$atom]",'[0-9]+');
       $atomElementName[$atom] = $values[0];
 
-      # Find the element of this atom in the list.
+      # Find the element name of this atom in the list of unique elements.
       $found = 0;
       foreach $element (1..$numElements)
       {
@@ -2799,7 +2855,7 @@ sub createElementList
          }
       }
 
-      # Add a new element to the list if it was not found.
+      # Add a new element to the list of unique elements if it was not found.
       if ($found == 0)
       {
          $numElements++;

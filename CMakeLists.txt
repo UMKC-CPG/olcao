@@ -45,7 +45,7 @@ message("CMAKE_Fortran_COMPILER_ID= ${CMAKE_Fortran_COMPILER_ID}")
 #   stores it here then he/she will have a record. I guess just be careful to
 #   retain that information if you get a new version from github. Or something.
 if (CMAKE_Fortran_COMPILER_ID MATCHES "gfortran")
-   set (CMAKE_Fortran_FLAGS_RELEASE "-O3")
+   set (CMAKE_Fortran_FLAGS_RELEASE "-O3 -fimplicit-none -Wall")
    set (CMAKE_EXE_LINKER_FLAGS "-llapack -lblas")
 elseif (CMAKE_Fortran_COMPILER_ID MATCHES "Intel")
    set (CMAKE_Fortran_FLAGS_RELEASE "-O3")
