@@ -1,7 +1,7 @@
 # Top level CMake file for OLCAO
 
 # Set the minimum required version, the project name, and enable Fortran.
-cmake_minimum_required(VERSION 3.0)
+cmake_minimum_required(VERSION 3.1.0)
 project(OLCAO)
 enable_language (Fortran)
 
@@ -44,13 +44,13 @@ message("CMAKE_Fortran_COMPILER_ID= ${CMAKE_Fortran_COMPILER_ID}")
 #   retain a record of what they were when he/she compiles OLCAO. If the user
 #   stores it here then he/she will have a record. I guess just be careful to
 #   retain that information if you get a new version from github. Or something.
-if (CMAKE_Fortran_COMPILER_ID MATCHES "gfortran")
+if (CMAKE_Fortran_COMPILER_ID MATCHES "GNU")
    set (CMAKE_Fortran_FLAGS_RELEASE "-O3 -fimplicit-none -Wall")
    set (CMAKE_EXE_LINKER_FLAGS "-llapack -lblas")
 elseif (CMAKE_Fortran_COMPILER_ID MATCHES "Intel")
    set (CMAKE_Fortran_FLAGS_RELEASE "-O3")
    set (CMAKE_EXE_LINKER_FLAGS "-mkl")
-endif (CMAKE_Fortran_COMPILER_ID MATCHES "gfortran")
+endif (CMAKE_Fortran_COMPILER_ID MATCHES "GNU")
 message("CMAKE_Fortran_FLAGS_RELEASE= ${CMAKE_Fortran_FLAGS_RELEASE}")
 message("CMAKE_EXE_LINKER_FLAGS= ${CMAKE_EXE_LINKER_FLAGS}")
 
