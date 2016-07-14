@@ -154,7 +154,6 @@ use Env;
 use lib "$OLCAO_BIN/perl5";
 use StructureControl;
 use ElementData;
-use Math::MatrixReal;
 
 # Declare global variables.
 my $pi = 3.1415926535897932384626433832795;

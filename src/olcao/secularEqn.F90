@@ -345,7 +345,7 @@ subroutine readEnergyEigenValuesBand(numStates)
 end subroutine readEnergyEigenValuesBand
 
 
-subroutine appendExcitedEnergyEigenValuesBand (firstStateIndex,numStates)
+subroutine appendExcitedEValsBand (firstStateIndex,numStates)
 
    ! Use necessary modules
    use HDF5
@@ -391,7 +391,7 @@ subroutine appendExcitedEnergyEigenValuesBand (firstStateIndex,numStates)
    ! Deallocate the reading buffer
    deallocate (energyValuesTemp)
 
-end subroutine appendExcitedEnergyEigenValuesBand
+end subroutine appendExcitedEValsBand
 
 
 subroutine preserveValeValeOL

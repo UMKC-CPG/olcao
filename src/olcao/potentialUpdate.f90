@@ -49,7 +49,7 @@ subroutine makeSCFPot (totalEnergy)
          & exchRhoOp_did, exchCorrOverlap_did, numPoints, points, potPoints
    use O_Potential, only: spin, potDim, intgConsts, spinSplitFactor, &
          & potAlphas, potCoeffs, currIteration, lastIteration, feedbackLevel, &
-         & relaxFactor, xcCode, converged, convgTest
+         & relaxFactor, xcCode, converged, convgTest, GGA
    use O_SetupElecStatHDF5, only: potAlphaOverlap_did, coreChargeDensity_did, &
          & nonLocalNeutQPot_did, localNeutQPot_did, localNucQPot_did, &
          & nonLocalNucQPot_did, nonLocalResidualQ_did, pot, potPot, potTypesPot
@@ -65,6 +65,7 @@ subroutine makeSCFPot (totalEnergy)
    ! Define the local variables used in this subroutine.
    integer :: i,j,k ! Loop index variables
    integer :: hdferr
+   integer :: numOpValues
    integer :: currentType
    integer :: currentNumAlphas
    integer :: currentCumulAlphaSum
@@ -84,6 +85,28 @@ subroutine makeSCFPot (totalEnergy)
    real (kind=double) :: coreSum
    real (kind=double) :: spinDiffSum
    real (kind=double) :: nonCoreTotalSum
+   real (kind=double) :: SX 
+   real (kind=double) :: SY
+   real (kind=double) :: SZ
+   real (kind=double) :: SXX
+   real (kind=double) :: SXY
+   real (kind=double) :: SXZ
+   real (kind=double) :: SYY 
+   real (kind=double) :: SYZ
+   real (kind=double) :: SZZ
+   real (kind=double) :: SXC 
+   real (kind=double) :: SYC
+   real (kind=double) :: SZC
+   real (kind=double) :: SXXC
+   real (kind=double) :: SXYC
+   real (kind=double) :: SXZC
+   real (kind=double) :: SYYC
+   real (kind=double) :: SYZC
+   real (kind=double) :: SZZC
+   real (kind=double) :: SXS
+   real (kind=double) :: SYS
+   real (kind=double) :: SZS
+
    real (kind=double) :: testableDelta
    real (kind=double) :: radialWeightSum
    real (kind=double) :: weightedPotDiff
@@ -94,6 +117,8 @@ subroutine makeSCFPot (totalEnergy)
    real (kind=double), allocatable, dimension (:,:) :: elecStatPot
    real (kind=double), allocatable, dimension (:,:) :: exchCorrPot
    real (kind=double), allocatable, dimension (:,:) :: exchCorrRho
+   real (kind=double), allocatable, dimension (:,:) :: exchCorrRhoCore
+   real (kind=double), allocatable, dimension (:,:) :: exchCorrRhoSpin
    real (kind=double), allocatable, dimension (:,:) :: outputPot
    real (kind=double), allocatable, dimension (:,:) :: realSpacePotDiff
    real (kind=double), allocatable, dimension (:)   :: averageDelta
@@ -404,9 +429,24 @@ subroutine makeSCFPot (totalEnergy)
    ! Allocate space to hold the exchange-correlation potential, exchange
    !   correlation radial weights, Rho Matrix Operator, and the resultant Rho.
    allocate (exchCorrPot  (potDim,2+spin))
-   allocate (exchCorrRho  (1+spin,maxNumRayPoints))
+   ! If running GGA calculation space is allocated for the first and second
+   ! derivatives of the exchange rho operator.
+   if (GGA == 0) then
+      numOpValues = 1
+   else
+      numOpValues = 10
+   endif
+   allocate (exchCorrRho     (numOpValues,maxNumRayPoints))
+   allocate (exchCorrRhoCore (numOpValues,maxNumRayPoints))
+   allocate (exchRhoOp       (potDim,maxNumRayPoints,numOpValues))
+
+   if (spin == 1) then
+      allocate (exchCorrRhoSpin (1,maxNumRayPoints))
+   else
+      allocate (exchCorrRhoSpin (4,maxNumRayPoints))
+   endif
+
    allocate (radialWeight (maxNumRayPoints))
-   allocate (exchRhoOp    (potDim,maxNumRayPoints))
 
 
    ! Initialize the exchange-correlation potential accumulator
@@ -429,24 +469,102 @@ subroutine makeSCFPot (totalEnergy)
       if (hdferr /= 0) stop 'Failed to read radial weights'
 
       call h5dread_f (exchRhoOp_did(i),H5T_NATIVE_DOUBLE,&
-            & exchRhoOp(:,:),potPoints,hdferr)
+            & exchRhoOp(:,:,:),potPoints,hdferr)
       if (hdferr /= 0) stop 'Failed to read exch rho operator'
 
 
       ! The exchange correlation matrix times the charge vector produces the
       !   the real space charge
       do j = 1, numRayPoints
-         coreSum         = sum(exchRhoOp(:potDim,j) * generalRho(:potDim,3))
-         nonCoreTotalSum = sum(exchRhoOp(:potDim,j) * generalRho(:potDim,1))
+         coreSum         = sum(exchRhoOp(:potDim,j,1) * generalRho(:potDim,3))
+         nonCoreTotalSum = sum(exchRhoOp(:potDim,j,1) * generalRho(:potDim,1))
 
          if (spin == 2) then
-            spinDiffSum = sum(exchRhoOp(:potDim,j) * generalRho(:potDim,8))
-            exchCorrRho (3,j) = spinDiffSum  ! Valence spin difference
+            spinDiffSum = sum(exchRhoOp(:potDim,j,1) * generalRho(:potDim,8))
+            exchCorrRhoSpin(1,j) = spinDiffSum  ! Valence spin difference
+         else
+            exchCorrRhoSpin(1,j) = 0.0_double  ! Valence spin difference
          endif
 
-         if (coreSum < 0.0_double) then
-            coreSum = 0.0_double
+         if (GGA == 1) then
+            SX = -1.0_double * sum(2.0_double * exchRhoOp(:potDim,j,2) * &
+                  & generalRho(:potDim,1))
+            SY = -1.0_double * sum(2.0_double * exchRhoOp(:potDim,j,3) * &
+                  & generalRho(:potDim,1))
+            SZ = -1.0_double * sum(2.0_double * exchRhoOp(:potDim,j,4) * &
+                  & generalRho(:potDim,1))
+            SXX = sum(4.0_double * exchRhoOp(:potDim,j,5) &
+                  & - 2.0_double * exchRhoOp(:potDim,j,1) * &
+                  & generalRho(:potDim,1))
+            SXY = sum(4.0_double * exchRhoOp(:potDim,j,6))
+            SXZ = sum(4.0_double * exchRhoOp(:potDim,j,7))
+            SYY = sum(4.0_double * exchRhoOp(:potDim,j,8) &
+                  &- 2.0_double * exchRhoOp(:potDim,j,1) * &
+                  & generalRho(:potDim,1))
+            SYZ = sum(4.0_double * exchRhoOp(:potDim,j,9))
+            SZZ = sum(4.0_double * exchRhoOp(:potDim,j,10) &
+                  &- 2.0_double * exchRhoOp(:potDim,j,1) * &
+                  & generalRho(:potDim,1))
+
+
+            SXC = -1.0_double * sum(2.0_double * exchRhoOp(:potDim,j,2) * &
+                  & generalRho(:potDim,3))
+            SYC = -1.0_double * sum(2.0_double * exchRhoOp(:potDim,j,3) * &
+                  & generalRho(:potDim,3))
+            SZC = -1.0_double * sum(2.0_double * exchRhoOp(:potDim,j,4) * &
+                  & generalRho(:potDim,3))
+            SXXC = sum(4.0_double * exchRhoOp(:potDim,j,5) &
+                  & - 2.0_double * exchRhoOp(:potDim,j,1) * &
+                  & generalRho(:potDim,3))
+            SXYC = sum(4.0_double * exchRhoOp(:potDim,j,6))
+            SXZC = sum(4.0_double * exchRhoOp(:potDim,j,7))
+            SYYC = sum(4.0_double * exchRhoOp(:potDim,j,8) &
+                  &- 2.0_double * exchRhoOp(:potDim,j,1) * &
+                  & generalRho(:potDim,3))
+            SYZC = sum(4.0_double * exchRhoOp(:potDim,j,9))
+            SZZC = sum(4.0_double * exchRhoOp(:potDim,j,10) &
+                  &- 2.0_double * exchRhoOp(:potDim,j,1) * &
+                  & generalRho(:potDim,3))
+
+            if (spin == 2) then
+               SXS = -1.0_double * sum(2.0_double * exchRhoOp(:potDim,j,2) * &
+                     & generalRho(:potDim,8))
+               SYS = -1.0_double * sum(2.0_double * exchRhoOp(:potDim,j,3) * &
+                     & generalRho(:potDim,8))
+               SZS = -1.0_double * sum(2.0_double * exchRhoOp(:potDim,j,4) * &
+                     & generalRho(:potDim,8))
+            endif
          endif
+
+         if (GGA == 0) then
+            if (coreSum < 0.0_double) then
+               coreSum = 0.0_double
+            endif
+         else
+            if (coreSum < smallThresh) then
+               coreSum = smallThresh
+            endif
+  
+            if (SXC < smallThresh) then
+               SXC = smallThresh
+            endif
+            if (SYC < smallThresh) then
+               SYC = smallThresh
+            endif
+            if (SZC < smallThresh) then
+               SZC = smallThresh
+            endif
+             if (SXS < smallThresh) then
+               SXS = smallThresh
+            endif
+            if (SYS < smallThresh) then
+               SYS = smallThresh
+            endif
+            if (SZS < smallThresh) then
+               SZS = smallThresh
+            endif
+         endif
+
          if (nonCoreTotalSum < smallThresh) then
 ! This is totally ridiculous.  If the following statement is not present, then
 !   the program will not work.  The values for nonCoreTotalSum will not be
@@ -470,7 +588,36 @@ subroutine makeSCFPot (totalEnergy)
          endif
 
          exchCorrRho (1,j) = nonCoreTotalSum
-         exchCorrRho (2,j) = coreSum
+         exchCorrRhoCore (1,j) = coreSum
+
+         ! Note that the indexing scheme has changed from the one used
+         ! in exchRhoOp(:,:,10) in order to incorporate coreSum and spinDiffSum
+         if (GGA == 1) then
+            exchCorrRho (2,j) = SX
+            exchCorrRho (3,j) = SY
+            exchCorrRho (4,j) = SZ
+            exchCorrRho (5,j) = SXX
+            exchCorrRho (6,j) = SXY
+            exchCorrRho (7,j) = SXZ
+            exchCorrRho (8,j) = SYY
+            exchCorrRho (9,j) = SYZ
+            exchCorrRho (10,j) = SZZ
+
+            exchCorrRhoCore (2,j) = SXC
+            exchCorrRhoCore (3,j) = SYC
+            exchCorrRhoCore (4,j) = SZC
+            exchCorrRhoCore (5,j) = SXXC
+            exchCorrRhoCore (6,j) = SXYC
+            exchCorrRhoCore (7,j) = SXZC
+            exchCorrRhoCore (8,j) = SYYC
+            exchCorrRhoCore (9,j) = SYZC
+            exchCorrRhoCore (10,j) = SZZC
+            if (spin == 2) then
+               exchCorrRhoSpin (2,j) = SXS
+               exchCorrRhoSpin (3,j) = SYS
+               exchCorrRhoSpin (4,j) = SZS
+            endif
+         endif
       enddo
 
       ! Define the exchange correlation functions
@@ -480,6 +627,7 @@ subroutine makeSCFPot (totalEnergy)
       ! 150 = Ceperley-Alder
       ! 151 = von Barth-Hedin
       ! 152 = unknown
+      ! 200 = PBE96 (Perdew, Burke, and Enzerhof)
 
       if (xcCode == 100) then
             do j = 1, numRayPoints
@@ -487,71 +635,125 @@ subroutine makeSCFPot (totalEnergy)
                !   return value of the second array index value was 0.0 on the
                !   ia64 HP-UX machine sirius.  This seems to work.
                call wignerXC(exchCorrRho(1,j),currentExchCorrPot(1:2))
-               call wignerXCEnergy(exchCorrRho(2,j),currentExchCorrPot(3))
+               call wignerXCEnergy(exchCorrRhoCore(1,j),currentExchCorrPot(3))
                do k = 1,3
                   exchCorrPot(:potDim,k) = exchCorrPot(:potDim,k) + &
                         & radialWeight(j) * currentExchCorrPot(k) * &
-                        & exchRhoOp(:potDim,j)
+                        & exchRhoOp(:potDim,j,1)
                enddo
             enddo
       elseif (xcCode == 101) then
             do j = 1, numRayPoints
                call ceperleyAlderXC(exchCorrRho(1,j),currentExchCorrPot(1:2))
-               call ceperleyAlderXCEnergy(exchCorrRho(2,j),&
+               call ceperleyAlderXCEnergy(exchCorrRhoCore(1,j),&
                      & currentExchCorrPot(3))
                do k = 1,3
                   exchCorrPot(:potDim,k) = exchCorrPot(:potDim,k) + &
                         & radialWeight(j) * currentExchCorrPot(k) * &
-                        & exchRhoOp(:potDim,j)
+                        & exchRhoOp(:potDim,j,1)
                enddo
             enddo
       elseif (xcCode == 102) then
             do j = 1, numRayPoints
                call hedinLundqvistXC(exchCorrRho(1,j),&
                      & currentExchCorrPot(1:2))
-               call hedinLundqvistXCEnergy(exchCorrRho(2,j),&
+               call hedinLundqvistXCEnergy(exchCorrRhoCore(1,j),&
                      & currentExchCorrPot(3))
                do k = 1,3
                   exchCorrPot(:potDim,k) = exchCorrPot(:potDim,k) + &
                         & radialWeight(j) * currentExchCorrPot(k) * &
-                        & exchRhoOp(:potDim,j)
+                        & exchRhoOp(:potDim,j,1)
                enddo
             enddo
       elseif (xcCode == 150) then
             ! Ceperley and Alder Exchange-Correlation (LSDA)
             do j = 1, numRayPoints
-               call ceperleyAlderSP(exchCorrRho(1,j),exchCorrRho(3,j),&
-                     & exchCorrRho(2,j),currentExchCorrPot(1:4))
+               call ceperleyAlderSP(exchCorrRho(1,j),exchCorrRhoSpin(1,j),&
+                     & exchCorrRhoCore(1,j),currentExchCorrPot(1:4))
                do k = 1,4
                   exchCorrPot(:potDim,k) = exchCorrPot(:potDim,k) + &
                         & radialWeight(j) * currentExchCorrPot(k) * &
-                        & exchRhoOp(:potDim,j)
+                        & exchRhoOp(:potDim,j,1)
                enddo
             enddo
 
       elseif (xcCode == 151) then
             ! von Barth and Hedin Exchange-Correlation (LSDA)
             do j = 1, numRayPoints
-               call vonBarthHedin(exchCorrRho(1,j),exchCorrRho(3,j),&
-                     & exchCorrRho(2,j),currentExchCorrPot(1:4))
+               call vonBarthHedin(exchCorrRho(1,j),exchCorrRhoSpin(1,j),&
+                     & exchCorrRhoCore(1,j),currentExchCorrPot(1:4))
                do k = 1,4
                   exchCorrPot(:potDim,k) = exchCorrPot(:potDim,k) + &
                         & radialWeight(j) * currentExchCorrPot(k) * &
-                        & exchRhoOp(:potDim,j)
+                        & exchRhoOp(:potDim,j,1)
                enddo
             enddo
       elseif (xcCode == 152) then
             ! Old SPmain.for Exchange Correlation (LSDA) (Should be like the
             !   von barth and Hedin above.)
             do j = 1, numRayPoints
-               call oldEXCORR(exchCorrRho(1,j),exchCorrRho(3,j),&
-                     & exchCorrRho(2,j),currentExchCorrPot(1:4))
+               call oldEXCORR(exchCorrRho(1,j),exchCorrRhoSpin(1,j),&
+                     & exchCorrRhoCore(1,j),currentExchCorrPot(1:4))
                do k = 1,4
                   exchCorrPot(:potDim,k) = exchCorrPot(:potDim,k) + &
                         & radialWeight(j) * currentExchCorrPot(k) * &
-                        & exchRhoOp(:potDim,j)
+                        & exchRhoOp(:potDim,j,1)
                enddo
             enddo
+      elseif (xcCode == 200) then
+            ! PBE96 (Perdew, Burke, and Enzerhof), should be like
+            ! GGA in old ggamain.for
+            do j = 1, numRayPoints
+
+               call pbe96(exchCorrRho(1,j),exchCorrRho(2,j), &
+                  & exchCorrRho(3,j),exchCorrRho(4,j), &
+                  & exchCorrRho(5,j),exchCorrRho(6,j),exchCorrRho(7,j),&
+                  & exchCorrRho(8,j), &
+                  & exchCorrRho(9,j),exchCorrRho(10,j),currentExchCorrPot(1:2))
+               call pbe96(exchCorrRhoCore(1,j),exchCorrRhoCore(2,j), &
+                  & exchCorrRhoCore(3,j),exchCorrRhoCore(4,j), &
+                  & exchCorrRhoCore(5,j),exchCorrRhoCore(6,j), &
+                  & exchCorrRhoCore(7,j),exchCorrRhoCore(8,j), &
+                  & exchCorrRhoCore(9,j),exchCorrRho(10,j), &
+                  & currentExchCorrPot(3:4))
+               exchCorrPot(:potDim,1) = exchCorrPot(:potDim,1) + &
+                  & radialWeight(j) * currentExchCorrPot(1) * &
+                  & exchRhoOp(:potDim,j,1)
+               exchCorrPot(:potDim,2) = exchCorrPot(:potDim,2) + &
+                  & radialWeight(j) * currentExchCorrPot(2) * &
+                  & exchRhoOp(:potDim,j,1)
+               exchCorrPot(:potDim,3) = exchCorrPot(:potDim,3) + &
+                  & radialWeight(j) * currentExchCorrPot(4) * &
+                  & exchRhoOp(:potDim,j,1)
+            enddo
+!      elseif (XC_CODE == 250) then
+!           ! pbe96spin (Perdew, Burke, and Enzerhof), should be like
+!           ! GGA in old ggasmain.for
+!           do j = 1, numRayPoints
+!
+!              call pbe96spin(exchCorrRho(1,j),exchCorrRho(3,j),exchCorrRho(4,j), &
+!                 & exchCorrRho(5,j),exchCorrRho(6,j), &
+!                 & exchCorrRho(7,j),exchCorrRho(8,j),exchCorrRho(9,j),exchCorrRho(10,j), &
+!                 & exchCorrRho(11,j),exchCorrRho(12,j),exchCorrRho(22,j),exchCorrRho(23,j),exchCorrRho(24,j), &
+!                 & currentExchCorrPot(1:2))
+!              call pbe96spin(exchCorrRho(2,j),exchCorrRho(3,j),exchCorrRho(13,j), &
+!                 & exchCorrRho(14,j),exchCorrRho(15,j), &
+!                 & exchCorrRho(16,j),exchCorrRho(17,j),exchCorrRho(18,j),exchCorrRho(19,j), &
+!                 & exchCorrRho(20,j),exchCorrRho(21,j),exchCorrRho(22,j),exchCorrRho(23,j),exchCorrRho(24,j), &
+!                 & currentExchCorrPot(3:4))
+!              exchCorrPot(:potDim,1) = exchCorrPot(:potDim,1) + &
+!                 & radialWeight(j) * currentExchCorrPot(1) * &
+!                 & exchRhoOp(:potDim,j,1)
+!              exchCorrPot(:potDim,2) = exchCorrPot(:potDim,2) + &
+!                 & radialWeight(j) * currentExchCorrPot(2) * &
+!                 & exchRhoOp(:potDim,j,1)
+!              exchCorrPot(:potDim,3) = exchCorrPot(:potDim,3) + &
+!                 & radialWeight(j) * currentExchCorrPot(4) * &
+!                 & exchRhoOp(:potDim,j,1)
+!              exchCorrPot(:potDim,4) = exchCorrPot(:potDim,3) + &
+!                 & radialWeight(j) * currentExchCorrPot(4) * &
+!                 & exchRhoOp(:potDim,j,1)
+!           enddo
       endif
    enddo
 
@@ -588,6 +790,8 @@ subroutine makeSCFPot (totalEnergy)
 
    ! Deallocate exchange correlation arrays now that the total energy is known.
    deallocate (exchCorrRho)
+   deallocate (exchCorrRhoCore)
+   deallocate (exchCorrRhoSpin)
    deallocate (exchCorrOverlap)
 
    ! Allocate space to hold the output potentials
@@ -666,7 +870,7 @@ subroutine makeSCFPot (totalEnergy)
             & radialWeight(:),points,hdferr)
       if (hdferr /= 0) stop 'Failed to read radial weights #2'
       call h5dread_f (exchRhoOp_did(i),H5T_NATIVE_DOUBLE,&
-            & exchRhoOp(:,:),potPoints,hdferr)
+            & exchRhoOp(:,:,:),potPoints,hdferr)
       if (hdferr /= 0) stop 'Failed to read exch rho operator #2'
 
 
@@ -674,7 +878,7 @@ subroutine makeSCFPot (totalEnergy)
       !   potential vector difference to get the difference in real space.
       do j = 1, spin
          do k = 1, numRayPoints
-            realSpacePotDiff(k,j) = sum(exchRhoOp(:,k) * outputPot(:,j))
+            realSpacePotDiff(k,j) = sum(exchRhoOp(:,k,1) * outputPot(:,j))
          enddo
 
          ! Determine the delta to be tested.
@@ -1246,16 +1450,16 @@ subroutine vonBarthHedin (totalRho,spinDiffRho,coreRho,answer)
    answer(:) = 0.0_double
 
    ! Initialize some variables
-   alpha = (4.0_double/(9.0_double*pi))**0.33333333
-   rs = (3.0_double/(4.0_double*pi*totalRho))**0.33333333
+   alpha = (4.0_double/(9.0_double*pi))**0.33333333_double
+   rs = (3.0_double/(4.0_double*pi*totalRho))**0.33333333_double
    a = 2.0_double**(-1.0_double/3.0_double)
    gamma = 4.0_double/3.0_double * a / (1.0_double - a)
-   two13 = 2.0**(0.3333333333)
+   two13 = 2.0**(0.3333333333_double)
 
-   rP = 21.0
-   rF = 2.0**(4.0/3.0)*rP
-   cP = 0.045
-   cF = cP/2.0
+   rP = 21.0_double
+   rF = 2.0_double**(4.0_double/3.0_double)*rP
+   cP = 0.045_double
+   cF = cP/2.0_double
 
    ! Abort if the incoming total charge is sufficiently large, then compute the
    !   exchange correlation for it.
@@ -1286,11 +1490,11 @@ subroutine vonBarthHedin (totalRho,spinDiffRho,coreRho,answer)
          x = 1.0_double
       endif
 
-      epsxP = -3.0/(2.0 * pi * alpha) / rs
+      epsxP = -3.0_double/(2.0_double * pi * alpha) / rs
 
       epsxF = two13 * epsxP
 
-      muxP = 4.0/3.0 * epsxP
+      muxP = 4.0_double/3.0_double * epsxP
 
 !      muxF = two13 * muxP
 
@@ -1791,6 +1995,217 @@ subroutine oldEXCORR(rh,sold,rhc,answer)
    answer(4) = excrc
 
 end subroutine oldEXCORR
+
+subroutine pbe96(rho,rhox,rhoy,rhoz,rhoxx,rhoxy,rhoxz,rhoyy,rhoyz,rhozz,answer)
+   use O_Kinds
+   use O_Constants
+
+   ! Referenced papers
+
+   ! PhysRevLett 77.3865 "Generalized Gradient Approximation Made Simple"
+
+   ! PhysRevB 75.195108 "Functional form of the generalized gradient 
+   ! approximation for exchange: The PBEalpha functional"
+
+
+   implicit none
+
+   ! Subroutine inputs
+   real (kind=double) :: rho,rhox,rhoy,rhoz,rhoxx,rhoxy,rhoxz,rhoyy,rhoyz,rhozz
+
+   ! Subroutine outputs
+   real (kind=double), dimension (2) :: answer
+
+   ! Variables used in both exchange and correlation calculations
+   real (kind=double) :: seitzRadius
+
+   ! Variables declared for exchange energy and potential
+   real (kind=double) :: AX,Mu,Kappa,u,v,EXUNIF,FXPBE,s,kf,ks,gradN,Fs,Fss,exchangeEnergy,exchangePotential
+
+   ! Variables used for correlation energy and potential
+   real (kind=double) :: FZZ,F,EC,ECRS,FZ,ECZET,COMM,COMM2,COMM3,VCUP
+   real (kind=double) :: VCDN,DVCUP,DVCDN,G,PON,B,Q4,Q5,H,T,Beta,Gamm,DELT,ETA,GAM
+   real (kind=double) :: correlationEnergy,correlationPotential
+   real (kind=double) :: Q0,Q2,Q3,BG,BEC,FAC,FACT2, Q9
+   real (kind=double) :: FACT1,FACT0,FACT5,FACT3,HRST,GZ,HB,HBT,HRS,HT,HZT,HTT,HZ,Q8,PREF
+   real (kind=double) :: VV, UU, WW
+   ! GCOR2 inputs and outputs
+   real (kind=double) :: EU,EURS,RTRS,EP,EPRS,ALFM,ALFRSM
+
+
+   ! The local Seitz radius.
+   seitzRadius = (3D0/4D0*pi*rho)**(1D0/3D0)
+
+   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+   !!                                                                !!
+   !!                             EXCHANGE                           !!
+   !!                                                                !!
+   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+ 
+   ! The local Fermi wave vector.
+   kf = (3D0*(pi**2D0)*rho)**(1D0/3D0)
+
+   ! The Thomas-Fermi screening wave number.
+   ks = sqrt(4D0*kf/pi)
+
+   gradN = sqrt(rhox*rhox+rhoy*rhoy+rhoz*rhoz)
+   
+   ! Dimensionless density gradient.
+   s = gradN/(2D0*kf*rho)
+
+   AX = -0.7385587663820224_double 
+   Mu = 0.2195149727645171_double
+   Kappa = 0.8040_double
+
+   !
+   EXUNIF = AX*rho**(1D0/3D0)
+
+   ! Compare to eqn 14 from PhysRevLett 77.3865
+   FXPBE = 1D0 + Kappa - Kappa/(1D0+(Mu/Kappa)*(s**2D0))
+
+   ! Exchange energy
+   exchangeEnergy = EXUNIF*FXPBE
+   
+   !!!!!!!!!!!!!!!    EXCHANGE POTENTIAL     !!!!!!!!!!!!!!!!!!!!!!
+
+   u = ((rhox*(rhox*rhoxx+rhoy*rhoxy+rhoz*rhoxz)/gradN)+ &
+      & (rhoy*(rhox*rhoxy+rhoy*rhoyy+rhoz*rhoyz)/gradN)+ &
+      & (rhoz*(rhox*rhoxz+rhoy*rhoyz+rhoz*rhozz)/gradN))/ &
+      & (8D0*(rho**2D0)*(kf**3D0))
+
+   v = (rhoxx +rhoyy + rhozz)/(4D0*rho*(kf**2D0))
+
+   ! Find first and second derivatives of FX w.r.t s.
+
+   ! Compare to PhysRevB 75.195108 equation 7
+   Fs=2D0*Kappa*(Mu/Kappa)/((1D0+(Mu/Kappa)*(s**2D0))**2D0)
+   Fss=-4D0*(Mu/Kappa)*s*Fs/(1D0+(Mu/Kappa)*(s**2D0))
+   exchangePotential = EXUNIF*((4D0/3D0)*FXPBE-(u-(4D0/3D0)*s**3D0)*FSS-v*FS)
+
+   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+   !!                                                                !!
+   !!                       CORRELATION                              !!
+   !!                                                                !!
+   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+   RTRS=sqrt(seitzRadius)
+
+   CALL GCOR2(0.0310907D0,0.21370D0,7.5957D0,3.5876D0,1.6382D0, &
+      & 0.49294D0,RTRS,EU,EURS)
+   CALL GCOR2(0.01554535D0,0.20548D0,14.1189D0,6.1977D0,3.3662D0, &
+      & 0.62517D0,RTRS,EP,EPRS)
+   CALL GCOR2(0.0168869D0,0.11125D0,10.357D0,3.6231D0,0.88026D0, &
+      & 0.49671D0,RTRS,ALFM,ALFRSM)   
+
+   !!!!!!!!!!!!!!!!    LSD POTENTIAL and ENERGY   !!!!!!!!!!!!!!!!!!!!!!
+
+   GAM = 0.5198420997897463_double
+   FZZ = 8D0/(9D0*GAM)
+ 
+
+   F=((1D0**(4D0/3D0))+(1D0**(4D0/3D0))-2D0)/GAM
+   EC=EU-ALFM*F/FZZ
+   ! ECRS=dEC/dRS
+   ECRS=EURS-ALFRSM*F/FZZ
+
+   ! ECZET=dEC/dZETA
+   ECZET= -(ALFM/FZZ)
+ 
+   ! FZ=dF/dZETA
+   FZ=(4D0/3D0)*((1D0**(1D0/3D0))-(1D0**(1D0/3D0)))/GAM
+   COMM=EC-seitzRadius*ECRS/3
+   VCUP=COMM+ECZET
+   VCDN=COMM-ECZET
+   DVCUP=0.0_double
+   DVCDN=0.0_double
+
+   !!!!!!!!!!!!!!!!!!!!   PBE CORRELATION ENERGY      !!!!!!!!!!!!!!!!!!!!!
+     
+   Beta = 0.0667245506031492_double
+   Gamm = 0.0310906908696549_double
+   DELT = Beta/Gamm
+   T = gradN/(2D0*rho*ks)
+
+   ! G = PHI(ZETA) from 77.3865
+   G=((1D0**(2D0/3D0))+(1D0**(2D0/3D0)))/2D0
+
+   ! Compare to terms in equation 8 from 77.3865
+   PON=-EC/((G**3D0)*Gamm)
+
+   ! Compare to equation 8 from 77.3865. A = B
+   B=DELT/(DEXP(PON)-1D0)
+   Q4=1D0+B*(T**2D0)
+   Q5=1D0+B*(T**2D0)+(B**2D0)*(T**4D0)
+
+   ! Compare to equation 7 from 77.3865
+   H=(G**3D0)*(Beta/DELT)*DLOG(1D0+DELT*Q4*(T**2D0)/Q5)
+
+   ! Compare to equation 3 from 77.3865
+   correlationEnergy=EC+H
+
+   !!!!!!!!!!!!!!!!!    PBE CORRELATION POTENTIAL      !!!!!!!!!!!!!!
+
+   UU= ((rhox*(rhox*rhoxx+rhoy*rhoxy+rhoz*rhoxz)/gradN)+ &
+      & (rhoy*(rhox*rhoxy+rhoy*rhoyy+rhoz*rhoyz)/gradN)+ &
+      & (rhoz*(rhox*rhoxz+rhoy*rhoyz+rhoz*rhozz)/gradN))/ &
+      & (8D0*(rho**2D0)*(ks**3D0))
+
+   VV= (rhoxx+rhoyy+rhozz)/(4D0*rho*(ks**2D0))
+
+   WW= 0D0
+
+   GZ=((1D0+ETA)**(-1D0/6D0)- &
+      & (1D0+ETA)**(-1/6D0))/3D0
+   FAC=DELT/B+1D0
+   BG=-3D0*(B**2D0)*EC*FAC/(Beta*(G**4D0))
+   BEC=(B**2D0)*FAC/(Beta*(G**3D0))
+   Q8=(Q5**2D0)+DELT*Q4*Q5*(T**2D0)
+   Q9=1D0+2D0*B*(T**2D0)
+   HB=-Beta*(G**3D0)*B*(T**6D0)*(2D0+B*(T**2D0))/Q8
+   HRS=-(seitzRadius/3D0)*HB*BEC*ECRS
+   FACT0=2D0*DELT-6D0*B
+   FACT1=Q5*Q9+Q4*(Q9**2D0)
+   HBT=2D0*Beta*(G**3D0)*(T**4D0)*((Q4*Q5*FACT0-DELT*FACT1)/Q8)/Q8
+   HRST=(seitzRadius/3D0)*(T**2D0)*HBT*BEC*ECRS
+   HZ=3D0*GZ*H/G+HB*(BG*GZ+BEC*ECZET)
+   HT=2D0*Beta*(G**3D0)*Q9/Q8
+   HZT=3D0*GZ*HT/G+HBT*(BG*GZ+BEC*ECZET)
+   FACT2=Q4*Q5+B*(T**2D0)*(Q4*Q9+Q5)
+   FACT3=2D0*B*Q5*Q9+DELT*FACT2
+   HTT=4D0*Beta*(G**3D0)*T*(2D0*B/Q8-(Q9*FACT3/Q8)/Q8)
+   COMM2=H+HRS+HRST+(T**2D0)*HT/6D0+7D0*(T**3D0)*HTT/6D0
+   PREF=HZ-GZ*(T**2D0)*HT/G
+   FACT5=GZ*(2D0*HT+T*HTT)/G
+   COMM3=COMM2-UU*HTT-VV*HT-WW*(HZT-FACT5)
+   DVCUP=COMM3+PREF
+   DVCDN=COMM3-PREF
+
+   correlationPotential = VCUP+DVCUP
+
+   !!!!!!!!!!!!!!    Combining Correlation and Potential    !!!!!!!!!!!!!!
+
+   ! XC_potential.
+   answer(1) = exchangePotential + correlationPotential
+   ! Total XC_energy.
+   answer(2) = exchangeEnergy + correlationEnergy
+
+end subroutine pbe96
+
+subroutine GCOR2(A,A1,B1,B2,B3,B4,RTRS,GG,GGRS)
+   
+   implicit none
+
+   real (kind=double) :: A,A1,B1,B2,B3,B4,RTRS,GG,GGRS,Q0,Q1,Q2,Q3
+ 
+   Q0=-2*A*(1+A1*(RTRS**2))
+   Q1=2*A*RTRS*(B1+RTRS*(B2+RTRS*(B3+B4*RTRS)))
+   Q2=DLOG(1+1/Q1)
+   GG=Q0*Q2
+   Q3=A*(B1/RTRS+2*B2+RTRS*(3*B3+4*B4*RTRS))
+   GGRS=-2*A*A1*Q2-Q0*Q3/(Q1*(1+Q1))
+   
+end subroutine GCOR2
+
 !
 !*************************************************************
 !

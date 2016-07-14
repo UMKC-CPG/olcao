@@ -6273,13 +6273,13 @@ double Cdistance(double limitDistSqrd, double limitDist,
    }
 
    if (tooFar)
-      {return 1000000.0;}
+      {return 1000000000.0;}
    else
    {
       r = diff[0]*diff[0] + diff[1]*diff[1] + diff[2]*diff[2];
       if (r<limitDistSqrd)
          {return sqrt(r);}
       else
-         {return 1000000.0;}
+         {return 1000000000.0;}
    }
 }

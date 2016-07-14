@@ -19,7 +19,7 @@ subroutine computeOptc
    use O_OptcTransitions, only: transCounter, energyDiff, transitionProb, &
          & getEnergyStatistics, computeTransitions
    use O_SecularEquation, only: energyEigenValues, readEnergyEigenValuesBand, &
-         & appendExcitedEnergyEigenValuesBand, shiftEnergyEigenValues
+         & appendExcitedEValsBand, shiftEnergyEigenValues
 
 
    ! Make sure that no funny variables are defined.
@@ -91,8 +91,7 @@ subroutine computeOptc
    if (stateSet == 1) then ! Doing PACS calculation and we need to modify
       ! the energy eigen values and their position. Now that the occupied
       ! energy is known we can append the unoccupied excited states.
-      call appendExcitedEnergyEigenValuesBand(lastInitStatePACS+1,&
-            & numStates)
+      call appendExcitedEValsBand(lastInitStatePACS+1,numStates)
    endif
 
    ! Shift the energy eigen values according to the highest occupied state.

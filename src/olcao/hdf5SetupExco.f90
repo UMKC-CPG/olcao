@@ -40,7 +40,7 @@ module O_SetupExchCorrHDF5
    ! Define arrays that hold the dimensions of the datasets.  The potDims2
    !   dimension set is not given here because it is predominantly used in the
    !   elecStat module.  Import it from there when needed.
-   integer(hsize_t), dimension (2) :: potPoints
+   integer(hsize_t), dimension (3) :: potPoints
    integer(hsize_t), dimension (2) :: potPot
    integer(hsize_t), dimension (1) :: points
    integer(hsize_t), dimension (1) :: numPoints
@@ -63,11 +63,11 @@ subroutine initSetupExchCorrHDF5 (setup_fid,maxNumRayPoints)
 
    ! Import any necessary definition modules.
    use HDF5
-   use O_SetupElecStatHDF5 ! For potPot_plid and potPot_dsid
+   use O_SetupElecStatHDF5, only: potPot_plid, potPot_dsid
 
    ! Import necessary object modules.
    use O_PotSites, only: numPotSites
-   use O_Potential, only: potDim
+   use O_Potential, only: potDim, GGA
 
    ! Define the passed parameters.
    integer(hid_t), intent(in) :: setup_fid
@@ -79,12 +79,20 @@ subroutine initSetupExchCorrHDF5 (setup_fid,maxNumRayPoints)
    character*30 :: currentName
 
    ! Initialize data structure dimensions.
-   potPoints(1)   = potDim
-   potPoints(2)   = maxNumRayPoints
-   potPot(1)      = potDim
-   potPot(2)      = potDim
-   points(1)      = maxNumRayPoints
-   numPoints(1)   = 1
+   potPoints(1)    = potDim
+   potPoints(2)    = maxNumRayPoints
+   ! For nonGGA only the rho op value is stored. For GGA the first and second
+   !   derivatives, as well as the rho op value are stored. Thus, for GGA 10
+   !   indices are required instead of 1.
+   if (GGA == 0) then
+      potPoints(3) = 1
+   else
+      potPoints(3) = 10
+   endif
+   potPot(1)       = potDim
+   potPot(2)       = potDim
+   points(1)       = maxNumRayPoints
+   numPoints(1)    = 1
 
    ! Create the exchange correlation group within the setup_fid.
    call h5gcreate_f (setup_fid,"/exchCorrGroup",exchCorrGroup_gid,hdferr)
@@ -96,7 +104,7 @@ subroutine initSetupExchCorrHDF5 (setup_fid,maxNumRayPoints)
    !   exchCorrGroup.
    call h5screate_simple_f(1,numPoints,numPoints_dsid,hdferr)
    if (hdferr /= 0) stop 'Failed to create numPoints dsid.'
-   call h5screate_simple_f(2,potPoints,potPoints_dsid,hdferr)
+   call h5screate_simple_f(3,potPoints,potPoints_dsid,hdferr)
    if (hdferr /= 0) stop 'Failed to create potPoints dsid.'
    call h5screate_simple_f(1,points,points_dsid,hdferr)
    if (hdferr /= 0) stop 'Failed to create points dsid.'
@@ -110,7 +118,7 @@ subroutine initSetupExchCorrHDF5 (setup_fid,maxNumRayPoints)
    if (hdferr /= 0) stop 'Failed to set potPoints chunked layout.'
    call h5pset_layout_f(points_plid,H5D_CHUNKED_F,hdferr)
    if (hdferr /= 0) stop 'Failed to set points chunked layout.'
-   call h5pset_chunk_f(potPoints_plid,2,potPoints,hdferr)
+   call h5pset_chunk_f(potPoints_plid,3,potPoints,hdferr)
    if (hdferr /= 0) stop 'Failed to set potPoints chunked property.'
    call h5pset_chunk_f(points_plid,1,points,hdferr)
    if (hdferr /= 0) stop 'Failed to set points chunked property.'
@@ -160,7 +168,7 @@ subroutine accessSetupExchCorrHDF5 (setup_fid)
 
    ! Import necessary object modules.
    use O_PotSites, only: numPotSites
-   use O_Potential, only: potDim
+   use O_Potential, only: potDim, GGA
 
    ! Define the passed parameters.
    integer(hid_t), intent(in) :: setup_fid
@@ -245,6 +253,11 @@ subroutine accessSetupExchCorrHDF5 (setup_fid)
    ! Define the dimensions of the remaining HDF5 stored matrices.
    potPoints(1) = potDim
    potPoints(2) = tempMaxNumRayPoints
+   if (GGA == 0) then
+      potPoints(3) = 1
+   else
+      potPoints(3) = 10
+   endif
    points(1)    = tempMaxNumRayPoints
 
 end subroutine accessSetupExchCorrHDF5
