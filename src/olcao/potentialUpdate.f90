@@ -83,8 +83,8 @@ subroutine makeSCFPot (totalEnergy)
    real (kind=double) :: elecStatEnergy
    real (kind=double) :: elecStatEnergyDiff
    real (kind=double) :: coreSum
+   real (kind=double) :: totalSum
    real (kind=double) :: spinDiffSum
-   real (kind=double) :: nonCoreTotalSum
    real (kind=double) :: SX 
    real (kind=double) :: SY
    real (kind=double) :: SZ
@@ -476,8 +476,8 @@ subroutine makeSCFPot (totalEnergy)
       ! The exchange correlation matrix times the charge vector produces the
       !   the real space charge
       do j = 1, numRayPoints
-         coreSum         = sum(exchRhoOp(:potDim,j,1) * generalRho(:potDim,3))
-         nonCoreTotalSum = sum(exchRhoOp(:potDim,j,1) * generalRho(:potDim,1))
+         coreSum  = sum(exchRhoOp(:potDim,j,1) * generalRho(:potDim,3))
+         totalSum = sum(exchRhoOp(:potDim,j,1) * generalRho(:potDim,1))
 
          if (spin == 2) then
             spinDiffSum = sum(exchRhoOp(:potDim,j,1) * generalRho(:potDim,8))
@@ -565,9 +565,9 @@ subroutine makeSCFPot (totalEnergy)
             endif
          endif
 
-         if (nonCoreTotalSum < smallThresh) then
+         if (totalSum < smallThresh) then
 ! This is totally ridiculous.  If the following statement is not present, then
-!   the program will not work.  The values for nonCoreTotalSum will not be
+!   the program will not work.  The values for totalSum will not be
 !   calculated correctly.  For the first potential all the values will be less
 !   than smallThresh.  For the later potential sites (i) the values will be
 !   correct.  I can only assume that the error lies in a bad allocation
@@ -580,14 +580,14 @@ subroutine makeSCFPot (totalEnergy)
 !   to compile both cases with the -C flag to check array bounds.  The Tru64
 !   compiler gave no errors, while the HP-UX one wouldn't even get past the
 !   parseInput subroutine that has been used flawlessly for years.  Annoying.
-!write (20,*) "nonCoreTotalSum=",nonCoreTotalSum
+!write (20,*) "totalSum=",totalSum
 !call flush (20)
-            nonCoreTotalSum = smallThresh
-!write (20,*) "nonCoreTotalSum=",nonCoreTotalSum
+            totalSum = smallThresh
+!write (20,*) "totalSum=",totalSum
 !call flush (20)
          endif
 
-         exchCorrRho (1,j) = nonCoreTotalSum
+         exchCorrRho (1,j) = totalSum
          exchCorrRhoCore (1,j) = coreSum
 
          ! Note that the indexing scheme has changed from the one used
@@ -2020,14 +2020,17 @@ subroutine pbe96(rho,rhox,rhoy,rhoz,rhoxx,rhoxy,rhoxz,rhoyy,rhoyz,rhozz,answer)
    real (kind=double) :: seitzRadius
 
    ! Variables declared for exchange energy and potential
-   real (kind=double) :: AX,Mu,Kappa,u,v,EXUNIF,FXPBE,s,kf,ks,gradN,Fs,Fss,exchangeEnergy,exchangePotential
+   real (kind=double) :: AX,Mu,Kappa,u,v,EXUNIF,FXPBE,s,kf,ks,gradN,Fs,Fss
+   real (kind=double) :: exchangeEnergy,exchangePotential
 
    ! Variables used for correlation energy and potential
    real (kind=double) :: FZZ,F,EC,ECRS,FZ,ECZET,COMM,COMM2,COMM3,VCUP
-   real (kind=double) :: VCDN,DVCUP,DVCDN,G,PON,B,Q4,Q5,H,T,Beta,Gamm,DELT,ETA,GAM
+   real (kind=double) :: VCDN,DVCUP,DVCDN,G,PON,B,Q4,Q5,H,T
+   real (kind=double) :: Beta,Gamm,DELT,ETA,GAM
    real (kind=double) :: correlationEnergy,correlationPotential
-   real (kind=double) :: Q0,Q2,Q3,BG,BEC,FAC,FACT2, Q9
-   real (kind=double) :: FACT1,FACT0,FACT5,FACT3,HRST,GZ,HB,HBT,HRS,HT,HZT,HTT,HZ,Q8,PREF
+   real (kind=double) :: Q0,Q2,Q3,BG,BEC,FAC,FACT2,Q9
+   real (kind=double) :: FACT1,FACT0,FACT5,FACT3,HRST,GZ
+   real (kind=double) :: HB,HBT,HRS,HT,HZT,HTT,HZ,Q8,PREF
    real (kind=double) :: VV, UU, WW
    ! GCOR2 inputs and outputs
    real (kind=double) :: EU,EURS,RTRS,EP,EPRS,ALFM,ALFRSM
