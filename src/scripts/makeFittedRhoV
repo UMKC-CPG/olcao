@@ -15,7 +15,7 @@ sub printHelp
 #          charage density is derived from the fitted charge.
 #
 # USAGE:   makeFittedRhoV  -m \$numPointsA \$numPointsB \$numPointsC
-#                        [-i \$inFile] [-noDX] | [-help]
+#                        [-i \$inFile] [-spindn] [-noDX] | [-help]
 #
 # The -m switch is used to define the number of mesh points along each a,b,c
 #   axis in the (possibly non-orthogonal) cell.  Note that periodic boundary
@@ -24,6 +24,14 @@ sub printHelp
 # The -i option is used to define which file should be used as the source of
 #   the SCF charge and potential data.  If this option is not given then the
 #   value of "gs_scfV-fb.dat" will be used.
+# The -spindn switch is used specifically for spin polarized calculations where
+#   the first and second sections of the potential function file are different.
+#   Recall that for non-spin-polarized calculations the first and second parts
+#   are identical and thus the second part can be ignored as duplicate data.
+#   When this switch is turned on, then the second section is specifically
+#   used as the data source. (Thus, if you want to see the spin up and spin
+#   down then you need to run this program twice, once for each spin
+#   direction.)
 # The -noDX switch is used to demand that the openDX plottable data *not* be
 #   created.  By default, this data will be made because it does not cost much
 #   extra time and it will prevent the user from having to run the computation
@@ -79,6 +87,7 @@ my $numSites;  # Total number of sites in the model.
 my @typeElements;  # List of what element each type is.
 my @outValues;  # All output data including alphas, SCF, and diff coeffs.
 my $lastCol;    # Records the number of columns of data starting from 0.
+my $spinDn;
 my $doOpenDX;
 
 # Initialize the environment.
@@ -107,6 +116,10 @@ my $doOpenDX;
 
 sub initEnv
 {
+   # Assume that we are doing the first section of the potential file which is
+   #   either for a spin non-polarized calculation or for the spin up only.
+   $spinDn = 0; 
+
    # Assume that the openDX type data files will be created.
    $doOpenDX = 1;
 
@@ -150,6 +163,8 @@ sub parseCommandLine
       }
       elsif ($ARGV[$number] eq "-i")
          {$inFile = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-spindn")
+         {$spinDn = 1;}
       elsif ($ARGV[$number] eq "-noDX")
          {$doOpenDX = 0;}
       elsif ($ARGV[$number] eq "-help")
@@ -253,13 +268,26 @@ sub computeDiff
    $numTerms = 0;
 
    # Open the input scf potential file.
-   open (INPOT,"<$inFile") ||
-      die "Cannot open $inFile for reading.\n";
+   open (INPOT,"<$inFile") || die "Cannot open $inFile for reading.\n";
 
    # Read past the line that lists the number of types.  (This was already
    #   computed from the structure.dat file where the element data was also
    #   obtained.)
    <INPOT>;
+
+   # If we need to do the spin down data, then read past the first section.
+   if ($spinDn == 1)
+   {
+      # Iterate over all the types in the system. We will read past each of the
+      #   terms for each of the types.
+      foreach $type (1..$numTypes)
+      {
+         # Read the number of terms for this type and then iterate past them.
+         @values = StructureControl::prepLine(\*INPOT,"",'\s+');
+         foreach $lineIP (1..$values[0])
+            {<INPOT>;}
+      }
+   }
 
    # Loop over each type and perform a difference calculation.
    foreach $type (1..$numTypes)
@@ -273,8 +301,8 @@ sub computeDiff
 
       # Read the number of terms from the isolated coefficient file and from
       #   the SCF potential file.
-      @values = StructureControl::prepLine(\*NONPOT,$lineNP,'\s+');
-      @values = StructureControl::prepLine(\*INPOT,$lineNP,'\s+');
+      @values = StructureControl::prepLine(\*NONPOT,"",'\s+');
+      @values = StructureControl::prepLine(\*INPOT,"",'\s+');
       
 
       # Read the terms of this non-interacting data and compute the difference
@@ -282,7 +310,7 @@ sub computeDiff
       while ($lineNP = <NONPOT>)
       {
          # Read a line from the input potential file and increment the count of
-         #   the number of terms read from this "total potential" file.
+         #   the number of terms read from this potential file.
          $lineIP = <INPOT>;
          $numTerms++;
 

@@ -66,8 +66,7 @@ subroutine computeWaveFnMesh
 
    ! Define local variables.
    integer :: a,b,c
-   integer :: i,j,k,l,m,n,o  ! Loop index variables.
-   integer :: hdferr
+   integer :: i,j,k,l,m,n  ! Loop index variables.
    integer :: dim1
    integer :: skipKP
    integer :: currentPointCount

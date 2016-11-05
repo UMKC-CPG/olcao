@@ -118,6 +118,9 @@ subroutine renormWaveFns
                      tempCoeff = sqrt(pi)*105.0_double/16.0_double/(2.0_double*&
                            & alphaSum*alphaSum*alphaSum*alphaSum*&
                            & sqrt(alphaSum))*angNorm1(4,k)*angNorm1(4,l)
+                  case default
+                     write(6,*) "normalization.f90 subroutine: renormWaveFns"
+                     write(6,*) "Only cases 1,2,3,4 for s,p,d,f are implemented"
                end select
 
                ! Accumulate the final renormalization coefficient.

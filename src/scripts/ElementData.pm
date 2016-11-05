@@ -31,6 +31,7 @@ our $VERSION = '0.01';
 # Define the arrays that hold elemental data.
 my @atomicMasses;    # Atomic mass of each element in atomic mass units.
 my @covalRadii;      # Covalent radii of each element in Angstroms.
+my @numUJElectrons;  # Number of electrons in the highest d or f orbital.
 my @coreCharge;      # Number of core electrons in each s,p,d,f.
 my @valeCharge;      # Number of valence electrons in each s,p,d,f.
 my @elementNames;    # Abbreviation of element names from the periodic table.
@@ -73,17 +74,23 @@ sub initElementData
          die "Cannot open elements.dat, aborting.\n";
 
    # Read the number of elements.
-   <EDATA>; # Read past the header.
+   @values = &prepLine(\*EDATA,$line,'\s+');
+   if ($values[0] ne "NUM_ELEMENTS")
+      {die "Expecting NUM_ELEMENTS tag in $OLCAO_DATA/elements.dat";}
    @values = &prepLine(\*EDATA,$line,'\s+');
    $numElements = $values[0];
 
    # Read the max l quantum number of all atoms.
-   <EDATA>; # Read past the header.
+   @values = &prepLine(\*EDATA,$line,'\s+');
+   if ($values[0] ne "MAX_QN_L")
+      {die "Expecting MAX_QN_L tag in $OLCAO_DATA/elements.dat";}
    @values = &prepLine(\*EDATA,$line,'\s+');
    $maxQN_l = $values[0];
 
    # Read the element names.
-   <EDATA>; # Read past the header.
+   @values = &prepLine(\*EDATA,$line,'\s+');
+   if ($values[0] ne "ELEMENT_NAMES")
+      {die "Expecting ELEMENT_NAMES tag in $OLCAO_DATA/elements.dat";}
    foreach $element (1..$numElements)
    {
       @values = &prepLine(\*EDATA,$line,'\s+');
@@ -91,7 +98,9 @@ sub initElementData
    }
 
    # Read the atomic masses.
-   <EDATA>; # Read past the header.
+   @values = &prepLine(\*EDATA,$line,'\s+');
+   if ($values[0] ne "MASS")
+      {die "Expecting MASS tag in $OLCAO_DATA/elements.dat";}
    foreach $element (1..$numElements)
    {
       @values = &prepLine(\*EDATA,$line,'\s+');
@@ -99,15 +108,30 @@ sub initElementData
    }
 
    # Read the covalent radii.
-   <EDATA>; # Read past the header.
+   @values = &prepLine(\*EDATA,$line,'\s+');
+   if ($values[0] ne "COVALENT_RADII")
+      {die "Expecting COVALENT_RADII tag in $OLCAO_DATA/elements.dat";}
    foreach $element (1..$numElements)
    {
       @values = &prepLine(\*EDATA,$line,'\s+');
       $covalRadii[$element] = $values[0];
    }
 
+   # Read the number of electrons in the highest d or f orbital in the ground
+   #   state. Used for UJ calculations.
+   @values = &prepLine(\*EDATA,$line,'\s+');
+   if ($values[0] ne "NUM_UJ_ELECTRONS")
+      {die "Expecting NUMUJ_ELECTRONS tag in $OLCAO_DATA/elements.dat";}
+   foreach $element (1..$numElements)
+   {
+      @values = &prepLine(\*EDATA,$line,'\s+');
+      $numUJElectrons[$element] = $values[0];
+   }
+
    # Read the designation of core orbitals for each atom.
-   <EDATA>; # Read past the header.
+   @values = &prepLine(\*EDATA,$line,'\s+');
+   if ($values[0] ne "CORE_ORBITALS")
+      {die "Expecting CORE_ORBITALS tag in $OLCAO_DATA/elements.dat";}
    foreach $element (1..$numElements)
    {
       @values = &prepLine(\*EDATA,$line,'\s+');
@@ -119,7 +143,13 @@ sub initElementData
    #   by the full beyond the minimal and then the extended beyond the full.
    foreach $basis (1..3)
    {
-      <EDATA>; # Read past the header.
+      @values = &prepLine(\*EDATA,$line,'\s+');
+      if (($basis == 1) and ($values[0] ne "MB_BEYOND_CORE"))
+         {die "Expecting MB_BEYOND_CORE tag in $OLCAO_DATA/elements.dat";}
+      elsif (($basis == 2) and ($values[0] ne "FB_BEYOND_MB"))
+         {die "Expecting FB_BEYOND_MB tag in $OLCAO_DATA/elements.dat";}
+      elsif (($basis == 3) and ($values[0] ne "EB_BEYOND_FB"))
+         {die "Expecting EB_BEYOND_FB tag in $OLCAO_DATA/elements.dat";}
       foreach $element (1..$numElements)
       {
          @values = &prepLine(\*EDATA,$line,'\s+');
@@ -129,7 +159,9 @@ sub initElementData
    }
 
    # Read the core charge for each spdf orbital of each element.
-   <EDATA>; # Read past the header.
+   @values = &prepLine(\*EDATA,$line,'\s+');
+   if ($values[0] ne "CORE_CHARGE")
+      {die "Expecting CORE_CHARGE tag in $OLCAO_DATA/elements.dat";}
    foreach $element (1..$numElements)
    {
       @values = &prepLine(\*EDATA,$line,'\s+');
@@ -138,7 +170,9 @@ sub initElementData
    }
 
    # Read the valence charge for each spdf orbital of each element.
-   <EDATA>; # Read past the header.
+   @values = &prepLine(\*EDATA,$line,'\s+');
+   if ($values[0] ne "VALE_CHARGE")
+      {die "Expecting VALE_CHARGE tag in $OLCAO_DATA/elements.dat";}
    foreach $element (1..$numElements)
    {
       @values = &prepLine(\*EDATA,$line,'\s+');
@@ -148,7 +182,9 @@ sub initElementData
 
    # Read the number of radial wave function Gaussians for each spdf orbital
    #   of each element.
-   <EDATA>; # Read past the header.
+   @values = &prepLine(\*EDATA,$line,'\s+');
+   if ($values[0] ne "NUM_RWF_TERMS_SPDF")
+      {die "Expecting NUM_RWF_TERMS_SPDF tag in $OLCAO_DATA/elements.dat";}
    foreach $element (1..$numElements)
    {
       @values = &prepLine(\*EDATA,$line,'\s+');
@@ -158,7 +194,9 @@ sub initElementData
 
    # Read the minimum exponential alpha for the radial wave functions for
    #   each element.
-   <EDATA>; # Read past the header.
+   @values = &prepLine(\*EDATA,$line,'\s+');
+   if ($values[0] ne "MIN_RWF_ALPHA")
+      {die "Expecting MIN_RWF_ALPHA tag in $OLCAO_DATA/elements.dat";}
    foreach $element (1..$numElements)
    {
       @values = &prepLine(\*EDATA,$line,'\s+');
@@ -167,7 +205,9 @@ sub initElementData
 
    # Read the maximum exponential alpha for the radial wave functions for
    #   each element.
-   <EDATA>; # Read past the header.
+   @values = &prepLine(\*EDATA,$line,'\s+');
+   if ($values[0] ne "MAX_RWF_ALPHA")
+      {die "Expecting MAX_RWF_ALPHA tag in $OLCAO_DATA/elements.dat";}
    foreach $element (1..$numElements)
    {
       @values = &prepLine(\*EDATA,$line,'\s+');
@@ -175,7 +215,9 @@ sub initElementData
    }
 
    # Read the number of potential terms for each element.
-   <EDATA>; # Read past the header.
+   @values = &prepLine(\*EDATA,$line,'\s+');
+   if ($values[0] ne "NUM_POT_TERMS")
+      {die "Expecting NUM_POT_TERMS tag in $OLCAO_DATA/elements.dat";}
    foreach $element (1..$numElements)
    {
       @values = &prepLine(\*EDATA,$line,'\s+');
@@ -184,7 +226,9 @@ sub initElementData
 
    # Read the minimum exponential alpha for the potential function for
    #   each element.
-   <EDATA>; # Read past the header.
+   @values = &prepLine(\*EDATA,$line,'\s+');
+   if ($values[0] ne "MIN_POT_ALPHA")
+      {die "Expecting MIN_POT_ALPHA tag in $OLCAO_DATA/elements.dat";}
    foreach $element (1..$numElements)
    {
       @values = &prepLine(\*EDATA,$line,'\s+');
@@ -193,7 +237,9 @@ sub initElementData
 
    # Read the maximum exponential alpha for the potential function for
    #   each element.
-   <EDATA>; # Read past the header.
+   @values = &prepLine(\*EDATA,$line,'\s+');
+   if ($values[0] ne "MAX_POT_ALPHA")
+      {die "Expecting MAX_POT_ALPHA tag in $OLCAO_DATA/elements.dat";}
    foreach $element (1..$numElements)
    {
       @values = &prepLine(\*EDATA,$line,'\s+');
@@ -203,7 +249,9 @@ sub initElementData
    # Read data strings for each spdf orbital type of each element. The data
    #   strings are boolean identifiers for which Gaussians in the orbital
    #   expansion should be used.
-   <EDATA>; # Read past the header.
+   @values = &prepLine(\*EDATA,$line,'\s+');
+   if ($values[0] ne "GAUSS_TERMS_SPDF")
+      {die "Expecting GAUSS_TERMS_SPDF tag in $OLCAO_DATA/elements.dat";}
    foreach $element (1..$numElements)
    {
       foreach $QN_l (0..$maxQN_l)
@@ -216,7 +264,9 @@ sub initElementData
    }
 
    # Read the openDX color assignment for each element.
-   <EDATA>; # Read past the header.
+   @values = &prepLine(\*EDATA,$line,'\s+');
+   if ($values[0] ne "ODX_COLOR")
+      {die "Expecting ODX_COLOR tag in $OLCAO_DATA/elements.dat";}
    foreach $element (1..$numElements)
    {
       @values = &prepLine(\*EDATA,$line,'\s+');
@@ -224,7 +274,9 @@ sub initElementData
    }
 
    # Read the openDX grey scale assignment for each element.
-   <EDATA>; # Read past the header.
+   @values = &prepLine(\*EDATA,$line,'\s+');
+   if ($values[0] ne "ODX_GREY")
+      {die "Expecting ODX_GREY tag in $OLCAO_DATA/elements.dat";}
    foreach $element (1..$numElements)
    {
       @values = &prepLine(\*EDATA,$line,'\s+');
@@ -2272,6 +2324,9 @@ sub getAtomicMassesRef
 
 sub getCovalRadiiRef
    {return \@covalRadii;}
+
+sub getNumUJElectrons
+   {return \@numUJElectrons;}
 
 sub getElementNamesRef
    {return \@elementNames;}

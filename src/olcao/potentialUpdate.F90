@@ -36,6 +36,7 @@ subroutine makeSCFPot (totalEnergy)
    use O_TimeStamps
    use O_Input, only: numElectrons
    use O_Populate, only: occupiedEnergy
+   use O_KPoints, only: numKPoints
    use O_Constants, only: smallThresh
    use O_AtomicTypes, only: atomTypes
    use O_AtomicSites, only: coreDim
@@ -49,7 +50,8 @@ subroutine makeSCFPot (totalEnergy)
          & exchRhoOp_did, exchCorrOverlap_did, numPoints, points, potPoints
    use O_Potential, only: spin, potDim, intgConsts, spinSplitFactor, &
          & potAlphas, potCoeffs, currIteration, lastIteration, feedbackLevel, &
-         & relaxFactor, xcCode, converged, convgTest, GGA
+         & relaxFactor, xcCode, converged, convgTest, GGA, numPlusUJAtoms, &
+         & plusUJAtomID, plusUJ
    use O_SetupElecStatHDF5, only: potAlphaOverlap_did, coreChargeDensity_did, &
          & nonLocalNeutQPot_did, localNeutQPot_did, localNucQPot_did, &
          & nonLocalNucQPot_did, nonLocalResidualQ_did, pot, potPot, potTypesPot
@@ -125,14 +127,14 @@ subroutine makeSCFPot (totalEnergy)
    real (kind=double), allocatable, dimension (:)   :: maxDelta
    real (kind=double), allocatable, dimension (:)   :: typesMagneticMoment
 
-   real (kind=double) :: th1
-   real (kind=double) :: th2
-   real (kind=double) :: t1
-   real (kind=double) :: t2
-   real (kind=double) :: s11
-   real (kind=double) :: s12
-   real (kind=double) :: s22
-   real (kind=double) :: det
+   real (kind=double), allocatable, dimension (:) :: th1
+   real (kind=double), allocatable, dimension (:) :: th2
+   real (kind=double), allocatable, dimension (:) :: t1
+   real (kind=double), allocatable, dimension (:) :: t2
+   real (kind=double), allocatable, dimension (:) :: s11
+   real (kind=double), allocatable, dimension (:) :: s12
+   real (kind=double), allocatable, dimension (:) :: s22
+   real (kind=double), allocatable, dimension (:) :: det
    real (kind=double), allocatable, dimension (:) :: drl1,drl2
    real (kind=double), allocatable, dimension (:) :: rl0,rl1,rl2
 
@@ -914,6 +916,14 @@ subroutine makeSCFPot (totalEnergy)
    allocate (drl1 (potDim))
    allocate (drl2 (potDim))
 
+   allocate ( s11 (potDim))
+   allocate ( s12 (potDim))
+   allocate ( s22 (potDim))
+   allocate (  t1 (potDim))
+   allocate (  t2 (potDim))
+   allocate ( th1 (potDim))
+   allocate ( th2 (potDim))
+
    ! This is basically copied from the old code with little modification for
    !   the names since I don't know what they mean or do in most cases.
    do i = 1, spin
@@ -931,47 +941,59 @@ subroutine makeSCFPot (totalEnergy)
             !   times the drl1, and drl2 vectors.
 
             ! Initialize the summation variables
-            s11 = 0.0_double
-            s12 = 0.0_double
-            s22 = 0.0_double
-            t1  = 0.0_double
-            t2  = 0.0_double
+            s11(:) = 0.0_double
+            s12(:) = 0.0_double
+            s22(:) = 0.0_double
+            t1(:)  = 0.0_double
+            t2(:)  = 0.0_double
 
             ! The cases for the drl1 vector are done first. 
             do j = 1, potDim
                tempOverlap(:,j) = potAlphaOverlap(:,j) * drl1(j)
-               s11 = s11 + sum(tempOverlap(:,j) * drl1(:))
-               t1  = t1  + sum(tempOverlap(:,j) * rl0(:))
+               do k = 1, potDim
+                  s11(k) = s11(k) + tempOverlap(k,j) * drl1(k)
+                  t1(k)  = t1(k)  + tempOverlap(k,j) * rl0(k)
+               enddo
             enddo
 
             ! The cases for the drl2 vector are done second.
             do j = 1, potDim
                tempOverlap(:,j) = potAlphaOverlap(:,j) * drl2(j)
-               s12 = s12 + sum(tempOverlap(:,j) * drl1(:))
-               s22 = s22 + sum(tempOverlap(:,j) * drl2(:))
-               t2  = t2  + sum(tempOverlap(:,j) * rl0(:))
+               do k = 1, potDim
+                  s12(k) = s12(k) + tempOverlap(k,j) * drl1(k)
+                  s22(k) = s22(k) + tempOverlap(k,j) * drl2(k)
+                  t2(k)  = t2(k)  + tempOverlap(k,j) * rl0(k)
+               enddo
             enddo
-            th1 = t1/s11
+            th1(:) = t1(:)/s11(:)
             if (feedbackLevel /= 1) then
                if (currIteration > 2) then
 
                   ! Calculate the determinate.
-                  det = s11*s22 - s12*s12
-                  if (det/(s11*s22) >= 0.01_double) then
-                     th1 = ( s22*t1 - s12*t2)/det
-                     th2 = (-s12*t1 + s11*t2)/det
-                  endif
+                  det(:) = s11(:)*s22(:) - s12(:)*s12(:)
+                  do j = 1, potDim
+                     if (det(j)/(s11(j)*s22(j)) >= 0.01_double) then
+                        th1(j) = ( s22(j)*t1(j) - s12(j)*t2(j))/det(j)
+                        th2(j) = (-s12(j)*t1(j) + s11(j)*t2(j))/det(j)
+                     endif
+                  enddo
                endif
             endif
          endif
       endif
 
       ! Form the next iteration and save the previous two.
-      potCoeffs(:,i) = &
-            & (1.0_double - relaxFactor) * &
-            & ((1.0_double-th1-th2)*xl0(:,i) + th1*xl1(:,i) + th2*xl2(:,i)) + &
-            & relaxFactor * &
-            & ((1.0_double-th1-th2)*yl0(:,i) + th1*yl1(:,i) + th2*yl2(:,i))
+!      potCoeffs(:,i) = &
+!            & (1.0_double - relaxFactor) * &
+!            & ((1.0_double-th1-th2)*xl0(:,i) + th1*xl1(:,i) + th2*xl2(:,i)) + &
+!            & relaxFactor * &
+!            & ((1.0_double-th1-th2)*yl0(:,i) + th1*yl1(:,i) + th2*yl2(:,i))
+      potCoeffs(:,i) = (1.0_double - relaxFactor) &
+            & * ((1.0_double-th1(:)-th2(:))*xl0(:,i) &
+            & + th1(:)*xl1(:,i) + th2(:)*xl2(:,i)) &
+            & + relaxFactor &
+            & * ((1.0_double-th1(:)-th2(:))*yl0(:,i) &
+            & + th1(:)*yl1(:,i) + th2(:)*yl2(:,i))
 
       xl2(:,i) = xl1(:,i)
       xl1(:,i) = xl0(:,i)
@@ -988,7 +1010,18 @@ subroutine makeSCFPot (totalEnergy)
    ! Write the file header that says the total number of types.
    write (8,fmt="(a9,i5)") "NUM_TYPES",numPotTypes
 
-   do i = 1, spin
+   ! Normally, one would expect this type of loop to go from 1 to spin.
+   !   However, in this case we need to go from 1 to 2. For the spin==2 case,
+   !   the reason is obvious: we need to write the spin up and spin down
+   !   potential coefficients and other data. For the spin==1 case, we should
+   !   only need to write one set of coefficients because there is no spin up
+   !   or spin down concept here, the system is spin degenerate. However, to
+   !   maintain consistency in the structure of the file we will repeat the
+   !   same potential coefficients and they will have a "SPIN_DN" label. Do not
+   !   be confused though, the coefficients for the SPIN_DN section are not used
+   !   by a spin non-polarized calculation at all. They are just cruft that is
+   !   kept around to maintain file format consistency.
+   do i = 1, 2
 
       ! Initialize the counter for the number of terms.
       potTermCount = 0
@@ -1009,10 +1042,12 @@ subroutine makeSCFPot (totalEnergy)
             ! Increment the counter.
             potTermCount = potTermCount + 1
 
-            ! Write the term.
+            ! Write the term. Note that the spin==1 case always writes a
+            !   potCoeffs term from index 1 while the spin==2 case can write a
+            !   potCoeffs term from index i==1 or i==2.
             if (spin == 1) then
                write (8,fmt="(2(1x,e17.10),3(1x,e13.6))") &
-                     & potCoeffs(potTermCount,i),potAlphas(potTermCount),&
+                     & potCoeffs(potTermCount,1),potAlphas(potTermCount),&
                      & generalRho(potTermCount,1),generalRho(potTermCount,2),&
                      & 0.0_double
             else
@@ -1026,6 +1061,38 @@ subroutine makeSCFPot (totalEnergy)
    enddo
    call flush (8)
 
+   ! Record the potential information for any plusUJ terms.
+   write (8,fmt="(a20)") "NUM PLUSUJ TERMS"
+   write (8,fmt="(i5)") numPlusUJAtoms
+   do i = 1, 2 ! Spin up and down.
+
+      ! Write the header tag for this block of data.
+      if (i == 1) then
+         write (8,fmt="(a20)") "TOTAL OR SPIN_UP"
+      else
+         write (8,fmt="(a20)") "SPIN_DN"
+      endif
+
+      do j = 1, numKPoints
+
+         ! Write the atom ID numbers followed by the plusUJ terms for each of
+         !   the numPlusUJAtoms. Note again that the spin==1 case will produce
+         !   redundent data in the i==2 iteration.
+         do k = 1, numPlusUJAtoms
+            !do k = 1, 7 ! Temp. comment until I decide to do 5x5 or 7x7 blocks.
+            if (spin == 1) then
+               write (8,fmt="(i5)") plusUJAtomID(k)
+               write (8,fmt="(4e18.10)") plusUJ(1:4,k,1,j)
+               write (8,fmt="(3e18.10)") plusUJ(5:7,k,1,j)
+            else
+               write (8,fmt="(i5)") plusUJAtomID(k)
+               write (8,fmt="(4e18.10)") plusUJ(1:4,k,i,j)
+               write (8,fmt="(3e18.10)") plusUJ(5:7,k,i,j)
+            endif
+         enddo
+      enddo
+   enddo
+   call flush (8)
 
    ! Compute the total magnetic moment of the system and of individual
    !   potential types.  (Only done for spin polarized calculations.)
@@ -1108,6 +1175,13 @@ subroutine makeSCFPot (totalEnergy)
    deallocate (rl2)
    deallocate (drl1)
    deallocate (drl2)
+   deallocate (s11)
+   deallocate (s12)
+   deallocate (s22)
+   deallocate (t1)
+   deallocate (t2)
+   deallocate (th1)
+   deallocate (th2)
 
    ! Log the date and time we end.
    call timeStampEnd (18)

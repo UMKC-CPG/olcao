@@ -123,6 +123,8 @@ subroutine makeAlphaDist
          alphaCenter(l,k,j,i) = elementAtomicAlphas(l,j) / &
                & (elementAtomicAlphas(l,j) + elementAtomicAlphas(k,i))
 
+         ! Produce a quantity like: a*(alpha1 + alpha2) / (alpha1*alpha2) which
+         !   is a Gaussian product theorem prefactor.
          alphaDist(l,k,j,i) = logBasisFnThresh / &
                & elementAtomicAlphas(k,i) / alphaCenter(l,k,j,i)
       enddo

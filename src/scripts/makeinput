@@ -1,4 +1,4 @@
-#!/usr/bin/perl
+#!/usr/bin/env perl
 
 sub printHelp
 {
@@ -3252,7 +3252,7 @@ sub printOLCAOInput
    printf OLCAO "%-5d\n",$totalNumTypes[$fileSet];
 
    # Write each atomic type's potential function contribution.
-   &printPot($fileSet);
+   &printSCFPot($fileSet);
 
    # Print the exchange correlation mesh definition.
    print OLCAO "PRINT_XC_MESH\n";
@@ -3299,6 +3299,9 @@ sub printOLCAOInput
    print OLCAO "0.2\n";
    print OLCAO "EACH_ITER_FLAGS__TDOS\n";
    print OLCAO "$iterTDOS\n";
+   print OLCAO "PLUSUJ_FORM__NUM_ITEMS\n";
+   print OLCAO "0 0      ! 0,1,2: elements, types, atoms; num items\n";
+   print OLCAO "ID__U__J\n";
    print OLCAO "NUM_SPLIT_TYPES__DEFAULT_SPLIT\n";
    print OLCAO "0 $spinMAIN\n";
    print OLCAO "TYPE_ID__SPIN_SPLIT_FACTOR\n";
@@ -3307,7 +3310,7 @@ sub printOLCAOInput
    print OLCAO "DOS_INPUT_DATA\n";
    print OLCAO "$eDeltaDOS $sigmaDOS               ! DOS Delta Energy, DOS sigma broadening (FWHM)\n";
    print OLCAO "$eminDOS $emaxDOS                 ! DOS EMIN and EMAX\n";
-   print OLCAO "$allAtomPDOS                       ! Flag for all atom PDOS\n";
+   print OLCAO "$allAtomPDOS ! PDOS control flag: 0 t; 1 a total; 2 a nl; 3 a nlm\n";
 
    # Print data useful for the bond portion of the calculation
    print OLCAO "BOND_INPUT_DATA\n";
@@ -3616,7 +3619,7 @@ sub getOrbitalStates
    return @numStates;
 }
 
-sub printPot
+sub printSCFPot
 {
    # Define passed parameters.
    my $fileSet = $_[0];
@@ -3762,13 +3765,20 @@ sub printPot
    }
    }
 
-   #Print the spin up and spin down components and close the file
+   # Print the spin up and spin down components followed by a stub for plusUJ
+   #   terms and then close the file. We assume that there are no plusUJ terms.
    
    print SCFPOT " TOTAL OR SPIN_UP\n";
    print SCFPOT @scfCoeffs;
 
    print SCFPOT " SPIN_DN\n";
    print SCFPOT @scfCoeffs;
+
+   print SCFPOT "NUM PLUSUJ TERMS\n";
+   print SCFPOT "0\n";
+
+   print SCFPOT " TOTAL OR SPIN_UP\n";
+   print SCFPOT " SPIN_DN\n";
 
    close (SCFPOT);
 }

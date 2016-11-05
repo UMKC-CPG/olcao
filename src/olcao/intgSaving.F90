@@ -340,6 +340,13 @@ subroutine coreValeSaving (kPointCount,valeStateIndex,valeStateNum,&
    ! Define local variables for loop control.
    integer :: i
 
+   ! Note the slightly tricky aspect of this action. At this point the
+   !   currentPair holds integrals between two atoms (i,j). The problem is that
+   !   when constructing the coreVale matrix we only have the core_i integrals
+   !   with the valence_j in the correct orientation in currentPair. The core_j
+   !   and valence_i orbitals are cc-transposed. Thus, to store the core_j and
+   !   valence_i we take values from the currentPairDagger.
+
    if (coreStateNum(1) /= 0) then
       do i = 1, kPointCount
          coreVale(coreStateIndex(1)+1:coreStateIndex(1)+coreStateNum(1),&
@@ -409,7 +416,7 @@ end subroutine coreCoreSaving
 #else
 
 subroutine applyPhaseFactorsGamma (currentPairGamma,pairXBasisFn12,statesDim1,&
-      & statesDim2,k,runCode)
+      & statesDim2,runCode)
 
    ! Import the necessary modules
    use O_Kinds
@@ -425,7 +432,6 @@ subroutine applyPhaseFactorsGamma (currentPairGamma,pairXBasisFn12,statesDim1,&
    integer :: statesDim2
    real (kind=double), dimension (maxNumStates,maxNumStates) :: currentPairGamma
    real (kind=double), dimension (statesDim1,statesDim2) :: pairXBasisFn12
-   integer :: k ! Cell loop index
    integer :: runCode
 
    if (runCode <= 2) then
@@ -603,9 +609,6 @@ subroutine coreValeSavingGamma (valeStateIndex,valeStateNum,&
          & maxNumStates) :: currentPairGamma
    real (kind=double), dimension (maxNumStates,&
          & maxNumStates) :: currentPairGammaTranspose
-
-   ! Define local variables for loop control.
-   integer :: i
 
    if (coreStateNum(1) .ne. 0) then
       coreValeGamma(coreStateIndex(1)+1:coreStateIndex(1)+coreStateNum(1),&

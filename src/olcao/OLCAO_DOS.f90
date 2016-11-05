@@ -59,10 +59,8 @@ program DOS
    !   energ for metals).
    call populateStates
 
-   ! Shift the energy eigen values according to the highest occupied state and
-   !   convert them from au to eV.
+   ! Shift the energy eigen values according to the highest occupied state.
    call shiftEnergyEigenValues(occupiedEnergy,numStates)
-!   call convertEnergyEigenValuesToeV
 
    ! Call the DOS subroutine to compute the total and partial density of states
    !   as well as the localization index.

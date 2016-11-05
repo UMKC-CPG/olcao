@@ -37,6 +37,7 @@ function getLeadChars (label)
    !   a typical string will be of the form "Si1_1" so that the first non-
    !   alphabetical character will always be at an index > 1 (start counting
    !   from 1).)
+   firstNonAlphaPos = 0 ! Initialize to avoid compiler warning.
    if (len(label) > 0) then
       do i = 1, len(label)
          charIndex = iachar(label(i:i))
@@ -51,6 +52,10 @@ function getLeadChars (label)
       write (formatString,fmt="(a2,i1,a1)") '(a',firstNonAlphaPos-1,')'
    else
       stop 'A label has length 0'
+   endif
+
+   if (firstNonAlphaPos == 0) then
+      stop "No a-z or A-Z characters found in label"
    endif
 
    write (getLeadChars,fmt=formatString) label

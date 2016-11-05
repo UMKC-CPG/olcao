@@ -431,6 +431,17 @@ subroutine makeECMeshAndOverlap
    ! Start making the exchange correlation matrices and mesh points.
    call timeStampStart(7)
 
+   ! Initialize variables to avoid compiler warnings.
+   xdistance = 0.0_double
+   ydistance = 0.0_double
+   zdistance = 0.0_double
+   xxdistance = 0.0_double
+   xydistance = 0.0_double
+   xzdistance = 0.0_double
+   yydistance = 0.0_double
+   yzdistance = 0.0_double
+   zzdistance = 0.0_double
+
    ! Pull variables out of the large data structures and assign local values
    !   to them.
    rSampleSpaceSqrt = sqrt(rSampleSpace)

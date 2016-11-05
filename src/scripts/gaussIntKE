@@ -1,0 +1,855 @@
+#!/usr/bin/env perl
+
+##################################################################
+#
+# Author: Ben Walker
+#
+# This program generates the formatted 20x20 and 16x16 matrix elements 
+# for kinetic energy integrals.  The overlap formalism is readily 
+# extendable to orbitals higher than f-type (g-type orbitals, etc.).  
+# It makes use of the "triad" formalism established by Browne & 
+# Poshusta in 1962 the reference for wihch is the following:
+#
+# ****************************************************************
+# Browne JC, Poshusta RD., "Quantum-Mechanical Integrals 
+# over Gaussian Atomic Orbitals.", The Journal of Chemical Physics, 
+# Vol. 36, Iss. 7, P. 19337, (1962).
+# ****************************************************************
+#
+# The output of this program is the integral solutions in
+# the form of Fortran 90 code, which is to be used in OLCAO.
+##################################################################
+
+##################################################################
+# Use necessary modules
+##################################################################
+use strict;
+use warnings;
+use Env;
+use POSIX;
+
+##################################################################
+# Begin main program
+##################################################################
+
+my @eTriad;
+my @tg;
+&printKE_OL;
+##################################################################
+# End main program
+##################################################################
+
+##################################################################
+# Define subroutines
+##################################################################
+
+# This subroutine initializes the triads that are to represent
+# the types of orbitals.
+sub triads {
+  # Initialize the triads
+  @{$eTriad[1]}  = qw(0 0 0); # s
+  @{$eTriad[2]}  = qw(1 0 0); # x
+  @{$eTriad[3]}  = qw(0 1 0); # y
+  @{$eTriad[4]}  = qw(0 0 1); # z
+  @{$eTriad[5]}  = qw(2 0 0); # xx
+  @{$eTriad[6]}  = qw(0 2 0); # yy
+  @{$eTriad[7]}  = qw(0 0 2); # zz
+  @{$eTriad[8]}  = qw(1 1 0); # xy
+  @{$eTriad[9]}  = qw(1 0 1); # xz
+  @{$eTriad[10]} = qw(0 1 1); # yz
+  @{$eTriad[11]} = qw(1 1 1); # xyz
+  @{$eTriad[12]} = qw(2 1 0); # xxy
+  @{$eTriad[13]} = qw(2 0 1); # xxz
+  @{$eTriad[14]} = qw(1 2 0); # yyx
+  @{$eTriad[15]} = qw(0 2 1); # yyz
+  @{$eTriad[16]} = qw(1 0 2); # zzx
+  @{$eTriad[17]} = qw(0 1 2); # zzy
+  @{$eTriad[18]} = qw(3 0 0); # xxx
+  @{$eTriad[19]} = qw(0 3 0); # yyy
+  @{$eTriad[20]} = qw(0 0 3); # zzz
+  #@{$eTriad[21]} = qw(0 1 3);
+  #@{$eTriad[22]} = qw(0 3 1);
+  #@{$eTriad[23]} = qw(1 0 3);
+  #@{$eTriad[24]} = qw(1 3 0);
+  #@{$eTriad[25]} = qw(3 0 1);
+  #@{$eTriad[26]} = qw(3 1 0);
+  #@{$eTriad[27]} = qw(4 0 0);
+  #@{$eTriad[28]} = qw(0 4 0);
+  #@{$eTriad[29]} = qw(0 0 4);
+  #@{$eTriad[30]} = qw(1 1 2);
+  #@{$eTriad[31]} = qw(1 2 1);
+  #@{$eTriad[32]} = qw(2 1 1);
+}
+
+# This subroutine defines the array values needed
+# to generate g(16,16) expressions.
+sub gNums { 
+  # Initialize the triads
+  @{$tg[1]} = qw(1 1 0 1 0 1);
+  @{$tg[2]} = qw(1 2 0 1 0 1);
+  @{$tg[3]} = qw(1 3 0 1 0 1);
+  @{$tg[4]} = qw(1 4 0 1 0 1);
+  @{$tg[5]} = qw(1 8 0 1 0 1);
+  @{$tg[6]} = qw(1 9 0 1 0 1);
+  @{$tg[7]} = qw(1 10 0 1 0 1);
+  @{$tg[8]} = qw(1 5 -1 6 0 1);
+  @{$tg[9]} = qw(2 7 -1 5 -1 6);
+  @{$tg[10]} = qw(1 11 0 1 0 1);
+  @{$tg[11]} = qw(1 13 -1 15 0 1);
+  @{$tg[12]} = qw(1 18 -3 14 0 1);
+  @{$tg[13]} = qw(3 12 -1 19 0 1);
+  @{$tg[14]} = qw(2 20 -3 13 -3 15);
+  @{$tg[15]} = qw(4 16 -1 18 -1 14);
+  @{$tg[16]} = qw(4 17 -1 12 -1 19);
+}
+
+# This subroutine calculates binomial coefficients
+sub choose {
+  # Define passed parameters
+  my $n = $_[0];
+  my $k = $_[1];    # These are for "n choose k"
+
+  # Define local variables
+  my $l;
+  my $returnValue;
+  $returnValue = 1;
+  foreach $l (1..$k) {
+    $returnValue *= ($n - $l + 1)/$l;
+  }
+  return $returnValue;
+}
+
+# This subroutine computes the factorial (x!)
+# of a positive integer passed to it.
+sub factorial {
+  # Define passed parameters
+  my $inputNum = $_[0];
+
+  # Define local variables
+  my $i;
+  my $returnValue;
+
+  $returnValue = 1;
+
+  if ($inputNum == 0 or $inputNum == 1) {
+    return $returnValue;  
+  }
+  else {
+    for ($i=1;$i<=$inputNum;$i++) {
+      $returnValue *= $i;
+    }
+  }
+  return $returnValue;
+}
+
+# This subroutine calculates the double factorial.
+sub dFact {
+  # Define passed parameters
+  my $inputNumber = $_[0];
+  # Define local variables
+  my $i;
+  my $product;
+  my $returnValue;
+  $returnValue = 1;
+  if ($inputNumber == 0 or $inputNumber == 1)
+    {return $returnValue;}
+  else {
+    for ($i = 1;((2*$i) - 1) <= ($inputNumber);$i++)
+      {$returnValue *= (2*$i) - 1;}
+  }
+  return $returnValue;
+}
+
+# This subroutine computes a single x-, y-, or 
+# z-component of the 2-center overlap integral
+# according to the Cook formalism:
+#
+# ****************************************************************
+# Cook, David B., "Handbook of Computational Quantum Chemistry."
+# Dover Publications (August 22, 2005).
+# ISBN-10: 0486443078
+# ISBN-13: 978-0486443072
+# ****************************************************************
+#
+# The output of this program is the integral solutions in
+# the form of Fortran 90 code, which is to be used in OLCAO.
+sub twoCenterSum {
+  # Define passed parameters.
+  my $l1 = $_[0];
+  my $l2 = $_[1];
+  my $dim = $_[2];
+  $dim += 1;
+  # Define local variables.
+  my $j;
+  my $string;
+  my $l;
+  my $s;
+  $l = $l1 + $l2;
+  $string = "";
+  $string .= "("; # Outer paren
+  foreach $j (0..floor($l/2)) {
+    foreach $s (0..(2*$j)) {
+      my $power1 = $l1 - $s;
+      my $power2 = $l2 - 2*$j + $s;
+      if (&choose($l1,$s)*&choose($l2,(2*$j - $s)) == 0) {
+        $string .= "0";
+      }
+      else {
+        $string .= "(";
+        $string .= &choose($l1,$s)*&choose($l2,(2*$j - $s))*&dFact(2*$j - 1)/(2**$j);
+        $string .= "*";
+        $string .= "(PA($dim)**$power1)*(PB($dim)**$power2)/(Y**$j)";
+        $string .= ")";
+      }
+      if ($j != floor($l/2) or $s != (2*$j)) {
+        $string .= " + ";
+      }
+      else {
+        $string .= "";
+      }
+    }
+  }
+  $string .= ")"; # Outer paren
+  return $string;
+}
+
+# This subroutine generates the g(16,16) orbital overlap
+# expressions as follows:
+# ****************************************************************
+# Set up tg(16,16) values.  tg(:,1), tg(:,3), tg(:,5) are coefficients
+# and tg(:,2), tg(:,4), tg(:,6) are wo(20,20,20,20) index values.
+# ****************************************************************
+# REFERENCE FOR (20,20) AND (16,16) MATRIX ELEMENTS
+# THIS IS AS THEY ARE DEFINED IN OLCAO.
+# ****************************************************************
+# 
+# g(16,16): 1,s; 2,x; 3,y; 4,z; 5,xy; 6,xz; 7,yz; 8,xx-yy;
+# 9,2zz-xx-yy; 10,xyz; 11,xxz-yyz; 12,xxx-3yyx; 13,3xxy-yyy; 
+# 14,2zzz-3xxz-3yyz; 15,4zzx-xxx-yyx; 16,4zzy-xxy-yyy
+# 
+# wo(20,20): 1,s; 2,x; 3,y; 4,z; 5,xx; 6,yy; 7,zz; 8,xy; 9,xz;
+# 10,yz; 11,xyz; 12,xxy; 13,xxz; 14,yyx; 15,yyz; 16,zzx; 17,zzy
+# 18,xxx; 19,yyy; 20,zzz
+# 
+# ****************************************************************
+sub g_gen {
+  # Define passed parameters.
+  my $orb1 = $_[0];
+  my $orb2 = $_[1];
+  # Define local variables.
+  my @tg1;
+  my @tg2;
+  my $orbital1;
+  my $orbital2;
+  my $total;
+  my $temp;
+  my $string = "";
+  my $string1 = "";
+  my $string2 = "";
+  my $string3 = "";
+  my $string4 = "";
+  my $string5 = "";
+  my $string6 = "";
+  my $string7 = "";
+  my $string8 = "";
+  my $string9 = "";
+  
+  # Initialize arrays.
+  &gNums;
+
+  foreach $orbital2 (1..$orb2) {
+    foreach $orbital1 (1..$orb1) {
+      @tg1[0..5] = @{$tg[$orbital1]};
+      @tg2[0..5] = @{$tg[$orbital2]};
+      $string .= "g($orbital1,$orbital2) = ";
+      if ($tg1[0]*$tg2[0] == 0) {
+        $string1 = "0";
+        $string .= $string1;
+        $string .= " + ";
+      }
+      else {
+        $string1 = $tg1[0]*$tg2[0];
+        $string1 .= "*wo(";
+        $string1 .= $tg1[1];
+        $string1 .= ",";
+        $string1 .= $tg2[1];
+        $string1 .= ")";
+        $string .= $string1;
+        $string .= " + ";
+      }
+      if ($tg1[0]*$tg2[2] == 0) {
+        $string2 = "0";
+        $string .= $string2;
+        $string .= " + ";
+      }
+      else {
+        $string2 = $tg1[0]*$tg2[2];
+        $string2 .= "*wo(";
+        $string2 .= $tg1[1];
+        $string2 .= ",";
+        $string2 .= $tg2[3];
+        $string2 .= ")";
+        $string .= $string2;
+        $string .= " + ";
+      }
+      if ($tg1[0]*$tg2[4] == 0) {
+        $string3 = "0";
+        $string .= $string3;
+        $string .= " + ";
+      }
+      else {
+        $string3 = $tg1[0]*$tg2[4];
+        $string3 .= "*wo(";
+        $string3 .= $tg1[1];
+        $string3 .= ",";
+        $string3 .= $tg2[5];
+        $string3 .= ")";
+        $string .= $string3;
+        $string .= " + ";
+      }
+      if ($tg1[2]*$tg2[0] == 0) {
+        $string4 = "0";
+        $string .= $string4;
+        $string .= " + ";
+      }
+      else {
+        $string4 = $tg1[2]*$tg2[0];
+        $string4 .= "*wo(";
+        $string4 .= $tg1[3];
+        $string4 .= ",";
+        $string4 .= $tg2[1];
+        $string4 .= ")";
+        $string .= $string4;
+        $string .= " + ";
+      }
+      if ($tg1[2]*$tg2[2] == 0) {
+        $string5 = "0";
+        $string .= $string5;
+        $string .= " + ";
+      }
+      else {
+        $string5 = $tg1[2]*$tg2[2];
+        $string5 .= "*wo(";
+        $string5 .= $tg1[3];
+        $string5 .= ",";
+        $string5 .= $tg2[3];
+        $string5 .= ")";
+        $string .= $string5;
+        $string .= " + ";
+      }
+      if ($tg1[2]*$tg2[4] == 0) {
+        $string6 = "0";
+        $string .= $string6;
+        $string .= " + ";
+      }
+      else {
+        $string6 = $tg1[2]*$tg2[4];
+        $string6 .= "*wo(";
+        $string6 .= $tg1[3];
+        $string6 .= ",";
+        $string6 .= $tg2[5];
+        $string6 .= ")";
+        $string .= $string6;
+        $string .= " + ";
+      }
+      if ($tg1[4]*$tg2[0] == 0) {
+        $string7 = "0";
+        $string .= $string7;
+        $string .= " + ";
+      }
+      else {
+        $string7 = $tg1[4]*$tg2[0];
+        $string7 .= "*wo(";
+        $string7 .= $tg1[5];
+        $string7 .= ",";
+        $string7 .= $tg2[1];
+        $string7 .= ")";
+        $string .= $string7;
+        $string .= " + ";
+      }
+      if ($tg1[4]*$tg2[2] == 0) {
+        $string8 = "0";
+        $string .= $string8;
+        $string .= " + ";
+      }
+      else {
+        $string8 = $tg1[4]*$tg2[2];
+        $string8 .= "*wo(";
+        $string8 .= $tg1[5];
+        $string8 .= ",";
+        $string8 .= $tg2[3];
+        $string8 .= ")";
+        $string .= $string8;
+        $string .= " + ";
+      }
+      if ($tg1[4]*$tg2[4] == 0) {
+        $string9 = "0";
+        $string .= $string9;
+      }
+      else {
+        $string9 = $tg1[4]*$tg2[4];
+        $string9 .= "*wo(";
+        $string9 .= $tg1[5];
+        $string9 .= ",";
+        $string9 .= $tg2[5];
+        $string9 .= ")";
+        $string .= $string9;
+      }
+
+      #**************************************************************
+      # Start RegEXP portion here
+      #**************************************************************
+      # Eliminate redundant mathematical operations
+      if ($string =~ m/\+ -/) {
+        $string =~ s/\+ -/- /g;
+      }
+      if ($string =~ m/ 1\*/) {
+        $string =~ s/ 1\*/ /g;
+      }
+      # Eliminate zero terms
+      if ($string =~ m/ \+ 0/) {
+        $string =~ s/ \+ 0//g;
+      }
+      #**************************************************************
+      # End of RegEXP portion
+      #**************************************************************
+
+      # Now, process the output string into 80 character-long lines.
+      my $portion = "";
+      my $initial = 0;
+      my $final = 78;
+      if (length($string) > 1) {
+        while ($final < length($string)) {
+          $portion .= substr($string, $initial, 79);
+          $portion .= "&\n";
+          $portion .= "&";
+          $initial += 79;
+          $final += 79;
+        }
+        $portion .= substr($string, $initial, length($string));
+      }
+      $portion .= "\n\n";
+      print PRI $portion;
+      $string = ""; # Reset the string before starting the loops again to prevent
+                    # the solutions from concatonating onto each other.
+    }
+  }
+  return $string;
+}
+
+# This subroutine uses the 2-center OL functionality
+# to construct KE integral formulas.  These integrals 
+# are weighted sums of 2-center OL integrals.  This
+# uses Cook's formalism (referenced above).
+sub KE_OL {
+  # Define passed parameters
+  my $orb1 = $_[0];
+  my $orb2 = $_[1];
+  # Define local variables
+  my @eTriad1;
+  my @eTriad2;
+  my $orbital1;
+  my $orbital2;
+  my $l1;
+  my $l2;
+  my $string = "";
+  my $dim;
+  my $num;
+
+  &triads; # Initialize triads
+
+  foreach $orbital2 (1..$orb2) {
+    foreach $orbital1 (1..$orb1) {
+      @eTriad1[0..2] = @{$eTriad[$orbital1]};
+      @eTriad2[0..2] = @{$eTriad[$orbital2]};
+      $string .= "wo($orbital1,$orbital2) = ";
+      $string .= "coef*("; # Outer paren
+      $num = ((2*$eTriad2[0] + 1) + (2*$eTriad2[1] + 1) + (2*$eTriad2[2] + 1));
+      $string .= "($num*a2)";
+      $string .= "*(";
+      foreach $dim (0..2) {
+        $l1 = $eTriad1[$dim];
+        $l2 = $eTriad2[$dim];
+        $string .= &twoCenterSum($l1,$l2,$dim);
+        if ($dim != 2) {
+          $string .= "*";
+        }
+      }
+      $string .= ")";
+      $string .= " - ";
+      $eTriad2[0] += 2;
+      $string .= "(2*(a2**2))*(";
+      foreach $dim (0..2) {
+        $l1 = $eTriad1[$dim];
+        $l2 = $eTriad2[$dim];
+        $string .= &twoCenterSum($l1,$l2,$dim);
+        if ($dim != 2) {
+          $string .= "*";
+        }
+      }
+      $string .= ")";
+      $string .= " - ";
+      $eTriad2[0] -= 2;
+      $eTriad2[1] += 2;
+      $string .= "(2*(a2**2))*(";
+      foreach $dim (0..2) {
+        $l1 = $eTriad1[$dim];
+        $l2 = $eTriad2[$dim];
+        $string .= &twoCenterSum($l1,$l2,$dim);
+        if ($dim != 2) {
+          $string .= "*";
+        }
+      }
+      $string .= ")";
+      $string .= " - ";
+      $eTriad2[1] -= 2;
+      $eTriad2[2] += 2;
+      $string .= "(2*(a2**2))*(";
+      foreach $dim (0..2) {
+        $l1 = $eTriad1[$dim];
+        $l2 = $eTriad2[$dim];
+        $string .= &twoCenterSum($l1,$l2,$dim);
+        if ($dim != 2) {
+          $string .= "*";
+        }
+      }
+      $string .= ")";
+      $string .= " - ";
+      $eTriad2[2] -= 2;
+      $string .= "(($eTriad2[0]**2 - $eTriad2[0])/2.0d0)*";
+      $eTriad2[0] -= 2;
+      # There cannot be negative triad values, so check for them and
+      # make the overlap term zero if $eTriad2[$dim] < 0
+      if ($eTriad2[0] >= 0) {
+        $string .= "(";
+        foreach $dim (0..2) {
+          $l1 = $eTriad1[$dim];
+          $l2 = $eTriad2[$dim];
+          $string .= &twoCenterSum($l1,$l2,$dim);
+          if ($dim != 2) {
+            $string .= "*";
+          }
+        }
+        $string .= ")";
+        $string .= " - ";
+      }
+      else {
+        $string .= "(0.d0) - ";
+      }
+      $eTriad2[0] += 2;
+      $string .= "(($eTriad2[1]**2 - $eTriad2[1])/2.0d0)*";
+      $eTriad2[1] -= 2;
+      if ($eTriad2[1] >= 0) {
+        $string .= "(";
+        foreach $dim (0..2) {
+          $l1 = $eTriad1[$dim];
+          $l2 = $eTriad2[$dim];
+          $string .= &twoCenterSum($l1,$l2,$dim);
+          if ($dim != 2) {
+            $string .= "*";
+          }
+        }
+        $string .= ")";
+        $string .= " - ";
+      }
+      else {
+        $string .= "(0.d0) - ";
+      }
+      $eTriad2[1] += 2;
+      $string .= "(($eTriad2[2]**2 - $eTriad2[2])/2.0d0)*";
+      $eTriad2[2] -= 2;
+      if ($eTriad2[2] >= 0) {
+        $string .= "(";
+        foreach $dim (0..2) {
+          $l1 = $eTriad1[$dim];
+          $l2 = $eTriad2[$dim];
+          $string .= &twoCenterSum($l1,$l2,$dim);
+          if ($dim != 2) {
+            $string .= "*";
+          }
+        }
+        $string .= ")";
+      }
+      else {
+        $string .= "(0.d0)";
+      }
+      $string .= ")"; # Outer paren
+
+      #**************************************************************
+      # Start RegEXP portion here
+      #**************************************************************
+      # Eliminate terms raised to 0-power
+      if ($string =~ m/\(PA\(1\)\*\*0\)/) {
+        $string =~ s/\(PA\(1\)\*\*0\)/1/g;
+      }
+      if ($string =~ m/\(PA\(2\)\*\*0\)/) {
+        $string =~ s/\(PA\(2\)\*\*0\)/1/g;
+      }
+      if ($string =~ m/\(PA\(3\)\*\*0\)/) {
+        $string =~ s/\(PA\(3\)\*\*0\)/1/g;
+      }
+      if ($string =~ m/\(PB\(1\)\*\*0\)/) {
+        $string =~ s/\(PB\(1\)\*\*0\)/1/g;
+      }
+      if ($string =~ m/\(PB\(2\)\*\*0\)/) {
+        $string =~ s/\(PB\(2\)\*\*0\)/1/g;
+      }
+      if ($string =~ m/\(PB\(3\)\*\*0\)/) {
+        $string =~ s/\(PB\(3\)\*\*0\)/1/g;
+      }
+      if ($string =~ m/\/\(Y\*\*0\)/) {
+        $string =~ s/\/\(Y\*\*0\)//g;
+      }
+      # Simplify terms raised to 1-power
+      if ($string =~ m/\(PB\(1\)\*\*1\)/) {
+        $string =~ s/\(PB\(1\)\*\*1\)/PB\(1\)/g;
+      }
+      if ($string =~ m/\(PB\(2\)\*\*1\)/) {
+        $string =~ s/\(PB\(2\)\*\*1\)/PB\(2\)/g;
+      }
+      if ($string =~ m/\(PB\(3\)\*\*1\)/) {
+        $string =~ s/\(PB\(3\)\*\*1\)/PB\(3\)/g;
+      }
+      if ($string =~ m/\(PA\(1\)\*\*1\)/) {
+        $string =~ s/\(PA\(1\)\*\*1\)/PA\(1\)/g;
+      }
+      if ($string =~ m/\(PA\(2\)\*\*1\)/) {
+        $string =~ s/\(PA\(2\)\*\*1\)/PA\(2\)/g;
+      }
+      if ($string =~ m/\(PA\(3\)\*\*1\)/) {
+        $string =~ s/\(PA\(3\)\*\*1\)/PA\(3\)/g;
+      }
+      if ($string =~ m/\(Y\*\*1\)/) {
+        $string =~ s/\(Y\*\*1\)/Y/g;
+      }
+      # Get rid of redundant 1's.
+      while ($string =~ m/\*1\*/) {
+        $string =~ s/\*1\*/\*/g;
+      }
+      if ($string =~ m/\(1\*1\)/) {
+        $string =~ s/\(1\*1\)/1/g;
+      }
+      while ($string =~ m/\*\(1\)\*/) {
+        $string =~ s/\*\(1\)\*/\*/g;
+      }
+      # wo (1,1)
+      if ($string =~ m/\*\(\(1\)\*\(1\)\)/) {
+        $string =~ s/\*\(\(1\)\*\(1\)\)//g;
+      }
+      if ($string =~ m/\*1\//) {
+        $string =~ s/\*1\//\//g;
+      }
+      if ($string =~ m/\(\(1\)\*/) {
+        $string =~ s/\(\(1\)\*/\(/g;
+      }
+      if ($string =~ m/\*\(1\)\)/) {
+        $string =~ s/\*\(1\)\)/\)/g;
+      }
+      if ($string =~ m/\(1\*/) {
+        $string =~ s/\(1\*/\(/g;
+      }
+      if ($string =~ m/\*1\)/) {
+        $string =~ s/\*1\)/\)/g;
+      }
+      while ($string =~ m/ \+ 0 /) {
+        $string =~ s/ \+ 0 / /g;
+      }
+      if ($string =~ m/ \+ 0\)/) {
+        $string =~ s/ \+ 0\)/\)/g;
+      }
+      # Miscellaneous paren reductions
+      if ($string =~ m/\(\(\(PA\(1\)\)\)\)/) {
+        $string =~ s/\(\(\(PA\(1\)\)\)\)/PA\(1\)/g;
+      }
+      if ($string =~ m/\(\(\(PA\(2\)\)\)\)/) {
+        $string =~ s/\(\(\(PA\(2\)\)\)\)/PA\(2\)/g;
+      }
+      if ($string =~ m/\(\(\(PA\(3\)\)\)\)/) {
+        $string =~ s/\(\(\(PA\(3\)\)\)\)/PA\(3\)/g;
+      }
+      if ($string =~ m/\(\(\(PB\(1\)\)\)\)/) {
+        $string =~ s/\(\(\(PB\(1\)\)\)\)/PB\(1\)/g;
+      }
+      if ($string =~ m/\(\(\(PB\(2\)\)\)\)/) {
+        $string =~ s/\(\(\(PB\(2\)\)\)\)/PB\(2\)/g;
+      }
+      if ($string =~ m/\(\(\(PB\(3\)\)\)\)/) {
+        $string =~ s/\(\(\(PB\(3\)\)\)\)/PB\(3\)/g;
+      }
+      if ($string =~ m/\(\(PA\(1\)\)\)/) {
+        $string =~ s/\(\(PA\(1\)\)\)/PA\(1\)/g;
+      }
+      if ($string =~ m/\(\(PA\(2\)\)\)/) {
+        $string =~ s/\(\(PA\(2\)\)\)/PA\(2\)/g;
+      }
+      if ($string =~ m/\(\(PA\(3\)\)\)/) {
+        $string =~ s/\(\(PA\(3\)\)\)/PA\(3\)/g;
+      }
+      if ($string =~ m/\(\(PB\(1\)\)\)/) {
+        $string =~ s/\(\(PB\(1\)\)\)/PB\(1\)/g;
+      }
+      if ($string =~ m/\(\(PB\(2\)\)\)/) {
+        $string =~ s/\(\(PB\(2\)\)\)/PB\(2\)/g;
+      }
+      if ($string =~ m/\(\(PB\(3\)\)\)/) {
+        $string =~ s/\(\(PB\(3\)\)\)/PB\(3\)/g;
+      }
+      if ($string =~ m/\(\(PA\(1\)\*\*2\)\)/) {
+        $string =~ s/\(\(PA\(1\)\*\*2\)\)/\(PA\(1\)\*\*2\)/g;
+      }
+      if ($string =~ m/\(\(PA\(2\)\*\*2\)\)/) {
+        $string =~ s/\(\(PA\(2\)\*\*2\)\)/\(PA\(2\)\*\*2\)/g;
+      }
+      if ($string =~ m/\(\(PA\(3\)\*\*2\)\)/) {
+        $string =~ s/\(\(PA\(3\)\*\*2\)\)/\(PA\(3\)\*\*2\)/g;
+      }
+      if ($string =~ m/\(\(PB\(1\)\*\*2\)\)/) {
+        $string =~ s/\(\(PB\(1\)\*\*2\)\)/\(PB\(1\)\*\*2\)/g;
+      }
+      if ($string =~ m/\(\(PB\(2\)\*\*2\)\)/) {
+        $string =~ s/\(\(PB\(2\)\*\*2\)\)/\(PB\(2\)\*\*2\)/g;
+      }
+      if ($string =~ m/\(\(PB\(3\)\*\*2\)\)/) {
+        $string =~ s/\(\(PB\(3\)\*\*2\)\)/\(PB\(3\)\*\*2\)/g;
+      }
+      if ($string =~ m/\(\(PA\(1\)\*\*3\)\)/) {
+        $string =~ s/\(\(PA\(1\)\*\*3\)\)/\(PA\(1\)\*\*3\)/g;
+      }
+      if ($string =~ m/\(\(PA\(2\)\*\*3\)\)/) {
+        $string =~ s/\(\(PA\(2\)\*\*3\)\)/\(PA\(2\)\*\*3\)/g;
+      }
+      if ($string =~ m/\(\(PA\(3\)\*\*3\)\)/) {
+        $string =~ s/\(\(PA\(3\)\*\*3\)\)/\(PA\(3\)\*\*3\)/g;
+      }
+      if ($string =~ m/\(\(PB\(1\)\*\*3\)\)/) {
+        $string =~ s/\(\(PB\(1\)\*\*3\)\)/\(PB\(1\)\*\*3\)/g;
+      }
+      if ($string =~ m/\(\(PB\(2\)\*\*3\)\)/) {
+        $string =~ s/\(\(PB\(2\)\*\*3\)\)/\(PB\(2\)\*\*3\)/g;
+      }
+      if ($string =~ m/\(\(PB\(3\)\*\*3\)\)/) {
+        $string =~ s/\(\(PB\(3\)\*\*3\)\)/\(PB\(3\)\*\*3\)/g;
+      }
+      # Get rid of some zero terms.
+      if ($string =~ m/ - \(\(0\*\*2 - 0\)\/2.0d0\)\*\(0.d0\)/) {
+        $string =~ s/ - \(\(0\*\*2 - 0\)\/2.0d0\)\*\(0.d0\)//g;
+      }
+
+      #**************************************************************
+      # End of RegEXP portion
+      #**************************************************************
+      
+      # Now, process the output string into 80 character-long lines.
+      my $portion = "";
+      my $initial = 0;
+      my $final = 78;
+      if (length($string) > 1) {
+        while ($final < length($string)) {
+          $portion .= substr($string, $initial, 79);
+          $portion .= "&\n";
+          $portion .= "&";
+          $initial += 79;
+          $final += 79;
+        }
+        $portion .= substr($string, $initial, length($string));
+      }
+      $portion .= "\n\n";
+      print PRI $portion;
+      $string = ""; # Reset the string before starting the loops again to prevent
+                    # the solutions from concatonating onto each other.
+    }
+  }
+  return $string;
+}
+
+# This subroutine prints the formulas according to
+# the l1l2switch formalism.
+sub printKE_OL {
+  # Declare local variables
+  my $string;
+  my $KE_CodeFile = "KE_Intg";
+
+  # Open the output file
+  open (PRI,">$KE_CodeFile") || die "Error opening file.\n";
+
+  print PRI "if (l1l2switch.eq.34) then\n\n";
+  $string = &KE_OL(4,4);
+  $string .= &g_gen(4,4);
+  print PRI "$string\n";
+    
+  print PRI "else if (l1l2switch.eq.17) then\n\n";
+  $string = &KE_OL(1,1);
+  $string .= &g_gen(1,1);
+  print PRI "$string\n";
+ 
+  print PRI "else if (l1l2switch.eq.33) then\n\n";
+  $string = &KE_OL(1,4);
+  $string .= &g_gen(1,4);
+  print PRI "$string\n";
+  
+  print PRI "else if (l1l2switch.eq.65) then\n\n";
+  $string = &KE_OL(1,10);
+  $string .= &g_gen(1,9);
+  print PRI "$string\n";
+ 
+  print PRI "else if (l1l2switch.eq.129) then\n\n";
+  $string = &KE_OL(1,20);
+  $string .= &g_gen(1,16);
+  print PRI "$string\n";
+  
+  print PRI "else if (l1l2switch.eq.18) then\n\n";
+  $string = &KE_OL(4,1);
+  $string .= &g_gen(4,1);
+  print PRI "$string\n";
+ 
+  print PRI "else if (l1l2switch.eq.66) then\n\n";
+  $string = &KE_OL(4,10);
+  $string .= &g_gen(4,9);
+  print PRI "$string\n";
+ 
+  print PRI "else if (l1l2switch.eq.130) then\n\n";
+  $string = &KE_OL(4,20);
+  $string .= &g_gen(4,16);
+  print PRI "$string\n";
+    
+  print PRI "else if (l1l2switch.eq.20) then\n\n";
+  $string = &KE_OL(10,1);
+  $string .= &g_gen(9,1);
+  print PRI "$string\n";
+  
+  print PRI "else if (l1l2switch.eq.36) then\n\n";
+  $string = &KE_OL(10,4);
+  $string .= &g_gen(9,4);
+  print PRI "$string\n";
+  
+  print PRI "else if (l1l2switch.eq.68) then\n\n";
+  $string = &KE_OL(10,10);
+  $string .= &g_gen(9,9);
+  print PRI "$string\n";
+    
+  print PRI "else if (l1l2switch.eq.132) then\n\n";
+  $string = &KE_OL(10,20);
+  $string .= &g_gen(9,16);
+  print PRI "$string\n";
+    
+  print PRI "else if (l1l2switch.eq.24) then\n\n";
+  $string = &KE_OL(20,1);
+  $string .= &g_gen(16,1);
+  print PRI "$string\n";
+  
+  print PRI "else if (l1l2switch.eq.40) then\n\n";
+  $string = &KE_OL(20,4);
+  $string .= &g_gen(16,4);
+  print PRI "$string\n";
+    
+  print PRI "else if (l1l2switch.eq.72) then\n\n";
+  $string = &KE_OL(20,10);
+  $string .= &g_gen(16,9);
+  print PRI "$string\n";
+    
+  print PRI "else\n\n";
+  $string = &KE_OL(20,20);
+  $string .= &g_gen(16,16);
+  print PRI "$string";
+  print PRI "end if";
+}

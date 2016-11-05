@@ -2045,8 +2045,7 @@ subroutine getIntgResults (valeValeGamma,coreValeOLGamma,&
                call applyPhaseFactorsGamma (currentPairGamma,&
                   & accumulatedIntg(1:currentNumTotalStates(1),&
                   & accumInitPos+1:accumInitPos+currentNumTotalStates(2)),&
-                  & currentNumTotalStates(1),currentNumTotalStates(2),&
-                  & loopIndices(2,k),runCode)
+                  & currentNumTotalStates(1),currentNumTotalStates(2),runCode)
 #endif
 
             else
@@ -2061,8 +2060,7 @@ subroutine getIntgResults (valeValeGamma,coreValeOLGamma,&
                call applyPhaseFactorsGamma (currentPairGamma,&
                   & accumulatedIntg(1:currentNumTotalStates(1),&
                   & accumInitPos+1:accumInitPos+currentNumTotalStates(2)),&
-                  & currentNumTotalStates(1),currentNumTotalStates(2),&
-                  & loopIndices(2,k),runCode)
+                  & currentNumTotalStates(1),currentNumTotalStates(2),runCode)
 #endif
             endif
 

@@ -183,7 +183,10 @@ subroutine computeBands
       call saveCoreValeOL (coreValeOLGamma,i)
 #endif
 
-      ! Preserve the valeValeOL (if needed).
+      ! Preserve the valeValeOL (if needed). It will be destroyed by the
+      !   upcoming call to secularEqnOneKP where the ZHEGV routine is called.
+      !   This should be preserved in the case that a spin polarized
+      !   calculation is being done.
       call preserveValeValeOL
 
       do j = 1, spin

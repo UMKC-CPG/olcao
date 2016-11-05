@@ -16,7 +16,7 @@ module O_MathSubs
    contains
 
 ! This is a calculation of an integral over the error function.
-function erf(x)
+function error_fn(x)
 
    ! Use precision parameters
    use O_Kinds
@@ -26,7 +26,7 @@ function erf(x)
 
    ! Define the dummy variables passed to this subroutine.
    real (kind=double) :: x
-   real (kind=double) :: erf
+   real (kind=double) :: error_fn
 
    ! Define the local variables used in this subroutine.
    real (kind=double) :: absX
@@ -109,7 +109,7 @@ function erf(x)
             a = a  / (q(1) + absXSqrd * (q(2) + &
               & absXSqrd * (q(3) + absXSqrd * q(4))))
             if (x < 0.0_double) a = -a
-            erf = a
+            error_fn = a
          else
             ! Assign parameters where x is between 0.46875 and 4.
             p(1) = 22.898992851659_double
@@ -130,7 +130,7 @@ function erf(x)
               & absX * p(6))))))
             a = a/(q(1) + absX * (q(2) + absX * (q(3) + absX * &
               & (q(4) + absX * (q(5) + absX * q(6))))))
-            erf = sign(1.0_double - a,x)
+            error_fn = sign(1.0_double - a,x)
          endif
       else
          ! Assign parameters where x is between 4 and 6.
@@ -149,13 +149,13 @@ function erf(x)
            & (p(3) + invAbsXSqrd * p(4)))) / (q(1) + invAbsXSqrd * (q(2) + &
            & invAbsXSqrd * (q(3) + invAbsXSqrd * q(4))))
          a = exp(-absXSqrd) * (invSqrtPi + a) / absX
-         erf = sign(1.0_double - a,x)
+         error_fn = sign(1.0_double - a,x)
       endif
    else
-      erf = x/absX
+      error_fn = x/absX
    endif
 
-end function erf
+end function error_fn
 
 
 function stepFunction (x,stepFnRange)

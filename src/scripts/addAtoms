@@ -1,4 +1,4 @@
-#!/usr/bin/perl
+#!/usr/bin/env perl
 #PROGRAM:  addAtoms
 #PURPOSE:  This program will read an olcao.skl file and add atoms to it
 #          according to annotations in the file.

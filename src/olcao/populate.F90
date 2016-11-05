@@ -427,8 +427,6 @@ subroutine populateSmearing
    integer :: i,j
    integer :: numSegments
    real (kind=double) :: fermiFunction
-   real (kind=double) :: minEnergyInit
-   real (kind=double) :: maxEnergyInit
    real (kind=double) :: minEnergy
    real (kind=double) :: maxEnergy
    real (kind=double) :: chargeSum

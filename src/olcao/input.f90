@@ -335,6 +335,7 @@ subroutine readMainControl(readUnit,writeUnit)
    ! Use necessary modules
    use O_Kinds
    use O_ReadDataSubs
+   use O_Constants, only: hartree
    use O_PotTypes, only: numPotTypes
    use O_Potential, only: setPotControlParameters
 
@@ -351,11 +352,18 @@ subroutine readMainControl(readUnit,writeUnit)
    integer :: lastIt
    integer :: fbLevel
    integer :: xcCodeTemp
-   integer :: numSpltTps
+   integer :: plusUJFormTemp
+   integer :: numPlusUJItemsTemp
+   integer :: numSplitTypes
+   integer :: itemID
    integer :: typeID
+   integer, allocatable, dimension (:) :: plusUJItemIDTemp
    real (kind=double) :: rlxFact
    real (kind=double) :: cTest
-   real (kind=double) :: spltAmt
+   real (kind=double) :: hubbardU
+   real (kind=double) :: hundJ
+   real (kind=double) :: splitAmt
+   real (kind=double), allocatable, dimension (:,:) :: plusUJItemValueTemp
    real (kind=double), allocatable, dimension (:) :: typeSpinSplitTemp
 
 
@@ -379,29 +387,78 @@ subroutine readMainControl(readUnit,writeUnit)
    call readData(readUnit,writeUnit,iterFlagTDOS,len('EACH_ITER_FLAGS__TDOS'),&
          & 'EACH_ITER_FLAGS__TDOS')
 
+   ! At this point we need to read information related to the plusUJ terms.
+   !   We will accept the data in three possible forms: by element, sequential
+   !   type number, or atom. The determination is made on the first line of
+   !   this section: (0, 1, 2) respectively. Depending on the value of the
+   !   flag, the second number indicates the number of elements, types, or
+   !   atoms for which UJ data is provided. The remaining data is therefore
+   !   understood to be useful for individual atoms or for types or for
+   !   elements. All of the data will be converted to the form of individual
+   !   atoms internally within OLCAO, but in many cases it is assumed to be
+   !   easier to specify the UJ terms for all atoms of a given element or
+   !   sequential type number all at once instead of on a per-atom basis.
+
+   ! Read the form in which the UJ terms will be given and the number of items.
+   !   Presently, it is assumed that the UJ contribution will only be added to
+   !   the orbital type (d or f) that is highest in energy, meaning that an
+   !   atom with 4f orbitals cannot have a UJ contribution to the 3d orbitals.
+   !   Note that the term "Item" is used here because depending on the Form,
+   !   the input may be providing UJ values for all atoms of a given element,
+   !   type, or even just for specific atoms.
+   call readData(readUnit,writeUnit,plusUJFormTemp,numPlusUJItemsTemp,&
+         & len('PLUSUJ_FORM__NUM_ITEMS'),'PLUSUJ_FORM__NUM_ITEMS')
+
+   ! Allocate space to hold the U and J values for the designated number of
+   !   atoms. Also allocate space to hold the type identifies.
+   allocate (plusUJItemValueTemp(2,numPlusUJItemsTemp))
+   allocate (plusUJItemIDTemp(numPlusUJItemsTemp))
+
+   ! Read the U and J values for each of the specific ID'd items. For the
+   !   element or sequential type form, the ID number given will correspond to
+   !   the ID number given under the ATOM_TYPE_ID__SEQUENTIAL_NUMBER tag in the
+   !   olcao.dat file (the first or last number of that line). For atoms, it
+   !   corresponds to the atom number. Note that the U and J quantities must be
+   !   provided in eV and that they will be converted to au.
+   ! For reference, the ATOM_TYPE_ID__SEQUENTIAL_NUMBER tag provides a series
+   !   of ID numbers. The first is the element ID, then the species ID within
+   !   that element, and then the type ID within that species. The final number
+   !   is the overall (system-wide) type ID.
+   call readAndCheckLabel(readUnit,writeUnit,len('ID__U__J'),'ID__U__J')
+   do i = 1, numPlusUJItemsTemp
+      call readData(readUnit,writeUnit,itemID,hubbardU,hundJ,0,'')
+      plusUJItemValueTemp(1,i) = hubbardU / hartree ! Convert from eV to au
+      plusUJItemValueTemp(2,i) = hundJ / hartree ! Convert from eV to au
+      plusUJItemIDTemp(i) = itemID
+   enddo
+
+
    ! Read the default amount that all types will have their charge contribution
    !   split by in the case of a spin polarized calculation.
-   call readData(readUnit,writeUnit,numSpltTps,spltAmt,&
+   call readData(readUnit,writeUnit,numSplitTypes,splitAmt,&
          & len('NUM_SPLIT_TYPES__DEFAULT_SPLIT'),&
          & 'NUM_SPLIT_TYPES__DEFAULT_SPLIT')
 
    ! Assign the default spin splitting for all types in the system.
    allocate (typeSpinSplitTemp(numPotTypes))
-   do i = 1, numPotTypes
-      typeSpinSplitTemp(i) = spltAmt
-   enddo
+   typeSpinSplitTemp(:) = splitAmt
 
    ! Read specific splitting for specific types.
-   call readAndCheckLabel(readUnit,writeUnit,len('TYPE_ID__SPIN_SPLIT_FACTOR'),&
-         &'TYPE_ID__SPIN_SPLIT_FACTOR')
-   do i = 1, numSpltTps
-      call readData(readUnit,writeUnit,typeID,spltAmt,0,'')
-      typeSpinSplitTemp(typeID) = spltAmt
+   call readAndCheckLabel(readUnit,writeUnit,&
+         & len('TYPE_ID__SPIN_SPLIT_FACTOR'),'TYPE_ID__SPIN_SPLIT_FACTOR')
+   do i = 1, numSplitTypes
+      call readData(readUnit,writeUnit,typeID,splitAmt,0,'')
+      typeSpinSplitTemp(typeID) = splitAmt
    enddo
 
+   ! Now we pass the parameters we just read in to the Potential module so that
+   !   it can initialize the values it stores.
    call setPotControlParameters(fbLevel,lastIt,xcCodeTemp,rlxFact,cTest,&
-         & typeSpinSplitTemp)
+         & plusUJFormTemp,numPlusUJItemsTemp,plusUJItemIDTemp,&
+         & plusUJItemValueTemp,typeSpinSplitTemp)
 
+   deallocate (plusUJItemValueTemp)
+   deallocate (plusUJItemIDTemp)
    deallocate (typeSpinSplitTemp)
 
 end subroutine readMainControl

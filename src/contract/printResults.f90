@@ -516,7 +516,7 @@ subroutine createIsoUnion(i,j,k,fileUnit,orbitalCount)
    real (kind=double) :: blue
    character*3 :: orbSign
    character*8 :: orbSignNote
-   character*15 :: lmType
+   character*25 :: lmType
 
    ! Determine the current lmType and the normalization value.
    select case (i)
@@ -577,6 +577,11 @@ subroutine createIsoUnion(i,j,k,fileUnit,orbitalCount)
          lmType = "y*(4*z*z - x*x - y*y)"
          normalization = sqrt(21.0_double / 32.0_double / pi)
       end select
+
+      case default
+         write (6,*) "printResults.f90 subroutine: createIsoUnion"
+         write (6,*) "Only 1,2,3,4 for s,p,d,f have been implemented"
+         stop
    end select
 
    ! Create the union of the negative and positive components of the basis fn.

@@ -9,7 +9,7 @@ cif2olcao collectSpectra copyInputs
 dump2skl
 gaussOverlapRT
 insert3cbo intGen
-lmp2skl
+lmp2skl.py
 makeBDB makeBOND makeFittedRhoV makeinput makePDOS makePotDB makeSGDB
 makeSYBD massGather massPrep massSubmit mkdirhier modStruct
 nanoTube.py normalize

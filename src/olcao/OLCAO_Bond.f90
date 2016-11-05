@@ -64,10 +64,8 @@ program bond
    !   energ for metals).
    call populateStates
 
-   ! Shift the energy eigen values according to the highest occupied state and
-   !   convert them from au to eV.
+   ! Shift the energy eigen values according to the highest occupied state.
    call shiftEnergyEigenValues(occupiedEnergy,numStates)
-!   call convertEnergyEigenValuesToeV
 
    ! Call the bond subroutine to compute the bond order and effective charge.
    call computeBond

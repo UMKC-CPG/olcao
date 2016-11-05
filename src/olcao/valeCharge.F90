@@ -36,20 +36,21 @@ subroutine makeValenceRho
    use O_Input,           only: numStates
    use O_KPoints,         only: numKPoints
    use O_Constants,       only: smallThresh
-   use O_Potential,       only: spin, potDim, potCoeffs
+   use O_Potential,       only: spin, potDim, potCoeffs, numPlusUJAtoms
    use O_MainEVecHDF5,    only: valeStates, eigenVectors_did
    use O_Populate,        only: electronPopulation, cleanUpPopulation
    use O_SetupIntegralsHDF5, only: atomOverlap_did, atomKEOverlap_did, &
          & atomNucOverlap_did, atomPotOverlap_did, atomDims
 #ifndef GAMMA
    use O_BLASZHER
-   use O_SecularEquation, only: valeVale, cleanUpSecularEqn, energyEigenValues
+   use O_SecularEquation, only: valeVale, cleanUpSecularEqn, energyEigenValues,&
+         & update1UJ
    use O_MatrixSubs, only: readMatrix, readPackedMatrix, matrixElementMult, &
          & packMatrix
 #else
    use O_BLASDSYR
    use O_SecularEquation, only: valeValeGamma, cleanUpSecularEqn, &
-         & energyEigenValues
+         & energyEigenValues, update1UJ
    use O_MatrixSubs, only: readMatrixGamma, readPackedMatrix, &
          & matrixElementMultGamma, packMatrixGamma
 #endif
@@ -106,12 +107,14 @@ subroutine makeValenceRho
 
    ! Allocate space for the valence charge density (as represented by a
    !   summation of atom centered Gaussian functions in the same way as the
-   !   potential function is just different coefficients).
+   !   potential function except with different coefficients).
    allocate (potRho (potDim,spin)) ! This will be deallocated in the makeSCFPot
          ! subroutine since after its values are copied to a local array there
          ! it will not be needed again until here.
-allocate (chargeDensityTrace(spin))
-chargeDensityTrace(:) = 0.0_double
+
+   ! Allocate space to hold the trace of the charge density, nuclear potential,
+   !   and kinetic energy.
+   allocate (chargeDensityTrace(spin))
    allocate (nucPotTrace(spin))
    allocate (kineticEnergyTrace(spin))
 
@@ -124,6 +127,7 @@ chargeDensityTrace(:) = 0.0_double
    potRho(:,:)           = 0.0_double
    nucPotTrace(:)        = 0.0_double
    kineticEnergyTrace(:) = 0.0_double
+   chargeDensityTrace(:) = 0.0_double
 
    ! Initialize local variables
    electronEnergy(:)     = 0.0_double
@@ -154,7 +158,7 @@ chargeDensityTrace(:) = 0.0_double
       ! Note that it is only necessary to go through the initialization action
       !   if there are more than 1 kpoint.  For the 1 kpoint case, the valeVale
       !   matrix was not changed so it can still be used here.  Also note
-      !   that the gammaKPoint option will never enter the if block.
+      !   that the gammaKPoint option will never enter the "if" block.
 #ifndef GAMMA
       if (numKPoints > 1) then
 
@@ -190,13 +194,13 @@ chargeDensityTrace(:) = 0.0_double
          deallocate (tempRealValeVale)
          deallocate (tempImagValeVale)
       endif
-#endif
 
       ! Initialize matrix to receive the valeVale density matrix (square of the
       !   wave function).
-#ifndef GAMMA
       valeValeRho(:,:,:) = cmplx(0.0_double,0.0_double,double)
 #else
+      ! All of the information we need is already available in system memory.
+      !   The only thing we need to do is initialize this matrix to zero.
       valeValeRhoGamma(:,:,:) = 0.0_double
 #endif
 
@@ -216,6 +220,30 @@ chargeDensityTrace(:) = 0.0_double
                   & valeValeRho(:,:,k),valeDim)
          enddo
       enddo
+
+      ! In the event that the calculation includes plusUJ terms, then we need
+      !   to compute the plusUJ potential from each atom with such a
+      !   contribution. Of course, we also want to do it as efficiently as
+      !   possible. The computation follows equation #9 from Anisimov VI,
+      !   Zaanen J, Andersen OK. Band theory and Mott insulators: Hubbard U
+      !   instead of Stoner I. Physical Review B, 1991;44(3):943. Available
+      !   from: http://dx.doi.org/10.1103/PhysRevB.44.943.
+      ! We will perform the update in two phases so that we are only doing work
+      !   when the appropriate data structures are most available (to avoid
+      !   having to do any extra data-reading or data-transfer just for the
+      !   purpose of updating the plusUJ terms). We will do phase 1 here
+      !   because at this point in the program we have access to the charge
+      !   density matrix with all kpoint and electron energy level population
+      !   effects accounted for already. The charge density matrix is not
+      !   currently packed so it is fairly easy to reference the matrix
+      !   elements. Also, at this point the charge denstiy matrix still has a
+      !   up and down spin representation instead of a total and up minus down
+      !   representation.
+
+      ! Start the computation of the plusUJ terms if there are any.
+      if (numPlusUJAtoms > 0) then
+         call update1UJ(i,valeValeRho)
+      endif
 
       ! Pack the matrix for easy comparison with the hamiltonian terms
       !   to be read in next.  Store the result in the appropriate packed
@@ -238,6 +266,11 @@ chargeDensityTrace(:) = 0.0_double
          enddo
       enddo
 
+      ! Note: the documentation written above for the plusUJ applies here too.
+      if (numPlusUJAtoms > 0) then
+         call update1UJ(i,valeValeRhoGamma)
+      endif
+
       ! Pack the matrix for easy comparison with the hamiltonian terms
       !   to be read in next.  Store the result in the appropriate packed
       !   valeVale spin array.
@@ -246,6 +279,16 @@ chargeDensityTrace(:) = 0.0_double
             & packedValeValeSpin(:,:,j),valeDim)
       enddo
 #endif
+
+
+      ! Allocate space to hold the overlap matrix. Later, this will also be used
+      !   to read in the Hamiltonian matrix terms (KE, nuclear, and electronic
+      !   potential).
+      allocate (packedValeVale(dim1,valeDim*(valeDim+1)/2))
+
+      ! Read the overlap matrix into the packedValeVale representation.
+      call readPackedMatrix (atomOverlap_did(i),packedValeVale,&
+            & atomDims,dim1,valeDim)
 
       ! In the case that the calculation is spin polarized (spin=2) then we
       !   need to convert the values in the packedValeValeSpin density matrix
@@ -259,29 +302,27 @@ chargeDensityTrace(:) = 0.0_double
          enddo
       endif
 
-      ! Read in the hamiltonian terms and perform an element by element
-      !   multiplication with the density matrix for each term.
+      ! In the next section, we will read in the hamiltonian terms (and
+      !   overlap) and perform an element by element multiplication with the
+      !   density matrix for each term.
 
-      ! Allocate space to hold the matrix to read in.
-      allocate (packedValeVale(dim1,valeDim*(valeDim+1)/2))
+      ! Compute the integration of the charge density to show that <Psi|Psi> is
+      !   actually equal to the expected number of eletrons. Note that in the
+      !   spin polarized case the first index will refer to the total number of
+      !   electrons and the second index will refer to the spin difference.
 
-! Compute the integration of the charge density to show that <Psi|Psi> is
-!   actually equal to the expected number of eletrons. Note that in the spin
-!   polarized case the first index will refer to the total number of electrons
-!   and the second index will refer to the spin difference.
-call readPackedMatrix (atomOverlap_did(i),packedValeVale,&
-      & atomDims,dim1,valeDim)
-do j = 1, spin
+      do j = 1, spin
 #ifndef GAMMA
-   call matrixElementMult (chargeDensityTrace(j),packedValeVale,&
-         & packedValeValeSpin(:,:,j),dim1,valeDim)
+         call matrixElementMult (chargeDensityTrace(j),packedValeVale,&
+               & packedValeValeSpin(:,:,j),dim1,valeDim)
 #else
-   call matrixElementMultGamma (chargeDensityTrace(j),packedValeVale,&
-         & packedValeValeSpin(:,:,j),dim1,valeDim)
+         call matrixElementMultGamma (chargeDensityTrace(j),packedValeVale,&
+               & packedValeValeSpin(:,:,j),dim1,valeDim)
 #endif
-enddo
+      enddo
 
-      ! Nuclear potential term first.
+
+      ! Compute the nuclear contribution to the fitted potential first.
       call readPackedMatrix (atomNucOverlap_did(i),packedValeVale,&
             & atomDims,dim1,valeDim)
       do j = 1, spin
@@ -294,7 +335,7 @@ enddo
 #endif
       enddo
 
-      ! Kinetic Energy term next.
+      ! Now compute the kinetic energy.
       call readPackedMatrix (atomKEOverlap_did(i),packedValeVale,&
             & atomDims,dim1,valeDim)
       do j = 1, spin
@@ -327,12 +368,14 @@ enddo
 
    enddo ! i   numKPoints
 
-write (20,*) "Total number of electrons from <psi|psi> = ",&
-      & chargeDensityTrace(1)
-if (spin == 2) then
-   write (20,*) "Electron spin difference from <psi|psi> = ",&
-         & chargeDensityTrace(2)
-endif
+   ! Now that all k-points have been accumulated, record the total and spin
+   !   difference number of electrons in the system.
+   write (20,*) "Total number of electrons from <psi|psi> = ",&
+         & chargeDensityTrace(1)
+   if (spin == 2) then
+      write (20,*) "Electron spin difference from <psi|psi> = ",&
+            & chargeDensityTrace(2)
+   endif
 
    if (spin == 1) then
 
@@ -374,7 +417,7 @@ endif
    call cleanUpSecularEqn
 
    ! Deallocate other arrays and matrices defined in this subroutine.
-deallocate(chargeDensityTrace)
+   deallocate (chargeDensityTrace)
    deallocate (structuredElectronPopulation)
    deallocate (packedValeValeSpin)
    deallocate (currentPopulation)

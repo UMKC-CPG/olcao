@@ -448,8 +448,8 @@ subroutine neutralAndNuclearQPot
                      nonLocalNeutQPot(matrixIndex(2),matrixIndex(1)) = &
                         & nonLocalNeutQPot(matrixIndex(2),matrixIndex(1)) + &
                         & neutralQPotCoeff(l,m) / potSiteOffset * &
-                        & (- erf(currentAlphasSqrt(l,1) * potSiteOffset) + &
-                        & (+ erf(reducedPotAlphaSqrt(l,m) * potSiteOffset)))
+                        & (- error_fn(currentAlphasSqrt(l,1)*potSiteOffset) + &
+                        & (+ error_fn(reducedPotAlphaSqrt(l,m)*potSiteOffset)))
                   else
                      localNeutQPot(matrixIndex(2),matrixIndex(1)) = &
                         & localNeutQPot(matrixIndex(2),matrixIndex(1)) + &
@@ -478,8 +478,8 @@ subroutine neutralAndNuclearQPot
                      nonLocalNeutQPot(matrixIndex(2),matrixIndex(1)) = &
                         & nonLocalNeutQPot(matrixIndex(2),matrixIndex(1)) + &
                         & neutralQPotCoeff(m,l) / potSiteOffset * &
-                        & (- erf(currentAlphasSqrt(m,1) * potSiteOffset) + &
-                        & (+ erf(reducedPotAlphaSqrt(m,l) * potSiteOffset)))
+                        & (- error_fn(currentAlphasSqrt(m,1)*potSiteOffset) + &
+                        & (+ error_fn(reducedPotAlphaSqrt(m,l)*potSiteOffset)))
                   else
                      localNeutQPot(matrixIndex(2),matrixIndex(1)) = &
                         & localNeutQPot(matrixIndex(2),matrixIndex(1)) + &
@@ -526,10 +526,10 @@ subroutine neutralAndNuclearQPot
                         & nonLocalNeutQPot(matrixIndex(2),matrixIndex(1)) + &
                         & neutralQPotCoeff(loopIndex(1),loopIndex(2)) / &
                         & potSiteOffset * &
-                        & (- erf(currentAlphasSqrt(loopIndex(1),1) * &
+                        & (- error_fn(currentAlphasSqrt(loopIndex(1),1) * &
                         & potSiteOffset) + &
-                        & (erf(reducedPotAlphaSqrt(loopIndex(1),loopIndex(2)) *&
-                        & potSiteOffset)))
+                        & (error_fn(reducedPotAlphaSqrt(loopIndex(1),&
+                        & loopIndex(2))*potSiteOffset)))
                   else
                      localNeutQPot(matrixIndex(2),matrixIndex(1)) = &
                         & localNeutQPot(matrixIndex(2),matrixIndex(1)) +&
@@ -573,7 +573,7 @@ subroutine neutralAndNuclearQPot
                      nonLocalNucQPot(arrayIndex) = &
                         & nonLocalNucQPot(arrayIndex) - &
                         & potTypes(currentType(2))%nucCharge * &
-                        & piXX32 * exp(-screenMagnitude) * erf(coeff) / &
+                        & piXX32 * exp(-screenMagnitude) * error_fn(coeff) / &
                         & coeff / nuclearFactor
                   else
                      nonLocalNucQPot(arrayIndex) = &
@@ -923,8 +923,8 @@ subroutine residualQ
                   else
                      nonLocalResidualQ(matrixIndex(2),matrixIndex(1)) = &
                         & nonLocalResidualQ(matrixIndex(2),matrixIndex(1)) + &
-                        & alphaFactor * (- erf(minReducedAlphaSqrt(k) * &
-                        & potSiteOffset) + (erf(reducedPotAlphaSqrt(k,1) * &
+                        & alphaFactor * (- error_fn(minReducedAlphaSqrt(k) * &
+                        & potSiteOffset) + (error_fn(reducedPotAlphaSqrt(k,1)*&
                         & potSiteOffset))) / potSiteOffset
                   endif
                endif

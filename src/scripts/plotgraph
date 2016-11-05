@@ -525,7 +525,7 @@ open(OUT, "> plotscript") || die "Cannot open output file for writing.\n";
 #	set via the command line will come second.  I will also try to
 #	put them in the order in which they are given in the USAGE
 #	section at the top.
-if("$TERM" eq "xterm")
+if("$TERM" =~ "xterm")
    {print OUT "set term x11\n";}
 else
    {print OUT "set term kc_tek40xx\n";}

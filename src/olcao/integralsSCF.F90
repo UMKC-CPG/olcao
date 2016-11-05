@@ -61,9 +61,9 @@ subroutine allocateIntegralsSCF(coreDim,valeDim,numKPoints)
    implicit none
 
    ! Define passed dummy parameters.
-   integer :: coreDim
-   integer :: valeDim
-   integer :: numKPoints
+   integer, intent(in) :: coreDim
+   integer, intent(in) :: valeDim
+   integer, intent(in) :: numKPoints
 
 #ifndef GAMMA
    allocate (coreCore (coreDim,coreDim,numKPoints))
@@ -433,7 +433,7 @@ subroutine gaussOverlapOL
 #else
             call applyPhaseFactorsGamma (currentPairGamma,pairXBasisFn12(1:&
                   & currentNumTotalStates(1),1:currentNumTotalStates(2)),&
-                  & currentNumTotalStates(1),currentNumTotalStates(2),k,0)
+                  & currentNumTotalStates(1),currentNumTotalStates(2),0)
 #endif
          enddo !(k superlattice)
 
@@ -772,15 +772,15 @@ subroutine gaussOverlapKE
                   !   has been shown to exist.
                   contrib = .true.
 
-	      ! Calculate the opcode to do the correct set of integrals
-              ! for the current alpha pair
+               ! Calculate the opcode to do the correct set of integrals
+               ! for the current alpha pair
                l1l2Switch = ishft(1,&
                  &(powerOfTwo(currentlmAlphaIndex(alphaIndex(1),1))))&
                  &+ ishft(16,&
                  &(powerOfTwo(currentlmAlphaIndex(alphaIndex(2),2))))
 
-              ! We can proceed with the next step of the calculation. This
-              ! is the actual integral.
+               ! We can proceed with the next step of the calculation. This
+               ! is the actual integral.
                call KEInteg (currentAlphas(alphaIndex(1),1),&
                  & currentAlphas(alphaIndex(2),2), &
                  & currentPosition(:,1), shiftedAtomPos(:),&
@@ -838,7 +838,7 @@ subroutine gaussOverlapKE
 #else
             call applyPhaseFactorsGamma (currentPairGamma,pairXBasisFn12(1:&
                   & currentNumTotalStates(1),1:currentNumTotalStates(2)),&
-                  & currentNumTotalStates(1),currentNumTotalStates(2),k,0)
+                  & currentNumTotalStates(1),currentNumTotalStates(2),0)
 #endif
          enddo !(k superlattice)
 
@@ -1228,7 +1228,7 @@ subroutine gaussOverlapNP
 #else
             call applyPhaseFactorsGamma (currentPairGamma,pairXBasisFn12(1:&
                   & currentNumTotalStates(1),1:currentNumTotalStates(2)),&
-                  & currentNumTotalStates(1),currentNumTotalStates(2),k,0)
+                  & currentNumTotalStates(1),currentNumTotalStates(2),0)
 #endif
          enddo !(k superlattice)
 
@@ -1359,10 +1359,6 @@ subroutine gaussOverlapEP
          ! alpha pairs are considered to have no overlap.
    real (kind=double) :: maxLatticeRadius ! Maximum radius beyond which no
          ! lattice points will be considered for integration.
-
-   ! Define variables for gauss integrals
-   integer :: l1l2Switch
-   integer, dimension(16) :: powerOfTwo = (/0,1,1,1,2,2,2,2,2,3,3,3,3,3,3,3/)
 
    ! Allocate space for locally defined allocatable arrays
    allocate (currentBasisFns     (maxNumAtomAlphas,maxNumStates,2))
@@ -1630,7 +1626,7 @@ subroutine gaussOverlapEP
 #else
             call applyPhaseFactorsGamma (currentPairGamma,pairXBasisFn12(1:&
                   & currentNumTotalStates(1),1:currentNumTotalStates(2)),&
-                  & currentNumTotalStates(1),currentNumTotalStates(2),k,0)
+                  & currentNumTotalStates(1),currentNumTotalStates(2),0)
 #endif
             ! If there were no interactions for this cell then mark the
             !   appropriate bit to make sure that the next atomic alpha does

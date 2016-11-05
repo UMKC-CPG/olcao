@@ -29,16 +29,16 @@ module O_Orthogonalization
 !   of core basis functions (from all atoms), and let |v> be a single element
 !   of the set of current valence basis functions (from all atoms). We will let
 !   <c|v'> represent a single matrix element of the overlap between a
-!   particular core basis function and a particular valence basis function.
+!   particular core basis function and a particular new valence basis function.
 !   Don't think of these as state vectors. Instead, they are just a particular
 !   member of the valeDim or coreDim set of basis functions for the system.
 
 ! The basic goal is to take the existing valence basis functions (that created
-!   the existing VV CV, VC, and CC matrices of overlap matrix elements) and
+!   the existing VV, CV, VC, and CC matrices of overlap matrix elements) and
 !   create a new set of basis functions that are orthogonal to the core basis
 !   functions.
 
-!   That is <c|v'> = <v'|c> = 0 for all elements.
+!   That is: we want <c|v'> = <v'|c> = 0 for all elements.
 
 !   Essentially, each matrix element of interaction between a basis function
 !   from the core and a basis function from the new valence is equal to zero.
@@ -62,7 +62,7 @@ module O_Orthogonalization
 !   <c|v'> = <c|v> + SUM( <c|C|c> )
 
 !   Here, the SUM is still a single summation over the elements of the *right*
-!   set of core basis functions |c>, but we are now summing the overlap of each
+!   set of core basis functions C|c>, but we are now summing the overlap of each
 !   of the core basis functions with *a particular* other core basis function.
 !   The trick is that the core basis functions that are on the same atomic
 !   site are orthogonal to each other, and the overlap of core basis functions
@@ -77,7 +77,7 @@ module O_Orthogonalization
 !   function and the old valence basis function plus a single coefficient that
 !   is specific for that core:valence pair.
 
-! Rewriting the equation in the light of that discussion we have:
+! Rewriting the equation in light of that discussion we have:
 !   <c|v'> = <c|v> + C
 
 ! Now, we *demand* orthogonality between |c> and |v'> so that <c|v'> = 0.
@@ -85,7 +85,9 @@ module O_Orthogonalization
 
 !   Or, the orthogonalization coefficients between core and valence basis
 !   functions are just the negative of the matrix elements of the overlap
-!   between the core and valence basis functions.
+!   between the core and valence basis functions. (I.e. Gramm-Schmidt
+!   orthogonalization in which the projection of one vector on another is used
+!   to determine the orthogonalization coefficient.)
 
 ! Expressly: C = -<c|v> and C* = -<v|c> recalling that these are all just
 !   single elements and not matrices per se.
@@ -122,7 +124,8 @@ module O_Orthogonalization
 !   <v'|v'> = <v|v> - 2*SUM( <v|c><c|v> ) + SUM(SUM( <v|cj><cj|ci><ci|v> ))
 
 ! We can now translate this equation into a sequence of matrix operations to
-!   produce the entire V'V' matrix from the set of matrix elements <v'|v'>.
+!   produce the entire V'V' matrix from the set of matrix elements <v'|v'>,
+!   which were produced from <v|v>, <c|c>, and <v|c>.
 
 ! We take the original VV matrix and first subtract 2*[VC*CV]. Note that VC is
 !   the complex conjugate transpose (or dagger) of CV. Then we add VC*CC*CV.

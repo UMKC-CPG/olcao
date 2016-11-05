@@ -469,7 +469,7 @@ module O_CrystalSystem
             !   cell.  If so, (and if it does not duplicate another already
             !   present atom) then we save it.  Otherwise we ignore it.
             if ((inPrimitiveCell(shiftedReduceFractABC(:)) == 1) .and. &
-                  & (isUniqueAtom(numReduceAtoms,i,reduceFractABC(:,:),&
+                  & (isUniqueAtom(numReduceAtoms,reduceFractABC(:,:),&
                   &  shiftedReduceFractABC(:)) == 1)) then
                numReduceAtoms = numReduceAtoms + 1
                reduceFractABC(:,numReduceAtoms) = shiftedReduceFractABC(:)!**
@@ -718,7 +718,7 @@ module O_CrystalSystem
    end function inPrimitiveCell
 
 
-   function isUniqueAtom (numReduceAtom,currentAtom,fractPositions,testPosition)
+   function isUniqueAtom (numReduceAtom,fractPositions,testPosition)
 
       ! Import necessary parameter modules.
       use O_Kinds
@@ -729,7 +729,6 @@ module O_CrystalSystem
 
       ! Define passed dummy parameters.
       integer :: numReduceAtom
-      integer :: currentAtom
       real (kind=double), dimension (3,numReduceAtom) :: fractPositions
       real (kind=double), dimension (3) :: testPosition
 

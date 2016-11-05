@@ -67,7 +67,7 @@ subroutine getEnergyStatistics
    use O_Potential,       only: spin
    use O_CommandLine,     only: stateSet
    use O_SecularEquation, only: energyEigenValues
-   use O_Populate,        only: electronPopulation
+   use O_Populate,        only: electronPopulation, occupiedEnergy
    use O_KPoints,         only: numKPoints, kPointWeight
    use O_Constants,       only: dim3, smallThresh, bigThresh, hartree
    use O_Input, only: numStates, cutoffEnOPTC, maxTransEnOPTC, &
@@ -123,8 +123,6 @@ subroutine getEnergyStatistics
       energyMin = totalEnergyDiffPACS - &
             & mod(totalEnergyDiffPACS,onsetEnergySlackPACS)
       maxTransEnergy = energyMin + energyWindowPACS
-!write (20,*) maxTransEnergy,energyMin,deltaPACS
-!call flush (20)
    else                         ! Sigma(E) type calculation
       energyCutoff   = cutoffEnSIGE
       maxTransEnergy = maxTransEnSIGE
@@ -255,10 +253,6 @@ subroutine getEnergyStatistics
             !   with less than full occupation.
             if (abs(electronPopulation(orderedIndex)-kPointWeight(i) / &
                   & real(spin,double)) > smallThresh) then
-!            if (energyEigenValues(j,i,h) > 0.0_double) then
-!write (20,*) "ePop,ordIndex,kPWeight,j,i,h",electronPopulation(orderedIndex),&
-!   & orderedIndex,kPointWeight(i),j,i,h
-!call flush (20)
 
                ! In the condition that we are doing a PACS calculation then
                !   the initial state core state(s) *will* be partially
@@ -336,12 +330,10 @@ subroutine getEnergyStatistics
                   !   comparing the energy difference between adjacent states
                   !   for the current kpoint.
                   if (currentGap < directGap(i,h)) then
-                     directGap(i,h) = currentGap
-!write (20,*) "currGap,dirGap,i,h",currentGap,directGap(i,h),i,h
-!call flush(20)
                      ! The largest currentGap for this kpoint might be a
                      !   directGap when compared with other directGap values
                      !   from other kpoints (to be determined later).
+                     directGap(i,h) = currentGap
                   endif
                else ! The previous state has no electrons in it.
                   ! No need to search through any higher states in the outer j
@@ -370,9 +362,11 @@ subroutine getEnergyStatistics
             !   lowest unoccupied state that is *greater* than the maximum
             !   transition energy from the Fermi level.
             do k = lastOccupiedState(i,h), numStates
-               if (energyEigenValues(k,i,h) > maxTransEnergy) then
-                   lastUnoccupiedState(i,h) = k
-                   exit
+               if (energyEigenValues(k,i,h) > &
+                     & (energyEigenValues(lastOccupiedState(i,h),i,h) + &
+                     & maxTransEnergy)) then
+                  lastUnoccupiedState(i,h) = k-1
+                  exit
                endif
                if (k == numStates) then
                   lastUnoccupiedState(i,h) = numStates
@@ -383,9 +377,10 @@ subroutine getEnergyStatistics
             !   highest occupied state that is *less* than the maximum
             !   transition energy from the Fermi level.
             do k = 1, firstUnoccupiedState(i,h)-1
-               if (abs(energyEigenValues(firstUnoccupiedState(i,h)-k,i,h)) > &
-                        & maxTransEnergy) then
-                  firstOccupiedState(i,h) = firstUnoccupiedState(i,h)-k
+               if (energyEigenValues(firstUnoccupiedState(i,h)-k,i,h) < &
+                        & (energyEigenValues(firstUnoccupiedState(i,h),i,h) - &
+                        & maxTransEnergy)) then
+                  firstOccupiedState(i,h) = firstUnoccupiedState(i,h)-k+1
                   exit
                endif
                if (k == firstUnoccupiedState(i,h)-1) then
@@ -455,7 +450,14 @@ subroutine getEnergyStatistics
                ! If the energy of the final state is higher than the requested
                !   cut-off then we adjust the record for the last unoccupied
                !   state and go to the next initial state because all the
-               !   remaining final states will be greater.
+               !   remaining final states will be greater. This should never be
+               !   entered for the sigma(E) (stateSet==2) case because the
+               !   energyCutoff should always be set much larger than the
+               !   maxTransEnergy. Thus, the first/last Occ./Unocc. states
+               !   index numbers will all be clustered around the Fermi energy
+               !   index number where the quality of the state functions is
+               !   expected to be high (and so we should have no reason to
+               !   discard them).
                if (energyEigenValues(k,i,h) > energyCutoff) then
                   lastUnoccupiedState(i,h) = k-1
                   exit
@@ -467,12 +469,10 @@ subroutine getEnergyStatistics
 
                ! Check if the energy difference is less than the maximum
                !   transition energy that the input file requested computation
-               !   for.  If it fails, then we adjust the record for the last
-               !   unoccupied state and go to the next initial state because
+               !   for.  If it fails, then we go to the next initial state because
                !   all the remaining final states for this energy will be
                !   greater.
                if (currentEnergyDiff > maxTransEnergy) then
-                  lastUnoccupiedState(i,h) = k-1
                   exit
                endif
 
@@ -512,8 +512,6 @@ subroutine getEnergyStatistics
       ! Determine the maximum number of transition pairs of all the kpoints and
       !   for both spins.
       maxPairs = max(maxPairs,maxval(transCounter(:,h)))
-!write (20,*) "maxPairs=",maxPairs
-!call flush (20)
    enddo ! (h spin)
 
    ! Now that the number of transitions for each kpoint are known we can 
@@ -926,10 +924,6 @@ subroutine computePairs (currentKPoint,xyzComponents,spinDirection)
    ! Initialize the first index since it will always be 0.
    segmentBorders(1) = 0
 
-!write (20,*) "firstInit, lastInit=",firstInit,lastInit
-!write (20,*) "firstFin, lastFin=",firstFin,lastFin
-!write (20,*) "energyCutoff=",energyCutoff
-!call flush (20)
    ! Begin the double loop to determine the transition energies.
    do i = firstInit, lastInit
       finalStateIndex = 0
@@ -939,8 +933,6 @@ subroutine computePairs (currentKPoint,xyzComponents,spinDirection)
          !   initial and final. We do not consider transitions where the final
          !   state has an energy less than the initial.
          if (i >= j) cycle
-!write (20,*) "energyEigenValue(",j,")=",energyEigenValues(j,currentKPoint,spinDirection)
-!call flush (20)
 
          ! If the energy of the final state is higher than the requested
          !   cut-off we go to the next initial state.
@@ -951,8 +943,6 @@ subroutine computePairs (currentKPoint,xyzComponents,spinDirection)
          currentEnergyDiff = energyEigenValues(j,currentKPoint,spinDirection)-&
                & energyEigenValues(i,currentKPoint,spinDirection)
 
-!write (20,*) "eDiff,transE",currentEnergyDiff,maxTransEnergy
-!call flush (20)
          ! Check if the energy difference is less than the maximum
          !   transition energy that the input file requested computation
          !   for.  If it fails, then we go to the next initial state because
@@ -961,8 +951,6 @@ subroutine computePairs (currentKPoint,xyzComponents,spinDirection)
 
          ! Increment the number of transition pairs counted so far.
          transPairCount = transPairCount + 1
-!write (20,*) "transPairCount=",transPairCount,maxPairs
-!call flush (20)
 
          ! Store the transition energy for the current pair.
          energyDiffTemp(transPairCount) = currentEnergyDiff
@@ -1000,10 +988,6 @@ subroutine computePairs (currentKPoint,xyzComponents,spinDirection)
 
          finStateFactor = 1.0_double - electronPopulation(orderedIndex) / &
                & (kPointWeight(currentKPoint)/real(spin,double))
-!initStateFactor = 1.0_double
-!finStateFactor = 1.0_double
-!write (20,*) "i,j,stateFactors",i,j,initStateFactor,finStateFactor
-!call flush (20)
 
 #ifndef GAMMA
 
@@ -1090,10 +1074,13 @@ subroutine computeSigmaE (currentKPoint,xyzComponents,spinDirection)
    use O_Constants, only: dim3, pi, auTime, lightFactor, hartree
    use O_KPoints, only: numKPoints, kPointWeight
    use O_SortSubs
-   use O_Input, only: maxTransEnSIGE, deltaSIGE, sigmaSIGE
+   use O_Input, only: maxTransEnSIGE, deltaSIGE, sigmaSIGE, numStates, &
+         & thermalSigma
+   use O_Populate, only: occupiedEnergy, electronPopulation
    use O_Lattice, only: realCellVolume
    use O_Potential, only: spin
    use O_AtomicSites, only: valeDim
+   use O_CommandLine, only: stateSet
 #ifndef GAMMA
    use O_SecularEquation, only: valeVale, energyEigenValues
 #else
@@ -1109,7 +1096,7 @@ subroutine computeSigmaE (currentKPoint,xyzComponents,spinDirection)
    integer :: spinDirection
 
    ! Define local variables.
-   integer :: i,j,k ! Loop index variables
+   integer :: i,j,k,p,q ! Loop index variables
    integer :: initComponent
    integer :: finComponent
    integer :: firstInit
@@ -1123,6 +1110,8 @@ subroutine computeSigmaE (currentKPoint,xyzComponents,spinDirection)
    integer :: initialStateIndex
    integer :: numEnergyPoints
    real (kind=double) :: alphaFactor
+   real (kind=double) :: initStateFactor
+   real (kind=double) :: finStateFactor
    real (kind=double) :: kPointFactor
    real (kind=double) :: sigmaSqrt2Pi
    real (kind=double) :: conversionFactor
@@ -1162,7 +1151,7 @@ subroutine computeSigmaE (currentKPoint,xyzComponents,spinDirection)
 
       allocate (energyScale (numEnergyPoints))
       do i = 1, numEnergyPoints
-         energyScale(i) = -maxTransEnSIGE + deltaSIGE * (i-1)
+         energyScale(i) = -maxTransEnSIGE + deltaSIGE * (i-1) + occupiedEnergy
       enddo
    endif
 
@@ -1278,8 +1267,8 @@ subroutine computeSigmaE (currentKPoint,xyzComponents,spinDirection)
             !   sign included in the getIntgResults subroutine for the
             !   momentum matrix. (See notes in that code.)
             transitionProb(k,initialStateIndex,finalStateIndex) = &
-                  &  real(valeValeXMom,double)**2 + &
-                  & aimag(valeValeXMom)**2
+                  & (real(valeValeXMom,double)**2 + aimag(valeValeXMom)**2) * &
+                  & (initStateFactor * finStateFactor)
          enddo
 #else
 
@@ -1385,10 +1374,6 @@ subroutine computeSigmaE (currentKPoint,xyzComponents,spinDirection)
          finalStateIndex = 0
          do j = firstFin, lastFin
 
-            ! We don't want double counting or self interactions so we skip the
-            !   i>=j cases.
-            if (i >= j) cycle
-
             ! Increment the index number for the final states. Note that we
             !   need to increment the index for every j-loop iteration because
             !   we computed the conjWaveMomSum and conjWaveMomSumGamma for
@@ -1397,6 +1382,10 @@ subroutine computeSigmaE (currentKPoint,xyzComponents,spinDirection)
             !   was a point of confusion in the past when the code was being
             !   developed.)
             finalStateIndex = finalStateIndex + 1
+
+            ! We don't want double counting or self interactions so we skip the
+            !   i>=j cases.
+            if (i >= j) cycle
 
             ! See notes for the above case.
             sigmaEAccumulator(:,xyzComponents) = &
@@ -1485,6 +1474,11 @@ subroutine computeSigmaE (currentKPoint,xyzComponents,spinDirection)
 
       ! Adjust the sigmaE to have the correct units.
       sigmaEAccumulator(:,:) = sigmaEAccumulator(:,:) * conversionFactor
+
+      ! Now we can compute the final DC conductivity.
+      do i = 1, numEnergyPoints
+!         dcCond = dcCond + 
+      enddo
 
       do i = 1, numEnergyPoints
 

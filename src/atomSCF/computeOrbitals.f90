@@ -339,8 +339,8 @@ subroutine solveWaveFn2
       ! Call the appropriate integration subroutine.
       if (doRelativistic == 0) then
          call intNonRel(v,i)
-      else
-         call intRel(v,i)
+!      else
+!         call intRel(v,i)
       endif
 
       ! Accumulate the charge density.
@@ -770,26 +770,26 @@ subroutine intNonRel(v,iorb)
 
 end subroutine intNonRel
 
-subroutine intRel(v,iorb)
-
-   ! Use necessary modules
-   use O_Kinds
-   use O_RadialGrid
-   use ExecutionData
-   use AtomData
-   use PotData
-   use EnergyData
-
-   implicit none
-
-   ! Define passed paramters.
-   real (kind=double), dimension (numRadialPoints) :: v
-   integer :: iorb
-
-
-   stop 'RELATIVISTIC INTEGRATION NOT YET IMPLEMENTED FROM OLD PROGRAM'
-
-end subroutine intRel
+!subroutine intRel(v,iorb)
+!
+!   ! Use necessary modules
+!   use O_Kinds
+!   use O_RadialGrid
+!   use ExecutionData
+!   use AtomData
+!   use PotData
+!   use EnergyData
+!
+!   implicit none
+!
+!   ! Define passed paramters.
+!   real (kind=double), dimension (numRadialPoints) :: v
+!   integer :: iorb
+!
+!
+!   stop 'RELATIVISTIC INTEGRATION NOT YET IMPLEMENTED FROM OLD PROGRAM'
+!
+!end subroutine intRel
 
 
 subroutine orbitalInfo (currentOrb)

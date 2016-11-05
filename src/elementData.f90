@@ -9,6 +9,10 @@ module O_ElementData
    ! Define module data.
    character*3, allocatable, dimension (:)          :: elementNames ! The
          ! abbreviated names of the elements from the periodic table.
+   integer, allocatable, dimension (:)              :: numUJElectrons ! Number
+         ! of electrons in the highest occupied d or f orbital. This data was
+         ! taken from a periodic table of the elements and should be improved
+         ! upon in some way for more complicated scenarios.
    real (kind=double), allocatable, dimension (:)   :: atomicMass ! Atomic mass
          ! of each unique element.
    real (kind=double), allocatable, dimension (:)   :: covalRadii ! Covalent
@@ -27,6 +31,14 @@ module O_ElementData
 
    contains
 
+! This subroutine will read a bunch of data from the elements.dat file. Much
+!   of the data in elements.dat is already known by the olcao program upon
+!   reading the input file or it is not specifically needed by the olcao
+!   program. That information will be skipped. It is important that any new
+!   information that is added to elements.dat not disrupt the order present in
+!   that file. If such a disruption is caused, then this subroutine and other
+!   programs (e.g. perl scripts) that read elements.dat will need to be
+!   updated.
 subroutine initElementData
 
    ! Use any necessary modules.
@@ -39,7 +51,6 @@ subroutine initElementData
    ! Define local variables.
    character*100 :: dataDirectory
    character*100 :: elementDataFile
-   character*7   :: formatString
    integer   :: info
    integer   :: i
 
@@ -72,6 +83,7 @@ subroutine initElementData
    allocate (elementNames(numUniqueElements))
    allocate (atomicMass(numUniqueElements))
    allocate (covalRadii(numUniqueElements))
+   allocate (numUJElectrons(numUniqueElements))
    allocate (coreCharge(maxOrbitals,numUniqueElements))
    allocate (valeCharge(maxOrbitals,numUniqueElements))
    allocate (colorDX(numUniqueElements))
@@ -93,6 +105,12 @@ subroutine initElementData
    read (313,*)
    do i = 1, numUniqueElements
       read (313,*) covalRadii(i)
+   enddo
+
+   ! Number of UJ electrons (highest d or f orbital).
+   read (313,*)
+   do i = 1, numUniqueElements
+      read (313,*) numUJElectrons(i)
    enddo
 
    ! Read past the definition of the number of core orbitals of each spdf type.
@@ -210,6 +228,7 @@ subroutine deallocateElementData
    deallocate (elementNames)
    deallocate (atomicMass)
    deallocate (covalRadii)
+   deallocate (numUJElectrons)
    deallocate (coreCharge)
    deallocate (valeCharge)
    deallocate (colorDX)
