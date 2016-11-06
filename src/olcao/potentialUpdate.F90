@@ -568,25 +568,7 @@ subroutine makeSCFPot (totalEnergy)
          endif
 
          if (totalSum < smallThresh) then
-! This is totally ridiculous.  If the following statement is not present, then
-!   the program will not work.  The values for totalSum will not be
-!   calculated correctly.  For the first potential all the values will be less
-!   than smallThresh.  For the later potential sites (i) the values will be
-!   correct.  I can only assume that the error lies in a bad allocation
-!   statement somewhere, or an access outside of some array boundry, but I have
-!   been unable to determine where.  If these write statements are present,
-!   then the program will function correctly even though the statements are
-!   never executed.  This tells me that the compiler is optimizing differently
-!   for the two cases on the HP-UX ia64 machine sirius.  Further, on the Tru64
-!   machine hilbert this works fine without these write statements.  I tried
-!   to compile both cases with the -C flag to check array bounds.  The Tru64
-!   compiler gave no errors, while the HP-UX one wouldn't even get past the
-!   parseInput subroutine that has been used flawlessly for years.  Annoying.
-!write (20,*) "totalSum=",totalSum
-!call flush (20)
             totalSum = smallThresh
-!write (20,*) "totalSum=",totalSum
-!call flush (20)
          endif
 
          exchCorrRho (1,j) = totalSum
@@ -910,25 +892,26 @@ subroutine makeSCFPot (totalEnergy)
    !   small, the first order M=1 extrapolation is used instead.  M is
    !   effectively reduced to 0 or 1 if the iteration is 0, 1, or 2.
 
-   allocate ( rl0 (potDim))
-   allocate ( rl1 (potDim))
-   allocate ( rl2 (potDim))
-   allocate (drl1 (potDim))
-   allocate (drl2 (potDim))
+   allocate( rl0 (potDim))
+   allocate( rl1 (potDim))
+   allocate( rl2 (potDim))
+   allocate(drl1 (potDim))
+   allocate(drl2 (potDim))
 
-   allocate ( s11 (potDim))
-   allocate ( s12 (potDim))
-   allocate ( s22 (potDim))
-   allocate (  t1 (potDim))
-   allocate (  t2 (potDim))
-   allocate ( th1 (potDim))
-   allocate ( th2 (potDim))
+   allocate( s11 (potDim))
+   allocate( s12 (potDim))
+   allocate( s22 (potDim))
+   allocate(  t1 (potDim))
+   allocate(  t2 (potDim))
+   allocate( th1 (potDim))
+   allocate( th2 (potDim))
+   allocate( det (potDim))
 
    ! This is basically copied from the old code with little modification for
    !   the names since I don't know what they mean or do in most cases.
    do i = 1, spin
-      th1 = 0.0_double
-      th2 = 0.0_double
+      th1(:) = 0.0_double
+      th2(:) = 0.0_double
       if (feedbackLevel /= 0) then
          if (currIteration > 1) then
             rl0(:)  = yl0(:,i) - xl0(:,i)
@@ -1001,7 +984,6 @@ subroutine makeSCFPot (totalEnergy)
       yl1(:,i) = yl0(:,i)
    enddo
 
-
    ! Record the potential terms (alphas), potential coefficients, total charge
    !   density (core+valence), and valence charge density (up+down), and for
    !   spin polarized cases the difference (up-down).
@@ -1061,6 +1043,7 @@ subroutine makeSCFPot (totalEnergy)
    enddo
    call flush (8)
 
+
    ! Record the potential information for any plusUJ terms.
    write (8,fmt="(a20)") "NUM PLUSUJ TERMS"
    write (8,fmt="(i5)") numPlusUJAtoms
@@ -1093,6 +1076,7 @@ subroutine makeSCFPot (totalEnergy)
       enddo
    enddo
    call flush (8)
+
 
    ! Compute the total magnetic moment of the system and of individual
    !   potential types.  (Only done for spin polarized calculations.)
@@ -1182,6 +1166,7 @@ subroutine makeSCFPot (totalEnergy)
    deallocate (t2)
    deallocate (th1)
    deallocate (th2)
+   deallocate (det)
 
    ! Log the date and time we end.
    call timeStampEnd (18)
