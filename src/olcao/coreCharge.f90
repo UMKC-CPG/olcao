@@ -49,6 +49,7 @@ subroutine makeCoreRho
    ! Define the local variables used in this subroutine.
    integer :: i,j,k,l,m ! Loop variables.  loop1=i, nestedloop2=j ...
    integer :: hdferr
+   integer :: info ! LAPACK error
 
    ! Iteration dependent variables.  For each potential site iteration these
    !   values will change when the potential type of the site changes.
@@ -498,7 +499,12 @@ subroutine makeCoreRho
       !   that will reproduce the total core charge of this site.
       call solveDPOSVX (currNumPotAlphas,2,&
             & gaussSelfOverlap(:currNumPotAlphas,:currNumPotAlphas),&
-            & currNumPotAlphas,coreBasisOverlap(:currNumPotAlphas,1:2))
+            & currNumPotAlphas,coreBasisOverlap(:currNumPotAlphas,1:2),info)
+
+      if (info /= 0) then
+         write (20, *) 'dposvx failed. INFO= ', info
+         stop
+      endif
 
       ! Copy the solution to a better named array.  (This is (G).)  Note that
       !   the above call to solveDPOSVX destroyed the prior contents of

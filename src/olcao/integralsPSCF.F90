@@ -1791,13 +1791,8 @@ subroutine getIntgResults (valeValeGamma,coreValeOLGamma,&
          ! point closest to the difference between the unit cell positions for
          ! atom 1 and atom 2.
 
-!write (20,*) "Got here 0a"
-!call flush (20)
    ! Initialize the HDF interface for the components needed here.
    call initReadIntgHDF5 (runCode)
-
-!write (20,*) "Got here 1a"
-!call flush (20)
 
    ! Allocate space for locally defined allocatable arrays.
 #ifndef GAMMA
@@ -1834,16 +1829,10 @@ subroutine getIntgResults (valeValeGamma,coreValeOLGamma,&
    endif
 #endif
 
-!write (20,*) "Got here 2a"
-!call flush (20)
-
 
    ! For each atom read in the requested results of the atom2-lattice loop
    !   matrices from the intg calculation.
    do i = 1, numAtomSites
-
-!write (20,*) "Got here 3a,",i
-!call flush (20)
 
       ! Initialize the current atom2 index number and the number of total
       !   states for this atom pair.
@@ -2364,8 +2353,6 @@ subroutine getIntgResults (valeValeGamma,coreValeOLGamma,&
    endif
 #endif
 
-!write (20,*) "Got here 1a"
-!call flush (20)
 end subroutine getIntgResults
 
 

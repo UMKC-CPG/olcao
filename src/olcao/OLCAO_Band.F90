@@ -147,9 +147,6 @@ subroutine computeBands
    allocate (coreValeOLGamma(coreDim,valeDim))
 #endif
 
-!write (20,*) "numKPoints=",numKPoints
-!write (20,*) "valeDim=",valeDim
-!call flush (20)
 
    ! Loop over all kpoints and compute the solid state wave function and
    !   energy eigen values for each. But first, ...
@@ -162,8 +159,6 @@ subroutine computeBands
    call flush (20)
 
    do i = 1, numKPoints
-!write (20,*) "current kpoints = ",i
-!call flush (20)
 
       ! Read the overlap integral results and apply kpoints effects.
 #ifndef GAMMA
@@ -173,8 +168,6 @@ subroutine computeBands
       call getIntgResults(valeValeOLGamma(:,:,1),coreValeOLGamma,1,&
             & valeValeBand_did(i),valeValeBand,doSYBD,1)
 #endif
-!write (20,*) "Got here 0"
-!call flush (20)
 
       ! Write the coreValeOL for later use by other programs (if needed).
 #ifndef GAMMA

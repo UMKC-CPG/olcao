@@ -419,8 +419,7 @@ subroutine setPotControlParameters (fbL,lastIt,corrCode,rlxFact,cTest,&
    ! Read each line(functional type). Once the correct one is found use
    ! it to set "spin", "rel", "GGA".
    do i = 1, numCodes
-      read (9,*) functionalName, xcCodeParam, spinParam, &
-                                     & relParam, GGAParam
+      read (9,*) functionalName, xcCodeParam, spinParam, relParam, GGAParam
       if (xcCodeParam.eq.xcCode) then
          spin = spinParam
          rel = relParam
@@ -480,7 +479,7 @@ subroutine initPotCoeffs
             potTermCount = potTermCount + 1
 
             read (8,*) potCoeffs(potTermCount,i), spaceHolder1, spaceHolder2,&
-               & spaceHolder3,spaceHolder4 
+               & spaceHolder3, spaceHolder4 
          enddo
       enddo
    enddo

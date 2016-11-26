@@ -110,9 +110,11 @@ subroutine secularEqnAllKP(spinDirection, numStates)
       ! Prepare the matrices.
       packedValeVale(:,:) = 0.0_double
       tempPackedValeVale(:,:) = 0.0_double
+
 #ifndef GAMMA
-      valeVale(:,:,1,spinDirection)=cmplx(0.0_double,0.0_double,double)
       valeValeOL(:,:,1,spinDirection)=cmplx(0.0_double,0.0_double,double)
+
+      valeVale(:,:,1,spinDirection) = cmplx(0.0_double,0.0_double,double)
 #else
       valeValeGamma(:,:,spinDirection) = 0.0_double
       valeValeOLGamma(:,:,spinDirection) = 0.0_double
@@ -132,7 +134,6 @@ subroutine secularEqnAllKP(spinDirection, numStates)
                & tempPackedValeVale,atomDims,potCoeffs(j,spinDirection),&
                & dim1,valeDim)
       enddo
-
 
       ! Unpack the hamiltonian matrix.
 #ifndef GAMMA

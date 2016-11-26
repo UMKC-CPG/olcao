@@ -55,20 +55,14 @@ subroutine intgPSCF
    ! Renormalize the basis functions
    call renormalizeBasis
 
-!write (20,*) "Got here 0"
-!call flush (20)
 
    ! Prepare the HDF5 files for the post SCF integrals.
    call initPSCFIntgHDF5
 
-!write (20,*) "Got here 1"
-!call flush (20)
 
    ! Read the provided potential coefficients.
    call initPotCoeffs
 
-!write (20,*) "Got here 2"
-!call flush (20)
    ! Compute the integrals and the momentum matrix elements (MME or MOME) (if
    !   requested).  The MME request is given on the command line and the
    !   subroutine gets that flag from that module.  The integrals are also

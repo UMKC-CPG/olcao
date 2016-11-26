@@ -214,9 +214,10 @@ subroutine getRecipCellVectors
    write (20,100) 'The real  cell volume is: ',realCellVolume
    write (20,100) 'The recip cell volume is: ',recipCellVolume
    write (20,*)   'The recip lattice vectors are: '
-   write (20,200) recipVectors(:,:)
+   write (20,fmt="(3d18.8)") recipVectors(1:dim3,1)
+   write (20,fmt="(3d18.8)") recipVectors(1:dim3,2)
+   write (20,fmt="(3d18.8)") recipVectors(1:dim3,3)
    100 format (a,e12.5)
-   200 format (3f12.8,/,3f12.8,/,3f12.8)
 
 end subroutine getRecipCellVectors
 
@@ -754,8 +755,8 @@ subroutine findLatticeVector (arbitraryVector, latticeVector)
    implicit none
 
    ! Define the dummy variables passed to this subroutine.
-   real (kind=double), dimension (dim3), intent(in)  :: arbitraryVector
-   real (kind=double), dimension (dim3), intent(out) :: latticeVector
+   real (kind=double), dimension (:), intent(in)  :: arbitraryVector
+   real (kind=double), dimension (:), intent(out) :: latticeVector
 
    ! Define the local variables used in this subroutine.
    integer :: i ! Loop variable.
@@ -1234,8 +1235,8 @@ subroutine intersectionTest (unitDims, unitDotMatrix, rootSizes, cellCounter,&
                          &unitDims(2,i) * unitDims(1,j)
 
          ! Initialize the bounds for the length of the segment to large numbers.
-         upperBound =  10000000
-         lowerBound = -10000000
+         upperBound =  10000000.0_double
+         lowerBound = -10000000.0_double
 
          ! Initialize the failure flag to success.
          failure = 0

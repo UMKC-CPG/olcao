@@ -125,10 +125,15 @@ my @posBit;          # Num. of replicated cells needed in the +abc directions.
 my $buffer=10;       # Buffer space between the system and the simulation box
                      #   for the case of non-periodic systems (bio-molecules).
 
-# References to elemental data from the database.
+# References to elemental data from the database and implicit data about the
+#   current system under study that is extracted from the elemental database.
 my $elementNames_ref;
 my $covalRadii_ref;
 my $valenceCharge_ref;
+my $minPotAlpha;
+my $maxNumPotAlphas;
+my $maxNumAtomAlphas;
+my $maxNumValeStates; # Largest number of valence states from any given atom.
 
 # Manipulation data.
 my $rotMatrix;    # Three dimensional rotation matrix.
@@ -346,6 +351,17 @@ sub getExt2CentralItemMapRef
 sub getCentral2ExtItemMapRef
    {return \@central2ExtItemMap;}
 
+sub getMinPotAlpha
+   {return $minPotAlpha;}
+
+sub getMaxNumPotAlphas
+   {return $maxNumPotAlphas;}
+
+sub getMaxNumAtomAlphas
+   {return $maxNumAtomAlphas;}
+
+sub getMaxNumValeStates
+   {return $maxNumValeStates;}
 
 # Define functions to set these variables.
 
@@ -617,6 +633,12 @@ sub readInputFile
 
    # Map element names to atomic Z number.
    &mapElementNumber;
+
+   # Compute basic information about the system such as the maximum number of
+   #   potential terms for any one potential site in the system, the maximum
+   #   number of Gaussians in an atomic basis function of any one atom in the
+   #   system.
+   &computeImplicitInfo;
 }
 
 sub setupDataBaseRef
@@ -2865,6 +2887,54 @@ sub createElementList
       else
          {$atomElementID[$atom] = $found;}
    }
+}
+
+
+sub computeImplicitInfo
+{
+   # Define local variables
+   my $atom;
+   my $element;
+   my $basis;
+   my $orbitalType;
+   my $currentZ;
+   my $tempValue;
+   my @tempArray;
+
+   $minPotAlpha = 1000.0;
+   $maxNumPotAlphas = 0;
+   $maxNumAtomAlphas = 0;
+   $maxNumValeStates = 0;
+   foreach $atom (1..$numAtoms)
+   {
+      $currentZ = $atomicZ[$atom];
+
+      $tempValue = ElementData::getMinTermPot($currentZ);
+      if ($tempValue < $minPotAlpha)
+         {$minPotAlpha = $tempValue;}
+
+      $tempValue = ElementData::getNumTermsPot($currentZ);
+      if ($tempValue > $maxNumPotAlphas)
+         {$maxNumPotAlphas = $tempValue;}
+
+      @tempArray = ElementData::getNumTermsWF($currentZ);
+      if ($tempArray[0] > $maxNumAtomAlphas)
+         {$maxNumAtomAlphas = $tempArray[0];}
+
+      $tempValue = 0;
+      foreach $basis (1..3) # MB+FB+EB
+      {
+         @tempArray = ElementData::getValeOrbitals($basis,$currentZ);
+         $tempValue += 1*$tempArray[0]; #s
+         $tempValue += 3*$tempArray[1]; #p
+         $tempValue += 5*$tempArray[2]; #d
+         $tempValue += 7*$tempArray[3]; #f
+      }
+      if ($tempValue > $maxNumValeStates)
+         {$maxNumValeStates = $tempValue;}
+   }
+
+
 }
 
 

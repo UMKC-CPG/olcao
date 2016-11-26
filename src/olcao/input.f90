@@ -123,6 +123,7 @@ subroutine parseInput
    open(5,file='fort.5',status='old',form='formatted')
    readUnit = 5
 
+
    ! Read the title.
    call readTitle(readUnit,writeUnit)
 

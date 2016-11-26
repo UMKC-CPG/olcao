@@ -13,13 +13,30 @@ module O_PotentialUpdate
    ! Begin list of module data.!
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-   ! Define variables used to update the solid state potential.
-   real (kind=double), allocatable, dimension (:,:) :: xl0,xl1,xl2 ! Holds the
-         !   actually used potential coefficients from the current and previous
-         !   two iterations.
-   real (kind=double), allocatable, dimension (:,:) :: yl0,yl1,yl2 ! Holds the
-         !   guesses for the next set of potential coefficients from the
-         !   current and previous two iterations.
+   ! Define variables used to update the solid state potential. These arrays are
+   !   retained across all SCF iterations.
+   real (kind=double), allocatable, dimension (:,:) :: potDifference ! Holds
+         ! the difference between the currently used potential coefficients and
+         ! the current guess for the next set of potential coefficients.
+   real (kind=double), allocatable, dimension (:,:,:) :: usedPotCoeffs ! Holds
+         ! the currently used potential coefficients along with previous sets
+         ! of used coefficients equal to the given feedbackLevel+1. The first
+         ! index is potDim, the second is feedbackLevel+1 and the last is spin.
+         ! Note that the +1 arises because we need to hold the *current* plus
+         ! feedbackLevel number previous iterations.
+   real (kind=double), allocatable, dimension (:,:,:) :: guessedPotCoeffs !
+         ! Holds the currently guessed potential coefficients along with
+         ! previous sets of guessed coefficients equal to the given
+         ! feedbackLevel+1. The first index is potDim, the second is
+         ! feedbackLevel+1 and the last is spin. Note that the +1 arises because
+         ! we need to hold the *current* plus feedbackLevel number previous
+         ! iterations.
+!   real (kind=double), allocatable, dimension (:,:) :: xl0,xl1,xl2 ! Holds the
+!         !   actually used potential coefficients from the current and previous
+!         !   two iterations.
+!   real (kind=double), allocatable, dimension (:,:) :: yl0,yl1,yl2 ! Holds the
+!         !   guesses for the next set of potential coefficients from the
+!         !   current and previous two iterations.
 
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    ! Begin list of module subroutines.!
@@ -67,6 +84,7 @@ subroutine makeSCFPot (totalEnergy)
    ! Define the local variables used in this subroutine.
    integer :: i,j,k ! Loop index variables
    integer :: hdferr
+   integer :: info
    integer :: numOpValues
    integer :: currentType
    integer :: currentNumAlphas
@@ -121,22 +139,10 @@ subroutine makeSCFPot (totalEnergy)
    real (kind=double), allocatable, dimension (:,:) :: exchCorrRho
    real (kind=double), allocatable, dimension (:,:) :: exchCorrRhoCore
    real (kind=double), allocatable, dimension (:,:) :: exchCorrRhoSpin
-   real (kind=double), allocatable, dimension (:,:) :: outputPot
    real (kind=double), allocatable, dimension (:,:) :: realSpacePotDiff
    real (kind=double), allocatable, dimension (:)   :: averageDelta
    real (kind=double), allocatable, dimension (:)   :: maxDelta
    real (kind=double), allocatable, dimension (:)   :: typesMagneticMoment
-
-   real (kind=double) :: th1
-   real (kind=double) :: th2
-   real (kind=double) :: t1
-   real (kind=double) :: t2
-   real (kind=double) :: s11
-   real (kind=double) :: s12
-   real (kind=double) :: s22
-   real (kind=double) :: det
-   real (kind=double), allocatable, dimension (:) :: drl1,drl2
-   real (kind=double), allocatable, dimension (:) :: rl0,rl1,rl2
 
    ! Log the date and time we start.
    call timeStampStart (18)
@@ -180,7 +186,13 @@ subroutine makeSCFPot (totalEnergy)
    ! Solve the linear set of equations with LAPACK to get the coefficients for
    !   total valence charge and (for spin polarized calcs.) the spin difference
    !   of the valence charge.
-   call solveDPOSVX (potDim,spin+1,tempOverlap,potDim,generalRho(:,:spin+1))
+   call solveDPOSVX (potDim,spin+1,tempOverlap,potDim,generalRho(:,:spin+1),&
+         & info)
+
+   if (info /= 0) then
+      write (20, *) 'dposvx failed. INFO= ', info
+      stop
+   endif
 
    ! Compute the fitted valence charge.  (Up + Down for spin polarized calcs.)
    fittedCharge = dot_product(intgConsts(:potDim),generalRho(:potDim,1))
@@ -419,8 +431,12 @@ subroutine makeSCFPot (totalEnergy)
    enddo
 
    ! Solve with LAPACK dposvx
-   call solveDPOSVX (potDim,2,tempOverlap,potDim,elecStatPot(:,:2))
+   call solveDPOSVX (potDim,2,tempOverlap,potDim,elecStatPot(:,:2),info)
 
+   if (info /= 0) then
+      write (20, *) 'dposvx failed. INFO= ', info
+      stop
+   endif
 
    ! Begin the exchange-correlation potential fitting
 
@@ -770,8 +786,12 @@ subroutine makeSCFPot (totalEnergy)
 
    ! Solve the linear set of equations with LAPACK
    call solveDPOSVX (potDim,2+spin,exchCorrOverlap,potDim,&
-         & exchCorrPot(:,:2+spin))
+         & exchCorrPot(:,:2+spin),info)
 
+   if (info /= 0) then
+      write (20, *) 'dposvx failed. INFO= ', info
+      stop
+   endif
 
    ! Calculate the total exchange correlation energy minus the core exchange
    !   correlation energy to get the valence exchange correlation energy.
@@ -796,34 +816,41 @@ subroutine makeSCFPot (totalEnergy)
    deallocate (exchCorrRhoSpin)
    deallocate (exchCorrOverlap)
 
-   ! Allocate space to hold the output potentials
-   allocate (outputPot (potDim,spin))
-   if (.not.allocated(xl0)) then
-      allocate (xl0 (potDim,spin))
-      allocate (xl1 (potDim,spin))
-      allocate (xl2 (potDim,spin))
-      allocate (yl0 (potDim,spin))
-      allocate (yl1 (potDim,spin))
-      allocate (yl2 (potDim,spin))
+   ! Allocate space to hold data structures for determining the next set of
+   !   potential coefficients and for measuring the degree of convergence that
+   !   we have achieved since the previous iteration. Note that we only need to
+   !   allocate these entities once because they are used in every SCF iteration
+   !   and they don't consume too much space so they will not "get in the way"
+   !   of other much larger data structures that are needed in other parts of
+   !   the SCF process (e.g. diagonalization).
+   ! Note importantly, that the indices for usedPotCoeffs and guessedPotCoeffs
+   !   in the second array index are one higher than the numbers expressed in
+   !   the Anderson paper. That is, index 1 is for x^l+0 and index 2 is for
+   !   x^l-1 and index 3 is for x^l-2, etc.
+   if (.not. allocated(potDifference)) then
+      allocate (potDifference(potDim,spin)) ! For measuring convergence.
+      allocate (usedPotCoeffs(potDim,feedbackLevel+1,spin)) ! Anderson's x
+      allocate (guessedPotCoeffs(potDim,feedbackLevel+1,spin)) ! Anderson's y
 
       do i = 1, spin
-         xl1(:,i) = potCoeffs(:,i)
-         xl2(:,i) = potCoeffs(:,i)
-         yl1(:,i) = elecStatPot(:,1) + elecStatPot(:,2) + exchCorrPot(:,i)
-         yl2(:,i) = elecStatPot(:,1) + elecStatPot(:,2) + exchCorrPot(:,i)
+         do j = 1, feedbackLevel+1
+            usedPotCoeffs(:,j,i) = potCoeffs(:,i)
+            guessedPotCoeffs(:,j,i) = elecStatPot(:,1) + elecStatPot(:,2) + &
+                  & exchCorrPot(:,i)
+         enddo
       enddo
    endif
 
 
    do i = 1, spin
-      xl0(:,i) = potCoeffs(:,i)
-      yl0(:,i) = elecStatPot(:,1) + elecStatPot(:,2) + exchCorrPot(:,i)
+      usedPotCoeffs(:,1,i) = potCoeffs(:,i) ! Anderson's x^l
+      guessedPotCoeffs(:,1,i) = elecStatPot(:,1) + elecStatPot(:,2) &
+            & + exchCorrPot(:,i) ! Anderson's y^l
 
-      ! Form the difference between last iteration and the current new
-      !   calculation of the potential.  (Note that this calculation will be
-      !   mixed later with the potential of last iteration to make the
-      !   convergence more smooth.)
-      outputPot(:,i) = yl0(:,i) - xl0(:,i)
+      ! Form the difference between the potential coefficients that have been
+      !   guessed for the next iteration and those that were used in the current
+      !   iteration.
+      potDifference(:,i) = guessedPotCoeffs(:,1,i) - usedPotCoeffs(:,1,i)
 
    enddo
 
@@ -880,7 +907,7 @@ subroutine makeSCFPot (totalEnergy)
       !   potential vector difference to get the difference in real space.
       do j = 1, spin
          do k = 1, numRayPoints
-            realSpacePotDiff(k,j) = sum(exchRhoOp(:,k,1) * outputPot(:,j))
+            realSpacePotDiff(k,j) = sum(exchRhoOp(:,k,1) * potDifference(:,j))
          enddo
 
          ! Determine the delta to be tested.
@@ -899,88 +926,11 @@ subroutine makeSCFPot (totalEnergy)
    deallocate (maxDelta)
    deallocate (exchRhoOp)
    deallocate (radialWeight)
-   deallocate (outputPot)
 
-   ! Generate the potentials for the next iteration using the method D.G.
-   !   Anderson, J. Assoc. Comp. Mach. 12, 547 (1965).
-
-   ! The parameter here referred to as the feedbackLevel is called M by
-   !   Anderson.  If M=0, the straight 'relaxed' iteration is used.  If M=2,
-   !   the 2x2 determinant in anderson's method is checked.  If it is too
-   !   small, the first order M=1 extrapolation is used instead.  M is
-   !   effectively reduced to 0 or 1 if the iteration is 0, 1, or 2.
-
-   allocate ( rl0 (potDim))
-   allocate ( rl1 (potDim))
-   allocate ( rl2 (potDim))
-   allocate (drl1 (potDim))
-   allocate (drl2 (potDim))
-
-   ! This is basically copied from the old code with little modification for
-   !   the names since I don't know what they mean or do in most cases.
-   do i = 1, spin
-      th1 = 0.0_double
-      th2 = 0.0_double
-      if (feedbackLevel /= 0) then
-         if (currIteration > 1) then
-            rl0(:)  = yl0(:,i) - xl0(:,i)
-            rl1(:)  = yl1(:,i) - xl1(:,i)
-            rl2(:)  = yl2(:,i) - xl2(:,i)
-            drl1(:) = rl0(:) - rl1(:)
-            drl2(:) = rl0(:) - rl2(:)
-
-            ! This part is new.  Make temp matrices holding the potAlphaOverlap
-            !   times the drl1, and drl2 vectors.
-
-            ! Initialize the summation variables
-            s11 = 0.0_double
-            s12 = 0.0_double
-            s22 = 0.0_double
-            t1  = 0.0_double
-            t2  = 0.0_double
-
-            ! The cases for the drl1 vector are done first. 
-            do j = 1, potDim
-               tempOverlap(:,j) = potAlphaOverlap(:,j) * drl1(j)
-               s11 = s11 + sum(tempOverlap(:,j) * drl1(:))
-               t1  = t1  + sum(tempOverlap(:,j) * rl0(:))
-            enddo
-
-            ! The cases for the drl2 vector are done second.
-            do j = 1, potDim
-               tempOverlap(:,j) = potAlphaOverlap(:,j) * drl2(j)
-               s12 = s12 + sum(tempOverlap(:,j) * drl1(:))
-               s22 = s22 + sum(tempOverlap(:,j) * drl2(:))
-               t2  = t2  + sum(tempOverlap(:,j) * rl0(:))
-            enddo
-            th1 = t1/s11
-            if (feedbackLevel /= 1) then
-               if (currIteration > 2) then
-
-                  ! Calculate the determinate.
-                  det = s11*s22 - s12*s12
-                  if (det/(s11*s22) >= 0.01_double) then
-                     th1 = ( s22*t1 - s12*t2)/det
-                     th2 = (-s12*t1 + s11*t2)/det
-                  endif
-               endif
-            endif
-         endif
-      endif
-
-      ! Form the next iteration and save the previous two.
-      potCoeffs(:,i) = &
-            & (1.0_double - relaxFactor) * &
-            & ((1.0_double-th1-th2)*xl0(:,i) + th1*xl1(:,i) + th2*xl2(:,i)) + &
-            & relaxFactor * &
-            & ((1.0_double-th1-th2)*yl0(:,i) + th1*yl1(:,i) + th2*yl2(:,i))
-
-      xl2(:,i) = xl1(:,i)
-      xl1(:,i) = xl0(:,i)
-      yl2(:,i) = yl1(:,i)
-      yl1(:,i) = yl0(:,i)
-   enddo
-
+   ! Blend the currently used potential, the current guess, and (possibly) a set
+   !   number of previous potential functions in an effort to accelerate the
+   !   convergence while retaining smooth character to the convergence process.
+   call blendPotentials()
 
    ! Record the potential terms (alphas), potential coefficients, total charge
    !   density (core+valence), and valence charge density (up+down), and for
@@ -1150,16 +1100,363 @@ subroutine makeSCFPot (totalEnergy)
    deallocate (kineticEnergyTrace)
    deallocate (tempOverlap)
    deallocate (potAlphaOverlap)
-   deallocate (rl0)
-   deallocate (rl1)
-   deallocate (rl2)
-   deallocate (drl1)
-   deallocate (drl2)
 
    ! Log the date and time we end.
    call timeStampEnd (18)
 
 end subroutine makeSCFPot
+
+
+! Use the method of D. G. Anderson (J. Assoc. Comp. Mach. 12, 547 (1965)) to
+!   compute the potential coefficients for the next SCF iteration. The problem
+!   is that we have a non-linear optimization problem but that we have a
+!   good(-ish) initial guess for the solution.
+
+! In a generalized secant method one would form a secant hyperplane (in N
+!   dimensions, where N is the number of terms in the potential) through two
+!   points (possible solutions). In the method used here we will only make a
+!   secant hyperline through those same possible solutions. I.e. we will reduce
+!   the data in the representation of the coefficients and apply the secant
+!   method to that so as to make a simpler overall expression for accelerated
+!   convergence with a few practical benefits and some remaining issues. The
+!   key idea is that the "most correct" hyperplane approach has a high
+!   computational cost (because of the need for large matrix inversion (which
+!   I have not yet attempted to apply to this problem so I don't actually know
+!   how big of an issue it really it), but a "linearized" form that does not
+!   necessarily intesect the subspace defining the solution (as a generalized
+!   secant method would be easy to compute and it would get close to the right
+!   direction. All we have to do then is make an algorithm that will get us as
+!   close to the solution subspace as possible and then we should converge to
+!   it. (Some issues remain, and they will be discussed later.)
+
+! In the D. G. Anderson paper, the basic iteration is z^l+1 = Gz^l. (Equation
+!   4.1). The "l+1" and "l" superscripts are not exponents. Instead they
+!   indicate the next iteration and current iteration respectively. The G is an
+!   abstract iteration operator, which in our case represents all of the rest of
+!   the work in the SCF cycle that is required to take a guess for the
+!   potential terms and produce a new guess. The z values represent the
+!   potential coefficients from one iteration to the next. The iteration
+!   sequence is broken into a coupled pair of two iterative sequences called x
+!   and y. The original guess that was actually used is called x^l and the new
+!   guess for the next iteration is called y^l. The y^l = Gx^l relationship is
+!   defined in equation 4.2. The x and y are each manifest as a 1D array of
+!   potential function coefficients. (More explicit details will be givin below
+!   about how x, y, and other arrays appear in the program code.)
+
+! Now, there is some difference between what was actually used (x) and the guess
+!   for the current iteration (y). This is called a residual and it is defined
+!   by equation 4.3: r^l = y^l - x^l.
+
+! At this point the concept of a N-vector inner product is defined as (u,v) = 
+!   SUM(u_i * v_i * w_i; i=1..N) where the u and v are arbitrary vectors and
+!   the w_i are weighting factors, (Equation 4.4). In our scenario, the
+!   inner product takes the form <u|O|v> where u is a row vector, v is a column
+!   vector, and O is a positive definite matrix (operator) that is manifest as
+!   the potAlphaOverlap matrix. (That is, the operator is the matrix that
+!   represents the degree of overlap between Gaussians of different potential
+!   terms at different potential sites.) In this sense, the weighting factors
+!   are defined by the overlap. However, we could in the future consider
+!   weighting factors that are additinally designed to favor convergence for
+!   certain terms over convergence in other terms in the potential function
+!   coefficient array. The rational for pursuing a weighting factor is given in
+!   the paragraph beginning with "Variants of these algorithms..." on page 554.
+!   Serious consideration should be given to this line of thinking in the
+!   future.
+
+! The simplest algorithm is then given in equations 4.5 though 4.9 and it is
+!   called the "extrapolation" method. The extrapolation method is in contrast
+!   to the "relaxation" method that is introduced in Equation 3.3 and discussed
+!   in the subsequent paragraphs. The idea is that there is some operator that
+!   acts on z to produce a zero vector (Fz=0, Equation 3.1) only when the
+!   "right" z vector has been found. Or, equivalently, there is an operator G
+!   that leaves z unchanged (z=Gz, Equation 3.2) only when the "right" z vector
+!   has been found. These expressions can be combined generally to give
+!   Equation 3.3, Gz=z-HFz, for a regular homogeneous operator H. That equation
+!   will be true for some optimal choice of z. The relaxation approach to
+!   finding the optimal z starts with successive substitution of z into
+!   z^l+1=Gz^l (Equation 3.4). For a best choice of H (often just some
+!   empirically discovered multiplicative constant or array of multiplicative
+!   constants) the iterative process will drive toward a solution. Indeed, if
+!   the value of H is defined as the inverse of the Jacobian matrix of F with
+!   respect to z, then a generalized Newton-Raphson method is created. However,
+!   the problem is that the relaxation approach is too slow to be tractable 
+!   for our type of problem. Thus, we use the extrapolation method that will
+!   accelerate the convergence. (Again, the simplest extrapolation algorithm is
+!   given in equations 4.5 through 4.9. We will further modify that form with
+!   equations 4.15 through 4.18 for our work.)
+
+! Ultimately, we will want the potential function coefficients for the next
+!   iteration to be defined according to equation 4.9 with B^l being equal to
+!   the relaxation factor given in the olcao.dat input file and held here as
+!   "relaxFactor". The purpose of Equation 4.9 is to blend or mix the currently
+!   used potential coefficients x with the terms of the next guess y. Actually,
+!   this equation will mix u and v which themselves are constructed from the x
+!   and y values of the current and previous iterations. The u and v are each
+!   built using a linearized secant-method approach. That is (looking just at u
+!   with v being built in the same way) we consider three points 1, 2, and 3.
+!   Point 3 is the new point (i.e. u) while point 2 is the current point (x^l)
+!   and point 1 (x^l-1) is the previous point. We have that 3 = 2 - f(2)/f'(2)
+!   which is basically a Newton's method formula. Then we approximate the
+!   derivative f'(2) with f'(2) ~= [f(2)-f(1)] / [2-1]. Combining we get the
+!   expression 3 = 2 - f(2)* [2-1] / [f(2)-f(1)] which when put into the form of
+!   the Anderson paper is Equation 4.5: u^l = x^l + theta^l * (x^l-1 -x^l).
+!   Theta will be determined next, but it represents the f(2)/[f(2)-f(1)] part
+!   of the method. In actuality, it will not explicitly be equal to that part of
+!   the method but will instead be selected to try to minimize another quantity.
+!   Note that the signs are correct.
+
+! The u vector is the base for the next iteration of coefficients and it is
+!   blended with some v. The u vector is built from the current x and a
+!   difference between the current and previous values of x. The difference is
+!   multiplied by a coefficient (theta) that is specifically selected so as to
+!   minimize the linearized residual R. We define R as R=0.5*(v-u,v-u). The
+!   expression that yields this condition is dR/dTheta = (r^l+1 - r^l,v - u)=0.
+!   The linearized residual is designed as such to represent a measure of the
+!   difference between our potential function coefficient guesses and the
+!   potential function coefficient values that are actually used. The idea being
+!   that the more we are able to make the y values we guess look just like the
+!   x values we just used, the closer we are to a converged solution. Thus,
+!   taking the derivative of R with respect to the undetermined parameters theta
+!   and setting the solution equal to zero should point to theta values that
+!   will make the residual smaller. With only 3, 2, and 1 points, the value of
+!   theta is given by Equation 4.8.
+
+! Now, it is discussed on pages 554-556 (starting near the bottom of 554) that
+!   a generalization of the method to higher degrees (M) can be done and that
+!   it is useful for M<~5. Beyond that, the earlier iterations are of limited
+!   value when determining new iterations. The usefulness of incorporating more
+!   previous iterations at all is that it improves the accuracy of the next
+!   step. The down side is that as convergence is reached the iterates become
+!   more and more alike and thus the system of equations becomes ill
+!   conditioned and possibly singular.
+
+! The implementation of this generalized approach is a straightforward extension
+!   of the previous discussion with the following exception. The dR/dTheta = 0
+!   requirement will lead to a system of M equations (4.18) instead of a single
+!   equation for theta. The system of equations must be solved via linear
+!   algebra methods, but this is fairly simple. The only caveat is that as the
+!   system moves toward convergence, the system of equations will become more
+!   ill conditioned. If the determinant of the matrix formulation of the problem
+!   becomes close to zero, then the program will need to fall back to a lower
+!   degree solution. Similarly, when the number of iterations performed so far
+!   is less than the desired degree, then a lower degree solution will need to
+!   be used until the higher degree option is available (i.e. when there are
+!   enough previous iterations).
+
+! This subroutine will take a parameter called the feedbackLevel, which is given
+!   in the olcao.dat input. The feedbackLevel represents the number M from
+!   Anderson's paper. Also note, that usedPotCoeffs is equal to x and
+!   guessedPotCoeffs is equal to y. Further, the indices are off by one. That
+!   is, the 1 in usedPotCoeffs(:,1,:) refers to x^l, not x^l+1 or x^l-1.
+!   Further, if a 2 were there, that would be understood as x^l-1. A 3 index
+!   would be for x^l-2 etc.
+subroutine blendPotentials()
+
+   use O_Kinds
+   use O_Potential, only: spin, potDim, currIteration, feedbackLevel, &
+         & relaxFactor, potCoeffs
+   use O_ElectroStatics, only: potAlphaOverlap
+   use O_LAPACKDPOSVX
+
+   implicit none
+
+   ! Define the dummy variables that are passed to this function.
+
+   ! Define the local variables.
+   integer :: info
+   integer :: i,j,k,l
+   integer :: maxFeedback
+   real (kind=double), allocatable, dimension(:) :: theta ! The x from Ax=B.
+   real (kind=double), allocatable, dimension(:) :: tempArray ! An intermediate
+         ! array for constructing the final set of potential coefficients.
+   real (kind=double), allocatable, dimension(:) :: solutions ! The B from Ax=B
+   real (kind=double), allocatable, dimension(:,:) :: solutionsTemp ! The B as
+         ! it must be passed to the LAPACK DPOSVX subroutine. (I.e. as a matrix
+         ! with multiple right hand sides. In this case though, there is only
+         ! one right hand side.) Note also that the dimension for solutionsTemp
+         ! is determined by a loop index from maxFeedback down to one. It is
+         ! not a constant feedbackLevel or maxFeedback. The idea is that if a
+         ! higher degree solution fails, we will shift down to a lower degree
+         ! one automatically.
+   real (kind=double), allocatable, dimension(:,:) :: matrix ! The A from Ax=B
+   real (kind=double), allocatable, dimension(:,:) :: matrixTemp ! The A as it
+         ! must be passed to the LAPACK DPOSVX subroutine. It is basically the
+         ! same as "matrix" except that the dimension is determined as for
+         ! solutionsTemp above and for the same reasons.
+   real (kind=double), allocatable, dimension(:,:) :: rl ! Difference between
+         ! the actually used and the guessed potential coefficients for each of
+         ! the feedbackLevel sets that are retained, plus the current iteration.
+         ! Thus, the first index is potDim and the second is feedbackLevel+1.
+   real (kind=double), allocatable, dimension(:,:) :: drl ! Differences
+         ! between the first rl and the other rl arrays. The first index is
+         ! potDim and the second is feedbackLevel. (The +1 is not needed here
+         ! because we don't need a difference between the current set (first rl)
+         ! and itself.)
+
+   ! Determine the maximum amount of feedback that is possible (a function of
+   !   the currIteration number) or desired (a function of feedbackLevel). A
+   !   certain number of iterations must pass before a particular feebackLevel
+   !   can be used. For example is the desired feedbackLevel is 2, then at least
+   !   two iterations must complete before we will have 2 prior sets of data to
+   !   use for feedback. (Thus we must *be on* iteration #3 before a
+   !   feedbackLevel of two can become active.)
+   maxFeedback = min(feedbackLevel,currIteration-1)
+
+   ! Allocate space for the operating data structures.
+   allocate (tempArray(potDim))
+   allocate (theta(maxFeedback+1)) ! The first index is special (1-sum(others)).
+   allocate (rl(potDim,maxFeedback+1)) ! +1 to also hold the current iteration.
+   if (maxFeedback > 0) then
+      allocate (drl(potDim,maxFeedback)) ! No +1 needed.
+   endif
+
+   ! Presently we are treating the two spin directions independently. However,
+   !   it might be a good idea in the future to try to integrate them together.
+   do i = 1, spin
+
+      ! Initialize all of the operating parameters that are needed for the
+      !   algorithm.
+
+      ! In the event that we don't do any feedback we need to initialize theta
+      !   to 1. (If there is no feedback then theta in an array of length 1.)
+      theta(:) = 0.0_double
+      theta(1) = 1.0_double ! Initialized to 1.
+
+      ! Compute the difference between the guessed and actually used potential
+      !   coefficients for the current iteration and every level of feedback. We
+      !   can call these deltas.
+      do j = 1, maxFeedback+1
+         rl(:,j) = guessedPotCoeffs(:,j,i) - usedPotCoeffs(:,j,i)
+      enddo
+
+      ! Compute the difference between the deltas from different iterations.
+      !   Specifically, get the difference between the current delta (1) and
+      !   each other delta.
+      if (maxFeedback > 0) then
+         do j = 1, maxFeedback
+            drl(:,j) = rl(:,1) - rl(:,j+1)
+         enddo
+      endif
+
+      ! If we are going to bother to do any accelerated convergence then we
+      !   proceed. Otherwise we just skip to the step where we form the next
+      !   iteration.
+      if (maxFeedback /= 0) then
+
+         ! Allocate space to hold the A matrix and B solutions in the largest
+         !   case scenario.
+         allocate (solutions(maxFeedback))
+         allocate (solutionsTemp(maxFeedback,1))
+         allocate (matrix(maxFeedback,maxFeedback))
+         allocate (matrixTemp(maxFeedback,maxFeedback))
+
+         ! Initialize the matrix and solutions in preparation for accumulation.
+         matrix(:,:) = 0.0_double
+         solutions(:) = 0.0_double
+
+         ! Assemble the system of linear equations for Ax=B. For A, we only need
+         !   to compute the upper triangle.
+         do j = 1, maxFeedback
+            do k = 1, j
+               do l = 1, potDim
+                  tempArray(:) = potAlphaOverlap(:,l)*drl(l,j)
+                  matrix(k,j) = matrix(k,j) + sum(tempArray(:)*drl(:,k))
+                  if (k == 1) then
+                     solutions(j) = solutions(j) + sum(tempArray(:)*rl(:,1))
+                  endif
+               enddo
+            enddo
+         enddo
+
+         ! Work backwards from the most feedback to the least. With each
+         !   iteration we will assemble the A and B from Ax=B. On the first
+         !   iteration we will compute the maximum possible feedback. However,
+         !   we recognize from the D.G. Anderson paper (554-556) that as the
+         !   feedbackLevel is increased there is a greater chance that the
+         !   system of linear equations will become ill conditioned (and thus
+         !   singular). When we compute the DPOSVX solution we check if there
+         !   are any errors
+         do j = maxFeedback, 1, -1
+
+            ! Copy the actual matrix A and solutions B into temporary data
+            !   structures because the originals will be destroyed within the
+            !   dposvx subroutine.
+            matrixTemp(:,:) = matrix(:,:)
+            solutionsTemp(:,1) = solutions(:)
+
+            ! Solve the system of linear equations Ax=B.
+            call solveDPOSVX(j,1,matrixTemp(1:j,1:j),j,solutionsTemp(1:j,1),&
+                  & info)
+
+            ! Determine if the solution is acceptable. If not, then we cycle to
+            !   a lower degree attempt and try again. If we are at the last
+            !   chance and we still get an error, then we die and complain.
+            if (info /= 0) then
+               if (j == 1) then
+                  write (20,*) "Failed to solve DPOSVX for potential blending."
+                  write (20,*) "This was the last chance. Stopping."
+                  stop
+               else
+                  write (20,*) "Failed to solve DPOSVX for potential blending."
+                  write (20,*) "Trying again with fewer feedback terms."
+                  write (20,*) "Current feedback term was",j
+               endif
+               cycle
+            endif
+
+            ! Copy the results into the theta array taking note that the first
+            !   index of theta is special. It will be used for
+            !   1.0-sum(other_theta_values).
+            theta(1) = 1.0_double - sum(solutionsTemp(1:maxFeedback,1))
+            theta(2:maxFeedback+1) = solutionsTemp(1:maxFeedback,1)
+
+            ! If any solution was successfully obtained that is all we need and
+            !   we can skip out of the rest of this loop.
+            exit
+         enddo
+
+         ! Deallocate the data structures for the linear equation problem.
+         deallocate (matrix)
+         deallocate (matrixTemp)
+         deallocate (solutions)
+         deallocate (solutionsTemp)
+      endif ! if (maxFeedback /= 0)
+
+      ! Form the potential coefficients for the next iteration.
+
+      ! Use a temp array to collect the contribution from all usedPotCoeffs of
+      !   each feedback level and the current iteration. Note that theta(1) is
+      !   special and that the other theta values were computed from the system
+      !   of linear equations.
+      tempArray(:) = 0.0_double
+      do j = 1, maxFeedback+1
+         tempArray(:) = tempArray(:) + theta(j)*usedPotCoeffs(:,j,i)
+      enddo
+      potCoeffs(:,i) = (1.0_double - relaxFactor) * tempArray(:)
+
+      tempArray(:) = 0.0_double
+      do j = 1, maxFeedback+1
+         tempArray(:) = tempArray(:) + theta(j)*guessedPotCoeffs(:,j,i)
+      enddo
+      potCoeffs(:,i) = potCoeffs(:,i) + relaxFactor * tempArray(:)
+
+      ! Progressively shift the oldest iterations out by replacing them with an
+      !   earlier (lower middle index) iteration.
+      do j = feedbackLevel, 1, -1
+         usedPotCoeffs(:,j+1,i) = usedPotCoeffs(:,j,i)
+         guessedPotCoeffs(:,j+1,i) = guessedPotCoeffs(:,j,i)
+      enddo
+   enddo
+
+   ! Deallocate space for the operating data structures of the algorithm.
+   if (maxFeedback > 0) then
+      deallocate (drl)
+   endif
+   deallocate (rl)
+   deallocate (theta)
+   deallocate (tempArray)
+
+end subroutine blendPotentials
 
 
 subroutine wignerXC (rho,answer)
@@ -2295,13 +2592,10 @@ subroutine cleanUpPotentialUpdate
 
    implicit none
 
-   if (allocated (xl0)) then
-      deallocate (xl0)
-      deallocate (xl1)
-      deallocate (xl2)
-      deallocate (yl0)
-      deallocate (yl1)
-      deallocate (yl2)
+   if (allocated (usedPotCoeffs)) then
+      deallocate (usedPotCoeffs)
+      deallocate (guessedPotCoeffs)
+      deallocate (potDifference)
    endif
 
 end subroutine cleanUpPotentialUpdate

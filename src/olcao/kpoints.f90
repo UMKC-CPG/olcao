@@ -80,8 +80,8 @@ subroutine readKPoints(readUnit, writeUnit)
    !   coordinates.  Later, after the reciprocal lattice has been initialized
    !   these values will be changed into x,y,z cartesian coordinates.
    do i = 1, numKPoints
-      read (15,*)    counter, kPointWeight(i), kPoints(:dim3,i)
-      write (20,100) counter, kPointWeight(i), kPoints(:dim3,i)
+      read (15,*)    counter, kPointWeight(i), kPoints(1:dim3,i)
+      write (20,100) counter, kPointWeight(i), kPoints(1:dim3,i)
    enddo
    call flush (20)
 
