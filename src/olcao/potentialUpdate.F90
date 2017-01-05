@@ -1455,11 +1455,11 @@ write (20,*) "maxDelta",maxDelta(siteIndex)
 !      call blendPotentialsSCF(1,potDim,potCoeffs(:,i),&
 !            & guessedPotCoeffs(:,:,i),usedPotCoeffs(:,:,i),totalEnergyRecord)
 !   enddo
-!   do i = 1, spin
+   do i = 1, spin
       call blendPotentialsSCF(1,potDim,potCoeffs(:,i),&
             & guessedPotCoeffs(:,:,i),usedPotCoeffs(:,:,i),&
             & totalEnergyRecord(:,i))
-!   enddo
+   enddo
 !   if (currIteration > feedbackLevel+2) then
 !      do i = 1, spin
 !         call blendPotentialsTE(1,potDim,potCoeffs(:,i),&
