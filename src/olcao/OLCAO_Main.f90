@@ -17,10 +17,11 @@ subroutine mainSCF (totalEnergy, fromExternal)
    use O_AtomicTypes,     only: cleanUpAtomTypes
    use O_PotSites,        only: cleanUpPotSites
    use O_PotTypes,        only: cleanUpPotTypes
-   use O_SecularEquation, only: secularEqnAllKP, cleanUpSecularEqn
+   use O_SecularEquation, only: secularEqnAllKP, cleanUpSecularEqn, &
+                              & shiftEnergyEigenValues
    use O_ValeCharge,      only: makeValenceRho
    use O_KPoints,         only: cleanUpKPoints
-   use O_Populate,        only: populateStates
+   use O_Populate,        only: occupiedEnergy, populateStates
    use O_LAPACKParameters, only: setBlockSize
    use O_ExchangeCorrelation, only: cleanUpExchCorr
    use O_DOS,  only: computeIterationTDOS, printIterationTDOS, computeDOS
@@ -93,7 +94,7 @@ subroutine mainSCF (totalEnergy, fromExternal)
    call flush (7)
 
    ! Note the columns that record energy statistics for each iteration.
-   write (14,*) "Iter.  Kinetic   ElecStat   ExchCorr   Total"
+   write (14,*) "Iter.       Kinetic         ElecStat          ExchCorr           Total"
    call flush (14)
 
 
@@ -158,6 +159,9 @@ subroutine mainSCF (totalEnergy, fromExternal)
    do i = 1, spin
       call secularEqnAllKP(i, numStates)
    enddo
+
+   ! Shift the energy eigen values according to the highest occupied state.
+   call shiftEnergyEigenValues(occupiedEnergy,numStates)
 
    ! Find the Fermi level, the number of occupied bands, and the number of
    !   electrons occupying each of those bands.

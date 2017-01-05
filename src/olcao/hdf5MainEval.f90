@@ -114,6 +114,9 @@ subroutine closeMainEValHDF5
       enddo
    enddo
 
+   ! Dellocate space used to hold IDs for datasets in the eigenvalues group.
+   deallocate (eigenValues_did)
+
    ! Close the eigenvalue property list.
    call h5pclose_f (states_plid,hdferr)
    if (hdferr /= 0) stop 'Failed to close states_plid.'

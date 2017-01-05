@@ -75,8 +75,7 @@ subroutine computeIterationTDOS
                ! Compute the exponential term for the broadening of this point.
                !   Note that from the usual Gaussian term of exp(-alpha*x^2)
                !   we are have (eV-eS)^2 = x^2 and (1/sigma)^2 = alpha.
-               expTerm = ((currentEnergyValues(k) - &
-                     & energyScale(l))/sigmaDOS)**2
+               expTerm = ((currentEnergyValues(k)-energyScale(l))/sigmaDOS)**2
 
                ! If the exponential term is less than 50 we apply the
                !   broadening.
@@ -92,8 +91,7 @@ subroutine computeIterationTDOS
                         & kPointWeight(j) / real(spin,double)
 
                   ! Store the broadened TDOS.
-                  tdos(l,i,currIteration) = tdos(l,i,currIteration) + &
-                        & expFactor
+                  tdos(l,i,currIteration) = tdos(l,i,currIteration) + expFactor
                endif
             enddo
          enddo
@@ -125,7 +123,7 @@ subroutine printIterationTDOS
    do i = 1, spin
 
       ! Define the file ID to open.
-      fileID = 999+i
+      fileID = currIteration+i*1000
 
       ! Define the file name.
       write (fileName,fmt="(a5,i4)") "fort.",fileID

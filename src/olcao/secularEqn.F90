@@ -192,7 +192,7 @@ subroutine secularEqnAllKP(spinDirection, numStates)
 
       ! Write the energy eigenValues onto disk in HDF5 format in a.u.
       call h5dwrite_f (eigenValues_did(i,spinDirection),H5T_NATIVE_DOUBLE,&
-            & energyEigenValues(:numStates,i,spinDirection),states,hdferr)
+            & energyEigenValues(:,i,spinDirection),states,hdferr)
       if (hdferr /= 0) stop 'Cannot write energy eigen values.'
 
       ! In the event that we have some atoms with plusUJ terms, we need to
@@ -315,7 +315,7 @@ subroutine secularEqnOneKP (spinDirection,currKPoint,numStates,doSYBD)
 
       ! Write the eigenValue results to disk, in a.u.
       call h5dwrite_f (eigenValuesBand_did(currKPoint,spinDirection),&
-            & H5T_NATIVE_DOUBLE,energyEigenValues(:numStates,currKPoint,&
+            & H5T_NATIVE_DOUBLE,energyEigenValues(:,currKPoint,&
             & spinDirection),statesBand,hdferr)
       if (hdferr /= 0) stop 'Cannot write energy eigen values.'
 
@@ -342,11 +342,11 @@ subroutine update1UJ (currKPoint, valeValeRho)
    implicit none
 
    ! Declare the passed parameters.
-   integer :: currKPoint
+   integer, intent(in) :: currKPoint
 #ifndef GAMMA
-   complex (kind=double), dimension (:,:,:) :: valeValeRho
+   complex (kind=double), intent(inout), dimension (:,:,:) :: valeValeRho
 #else
-   real (kind=double), dimension (:,:,:) :: valeValeRho
+   real (kind=double),intent(inout), dimension (:,:,:) :: valeValeRho
 #endif
 
    ! Declare local variables.
@@ -560,8 +560,7 @@ subroutine shiftEnergyEigenValues(energyShift,numStates)
    integer, intent (in) :: numStates
 
    ! Shift the energyEigenValues down by the requested about.
-   energyEigenValues(:numStates,:,:) = &
-         & energyEigenValues(:numStates,:,:) - energyShift
+   energyEigenValues(:,:,:) = energyEigenValues(:,:,:) - energyShift
 
 end subroutine shiftEnergyEigenValues
 
@@ -595,11 +594,11 @@ subroutine readEnergyEigenValuesBand(numStates)
    do i = 1, numKPoints
       do j = 1, spin
          call h5dread_f (eigenValuesBand_did(i,j),H5T_NATIVE_DOUBLE,&
-               & energyValuesTemp(:numStates),statesBand,hdferr)
+               & energyValuesTemp(:),statesBand,hdferr)
          if (hdferr /= 0) stop 'Failed to read energy eigen values'
 
          ! Copy the necessary values into the final array.
-         energyEigenValues(:numStates,i,j) = energyValuesTemp(:numStates)
+         energyEigenValues(:,i,j) = energyValuesTemp(:)
       enddo
    enddo
 
@@ -642,7 +641,7 @@ subroutine appendExcitedEValsBand (firstStateIndex,numStates)
 
          ! Get the excited state energy values.
          call h5dread_f (eigenValuesBand2_did(i,j),H5T_NATIVE_DOUBLE,&
-               & energyValuesTemp(:numStates),statesBand,hdferr)
+               & energyValuesTemp(:),statesBand,hdferr)
          if (hdferr /= 0) stop 'Failed to read excited energy eigen values'
 
          energyEigenValues(firstStateIndex:numStates,i,j) = &

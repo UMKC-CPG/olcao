@@ -16,11 +16,11 @@ subroutine matrixElementMult(summation,matrix1,matrix2,dim1,dim2)
    implicit none
 
    ! Define the passed parameters.
-   real (kind=double) :: summation
-   integer :: dim1
-   integer :: dim2
-   real (kind=double), dimension (dim1,dim2*(dim2+1)/2) :: matrix1
-   real (kind=double), dimension (dim1,dim2*(dim2+1)/2) :: matrix2
+   real (kind=double), intent(inout) :: summation
+   integer, intent(in) :: dim1
+   integer, intent(in) :: dim2
+   real (kind=double), intent(in), dimension (dim1,dim2*(dim2+1)/2) :: matrix1
+   real (kind=double), intent(in), dimension (dim1,dim2*(dim2+1)/2) :: matrix2
 
    ! Define the local variables
    integer :: i,j
@@ -36,28 +36,15 @@ subroutine matrixElementMult(summation,matrix1,matrix2,dim1,dim2)
    !   packed matrix.
    diagonalIndex = 0
 
-   if (dim1 == 2) then
-
-      do i = 1,dim2
-         do j = diagonalIndex+1, diagonalIndex+i-1
-            tempSummation = tempSummation + &
-                  & matrix1(1,j)*matrix2(1,j) + matrix1(2,j)*matrix2(2,j)
-         enddo
-         diagonalIndex = diagonalIndex + i
-         tempSummation = tempSummation + matrix1(1,diagonalIndex) * &
-               & matrix2(1,diagonalIndex) / 2.0_double
+   do i = 1,dim2
+      do j = diagonalIndex+1, diagonalIndex+i-1
+         tempSummation = tempSummation + &
+               & matrix1(1,j)*matrix2(1,j) + matrix1(2,j)*matrix2(2,j)
       enddo
-   else
-
-      do i = 1,dim2
-         do j = diagonalIndex+1, diagonalIndex+i-1
-            tempSummation = tempSummation + matrix1(1,j)*matrix2(1,j)
-         enddo
-         diagonalIndex = diagonalIndex + i
-         tempSummation = tempSummation + matrix1(1,diagonalIndex) * &
-               & matrix2(1,diagonalIndex) / 2.0_double
-      enddo
-   endif
+      diagonalIndex = diagonalIndex + i
+      tempSummation = tempSummation + matrix1(1,diagonalIndex) * &
+            & matrix2(1,diagonalIndex) / 2.0_double
+   enddo
 
 
    ! Multiply by two for the lower half of the hermitian matrix.
@@ -76,25 +63,25 @@ subroutine matrixElementMultGamma(summation,matrix1,matrix2,dim1,dim2)
    implicit none
 
    ! Define the passed parameters.
-   real (kind=double) :: summation
-   integer :: dim1
-   integer :: dim2
-   real (kind=double), dimension (dim1,dim2*(dim2+1)/2) :: matrix1
-   real (kind=double), dimension (dim1,dim2*(dim2+1)/2) :: matrix2
+   real (kind=double), intent(inout) :: summation
+   integer, intent(in) :: dim1
+   integer, intent(in) :: dim2
+   real (kind=double), intent(in), dimension (dim1,dim2*(dim2+1)/2) :: matrix1
+   real (kind=double), intent(in), dimension (dim1,dim2*(dim2+1)/2) :: matrix2
 
    ! Define the local variables
    integer :: i
    integer :: diagonalIndex
 
    ! Here, we do not have to have a tempSummation or initialize the summation
-   !   because there is only 1 kpoint and the summation were already
+   !   because there is only 1 kpoint and the summation was already
    !   initialized at the beginning of valeCharge.
 
    do i = 1, dim2*(dim2+1)/2
       summation = summation + matrix1(1,i)*matrix2(1,i)
    enddo
 
-   ! Multiply by two for the lower half of the hermitian matrix.
+   ! Multiply by two for the lower half of the symmetric matrix.
    summation = summation * 2.0_double
 
    ! Correct for the fact that the diagonal does not need to be multiplied by 2.

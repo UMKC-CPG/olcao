@@ -210,7 +210,7 @@ subroutine makeCoreRho
 
    ! Initialize the core basis overlap, integrals, initial core coefficients,
    !   and corrected core coefficients.
-   coreBasisOverlap    (:,1:2) = 0.0_double
+   coreBasisOverlap    (:,:) = 0.0_double
    coreIntegrals       (:)   = 0.0_double
    coreCoeffs          (:)   = 0.0_double
    coreCoeffsCorrected (:)   = 0.0_double
@@ -499,10 +499,10 @@ subroutine makeCoreRho
       !   that will reproduce the total core charge of this site.
       call solveDPOSVX (currNumPotAlphas,2,&
             & gaussSelfOverlap(:currNumPotAlphas,:currNumPotAlphas),&
-            & currNumPotAlphas,coreBasisOverlap(:currNumPotAlphas,1:2),info)
+            & currNumPotAlphas,coreBasisOverlap(:currNumPotAlphas,:),info)
 
       if (info /= 0) then
-         write (20, *) 'dposvx failed. INFO= ', info
+         write (20, *) 'Core charge dposvx failed. INFO= ', info
          stop
       endif
 
