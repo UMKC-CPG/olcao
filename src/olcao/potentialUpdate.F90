@@ -819,7 +819,7 @@ subroutine makeSCFPot (totalEnergy)
    exchCorrPot(:,:) = 0.0_double
 
    do i = 1, numPotSites
-errorCount = 0
+!errorCount = 0
       currentType = potSites(i)%potTypeAssn
 
       ! Cycle to the next potential site if the covalent radius of the
@@ -858,7 +858,7 @@ errorCount = 0
          if (spin == 2) then
             spinDiffSum = sum(exchRhoOp(:potDim,j,1) * generalRho(:potDim,8))
             if (abs(spinDiffSum) > totalSum) then
-errorCount = errorCount + 1
+!errorCount = errorCount + 1
 !               write (20,*) "A charge difference between up and down spins ",&
 !                     & "has been found that is greater"
 !               write (20,*) "than the total charge. This is a numerical error",&
@@ -1124,8 +1124,8 @@ errorCount = errorCount + 1
 !                 & exchRhoOp(:potDim,j,1)
 !           enddo
       endif
-write (20,*) "i,error count=",i,errorCount
-call flush (20)
+!write (20,*) "i,error count=",i,errorCount
+!call flush (20)
    enddo ! i = 1, numPotSites
 
    ! Allocate space to hold the exchCorrOverlap
@@ -1372,8 +1372,8 @@ endif
          weightedPotDiff         = sum (radialWeight(:numRayPoints) * &
                & realSpacePotDiff(:numRayPoints,j)**2)
          averageDelta(siteIndex) = sqrt(weightedPotDiff / radialWeightSum)
-write (20,*) "averageDelta,i,j",averageDelta(siteIndex),i,j
-write (20,*) "maxDelta",maxDelta(siteIndex)
+!write (20,*) "averageDelta,i,j",averageDelta(siteIndex),i,j
+!write (20,*) "maxDelta",maxDelta(siteIndex)
          testableDelta           = max (averageDelta(siteIndex),testableDelta)
       enddo
    enddo
@@ -2170,10 +2170,10 @@ subroutine blendPotentialsSCF(firstTerm, numTerms, outCoeffs, inGuessedCoeffs,&
    ! Progressively shift the oldest iterations out by replacing them with an
    !   earlier iteration. (Note that this will do a bit more work than needed
    !   during the first few SCF cycles, but then it will work fine.
-!   do i = feedbackLevel, 1, -1
-!      inUsedCoeffs(:,i+1) = inUsedCoeffs(:,i)
-!      inGuessedCoeffs(:,i+1) = inGuessedCoeffs(:,i)
-!   enddo
+   do i = feedbackLevel, 1, -1
+      inUsedCoeffs(:,i+1) = inUsedCoeffs(:,i)
+      inGuessedCoeffs(:,i+1) = inGuessedCoeffs(:,i)
+   enddo
 !   do i = feedbackLevel, 1, -1
 !      inUsedCoeffs(:,i+1) = inUsedCoeffs(:,i)
 !      inGuessedCoeffs(:,i+1) = inGuessedCoeffs(:,i)
@@ -2305,10 +2305,10 @@ call flush (20)
    ! Compute the difference between the guessed and actually used potential
    !   coefficients for the current iteration and every level of feedback. We
    !   can call these deltas.
-write (20,*) "TERecord(:)",totalEnergyRecord(:)
+!write (20,*) "TERecord(:)",totalEnergyRecord(:)
    do i = 1, maxFeedback+1
-      rlEnergy(i) = totalEnergyRecord(i+1) - totalEnergyRecord(i)
-write (20,*) "i TEi+1 TEi",i,totalEnergyRecord(i+1),totalEnergyRecord(i)
+      rlEnergy(i) = totalEnergyRecord(i) - totalEnergyRecord(i+1)
+!write (20,*) "i TEi+1 TEi",i,totalEnergyRecord(i),totalEnergyRecord(i+1)
    enddo
 
    ! Compute the difference between the deltas from different iterations.
@@ -2316,7 +2316,7 @@ write (20,*) "i TEi+1 TEi",i,totalEnergyRecord(i+1),totalEnergyRecord(i)
    !   each other delta.
    do i = 1, maxFeedback
       drlEnergy(i) = rlEnergy(1) - rlEnergy(i+1)
-write (20,*) "i rlE1 rlEi+1",i,rlEnergy(1),rlEnergy(i+1)
+!write (20,*) "i rlE1 rlEi+1",i,rlEnergy(1),rlEnergy(i+1)
    enddo
 
    ! Allocate space to hold the A matrix and B solutions in the largest
@@ -2380,6 +2380,7 @@ write (20,*) "i rlE1 rlEi+1",i,rlEnergy(1),rlEnergy(i+1)
             write (20,*) "This was the last chance. Stopping."
             write (20,*) "matrix:",matrix(1,1)
             write (20,*) "solutions:",solutions(1)
+            write (20,*) "DPOSVX info = ",info
             stop
          else
             write (20,*) "Failed to solve DPOSVX for potential blending."
@@ -2387,6 +2388,7 @@ write (20,*) "i rlE1 rlEi+1",i,rlEnergy(1),rlEnergy(i+1)
             write (20,*) "Current feedback term was:",i
             write (20,*) "matrix:",matrix(1:i,1:i)
             write (20,*) "solutions:",solutions(1:i)
+            write (20,*) "DPOSVX info = ",info
          endif
          cycle
       endif
