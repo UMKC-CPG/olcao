@@ -3748,6 +3748,8 @@ sub printSCFPot
       else
       {
          $line = <POT>;
+         @values = StructureControl::prepLine("","$line",'\s+');
+         $potDim[$fileSet] += $values[0];
          print OLCAO $line;
          $line = <POT>;
          print OLCAO $line;
@@ -3795,16 +3797,16 @@ sub printSCFPot
    # Print the spin up and spin down components followed by a stub for plusUJ
    #   terms and then close the file. We assume that there are no plusUJ terms.
    
-   print SCFPOT " TOTAL OR SPIN_UP\n";
+   print SCFPOT " TOTAL__OR__SPIN_UP\n";
    print SCFPOT @scfCoeffs;
 
    print SCFPOT " SPIN_DN\n";
    print SCFPOT @scfCoeffs;
 
-   print SCFPOT "NUM PLUSUJ TERMS\n";
+   print SCFPOT "NUM__PLUSUJ__TERMS\n";
    print SCFPOT "0\n";
 
-   print SCFPOT " TOTAL OR SPIN_UP\n";
+   print SCFPOT " TOTAL__O__SPIN_UP\n";
    print SCFPOT " SPIN_DN\n";
 
    close (SCFPOT);
@@ -4602,12 +4604,12 @@ sub makeSubFile
       open (SUBFILE,">$subDir/$slurm_sub") ||
             die "Cannot open $subDir/$slurm_sub for writing.\n";
       $subHeader[0] = "#!/bin/bash\n";
-      $subHeader[1] = "\#SBATCH -p General\n";
+      $subHeader[1] = "\#SBATCH -p Lewis\n";
       $subHeader[2] = "\#SBATCH -J $proj_name\n";
       $subHeader[3] = "\#SBATCH -o $proj_name.o\%J\n";
       $subHeader[4] = "\#SBATCH -e $proj_name.e\%J\n";
       $subHeader[5] = "\#SBATCH -n 1\n";
-      $subHeader[6] = "\#SBATCH -t 60\n";
+      $subHeader[6] = "\#SBATCH -t 00:60:00\n";
       $subHeader[7] = "\#SBATCH --mem=10G\n";
       $subHeader[8] = "\#\n";
    }

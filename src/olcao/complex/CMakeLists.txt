@@ -27,9 +27,10 @@ add_executable(OLCAOsetup ../basis.f90 ../elecStat.f90 ../intgOrtho.F90
 target_link_libraries(OLCAOsetup Common GaussIntegrals)
 
 add_executable(OLCAOmain ../hdf5MainEval.f90 ../hdf5MainEvec.F90 
-  ../hdf5Main.f90 ../hdf5PSCFBand.F90 ../elecStat.f90 ../matrixSubs.F90 
-  ../secularEqn.F90 ../populate.F90 ../valeCharge.F90 ../potentialUpdate.F90 
-  ../dos.F90 ../bond.F90 ../bond3C.F90 ../OLCAO_Main.f90 ../OLCAO_MainWrap.f90 )
+   ../hdf5MainPotRho.f90 ../hdf5Main.f90 ../hdf5PSCFBand.F90 ../elecStat.f90
+   ../matrixSubs.F90 ../secularEqn.F90 ../populate.F90 ../valeCharge.F90
+   ../potentialUpdate.F90 ../dos.F90 ../bond.F90 ../bond3C.F90
+   ../OLCAO_Main.f90 ../OLCAO_MainWrap.f90 )
 target_link_libraries(OLCAOmain Common)
 
 add_executable(OLCAOintg ../basis.f90 ../hdf5PSCFIntg.f90 ../intgOrtho.F90 
@@ -38,32 +39,34 @@ add_executable(OLCAOintg ../basis.f90 ../hdf5PSCFIntg.f90 ../intgOrtho.F90
 target_link_libraries(OLCAOintg Common GaussIntegrals)
 
 add_executable(OLCAOband ../basis.f90 ../hdf5PSCFBand.F90 ../hdf5PSCFIntg.f90 
-  ../hdf5MainEval.f90 ../hdf5MainEvec.F90 ../hdf5Main.f90 ../intgOrtho.F90 
-  ../intgSaving.F90 ../integralsPSCF.F90 ../matrixSubs.F90 ../secularEqn.F90 
-  ../populate.F90 ../OLCAO_Band.F90 ../OLCAO_BandWrap.f90 )
+   ../hdf5MainEval.f90 ../hdf5MainEvec.F90 ../hdf5MainPotRho.f90
+   ../hdf5Main.f90 ../intgOrtho.F90 ../intgSaving.F90 ../integralsPSCF.F90
+   ../matrixSubs.F90 ../secularEqn.F90 ../populate.F90 ../OLCAO_Band.F90
+   ../OLCAO_BandWrap.f90 )
 target_link_libraries(OLCAOband Common GaussIntegrals)
 
 add_executable(OLCAOdos ../hdf5PSCFBand.F90 ../hdf5MainEval.f90 
-  ../hdf5MainEvec.F90 ../hdf5Main.f90 ../matrixSubs.F90 ../secularEqn.F90 
-  ../populate.F90 ../dos.F90 ../OLCAO_DOS.f90 )
+   ../hdf5MainEvec.F90 ../hdf5MainPotRho.f90 ../hdf5Main.f90 ../matrixSubs.F90
+   ../secularEqn.F90 ../populate.F90 ../dos.F90 ../OLCAO_DOS.f90 )
 target_link_libraries(OLCAOdos Common )
 
 add_executable(OLCAObond ../hdf5PSCFBand.F90 ../hdf5MainEval.f90 
-  ../hdf5MainEvec.F90 ../hdf5Main.f90 ../matrixSubs.F90 ../secularEqn.F90 
-  ../populate.F90 ../bond.F90 ../bond3C.F90 ../OLCAO_Bond.f90 )
+   ../hdf5MainEvec.F90 ../hdf5MainPotRho.f90 ../hdf5Main.f90 ../matrixSubs.F90
+   ../secularEqn.F90 ../populate.F90 ../bond.F90 ../bond3C.F90
+   ../OLCAO_Bond.f90 )
 target_link_libraries(OLCAObond Common )
 
 add_executable(OLCAOoptc ../basis.f90 ../hdf5PSCFBand.F90 ../hdf5PSCFIntg.f90
-  ../hdf5MainEval.f90 ../hdf5MainEvec.F90 ../hdf5Main.f90 ../intgOrtho.F90 
-  ../intgSaving.F90 ../integralsPSCF.F90 ../matrixSubs.F90 ../secularEqn.F90 
-  ../populate.F90 ../optc.F90 ../optcPrint.F90 ../OLCAO_Optc.f90 
-  ../OLCAO_OptcWrap.f90 )
+   ../hdf5MainEval.f90 ../hdf5MainEvec.F90 ../hdf5MainPotRho.f90
+   ../hdf5Main.f90 ../intgOrtho.F90 ../intgSaving.F90 ../integralsPSCF.F90
+   ../matrixSubs.F90 ../secularEqn.F90 ../populate.F90 ../optc.F90
+   ../optcPrint.F90 ../OLCAO_Optc.f90 ../OLCAO_OptcWrap.f90 )
 target_link_libraries(OLCAOoptc Common GaussIntegrals)
 
 add_executable(OLCAOwave ../basis.f90 ../hdf5PSCFBand.F90
-  ../hdf5MainEval.f90 ../hdf5MainEvec.F90 ../hdf5Main.f90 ../matrixSubs.F90 
-  ../secularEqn.F90 ../populate.F90 ../openDX.f90 ../wave.F90 
-  ../OLCAO_Wave.f90 )
+   ../hdf5MainEval.f90 ../hdf5MainEvec.F90 ../hdf5MainPotRho.f90
+   ../hdf5Main.f90 ../matrixSubs.F90 ../secularEqn.F90 ../populate.F90
+   ../openDX.f90 ../wave.F90 ../OLCAO_Wave.f90 )
 target_link_libraries(OLCAOwave Common )
 
 install(TARGETS OLCAOsetup OLCAOmain OLCAOintg OLCAOband OLCAOdos

@@ -554,12 +554,13 @@ subroutine neutralAndNuclearQPot
                ! Identify the index of the charge array to be filled
                arrayIndex = initAlphaIndex(1) + m
 
-               ! Calculate the nuclear potential factor
+               ! Calculate the sum of nuclear and electronic potential alphas.
                nuclearFactor = currentAlphas(m,1) + &
                      & potTypes(currentType(2))%nucAlpha
 
-               ! Calculate the magnitude of the screening vector for this index?
-               screenMagnitude = currentAlphas(m,1) * potSiteOffsetSqrd * &
+               ! Calculate the magnitude of the screening vector for this
+               !   index. This is like: r^2 * alpha1*alpha2 / (alpha1+alpha2).
+               screenMagnitude = potSiteOffsetSqrd * currentAlphas(m,1) * &
                      & potTypes(currentType(2))%nucAlpha / nuclearFactor
 
                if (screenMagnitude < logElecThresh) then
@@ -582,7 +583,7 @@ subroutine neutralAndNuclearQPot
                         & exp(-screenMagnitude) * x2pi / nuclearFactor
                   endif
                else
-                  exit ! Exit with the screenmagnitude is sufficiently small.
+                  exit ! Exit when the screenMagnitude is sufficiently small.
                endif
             enddo
          enddo

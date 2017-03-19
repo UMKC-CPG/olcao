@@ -34,6 +34,7 @@ subroutine initMainHDF5(numStates)
    use HDF5
    use O_MainEValHDF5, only: initMainEValHDF5
    use O_MainEVecHDF5, only: initMainEVecHDF5
+   use O_MainPotRhoHDF5, only: initMainPotRhoHDF5
 
    ! Make sure that no funny variables are defined.
    implicit none
@@ -71,7 +72,8 @@ subroutine initMainHDF5(numStates)
 
    ! Then create the necessary subgroups of the main hdf5 file.
    call initMainEVecHDF5 (main_fid,numStates)
-   call initMainEValHDF5  (main_fid,numStates)
+   call initMainEValHDF5 (main_fid,numStates)
+   call initMainPotRhoHDF5 (main_fid)
 
 end subroutine initMainHDF5
 
@@ -82,6 +84,7 @@ subroutine closeMainHDF5
    use HDF5
    use O_MainEValHDF5, only: closeMainEValHDF5
    use O_MainEVecHDF5, only: closeMainEVecHDF5
+   use O_MainPotRhoHDF5, only: closeMainPotRhoHDF5
 
    ! Make sure that no funny variables are defined.
    implicit none
@@ -100,6 +103,7 @@ subroutine closeMainHDF5
    ! Close the subgroups of the main hdf5 file.
    call closeMainEVecHDF5
    call closeMainEValHDF5
+   call closeMainPotRhoHDF5
 
 end subroutine closeMainHDF5
 

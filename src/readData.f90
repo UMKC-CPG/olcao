@@ -170,11 +170,10 @@ subroutine readDoubleArray (readUnit,writeUnit,numValues,doubleArray,length,&
    implicit none
 
    ! Passed parameters
-   integer, intent (in)    :: numValues  ! Number of array values.
-   real (kind=double), intent (out),&
-         & dimension(numValues) :: doubleArray ! Array to read.
-   integer, intent (in)    :: length     ! Label length
-   character (LEN=length)  :: lookLabel  ! Label that we are looking for.
+   integer, intent (in)   :: numValues  ! Number of array values.
+   real (kind=double), intent(out), dimension(:) :: doubleArray ! Array to read
+   integer, intent (in)   :: length     ! Label length
+   character (LEN=length) :: lookLabel  ! Label that we are looking for.
    integer, intent(in)    :: readUnit  ! The unit number of the file from which
                                        ! we are reading.
    integer, intent(in)    :: writeUnit  ! The unit number of the file to which
@@ -207,10 +206,9 @@ subroutine readDoubleMatrix (readUnit,writeUnit,numValues1,numValues2,&
    ! Passed parameters
    integer, intent (in)   :: numValues1 ! Number of matrix dim1 values.
    integer, intent (in)   :: numValues2 ! Number of matrix dim2 values.
-   real (kind=double), intent (out), &
-         & dimension(numValues1,numValues2) :: doubleMatrix ! Matrix to read.
-   integer, intent (in)    :: length     ! Label length
-   character (LEN=length)  :: lookLabel  ! Label that we are looking for.
+   real (kind=double), intent(out), dimension(:,:) :: doubleMatrix ! M to read.
+   integer, intent (in)   :: length     ! Label length
+   character (LEN=length) :: lookLabel  ! Label that we are looking for.
    integer, intent(in)    :: readUnit  ! The unit number of the file from which
                                        ! we are reading.
    integer, intent(in)    :: writeUnit  ! The unit number of the file to which
@@ -387,7 +385,7 @@ subroutine readIntArray (readUnit,writeUnit,numValues,intArray,length,lookLabel)
 
    ! Passed parameters
    integer                :: numValues ! Number of array values.
-   integer, dimension(numValues) :: intArray ! Array to read.
+   integer, dimension(:) :: intArray ! Array to read.
    integer                :: length     ! Label length
    character (LEN=length) :: lookLabel  ! Label that we are looking for.
    integer, intent(in)    :: readUnit  ! The unit number of the file from which

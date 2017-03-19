@@ -18,6 +18,7 @@ sub printHelp
 #              [-sybd [\$edge]]] |
 #              -help
 #
+#
 #\$edge is either "gs", "1s", "2s", "2p", "3s", "3p", ... 
 #-scf option accepts these parameters:  "EB", "FB", "MB", and "NO".  These
 #       will request the type of basis to use for the scf portion of the
@@ -45,6 +46,12 @@ sub printHelp
 #       calculations can be done in one command line, and with the minimal
 #       amount of work possible.  Some jobs need to be done in a certain way.
 #
+#Note: If the output file from any portion of a calculation sequence is found
+#       to already exist, then that portion of the calculation sequence will be
+#       skipped. (For example, if "gs_main-fb.out" is present in the project
+#       directory, then the "main" portion of the calculation will be skipped
+#       if any attempt were made to run it.
+#       
 #-pacs will do a spectral calculation from an initial state to a final state.
 #       The type of calculation, and the potentials used depends on the case of
 #       the requested edge.  You MUST provide an edge for the -pacs option.

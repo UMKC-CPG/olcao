@@ -441,12 +441,13 @@ subroutine initPotCoeffs
    integer :: i,j,k ! Loop index variables
    integer :: potTermCount
    integer :: tempInt
+   real (kind=double) :: spaceHolder0 ! Spin down coefficients
    real (kind=double) :: spaceHolder1 ! Gaussian exponential alphas
-   real (kind=double) :: spaceHolder2 ! Total charge density
-   real (kind=double) :: spaceHolder3 ! Valence charge density
-   real (kind=double) :: spaceHolder4 ! Up - Down valence charge density.
+   real (kind=double) :: spaceHolder2 ! Total (core+vale (up+down)) chrg dsty.
+   real (kind=double) :: spaceHolder3 ! Valence (up+down) charge density.
+   real (kind=double) :: spaceHolder4 ! Valence (up-down) charge density.
 
-   ! Allocate space for the potential coefficients.
+   ! Allocate space for the potential coefficients and the alphas.
    allocate (potCoeffs(potDim,spin))
 
    ! Read the existing potential coefficients for each term, or for the
@@ -467,10 +468,11 @@ subroutine initPotCoeffs
          read (8,*) tempInt ! The number of terms for this type.
 
          if (tempInt /= potTypes(j)%numAlphas) then
-            write (20,*) "Mismatch between scfV and olcao.dat"
+            write (20,*) "Mismatch between scfV and olcao.dat:"
             write (20,*) "scfV claims type ",j," has ",tempInt," terms"
             write (20,*) "olcao.dat claims type ",j," has ",&
                   & potTypes(j)%numAlphas," terms"
+            stop
          endif
 
          do k = 1, potTypes(j)%numAlphas
@@ -478,8 +480,8 @@ subroutine initPotCoeffs
             ! Increment the counter.
             potTermCount = potTermCount + 1
 
-            read (8,*) potCoeffs(potTermCount,i), spaceHolder1, spaceHolder2,&
-               & spaceHolder3, spaceHolder4 
+            read (8,*) potCoeffs(potTermCount,i), spaceHolder1, spaceHolder2, &
+                  & spaceHolder3, spaceHolder4
          enddo
       enddo
    enddo
@@ -490,9 +492,10 @@ subroutine initPotCoeffs
    if (spin == 1) then
       read (8,*) ! SPIN_DN tag
       do j = 1, numPotTypes
-         read (8,*) ! Num terms tag
+         read (8,*) spaceHolder1 ! Num terms data
          do k = 1, potTypes(j)%numAlphas
-            read (8,*) ! Duplicate data we ignore
+            read (8,*) spaceHolder0, spaceHolder1, spaceHolder2, spaceHolder3,&
+                  & spaceHolder4 ! Duplicate data that we can ignore
          enddo
       enddo
    endif
@@ -514,9 +517,10 @@ subroutine initPotCoeffs
    read (8,*) ! Line with a "NUM_PLUSUJ_TERMS" tag on it.
    read (8,*) tempInt ! Number of atoms with a +UJ term.
    if (tempInt /= numPlusUJAtoms) then
-      write (20,*) "Mismatch between scfV and olcao.dat: scfV claims that"
-      write (20,*) "there are ",tempInt," PlusUJ terms while olcao.dat claims"
-      write (20,*) "that there are ",numPlusUJAtoms,"."
+      write (20,*) "Mismatch between scfV and olcao.dat:"
+      write (20,*) "scfV claims that there are ",tempInt," PlusUJ terms"
+      write (20,*) "olcao.dat claims that there are ",numPlusUJAtoms,"."
+      stop
    endif
 
    ! As discussed in the potentialUpdate.f90 file, this loop must go from 1 to
@@ -525,7 +529,7 @@ subroutine initPotCoeffs
    !   the value of spin==1 then the second set of data is redundent and it will
    !   be read in, but ignored.
    do j = 1, 2
-      read (8,*) ! Line with a "TOTAL OR SPIN_UP" tag on it for i==1 or a
+      read (8,*) ! Line with a "TOTAL__OR__SPIN_UP" tag on it for i==1 or a
                  !   "SPIN_DN" tag on it for i==2.
 
       ! Read the 1:7 +UJ array for each atom. Note that for d-type orbitals the
@@ -533,10 +537,10 @@ subroutine initPotCoeffs
       do k = 1, numPlusUJAtoms
          read (8,*) tempInt ! Atom ID number
          if (tempInt /= plusUJAtomID(k)) then
-            write (20,*) "Mismatch between scfV and olcao.dat: scfV claims that"
-            write (20,*) "atom ",tempInt," is atom number ",j," in the list, "
-            write (20,*) "but olcao.dat claims that it should be ",&
-                  & plusUJAtomID(k)
+            write (20,*) "Mismatch between scfV and olcao.dat:"
+            write (20,*) "scfV claims atom ",tempInt," is atom number ",j
+            write (20,*) "olcao.dat claims that it is ", plusUJAtomID(k)
+            stop
          endif
          do i = 1, numKPoints
 !#ifndef GAMMA

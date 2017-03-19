@@ -273,10 +273,10 @@ subroutine solveDPOSVX (N, NRHS, A, LD, B, INFO)
          & resultMatrix,LD,conditionNumber,forwardError,backwardError,&
          & realWorkSpace,integerWorkSpace,info)
 
-   if (info /= 0) then
-      write (20, *) 'dposvx failed. INFO= ', info
-      stop
-   endif
+!   if (info /= 0) then
+!      write (20, *) 'dposvx failed. INFO= ', info
+!      stop
+!   endif
 
    ! Recover the solution into the given B matrix.
    B(:,:) = resultMatrix(:,:)

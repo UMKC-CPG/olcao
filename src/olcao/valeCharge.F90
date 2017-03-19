@@ -417,7 +417,6 @@ subroutine makeValenceRho
    call cleanUpSecularEqn
 
    ! Deallocate other arrays and matrices defined in this subroutine.
-   deallocate (chargeDensityTrace)
    deallocate (structuredElectronPopulation)
    deallocate (packedValeValeSpin)
    deallocate (currentPopulation)
