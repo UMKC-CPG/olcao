@@ -397,7 +397,7 @@ sub initEnv
    # Assume a scaling factor of 10.0 for the atom and cell size so that 1.0
    #   angstrom is equal to 10.0mm.
    $aScale = 10.0;
-   $cScale = 10.0;
+   $cScale = 12.0;
 
    # The scaling factor for the bond diameter is set equal to 1.0 so that when
    #   the default bond diameter of 10% of the largest covalent radius is
@@ -932,6 +932,7 @@ sub printOpenScad
    # Define local variables.
    my $xyz;
    my $atom;
+   my $hemisphere;
    my $bond;
    my $out;
    my $sheet;
@@ -1121,7 +1122,8 @@ print STDOUT "reducedNumBondsExt=$reducedNumBondsExt\n";
       # Print the module for making the bonds and cell vectors. Note that the
       #   1 flag near the end is for requesting that corner spheres be included
       #   in the print.  These should not be included when printing the bonds
-      #   and vectors (BAV) as a skeleton for subtracting holes.
+      #   and vectors (BAV) as a skeleton for subtracting holes (as is done
+      #   in the other "parts" section).
       &printBAVModule(\*OUT,$minAtomRadius,$maxAtomRadius,\@scaledCoords,
             \@scaledCoordsExt,$bondRadius,$reducedBondInfoExt_ref,
             $reducedNumBondsExt,\@atomNumIndex,1,$doParts);
@@ -1137,114 +1139,139 @@ print STDOUT "reducedNumBondsExt=$reducedNumBondsExt\n";
    }
    else
    {
-      # Close the originally opened OUT handle.
+      # Close the originally opened OUT handle. We need multiple output files.
       close (OUT);
 
-      # We are going to print the sheets of atoms first.
+      # We are going to print the sheets of atom hemispheres first.
 
       # Select the grid step size.
       $xStepSize = 2.0*$maxAtomRadius+0.5*$maxAtomRadius;
       $yStepSize = 2.0*$maxAtomRadius+0.5*$maxAtomRadius;
 
-      # Determine the maximum number of atoms in the x and y directions based
-      #   on the maximum atom radius.
+      # Determine the maximum number of atom hemispheres in the x and y
+      #   directions based on the maximum atom radius.
       $maxXItems = floor($xVol3D/$xStepSize);
       $maxYItems = floor($yVol3D/$yStepSize);
 
-      # Compute the number of sheets to print.
-      $numItemSheets = ceil($numAtoms/($maxXItems*$maxYItems));
+      # Compute the number of sheets to print. The times 2 is because we will
+      #   have one set up top and one set of bottom hemisphere sheets.
+      $numItemSheets = ceil($numAtoms/($maxXItems*$maxYItems))*2;
 
-      # Initialize the starting atom number for the first sheet.
-      $startingItemNumber = 1;
-
-      # Print the sheets.
-      foreach $sheet (1..$numItemSheets)
+      # Print the sheets of atom hemispheres. We will do the top first, and
+      #   then the bottom.
+      foreach $hemisphere (1..2)
       {
-         # Open the file for this sheet.
-         open (OUT, "> atomSheet$sheet.scad") ||
-               die "Cannot open atomSheet$sheet.scad for writing\n";
+         # Initialize the starting atom number for the first sheet.
+         $startingItemNumber = 1;
 
-         # Use the write module to allow for adding text labels to each of the
-         #   rod and sphere components.
-         print OUT ("use <write.scad>\n");
-
-         # Initialize the position for the atoms on the sheet in the x-y axis.
-         $sheetPos1[1] = $maxAtomRadius;
-         $sheetPos1[2] = $maxAtomRadius;
-
-         # Initialize the count of our current position in the x-y grid.
-         $xGridPos = 1;
-         $yGridPos = 1;
-
-         # Print the module for making rods.
-         &printRodModule(\*OUT);
-
-         # Print the module for making labels that will appear on the spheres.
-         &printSphereLabelModule(\*OUT);
-
-         # Print module for making a sphere that is translated to a give point.
-         &printTransSphereModule(\*OUT);
-
-         # Print the module for making the bonds and vectors skeleton.  Note
-         #   that the 0 flag on the end requests that no corner spheres be
-         #   included in the definition of the skeleton.  The corner spheres
-         #   will have to be explicitly requested later.
-         &printBAVModule(\*OUT,$minAtomRadius,$maxAtomRadius,\@scaledCoords,
-               \@scaledCoordsExt,$bondRadius,$reducedBondInfoExt_ref,
-               $reducedNumBondsExt,\@atomNumIndex,0,$doParts);
-
-         # Add each atom to the sheet.
-         foreach $atom ($startingItemNumber..$numAtoms)
+         foreach $sheet (1..$numItemSheets)
          {
-            # Adjust the height of the current atom on the sheet.
-            $sheetPos1[3] = $scaledAtomRadius[$atom];
-
-            &addAtomToSheet(\*OUT,$atom,$scaledCoords[$atom],\@sheetPos1,
-                  $scaledAtomRadius[$atom]);
-
-            # Record that we have added an atom in the x-axis and update the
-            #   position for the next atom.
-            $xGridPos++;
-            $sheetPos1[1] += $xStepSize;
-
-            # If this puts us over the maximum number of cells in the x-axis
-            #   direction of the grid, then reset the x-axis count, reset the
-            #   grid position on the x-axis to the first cell, increment
-            #   the y-axis grid position, and increment the y-axis sheet pos.
-            if ($xGridPos > $maxXItems)
+            # Open the file for this sheet.
+            if ($hemisphere == 1)
             {
-               $xGridPos = 1;
-               $sheetPos1[1] = $maxAtomRadius;
-               $yGridPos++;
-               $sheetPos1[2] += $yStepSize;
+               open (OUT, "> atomTopSheet$sheet.scad") ||
+                     die "Cannot open atomTopSheet$sheet.scad for writing\n";
             }
-
-            # If this takes us over the maximum number of cells in the y-axis
-            #   direction of the grid, reset the y-axis count and start a new
-            #   sheet. Then record the last atom printed so that the new sheet
-            #   can start from the next atom.
-            if ($yGridPos > $maxYItems)
+            else
             {
-               $yGridPos = 1;
-               $sheetPos1[2] = $maxAtomRadius;
+               open (OUT, "> atomBotSheet$sheet.scad") ||
+                     die "Cannot open atomBotSheet$sheet.scad for writing\n";
+            }
+   
+            # Use the write module to allow for adding text labels to each of
+            #   the rod and sphere components.
+            print OUT ("use <write.scad>\n");
+
+            # Set default facet values.
+            print OUT ("\$fa=0.5; // default minimum facet angle\n");
+            print OUT ("\$fs=0.5; // default minimum facet size\n");
+   
+            # Initialize the position for the hemispheres on the sheet in the
+            #    x-y axis.
+            $sheetPos1[1] = $maxAtomRadius;
+            $sheetPos1[2] = $maxAtomRadius;
+   
+            # Initialize the count of our current position in the x-y grid.
+            $xGridPos = 1;
+            $yGridPos = 1;
+   
+            # Print the module for making rods.
+            &printRodModule(\*OUT);
+   
+            # Print the module for making labels that will appear on the
+            #   spheres.
+            &printSphereLabelModule(\*OUT);
+   
+            # Print module for making a sphere that is translated to a given
+            #   point.
+            &printTransSphereModule(\*OUT);
+   
+            # Print module for making a cube that is translated to a given
+            #   point.
+            &printTransSubCubeModule(\*OUT);
+   
+            # Print the module for making the bonds and vectors skeleton.  Note
+            #   that the 0 flag on the end requests that no corner spheres be
+            #   included in the definition of the skeleton.  The corner spheres
+            #   will have to be explicitly requested later.
+            &printBAVModule(\*OUT,$minAtomRadius,$maxAtomRadius,\@scaledCoords,
+                  \@scaledCoordsExt,$bondRadius,$reducedBondInfoExt_ref,
+                  $reducedNumBondsExt,\@atomNumIndex,0,$doParts);
+   
+            # Add each atom hemisphere to the sheet.
+            foreach $atom ($startingItemNumber..$numAtoms)
+            {
+               # Adjust the height of the current atom on the sheet.
+               #$sheetPos1[3] = $scaledAtomRadius[$atom];
+               $sheetPos1[3] = 0;
+   
+               &addAtomToSheet(\*OUT,$atom,$scaledCoords[$atom],\@sheetPos1,
+                     $scaledAtomRadius[$atom],$hemisphere);
+   
+               # Record that we have added an atom in the x-axis and update the
+               #   position for the next atom.
+               $xGridPos++;
+               $sheetPos1[1] += $xStepSize;
+   
+               # If this puts us over the maximum number of cells in the x-axis
+               #   direction of the grid, then reset the x-axis count, reset the
+               #   grid position on the x-axis to the first cell, increment
+               #   the y-axis grid position, and increment the y-axis sheet pos.
+               if ($xGridPos > $maxXItems)
+               {
+                  $xGridPos = 1;
+                  $sheetPos1[1] = $maxAtomRadius;
+                  $yGridPos++;
+                  $sheetPos1[2] += $yStepSize;
+               }
+   
+               # If this takes us over the maximum number of cells in the y-axis
+               #   direction of the grid, reset the y-axis count and start a new
+               #   sheet. Then record the last atom printed so that the new
+               #   sheet can start from the next atom.
+               if ($yGridPos > $maxYItems)
+               {
+                  $yGridPos = 1;
+                  $sheetPos1[2] = $maxAtomRadius;
+                  $lastItemNumberPrinted = $atom;
+                  last;
+               }
+   
+               # Record the last atom number printed in case the current sheet
+               #   finishes before it is full.
                $lastItemNumberPrinted = $atom;
-               last;
             }
-
-            # Record the last atom number printed in case the current sheet
-            #   finishes before it is full.
-            $lastItemNumberPrinted = $atom;
-         }
-
-         # Close the OUT file for this sheet.
-         close (OUT);
-
-         # Set up the starting atom for the next sheet and abort if this sheet
-         #   just happened to perfectly fit the number of atoms.
-         $startingItemNumber = $lastItemNumberPrinted + 1;
-         if ($startingItemNumber > $numAtoms)
-            {last;}
-      }
+   
+            # Close the OUT file for this sheet.
+            close (OUT);
+   
+            # Set up the starting atom for the next sheet and abort if this
+            #   sheet just happened to perfectly fit the number of atoms.
+            $startingItemNumber = $lastItemNumberPrinted + 1;
+            if ($startingItemNumber > $numAtoms)
+               {last;}
+         } # End sheet loop
+      } # End hemisphere loop
 
       # Now we do the bonds.
 
@@ -1284,6 +1311,10 @@ print STDOUT "reducedNumBondsExt=$reducedNumBondsExt\n";
          # Use the write module to allow for adding text labels to each of the
          #   rod and sphere components.
          print OUT ("use <write.scad>\n");
+
+         # Set default facet values.
+         print OUT ("\$fa=0.5; // default minimum facet angle\n");
+         print OUT ("\$fs=0.5; // default minimum facet size\n");
 
          # Initialize the end points for the first bond on the sheet in the
          #   x-y axis.
@@ -1379,7 +1410,8 @@ sub printRodModule
    print $out "   translate(v=[xPos,yPos,zPos]) {\n";
    print $out "      rotate(a=angle, v=[xNormal,yNormal,zNormal]) {\n";
    print $out "         translate(v=[0,0,shift]) {\n";
-   print $out "            cylinder(h=length,r=radius,\$fn=100);}}}\n";
+#   print $out "            cylinder(h=length,r=radius,\$fn=50);}}}\n";
+   print $out "            cylinder(h=length,r=radius);}}}\n";
    print $out "}\n";
 }
 
@@ -1396,31 +1428,36 @@ sub printRodLabelModule
    print $out "      translate(v=[xPos,yPos,zPos]) {\n";
    print $out "         rotate(a=angle, v=[xNormal,yNormal,zNormal]) {\n";
    print $out "            translate(v=[0,0,shift]) {\n";
-   print $out "               cylinder(h=length,r=radius,\$fn=100);}}}\n";
+#   print $out "               cylinder(h=length,r=radius,\$fn=50);}}}\n";
+   print $out "               cylinder(h=length,r=radius);}}}\n";
 
    print $out "      translate(v=[xPos,yPos,zPos]) {\n";
    print $out "         rotate(a=angle, v=[xNormal,yNormal,zNormal]) {\n";
    print $out "            translate(v=[0,0,shift]) {\n";
    print $out "               writecylinder(atomLabel1,[0,0,0],radius,length,";
-   print $out "up=length*1/3,h=radius,rotate=90,\$fn=100);}}}\n";
+#   print $out "up=length*1/3,h=radius,rotate=90,\$fn=50);}}}\n";
+   print $out "up=length*1/3,h=radius,rotate=90);}}}\n";
 
    print $out "      translate(v=[xPos,yPos,zPos]) {\n";
    print $out "         rotate(a=angle, v=[xNormal,yNormal,zNormal]) {\n";
    print $out "            translate(v=[0,0,shift]) {\n";
    print $out "               writecylinder(atomLabel2,[0,0,0],radius,length,";
-   print $out "down=length*1/3,h=radius,rotate=90,\$fn=100);}}}\n";
+#   print $out "down=length*1/3,h=radius,rotate=90,\$fn=50);}}}\n";
+   print $out "down=length*1/3,h=radius,rotate=90);}}}\n";
 
    print $out "      translate(v=[xPos,yPos,zPos]) {\n";
    print $out "         rotate(a=angle, v=[xNormal,yNormal,zNormal]) {\n";
    print $out "            translate(v=[0,0,shift]) {\n";
    print $out "               writecylinder(label1,[0,0,0],radius,length,";
-   print $out "up=length*1/6,h=radius,rotate=90,\$fn=100);}}}\n";
+#   print $out "up=length*1/6,h=radius,rotate=90,\$fn=50);}}}\n";
+   print $out "up=length*1/6,h=radius,rotate=90);}}}\n";
 
    print $out "      translate(v=[xPos,yPos,zPos]) {\n";
    print $out "         rotate(a=angle, v=[xNormal,yNormal,zNormal]) {\n";
    print $out "            translate(v=[0,0,shift]) {\n";
    print $out "               writecylinder(label2,[0,0,0],radius,length,";
-   print $out "down=length*1/6,h=radius,rotate=90,\$fn=100);}}}\n";
+#   print $out "down=length*1/6,h=radius,rotate=90,\$fn=50);}}}\n";
+   print $out "down=length*1/6,h=radius,rotate=90);}}}\n";
    print $out "   }\n";
    print $out "}\n";
 }
@@ -1444,7 +1481,8 @@ sub printSphereLabelModule
    print $out "      rotate(a=angle, v=[xNormal,yNormal,zNormal]) {\n";
    print $out "         translate(v=[0,0,shift]) {\n";
    print $out "            writecube(label,[0,0,0],[radius,radius,distance],";
-   print $out "t=thickness,h=radius*2,face=\"top\",\$fn=100);}}}\n";
+#   print $out "t=thickness,h=radius*2,face=\"top\",\$fn=50);}}}\n";
+   print $out "t=thickness,h=radius*2,face=\"top\");}}}\n";
    print $out "}\n";
 }
 
@@ -1456,7 +1494,21 @@ sub printTransSphereModule
    # Print out the modules that will be used to make a translated sphere.
    print $out "module transSphere(xPos,yPos,zPos,radius)\n";
    print $out "{\n";
-   print $out "   translate(v=[xPos,yPos,zPos]) {sphere(r=radius,\$fn=100);}\n";
+#   print $out "   translate(v=[xPos,yPos,zPos]) {sphere(r=radius,\$fn=50);}\n";
+   print $out "   translate(v=[xPos,yPos,zPos]) {sphere(r=radius);}\n";
+   print $out "}\n";
+}
+
+sub printTransSubCubeModule
+{
+   # Define passed parameters.
+   my $out = $_[0];
+
+   # Print out the module that will be used to make a translated cube.
+   print $out "module transSubCube(xPos,yPos,zPos,length)\n";
+   print $out "{\n";
+   print $out "   translate(v=[xPos,yPos,zPos]) ".
+         "{cube(size=length,center=true);}\n";
    print $out "}\n";
 }
 
@@ -1604,8 +1656,10 @@ sub printBAVModule
          # This will make two numbers in space that are the bond numbers for
          #   the two atoms joined by this bond.
          &printRod(\@point1XYZ,\@point2XYZ,$bondRadius,$minAtomRadius,
-               $maxAtomRadius,$out,$atomNumIndex_ref->[$reducedBondInfoExt_ref->[$bond][1]],
-               $atomNumIndex_ref->[$reducedBondInfoExt_ref->[$bond][2]],$label1,$label2,1);
+               $maxAtomRadius,$out,
+               $atomNumIndex_ref->[$reducedBondInfoExt_ref->[$bond][1]],
+               $atomNumIndex_ref->[$reducedBondInfoExt_ref->[$bond][2]],
+               $label1,$label2,1);
       }
    }
 
@@ -1758,8 +1812,8 @@ sub printRod
       print $out "$rodLength,$rodRadius);\n";
    }
 
-   # If the labelCode is 1, then print the label number next to the rod (so
-   #   that it will appear on the sphere when subtracted away).
+   # If the labelCode is 1, then print the label number next to the rod
+   #   (so that it will appear on the sphere when subtracted away).
    if ($labelCode == 1)
    {
       # Compute the label thickness. Because the label is positioned between
@@ -1813,9 +1867,11 @@ sub printRod
    # Print labels onto the rods if requested.
    if ($labelCode == 2)
    {
-      print $out "labeledRod($point1_ref->[1],$point1_ref->[2],$point1_ref->[3],";
+      print $out "labeledRod($point1_ref->[1],$point1_ref->[2]," .
+            "$point1_ref->[3],";
       print $out "$angle,$normal[1],$normal[2],$normal[3],$rodShift,";
-      print $out "$rodLength,$rodRadius,\"$atomLabel1\",\"$atomLabel2\",\"$label1\",\"$label2\");\n";
+      print $out "$rodLength,$rodRadius,\"$atomLabel1\",\"$atomLabel2\"," .
+            "\"$label1\",\"$label2\");\n";
    }
 }
 
@@ -1828,8 +1884,34 @@ sub printSphere
 
    print $out "   transSphere($point_ref->[1],$point_ref->[2],$point_ref->[3],";
    print $out "$radius);\n";
-#   print $out "   translate(v=[$point_ref->[1],$point_ref->[2],".
-#             "$point_ref->[3]]) {sphere($radius, \$fn=100);}\n";
+}
+
+sub printSubCube
+{
+   # Define passed parameters.
+   my $point_ref  = $_[0];
+   my $radius     = $_[1];
+   my $hemisphere = $_[2]; # 1=Print Top, Sub Bottom; 2=Print Bottom, Sub Top
+   my $out        = $_[3]; # File handle
+
+   # Define local variables.
+   my @cubePos;
+   my $cubeSize;
+
+   # Compute the cube position. Cube will be created centered at the origin.
+   $cubePos[1] = $point_ref->[1];
+   $cubePos[2] = $point_ref->[2];
+   if ($hemisphere == 1)
+      {$cubePos[3] = $point_ref->[3] - $radius;}
+   else
+      {$cubePos[3] = $point_ref->[3] + $radius;}
+
+   # Compute the cube size. It should be just a tad larger than the sphere.
+   $cubeSize = $radius*2.0 + 0.01*$radius;
+
+   # Request a translated cube for subtraction.
+   print $out "      transSubCube($cubePos[1],$cubePos[2],$cubePos[3],".
+         "$cubeSize);\n";
 }
 
 sub addAtomToSheet
@@ -1840,10 +1922,17 @@ sub addAtomToSheet
    my $atomPos_ref = $_[2];
    my $sheetPos_ref = $_[3];
    my $radius = $_[4];
+   my $hemisphere = $_[5];
 
    # Define local variables.
    my $xyz;
    my @transVect;
+   my $rotation;
+
+   if ($hemisphere == 1)
+      {$rotation = 0;}
+   else
+      {$rotation = 180;}
 
    # Compute the translation vector for the atom from its position within the
    #   cell to its position on the sheet.
@@ -1853,11 +1942,14 @@ sub addAtomToSheet
    # Now we need to translate the difference object that is taken between the
    #   atom and the skeleton.  The difference object will have holes in all the
    #   right places and it will be translated to the correct spot on the sheet.
+   print $out "rotate([0,$rotation,0]) {\n";
    print $out "translate(v=[$transVect[1],$transVect[2],$transVect[3]]) {\n";
    print $out "   difference() {\n   ";
    &printSphere($atomPos_ref,$radius,$out);
    print $out "      bondsAndVectors();\n";
+   &printSubCube($atomPos_ref,$radius,$hemisphere,$out);
    print $out "   }\n";
+   print $out "}\n";
    print $out "}\n";
 }
 
