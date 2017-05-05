@@ -932,6 +932,7 @@ sub printOpenScad
    # Define local variables.
    my $xyz;
    my $atom;
+   my $angle; # This is the angle at which the key is positioned & rotated.
    my $hemisphere;
    my $bond;
    my $out;
@@ -1061,8 +1062,6 @@ sub printOpenScad
    $reducedBondInfoExt_ref = $returnValue[0];
    $reducedNumBondsExt = $returnValue[1];
 
-print STDOUT "reducedNumBondsExt=$reducedNumBondsExt\n";
-
    # Scale the bond lengths.
    foreach $bond (1..$reducedNumBondsExt)
       {$reducedBondInfoExt_ref->[$bond][3] *= $cScale;}
@@ -1096,6 +1095,9 @@ print STDOUT "reducedNumBondsExt=$reducedNumBondsExt\n";
       if ($reducedBondInfoExt_ref->[$bond][3] > $maxBondLength)
          {$maxBondLength = $reducedBondInfoExt_ref->[$bond][3];}
    }
+
+   # Define fixed model variables.
+   $angle = 53.7; # Fix the angle for the key.
 
 #   # Scale the size of the cell rods for the system.
 #   foreach $abc (1..3)
@@ -1206,6 +1208,10 @@ print STDOUT "reducedNumBondsExt=$reducedNumBondsExt\n";
             #   point.
             &printTransSphereModule(\*OUT);
    
+            # Print module for making a key that is translated to a given
+            #   point.
+            &printTransKeyModule(\*OUT,$angle);
+   
             # Print module for making a cube that is translated to a given
             #   point.
             &printTransSubCubeModule(\*OUT);
@@ -1226,7 +1232,7 @@ print STDOUT "reducedNumBondsExt=$reducedNumBondsExt\n";
                $sheetPos1[3] = 0;
    
                &addAtomToSheet(\*OUT,$atom,$scaledCoords[$atom],\@sheetPos1,
-                     $scaledAtomRadius[$atom],$hemisphere);
+                     $scaledAtomRadius[$atom],$angle,$hemisphere);
    
                # Record that we have added an atom in the x-axis and update the
                #   position for the next atom.
@@ -1494,8 +1500,23 @@ sub printTransSphereModule
    # Print out the modules that will be used to make a translated sphere.
    print $out "module transSphere(xPos,yPos,zPos,radius)\n";
    print $out "{\n";
-#   print $out "   translate(v=[xPos,yPos,zPos]) {sphere(r=radius,\$fn=50);}\n";
    print $out "   translate(v=[xPos,yPos,zPos]) {sphere(r=radius);}\n";
+   print $out "}\n";
+}
+
+sub printTransKeyModule
+{
+   # Define passed parameters.
+   my $out = $_[0];
+   my $angle = $_[1];
+
+   # Print out the modules that will be used to make a translated key.
+   print $out "module transKey(xPos,yPos,zPos,length)\n";
+   print $out "{\n";
+   print $out "   translate(v=[xPos,yPos,zPos]) {\n";
+   print $out "      rotate([0,0,$angle]) ".
+         "{cube(size=length,center=true);}\n";
+   print $out "   }\n";
    print $out "}\n";
 }
 
@@ -1882,8 +1903,32 @@ sub printSphere
    my $radius    = $_[1];
    my $out       = $_[2]; # File handle
 
-   print $out "   transSphere($point_ref->[1],$point_ref->[2],$point_ref->[3],";
-   print $out "$radius);\n";
+   print $out "      transSphere($point_ref->[1],$point_ref->[2],";
+   print $out "$point_ref->[3],$radius);\n";
+}
+
+
+sub printKey
+{
+   # Define passed parameters.
+   my $point_ref = $_[0];
+   my $radius    = $_[1];
+   my $angle     = $_[2];
+   my $out       = $_[3]; # File handle
+
+   # Define local variables.
+   my @keyPos;
+   my $keySize;
+
+   # Assign key size.
+   $keySize = 1.00;
+
+   # Compute key position.
+   $keyPos[1] = $point_ref->[1] + $radius * cos($angle*pi/180.0);
+   $keyPos[2] = $point_ref->[2] + $radius * sin($angle*pi/180.0);
+   $keyPos[3] = $point_ref->[3];
+
+   print $out "      transKey($keyPos[1],$keyPos[2],$keyPos[3],$keySize);\n";
 }
 
 sub printSubCube
@@ -1910,7 +1955,7 @@ sub printSubCube
    $cubeSize = $radius*2.0 + 0.01*$radius;
 
    # Request a translated cube for subtraction.
-   print $out "      transSubCube($cubePos[1],$cubePos[2],$cubePos[3],".
+   print $out "         transSubCube($cubePos[1],$cubePos[2],$cubePos[3],".
          "$cubeSize);\n";
 }
 
@@ -1922,7 +1967,8 @@ sub addAtomToSheet
    my $atomPos_ref = $_[2];
    my $sheetPos_ref = $_[3];
    my $radius = $_[4];
-   my $hemisphere = $_[5];
+   my $angle = $_[5];
+   my $hemisphere = $_[6];
 
    # Define local variables.
    my $xyz;
@@ -1943,13 +1989,16 @@ sub addAtomToSheet
    #   atom and the skeleton.  The difference object will have holes in all the
    #   right places and it will be translated to the correct spot on the sheet.
    print $out "rotate([0,$rotation,0]) {\n";
-   print $out "translate(v=[$transVect[1],$transVect[2],$transVect[3]]) {\n";
-   print $out "   difference() {\n   ";
+   print $out "   translate(v=[$transVect[1],$transVect[2],$transVect[3]]) {\n";
+   print $out "      difference() {\n   ";
+   print $out "         union() {\n   ";
    &printSphere($atomPos_ref,$radius,$out);
-   print $out "      bondsAndVectors();\n";
+   &printKey($atomPos_ref,$radius,$angle,$out);
+   print $out "         }\n";
+   print $out "         bondsAndVectors();\n";
    &printSubCube($atomPos_ref,$radius,$hemisphere,$out);
+   print $out "      }\n";
    print $out "   }\n";
-   print $out "}\n";
    print $out "}\n";
 }
 
