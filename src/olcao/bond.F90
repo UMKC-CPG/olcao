@@ -16,12 +16,13 @@ subroutine computeBond
    use O_Potential,   only: spin
    use O_CommandLine, only: doBond
    use O_Lattice,     only: realVectors
-   use O_AtomicTypes, only: numAtomTypes, atomTypes
+   use O_AtomicTypes, only: numAtomTypes, atomTypes, maxNumStates
    use O_KPoints,     only: numKPoints, kPointWeight
+   use O_Populate,    only: electronPopulation
    use O_AtomicSites, only: valeDim, numAtomSites, atomSites
    use O_Constants,   only: pi, hartree, bigThresh, smallThresh
    use O_Input,       only: numStates, sigmaBOND, eminBOND, emaxBOND, &
-         & deltaBOND, maxBL, detailCodeBond, excitedAtomPACS, maxNumNeighbors
+         & deltaBOND, maxBL, outputCodeBondQ, excitedAtomPACS, maxNumNeighbors
 #ifndef GAMMA
    use O_SecularEquation, only: valeVale, valeValeOL, readDataSCF, &
          & readDataPSCF, energyEigenValues
@@ -38,8 +39,8 @@ subroutine computeBond
    integer, allocatable, dimension (:) :: numTypeBonds
    integer, allocatable, dimension (:) :: numChargedAtoms
    integer, allocatable, dimension (:) :: numOrbIndex
-   integer, allocatable, dimension (:) :: bondIndex
-   integer, allocatable, dimension (:) :: numAtomStates
+   integer, allocatable, dimension (:) :: chargeIndex
+   integer, allocatable, dimension (:) :: numAtomBasisFns
    integer, allocatable, dimension (:) :: numAtomsBonded
    integer, allocatable, dimension (:) :: bondedAtomID
    integer, allocatable, dimension (:) :: bondedTypeID
@@ -48,10 +49,15 @@ subroutine computeBond
    integer, allocatable, dimension (:,:,:) :: bondAngleAtoms
    integer, dimension (2) :: atom1Index
    integer, dimension (2) :: atom2Index
-   integer :: numSOrbitals
-   integer :: numPOrbitals
-   integer :: numDOrbitals
-   integer :: numFOrbitals
+   integer :: numSQN_l
+   integer :: numPQN_l
+   integer :: numDQN_l
+   integer :: numFQN_l
+   integer :: initSIndex
+   integer :: initPIndex
+   integer :: initDIndex
+   integer :: initFIndex
+   integer :: cumulBondQTotal
    integer :: maxNumBondAngles
    integer :: maxNumBonds
    integer :: currentNumBonds
@@ -61,6 +67,7 @@ subroutine computeBond
    integer :: minDistCount
    integer :: bondedAtomCounter
    integer :: numEnergyPoints
+   integer :: stateSpinKPointIndex
    real (kind=double) :: oneValeRealAccum
    real (kind=double) :: systemCharge
    real (kind=double) :: systemBondOrder
@@ -80,6 +87,7 @@ subroutine computeBond
          ! Index range is maxNumNeighbors.
    real (kind=double), allocatable, dimension (:)      :: bondOrderAllEnergy
    real (kind=double), allocatable, dimension (:)      :: totalCalcBondOrder
+   real (kind=double), allocatable, dimension (:,:)    :: atomOrbitalCharge
    real (kind=double), allocatable, dimension (:,:)    :: bondLength
    real (kind=double), allocatable, dimension (:,:)    :: bondOrder
    real (kind=double), allocatable, dimension (:,:)    :: bondAngle
@@ -99,9 +107,9 @@ subroutine computeBond
    sigmaSqrtPi = sqrt(pi) * sigmaBOND
 
    ! Allocate arrays and matrices for this computation.
-   allocate (numOrbIndex     (numAtomTypes + 1))
-   allocate (bondIndex       (valeDim))
-   allocate (numAtomStates   (numAtomSites))
+   allocate (chargeIndex     (valeDim))
+   allocate (numAtomBasisFns (numAtomSites))
+   allocate (numOrbIndex     (numAtomSites + 1)) ! Store Q for all atoms+orb
 #ifndef GAMMA
    allocate (waveFnSqrd (valeDim))
    if (doBond .eq. 0) then
@@ -116,57 +124,72 @@ subroutine computeBond
    endif
 #endif
 
+   numOrbIndex(:) = 0
 
-   ! Initialize counter to index the cumulative sum of orbitals of all types.
+   ! Initialize counter to index the cumulative sum of QN_l orbitals for all
+   !   atomic sites. (This will give a BondQ for each atom and QN_l orbital.)
    numOrbIndex(1) = 0
 
    ! Loop to record the index number for each type's orbitals.
-   do i = 1, numAtomTypes
+   do i = 1, numAtomSites
       numOrbIndex (i+1) = numOrbIndex(i) + &
-            & sum(atomTypes(i)%numQN_lValeRadialFns(:))
+            & sum(atomTypes(atomSites(i)%atomTypeAssn)%numQN_lValeRadialFns(:))
+!         & atomTypes(atomSites(i)%atomTypeAssn)%numQN_lValeRadialFns(1)*1 + &
+!         & atomTypes(atomSites(i)%atomTypeAssn)%numQN_lValeRadialFns(2)*3 + &
+!         & atomTypes(atomSites(i)%atomTypeAssn)%numQN_lValeRadialFns(3)*5 + &
+!         & atomTypes(atomSites(i)%atomTypeAssn)%numQN_lValeRadialFns(4)*7
    enddo
 
+   ! Record the total number QN_l resolved orbitals summed over all atoms.
+   cumulBondQTotal = numOrbIndex(numAtomSites+1)
 
    ! Initialize the index number in valeDim that each state is at.
    valeDimIndex = 0
 
-   ! Loop over every atom in the system to index where the values for each
-   !   atom should be stored.
+   ! Loop over every atom in the system to index where the Bond Q values for
+   !   each atom should be stored.
    do i = 1, numAtomSites
 
       ! Obtain the type of the current atom.
       currentType = atomSites(i)%atomTypeAssn
 
-      ! Identify and store the number of valence states for this atom.
-      numAtomStates(i) = atomTypes(currentType)%numValeStates
+      ! Identify and store the number of valence basis functions for this atom.
+      numAtomBasisFns(i) = atomTypes(currentType)%numValeStates
 
-      numSOrbitals = atomTypes(currentType)%numQN_lValeRadialFns(1)
-      numPOrbitals = atomTypes(currentType)%numQN_lValeRadialFns(2)
-      numDOrbitals = atomTypes(currentType)%numQN_lValeRadialFns(3)
-      numFOrbitals = atomTypes(currentType)%numQN_lValeRadialFns(4)
+      numSQN_l = atomTypes(currentType)%numQN_lValeRadialFns(1)
+      numPQN_l = atomTypes(currentType)%numQN_lValeRadialFns(2)
+      numDQN_l = atomTypes(currentType)%numQN_lValeRadialFns(3)
+      numFQN_l = atomTypes(currentType)%numQN_lValeRadialFns(4)
 
-      do j = 1, numSOrbitals
+      initSIndex = 0
+      initPIndex = numSQN_l
+      initDIndex = numSQN_l + numPQN_l
+      initFIndex = numSQN_l + numPQN_l + numDQN_l
+!      initSIndex = numOrbIndex(i)
+!      initPIndex = numOrbIndex(i) + numSQN_l
+!      initDIndex = numOrbIndex(i) + numSQN_l + numPQN_l
+!      initFIndex = numOrbIndex(i) + numSQN_l + numPQN_l + numDQN_l
+
+      do j = 1, numSQN_l
          valeDimIndex = valeDimIndex + 1
-         bondIndex(valeDimIndex) = numOrbIndex(currentType) + j
+         chargeIndex(valeDimIndex) = initSIndex + j
       enddo
-      do j = 1, numPOrbitals
+      do j = 1, numPQN_l
          do k = 1,3
             valeDimIndex = valeDimIndex + 1
-            bondIndex(valeDimIndex) = numOrbIndex(currentType) + numSOrbitals +j
+            chargeIndex(valeDimIndex) = initPIndex + j
          enddo
       enddo
-      do j = 1, numDOrbitals
+      do j = 1, numDQN_l
          do k = 1,5
             valeDimIndex = valeDimIndex + 1
-            bondIndex(valeDimIndex) = numOrbIndex(currentType) + numSOrbitals +&
-                  & numPOrbitals + j
+            chargeIndex(valeDimIndex) = initDIndex + j
          enddo
       enddo
-      do j = 1, numFOrbitals
-         do k = 1,5
+      do j = 1, numFQN_l
+         do k = 1,7
             valeDimIndex = valeDimIndex + 1
-            bondIndex(valeDimIndex) = numOrbIndex(currentType) + numSOrbitals +&
-                  & numPOrbitals + numDOrbitals + j
+            chargeIndex(valeDimIndex) = initFIndex + j
          enddo
       enddo
    enddo
@@ -180,6 +203,7 @@ subroutine computeBond
    allocate (bondOrder          (numAtomSites,numAtomSites))
    allocate (bondLength         (numAtomSites,numAtomSites))
    allocate (atomCharge         (numAtomSites))
+   allocate (atomOrbitalCharge  (numAtomSites,maxNumStates))
    if (excitedAtomPACS .ne. 0) then
       allocate (energyScale         (numEnergyPoints))
       allocate (bondCompleteAtom    (numEnergyPoints,maxNumNeighbors))
@@ -199,10 +223,14 @@ subroutine computeBond
 
    do h = 1, spin
 
+      ! Track the stateSpinKPoint index number.
+      stateSpinKPointIndex = (h-1) * numStates
+
       ! Initialize various arrays and matrices.
       bondOrder          (:,:) = 0.0_double
       bondLength         (:,:) = 0.0_double
       atomCharge         (:)   = 0.0_double
+      atomOrbitalCharge  (:,:) = 0.0_double
       if (excitedAtomPACS .ne. 0) then
          bondCompleteAtom    (:,:) = 0.0_double
          bondOrderAllEnergy  (:)   = 0.0_double
@@ -214,6 +242,10 @@ subroutine computeBond
       ! Begin accumulating the BOND values over each kpoint
       do i = 1, numKPoints
 
+         ! Track the stateSpinKPoint index number.
+         if ((spin == 2) .and. (i /= 1)) then
+            stateSpinKPointIndex = stateSpinKPointIndex + numStates
+         endif
 
          ! Determine if we are doing bond+Q* in a post-SCF calculation, or
          !   within an SCF calculation.  (The doBond flag is only set to
@@ -231,6 +263,9 @@ subroutine computeBond
 
 
          do j = 1, numStates
+
+            ! Track the stateSpinKPoint index number.
+            stateSpinKPointIndex = stateSpinKPointIndex + 1
 
             ! Initialize the bond order for energy dependency.
             bondOrderEnergyDep (:) = 0.0_double
@@ -252,7 +287,7 @@ subroutine computeBond
 
                   ! Identify the indices of the current atom from loop (k).
                   atom1Index(1) = atom1Index(2) + 1
-                  atom1Index(2) = atom1Index(1) + numAtomStates(k) - 1
+                  atom1Index(2) = atom1Index(1) + numAtomBasisFns(k) - 1
                enddo
 
                ! Initialize the indices of the second atom. 1 = init, 2 = fin
@@ -267,7 +302,7 @@ subroutine computeBond
 
                   ! Identify the indices of the current atom from loop (l).
                   atom2Index(1) = atom2Index(2) + 1
-                  atom2Index(2) = atom2Index(1) + numAtomStates(l) - 1
+                  atom2Index(2) = atom2Index(1) + numAtomBasisFns(l) - 1
 
 
                   ! Determine the smallest distance between the atoms of the
@@ -375,16 +410,24 @@ subroutine computeBond
 
                         ! Store the atom pair bond order contribution for this
                         !   energy level.
+!                        bondOrderEnergyDep(bondedAtomCounter) = &
+!                              & bondOrderEnergyDep(bondedAtomCounter) + &
+!                              & oneValeRealAccum * kPointWeight(i) / &
+!                              & real(spin,double)
                         bondOrderEnergyDep(bondedAtomCounter) = &
                               & bondOrderEnergyDep(bondedAtomCounter) + &
-                              & oneValeRealAccum * kPointWeight(i) / &
-                              & real(spin,double)
+                              & oneValeRealAccum * &
+                              & electronPopulation(stateSpinKPointIndex)
 
                         ! Store the atom pair bond order contribution.
+!                        bondOrderAllEnergy(bondedAtomCounter) = &
+!                              & bondOrderAllEnergy(bondedAtomCounter) + &
+!                              & oneValeRealAccum * kPointWeight(i) / &
+!                              & real(spin,double)
                         bondOrderAllEnergy(bondedAtomCounter) = &
                               & bondOrderAllEnergy(bondedAtomCounter) + &
-                              & oneValeRealAccum * kPointWeight(i) / &
-                              & real(spin,double)
+                              & oneValeRealAccum * &
+                              & electronPopulation(stateSpinKPointIndex)
 
                      enddo
                   endif
@@ -421,10 +464,10 @@ subroutine computeBond
 
                ! Identify the indices of the current atom from loop (k).
                atom1Index(1) = atom1Index(2) + 1
-               atom1Index(2) = atom1Index(1) + numAtomStates(k) - 1
+               atom1Index(2) = atom1Index(1) + numAtomBasisFns(k) - 1
 
-               ! Loop over the atom 1 indexed states against all other states
-               !   in this band (j).
+               ! Loop over the atom 1 indexed basis functions against all
+               !   other basis functions in this band (j).
                do l = atom1Index(1), atom1Index(2)
 
 #ifndef GAMMA
@@ -452,9 +495,20 @@ subroutine computeBond
 
                   ! Store the atom charge contribution from this band (j) and
                   !   kpoint (i).
+!                  atomCharge(k) = atomCharge(k) + oneValeRealAccum * &
+!                        & kPointWeight(i) / real(spin,double)
                   atomCharge(k) = atomCharge(k) + oneValeRealAccum * &
-                        & kPointWeight(i) / real(spin,double)
-               enddo
+                        & electronPopulation(stateSpinKPointIndex)
+
+                  ! Store the atom orbital charge contribution.
+!                  atomOrbitalCharge(k,chargeIndex(l)) = &
+!                        & atomOrbitalCharge(k,chargeIndex(l)) + &
+!                        oneValeRealAccum * kPointWeight(i) / real(spin,double)
+                  atomOrbitalCharge(k,chargeIndex(l)) = &
+                        & atomOrbitalCharge(k,chargeIndex(l)) + &
+                        & oneValeRealAccum * &
+                        & electronPopulation(stateSpinKPointIndex)
+               enddo ! state index l
 
                ! Initialize the indices of the second atom. (1)=init, (2)=fin
                atom2Index(1) = 0
@@ -465,7 +519,7 @@ subroutine computeBond
 
                   ! Identify the indices of the current atom from loop (l).
                   atom2Index(1) = atom2Index(2) + 1
-                  atom2Index(2) = atom2Index(1) + numAtomStates(l) - 1
+                  atom2Index(2) = atom2Index(1) + numAtomBasisFns(l) - 1
 
 
                   ! Determine the smallest distance between the atoms of the
@@ -559,8 +613,10 @@ subroutine computeBond
 #endif
 
                         ! Store the atom pair bond order contribution.
+!                        bondOrder(k,l) = bondOrder(k,l) + oneValeRealAccum * &
+!                              & kPointWeight(i) / real(spin,double)
                         bondOrder(k,l) = bondOrder(k,l) + oneValeRealAccum * &
-                              & kPointWeight(i) / real(spin,double)
+                              & electronPopulation(stateSpinKPointIndex)
 
                      enddo
                   endif
@@ -803,7 +859,7 @@ subroutine computeBond
       endif
 
       ! Begin recording general bond order results to disk.
-      if (detailCodeBond == 0) then
+      if (outputCodeBondQ == 1) then
          do i = 1, numAtomTypes
 
             write (9+h,fmt="(2x,a10,i5,a3,a18)") 'Atom type:',i,' - ',&
@@ -875,6 +931,14 @@ subroutine computeBond
             write (9+h,fmt=200) "TYPE_ID          ", &
                   & atomTypes(currentType)%typeID
             write (9+h,fmt=300) "ATOM_CHARGE      ", atomCharge(i)
+            write (9+h,fmt=310) "ATOM_ORBITAL_CHARGE"
+            numSQN_l = atomTypes(currentType)%numQN_lValeRadialFns(1)
+            numPQN_l = atomTypes(currentType)%numQN_lValeRadialFns(2)
+            numDQN_l = atomTypes(currentType)%numQN_lValeRadialFns(3)
+            numFQN_l = atomTypes(currentType)%numQN_lValeRadialFns(4)
+            do j = 1, numSQN_l + numPQN_l + numDQN_l + numFQN_l
+               write (9+h,fmt=320) atomOrbitalCharge(i,j)
+            enddo
             write (9+h,fmt=200) "NUM_BONDED_ATOMS ", numAtomsBonded(i)
             do j = i+1, numAtomSites
                ! Only include bonds that exist in the statistics.
@@ -911,12 +975,13 @@ subroutine computeBond
 
    ! Deallocate matrices that are no longer needed.
    deallocate (numOrbIndex)
-   deallocate (bondIndex)
-   deallocate (numAtomStates)
+   deallocate (chargeIndex)
+   deallocate (numAtomBasisFns)
    deallocate (bondOrderEnergyDep)
    deallocate (bondOrder)
    deallocate (bondLength)
    deallocate (atomCharge)
+   deallocate (atomOrbitalCharge)
 #ifndef GAMMA
    deallocate (waveFnSqrd)
    if (doBond == 0) then
@@ -946,7 +1011,9 @@ subroutine computeBond
 
    ! Define all the formatted output styles.
    200 format (a17,i5)
-   300 format (a17,f12.8)
+   300 format (a17,f16.8)
+   310 format (a19)
+   320 format (f16.8)
    400 format (a17,a3)
 
 end subroutine computeBond

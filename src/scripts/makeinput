@@ -363,14 +363,14 @@ my $eDeltaDOS;   # Energy delta for DOS evaluation.
 my $sigmaDOS;    # Gaussian broadening for DOS curves.
 my $eminDOS;     # Minimum energy to evaluate DOS at.
 my $emaxDOS;     # Maximum energy to evaluate DOS at.
-my $allAtomPDOS; # Flag to force PDOS of each atom=1; each type=0.
+my $detailCodePDOS; # PDOS output style: 0=type;1=a total;2=a nl; 3=a nlm.
 my $iterTDOS;    # Flag to compute TDOS for each SCF iteration.
 my $maxLenBOND;  # Length beyond which atoms are not considered to "bond".
 my $eDeltaBOND;  # Energy delta for BOND evaluation.
 my $sigmaBOND;   # Gaussian broadening for BOND curves.
 my $eminBOND;    # Minimum energy to evaluate BOND at.
 my $emaxBOND;    # Maximum energy to evaluate BOND at.
-my $allAtomBOND; # Flag to force bond calculations for each atom=1; each type=0.
+my $outputBONDQ; # BondQ output flag for old (type) style=0; new (atom) style=1.
 my $BOND3C;      # Flag to compute the 3-Center bond order. default=0=no, 1=yes
 my $maxNeighborBOND; # Maximum number of neighbor bonds for a single atom.
 my $eDeltaPACS;  # Energy delta for ELNES/XANES evaluation.
@@ -829,7 +829,7 @@ sub initDefaults
    $sigmaDOS=0.1;
    $eminDOS=-30;
    $emaxDOS=30;
-   $allAtomPDOS=0;
+   $detailCodePDOS=0;
    $iterTDOS=0;
 
    # Default BOND options
@@ -838,7 +838,7 @@ sub initDefaults
    $emaxBOND=30;
    $sigmaBOND=0.1;
    $eDeltaBOND=0.01;
-   $allAtomBOND=1;
+   $outputBONDQ=0;
    $BOND3C = 0;
    $maxNeighborBOND = 20;
    
@@ -3334,14 +3334,14 @@ sub printOLCAOInput
    print OLCAO "DOS_INPUT_DATA\n";
    print OLCAO "$eDeltaDOS $sigmaDOS               ! DOS Delta Energy, DOS sigma broadening (FWHM)\n";
    print OLCAO "$eminDOS $emaxDOS                 ! DOS EMIN and EMAX\n";
-   print OLCAO "$allAtomPDOS ! PDOS control flag: 0 t; 1 a total; 2 a nl; 3 a nlm\n";
+   print OLCAO "$detailCodePDOS ! PDOS ctrl flag: 0 t; 1 a total; 2 a nl; 3 a nlm\n";
 
    # Print data useful for the bond portion of the calculation
    print OLCAO "BOND_INPUT_DATA\n";
    print OLCAO "$maxLenBOND                     ! MAXIMUM BOND LENGTH\n";
    print OLCAO "$eDeltaBOND $sigmaBOND               ! BOND Delta Energy, BOND sigma broadening\n";
    print OLCAO "$eminBOND $emaxBOND                  ! BOND EMIN and EMAX\n";
-   print OLCAO "$allAtomBOND                        ! Flag for all atom BOND\n";
+   print OLCAO "$outputBONDQ        ! Flag for BONDQ output style 0=new a; 1=old t\n";
    print OLCAO "$BOND3C                         ! Flag for 3C-BOND\n";
    print OLCAO "$maxNeighborBOND                     ! Max # neighbor atoms\n";
 
@@ -3869,7 +3869,7 @@ sub makeOLCAOMI
    # Create the header for the olcao file
    print OLCAOMI "title\n";
    print OLCAOMI "OLCAO file created by makeinput\n";
-   print OLCAOMI "@{$systemTitle_ref}";
+   print OLCAOMI "@{$systemTitle_ref}\n";
    print OLCAOMI "end\n";
    print OLCAOMI "cell\n";
 

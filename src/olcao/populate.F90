@@ -306,21 +306,23 @@ subroutine populateStandard
       !   exceeds the number of electrons in the system.  If so, reduce the
       !   last populated level so that the total number of populated electrons
       !   equals the total number of electrons in the system.
-      if (populatedElectrons > numElectrons) then
+      if (populatedElectrons > real(numElectrons,double)) then
 
          ! First adjust the actual population.
          electronPopulation(indexEnergyEigenValues(i)) = kPointWeight &
             & (1+(indexEnergyEigenValues(i)-1)/(numStates*spin)) / &
-            & real(spin,double) + numElectrons - populatedElectrons
+            & real(spin,double) + real(numElectrons,double) - &
+            & populatedElectrons
 
          ! Then adjust the record of the number of populated electrons.
-         populatedElectrons = numElectrons
+         populatedElectrons = real(numElectrons,double)
 
       endif
 
       ! Abort the loop when the last electron has been populated, recording
       !   the occupied energy (fermi energy for metals) as we leave.
-      if (abs(numElectrons - populatedElectrons) < smallThresh) then
+      if (abs(real(numElectrons,double) - populatedElectrons) < &
+            & smallThresh) then
          occupiedEnergyIndex = i
          occupiedEnergy = sortedEnergyEigenValues(occupiedEnergyIndex)
          exit
@@ -392,6 +394,7 @@ subroutine populateStandard
             & possibleDegenCharge * kPointWeight &
             & (1+(indexEnergyEigenValues(i)-1)/(numStates*spin)) / &
             & real(spin,double)
+
    enddo
 
    ! Adjust the occupied energy and occupied energy index.
@@ -554,14 +557,14 @@ subroutine populateSmearing
       !   the just assigned chargeSum is sufficiently small then we can exit
       !   the population outer (i) loop since we have found the correct
       !   population values, and Fermi level.
-      if (abs(chargeSum - numElectrons) < smallThresh) then
+      if (abs(chargeSum - real(numElectrons,double)) < smallThresh) then
          exit
       endif
 
       ! Move one or the other border value to the position of the last
       !   Fermi energy.  The Fermi energy will be re-guessed in the next
       !   iteration.
-      if (chargeSum < numElectrons) then
+      if (chargeSum < real(numElectrons,double)) then
          minEnergy = occupiedEnergy
       else
          maxEnergy = occupiedEnergy

@@ -46,7 +46,7 @@ module O_Input
    real (kind=double) :: emaxDOS   ! Given in eV, stored in a.u.
 
    ! Define control variables that apply only to the bond program.
-   integer :: detailCodeBond ! 0=old-style (by types) 1=new-style (all atom)
+   integer :: outputCodeBondQ ! 0=new (all atom Machine readable) 1=old (types)
    integer :: doBond3C ! 0=no 1=yes
    integer :: maxNumNeighbors ! This is used to limit memory allocations. It
          ! is the max # of bonding neighbors that a single atom can have.
@@ -518,7 +518,7 @@ subroutine readBondControl(readUnit,writeUnit)
    call readData(readUnit,writeUnit,maxBL,0,'')
    call readData(readUnit,writeUnit,deltaBOND,sigmaBOND,0,'')
    call readData(readUnit,writeUnit,eminBOND,emaxBOND,0,'')
-   call readData(readUnit,writeUnit,detailCodeBond,0,'')
+   call readData(readUnit,writeUnit,outputCodeBondQ,0,'')
    call readData(readUnit,writeUnit,doBond3C,0,'')
    call readData(readUnit,writeUnit,maxNumNeighbors,0,'')
 

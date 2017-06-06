@@ -251,6 +251,7 @@ subroutine computeDOS
    integer :: finIndex
    integer :: energyLevelCounter
    integer :: numCols
+   integer :: stateSpinKPointIndex
    real (kind=double) :: occupancyNumber
    real (kind=double) :: oneValeRealAccum
    real (kind=double) :: expTerm
@@ -529,6 +530,9 @@ subroutine computeDOS
 
    do h = 1, spin
 
+      ! Track the stateSpinKPoint index number.
+      stateSpinKPointIndex = (h-1) * numStates
+
       ! Record which calculation is being done.
       if (spin == 2) then
          if (h == 1) then
@@ -546,6 +550,10 @@ subroutine computeDOS
       ! Begin accumulating the DOS values
       do i = 1, numKPoints
 
+         ! Track the stateSpinKPoint index number.
+         if ((spin == 2) .and. (i /= 1)) then
+            stateSpinKPointIndex = stateSpinKPointIndex + numStates
+         endif
 
          ! Determine if we are doing the DOS in a post-SCF calculation, or
          !   within an SCF calculation.  (The doDOS flag is only set to true
@@ -564,16 +572,21 @@ subroutine computeDOS
 
          do j = 1, numStates
 
-            ! Determine the occupancy number for this state.  The default
-            !   assumption is that each state contains 2 electrons.  This is
-            !   because the sum of all kpoint weighting factors is equal to 2.
-            !   This will make spin polarized states half occupied and spin
-            !   non-polarized states fully occupied.
-            if (energyEigenValues(j,i,h) <= 0.0_double) then
-               occupancyNumber = 1.0_double/real(spin,double)
-            else
-               occupancyNumber = 0.0_double
-            endif
+            ! Track the stateSpinKPoint index number.
+            stateSpinKPointIndex = stateSpinKPointIndex + 1
+
+            occupancyNumber = electronPopulation(stateSpinKPointIndex)
+
+!            ! Determine the occupancy number for this state.  The default
+!            !   assumption is that each state contains 2 electrons.  This is
+!            !   because the sum of all kpoint weighting factors is equal to 2.
+!            !   This will make spin polarized states half occupied and spin
+!            !   non-polarized states fully occupied.
+!            if (energyEigenValues(j,i,h) <= 0.0_double) then
+!               occupancyNumber = 1.0_double/real(spin,double)
+!            else
+!               occupancyNumber = 0.0_double
+!            endif
 
             ! Initialize the accumlator for the wave function--overlap
             !   interaction.
@@ -617,20 +630,25 @@ subroutine computeDOS
 #endif
 
                   ! Store the current electron number assignment.
+!                  electronNumber(l,k) = electronNumber(l,k) + &
+!                        & oneValeRealAccum * kPointWeight(i) * occupancyNumber
                   electronNumber(l,k) = electronNumber(l,k) + &
-                        & oneValeRealAccum * kPointWeight(i) * occupancyNumber
+                        & oneValeRealAccum * occupancyNumber
 
 
                   pdosAccum(pdosIndex(valeDimIndex)) = &
                         & pdosAccum(pdosIndex(valeDimIndex)) + &
-                        & oneValeRealAccum / real(spin,double)
+                        & oneValeRealAccum * occupancyNumber
 
 
                   ! Store the square of the accumulation as the localization
                   !   index for this state.
+!                  localizationIndex(j) = localizationIndex(j) + &
+!                        & oneValeRealAccum * oneValeRealAccum * &
+!                        & kPointWeight(i) / real(spin,double)
                   localizationIndex(j) = localizationIndex(j) + &
                         & oneValeRealAccum * oneValeRealAccum * &
-                        & kPointWeight(i) / real(spin,double)
+                        & occupancyNumber
                enddo
             enddo
 
@@ -662,8 +680,7 @@ subroutine computeDOS
                   !   denominator we need to divide the whole expression by
                   !   eV/hartree to get a final energy unit of eV. Recall that
                   !   the hartree variable equals 27.211... eV/hartree.
-                  expFactor = exp(-expTerm) / sigmaSqrtPi / hartree * &
-                        & kPointWeight(i)
+                  expFactor = exp(-expTerm) / sigmaSqrtPi / hartree
 
                   ! Broaden and store the complete pdos
                   pdosComplete(:,k) = pdosComplete(:,k) + pdosAccum(:) * &
