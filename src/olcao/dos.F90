@@ -575,18 +575,18 @@ subroutine computeDOS
             ! Track the stateSpinKPoint index number.
             stateSpinKPointIndex = stateSpinKPointIndex + 1
 
-            occupancyNumber = electronPopulation(stateSpinKPointIndex)
+!            occupancyNumber = electronPopulation(stateSpinKPointIndex)
 
-!            ! Determine the occupancy number for this state.  The default
-!            !   assumption is that each state contains 2 electrons.  This is
-!            !   because the sum of all kpoint weighting factors is equal to 2.
-!            !   This will make spin polarized states half occupied and spin
-!            !   non-polarized states fully occupied.
-!            if (energyEigenValues(j,i,h) <= 0.0_double) then
-!               occupancyNumber = 1.0_double/real(spin,double)
-!            else
-!               occupancyNumber = 0.0_double
-!            endif
+            ! Determine the occupancy number for this state.  The default
+            !   assumption is that each state contains 2 electrons.  This is
+            !   because the sum of all kpoint weighting factors is equal to 2.
+            !   This will make spin polarized states half occupied and spin
+            !   non-polarized states fully occupied.
+            if (energyEigenValues(j,i,h) <= 0.0_double) then
+               occupancyNumber = 1.0_double/real(spin,double)
+            else
+               occupancyNumber = 0.0_double
+            endif
 
             ! Initialize the accumlator for the wave function--overlap
             !   interaction.
@@ -630,25 +630,25 @@ subroutine computeDOS
 #endif
 
                   ! Store the current electron number assignment.
-!                  electronNumber(l,k) = electronNumber(l,k) + &
-!                        & oneValeRealAccum * kPointWeight(i) * occupancyNumber
                   electronNumber(l,k) = electronNumber(l,k) + &
-                        & oneValeRealAccum * occupancyNumber
+                        & oneValeRealAccum * kPointWeight(i) * occupancyNumber
+!                  electronNumber(l,k) = electronNumber(l,k) + &
+!                        & oneValeRealAccum * occupancyNumber
 
 
                   pdosAccum(pdosIndex(valeDimIndex)) = &
                         & pdosAccum(pdosIndex(valeDimIndex)) + &
-                        & oneValeRealAccum * occupancyNumber
+                        & oneValeRealAccum / real(spin,double)
 
 
                   ! Store the square of the accumulation as the localization
                   !   index for this state.
-!                  localizationIndex(j) = localizationIndex(j) + &
-!                        & oneValeRealAccum * oneValeRealAccum * &
-!                        & kPointWeight(i) / real(spin,double)
                   localizationIndex(j) = localizationIndex(j) + &
                         & oneValeRealAccum * oneValeRealAccum * &
-                        & occupancyNumber
+                        & kPointWeight(i) / real(spin,double)
+!                  localizationIndex(j) = localizationIndex(j) + &
+!                        & oneValeRealAccum * oneValeRealAccum * &
+!                        & occupancyNumber
                enddo
             enddo
 
@@ -680,7 +680,8 @@ subroutine computeDOS
                   !   denominator we need to divide the whole expression by
                   !   eV/hartree to get a final energy unit of eV. Recall that
                   !   the hartree variable equals 27.211... eV/hartree.
-                  expFactor = exp(-expTerm) / sigmaSqrtPi / hartree
+                  expFactor = exp(-expTerm) / sigmaSqrtPi / hartree * &
+                        & kpointWeight(i)
 
                   ! Broaden and store the complete pdos
                   pdosComplete(:,k) = pdosComplete(:,k) + pdosAccum(:) * &
