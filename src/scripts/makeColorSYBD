@@ -1,0 +1,314 @@
+#!/usr/bin/env perl
+ 
+use strict;
+use warnings;
+use diagnostics;
+use PostScript::Simple;
+ 
+##############################################################
+# for a description of the PostScript::Simple module
+# go to cpan.org and search for "postscript simple"
+##############################################################
+ 
+##############################################################
+# Declaration of global variables
+##############################################################
+ 
+my $p;      # name of PostScript object
+my $Emin;   # smallest energy value that the user wants to plot
+my $Emax;   # largest energy value that the user wants to plot
+my $yInterval;  # interval size along y axis in eV
+my $symmK;      # number of highly symmetric k points
+my $xmin;   # placement of left edge of plotting box
+my $xmax;   # placement of right edge of plotting box
+my $ymin;   # placement of bottom edge of plotting box
+my $ymax;   # placement of top edge of plotting box
+my @testArray;  # in sub drawLines and sub assignColor
+my @data;
+my $count;
+my @array;
+my $last;
+my $lastk;
+ 
+###############################################################
+# Begin exectuion of the script here
+###############################################################
+ 
+#create a new PostScript object and page
+$p = new PostScript::Simple(papersize => "A4", colour => 1, units => "mm");
+$p->newpage;
+ 
+# these six lines are the only ones I could not place in a subroutine
+# without throwing some errors
+open ( SYBD, "gs_sybd-fb.plot" ) || die "could not open SYBD for reading";
+@array = <SYBD>;
+$last = pop (@array);
+@data = &prepLine("","$last",'\s+');
+$lastk = $data[0];
+seek(SYBD, 0,0);
+ 
+&readInput;
+&drawBox;
+&drawEnergyIntervals;
+&drawKpoints;
+&drawLines;
+ 
+# writes the current PostScript from this script to a file
+$p->output("SYBD_Plot.ps");
+ 
+###############################################################
+# End execution of the script here
+###############################################################
+ 
+###############################################################
+# Define all the subroutines
+###############################################################
+ 
+# reads the input file to find user defined parameters
+sub readInput
+{
+    # Declare local variables
+    my @input;  # contains each line of INPUT as an array element
+ 
+    #open input file for reading
+    open(INPUT, "<input" ) || die "could not open input for reading";
+    @input = <INPUT>;
+ 
+    #smallest plotted y energy value
+    $Emin = $input[1];
+ 
+    #largest plotted y energy value
+    $Emax = $input[3];
+ 
+    #interval size in eV of tick marks on y axis
+    $yInterval = $input[5];
+ 
+    $symmK = $input[7];
+ 
+    close INPUT;
+}
+ 
+# draws the box that will serve as the plotting area
+sub drawBox
+{
+    $p->setlinewidth(.5);
+ 
+    #draw a box to be the plotting area
+    $xmin = 75;
+    $xmax = 150;
+    $ymin = 150;
+    $ymax = 275;
+    $p->box($xmin,$ymin, $xmax,$ymax);
+}
+ 
+# draws the tick marks and units in eV along the vertical axis
+sub drawEnergyIntervals
+{
+    # Declare local variables
+    my $IntNum; # the number of intervals to be plotted
+    my $IntSize;    # the size of each interval
+    my $counter;
+    my $y;
+    my $Enow;
+     
+    $p->setlinewidth(.5);
+ 
+    $IntNum = (($Emax-$Emin)/$yInterval)+1;
+    $IntSize = (($ymax-$ymin)/($IntNum-1));
+ 
+    $p->setfont("Times-Roman", 18);  #currently no greek letters
+    $counter = 0;
+    $y = $ymin;
+    $Enow = $Emin;
+ 
+    while ($counter < $IntNum)
+    {
+        $p->line($xmin,$y, $xmin-3,$y);
+        $p->text( {align => 'right'}, $xmin-5,$y, "$Enow");
+        $counter++; 
+         
+        $y = $y + $IntSize;
+        $Enow = $Enow + $yInterval;
+    }
+}
+ 
+# plots highly symmetric k-points with a vertical line and a label on the
+#   horizontal axis
+sub drawKpoints
+{
+    # Declare local variables
+    my @thisarray;
+    my $thiscount;
+    my @thisdata;
+    my $thisKpoint;
+    my $thisKpointLocation;
+    my @kx;
+ 
+    $p->setlinewidth(.5);
+    $p->setfont("Times-Roman", 18);
+    open ( SYBD, "gs_sybd-fb.plot" ) || die "could not open SYBD for reading";
+    @thisarray = <SYBD>;
+    $thiscount = 0;
+ 
+    # plots highly symmetric k-points, the number of which is user defined in
+    #   the input file and stored as symmK.
+    while ($thiscount <= $symmK-1)
+    {
+        @thisdata = &prepLine("","$thisarray[$thiscount]",'\s+');
+ 
+        # obtains the letter name of the current k-point
+        $thisKpoint = pop(@thisdata);
+ 
+        # obtains the location of the current k-point
+        $thisKpointLocation = pop(@thisdata);
+         
+        # makes $thisKpointLocation plottable in mm
+        @kx = &coordTransform("$thisKpointLocation","0");
+ 
+        $thiscount++;
+ 
+        $p->text( {align => 'centre'}, $kx[0], $ymin-5, "$thisKpoint");
+        $p->line($kx[0],$ymin, $kx[0],$ymax);
+    }
+ 
+    seek(SYBD, 0,0);
+}
+ 
+# draws the actual bands
+sub drawLines
+{
+    # Declare local variables
+    my @SYBD;
+    my $lastline;
+    my @entries;
+    my $dataSize;
+    my @weight;
+    my @xy;
+    my $xcoord;
+    my $ycoord;
+    my @Colors;
+    my $lines;
+    my $countlines; # in sub drawLines
+     
+    $p->setlinewidth(.1);
+     
+    # open the band structure file
+    open ( SYBD, "gs_sybd-fb.plot" ) || die "could not open SYBD for reading";  
+    @SYBD = <SYBD>;
+    $lastline = pop(@SYBD);
+    @entries = &prepLine("","$lastline",'\s+');
+    $dataSize = @entries -1;
+    seek(SYBD, 0,0);
+     
+    # open the file that will define the color ratios
+    open( WEIGHT, "<colorValues" ) ||
+          die "could not open contribution file for reading";
+    @weight = <WEIGHT>;
+     
+    $countlines=0;
+ 
+    # step through each line in SYBD
+    while ($lines = <SYBD>)
+    {
+        $countlines++;
+        @data = &prepLine("","$lines",'\s+');
+ 
+        # step through each entry in the current line, but stop before highly 
+        ## symmetric k-points if necessary 
+        for ($count = 1; $count <= $dataSize; $count++)
+        {
+            @xy = &coordTransform("$data[0]","$data[$count]");
+         
+            $xcoord = $xy[0];
+            $ycoord = $xy[1];
+     
+            # keep points that fall between the max and min energy levels   
+            if (($ycoord <= $ymax) && ($ycoord >= $ymin))
+            {
+                @testArray = &prepLine("","$weight[$countlines-1]",'\s+');
+                 
+                @Colors = &assignColor("$testArray[$count-1]"
+                                ,"$testArray[$count-1]");
+                $p->setcolour($Colors[1], 0, $Colors[0]);
+                $p->circle({filled => 1}, $xcoord,$ycoord, .2);
+                 
+            }
+        }   
+         
+    }
+ 
+    close (SYBD);
+}
+ 
+# assigns color to a plotted point based on two passed parameters
+sub assignColor
+{
+    # Define passed parameters.
+    my $firstColor = $_[0];
+    my $secondColor = $_[1];
+     
+    # Declare local variables
+    my @colors;
+ 
+    my $firstColorNumber = $testArray[$count-1] * 255;
+    my $secondColorNumber= (1-$testArray[$count-1]) * 255;
+ 
+    @colors = ($firstColorNumber, $secondColorNumber);
+ 
+    return @colors; 
+}
+ 
+# maps the x,y coordinates from k-points,eV to mm,mm as required to plot
+sub coordTransform
+{
+    # Define passed parameters.
+    my $kpoint = $_[0];
+    my $energy = $_[1];
+     
+    # Declare local variables
+    my @coordinates;
+    #my @array;
+    my $xplot;
+    my $yplot;
+     
+    # Perform x and y coordinate transform
+ 
+    # to get a plottable x value this multiplies the kpoint location by the
+    # ratio of the range of x values to the largest kpoint location, last an
+    # additive constant equal to xmin is added
+    $xplot = $kpoint*(($xmax-$xmin)/$lastk)+$xmin;
+    $yplot = ($energy+(($Emax-$Emin)/2))*(($ymax-$ymin)/($Emax-$Emin)) + $ymin;
+ 
+    # Put these new coordinate values into array
+    push(@coordinates, $xplot);
+    push(@coordinates, $yplot);
+ 
+    return @coordinates;
+}
+ 
+sub prepLine 
+{
+    # Define passed parameters.
+    my $fileHandle = $_[0];
+    my $line = $_[1];
+    my $splitter = $_[2];
+ 
+    # Declare local variables.
+    my @values;
+ 
+    # Read the line if necessary.
+    if ("$fileHandle" ne "")
+    {
+        $line = <$fileHandle>;
+    }
+ 
+    # Chomp, split, and shift it.
+    chomp $line;
+    @values = split(/$splitter/,$line);
+    if ($values[0] eq "")
+    {
+        shift @values;
+    }
+ 
+    return @values;
+}
