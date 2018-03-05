@@ -3,17 +3,13 @@
 # Document the current location
 message("At the real OLCAO application.")
 
-# Library containing just Kinds and Constants so that the gGaussIntegral library
-# only depends on a library source file that almost never change.
-add_library(gkindsConsts STATIC ../../kinds.f90 ../../constants.f90
-   ../../elementData.f90)
-
 # Library for gaussIntegrals.f90
-add_library(gGaussIntegrals STATIC ../gaussIntegrals.f90)
-target_link_libraries(gGaussIntegrals gkindsConsts)
+add_library(gGaussIntegrals STATIC ../../kinds.f90 ../../constants.f90 
+  ../../elementData.f90 ../gaussIntegrals.f90)
 
 # Library containing common source files that all executables need
-add_library(gCommon OBJECT ../../readData.f90 ../stringSubs.f90 ../mathSubs.f90 
+add_library(gCommon OBJECT ../../kinds.f90 ../../constants.f90 
+   ../../elementData.f90 ../../readData.f90 ../stringSubs.f90 ../mathSubs.f90 
    ../sortSubs.f90 ../interfaces.F90 ../timeStamps.f90 ../commandLine.f90 
    ../potSites.f90 ../potTypes.f90 ../atomicTypes.f90 ../atomicSites.f90 
    ../potential.f90 ../lattice.f90 ../kpoints.f90 ../gaussRelations.f90 
@@ -30,7 +26,6 @@ add_executable(gOLCAOmain $<TARGET_OBJECTS:gCommon> ../hdf5MainEval.f90
    ../hdf5PSCFBand.F90 ../elecStat.f90 ../matrixSubs.F90 ../secularEqn.F90 
    ../populate.F90 ../valeCharge.F90 ../potentialUpdate.F90 ../dos.F90 
    ../bond.F90 ../bond3C.F90 ../OLCAO_Main.f90 ../OLCAO_MainWrap.f90 )
-target_link_libraries(gOLCAOmain gkindsConsts)
 
 add_executable(gOLCAOintg $<TARGET_OBJECTS:gCommon> ../basis.f90 
    ../hdf5PSCFIntg.f90 ../intgOrtho.F90 ../intgSaving.F90 ../integralsPSCF.F90 
@@ -48,13 +43,11 @@ add_executable(gOLCAOdos $<TARGET_OBJECTS:gCommon> ../hdf5PSCFBand.F90
    ../hdf5MainEval.f90 ../hdf5MainEvec.F90 ../hdf5MainPotRho.f90 
    ../hdf5Main.f90 ../matrixSubs.F90 ../secularEqn.F90 ../populate.F90 
    ../dos.F90 ../OLCAO_DOS.f90 )
-target_link_libraries(gOLCAOdos gkindsConsts )
 
 add_executable(gOLCAObond $<TARGET_OBJECTS:gCommon> ../hdf5PSCFBand.F90 
    ../hdf5MainEval.f90 ../hdf5MainEvec.F90 ../hdf5MainPotRho.f90 
    ../hdf5Main.f90 ../matrixSubs.F90 ../secularEqn.F90 ../populate.F90 
    ../bond.F90 ../bond3C.F90 ../OLCAO_Bond.f90 )
-target_link_libraries(gOLCAObond gkindsConsts )
 
 add_executable(gOLCAOoptc $<TARGET_OBJECTS:gCommon> ../basis.f90 
    ../hdf5PSCFBand.F90 ../hdf5PSCFIntg.f90 ../hdf5MainEval.f90 
@@ -68,7 +61,6 @@ add_executable(gOLCAOwave $<TARGET_OBJECTS:gCommon> ../basis.f90
    ../hdf5PSCFBand.F90 ../hdf5MainEval.f90 ../hdf5MainEvec.F90 
    ../hdf5MainPotRho.f90 ../hdf5Main.f90 ../matrixSubs.F90 ../secularEqn.F90 
    ../populate.F90 ../openDX.f90 ../wave.F90 ../OLCAO_Wave.f90 )
-target_link_libraries(gOLCAOwave gkindsConsts )
 
 # At this point we need to add the -DGAMMA preprocessor definition to the
 #   compile command for these gamma k-point executables. This addition applies
