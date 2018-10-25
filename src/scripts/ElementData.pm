@@ -32,6 +32,7 @@ our $VERSION = '0.01';
 my @atomicMasses;    # Atomic mass of each element in atomic mass units.
 my @covalRadii;      # Covalent radii of each element in Angstroms.
 my @numUJElectrons;  # Number of electrons in the highest d or f orbital.
+my @ljPairCoeffs;    # LJ pair coefficients for LAMMPS MD simulations.
 my @coreCharge;      # Number of core electrons in each s,p,d,f.
 my @valeCharge;      # Number of valence electrons in each s,p,d,f.
 my @elementNames;    # Abbreviation of element names from the periodic table.
@@ -121,11 +122,22 @@ sub initElementData
    #   state. Used for UJ calculations.
    @values = &prepLine(\*EDATA,$line,'\s+');
    if ($values[0] ne "NUM_UJ_ELECTRONS")
-      {die "Expecting NUMUJ_ELECTRONS tag in $OLCAO_DATA/elements.dat";}
+      {die "Expecting NUM_UJ_ELECTRONS tag in $OLCAO_DATA/elements.dat";}
    foreach $element (1..$numElements)
    {
       @values = &prepLine(\*EDATA,$line,'\s+');
       $numUJElectrons[$element] = $values[0];
+   }
+
+   # Read the LJ potential coefficients for each atom.
+   @values = &prepLine(\*EDATA,$line,'\s+');
+   if ($values[0] ne "LJ_PAIR_COEFFS")
+      {die "Expecting LJ_PAIR_COEFFS tag in $OLCAO_DATA/elements.dat";}
+   foreach $element (1..$numElements)
+   {
+      @values = &prepLine(\*EDATA,$line,'\s+');
+      $ljPairCoeffs[$element][1] = $values[0];
+      $ljPairCoeffs[$element][2] = $values[1];
    }
 
    # Read the designation of core orbitals for each atom.
@@ -371,6 +383,9 @@ sub getCovalRadiiRef
 
 sub getNumUJElectrons
    {return \@numUJElectrons;}
+
+sub getLJPairCoeffs
+   {return \@ljPairCoeffs;}
 
 sub getElementNamesRef
    {return \@elementNames;}

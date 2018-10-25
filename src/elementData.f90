@@ -67,7 +67,7 @@ subroutine initElementData
    open (unit=313,file=elementDataFile,form='formatted',status='old',&
          & IOSTAT=info)
    if (info /= 0) then
-      stop "Failed to open elementDataFile"
+      stop "Failed to open elementDataFile elements.dat"
    endif
 
    ! Read the number of elements in the data base.
@@ -111,6 +111,12 @@ subroutine initElementData
    read (313,*)
    do i = 1, numUniqueElements
       read (313,*) numUJElectrons(i)
+   enddo
+
+   ! Read past the LJ Pair Coefficients for each element.
+   read (313,*)
+   do i = 1, numUniqueElements
+      read (313,*)
    enddo
 
    ! Read past the definition of the number of core orbitals of each spdf type.

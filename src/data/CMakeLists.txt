@@ -4,6 +4,6 @@
 message("At the set of databases.")
 
 set (DATABASES atomicBDB.tgz atomicPDB.tgz spaceDB.tgz sybdDB.tgz elements.dat
-   xc_code.dat)
+   bonds.dat angles.dat xc_code.dat)
 
 install (PROGRAMS ${DATABASES} DESTINATION share)

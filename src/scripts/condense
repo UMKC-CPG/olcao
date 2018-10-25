@@ -1,0 +1,1404 @@
+#!/usr/bin/env perl
+
+sub printHelp
+{
+   print <<ENDHELP;
+# PROGRAM: condense
+# PURPOSE: To create all the necessary input files for running a LAMMPS
+#          condensation on a set of molecules with defined reaction types.
+# INPUT:
+# Expected input: Keywords that define sections. Sections follow the Keywords.
+# The Keywords may have an accompanying Value that defines the number of lines
+#   in the rest of the section. The Keywords and their sections are defined as
+#   follows:
+#
+#   (1) Composition:
+#   Keyword: "Composition";
+#   Required Value: Integer number of different types of molecule bindings.
+#      Each type of binding on each molecule contributes one to this number.
+#      For example, the B10C2H12 molecule may have a binding to a C atom or
+#      to a B atom. Each case would contribute 1 to the number of different
+#      types of molecular bindings. Continuing the example, one might consider
+#      to differentiate between the different B atoms (e.g., the ones next to
+#      a C atom and the ones with only other B neighbors). In that case, each
+#      type of B that was distinguished would contribute 1 to the number of
+#      different molecular bindings;
+#   Section Definition: One line for each type of molecule. On each line the
+#   first item is the name of a molecule as it would be found in the precursor
+#   database under the filename olcao_MOLECUlENAME.skl. So, for example, the
+#   precursor database file for water is "olcao_H2O.skl". The next item on the
+#   line is the element name and type combination separated by a hyphen. The
+#   last item on the same line is an integer number that indicates how many of
+#   that type of molecule and its binding should be placed in the simulation
+#   box. So, requesting 9 copies of a B10C2H12 molecule with a B1 "opening" for
+#   binding would be done with the following line: "B10C2H12 B-1 9".
+#
+#   (2) Cell:
+#   Keyword: "Cell_Size";
+#   Required Value: Floating point size of the cell in Angstroms;
+#   Section Definition: Absent. No section information needed.
+#
+#   (3) Reactions:
+#   Keyword: "Reactions";
+#   Required Value: Integer number of different types of reactions.
+#   Section Definition: One line for each type of reaction. Each reaction is
+#   defined by referencing a particular pair of (possibly different types of)
+#   molecules and a particular type of atom within each molecule. The working
+#   assumption in all cases is that every reaction will require that an H atom
+#   is discharged from each molecule before the binding between the requested
+#   underlying atoms can take place. The final piece of information for each
+#   reaction is the probability that the reaction will occur once the
+#   molecular fragments are sufficiently close. So, for example, the reaction
+#   leading to the binding of two CH4 molecules would be expressed on one line
+#   as "CH4 C1 CH4 C1 0.86".
+
+# Example input:
+# 
+# composition 3
+# B10C2H12 B-1 6
+# CH4 C-1 2
+# CH3CH3 C-1 1
+#
+# cell_size 50.0
+#
+# reactions 3
+# B10C2H12 B-1 B10C2H12 B-1 0.85
+# B10C2H12 B-1 CH4 C-1 0.85
+# B10C2H12 B-1 CH3CH3 C-1 0.75
+
+
+# Prepare molecules and reactions.
+#
+# The above input file is read and the "makeReactions" script is executed for
+#   each of the molecule reaction pairs. The makeReactions script produces a
+#   number of output files for each pair. The most important are the preRxn and
+#   postRxn molecule template files that will be used to drive the molecule
+#   binding process. The next most important are the individual skeleton files
+#   for each molecule after the appropriate H atom has been removed. Those
+#   skeleton files will be used when packmol is run.
+
+
+# Run Packmol
+#
+# The appropriate skeleton files that were created in the previous step will be
+#   grabbed, converted to PBD format and sent as input to the packmol program.
+
+
+# Prepare LAMMPS input
+#
+#   The output PDB from packmol that includes all the molecules will be
+#   converted into a skeleton file and then into a LAMMPS data file. At the
+#   same time, the reaction templates will be gathered and compared to the
+#   LAMMPS data file to ensure consistency for all bond types and bond-angle
+#   types across all files. The results of that analysis will be used to
+#   construct a LAMMPS "in" file. A slurm submission file is also created.
+
+# The -help option gives this help.
+#
+# USAGE: condense [-help]
+
+ENDHELP
+   exit;
+}
+
+
+###############################################
+# Begin program execution #####################
+###############################################
+
+# Use necessary modules.
+use strict;
+use warnings;
+use POSIX qw(ceil floor);
+use Env;
+use lib "$OLCAO_BIN/perl5";
+use StructureControl;
+use ElementData;
+use BondData;
+use AngleData;
+use File::Copy;
+
+# Declare global variables.
+my $inputFile;
+my $cellSize;
+my $numMoleculeTypes;
+my $numReactionTypes;
+my $numUniqueRxnMolPairs;
+my @uniqueRxnMolPairs;
+my $rxnTemplateDir;
+my @moleculeName;
+my @bindingType;
+my @numMolecules;
+my @numMolAtoms;
+my @atomMoleculeID;
+my @rxnMolName;
+my @rxnBinding;
+my @rxnProbability;
+my @molRxn;
+my @fixRxn;
+my $numHookeBonds;
+my $numHookeAngles;
+my $hookeBondCoeffs_ref;
+my $hookeAngleCoeffs_ref;
+my $numPeriodicElements; # Number of elements from periodic table database
+my $elementNames_ref;
+
+# Initialize the environment.
+&initEnv;
+
+# Read the command line parameters.
+&parseCommandLine;
+
+# Read the main input file.
+&parseInputFile;
+
+# Error check the input for consistency.
+&errorCheckInput;
+
+# Compute implicit information not explictly given in the input file.
+&computeImplicitInput;
+
+# Create the reaction templates.
+&makeReactionTemplates;
+
+# Assemble the packmol input file and run packmol.
+&runPackmol;
+
+# Create LAMMPS data_file, LAMMPS in_file, and the slurm submission file.
+&createLAMMPSFiles;
+
+# Make all bond types consistent across all files.
+&normalizeBondTypes;
+
+###############################################
+# End program execution #######################
+###############################################
+
+sub initEnv
+{
+   $inputFile = "condense.in";
+   $rxnTemplateDir = "reactionTemplates";
+}
+
+sub parseCommandLine
+{
+   # Declare local variables
+   my $number;
+   my $argument;
+   my $commandLine = "command";
+
+   # Initialize the index counter for the command line parameters.
+   $number=0;
+
+   # Loop through the command line parameters checking for each option.
+   while ($number < scalar(@ARGV))
+   {
+      if ($ARGV[$number] eq "-help")
+         {&printHelp;}
+      elsif ($ARGV[$number] eq "-i")
+         {$inputFile = $ARGV[++$number];}
+      else
+      {
+         print STDOUT "UNKNOWN COMMAND LINE PARAMETER $ARGV[$number].";
+         print STDOUT " ABORTING.\n";
+         exit;
+      }
+      $number++;
+   }
+
+   #Record the command line used to create this set of input files.
+   open (COMMANDLINE,">>$commandLine");
+   print COMMANDLINE "condense ";
+   foreach $argument (0..$#ARGV)
+      {print COMMANDLINE "$ARGV[$argument] ";}
+   print COMMANDLINE "\n";
+   close (COMMANDLINE);
+}
+
+sub parseInputFile
+{
+   # Define local variables.
+   my $line;
+   my @values;
+   my $mol;
+   my $rxn;
+
+   # Open the condensation input file.
+   open (INFILE,"<$inputFile") || die "Cannot open $inputFile for reading.\n";
+
+   # Read the input file.
+   while ($line = <INFILE>)
+   {
+      @values = StructureControl::prepLine("",$line,'\s+');
+
+      # Look for "composition", "cell_size", and "reactions" key words.
+      if (lc($values[0]) eq "composition")
+      {
+         $numMoleculeTypes = $values[1];
+
+         foreach $mol (1..$numMoleculeTypes)
+         {
+            @values = StructureControl::prepLine(\*INFILE,"",'\s+');
+            $moleculeName[$mol] = lc($values[0]);
+            $bindingType[$mol] = lc($values[1]);
+            $numMolecules[$mol] = $values[2];
+         }
+      }
+      elsif (lc($values[0]) eq "cell_size")
+         {$cellSize = $values[1];}
+      elsif (lc($values[0]) eq "reactions")
+      {
+         # Get the number of different types of reactions.
+         $numReactionTypes = $values[1];
+
+         # Read the descriptor for each reaction that includes the name of each
+         #   of the participating molecules and the type of binding that each
+         #   molecule makes available for that reaction to occur.
+         foreach $rxn (1..$numReactionTypes)
+         {
+            @values = StructureControl::prepLine(\*INFILE,"",'\s+');
+            $rxnMolName[1][$rxn] = lc($values[0]);
+            $rxnBinding[1][$rxn] = lc($values[1]);
+            $rxnMolName[2][$rxn] = lc($values[2]);
+            $rxnBinding[2][$rxn] = lc($values[3]);
+            $rxnProbability[$rxn] = $values[4];
+         }
+      }
+   }
+}
+
+sub errorCheckInput
+{
+   # Define local variables.
+   my $rxn;
+   my $mol;
+   my $found;
+
+   # Make sure that each of the components of the reaction actually appears in
+   #   the list of molecules that should compose the condensation.
+   foreach $rxn (1..$numReactionTypes)
+   {
+      # Search for the first molecule+binding of this reaction.
+      $found = 0;
+      foreach $mol (1..$numMoleculeTypes)
+      {
+         if (($rxnMolName[1][$rxn] eq $moleculeName[$mol]) and
+             ($rxnBinding[1][$rxn] eq $bindingType[$mol]))
+            {$found = $mol;}
+      }
+      if ($found == 0)
+         {die "The first molecule+binding of reaction $rxn is not present.\n";}
+
+      # Search for the second molecule+binding of this reaction.
+      $found = 0;
+      foreach $mol (1..$numMoleculeTypes)
+      {
+         if (($rxnMolName[2][$rxn] eq $moleculeName[$mol]) and
+             ($rxnBinding[2][$rxn] eq $bindingType[$mol]))
+            {$found = $mol;}
+      }
+      if ($found == 0)
+         {die "The second molecule+binding of reaction $rxn is not present.\n";}
+   }
+}
+
+sub computeImplicitInput
+{
+   my $mol;
+   my $atom;
+   my $line;
+   my $molFile;
+   my @values;
+   my $repeatMol;
+   my $atomCount;
+   my $molCount;
+   my $command;
+   my $currNumAtoms;
+
+   # Compute the number of atoms in each of the molecules.
+   foreach $mol (1..$numMoleculeTypes)
+   {
+      $molFile = "$PRECURSOR_DB/" . lc($moleculeName[$mol]) . ".skl";
+      open (SKL,"<$molFile") || die "Cannot open $molFile for reading\n";
+
+      while ($line = <SKL>)
+      {
+         if ($line =~ /cartesian/)
+         {
+            @values = StructureControl::prepLine("",$line,'\s+');
+            $currNumAtoms = $values[1];
+            last;
+         }
+      }
+      close (SKL);
+#      # Obtain the number of lines in the PDB for this molecule that start with
+#      #   "ATOM".
+#      $command = "grep ^ATOM $PRECURSOR_DB/" .
+#         lc($moleculeName[$mol]) . ".pdb | wc -l";
+#      $currNumAtoms = `$command`;
+#      chomp($currNumAtoms);
+
+      $numMolAtoms[$mol] = $currNumAtoms;
+# For the -H case:
+#      # Subtract one for each of the "reaction points" that are introduced.
+#      #   Presently, the input only permits one reaction point so we always
+#      #   subtract one. In the future, the input format could be changed. Then,
+#      #   the minus one would need to be a slightly more complicated
+#      #   computation.
+#      $numMolAtoms[$mol] = $currNumAtoms - 1;
+   }
+
+   # Now, assign a molecule number to each atom.
+   $atomCount = 0;
+   $molCount = 0;
+   foreach $mol (1..$numMoleculeTypes)
+   {
+      foreach $repeatMol (1..$numMolecules[$mol])
+      {
+         $molCount++;
+         foreach $atom (1..$numMolAtoms[$mol])
+         {
+            $atomCount++;
+            $atomMoleculeID[$atomCount] = $molCount;
+         }
+      }
+   }
+}
+
+sub makeReactionTemplates
+{
+   # Define local variables.
+   my $id;
+   my $letter;
+   my $found;
+   my $rxn;
+   my $rxnPair;
+   my $rxnBindingPair;
+   my $rxnMolBindingPair;
+   my $currRxnMolPair;
+   my @phaseLetter = ("",'a','b','c','d');
+
+
+   # Initialize the number of unique reaction molecule pairs to zero.
+   $numUniqueRxnMolPairs = 0;
+
+   # Create a directory for the combined set of reaction templates.
+   mkdir ("$rxnTemplateDir");
+
+   # For each unique pair of molecules in the reaction list, copy the molecules
+   #   from the precursor database into a working directory and produce the set
+   #   of reaction templates. Once all reaction templates for a given pair of
+   #   precursor molecules has been made, then copy out the select subset of
+   #   reaction templates that are needed for this simulation and store them in
+   #   the reactionTemplates directory created above.
+   foreach $rxn (1..$numReactionTypes)
+   {
+      # Construct the name for the current reaction molecule pair.
+      if ($rxnMolName[1][$rxn] lt $rxnMolName[2][$rxn])
+         {$currRxnMolPair = "$rxnMolName[1][$rxn]__$rxnMolName[2][$rxn]";}
+      else
+         {$currRxnMolPair = "$rxnMolName[2][$rxn]__$rxnMolName[1][$rxn]";}
+
+      # Search for indentically named pairs of reaction molecules.
+      $found = 0;
+      foreach $rxnPair (1..$numUniqueRxnMolPairs)
+      {
+         if ($currRxnMolPair eq $uniqueRxnMolPairs[$rxnPair])
+            {$found = $rxnPair; last;}
+      }
+
+      # In the event that this pair has not been found before, we record the
+      #   fact that we have now found it and we compute the reaction templates.
+      if ($found == 0)
+      {
+         # Store the current (unique) reaction molecule pair.
+         $uniqueRxnMolPairs[++$numUniqueRxnMolPairs] = $currRxnMolPair;
+
+         # Create a directory for this set of reaction templates.
+         mkdir("$currRxnMolPair");
+
+         # Copy the molecules from the precursor database.
+         copy("$PRECURSOR_DB/$rxnMolName[1][$rxn].skl",
+            "$currRxnMolPair/olcao1.skl");
+         copy("$PRECURSOR_DB/$rxnMolName[2][$rxn].skl",
+            "$currRxnMolPair/olcao2.skl");
+
+         # Enter the directory, make the reaction templates, and back out.
+         chdir("$currRxnMolPair");
+         system("makeReactions");
+         chdir("..");
+      }
+
+      # For the current reaction, grab the appropriate reaction templates and
+      #   store them in the collective $rxnTemplatesDir directory with
+      #   appropriate names to distinguish them.
+      $rxnBindingPair = $rxnBinding[1][$rxn] . "_" . $rxnBinding[2][$rxn];
+      $rxnMolBindingPair = $rxnMolName[1][$rxn] . "_" . $rxnBinding[1][$rxn] .
+         "_" . $rxnMolName[2][$rxn] . "_" . $rxnBinding[2][$rxn];
+      foreach $letter (1..4)
+      {
+         copy("$currRxnMolPair/rxnTemplates/preRxn." .
+            "$rxnBindingPair.$phaseLetter[$letter].data",
+            "$rxnTemplateDir/preRxn.$rxnMolBindingPair." .
+            "$phaseLetter[$letter].data");
+         copy("$currRxnMolPair/rxnTemplates/postRxn." .
+            "$rxnBindingPair.$phaseLetter[$letter].data",
+            "$rxnTemplateDir/postRxn.$rxnMolBindingPair." .
+            "$phaseLetter[$letter].data");
+      }
+
+      # Copy the map files.
+      foreach $letter (1..4)
+      {
+         copy("$currRxnMolPair/rxnTemplates/$rxnBindingPair.".
+            "$phaseLetter[$letter].map","$rxnTemplateDir/$rxnMolBindingPair.".
+            "$phaseLetter[$letter].map");
+      }
+
+      # Craft the molecule command for each reaction template file. Also,
+      #   craft the fix bond/react command for each reaction template in the
+      #   subset. The commands will not be used until later when the LAMMPS
+      #   files are actually made.
+      $molRxn[$rxn] = "molecule pre.$rxnMolBindingPair " .
+         "preRxn.$rxnMolBindingPair.data\n" .
+         "molecule post.$rxnMolBindingPair " .
+         "postRxn.$rxnMolBindingPair.data\n";
+      $fixRxn[$rxn] = "  react $rxnMolBindingPair all 500 0.5 2.0 " .
+         "pre.$rxnMolBindingPair post.$rxnMolBindingPair " .
+         "$rxnMolBindingPair.map prob 0.99 12345 ";
+   }
+}
+
+sub runPackmol
+{
+   # Define local variables.
+   my $mol;
+   my $rxn;
+   my $line;
+   my @values;
+   my $randSeed;
+   my $packmolFile;
+   my $currRxnMolPair;
+
+   # Create a directory to run packmol in.
+   mkdir ("packmol");
+   chdir ("packmol");
+
+   # Define the packmol input file.
+   $packmolFile = "packmol.in";
+
+   # Open the packmol input file that is to be written.
+   open (PACK,">$packmolFile") || die "Cannot open $packmolFile for writing\n";
+
+   # Add header comments.
+   print PACK "#Packmol input file from condense.\n\n";
+
+   # Insert the random seed and tolerance.
+   $randSeed = int(rand(99999));
+   print PACK "seed $randSeed\n";
+   print PACK "tolerance 5.0\n";
+
+   # The input and output file types for the molecules are PDB.
+   print PACK "filetype pdb\n";
+   print PACK "output packmol.raw.pdb\n\n";
+
+   foreach $mol (1..$numMoleculeTypes)
+   {
+      print PACK "structure $moleculeName[$mol]_$bindingType[$mol].pdb\n";
+      print PACK "  number $numMolecules[$mol]\n";
+      print PACK "  inside cube 0.0 0.0 0.0 $cellSize\n";
+      print PACK "end structure\n\n";
+   }
+
+   # Close the packmol input file.
+   close (PACK);
+
+   # Copy in the necessary pdb files.
+   foreach $rxn (1..$numReactionTypes)
+   {
+      # Construct the name for the current reaction molecule pair.
+      if ($rxnMolName[1][$rxn] lt $rxnMolName[2][$rxn])
+         {$currRxnMolPair = "$rxnMolName[1][$rxn]__$rxnMolName[2][$rxn]";}
+      else
+         {$currRxnMolPair = "$rxnMolName[2][$rxn]__$rxnMolName[1][$rxn]";}
+
+#      print STDOUT "currRxnMolPair = $currRxnMolPair\n";
+##      chdir ("${currRxnMolPair}/centered");
+##      my $pwd = `pwd`;
+##      print STDOUT "pwd = $pwd\n";
+#      my @temp = glob ("../$currRxnMolPair/centered/*.pdb");
+#      print STDOUT "temp = @temp\n";
+      foreach my $file (glob "../$currRxnMolPair/centered/*.pdb")
+         {copy("$file",".");}
+   }
+
+   # Execute packmol. There are lots of options for this program. It may be
+   #   necessary to enforce a distance between molecules so that no inter-
+   #   molecular "bonds" or "bond angles" are defined between the molecules
+   #   before the simulation starts.
+   system("packmol < $packmolFile");
+
+   # Unfortunately, the packmol program seems to not follow the PDB standard
+   #   as specified here: http://www.wwpdb.org/documentation/file-format.
+   #   Therefore, we will now correct the file.
+   open (RAW,"<packmol.raw.pdb") ||
+      die "Cannot open packmol.raw.pdb for reading.\n";
+   open (FIXED,">packmol.fixed.pdb") ||
+      die "Cannot open packmol.fixed.pdb for writing.\n";
+
+   while ($line = <RAW>)
+   {
+      @values = StructureControl::prepLine("",$line,'\s+');
+      if ($values[0] eq "ATOM")
+      {
+         print FIXED substr($line,0,54);
+         print FIXED "  1.00  0.00";
+         printf FIXED "%12s", $values[$#values];
+         print FIXED "\n";
+      }
+      else
+         {print FIXED "$line";}
+   }
+
+   close (RAW);
+   close (FIXED);
+
+   # Return to the main directory.
+   chdir ("..");
+}
+
+sub createLAMMPSFiles
+{
+   # Define local variables.
+   my @values;
+   my @values2;
+   my @phaseLetter = ("",'a','b','c','d');
+   my $letter;
+   my $axis;
+   my $atom;
+   my $bond;
+   my $bondCount;
+   my $uniqueBond;
+   my $hookeBond;
+   my $angle;
+   my $angleCount;
+   my $uniqueAngle;
+   my $hookeAngle;
+   my $element;
+   my $periodicElement;
+   my $species;
+   my $numAtoms;
+   my $numElements;
+   my $atomicZ_ref;
+   my $atom0Z;
+   my $atom1Z;
+   my $atom2Z;
+   my $atomicMasses_ref;
+   my $ljPairCoeffs_ref;
+   my $atomElementName_ref;
+   my $atomElementID_ref;
+   my $atomSpeciesID_ref;
+   my $numOrderedSpecies;
+   my @orderedSpeciesTag;
+   my @orderedSpeciesID;
+   my @orderedSpeciesMasses;
+   my @orderedSpeciesPairCoeffs;
+   my @orderedBondType;
+   my @orderedBondTypeCoeffs;
+   my @orderedAngleType;
+   my @orderedAngleTypeCoeffs;
+   my @orderedBondedAtoms;
+   my @angleBondedAtoms;
+   my $numSpecies_ref;
+   my $currentTag;
+   my $currentMol;
+   my $numBondsTotal;
+   my $numBonds_ref;
+   my $bonded_ref;
+   my $bondLength_ref;
+   my $bondTagID_ref;
+   my $numUniqueBondTags;
+   my @uniqueBondCoeffs;
+   my $uniqueBondTags_ref;
+   my $numBondAngles_ref;
+   my $angleBonded_ref;
+   my $angleTagID_ref;
+   my $numUniqueAngleTags;
+   my @uniqueAngleCoeffs;
+   my $uniqueAngleTags_ref;
+   my $numAnglesTotal;
+   my $directXYZ_ref;
+   my $maxVelocity;
+   my @randVel;
+   my $randSeed;
+   my $randProb;
+   my $numReactionMols;
+   my @reactionMols;
+   my $rxnMol;
+   my $rxn;
+   my $molFileFrom;
+   my $mapFileDir;
+   my $mapFileFrom;
+   my $mapFileTo;
+
+   # Create a directory for the LAMMPS data files and enter it.
+   mkdir ("lammps");
+   chdir ("lammps");
+
+   # Convert the packmol PDB into a skeleton file.
+   copy("../packmol/packmol.fixed.pdb","./");
+   system("pdb2skl -i packmol.fixed.pdb -o packmol.skl -pdbtypes");
+
+   # Read the skeleton file and extract necessary information.
+   StructureControl::readInputFile("packmol.skl",1);
+   $numAtoms = StructureControl::getNumAtoms;
+   $directXYZ_ref = StructureControl::getDirectXYZRef;
+   $atomElementName_ref = StructureControl::getAtomElementNameRef;
+   $atomElementID_ref = StructureControl::getAtomElementIDRef;
+   $atomSpeciesID_ref = StructureControl::getAtomSpeciesIDRef;
+   $atomicZ_ref = StructureControl::getAtomicZRef;
+   $numElements = StructureControl::getNumElements;
+   $numSpecies_ref = StructureControl::getNumSpeciesRef;
+
+   # Get useful elemental information.
+   $numPeriodicElements = ElementData::getNumElements;
+   $elementNames_ref = ElementData::getElementNamesRef;
+   $atomicMasses_ref = ElementData::getAtomicMassesRef;
+   $ljPairCoeffs_ref = ElementData::getLJPairCoeffs;
+
+   # Get useful bond information.
+   BondData::initBondData;
+   $numHookeBonds = BondData::getNumHookeBonds;
+   $hookeBondCoeffs_ref = BondData::getHookeBondCoeffsRef;
+
+   # Get useful angle information.
+   AngleData::initAngleData;
+   $numHookeAngles = AngleData::getNumHookeAngles;
+   $hookeAngleCoeffs_ref = AngleData::getHookeAngleCoeffs;
+
+   # Perform a bond analysis to get bond length and bond angle information.
+   system("bondAnalysis -bl -bf 1.1 -i packmol.skl");
+   system("bondAnalysis -ba -bf 1.1 -i packmol.skl");
+
+   # Read the bondAnalysis results and extract necessary information.
+   StructureControl::readBondAnalysisBL("bondAnalysis.bl",$numAtoms);
+   StructureControl::readBondAnalysisBA("bondAnalysis.ba",$numAtoms);
+   $bonded_ref = StructureControl::getBondingListRef;
+   $bondLength_ref = StructureControl::getBondLengthExtRef;
+   $bondTagID_ref = StructureControl::getBondTagIDRef;
+   $uniqueBondTags_ref = StructureControl::getUniqueBondTagsRef;
+   $numUniqueBondTags = StructureControl::getNumUniqueBondTags;
+   $numBondAngles_ref = StructureControl::getNumBondAnglesRef;
+   $angleBonded_ref = StructureControl::getAngleBondedRef;
+   $angleTagID_ref = StructureControl::getAngleTagIDRef;
+   $numUniqueAngleTags = StructureControl::getNumUniqueAngleTags;
+   $uniqueAngleTags_ref = StructureControl::getUniqueAngleTagsRef;
+   $numBondsTotal = StructureControl::getNumBondsTotal;
+   $numAnglesTotal = StructureControl::getNumAnglesTotal;
+   $numBonds_ref = StructureControl::getNumBondsRef;
+
+   # Assign an *ordered* species number to each atom, not a species number that
+   #   is nested within the element ID number. For example, if a system has
+   #   3 Si species and 2 O species and 90 atoms then the orderedSpeciesID
+   #   for each of the 90 atoms will be a number between 1 and 5 inclusive.
+   $numOrderedSpecies = 0;
+   foreach $atom (1..$numAtoms)
+   {
+      $orderedSpeciesID[$atom] = 0;
+      foreach $element (1..$atomElementID_ref->[$atom]-1)
+         {$orderedSpeciesID[$atom] += $numSpecies_ref->[$element];}
+      $orderedSpeciesID[$atom] += $atomSpeciesID_ref->[$atom];
+
+      # Get the largest number in the ordered species list. This is equal to
+      #   the number of unique species in the system.
+      if ($orderedSpeciesID[$atom] > $numOrderedSpecies)
+         {$numOrderedSpecies = $orderedSpeciesID[$atom];}
+   }
+
+   # Establish a unique list of the ordered species and important species info.
+   $bondCount = 0;
+   $angleCount = 0;
+   foreach $atom (1..$numAtoms)
+   {
+      foreach $species (1..$numOrderedSpecies)
+      {
+         if ($orderedSpeciesID[$atom] == $species)
+         {
+            # Assemble the tag for this element-species pair.
+            $orderedSpeciesTag[$species] =
+               "$atomElementName_ref->[$atom]" . "-" .
+               "$atomSpeciesID_ref->[$atom]";
+
+            # Get the mass of each type of atom.
+            $orderedSpeciesMasses[$species] =
+               $atomicMasses_ref->[$atomicZ_ref->[$atom]];
+
+            # Get the LJ pair coeffs for each type of atom. This is the first
+            #   coeff, the second is recorded next. Note that the true LJ
+            #   interaction is computed from the combination of coefficients
+            #   from different elements.
+            $orderedSpeciesPairCoeffs[$species][1] =
+               $ljPairCoeffs_ref->[$atomicZ_ref->[$atom]][1];
+
+            $orderedSpeciesPairCoeffs[$species][2] =
+               $ljPairCoeffs_ref->[$atomicZ_ref->[$atom]][2];
+         }
+      }
+
+      foreach $bond (1..$numBonds_ref->[$atom])
+      {
+         # Determine if this bond has been counted already. If so, then skip to
+         #   the next bond.
+         if ($atom > $bonded_ref->[$atom][$bond])
+            {next;}
+
+         # Increment a count of all bonds.
+         $bondCount++;
+
+         # Get the current tag for this bond and then extract the atomic
+         #   Z number for the atom bonded to $atom.
+         $currentTag = $uniqueBondTags_ref->[$bondTagID_ref->[$atom][$bond]];
+         $atom1Z = $atomicZ_ref->[$atom];
+         @values = StructureControl::prepLine("",$currentTag,'\s+');
+         @values2 = StructureControl::prepLine("",$values[1],'[0-9]+');
+         foreach $element (1..$numPeriodicElements)
+         {
+            if ("$values2[0]" eq "$elementNames_ref->[$element]")
+               {$atom2Z = $element; last;}
+         }
+
+         # Make sure that $atom1Z < $atom2Z.
+         if ($atom1Z > $atom2Z)
+            {($atom1Z,$atom2Z) = ($atom2Z,$atom1Z);}
+
+         # Record the bonded atoms and bond types in an ordered list.
+         $orderedBondedAtoms[$bondCount][1] = $atom;
+         $orderedBondedAtoms[$bondCount][2] = $bonded_ref->[$atom][$bond];
+         $orderedBondType[$bondCount] = $bondTagID_ref->[$atom][$bond];
+
+         # Collect the coefficients for each of the unique bond types.
+         foreach $hookeBond (1..$numHookeBonds)
+         {
+            if ((($atom1Z == $hookeBondCoeffs_ref->[$hookeBond][1]) and
+                 ($atom2Z == $hookeBondCoeffs_ref->[$hookeBond][2])) or
+                (($atom2Z == $hookeBondCoeffs_ref->[$hookeBond][1]) and
+                 ($atom1Z == $hookeBondCoeffs_ref->[$hookeBond][2])))
+            {
+               $uniqueBondCoeffs[$bondTagID_ref->[$atom][$bond]][1] =
+                  $hookeBondCoeffs_ref->[$hookeBond][3];
+               $uniqueBondCoeffs[$bondTagID_ref->[$atom][$bond]][2] =
+                  $hookeBondCoeffs_ref->[$hookeBond][4];
+            }
+         }
+      }
+
+      foreach $angle (1..$numBondAngles_ref->[$atom])
+      {
+         # Note that bond angles were not double listed in the bondAnalysis.ba
+         #   file (unlike the double listed bonds in bondAnalysis.bl). Thus, we
+         #   don't need to check for double counted bond angles here.
+
+         # Increment a cound of all bond angles.
+         $angleCount++;
+
+         # Get the current tag for this bond angle and then extract the atomic
+         #   Z numbers for the non-vertex atoms.
+         $currentTag =
+            $uniqueAngleTags_ref->[$angleTagID_ref->[$atom][$angle]];
+         $atom1Z = $atomicZ_ref->[$atom];
+         @values = StructureControl::prepLine("",$currentTag,'\s+');
+         @values2 = StructureControl::prepLine("",$values[0],'[0-9]+');
+         foreach $element (1..$numPeriodicElements)
+         {
+            if ("$values2[0]" eq "$elementNames_ref->[$element]")
+               {$atom0Z = $element; last;}
+         }
+
+         @values2 = StructureControl::prepLine("",$values[2],'[0-9]+');
+         foreach $element (1..$numPeriodicElements)
+         {
+            if ("$values2[0]" eq "$elementNames_ref->[$element]")
+               {$atom2Z = $element; last;}
+         }
+
+         # Collect the coefficients for each of the unique bond angle types.
+         foreach $hookeAngle (1..$numHookeAngles)
+         {
+            if ((($atom0Z == $hookeAngleCoeffs_ref->[$hookeAngle][1]) and
+                 ($atom1Z == $hookeAngleCoeffs_ref->[$hookeAngle][2]) and
+                 ($atom2Z == $hookeAngleCoeffs_ref->[$hookeAngle][3])) or
+                (($atom2Z == $hookeAngleCoeffs_ref->[$hookeAngle][1]) and
+                 ($atom1Z == $hookeAngleCoeffs_ref->[$hookeAngle][2]) and
+                 ($atom0Z == $hookeAngleCoeffs_ref->[$hookeAngle][3])))
+            {
+               $uniqueAngleCoeffs[$angleTagID_ref->[$atom][$angle]][1] = 
+                  $hookeAngleCoeffs_ref->[$hookeAngle][4];
+               $uniqueAngleCoeffs[$angleTagID_ref->[$atom][$angle]][2] = 
+                  $hookeAngleCoeffs_ref->[$hookeAngle][5];
+            }
+         }
+
+         $angleBondedAtoms[$angleCount][1]=$angleBonded_ref->[$atom][$angle][1];
+         $angleBondedAtoms[$angleCount][2]=$atom;
+         $angleBondedAtoms[$angleCount][3]=$angleBonded_ref->[$atom][$angle][2];
+
+         $orderedAngleType[$angleCount] = $angleTagID_ref->[$atom][$angle];
+      }
+   }
+
+   # Open the LAMMPS data file for writing.
+   open (LMPDAT,">lammps.dat") || die "Cannot open lammps.dat for writing.\n";
+
+   # Print the header.
+   print LMPDAT "lammps.dat\n\n";
+
+   # Print number of items and number of types.
+   print LMPDAT "$numAtoms atoms\n";
+   print LMPDAT "$numBondsTotal bonds\n";
+   print LMPDAT "$numAnglesTotal angles\n";
+   print LMPDAT "0 dihedrals\n";
+   print LMPDAT "0 impropers\n\n";
+   print LMPDAT "$numOrderedSpecies atom types\n";
+   print LMPDAT "$numUniqueBondTags bond types\n";
+   print LMPDAT "$numUniqueAngleTags angle types\n\n";
+   print LMPDAT "1 extra bond per atom\n";
+   print LMPDAT "0.000 $cellSize xlo xhi\n";
+   print LMPDAT "0.000 $cellSize ylo yhi\n";
+   print LMPDAT "0.000 $cellSize zlo zhi\n\n";
+
+   # Print the Mass information for each atom type.
+   print LMPDAT "Masses\n\n";
+   foreach $species (1..$numOrderedSpecies)
+   {
+      print LMPDAT "$species $orderedSpeciesMasses[$species] ".
+         "# $orderedSpeciesTag[$species]\n";
+   }
+
+   # Print out the pair coefficients for the LJ interaction of each bond type.
+   print LMPDAT "\nPair Coeffs\n\n";
+   foreach $species (1..$numOrderedSpecies)
+   {
+      print LMPDAT "$species $orderedSpeciesPairCoeffs[$species][1] " .
+         "$orderedSpeciesPairCoeffs[$species][2] " .
+         "# $orderedSpeciesTag[$species]\n";
+   }
+
+   # Print the bond coefficients for the spring-like interaction of each
+   #   bond type.
+   print LMPDAT "\nBond Coeffs\n\n";
+   foreach $bond (1..$numUniqueBondTags)
+   {
+      print LMPDAT "$bond $uniqueBondCoeffs[$bond][1] " .
+         "$uniqueBondCoeffs[$bond][2] " .
+         "# $uniqueBondTags_ref->[$bond]\n";
+   }
+#   foreach $bond (1..$numReactionMols)
+#   {
+#      print LMPDAT $bond+$numUniqueBondTags . " $rxnBind"
+#   }
+
+   # Print the bond angle coefficients for the spring-like interaction.
+   print LMPDAT "\nAngle Coeffs\n\n";
+   foreach $angle (1..$numUniqueAngleTags)
+   {
+      print LMPDAT "$angle $uniqueAngleCoeffs[$angle][1] " .
+         "$uniqueAngleCoeffs[$angle][2] " .
+         "# $uniqueAngleTags_ref->[$angle]\n";
+   }
+
+   # Print the atom information.
+   print LMPDAT "\nAtoms\n\n";
+   foreach $atom (1..$numAtoms)
+   {
+      print LMPDAT "$atom $atomMoleculeID[$atom] " .
+         "$orderedSpeciesID[$atom] 0.00 ";
+      foreach $axis (1..3)
+         {print LMPDAT " $directXYZ_ref->[$atom][$axis]";}
+      print LMPDAT " # $atomElementName_ref->[$atom]" . "-" .
+         "$atomSpeciesID_ref->[$atom]\n";
+   }
+
+   # Print the initial velocities for the molecules.
+   print LMPDAT "\nVelocities\n\n";
+   $currentMol = 0;
+   foreach $atom (1..$numAtoms)
+   {
+      # Create random velocities between +,- maxVelocity for each molecule.
+      #   Note that the assumption is that all atoms of the same molecule
+      #   appear next to each other in the list of atoms. Otherwise this does
+      #   not work.
+      $maxVelocity = 2.5;
+      if ($atomMoleculeID[$atom] != $currentMol)
+      {
+         foreach $axis (1..3)
+            {$randVel[$axis] = rand($maxVelocity*2)-$maxVelocity;}
+         $currentMol = $atomMoleculeID[$atom];
+      }
+      print LMPDAT "$atom $randVel[1] $randVel[2] $randVel[3] ";
+      print LMPDAT " # $atomElementName_ref->[$atom]" .
+         "$atomSpeciesID_ref->[$atom]\n";
+   }
+
+   # Print the bond information.
+   print LMPDAT "\nBonds\n\n";
+   foreach $bond (1..$numBondsTotal)
+   {
+      print LMPDAT "$bond $orderedBondType[$bond] " .
+         "$orderedBondedAtoms[$bond][1] $orderedBondedAtoms[$bond][2] # " .
+         "$atomElementName_ref->[$orderedBondedAtoms[$bond][1]]" .
+         "$atomSpeciesID_ref->[$orderedBondedAtoms[$bond][1]] " .
+         "$atomElementName_ref->[$orderedBondedAtoms[$bond][2]]" .
+         "$atomSpeciesID_ref->[$orderedBondedAtoms[$bond][2]]\n";
+     
+   }
+
+   # Print the bond angle information.
+   print LMPDAT "\nAngles\n\n";
+   foreach $angle (1..$numAnglesTotal)
+   {
+      print LMPDAT "$angle $orderedAngleType[$angle] " .
+         "$angleBondedAtoms[$angle][1] $angleBondedAtoms[$angle][2] " .
+         "$angleBondedAtoms[$angle][3] # " .
+         "$atomElementName_ref->[$angleBondedAtoms[$angle][1]]" .
+         "$atomSpeciesID_ref->[$angleBondedAtoms[$angle][1]]" . " " .
+         "$atomElementName_ref->[$angleBondedAtoms[$angle][2]]" .
+         "$atomSpeciesID_ref->[$angleBondedAtoms[$angle][2]]" . " " .
+         "$atomElementName_ref->[$angleBondedAtoms[$angle][3]]" .
+         "$atomSpeciesID_ref->[$angleBondedAtoms[$angle][3]]\n";
+#      if ($angle != $numAnglesTotal)
+#         {print LMPDAT "\n";}
+   }
+
+   # Close the LAMMPS data file.
+   close (LMPDAT);
+
+   # Open the LAMMPS input file for writing.
+   open (LMPIN,">lammps.in") || die "Cannot open lammps.in for writing.\n";
+
+   # Fill the LAMMPS input file with appropriate header information.
+   print LMPIN<<ENDLAMMPSHEAD;
+# A lammps command file for condensign a periodic cell.
+
+# Initialization
+
+units real
+dimension 3
+boundary p p p
+atom_style full
+pair_style lj/cut 15.0
+bond_style harmonic
+angle_style harmonic
+neigh_modify every 10 delay 0 check yes
+comm_modify mode single cutoff 20.0
+pair_modify shift yes mix sixthpower
+newton off
+
+# Atom definition
+read_data lammps.dat extra/bond/per/atom 5 extra/special/per/atom 5
+
+special_bonds lj/coul 0 1 1
+
+########################
+# Initialization
+########################
+
+timestep 0.0005
+
+# Set up output
+
+#restart 50000 restart.fast1.0 restart.fast1.1
+
+dump coords all atom 500 dump.fast1.coarse
+#dump_modify coords scale no
+
+compute bnd all property/local btype batom1 batom2
+dump bonds all local 500 dump.fast_1mol.bond.coarse index c_bnd[1] c_bnd[2] c_bnd[3]
+
+compute ang all property/local atype aatom1 aatom2 aatom3
+dump angles all local 500 dump.fast_1mol.angle.coarse index c_ang[1] c_ang[2] c_ang[3] c_ang[4]
+
+# Initial minimization
+
+#minimize 1.0e-15 1.0e-15 1000000 100000000
+#minimize 1.0e-15 1.0e-15 1000 1000000
+
+########################
+# Coarse run
+########################
+
+region simcell block EDGE EDGE EDGE EDGE EDGE EDGE units box
+
+ENDLAMMPSHEAD
+
+   # Insert the molecule definitions. There will be eight for every reaction
+   #   because there are four phases to a reaction and a pre and post aspect
+   #   to each phase.
+   print LMPIN "# Molecules\n";
+   foreach $rxn (1..$numReactionTypes)
+   {
+      foreach $letter (1..4)
+      {
+         $molFileFrom = "preRxn.$rxnMolName[1][$rxn]"."_$rxnBinding[1][$rxn]" .
+            "_$rxnMolName[2][$rxn]"."_$rxnBinding[2][$rxn]" .
+            ".$phaseLetter[$letter].data";
+         copy ("../reactionTemplates/$molFileFrom",".");
+         print LMPIN "molecule MOLpre$rxn$phaseLetter[$letter] $molFileFrom\n";
+         $molFileFrom = "postRxn.$rxnMolName[1][$rxn]"."_$rxnBinding[1][$rxn]".
+            "_$rxnMolName[2][$rxn]"."_$rxnBinding[2][$rxn]" .
+            ".$phaseLetter[$letter].data";
+         copy ("../reactionTemplates/$molFileFrom",".");
+         print LMPIN "molecule MOLpost$rxn$phaseLetter[$letter] $molFileFrom\n";
+      }
+   }
+
+   # Insert the bond reactions.
+   print LMPIN "\n# Bond Reactions\n";
+   print LMPIN "fix reaction all bond/react stabilization no &\n";
+   foreach $rxn (1..$numReactionTypes)
+   {
+      # Prepare the map file and print the react command for each phase in the
+      #   current reaction.
+      foreach $letter (1..4)
+      {
+         $randSeed = int(rand(99999));
+         $mapFileDir = "$rxnMolName[1][$rxn]" . "__$rxnMolName[2][$rxn]";
+         $mapFileFrom = "$rxnBinding[1][$rxn]" . "_$rxnBinding[2][$rxn].".
+            "$phaseLetter[$letter].map";
+         $mapFileTo = "$rxnMolName[1][$rxn]"."_$rxnBinding[1][$rxn]".
+            "_$rxnMolName[2][$rxn]"."_$rxnBinding[2][$rxn].".
+            "$phaseLetter[$letter].map";
+         copy ("../$mapFileDir/$mapFileFrom", "./$mapFileTo");
+         print LMPIN "  react RXN$rxn$phaseLetter[$letter] all 5 0.5 2.5 ".
+            "MOLpre$rxn$phaseLetter[$letter] ".
+            "MOLpost$rxn$phaseLetter[$letter] " .
+            "$mapFileTo prob $rxnProbability[$rxn] $randSeed &\n";
+      }
+   }
+
+   # Fill the LAMMPS input file with appropriate tail information.
+   print LMPIN<<ENDLAMMPSTAIL;
+
+fix energy all nve
+#fix squish all deform 500 x scale 0.25 y scale 0.25 z scale 0.25 remap x
+
+# Run
+
+run 60000
+#unfix squish
+run 60000
+
+ENDLAMMPSTAIL
+
+   # Close the LAMMPS input file.
+   close (LMPIN);
+
+   # Create the slurm file.
+   open (SLURM, ">slurm") || die "Cannot open slurm for writing.\n";
+
+   my $lmpDir = `pwd`;
+   chomp $lmpDir;
+
+   print SLURM<<ENDSLURM;
+#!/bin/bash
+#SBATCH -p Lewis
+#SBATCH -J lmp
+#SBATCH -o lmp.o%J
+#SBATCH -e lmp.e%J
+#SBATCH -N 1
+#SBATCH -n 2
+#SBATCH -t 00:02:30
+#SBATCH --mem=2G
+#
+export OMP_NUM_THREADS=1
+cd $lmpDir;
+mpirun $HOME/bin/lmp_mpi < lammps.in
+
+ENDSLURM
+
+   # Close the slurm file.
+   close (SLURM);
+
+   # Return to the project directory.
+   chdir ("..");
+}
+
+# We need to open each molecule file and also the lammps data file and collect
+#   information about all the bond types that are present. Those bond types
+#   will be analyzed and assembled into a list of the unique bond types. Then
+#   each file will be opened again and all the bond types will re-assigned
+#   according to the unique list of *all* bond types.
+sub normalizeBondTypes
+{
+   # Define the local variables.
+   my $line;
+   my $lineNum;
+   my @values;
+   my $bond;
+   my $atom;
+   my $mol;
+   my $uniqueBond;
+   my @uniqueBondTypes;
+   my $numUniqueBonds;
+   my @uniqueBondCoeffs;
+   my @lammpsFile;
+   my @molFiles;
+   my @molFile;
+   my $numMolFiles;
+   my $numBonds;
+   my $numBondTypes;
+   my $found;
+   my $hookeBond;
+   my $atom1Z;
+   my $atom2Z;
+   my $element;
+
+   # Enter the lammps directory to work.
+   chdir ("lammps");
+
+   # Initialize the number of unique bonds.
+   $numUniqueBonds = 0;
+
+   # Get the molecule file names.
+   @molFiles = `ls -1 preRxn*`;
+   push(@molFiles,`ls -1 postRxn*`);
+   chomp(@molFiles);
+   $numMolFiles = unshift(@molFiles,"") - 1;
+
+   # Open each molecule file and collect all the unique bond types.
+   foreach $mol (1..$numMolFiles)
+   {
+      open (MOL,"<$molFiles[$mol]") ||
+         die "Cannot open $molFiles[$mol] for reading";
+
+      while ($line = <MOL>)
+      {
+         if ($line =~ /bonds/)
+         {
+            @values = StructureControl::prepLine("",$line,'\s+');
+            $numBonds = $values[0];
+         }
+         elsif ($line =~ /Bonds/)
+         {
+            <MOL>;
+            foreach $bond (1..$numBonds)
+            {
+               @values = StructureControl::prepLine(\*MOL,"",'\s+');
+
+               # Determine if this bond has been seen before.
+               $found = 0;
+               foreach $uniqueBond (1..$numUniqueBonds)
+               {
+                  if (("$uniqueBondTypes[$uniqueBond][1]" eq "$values[5]") and
+                      ("$uniqueBondTypes[$uniqueBond][2]" eq "$values[6]"))
+                     {$found = $uniqueBond; last;}
+               }
+
+               if ($found == 0)
+               {
+                  $numUniqueBonds++;
+                  $uniqueBondTypes[$numUniqueBonds][1] = $values[5];
+                  $uniqueBondTypes[$numUniqueBonds][2] = $values[6];
+               }
+            }
+         }
+      }
+      close (MOL);
+   }
+
+   # Open the lammps data file and collect all the unique bond types.
+   open (LMP,"<lammps.dat") || die "Cannot open lammps.dat for reading.\n";
+
+   # Read the whole lammps.dat file into memory.
+   @lammpsFile = <LMP>;
+   chomp(@lammpsFile);
+   close (LMP);
+
+   # Parse the lammps.dat file.
+   $lineNum = 0;
+   while ($lineNum <= $#lammpsFile)
+   {
+      $line = $lammpsFile[$lineNum];
+      if ($line =~ /bond types/)
+      {
+         @values = StructureControl::prepLine("",$line,'\s+');
+         $numBondTypes = $values[0];
+      }
+      elsif ($line =~ /Bond Coeffs/)
+      {
+         $lineNum++;
+         foreach $bond (1..$numBondTypes)
+         {
+            @values = StructureControl::prepLine("",
+               "$lammpsFile[++$lineNum]",'\s+');
+
+            # Determine if this bond has been seen before.
+            $found = 0;
+            foreach $uniqueBond (1..$numUniqueBonds)
+            {
+               if (($uniqueBondTypes[$uniqueBond][1] eq $values[4]) and
+                   ($uniqueBondTypes[$uniqueBond][2] eq $values[5]))
+                  {$found = $uniqueBond; last;}
+            }
+
+            if ($found == 0)
+            {
+               $numUniqueBonds++;
+               $uniqueBondTypes[$numUniqueBonds][1] = $values[4];
+               $uniqueBondTypes[$numUniqueBonds][2] = $values[5];
+            }
+         }
+         last;
+      }
+      $lineNum++;
+   }
+
+   # For each one of the unique bonds we need to get the bond coefficients.
+   foreach $uniqueBond (1..$numUniqueBonds)
+   {
+      # Get the atomic Z numbers for this unique bond.
+      @values = StructureControl::prepLine("",
+         $uniqueBondTypes[$uniqueBond][1],'[0-9]+');
+      foreach $element (1..$numPeriodicElements)
+      {
+         if ("$values[0]" eq "$elementNames_ref->[$element]")
+            {$atom1Z = $element; last;}
+      }
+      @values = StructureControl::prepLine("",
+         $uniqueBondTypes[$uniqueBond][2],'[0-9]+');
+      foreach $element (1..$numPeriodicElements)
+      {
+         if ("$values[0]" eq "$elementNames_ref->[$element]")
+            {$atom2Z = $element; last;}
+      }
+
+      # Make sure that $atom1Z < $atom2Z.
+      if ($atom1Z > $atom2Z)
+         {($atom1Z,$atom2Z) = ($atom2Z,$atom1Z);}
+
+      foreach $hookeBond (1..$numHookeBonds)
+      {
+         if ((($atom1Z == $hookeBondCoeffs_ref->[$hookeBond][1]) and
+              ($atom2Z == $hookeBondCoeffs_ref->[$hookeBond][2])) or
+             (($atom2Z == $hookeBondCoeffs_ref->[$hookeBond][1]) and
+              ($atom1Z == $hookeBondCoeffs_ref->[$hookeBond][2])))
+         {
+            $uniqueBondCoeffs[$uniqueBond][1] =
+               $hookeBondCoeffs_ref->[$hookeBond][3];
+            $uniqueBondCoeffs[$uniqueBond][2] =
+               $hookeBondCoeffs_ref->[$hookeBond][4];
+         }
+      }
+   }
+
+   # At this point the total number of unique bond types has been discovered.
+   #   We also have all the coefficients for each unique bond. Now we just go
+   #   back through all of the molecule files and the lammps.dat file and
+   #   adjust their contents.
+
+   # Adjust the contents of the lammps.dat file.
+   open (LMP,">lammps.dat") || die "Cannot open lammps.dat for writing.\n";
+
+   $lineNum = 0;
+   while ($lineNum <= $#lammpsFile)
+   {
+      $line = $lammpsFile[$lineNum++];
+      if ($line =~ /bond types/)
+         {print LMP "$numUniqueBonds bond types\n";}
+      elsif ($line =~ /bonds/)
+      {
+         @values = StructureControl::prepLine("",$line,'\s+');
+         $numBonds = $values[0];
+         print LMP "$numBonds bonds\n";
+      }
+      elsif ($line =~ /Bond Coeffs/)
+      {
+         print LMP "Bond Coeffs\n\n";
+         foreach $uniqueBond (1..$numUniqueBonds)
+         {
+            print LMP "$uniqueBond $uniqueBondCoeffs[$uniqueBond][1] " .
+               "$uniqueBondCoeffs[$uniqueBond][2] " .
+               "# $uniqueBondTypes[$uniqueBond][1] " .
+               "$uniqueBondTypes[$uniqueBond][2]\n";
+         }
+         $lineNum += $numBondTypes+1;
+      }
+      elsif ($line =~ /Bonds/)
+      {
+         print LMP "Bonds\n\n";
+         foreach $bond (1..$numBonds)
+         {
+            @values = StructureControl::prepLine("",
+               "$lammpsFile[++$lineNum]",'\s+');
+
+            foreach $uniqueBond (1..$numUniqueBonds)
+            {
+               if (($values[5] eq $uniqueBondTypes[$uniqueBond][1]) and
+                   ($values[6] eq $uniqueBondTypes[$uniqueBond][2]))
+                  {print LMP "$bond $uniqueBond $values[2] $values[3] " .
+                     "$values[4] $values[5] $values[6]\n"; last;}
+            }
+         }
+         $lineNum++;
+      }
+      else
+         {print LMP "$line\n";}
+   }
+   close (LMP);
+
+
+   # Adjust the contents of each of the molecule files.
+   foreach $mol (1..$numMolFiles)
+   {
+      # Open the current molecule file.
+      open (MOL,"<$molFiles[$mol]") ||
+         die "Cannot open $molFiles[$mol] for reading";
+
+      # Read the whole molecule data file into memory.
+      @molFile = <MOL>;
+      chomp(@molFile);
+      close (MOL);
+
+      # Parse the molecule file in memory and modify the one on disk at the
+      #   same time.
+      open (MOL,">$molFiles[$mol]") ||
+         die "Cannot open $molFiles[$mol] for reading";
+      $lineNum = 0;
+      while ($lineNum <= $#molFile)
+      {
+         $line = $molFile[$lineNum];
+         if ($line =~ /bonds/)
+         {
+            print MOL "$line\n";
+            @values = StructureControl::prepLine("",$line,'\s+');
+            $numBonds = $values[0];
+         }
+         elsif ($line =~ /Bonds/)
+         {
+            print MOL "$line\n\n";
+            $lineNum++;
+            foreach $bond (1..$numBonds)
+            {
+               # Study each bond and update the bond type as needed.
+               @values = StructureControl::prepLine("","$molFile[++$lineNum]",
+                  '\s+');
+
+               # Determine what type of bond this is from the unique list.
+               foreach $uniqueBond (1..$numUniqueBonds)
+               {
+                  if (("$uniqueBondTypes[$uniqueBond][1]" eq "$values[5]") and
+                      ("$uniqueBondTypes[$uniqueBond][2]" eq "$values[6]"))
+                     {print MOL "$bond $uniqueBond $values[2] $values[3] " .
+                        "$values[4] $values[5] $values[6]\n"; last;}
+               }
+            }
+         }
+         else
+            {print MOL "$line\n";}
+         $lineNum++;
+      }
+      close (MOL);
+   }
+
+   # Return to the project directory.
+   chdir ("..");
+}

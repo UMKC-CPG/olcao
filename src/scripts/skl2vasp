@@ -115,7 +115,7 @@ sub initEnv
    $jobType = "relaxfull";
 
    # Initialize the default potential type.
-   $potType = "potpaw";
+   $potType = "potpawPBE";
 
    # Initialize the default sub type for the potential.
    $subPotType = "";

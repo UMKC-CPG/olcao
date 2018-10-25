@@ -1,0 +1,2833 @@
+#!/usr/bin/env perl
+
+sub printHelp
+{
+   print <<ENDHELP;
+# PROGRAM: makeReactions
+# PURPOSE: To create a set of pre- and post-reaction molecule files for a
+#    bond/react based LAMMPS calculation.
+# REQUIREMENTS: I prefer that programs not have any strange environmental
+#    requirements. However, for this program it needs to be executed inside a
+#    directory where the name is XXX__YYY where XXX and YYY are the names of the
+#    two molecules that will be used to create reaction pairs.
+# ALGORITHM: This program takes two OLCAO skeleton files as input. In turn,
+#    each file is parsed to find and record all of its H atoms and the atoms
+#    bonded to the H atoms. It is assumed that the H atoms between the two
+#    molecules will be the points at which new bonds will be formed. That is,
+#    the H atoms will break off to form H_2 and the remaining bare atoms will
+#    bond.
+#
+#    Once all the atoms in both molecules have been cataloged, then the second
+#    molecule will be systematically translated and oriented so that each of
+#    its H atoms would be in a proper position for reacting with each of the H
+#    atoms in the first molecule. Once so translated and rotated, then the
+#    skeleton files for molecule1 and the modified molecule2 will be merged
+#    into a single file.
+#
+#    At this point two product files are created that are suitable molecule
+#    files for use in LAMMPS bond/react calculations. The first is the
+#    pre-reaction molecule file that contains relevant segments of both
+#    molecules (where "relevant" is determined by the chain-length variable
+#    which is 2 by default so as to include the atoms bonded to the H atoms
+#    and the next nearest neighbor atoms). The second is the post-reaction
+#    molecule.
+#
+#    The atomic structure (number of atoms and their coordiates) are the same
+#    in both files. The difference is that additional information about their
+#    bonding patterns is different. When it is time for both the pre- and
+#    post-reaction LAMMPS files to be created the OLCAO skeleton file
+#    containing the merged pair of molecules is read, bonds and bond angles are
+#    analyzed, and a subset of the original atoms from the skeleton file are
+#    taken according to a chain-length variable.
+#
+#    Note that the subset will *not* include the bonding H atoms. The
+#    simulation will ultimately consist of molecules with sites where there are
+#    "missing" H atoms. Presently, the bond/react fix in LAMMPS will not permit
+#    a complicated series of reactions whereby the H from each molecule breaks
+#    off to form H_2 and the molecules can subsequently bind. Instead we will
+#    run the simulation with molecules where the H is already absent by
+#    construction so that molecule binding can only occur at those pre-defined
+#    sites.
+#
+# The -i1 option defines the name of the first molecule input file that must
+#    be in OLCAO skeleton input file format. The -i2 does the same for the
+#    second skeleton file. IMPORTANT: An extremely important assumption is that
+#    each molecule given in a skeleton file uses space group 1_a. I.e., all
+#    atomic coordinates should be specified explicitly. Additionally, they
+#    should be given in cartesian coordiantes. By default the files are assumed
+#    to be named olcao1.skl and olcao2.skl.
+# The -c1 option defines the chain length variable \$chainLen1. When reducing
+#    the number of atoms in the full molecules to save time while seeking
+#    reaction template matches this variable defines the number of atoms from
+#    the point of "contact" between the two molecules to include in the
+#    template from molecule 1. The -c2 option defines the same for molecule 2.
+#    This does not include the point of contact atoms. So, if the binding
+#    molecules are CH_4 and B_10C_2H_12 and the "contact" point is two C atom
+#    from the CH_4 and a B or a C atom from B10C_2H_12. Then a -c1 of 2 would
+#    include the central C atom of the CH_4 along with all three other H atoms.
+#    A -c2 of 2 would include the bound B atom or C atom, and each of the
+#    neighboring B or C atoms to the bound B atom. By default the chain length
+#    values are set to 2 for both molecules.
+# The -h option defines the distance that H atoms will be separated from each
+#    other when the templates are created. By default the H atom separation is
+#    0.5. It is assumed that when the pre- and post-reaction molecule files are
+#    created the H atoms that are "in contact" with each other will not be
+#    included.
+# The -help option gives this help.
+#
+# USAGE: makeReactions [-i1 \$inFile1] [-i2 \$inFile2]
+#                      [-c1 \$chainLen1] [-c2 \$chainLen2]
+#                      [-h \$hhDist]
+#                      [-help]
+#
+ENDHELP
+   exit;
+}
+
+###############################################
+# Begin program execution #####################
+###############################################
+
+# Use necessary modules.
+use strict;
+use warnings;
+use POSIX qw(ceil floor);
+use Env;
+use lib "$OLCAO_BIN/perl5";
+use StructureControl;
+use ElementData;
+use Math::Trig;
+
+# Declare global variables.
+my $pi = 3.1415926535897932384626433832795;
+my $epsilon = 0.00001;
+my $inFile1;      # First molecule input skeleton file.
+my $inFile2;      # Second molecule input skeleton file.
+my $inFileCent1;  # First molecule skeleton file with spatially centered mol.
+my $inFileCent2;  # Second molecule skeleton file with spatially centered mol.
+my $mol1Name;     # Name of the first molecule.
+my $mol2Name;     # Name of the second molecule.
+my $chainLen1;    # Number of atoms to include in a template from a whole mol.
+my $chainLen2;    # Same as above except for molecule 2.
+my $numAtoms1;    # Number of atoms in molecule 1.
+my $numAtoms2;    # Number of atoms in molecule 2.
+my $numHAtoms1;   # Number of H atoms in the first molecule.
+my $numHAtoms2;   # Number of H atoms in the second molecule.
+my @hAtomCoords1; # Coordinates of those H atoms in the first molecule.
+my @hAtomCoords2; # Coordinates of those H atoms in the second molecule.
+my @bondedCoords1;# Coordinates of the atoms bonded to the H in the first mol.
+my @bondedCoords2;# Coordinates of the atoms bonded to the H in the second mol.
+my @hAtomNumber1; # Atom number of the H atoms in mol 1.
+my @hAtomNumber2; # Atom number of the H atoms in mol 2.
+my @mergedHAtomNumber1; # Atom number of H atoms in the merged molecule.
+my @mergedHAtomNumber2; # Atom number of H atoms in the merged molecule.
+my @prunedHAtomNumber1; # Atom number of H atoms in the pruned merged molecule.
+my @prunedHAtomNumber2; # Atom number of H atoms in the pruned merged molecule.
+my @bondedAtomNumber1;# Atom num of atom bonded to H in mol 1 and merged mol.
+my @bondedAtomNumber2;# Atom num of atom bonded to H in mol 2 and merged mol.
+my @prunedBondedAtomNumber1;# Num of atom bonded to H(A,B) in pruned merged mol.
+my @prunedBondedAtomNumber2;# Num of atom bonded to H(A,B) in pruned merged mol.
+my $hhDist;       # The H-H distance in the templates.
+my $numBonds_ref; # The number of bonds that a given atom has.
+my $bonded_ref;   # The atom numbers that each atom is bonded to.
+my $numBondAngles_ref; # Number of bond angles for each atom.
+my $angleBonded_ref; # The atom numbers that the vertex atoms are bonded to.
+my @keepAtom;     # List of which atoms in the merged molecule to keep.
+my @prunedNumAtoms; # For each hh pair, the number of atoms left in the mol.
+my @prunedNumAtoms1; # For each hh pair, the number of atoms left in sub-mol. 1
+my @prunedNumAtoms2; # For each hh pair, the number of atoms left in sub-mol. 2
+my $directXYZ_ref;
+my $bondLength_ref;
+my $atomElementName_ref;
+my $atomSpeciesID_ref;
+my $numUniqueAngleTags;
+my $numUniqueBondTags;
+my $uniqueAngleTags_ref;
+my $angleTagID_ref;
+my $numAnglesTotal;
+my $bondTagID_ref;
+my $uniqueBondTags_ref;
+my @edgeID; # Atom IDs from the pre-reacted template without all topology.
+my @prunedEdgeID; # As above, but with ID numbers mapped to the pruned template.
+my @numEdgeIDs; # Number of such atoms.
+
+# Initialize the environment.
+&initEnv;
+
+# Read the command line parameters.
+&parseCommandLine;
+
+# Prepare the molecules by creating skeleton files with the molecules centered
+#   in each of their respective cells and by ensuring that each cell is
+#   sufficiently large to accomodate both molecules at their fullest possible
+#   extension in all directions and orientations.
+&prepMolecules;
+
+# Catalog the positions of the H atoms and their bound neighbors in both mols.
+&catalogH(1,$inFileCent1,\@hAtomCoords1,\@bondedCoords1,\@hAtomNumber1,
+          \@bondedAtomNumber1);
+&catalogH(2,$inFileCent2,\@hAtomCoords2,\@bondedCoords2,\@hAtomNumber2,
+          \@bondedAtomNumber2);
+
+# Print a set of centered skeleton file versions of the two molecules where the
+#   individual and reactive H atoms have been removed from each molecule one at
+#   a time. Then, convert the skeleton files to PDB format for inclusion in a
+#   packmol run.
+&generatePackmolPDBs($inFileCent1,$mol1Name,$numAtoms1,$numHAtoms1,
+   \@bondedAtomNumber1,\@hAtomNumber1);
+&generatePackmolPDBs($inFileCent2,$mol2Name,$numAtoms2,$numHAtoms2,
+   \@bondedAtomNumber2,\@hAtomNumber2);
+
+# Generate a set of merged molecule files with different orientations.
+&generateMergedMols;
+
+# Remove atoms that are far from the bond reaction point.
+&pruneMergedMolecule;
+
+# Build LAMMPS bond/react templates from the pruned olcao.skl files. There are
+#   four phases to a complete reaction: (a) Lead H atoms bond. (b) One lead H
+#   atom breaks from its home molecule. (c) The other lead H atom breaks from
+#   its home molecule. (d) The atoms that were bonded to the H atoms create a
+#   bond between themselves. Each phase requires a pre-template, a
+#   post-template, and a mapping file.
+# The terminology and notation is a bit tricky here so I will clarify. Each
+#   phase described above will be called a "reaction" by the bond/react fix in
+#   lammps. There will thus be four reaction template pairs labeled a, b, c, d
+#   as above.
+&makeReactionTemplates(1); # Pre-reaction "a" templates.
+&makeReactionTemplates(2); # Post-reaction "a" templates.
+&makeReactionTemplates(3); # Pre-reaction "b" templates.
+&makeReactionTemplates(4); # Post-reaction "b" templates.
+&makeReactionTemplates(5); # Pre-reaction "c" templates.
+&makeReactionTemplates(6); # Post-reaction "c" templates.
+&makeReactionTemplates(7); # Pre-reaction "d" templates.
+&makeReactionTemplates(8); # Post-reaction "d" templates.
+
+###############################################
+# End program execution #######################
+###############################################
+
+sub initEnv
+{
+   # Define local variables.
+   my @values;
+   my $basename;
+   my $pwd;
+
+   # Extract the names of the two molecules.
+   $pwd = `pwd`;
+   $basename = `basename $pwd`;
+   @values = StructureControl::prepLine("",$basename,'__');
+   $mol1Name = $values[0];
+   $mol2Name = $values[1];
+
+   # Initialize parameter defaults.
+   $inFile1 = "olcao1.skl";
+   $inFile2 = "olcao2.skl";
+   $chainLen1 = 3;
+   $chainLen2 = 3;
+   $hhDist = 0.5;
+}
+
+sub parseCommandLine
+{
+   # Declare local variables
+   my $number;
+   my $argument;
+   my $commandLine = "command";
+
+   # Initialize the index counter for the command line parameters.
+   $number=0;
+
+   # Loop through the command line parameters checking for each option.
+   while ($number < scalar(@ARGV))
+   {
+      if ($ARGV[$number] eq "-help")
+         {&printHelp;}
+      elsif ($ARGV[$number] eq "-i1")
+         {$inFile1 = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-i2")
+         {$inFile2 = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-c1")
+         {$chainLen1 = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-c2")
+         {$chainLen2 = $ARGV[++$number];}
+      else
+      {
+         print STDOUT "UNKNOWN COMMAND LINE PARAMETER $ARGV[$number].";
+         print STDOUT " ABORTING.\n";
+         exit;
+      }
+      $number++;
+   }
+
+   #Record the command line used to create this set of input files.
+   open (COMMANDLINE,">>$commandLine");
+   print COMMANDLINE "makeReactions ";
+   foreach $argument (0..$#ARGV)
+      {print COMMANDLINE "$ARGV[$argument] ";}
+   print COMMANDLINE "\n";
+   close (COMMANDLINE);
+}
+
+sub prepMolecules
+{
+   # Define local variables.
+   my @values;
+   my $systemTitle_ref;
+   my $systemTitle;
+   my $mag_ref;
+   my @sortedMag;
+   my $maxSide1;
+   my $maxSide2;
+
+   # Okay, the sequence of activity here is a bit tricky and convoluted because
+   #   there are limits to what kinds of information we have access to at
+   #   each stage. Also, we don't want to write a lot of custom code if we can
+   #   get away with just using existing subroutines from StructureControl.
+
+   # At the end of this subroutine, we will want each molecule to be in a new
+   #   skeleton file. The molecules will be centered in the simulation cells.
+   #   Also, the sizes of the simulation cells will be such that the full
+   #   breadth of both molecules in any direction can be contained. (That is
+   #   the slightly annoying part.) To make that happen, we need to know
+   #   something about *both* molecules before we *do* anything with either
+   #   of them.
+
+   # We will proceed here by reading each molecule, getting the maximum cell
+   #   magnitudes from each and then making the final cell cubic with sides
+   #   that are a sum of those two maxima.
+
+   # Create a directory to store the merged results in.
+   mkdir "centered";
+
+   # Molecule 1 first
+   StructureControl::readInputFile($inFile1,1);
+   $mag_ref = StructureControl::getMagRef;
+   @sortedMag = sort { $a <=> $b } @{$mag_ref}[1..3];
+   $maxSide1 = $sortedMag[$#sortedMag];
+   undef $mag_ref;
+
+   StructureControl::reset();
+
+   # Molecule 2 second
+   StructureControl::readInputFile($inFile2,1);
+   $mag_ref = StructureControl::getMagRef;
+   @sortedMag = sort { $a <=> $b } @{$mag_ref}[1..3];
+   $maxSide2 = $sortedMag[$#sortedMag];
+
+   StructureControl::reset();
+
+   # Now we can do some actual work on the molecules. Presently, the code below
+   #   is in bad form because the same code is just copy-pasted for molecule 1
+   #   to molecule 2. It should be another subroutine. Will FIX later.
+
+   # Read the first olcao skeleton file and then compute the "crystal"
+   #   parameters which (as a side effect) will center the molecule. (Note that
+   #   the original purpose of the computeCryatalParameters was to deal with
+   #   input files that do not contain lattice parameters.
+   StructureControl::readInputFile($inFile1,1);
+   StructureControl::setBuffer($maxSide2+$maxSide1);
+   StructureControl::computeCrystalParameters;
+
+   # Print the first molecule to a center shifted skeleton file. First we have
+   #   to create a new name for the file which is just the old one with a
+   #   "_cent" before the .skl. Then, we want to make sure that the system
+   #   title is copied over.
+   @values = split(/\./,$inFile1);
+   $inFileCent1 = $values[0] . "_cent.skl";
+   $systemTitle_ref = StructureControl::getSystemTitleRef;
+   $systemTitle = join(@{$systemTitle_ref});
+   open (SKL,">centered/$inFileCent1")
+      || die "Cannot open centered/$inFileCent1 for writing.\n";
+   StructureControl::printOLCAO(\*SKL,$systemTitle,"cartesian");
+   close (SKL);
+   undef $systemTitle_ref;
+
+   # Reset the StructureControl data.
+   StructureControl::reset();
+
+   # Repeat the same procedure for the second molecule.
+
+   # Read the first olcao skeleton file and then compute the "crystal"
+   #   parameters which (as a side effect) will center the molecule.
+   StructureControl::readInputFile($inFile2,1);
+   StructureControl::setBuffer($maxSide2+$maxSide1);
+   StructureControl::computeCrystalParameters;
+
+   # Print the center shifted second molecule.
+   @values = split(/\./,$inFile2);
+   $inFileCent2 = $values[0] . "_cent.skl";
+   $systemTitle = StructureControl::getSystemTitleRef;
+   $systemTitle = join(@{$systemTitle});
+   open (SKL,">centered/$inFileCent2")
+      || die "Cannot open centered/$inFileCent2 for writing.\n";
+   StructureControl::printOLCAO(\*SKL,$systemTitle,"cartesian");
+   close (SKL);
+
+   # Reset the StructureControl data for the next subroutine.
+   StructureControl::reset();
+}
+
+sub catalogH
+{
+   # Define passed parameters.
+   my $molNumber = $_[0];
+   my $inFile = $_[1];
+   my $hAtomCoords_ref = $_[2]; # Coordinates of the H atoms.
+   my $bondedCoords_ref = $_[3];# Coordinates of the atoms bonded to the H atom.
+   my $hAtomNumber_ref = $_[4]; # Atom number of each H atom.
+   my $bondedAtomNumber_ref = $_[5]; # Atom number of the atom bonded to the H.
+
+   # Define local variables.
+   my @values;
+   my $atom;
+   my $axis;
+   my $atomTag; # A tag for an atom in the bondAnalysis file: nameType#_Atom#.
+   my $bondedAtomTag; # As above except for the bonded atom.
+   my $tempBondedAtomNumber; # ID number of the bonded atom.
+   my $numBonds; # A temp variable for the number of bonds of an atom.
+   my $directXYZ_ref;
+   my $numAtoms;
+   my $numHAtoms;
+   my $bondFile = "bondAnalysis" . $molNumber . ".bl";
+
+   # Read the center shifted olcao skeleton file and get data and references
+   #   to key data from it.
+   StructureControl::readInputFile("centered/$inFile",1);
+   $numAtoms = StructureControl::getNumAtoms;
+   $directXYZ_ref = StructureControl::getDirectXYZRef;
+
+   # Request that the bond lengths between all atoms be computed.
+   system("bondAnalysis -bf 1.1 -bl -i centered/$inFile -o centered/$bondFile");
+
+   # Read the bond analysis output looking for H atoms. Then, assemble the list
+   #   of the H atom coordinates and the coordinates of their bonded partner
+   #   atom.
+   $numHAtoms = 0; # Initialize a count of the number of H atoms in this mol.
+   open (BOND,"<centered/$bondFile")
+      || die "Cannot open centered/$bondFile for reading.\n";
+   foreach $atom (1..$numAtoms)
+   {
+      # Check the tag of each atom. Read past the non-H, read the bonded atoms
+      #   for the H atoms that we find.
+      @values = StructureControl::prepLine(\*BOND,"",'\s+');
+      $atomTag = $values[0];
+      $numBonds = $values[2];
+      @values = split(/[0-9]+/,$atomTag);
+      if ($values[0] eq "h")
+      {
+         # We found a hydrogen atom.
+         $numHAtoms++;
+
+         # Make a note to the screen if there is more than one bond. We want
+         #   to assume that there should be only one bond to any H atom. If
+         #   there are more than one, then we will pick the closest one. There
+         #   are probably other scenarios where this could be problematic so
+         #   please watch out and FIX if needed.
+         if ($numBonds > 1)
+         {
+            print STDOUT "You may have a problem with molecule 1.\n";
+            print STDOUT "Atom $atomTag has more than one bond.\n";
+            exit(1);
+         }
+
+         # Get the tag for the bonded atom and get its atom number.
+         @values = StructureControl::prepLine(\*BOND,"",'\s+');
+         $bondedAtomTag = $values[0];
+         @values = split(/_/,$bondedAtomTag);
+         $tempBondedAtomNumber = $values[1];
+
+         # Store all relevant information for this H-OtherAtom pair.
+         foreach $axis (1..3)
+         {
+            $hAtomCoords_ref->[$numHAtoms][$axis]
+               = $directXYZ_ref->[$atom][$axis];
+            $bondedCoords_ref->[$numHAtoms][$axis]
+               = $directXYZ_ref->[$tempBondedAtomNumber][$axis];
+         }
+         $hAtomNumber_ref->[$numHAtoms] = $atom;
+         $bondedAtomNumber_ref->[$numHAtoms] = $tempBondedAtomNumber;
+      }
+      else # Read past the bonds associated with this atom. They don't matter.
+      {
+         foreach my $bondSet (1..ceil($numBonds/4))
+            {<BOND>;}
+      }
+   }
+
+   # Reset the StructureControl data for the next subroutine.
+   StructureControl::reset();
+
+   # Save the total number of atoms and number of H atoms from this molecule.
+   if ($molNumber == 1)
+   {
+      $numAtoms1 = $numAtoms;
+      $numHAtoms1 = $numHAtoms;
+   }
+   else
+   {
+      $numAtoms2 = $numAtoms;
+      $numHAtoms2 = $numHAtoms;
+   }
+
+   # Close the bond analysis file.
+   close(BOND);
+}
+
+sub generatePackmolPDBs
+{
+   # Define passed parameters.
+   my $inFileCent = $_[0];
+   my $molName = $_[1];
+   my $numAtoms = $_[2];
+   my $numHAtoms = $_[3];
+   my $bondedAtomNumber_ref = $_[4];
+   my $hAtomNumber_ref = $_[5];
+
+   # Define local variables.
+   my $line;
+   my @values;
+   my $atom;
+   my $hAtom;
+   my $sklFile;
+   my $pdbFile;
+   my $currElement;
+   my $elementSpecies;
+
+   # Open the original centered skeleton file.
+   open (MOL,"<centered/$inFileCent")
+      || die "Cannot open centered/$inFileCent for reading.\n";
+
+   # Create a PDB for each H atom in the molecule.
+   foreach $hAtom (1..$numHAtoms)
+   {
+      # Create a temporary name for the output skeleton file that will be
+      #   converted into a pdb file. The crucial difference between the temp
+      #   skeleton file and the input centered skeleton file is simply that
+      #   the temp file will have the H atom removed.
+      $sklFile = "temp.skl";
+
+      # Open the temporary skeleton file.
+      open (SKL,">centered/$sklFile")
+         || die "Cannot open centered/$sklFile for writing.\n";
+
+      # Read and copy everything from the beginning until the "cartesian" line.
+      while ($line = <MOL>)
+      {
+         if ($line =~ /^cart/)
+         {
+# For the -H case print this instead.
+#            print SKL "cartesian " . ($numAtoms - 1) . "\n";
+            print SKL $line;
+            last;
+         }
+         else
+            {print SKL $line;}
+      }
+
+      # Perform a simple copy all atoms. Also, when we find the
+      #   atom bonded to the H atom, make a record of the element and the
+      #   species number. That information will be used to define the output
+      #   file.
+      foreach $atom (1..$numAtoms)
+      {
+         # Get the line.
+         $line = <MOL>;
+
+         # If this atom is the atom bonded to the H atom, we still print it,
+         #   but we make a note of the element and species number. Otherwise we
+         #   just print the line.
+         if ($atom == $bondedAtomNumber_ref->[$hAtom])
+         {
+            # Print the line.
+            print SKL $line;
+
+            # Get the element-species identifier.
+            @values = StructureControl::prepLine("",$line,'\s+');
+            $elementSpecies = $values[0];
+            @values = StructureControl::prepLine("",$elementSpecies,'[0-9]');
+            $currElement = $values[0];
+            @values = StructureControl::prepLine("",$elementSpecies,'[A-Za-z]');
+            $elementSpecies = $currElement . "-" . $values[0];
+         }
+         else
+            {print SKL $line;}
+# For the -H case replace the above else.
+#         elsif ($atom != $hAtomNumber_ref->[$hAtom])
+#            {print SKL $line;}
+      }
+
+      # Read and copy everything from the last atom to the end of the file.
+      while ($line = <MOL>)
+         {print SKL $line;}
+
+      # Close the skeleton file.
+      close (SKL);
+
+      # Reset the read pointer for the molecule file.
+      seek (MOL,0,0);
+
+      # Create the name for the PDB file on the basis of the element and
+      #   species number of the atom bonded to the H atom.
+      $pdbFile = "$molName" . "_" . "$elementSpecies.pdb";
+
+      # Convert the skeleton file to a PDB.
+      system ("skl2pdb -i centered/$sklFile -o centered/$pdbFile -skltypes");
+   }
+
+   close (MOL);
+}
+
+sub generateMergedMols
+{
+   # Define local variables.
+   my @values;
+   my $line;
+   my $axis;
+   my $atom;
+   my $hAtom1;
+   my $hAtom2;
+   my $outFile;
+   my $command;
+   my $notColinear; # A flag for signaling that a non-colinear set of atoms
+                    # has been found.
+   my @planeCoords; # Three points that define a plane that define a normal.
+   my @rotOrigin; # The origin of the axis of rotation (an H atom).
+                  # Note that this keeps the H atom in the same position.
+   my @transVector1; # The point to translate the H atom of molecule 2 to for
+                     # the first translation. (Coincident with H of molecule 1)
+   my @transVector2; # The point to translate the H atom of molecule 2 to for
+                     # the second translation. ($hhDist from H of molecule 1)
+   my @finalCoord; # Third coordinate needed to define a plane. This coordinate
+                   # is normally not accessible until after a translation so we
+                   # have to do it manually first.
+   my @diffVector1; # Difference vector used to compute the finalCoord in the
+                    # event that certain atoms are colinear.
+   my @diffVector2; # As above, but computing a different difference.
+   my @tempVector;
+   my $diff1Mag; # Magnitude of the diffVector1.
+   my $diff2Mag; # Magnitude of the diffVector2.
+   my $finalCoordMag; # Magnitude of the finalCoord vector.
+   my $rotAngle; # Angle by which to rotate molecule 2.
+
+   # Create a directory to store the merged results in.
+   mkdir "merged";
+
+   # Repeatedly transform the position of molecule 2 such that every
+   #   combination of the four atoms comprising a bonded atom of molecule 1,
+   #   the associated H atom of molecule 1, the H atom of molecule 2, and the
+   #   bonded atom of molecule 2 are all in a line in that order is obtained.
+   # The transformation will consist of a translation, followed by a rotation,
+   #   and then another a translation. All operations are applied to the
+   #   coordinates of molecule 2.
+   # The first translation will make the coordinates of two H atoms become
+   #   coincident with each other.
+   # Then, the rotation will bring the vectors defined by the lines from bonded
+   #   atoms to H atoms of both molecules into anti-alignment.
+   # Finally, the last translation will put the H atoms $hhDist apart.
+   # The two molecules are then printed into a single "merged" file that
+   #   contains all atoms.
+# The two molecules are then printed into a single "merged" file that
+#   contains all atoms except those of the two H atoms.
+   foreach $hAtom1 (1..$numHAtoms1)
+   {
+if ($hAtom1 > 2)
+   {last;}
+
+      # Some care must be taken if (either through shear coincidence or because
+      #   the molecules are the same) the H atoms and bonded atoms are
+      #   co-linear with each other. That may happen easily if the two
+      #   molecules are the same because we then naturally grab identical atoms.
+      # If the atoms from the two molecules are colinear, then the axis of
+      #   rotation cannot be defined by taking three of the atomic coordinates
+      #   and using them to define a plane because they can only define a line.
+      #   Thus, if such a case is detected, we will need to select a third
+      #   point such that the angle of rotation is properly computed too.
+
+
+      # The translation vector that will bring the two H atoms $hhDist apart
+      #   from each other is the following. Note that this is a constant for
+      #   each hAtom1 and its bonded pair. Note also that this is the *second*
+      #   translation that will be applied although we compute this translation
+      #   vector first. That is the reason that we ultimately produce the
+      #   $transVector2 instead of $transVector1.
+      foreach $axis (1..3)
+      {
+         $diffVector1[$axis] = ($hAtomCoords1[$hAtom1][$axis]
+            - $bondedCoords1[$hAtom1][$axis]);
+      }
+      $diff1Mag = sqrt($diffVector1[1]**2
+                   +   $diffVector1[2]**2
+                   +   $diffVector1[3]**2);
+      foreach $axis (1..3)
+      {
+         $diffVector1[$axis] /= $diff1Mag;
+         $transVector2[$axis-1] = $diffVector1[$axis] * $hhDist;
+      }
+
+      # Iterate over all H atoms of the second molecule.
+      foreach $hAtom2 (1..$numHAtoms2)
+      {
+if ($hAtom2 > 2)
+   {last;}
+         # The translation vector that will bring the two H atoms coincident
+         #   with each other is the following.
+         foreach $axis (1..3)
+            {$transVector1[$axis-1] = $hAtomCoords1[$hAtom1][$axis]
+               - $hAtomCoords2[$hAtom2][$axis];}
+
+         # The coordinates of the points that define a plane for the rotation
+         #   are given by the atom bonded to the H atom of molecule 1, the H
+         #   atom of molecule 1, and the atom bonded to the H atom of molecule
+         #   2 *after* it is translated.
+         # There is a tricky part here though. The position of the second
+         #   bonded atom is only going to be right *after* the previous
+         #   translation. We don't have that value yet, so we have to compute
+         #   the translation of that atom manually just for this purpose. (Yes,
+         #   we could make two separate modStruct calls, but that would be
+         #   just as annoying and probably a good bit slower to execute.)
+         # Also, as mentioned earlier, another somewhat tricky part is what
+         #   happens if the set of three atoms are colinear. Then, we need to
+         #   make the final point at some arbitrary (but non-colinear)
+         #   position.
+
+         # Compute the final coordinate assuming that the atoms are not
+         #   colinear.
+         foreach $axis (1..3)
+            {$finalCoord[$axis] = $transVector1[$axis-1]
+                                + $bondedCoords2[$hAtom2][$axis];}
+
+         # Check if the atoms are colinear. In the event that they are, then
+         #   compute a new final coordinate. To check for colinearity we will
+         #   obtain normalized difference vectors between the atom bonded to
+         #   the H of molecule 1 and the H atom of molecule 1 and also between
+         #   the H atom of molecule 1 and the atom bonded to the H atom of
+         #   molecule 2 using the coordinates it would have *after* it is
+         #   translated so that the H atoms of both molecules are coincident.
+         #   Then, we will compare the vector components and if none of them
+         #   are different by more than epsilon we can assume that the atoms
+         #   are colinear and that we need to select a different final
+         #   coordiante.
+         foreach $axis (1..3)
+            {$diffVector2[$axis] = $hAtomCoords1[$hAtom1][$axis]
+                                 - $finalCoord[$axis];}
+
+         # Normalize the diffVector by first computing its magnitude.
+         $diff2Mag = sqrt($diffVector2[1]**2
+                      +   $diffVector2[2]**2
+                      +   $diffVector2[3]**2);
+
+         # Divide by the magnitude to normalize it.
+         foreach $axis (1..3)
+            {$diffVector2[$axis] /= $diff2Mag;}
+
+         # Assume that the atoms *are* colinear. If the vectors differ in any
+         #   direction by more than epsilon, then we say they are not colinear.
+         $notColinear = 0;
+         foreach $axis (1..3)
+         {
+            if ((abs($diffVector1[$axis])-abs($diffVector2[$axis])) > $epsilon)
+               {$notColinear = 1;}
+         }
+         if ($notColinear == 0) # Make a new arbitrary but non-colinear coord.
+         {
+            # The new vector will be a unit vector that is perpendicular to the
+            #   second difference vector in any direction. To do that, we first
+            #   make any vector that is simply not parallel with diffVector2.
+            #   The normalized cross product of that vector with diffVector2
+            #   will be perpendicular to both.
+            $tempVector[1] = $diffVector2[1] * 2.0; # Arbitrary 2, 3, 4
+            $tempVector[2] = $diffVector2[2] * 3.0;
+            $tempVector[3] = $diffVector2[3] * 4.0;
+            @finalCoord = StructureControl::normalizedCrossProduct(
+               \@diffVector2,\@tempVector);
+         }
+         @planeCoords = (@{$hAtomCoords1[$hAtom1]}[1..3],
+                         @{$bondedCoords1[$hAtom1]}[1..3],
+                         @finalCoord[1..3]);
+
+         $rotAngle = StructureControl::getVectorAngle(\@diffVector2,
+            \@diffVector1);
+         $rotAngle = ($pi - $rotAngle) * 180.0/$pi;
+
+         # Apply the translation, rotation, translation sequence.
+         $command = "modStruct -i centered/$inFileCent2 -o centered/temp.skl "
+                  . "-trans " . "@transVector1 -rotP @planeCoords -angle "
+                  . "$rotAngle -orig @{$hAtomCoords1[$hAtom1]}[1..3] -trans "
+                  . "@transVector2";
+         system("$command");
+
+         # The just created skeleton file can now be merged with the skeleton
+         #   file of the first molecule.
+
+         # Make the name of the merged file.
+         $outFile = "olcao_" . $hAtom1 . "_" . $hAtom2 . ".skl";
+
+         # Open both files. Then read through each and merge them into one. As
+         #   we merge them, we also create PDB files of both molecules that can
+         #   be used in a packmol run.
+         open (MOL1,"<centered/$inFileCent1")
+            || die "Cannot open centered/$inFileCent1 for reading.\n";
+         open (MOL2,"<centered/temp.skl")
+            || die "Cannot open centered/temp.skl for reading.\n";
+         open (MERGE,">merged/$outFile")
+            || die "Cannot open merged/$outFile for writing.\n";
+
+         # Put the titles for molecules 1 and 2 into the merged file. Also
+         #   print the titles for each individual molecule.
+         print MERGE "title\n";
+         print MERGE "MOLECULE 1\n";
+         <MOL1>; # Read past the molecule 1 "title" keyword line.
+         while ($line = <MOL1>)
+         {
+            @values = StructureControl::prepLine("",$line,'\s+');
+            if ($values[0] eq 'end')
+               {last;}
+            else
+               {print MERGE $line;}
+         }
+         print MERGE "MOLECULE 2\n";
+         <MOL2>; # Read past the molecule 2 "title" keyword line.
+         while ($line = <MOL2>)
+         {
+            @values = StructureControl::prepLine("",$line,'\s+');
+            if ($values[0] eq 'end')
+               {last;}
+            else
+               {print MERGE $line;}
+         }
+         print MERGE "end\n";
+
+         # Copy the lattice information. Both should be identical.
+         <MOL1>; # Read past "cell" of molecule 1.
+         <MOL1>; # Read past the parameters (assuming a,b,c alpha,beta,gamma)
+         <MOL2>; # Read past "cell" of molecule 2.
+         $line = <MOL2>; # Read the parameters of molecule 2.
+         print MERGE "cell\n";
+         print MERGE $line;
+         <MOL1>; # Read past "cartesian" in molecule 1.
+         <MOL2>; # Read past "cartesian" in molecule 2.
+         print MERGE "cartesian " . ($numAtoms1+$numAtoms2) . "\n";
+# For the -H case need to subtract 2 H atoms.
+#         print MERGE "cartesian " . ($numAtoms1+$numAtoms2 - 2) . "\n";
+
+         # Print the atoms from each molecule.
+         foreach $atom (1..$numAtoms1)
+         {
+            $line = <MOL1>;
+            print MERGE $line;
+# For the -H case, don't print the H atom.
+#            if ($atom != $hAtomNumber1[$hAtom1])
+#               {print MERGE $line;}
+         }
+         foreach $atom (1..$numAtoms2)
+         {
+            $line = <MOL2>;
+            print MERGE $line;
+# For the -H case, don't print the H atom.
+#            if ($atom != $hAtomNumber2[$hAtom2])
+#               {print MERGE $line;}
+         }
+         print MERGE "space 1_a\n";
+         print MERGE "supercell 1 1 1\n";
+         print MERGE "full\n";
+
+         close (MOL1);
+         close (MOL2);
+         close (MERGE);
+      }
+   }
+
+
+   # We now want to record the maping of H atom numbers from the original
+   #   molecules to the merged single molecule. The mapping from molecule 1 is
+   #   very simple. It will have the same number in both files. We "overwrite"
+   #   the bondedAtomNumber1 values with the atom numbers from the merged
+   #   molecule, but for the atoms from molecule 1, the numbers are the same so
+   #   we don't have to actually do anything.
+   foreach $hAtom1 (1..$numHAtoms1)
+      {$mergedHAtomNumber1[$hAtom1] = $hAtomNumber1[$hAtom1];}
+
+   # Similarly, the mapping of H atom index numbers from the original molecule
+   #   2 is also very simple. It will be the same every time with the caveat
+   #   that we just have to shift the index number by the number of atoms that
+   #   are in the first molecule. For the bondedAtomNumber2 we also just have
+   #   to shift by the number of atoms in molecule 1.
+   foreach $hAtom2 (1..$numHAtoms2)
+   {
+      $mergedHAtomNumber2[$hAtom2] = $hAtomNumber2[$hAtom2] + $numAtoms1;
+      $bondedAtomNumber2[$hAtom2] += $numAtoms1;
+   }
+
+# For the -H case, this is a mess (but worked) because we removed the H atoms
+#   and so everything got shifted in a couple of places. Annoying.
+#   # We now need to record the mapping of H-bonded atom number from the
+#   #   original molecules to the merged single molecule. The tricky part is
+#   #   that we had to remove the H atoms and so the H-bonded atom number might
+#   #   be affected by it if the H-bonded atom number was higher than the H atom
+#   #   number.
+#   foreach $hAtom1 (1..$numHAtoms1)
+#   {
+#      # If the H atom appears earlier in the atom list than the bonded atom,
+#      #   then when the H atom is removed we have to reduce the index of the
+#      #   bonded atom by 1. Otherwise, we can keep the index the same.
+#      if ($hAtomNumber1[$hAtom1] < $bondedAtomNumber1[$hAtom1])
+#         {$bondedAtomNumber1[$hAtom1] -= 1;}
+#   }
+#
+#   foreach $hAtom2 (1..$numHAtoms2)
+#   {
+#      # If the H atom appears earlier in the atom list than the bonded atom,
+#      #   then when the H atom is removed we have to reduce the index of the
+#      #   bonded atom by 2. A reduction of 1 is due to the lost H atom from
+#      #   molecule 1 and another reduction of 1 is due to the lost H atom from
+#      #   molecule 2. If the H atom from molecule 2 appears later in the atom
+#      #   list than the bonded atom in molecule 2, then we only have to reduce
+#      #   the index by 1 because of the lost H atom in molecule 1.
+#      if ($hAtomNumber2[$hAtom2] < $bondedAtomNumber2[$hAtom2])
+#         {$bondedAtomNumber2[$hAtom2] += ($numAtoms1 - 2);}
+#      else
+#         {$bondedAtomNumber2[$hAtom2] += ($numAtoms1 - 1);}
+#   }
+#
+#   # Note that we no longer make any use of the $mergedHAtomNumber array.
+#   #   Those atoms are gone from the merged molecule.
+#
+#   # Now we change the number of atoms in each individual molecule (and thus
+#   #   in the merged molecule). This is a side-effect of this subroutine.
+#   $numAtoms1 -= 1;
+#   $numAtoms2 -= 1;
+
+}
+
+# This subroutine will read each of the merged molecule files in the "merged"
+#   directory and will produce a new file for each in the "pruned" directory.
+#   The new file will simply be a pruned version of the merged molecule file.
+#   Pruning refers to the act of removing atoms that are a sufficient number of
+#   hops (defined by the chain length variable) away from the reacting H atoms.
+# One of the tasks to be executed here includes reading a bondAnalysis.bl file
+#   and constructing a representation of the data contained within. This is
+#   very similar to the activities used to create it in the first place and so
+#   it would be nice if we could just call a subroutine in StructureControl to
+#   do this for us. In the future, this subroutine should be moved into the
+#   StructureControl module and it should be modified to correctly deal with
+#   periodic boundary conditions. At present, this subroutine ignores that. FIX
+sub pruneMergedMolecule
+{
+   # Define local variables
+   my @values;
+   my @values2;
+   my $id;
+   my $row;
+   my $line;
+   my $bond;
+   my $atom;
+   my $hAtom1;
+   my $hAtom2;
+   my $numAtoms = $numAtoms1 + $numAtoms2; # Number of atoms in the merged file
+   my $atomNumber; # Index number of a particular atom.
+   my $numBondRows;
+   my $numBondsInRow;
+   my $mergedMolFile;
+   my $prunedMolFile;
+   my $prunedAtomCount; # Temp indexer for maping merged to pruned hAtom number
+
+   # Make a directory to hold the pruned skeleton files.
+   mkdir "pruned";
+
+   foreach $hAtom1 (1..$numHAtoms1)
+   {
+if ($hAtom1 > 2)
+   {last;}
+      foreach $hAtom2 (1..$numHAtoms2)
+      {
+if ($hAtom2 > 2)
+   {last;}
+         # Compute the bond analysis for this merged molecule.
+         $mergedMolFile = "olcao_" . $hAtom1 . "_" . $hAtom2 . ".skl";
+         system("bondAnalysis -i merged/$mergedMolFile -bl -bf 1.1");
+
+         # Read the bondAnalysis.bl file.
+         StructureControl::readBondAnalysisBL("bondAnalysis.bl",$numAtoms);
+
+         # Get data or references to the data computed in that subroutine.
+         $numBonds_ref = StructureControl::getNumBondsRef;
+         $bonded_ref = StructureControl::getBondingListRef;
+
+         # New we need to prune this molecule. We start off by assuming that no
+         #   atoms will be kept and we then traverse from the current H atoms
+         #   away from the other H atom.
+
+         # Assume that no atoms are retained except for the current H atoms.
+         #   Also, initialize the number of edge atoms.
+         $numEdgeIDs[$hAtom1][$hAtom2] = 0;
+         foreach $atom (1..$numAtoms)
+            {$keepAtom[$atom] = 0;}
+         $keepAtom[$mergedHAtomNumber1[$hAtom1]] = 1;
+         $keepAtom[$mergedHAtomNumber2[$hAtom2]] = 1;
+
+# For the -H case, initialize with the H-bonded atoms instead of the H atoms.
+#         # Assume that no atoms are retained except for the H-bonded atoms.
+#         #   Also, initialize the number of edge atoms.
+#         $numEdgeIDs[$hAtom1][$hAtom2] = 0;
+#         foreach $atom (1..$numAtoms)
+#            {$keepAtom[$atom] = 0;}
+#         $keepAtom[$bondedAtomNumber1[$hAtom1]] = 1;
+#         $keepAtom[$bondedAtomNumber2[$hAtom2]] = 1;
+
+         # Perform a depth-first search of the data structure. Mark all atoms
+         #   that are within the chain length as ones that should be kept. Note
+         #   that we have to call it twice, once for each H atom with different
+         #   chain lengths so that the two original molecules can be treated
+         #   differently if needed. There should be no cross-over because the
+         #   only place the two molecules "bond" is through the H atoms and
+         #   they are initialized as keepers so that the algorithm will not
+         #   attempt to "pass through" them. After the first depth-first search
+         #   we have the number of pruned atoms for the first molecule and
+         #   after the second depth-first search we have the total number and
+         #   can compute the number of pruned atoms for the second molecule.
+
+         # Initialize the number of pruned atoms to 2 (the two H atoms).
+         $prunedNumAtoms[$hAtom1][$hAtom2] = 2;
+
+         # Probe the first molecule.
+         &markAtomsToKeep(1,$chainLen1,$mergedHAtomNumber1[$hAtom1],
+            $hAtom1,$hAtom2);
+
+         # Compute the number of atoms in the pruned first molecule.
+         $prunedNumAtoms1[$hAtom1][$hAtom2] =
+            $prunedNumAtoms[$hAtom1][$hAtom2] - 1; # - mol2 H
+
+         # Probe the second molecule.
+         &markAtomsToKeep(1,$chainLen2,$mergedHAtomNumber2[$hAtom2],
+            $hAtom1,$hAtom2);
+
+         # Compute the number of atoms in the pruned second molecule.
+         $prunedNumAtoms2[$hAtom1][$hAtom2] =
+            $prunedNumAtoms[$hAtom1][$hAtom2] -
+            $prunedNumAtoms1[$hAtom1][$hAtom2];
+
+# For the -H case. Start the search with the bonded atoms.
+#         &markAtomsToKeep(1,$chainLen1,$bondedAtomNumber1[$hAtom1],
+#            $hAtom1,$hAtom2);
+#         &markAtomsToKeep(1,$chainLen2,$bondedAtomNumber2[$hAtom2],
+#            $hAtom1,$hAtom2);
+
+         # At this point we can create a new "pruned" skeleton file. It will
+         #   have the same name as the merged file, but it will be stored in a
+         #   different directory.
+         open (PRUNE,">pruned/$mergedMolFile")
+            || die "Cannot open pruned/$mergedMolFile for writing.\n";
+
+         # Open the merged file to copy from.
+         open (MERGE,"<merged/$mergedMolFile")
+            || die "Cannot open merged/$mergedMolFile for reading.\n";
+
+         # Line-by-line copy the merged file over into the pruned file. Insert
+         #   a new "cartesian" line and omit atom lines that were pruned.
+         #   keep.
+         while ($line = <MERGE>)
+         {
+            @values = StructureControl::prepLine("",$line,'\s+');
+            if ($values[0] =~ /cartesian/)
+            {
+               # Print a new cartesian line with the pruned number of atoms.
+               print PRUNE "cartesian $prunedNumAtoms[$hAtom1][$hAtom2]\n";
+
+               # Go through all the atoms in the merged file and omit those
+               #   that were pruned. Along the way we need to map the old
+               #   H atom index number to a new pruned H atom index number.
+               $prunedAtomCount = 0;
+               foreach $atom (1..$numAtoms)
+               {
+                  $line = <MERGE>;
+                  if ($keepAtom[$atom] == 1)
+                  {
+                     print PRUNE "$line";
+                     $prunedAtomCount++;
+                  }
+
+                  # Map the index of atoms in the merged file into the pruned
+                  #   file.
+                  if ($atom == $mergedHAtomNumber1[$hAtom1])
+                     {$prunedHAtomNumber1[$hAtom1][$hAtom2] = $prunedAtomCount;}
+                  elsif ($atom == $mergedHAtomNumber2[$hAtom2])
+                     {$prunedHAtomNumber2[$hAtom1][$hAtom2] = $prunedAtomCount;}
+                  elsif ($atom == $bondedAtomNumber1[$hAtom1])
+                     {$prunedBondedAtomNumber1[$hAtom1][$hAtom2]
+                        = $prunedAtomCount;}
+                  elsif ($atom == $bondedAtomNumber2[$hAtom2])
+                     {$prunedBondedAtomNumber2[$hAtom1][$hAtom2]
+                        = $prunedAtomCount;}
+                  else
+                  {
+                     foreach $id (1..$numEdgeIDs[$hAtom1][$hAtom2])
+                     {
+                        if ($atom == $edgeID[$id][$hAtom1][$hAtom2])
+                           {$prunedEdgeID[$id][$hAtom1][$hAtom2] =
+                              $prunedAtomCount;}
+                     }
+                  }
+
+# For the -H atom case:                  
+#                  # Map the index of the atoms that were bound to the H atoms
+#                  #   into the pruned file. Do the same with the edge atoms
+#                  #   where it is assumed that the atom bound to the H atom
+#                  #   can never also be an edge atom.
+#                  # The new $prunedHAtomNumber1 and $prunedHAtomNumber2
+#                  #   variables hold the bonded H atom index numbers in the
+#                  #   *pruned, merged* molecule. These numbers will always be
+#                  #   different.
+#                  if ($atom == $bondedAtomNumber1[$hAtom1])
+#                     {$prunedBondedAtomNumber1[$hAtom1][$hAtom2]
+#                        = $prunedAtomCount;}
+#                  elsif ($atom == $bondedAtomNumber2[$hAtom2])
+#                     {$prunedBondedAtomNumber2[$hAtom1][$hAtom2]
+#                        = $prunedAtomCount;}
+#                  else
+#                  {
+#                     foreach $id (1..$numEdgeIDs[$hAtom1][$hAtom2])
+#                     {
+#                        if ($atom == $edgeID[$id][$hAtom1][$hAtom2])
+#                           {$prunedEdgeID[$id][$hAtom1][$hAtom2] =
+#                              $prunedAtomCount;}
+#                     }
+#                  }
+               }
+            }
+            else
+               {print PRUNE "$line";}
+         }
+
+         close (PRUNE);
+         close (MERGE);
+      }
+   }
+}
+
+sub markAtomsToKeep
+{
+   # Define passed parameters.
+   my $currentChainPoint = $_[0];
+   my $maxChainLen = $_[1];
+   my $currentAtom = $_[2];
+   my $hAtom1 = $_[3];
+   my $hAtom2 = $_[4];
+
+   # Define local variables.
+   my $bond;
+
+   # Mark the current atom as a keeper and increment the count of the number
+   #   of atoms that are kept in the pruned molecule. Note that we have to
+   #   treat the special case of the first two atoms which are already 1.
+   #   There should never be another case where this subroutine is called on an
+   #   atom that is already 1.
+   if ($keepAtom[$currentAtom] == 0)
+   {
+      $keepAtom[$currentAtom] = 1;
+      $prunedNumAtoms[$hAtom1][$hAtom2]++;
+   }
+
+   # If the current chain point is equal to the maximum allowed chain length,
+   #   then return and don't bother looking for more atoms to keep. However,
+   #   before we go, we recognize that these atoms are also edge atoms and so
+   #   we record them.
+   if ($currentChainPoint == $maxChainLen)
+   {
+      $numEdgeIDs[$hAtom1][$hAtom2]++;
+      $edgeID[$numEdgeIDs[$hAtom1][$hAtom2]][$hAtom1][$hAtom2] = $currentAtom;
+      return 0;
+   }
+   else
+   {
+      # Consider each atom that the current atom is bonded to and call the
+      #   markAtomsToKeep subroutine on each one that isn't already kept.
+      foreach $bond (1..$numBonds_ref->[$currentAtom])
+      {
+         if ($keepAtom[$bonded_ref->[$currentAtom][$bond]] == 0)
+            {&markAtomsToKeep($currentChainPoint+1,$maxChainLen,
+                  $bonded_ref->[$currentAtom][$bond],$hAtom1,$hAtom2);}
+      }
+   }
+}
+
+# We need to make two molecule definition files for each reaction. There is a
+#   pre-reaction template in which the two original molecule fragments (from
+#   the pruned files) do not have any bond between them. There is also a post-
+#   reaction template in which the relevant atoms bonded to the H atoms from
+#   the original molecule fragments are bound to each other.
+# Once each pair of reaction templates is created, we need to make the
+#   associated map file.
+#
+# Pre-reaction template (a):
+#
+# This template will contain all atoms in the pruned file and it will contain
+#   all bonds among atoms of the originally distinct molecules, but it will
+#   not have any bonds that connect the two originally distinct molecules. All
+#   elements (masses) and all types will be assigned as per the pruned skeleton
+#   file.
+#
+# Post-reaction template (a):
+#
+# This template will contain all the same information as the pre-reaction
+#   template with the addition of one more bond specifically between the H
+#   atoms of the reacting molecules.
+#
+# Template (a) map file:
+#
+# All atoms in the pre-reaction template are the same as those in the post
+#   reaction template. Therefore, there will be one equivalency for each atom
+#   and the equivalencies will all be of the type 1 1, 2 2, 3 3, etc. The
+#   bonding IDs will be the atom numbers of the two H atoms. The edge IDs will
+#   be all edges that were found when pruning the molecule.
+#
+#
+#
+# Pre-reaction template (b):
+#
+# This template is a duplicate of the post-reaction template (a).
+#
+# Post-reaction template (b):
+#
+# This template contains all the same information as the pre-reaction template
+#   (b) with the difference that it has one less bond. The bond that is removed
+#   is the one between the H atom of molecule two and the atom from molecule
+#   two that is bonded to that H atom.
+#
+# Template (b) map file:
+#
+# This is the same as the template (a) map file with the difference that the
+#   bonding IDs are now the IDs associated with the H atom of molecule two and
+#   the atom bonded to the H atom of molecule two.
+#
+#
+#
+# Pre-reaction template (c):
+#
+# This template is more complicated than previous ones because it does not
+#   contain all atoms in the pruned skeleton file. This one contains all atoms
+#   from the first molecule of the pruned skeleton file plus the H atom of the
+#   second molecule. Only the bonds between the atoms of the first molecule
+#   plus the H-H bond that was created in part (a) are included. The tricky
+#   part is that the H atom from molecule two is not necessarily the first atom
+#   in molecule two. Therefore, its ID number may not follow sequentially from
+#   the last atom of molecule one. Careful accounting is required.
+#
+# Post-reaction template (c):
+#
+# This template contains all the same information as the pre-reaction template
+#   (c) with the difference that it has one less bond. The bond that is removed
+#   is the one between the H atom of molecule one and the atom from molecule
+#   one that is bonded to that H atom. (Like the post-reaction template (b)
+#   except applied to molecule one instead of molecule two. As with the
+#   pre-reaction template (c), careful accounting is required to properly label
+#   the H atom of molecule two and the H-H bond in which it participates.
+#
+# Template (c) map file:
+#
+# All atoms in the pre-reaction template (c) and post-reaction template (c)
+#   are the same so each is listed as an equivalency. (Note: only atoms from
+#   the first molecule plus the H atom of the second molecule are present.)
+#   The edge IDs include only those from the first molecule plus the atom ID
+#   of the H atom from the second molecule (shifted appropriately as alluded
+#   to above.) The bonding IDs are the H atom of molecule one and the atom from
+#   molecule one that is bonded to that H atom.
+#
+#
+#
+# Pre-reaction template (d):
+#
+# This template is yet more complicated. At this point the H-H molecule has
+#   been separate. Thus, all atoms in the pruned skeleton file minus the two
+#   H atoms will be present. Similarly, all bonds with the two molecules
+#   of the pruned skeleton file except for those that bind with either of the
+#   reacting H atoms will be present. As with the templates from phase (c), the
+#   ID numbers of atoms will need to be carefully accounted for because both H
+#   atoms from the H-H molecule will be missing. It is possible for the H from
+#   the first molecule to have any ID number (it doesn't have to be the first
+#   or last or whatever atom in molecule one). The same is true for the H atom
+#   of molecule two.
+#
+# Post-reaction template (d):
+#
+# This template is exactly like the pre-reaction template with the addition of
+#   one bond between the two atoms that were previously bonded to the two H
+#   atoms that broke off to form an H-H molecule. The same counting as was used
+#   for the pre-reaction template (d) will need to be used here.
+#
+# Template (d) map file:
+#
+# All atoms in the pre-reaction template (c) and post-reaction template (c)
+#   are the same so each is listed as an equivalency. (Note: all atoms from the
+#   pruned skeleton file except the two reacting H atoms are present.) The edge
+#   IDs include all those from both molecules except for the reacting H atoms.
+#   The bonding IDs are the two atoms that were bonded to the H atoms that
+#   broke off to form the H-H molecule.
+#
+sub makeReactionTemplates
+{
+   # Define passed parameters
+   my $rxnPhase = $_[0];
+
+   # Define local variables.
+   my $preOrPost;
+   my $phaseLetter;
+   my $mapFile;
+   my $template;
+   my $prunedMolFile;
+   my $id;
+   my $tag;
+   my $atom;
+   my $currAtom;
+   my $startAtom1;
+   my $startAtom2;
+   my $endAtom1;
+   my $endAtom2;
+   my $currPhaseAtom;
+   my $currMass;
+   my $axis;
+   my $tempTag1;
+   my $tempTag2;
+   my $bondTag;
+   my $bond;
+   my $currBond;
+   my $currBondType;
+   my $angle;
+   my $element;
+   my $hAtom1;
+   my $hAtom2;
+   my $bondCount;
+   my $angleCount;
+   my $speciesCount;
+   my $numBondsTotal;
+   my $atomicZ_ref;
+   my $atomicMasses_ref;
+   my $numAtoms;
+   my @phaseAtomMap;
+   my @atomPhaseMap;
+   my $phaseNumAtoms;
+   my $phaseNumBonds;
+   my @phaseBondList;
+   my $phaseNumEdgeIDs;
+   my @phasePrunedEdgeID;
+   my $bondingID1;
+   my $bondingID2;
+   my $setAtom;
+   my @angleSet;
+   my @bondSet;
+   my $found;
+   my $foundHAtom1;
+   my $foundHAtom2;
+   my @bondRejectSet;
+   my @hhBondRejectSet;
+#   my @h1BondRejectSet;
+#   my @h2BondRejectSet;
+   my @angleRejectSet;
+   my @hhAngleRejectSet;
+#   my @h1AngleRejectSet;
+#   my @h2AngleRejectSet;
+   my $rxnBindingPair;
+   my $numOrderedSpecies;
+   my @orderedSpeciesID;
+   my $atomElementID_ref;
+   my $numSpecies_ref;
+
+   # Create a directory to store the templates.
+   mkdir "rxnTemplates";
+
+   # Loop over all hAtom pairs.
+   foreach $hAtom1 (1..$numHAtoms1)
+   {
+if ($hAtom1 > 2)
+   {last;}
+      foreach $hAtom2 (1..$numHAtoms2)
+      {
+if ($hAtom2 > 2)
+   {last;}
+         # Define the file name for the pruned molecule.
+         $prunedMolFile = "olcao_" . $hAtom1 . "_" . $hAtom2 . ".skl";
+
+         # Read the skeleton file and extract useful data and references.
+         StructureControl::readInputFile("pruned/$prunedMolFile",1);
+         $numAtoms = StructureControl::getNumAtoms;
+         $directXYZ_ref = StructureControl::getDirectXYZRef;
+         $atomElementName_ref = StructureControl::getAtomElementNameRef;
+         $atomElementID_ref = StructureControl::getAtomElementIDRef;
+         $atomSpeciesID_ref = StructureControl::getAtomSpeciesIDRef;
+         $atomicZ_ref = StructureControl::getAtomicZRef;
+         $numSpecies_ref = StructureControl::getNumSpeciesRef;
+
+         # Get useful elemental information.
+         $atomicMasses_ref = ElementData::getAtomicMassesRef;
+
+
+         # Compute the bond length bond analysis for this pruned molecule.
+         system("bondAnalysis -i pruned/$prunedMolFile -bl -bf 1.1");
+
+         # Read the bondAnalysis.bl file.
+         StructureControl::readBondAnalysisBL("bondAnalysis.bl",
+            $prunedNumAtoms[$hAtom1][$hAtom2]);
+
+
+         # Compute the bond angle bond analysis for this pruned molecule.
+         system("bondAnalysis -i pruned/$prunedMolFile -ba -bf 1.1");
+
+         # Read the bondAnalysis.ba file.
+         StructureControl::readBondAnalysisBA("bondAnalysis.ba",
+            $prunedNumAtoms[$hAtom1][$hAtom2]);
+
+         # Get data (or references to data) obtain from the bondAnalysis file.
+         $numBonds_ref = StructureControl::getNumBondsRef;
+         $bonded_ref = StructureControl::getBondingListRef;
+         $bondLength_ref = StructureControl::getBondLengthExtRef;
+         $bondTagID_ref = StructureControl::getBondTagIDRef;
+         $uniqueBondTags_ref = StructureControl::getUniqueBondTagsRef;
+         $numUniqueBondTags = StructureControl::getNumUniqueBondTags;
+         $numBondAngles_ref = StructureControl::getNumBondAnglesRef;
+         $angleBonded_ref = StructureControl::getAngleBondedRef;
+         $angleTagID_ref = StructureControl::getAngleTagIDRef;
+         $numUniqueAngleTags = StructureControl::getNumUniqueAngleTags;
+         $uniqueAngleTags_ref = StructureControl::getUniqueAngleTagsRef;
+         $numBondsTotal = StructureControl::getNumBondsTotal;
+         $numAnglesTotal = StructureControl::getNumAnglesTotal;
+
+         # Make special variable assignments and adjustments for the each phase
+         #   and for each pre and post condition and map.
+
+
+         # Here we make an ordered list of the species number of all atoms that
+         #   will be in the current reaction phase template pair. The atoms are
+         #   pulled from the pruned skeleton file and the ones we don't need
+         #   are skipped. The tricky part is that the species ID number needs
+         #   to correspond to the overall system wide ID numbers. Presently,
+         #   the best we can do is the ID number from the current skeleton
+         #   file.
+         $numOrderedSpecies = 0;
+         $phaseNumAtoms = 0;
+         foreach $atom (1..$numAtoms)
+         {
+            # Increment the number of atoms that need to be included in this
+            #   phase of the reaction and also record the mapping of atoms
+            #   numbers in this phase to atom number of the pruned skeleton
+            #   file and vice versa.
+            $phaseAtomMap[++$phaseNumAtoms] = $atom;
+            $atomPhaseMap[$atom] = $phaseNumAtoms;
+#            if (($rxnPhase == 1) or ($rxnPhase == 2))
+#            {
+#               $phaseAtomMap[++$phaseNumAtoms] = $atom;
+#               $atomPhaseMap[$atom] = $phaseNumAtoms;
+#            }
+#            elsif (($rxnPhase == 3) or ($rxnPhase == 4))
+#            {
+#               $phaseAtomMap[++$phaseNumAtoms] = $atom;
+#               $atomPhaseMap[$atom] = $phaseNumAtoms;
+#            }
+#            elsif (($rxnPhase == 5) or ($rxnPhase == 6))
+#            {
+#               if (($atom <= $prunedNumAtoms1[$hAtom1][$hAtom2]) or
+#                   ($atom == $prunedHAtomNumber2[$hAtom1][$hAtom2]))
+#               {
+#                  $phaseAtomMap[++$phaseNumAtoms] = $atom;
+#                  $atomPhaseMap[$atom] = $phaseNumAtoms;
+#               }
+#            }
+#            else # $rxnPhase == 7 or 8
+#            {
+#               if (($atom != $prunedHAtomNumber1[$hAtom1][$hAtom2]) and
+#                   ($atom != $prunedHAtomNumber2[$hAtom1][$hAtom2]))
+#               {
+#                  $phaseAtomMap[++$phaseNumAtoms] = $atom;
+#                  $atomPhaseMap[$atom] = $phaseNumAtoms;
+#               }
+#            }
+
+            # For the current $atom, go through the list of elements up to the
+            #   element of the current $atom. Accumulate a count of the species
+            #   for each of those elements. Then add on the species ID of the
+            #   current $atom. (Note, that species ID is unique *only* for a
+            #   given element, which is why we had to accumulate the count as
+            #   just described.)
+            $orderedSpeciesID[$phaseNumAtoms] = 0;
+            foreach $element (1..$atomElementID_ref->[$atom]-1)
+               {$orderedSpeciesID[$phaseNumAtoms]+=$numSpecies_ref->[$element];}
+            $orderedSpeciesID[$phaseNumAtoms] += $atomSpeciesID_ref->[$atom];
+
+            # Get the largest number in the ordered species list. This is
+            #   equal to the number of unique species in the system.
+            if ($orderedSpeciesID[$phaseNumAtoms] > $numOrderedSpecies)
+               {$numOrderedSpecies = $orderedSpeciesID[$phaseNumAtoms];}
+
+            # It is crucially important to realize that the ordered species ID
+            #   numbers here are really only valid for the current reaction
+            #   template and not the entire simulation. To make things better,
+            #   it will be necessary to merge all types from all templates and
+            #   from the LAMMPS data file into one unified listing. That task
+            #   is reserved for the "condense" script.
+         }
+
+# For the -H case with only one pre-post template pair:
+# In the pre-reaction state, bond angles that include both of the
+#   atoms that were bonded to the reacted H atoms are not permitted.
+# In the post-reaction state, the atoms that were bonded to the
+#   reacted H atoms are now supposed to be bonded and so we must make
+#   sure that they are recognized as bonded.
+
+         # We will have to deal with this at some point. The idea is that when
+         #   we break off the two H atoms and then introduce a bond between
+         #   the now exposed atoms we will also want to introduce appropriate
+         #   bond angles. The problem is that the full reaction occurs in four
+         #   phases and tracking the angles in each will be a bit of work at
+         #   the moment. For now we will just not add any bond angles. So we
+         #   should expect that components that bond with each other will be
+         #   a bit floppy. Hence we comment out the angle related stuff below.
+         # Note that the foundHAtom1 and prunedHAtomNumber1 etc. may need to be
+         #   converted to foundBonded1 and prunedBondedNumber1 etc.
+#         foreach $atom (1..$numAtoms)
+#         {
+#            foreach $angle (1..$numBondAngles_ref->[$atom])
+#            {
+#               $angleSet[0] = $angleBonded_ref->[$atom][$angle][1];
+#               $angleSet[1] = $atom;
+#               $angleSet[2] = $angleBonded_ref->[$atom][$angle][2];
+#               $foundHAtom1 = 0;
+#               foreach $setAtom (0..2)
+#               {
+#                  if ($angleSet[$setAtom] ==
+#                     $prunedHAtomNumber1[$hAtom1][$hAtom2])
+#                     {$foundHAtom1 = 1; last;}
+#               }
+#               $foundHAtom2 = 0;
+#               foreach $setAtom (0..2)
+#               {
+#                  if ($angleSet[$setAtom] ==
+#                     $prunedHAtomNumber2[$hAtom1][$hAtom2])
+#                     {$foundHAtom2 = 1; last;}
+#               }
+#
+#               if (($foundHAtom1 == 1) and ($foundHAtom2 == 1))
+#                  {push (@hhAngleRejectSet, "$atom $angle");} # PreRxn Rejects
+#            }
+#         }
+
+         # Construct the list of bonds for the pre- and post-reaction templates
+         #   for every phase. This must be done in two parts. In the first part
+         #   we go through all known bonds and include only those that are
+         #   actually needed. The first part is done via an atom-bond loop. The
+         #   second part is a follow-on that explicitly adds bonds that would
+         #   not otherwise be present (because they are not present in the
+         #   bondAnalysis results).
+         $phaseNumBonds = 0;
+         foreach $atom (1..$numAtoms)
+         {
+            foreach $bond (1..$numBonds_ref->[$atom])
+            {
+               # Make certain that we don't double interact with bonds by only
+               #   analyzing the case where the bonded atom has a higher index.
+               if ($bonded_ref->[$atom][$bond] > $atom)
+               {
+# For the -H case.
+#                  # Determine the atoms involved in this bond.
+#                  $bondSet[0] = $atom;
+#                  $bondSet[1] = $bonded_ref->[$atom][$bond];
+#
+                  # Make sure that we never include any bond between molecule 1
+                  #   and molecule 2 including the H-H bond. The two molecules
+                  #   should be placed "far enough" apart that they never have
+                  #   bonds between them. (Including between the H atoms.)
+                  #   However, just to be certain, we do this check.
+                  if (($atom <= $prunedNumAtoms1[$hAtom1][$hAtom2]) and
+                      ($bonded_ref->[$atom][$bond] >
+                       $prunedNumAtoms1[$hAtom1][$hAtom2]))
+                     {next;}
+
+                  # Depending on the particular phase we will need to count
+                  #   or not count this bond.
+                  if (($rxnPhase >= 1) and ($rxnPhase <= 3))
+                     # Include all bonds.
+                     {$phaseBondList[++$phaseNumBonds] = ["",$atom,$bond];}
+                  elsif ($rxnPhase == 4)
+                  {
+                     # Include all bonds.
+                     $phaseBondList[++$phaseNumBonds] = ["",$atom,$bond];
+#                     # Include all bonds except the one from the H of molecule
+#                     #   two to the atom from molecule two that is bonded to
+#                     #   the H of molecule two.
+#                     if (($atom == $prunedHAtomNumber2[$hAtom1][$hAtom2]) or
+#                         ($bonded_ref->[$atom][$bond] ==
+#                          $prunedHAtomNumber2[$hAtom1][$hAtom2]))
+#                        {next;}
+#                     else
+#                        {$phaseBondList[++$phaseNumBonds] = ["",$atom,$bond];}
+                  }
+                  elsif ($rxnPhase == 5)
+                  {
+                     # Include all bonds.
+                     $phaseBondList[++$phaseNumBonds] = ["",$atom,$bond];
+#                     # Include only bonds within molecule one.
+#                     if ($atom <= $prunedNumAtoms1[$hAtom1][$hAtom2])
+#                        {$phaseBondList[++$phaseNumBonds] = ["",$atom,$bond];}
+#                     else
+#                        {last;}
+                  }
+                  elsif (($rxnPhase == 6) or ($rxnPhase == 7))
+                  {
+                     # Include all bonds except bonds from within molecule one
+                     #   that interact with the reacting H atom from molecule
+                     #   one.
+                     if ((($atom == $prunedHAtomNumber1[$hAtom1][$hAtom2]) and
+                          ($bonded_ref->[$atom][$bond] <
+                          $prunedNumAtoms1[$hAtom1][$hAtom2])) or
+                         (($bonded_ref->[$atom][$bond] ==
+                            $prunedHAtomNumber1[$hAtom1][$hAtom2]) and
+                          ($atom < $prunedNumAtoms1[$hAtom1][$hAtom2])))
+                        {next;}
+                     else
+                        {$phaseBondList[++$phaseNumBonds] = ["",$atom,$bond];}
+
+
+#                     # Include only bonds from within molecule one but before
+#                     #   that, check and exclude any bonds within molecule one
+#                     #   that interact with the reacting H atom.
+#                     if (($atom == $prunedHAtomNumber1[$hAtom1][$hAtom2]) or
+#                         ($bonded_ref->[$atom][$bond] ==
+#                          $prunedHAtomNumber1[$hAtom1][$hAtom2]))
+#                        {next;}
+#                     elsif ($atom <= $prunedNumAtoms1[$hAtom1][$hAtom2])
+#                        {$phaseBondList[++$phaseNumBonds] = ["",$atom,$bond];}
+#                     else
+#                        {last;}
+                  }
+                  else # $rxnPhase == 8
+                  {
+                     # Include all bonds except any that interact with the
+                     #   reacting H atoms of either molecule.
+                     if (($atom == $prunedHAtomNumber1[$hAtom1][$hAtom2]) or
+                         ($atom == $prunedHAtomNumber2[$hAtom1][$hAtom2]))
+                        {last;}
+                     elsif (($bonded_ref->[$atom][$bond] ==
+                          $prunedHAtomNumber1[$hAtom1][$hAtom2]) or
+                         ($bonded_ref->[$atom][$bond] ==
+                          $prunedHAtomNumber2[$hAtom1][$hAtom2]))
+                        {next;}
+                     else
+                     {
+                        # If we don't leave this block for either of the above
+                        #   reasons, then we will want to keep this bond.
+                        $phaseBondList[++$phaseNumBonds] = ["",$atom,$bond];
+                     }
+                  }
+
+# For the -H case.
+#                  $foundHAtom1 = 0;
+#                  foreach $setAtom (0..1)
+#                  {
+#                     if ($bondSet[$setAtom] ==
+#                        $prunedBondedAtomNumber1[$hAtom1][$hAtom2])
+#                        {$foundHAtom1 = 1; last;}
+#                  }
+#
+#                  $foundHAtom2 = 0;
+#                  foreach $setAtom (0..1)
+#                  {
+#                     if ($bondSet[$setAtom] ==
+#                        $prunedBondedAtomNumber2[$hAtom1][$hAtom2])
+#                        {$foundHAtom2 = 1; last;}
+#                  }
+#
+#                  if (($foundHAtom1 == 1) and ($foundHAtom2 == 1))
+#                     {push (@hhBondRejectSet, "$atom $bond");} # PreRxn Rejects
+               }
+            }
+         }
+
+         # At this point we can define the bonding pair for the map file.
+         if ($rxnPhase == 1)
+         {
+            $bondingID1 = $atomPhaseMap[$prunedHAtomNumber1[$hAtom1][$hAtom2]];
+            $bondingID2 = $atomPhaseMap[$prunedHAtomNumber2[$hAtom1][$hAtom2]];
+         }
+         elsif ($rxnPhase == 3)
+         {
+            $bondingID1 =
+               $atomPhaseMap[$prunedBondedAtomNumber1[$hAtom1][$hAtom2]];
+            $bondingID2 =
+               $atomPhaseMap[$prunedBondedAtomNumber2[$hAtom1][$hAtom2]];
+#            $bondingID1 = $atomPhaseMap[$prunedHAtomNumber2[$hAtom1][$hAtom2]];
+#            $bondingID2 =
+#               $atomPhaseMap[$prunedBondedAtomNumber2[$hAtom1][$hAtom2]];
+         }
+         elsif ($rxnPhase == 5)
+         {
+            $bondingID1 = $atomPhaseMap[$prunedHAtomNumber1[$hAtom1][$hAtom2]];
+            $bondingID2 =
+               $atomPhaseMap[$prunedBondedAtomNumber1[$hAtom1][$hAtom2]];
+         }
+         elsif ($rxnPhase == 7)
+         {
+            $bondingID1 = $atomPhaseMap[$prunedHAtomNumber2[$hAtom1][$hAtom2]];
+            $bondingID2 =
+               $atomPhaseMap[$prunedBondedAtomNumber2[$hAtom1][$hAtom2]];
+#            $bondingID1 =
+#               $atomPhaseMap[$prunedBondedAtomNumber1[$hAtom1][$hAtom2]];
+#            $bondingID2 =
+#               $atomPhaseMap[$prunedBondedAtomNumber2[$hAtom1][$hAtom2]];
+         }
+
+         # Add special bonds to each phase that are not expressed from the
+         #   bondAnalysis results. Note that nothing needs to be done for the
+         #   rxnPhase == 1 case because all bonds have already been accounted
+         #   for. In the rxnPhase == 7 case certain bonds have been ignored,
+         #   but we don't have to add any because the H-H does not participate.
+         # Whenever a new bond is added we must account for all information
+         #   associated with that bond. Note that in both cases, the starting
+         #   atom is always < the ending atom so we don't have to worry about
+         #   reordering. Then we must perform the following:
+         # (1) Update the number of bonds that the starting atom has. That is
+         #     always accomplished with a simple increment.
+         # (2) Record the ending atom as the new "bonded" atom.
+         # (3) Record the starting atom and the bond number in an ordered list
+         #     of bonds for this phase.
+         # (4) Create a tag for this bond. The tag is something like "b1 b1" or
+         #     "b1 c1" or "b1 h1", etc.
+         # (5) Determine if this tag is a new kind of tag or if there already
+         #     exists a tag of this type. If it is new, then create the unique
+         #     tag record.
+         # (6) Set the ID number of the tag to the unique tag number.
+
+         # In all cases except rxnPhase == 1, we need to add the H-H bonds.
+         if ($rxnPhase != 1)
+         {
+            $startAtom1 = $prunedHAtomNumber1[$hAtom1][$hAtom2];
+            $endAtom1 = $prunedHAtomNumber2[$hAtom1][$hAtom2];
+            $startAtom2 = 0;
+            $endAtom2 = 0;
+         }
+
+         # In all rxnPhases > 3, we also need to add the C-C bonds.
+         if ($rxnPhase > 3)
+         {
+            $startAtom2 = $prunedBondedAtomNumber1[$hAtom1][$hAtom2];
+            $endAtom2 = $prunedBondedAtomNumber2[$hAtom1][$hAtom2];
+         }
+
+#         if (($rxnPhase >= 2) and ($rxnPhase <= 6))
+#         {
+#            # Note the starting and ending atoms.
+#            $startAtom = $prunedHAtomNumber1[$hAtom1][$hAtom2];
+#            $endAtom = $prunedHAtomNumber2[$hAtom1][$hAtom2];
+#         }
+#         elsif ($rxnPhase == 8)
+#         {
+#            # Note the starting and enging atoms.
+#            $startAtom = $prunedBondedAtomNumber1[$hAtom1][$hAtom2];
+#            $endAtom = $prunedBondedAtomNumber2[$hAtom1][$hAtom2];
+#         }
+
+         if ($rxnPhase != 1)
+         {
+            # Perform the remaining update actions for the H-H bond.
+   
+            # Increment the number of bonds that the starting atom has.
+            $numBonds_ref->[$startAtom1]++;
+   
+            # Record the ending atom as the bonded pair of the starting atom.
+            $bonded_ref->[$startAtom1][$numBonds_ref->[$startAtom1]]=$endAtom1;
+   
+            # Record the starting atom and the bond number that pairs with the
+            #   ending atom.
+            $phaseBondList[++$phaseNumBonds]=["",$startAtom1,
+               $numBonds_ref->[$startAtom1]];
+   
+            # Make a tag for this bond pair. It is important that the tag be
+            #   alphabetical. The order of tag parts does not need to correspond
+            #   to the atom order of the bond.
+            $tempTag1 = "$atomElementName_ref->[$startAtom1]" .
+               "$atomSpeciesID_ref->[$startAtom1]";
+            $tempTag2 = "$atomElementName_ref->[$endAtom1]".
+               "$atomSpeciesID_ref->[$endAtom1]";
+            if ("$tempTag1" gt "$tempTag2")
+               {$bondTag = "$tempTag2 $tempTag1";}
+            else
+               {$bondTag = "$tempTag1 $tempTag2";}
+   
+            # Determine if this tag already exists.
+            $found = 0;
+            foreach $tag (1..$numUniqueBondTags)
+            {
+               if ($bondTag eq $uniqueBondTags_ref->[$tag])
+                  {$found = $tag;}
+            }
+   
+            # If not found, then increment the number of unique bond tags and
+            #   store the new unique bond tag as the last one. The bondTagID
+            #   then need to reference the new unique bond tag. If the bond tag
+            #   was found, then we don't have to increment the number of unique
+            #   bond tags or store a new unique tag. We just set the bondTagID
+            #   for this atom and bond pair to the one that was found.
+            if ($found == 0)
+            {
+               $uniqueBondTags_ref->[++$numUniqueBondTags] = $bondTag;
+               $bondTagID_ref->[$startAtom1][$numBonds_ref->[$startAtom1]] =
+                  $numUniqueBondTags;
+            }
+            else
+               {$bondTagID_ref->[$startAtom1][$numBonds_ref->[$startAtom1]] =
+                  $found;}
+         }
+
+
+         if ($rxnPhase > 3)
+         {
+            # Perform the remaining update actions for the C-C bond.
+   
+            # Increment the number of bonds that the starting atom has.
+            $numBonds_ref->[$startAtom2]++;
+   
+            # Record the ending atom as the bonded pair of the starting atom.
+            $bonded_ref->[$startAtom2][$numBonds_ref->[$startAtom2]]=$endAtom2;
+   
+            # Record the starting atom and the bond number that pairs with the
+            #   ending atom.
+            $phaseBondList[++$phaseNumBonds]=["",$startAtom2,
+               $numBonds_ref->[$startAtom2]];
+   
+            # Make a tag for this bond pair. It is important that the tag be
+            #   alphabetical. The order of tag parts does not need to correspond
+            #   to the atom order of the bond.
+            $tempTag1 = "$atomElementName_ref->[$startAtom2]" .
+               "$atomSpeciesID_ref->[$startAtom2]";
+            $tempTag2 = "$atomElementName_ref->[$endAtom2]".
+               "$atomSpeciesID_ref->[$endAtom2]";
+            if ("$tempTag1" gt "$tempTag2")
+               {$bondTag = "$tempTag2 $tempTag1";}
+            else
+               {$bondTag = "$tempTag1 $tempTag2";}
+   
+            # Determine if this tag already exists.
+            $found = 0;
+            foreach $tag (1..$numUniqueBondTags)
+            {
+               if ($bondTag eq $uniqueBondTags_ref->[$tag])
+                  {$found = $tag;}
+            }
+   
+            # If not found, then increment the number of unique bond tags and
+            #   store the new unique bond tag as the last one. The bondTagID
+            #   then need to reference the new unique bond tag. If the bond tag
+            #   was found, then we don't have to increment the number of unique
+            #   bond tags or store a new unique tag. We just set the bondTagID
+            #   for this atom and bond pair to the one that was found.
+            if ($found == 0)
+            {
+               $uniqueBondTags_ref->[++$numUniqueBondTags] = $bondTag;
+               $bondTagID_ref->[$startAtom2][$numBonds_ref->[$startAtom2]] =
+                  $numUniqueBondTags;
+            }
+            else
+               {$bondTagID_ref->[$startAtom2][$numBonds_ref->[$startAtom2]] =
+                  $found;}
+         }
+
+#         if (($rxnPhase != 1) and ($rxnPhase != 7))
+#         {
+#            # Perform the remaining update actions for the bond.
+#   
+#            # Increment the number of bonds that the starting atom has.
+#            $numBonds_ref->[$startAtom]++;
+#   
+#            # Record the ending atom as the bonded pair of the starting atom.
+#            $bonded_ref->[$startAtom][$numBonds_ref->[$startAtom]] = $endAtom;
+#   
+#            # Record the starting atom and the bond number that pairs with the
+#            #   ending atom.
+#            $phaseBondList[++$phaseNumBonds]=["",$startAtom,
+#               $numBonds_ref->[$startAtom]];
+#   
+#            # Make a tag for this bond pair. It is important that the tag be
+#            #   alphabetical. The order of tag parts does not need to correspond
+#            #   to the atom order of the bond.
+#            $tempTag1 = "$atomElementName_ref->[$startAtom]" .
+#               "$atomSpeciesID_ref->[$startAtom]";
+#            $tempTag2 = "$atomElementName_ref->[$endAtom]".
+#               "$atomSpeciesID_ref->[$endAtom]";
+#            if ("$tempTag1" gt "$tempTag2")
+#               {$bondTag = "$tempTag2 $tempTag1";}
+#            else
+#               {$bondTag = "$tempTag1 $tempTag2";}
+#   
+#            # Determine if this tag already exists.
+#            $found = 0;
+#            foreach $tag (1..$numUniqueBondTags)
+#            {
+#               if ($bondTag eq $uniqueBondTags_ref->[$tag])
+#                  {$found = $tag;}
+#            }
+#   
+#            # If not found, then increment the number of unique bond tags and
+#            #   store the new unique bond tag as the last one. The bondTagID
+#            #   then need to reference the new unique bond tag. If the bond tag
+#            #   was found, then we don't have to increment the number of unique
+#            #   bond tags or store a new unique tag. We just set the bondTagID
+#            #   for this atom and bond pair to the one that was found.
+#            if ($found == 0)
+#            {
+#               $uniqueBondTags_ref->[++$numUniqueBondTags] = $bondTag;
+#               $bondTagID_ref->[$startAtom][$numBonds_ref->[$startAtom]] =
+#                  $numUniqueBondTags;
+#            }
+#            else
+#               {$bondTagID_ref->[$startAtom][$numBonds_ref->[$startAtom]] =
+#                  $found;}
+#         }
+
+
+
+         # Construct the edge IDs specific to each phase.
+         if (($rxnPhase == 1) or ($rxnPhase == 3))
+         {
+            # All edge IDs obtained earlier will be used. No edge ID will be
+            #   added or subtracted.
+            $phaseNumEdgeIDs = $numEdgeIDs[$hAtom1][$hAtom2];
+            foreach $id (1..$phaseNumEdgeIDs)
+               {$phasePrunedEdgeID[$id] =
+                $atomPhaseMap[$prunedEdgeID[$id][$hAtom1][$hAtom2]];}
+         }
+         elsif ($rxnPhase == 5)
+         {
+            # All edge IDs obtained earlier will be used. No edge ID will be
+            #   added or subtracted.
+            $phaseNumEdgeIDs = $numEdgeIDs[$hAtom1][$hAtom2];
+            foreach $id (1..$phaseNumEdgeIDs)
+               {$phasePrunedEdgeID[$id] =
+                $atomPhaseMap[$prunedEdgeID[$id][$hAtom1][$hAtom2]];}
+#            # Only edge IDs for molecule one will be used.
+#            $phaseNumEdgeIDs = 0;
+#            foreach $id (1..$numEdgeIDs[$hAtom1][$hAtom2])
+#            {
+#               if ($prunedEdgeID[$id][$hAtom1][$hAtom2] <=
+#                   $atomPhaseMap[$prunedNumAtoms1[$hAtom1][$hAtom2]])
+#               {
+#                  $phasePrunedEdgeID[++$phaseNumEdgeIDs] =
+#                     $atomPhaseMap[$prunedEdgeID[$id][$hAtom1][$hAtom2]];
+#               }
+#            }
+#
+#            # Add the H atom from the second molecule as the last edge ID.
+#            $phasePrunedEdgeID[++$phaseNumEdgeIDs] =
+#               $atomPhaseMap[$prunedHAtomNumber2[$hAtom1][$hAtom2]];
+         }
+         elsif ($rxnPhase == 7)
+         {
+            # All edge IDs obtained earlier will be used except for the
+            #   reacting H atoms of each molecule.
+            $phaseNumEdgeIDs = 0;
+            foreach $id (1..$numEdgeIDs[$hAtom1][$hAtom2])
+            {
+               if (($prunedEdgeID[$id][$hAtom1][$hAtom2] !=
+                    $prunedHAtomNumber1[$hAtom1][$hAtom2]) and
+                   ($prunedEdgeID[$id][$hAtom1][$hAtom2] !=
+                    $prunedHAtomNumber2[$hAtom1][$hAtom2]))
+                  {$phasePrunedEdgeID[++$phaseNumEdgeIDs] =
+                   $atomPhaseMap[$prunedEdgeID[$id][$hAtom1][$hAtom2]];}
+            }
+         }
+
+         # Make the actual adjustments and finalize the needed data structures.
+         # Define the unique file name component.
+         $rxnBindingPair =
+            $atomElementName_ref->
+               [$prunedBondedAtomNumber1[$hAtom1][$hAtom2]] ."-".
+            $atomSpeciesID_ref->
+               [$prunedBondedAtomNumber1[$hAtom1][$hAtom2]] ."_".
+            $atomElementName_ref->
+               [$prunedBondedAtomNumber2[$hAtom1][$hAtom2]] ."-".
+            $atomSpeciesID_ref->[$prunedBondedAtomNumber2[$hAtom1][$hAtom2]];
+
+# For the -H case:
+#         if ($rxnPhase == 1) # Pre reaction state of phase (a).
+#         {
+#            # Define the file name.
+#            #$template = "preRxn_" . $hAtom1 . "_" . $hAtom2 . ".data";
+#            $template = "preRxn_$rxnBindingPair.a.data";
+#
+#            # The reject bond consist of the bond found between the initially
+#            #   separate molecules only (if it was found).
+#            push (@bondRejectSet, @hhBondRejectSet);
+#
+#            # Update the total number of bonds. The atoms that will link the
+#            #   molecules are not yet supposed to be bonded. In the original
+#            #   $numBondsTotal the linking atoms have a bond between them so we
+#            #   have to get rid of it.
+#            $numBondsTotal -= scalar(@bondRejectSet);
+#
+#            # The reject angles consist of only those that include both atoms
+#            #   that were originally bonded to the H atoms (if any were found).
+#            push (@angleRejectSet, @hhAngleRejectSet);
+#
+#            # Update the total number of angles.
+#            $numAnglesTotal -= scalar(@angleRejectSet);
+#         }
+#         elsif ($rxnPhase == 2) # Post reaction state of phase (a).
+#         {
+#            # Define the file name.
+#            #$template = "postRxn_" . $hAtom1 . "_" . $hAtom2 . ".data";
+#            $template = "postRxn_$rxnBindingPair.a.data";
+#
+##            # There are no bonds that should be rejected in the post rxn state.
+###            # Reject bonds consist of the h-neighbor bonds only. (Two bonds.)
+###            push (@bondRejectSet, @h1BondRejectSet);
+###            push (@bondRejectSet, @h2BondRejectSet);
+##
+###            # The bonds from the hh neighbors to the hh atoms are broken. But
+###            #   the hh atoms form H2 and the hh neighbors are bound to each
+###            #   other. Thus, from the original $numBondsTotal, we lose one
+###            #   bond in total. (Keep the hh, lose the two neighbor-h, gain
+###            #   the neighbor-neighbor.)
+###            $numBondsTotal -= 1;
+#
+#            # The atoms that were bonded to the hh neighbors are now to be
+#            #   bonded. So, we need to increase the number of bonds by one.
+#            $numBondsTotal += 1;
+#
+##            # There are no bond angle rejects in the post rxn state.
+###            # The reject angles consist of all three sets.
+###            push (@angleRejectSet, @hhAngleRejectSet);
+###            push (@angleRejectSet, @h1AngleRejectSet);
+###            push (@angleRejectSet, @h2AngleRejectSet);
+#
+##            # In the post reaction state the atoms that used to be neighbors to
+##            #   the H atoms are now themselves bonded to each other. Therefore,
+##            #   we need to add all the new bond angles associated with that
+##            #   change. First we add bond angles where the neighbor to $hAtom1
+##            #   is the vertex and then we add bond angles for the case where the
+##            #   neighbor to $hAtom2 is the vertex.
+##            &addBondAngles($prunedBondedAtomNumber1[$hAtom1][$hAtom2],
+##               $prunedBondedAtomNumber2[$hAtom1][$hAtom2]);
+##            &addBondAngles($prunedBondedAtomNumber2[$hAtom1][$hAtom2],
+##               $prunedBondedAtomNumber1[$hAtom1][$hAtom2]);
+#
+#            # Add the bond between the two hh-neighbor atoms for the post
+#            #   reaction state. Note that we have to take care regarding the
+#            #   unique bond labels and such.
+#            # NOTE: A very tricky thing is that the &addBond MUST occur AFTER
+#            #   the &addBondAngles. If you add the bond first, then it will
+#            #   "find" new angles that it shouldn't find.
+#            &addBond($prunedBondedAtomNumber1[$hAtom1][$hAtom2],
+#               $prunedBondedAtomNumber2[$hAtom1][$hAtom2]);
+#
+##            # Because there are no rejects, we do not have to adjust the total
+##            #   number of bond angles due to rejects.
+###            # Update the total number of angles.
+###            $numAnglesTotal -= scalar(@angleRejectSet);
+#         }
+
+         # Define the various file names:
+         $phaseLetter = chr(ord('a') + int(($rxnPhase-1)/2));
+         if ($rxnPhase/2 != int($rxnPhase/2))
+            {$preOrPost = "preRxn";}
+         else
+            {$preOrPost = "postRxn";}
+
+         $mapFile = "$rxnBindingPair.$phaseLetter.map";
+         $template = "$preOrPost.$rxnBindingPair.$phaseLetter.data";
+
+         # Open the pre or post-reaction molecule template for this hh pair.
+         open (OUT,">rxnTemplates/$template")
+            || die "Cannot open $template for writing.\n";
+
+         print OUT "$template\n\n";
+
+         print OUT "$phaseNumAtoms atoms\n";
+         print OUT "$phaseNumBonds bonds\n";
+         print OUT "0 angles\n";
+#         print OUT "$numAnglesTotal angles\n"; # FIX if needed.
+         print OUT "0 dihedrals\n";
+         print OUT "0 impropers\n";
+
+         print OUT "\nMasses\n\n";
+
+# For the -H case:
+#         foreach $atom (1..$numAtoms)
+#            {print OUT "$atom $atomicMasses_ref->[$atomicZ_ref->[$atom]]\n";}
+
+         foreach $atom (1..$phaseNumAtoms)
+         {
+            $currMass = $atomicMasses_ref->
+               [$atomicZ_ref->[$phaseAtomMap[$atom]]];
+            print OUT "$atom $currMass\n";
+         }
+
+# Seems to not be needed. I imagine that it forces a requirement that the
+#   molecule must be at a specific site before the reaction can occur. Without
+#   this given then the only thing that is studied is the bond topology. The
+#   true atomic positional topology is not used.
+#         print OUT "\nCoords\n\n";
+#
+#         foreach $atom (1..$prunedNumAtoms[$hAtom1][$hAtom2])
+#         {
+#            print OUT "$atom";
+#            foreach $axis (1..3)
+#               {print OUT " $directXYZ_ref->[$atom][$axis]";}
+#            print OUT "\n";
+#         }
+
+         print OUT "\nTypes\n\n";
+
+# For the -H case:
+#         foreach $atom (1..$prunedNumAtoms[$hAtom1][$hAtom2])
+#            {print OUT "$atom $orderedSpeciesID[$atom]\n";}
+
+         foreach $atom (1..$phaseNumAtoms)
+            {print OUT "$atom $orderedSpeciesID[$atom]\n";}
+
+         print OUT "\nBonds\n\n";
+
+         $bondCount = 0;
+         foreach $bond (1..$phaseNumBonds)
+         {
+            $currAtom = $phaseBondList[$bond][1];
+            $currBond = $phaseBondList[$bond][2];
+            $currBondType = $bondTagID_ref->[$currAtom][$currBond];
+            $currPhaseAtom = $atomPhaseMap[$currAtom];
+            print OUT "$bond $currBondType $currPhaseAtom " .
+               "$atomPhaseMap[$bonded_ref->[$currAtom][$currBond]] # " .
+               "$uniqueBondTags_ref->[$currBondType]\n";
+         }
+# For the -H case:
+#         foreach $atom (1..$numAtoms)
+#         {
+#            foreach $bond (1..$numBonds_ref->[$atom])
+#            {
+#               # The bonds in the bondAnalysis.bl are all double printed. That
+#               #   is, a bond from atom 1 to 7 is also reported as a bond from
+#               #   atom 7 to 1. We only need to print each bond once so we only
+#               #   print the case where the bonded atom is greater than the
+#               #   current atom.
+#               if ($bonded_ref->[$atom][$bond] > $atom)
+#               {
+#                  $found = 0;
+#                  foreach $setAtom (0..$#bondRejectSet)
+#                  {
+#                     if ("$atom $bond" eq "$bondRejectSet[$setAtom]")
+#                        {$found = 1;}
+#                  }
+#                  if ($found == 1)
+#                     {next;}
+#
+#                  $bondCount++;
+#                  print OUT "$bondCount $bondTagID_ref->[$atom][$bond] $atom "
+#                    . "$bonded_ref->[$atom][$bond] # "
+#                   . "$uniqueBondTags_ref->[$bondTagID_ref->[$atom][$bond]]\n";
+#               }
+#            }
+#         }
+#         
+#         print OUT "\nAngles\n\n";
+#
+#         $angleCount = 0;
+#         foreach $atom (1..$numAtoms)
+#         {
+#            # Unlike for the bonds, the angles are not double printed. Each
+#            #   bond angle is printed only once in a bondAnalysis.ba file
+#            #   because the $atom is always the vertex and of the 1st and 3rd
+#            #   positions, the smaller atom number is always the first. I.e.,
+#            #   there can never be a 3 1 2.
+#            foreach $angle (1..$numBondAngles_ref->[$atom])
+#            {
+#               $found = 0;
+#               foreach $setAtom (0..$#angleRejectSet)
+#               {
+#                  if ("$atom $angle" eq "$angleRejectSet[$setAtom]")
+#                     {$found = 1;}
+#               }
+#               if ($found == 1)
+#                  {next;}
+#
+#               $angleCount++;
+#               print OUT "$angleCount $angleTagID_ref->[$atom][$angle] "
+#                 . "$angleBonded_ref->[$atom][$angle][1] $atom "
+#                 . "$angleBonded_ref->[$atom][$angle][2] # "
+#                 . "$uniqueAngleTags_ref->[$angleTagID_ref->[$atom][$angle]]\n";
+#            }
+#         }
+#
+         close (OUT);
+# For the -H case:
+#         undef @bondRejectSet;
+#         undef @hhBondRejectSet;
+##         undef @h1BondRejectSet;
+##         undef @h2BondRejectSet;
+#         undef @angleRejectSet;
+#         undef @hhAngleRejectSet;
+##         undef @h1AngleRejectSet;
+##         undef @h2AngleRejectSet;
+
+         # Create the map file. We only need one for each phase of the overall
+         #   reaction so we make it when we are doing (arbitrarily) the
+         #   pre-reaction cases.
+         if ($rxnPhase/2 != int($rxnPhase/2))
+         {
+            open (MAP,">$mapFile") || die "Cannot open $mapFile for writing\n";
+            print MAP "# Map file: $mapFile\n\n";
+            print MAP "$phaseNumEdgeIDs edgeIDs\n";
+            print MAP "$phaseNumAtoms equivalences\n\n";
+
+            print MAP "BondingIDs\n\n";
+            print MAP "$bondingID1\n";
+            print MAP "$bondingID2\n\n";
+# For the -H case:
+#            print MAP "$prunedBondedAtomNumber1[$hAtom1][$hAtom2]\n";
+#            print MAP "$prunedBondedAtomNumber2[$hAtom1][$hAtom2]\n\n";
+
+            print MAP "EdgeIDs\n\n";
+            foreach $id (1..$phaseNumEdgeIDs)
+               {print MAP "$phasePrunedEdgeID[$id]\n";}
+            print MAP "\nEquivalences\n\n";
+            foreach $id (1..$phaseNumAtoms)
+               {print MAP "$id $id\n";}
+            close (MAP);
+         }
+      }
+   }
+}
+
+sub addBondAngles
+{
+   # Define passed parameters.
+   my $bondedAtomNumberA = $_[0];  # Use A,B to avoid confusion with 1,2.
+   my $bondedAtomNumberB = $_[1];  # Same
+
+   # Define local variables.
+   my $tag;
+   my $axis;
+   my $bond;
+   my $a;
+   my $b;
+   my $c;
+   my $neighborAtom;
+   my $currentAtom;
+   my $sqrDiff;
+   my $gamma;
+   my $cosGamma;
+   my $angleTag;
+   my $angleTag1;
+   my $angleTag2;
+   my $atomV;
+   my $atom1;
+   my $atom2;
+   my $atomTemp;
+   my $angle;
+   my $decimal;
+   my $found;
+
+   $neighborAtom = $bondedAtomNumberA;
+
+   # In every one of the new bond angles, one of the non-vertex atoms
+   #   will be the neighbor to the $hAtom2 atom. We will need to know the
+   #   distance to that atom and we don't have it yet so we compute it
+   #   first.
+   $sqrDiff = 0;
+   foreach $axis (1..3)
+   {
+      $sqrDiff +=
+        ($directXYZ_ref->[$neighborAtom][$axis] -
+         $directXYZ_ref->[$bondedAtomNumberB][$axis])**2;
+   }
+   $b = sqrt($sqrDiff);
+
+   # Now we can compute the rest of the bond angle data that is dependent
+   #   on each of the bonds to the neighbor of the vertex $hAtom atom.
+   foreach $bond (1..$numBonds_ref->[$neighborAtom])
+   {
+      $currentAtom = $bonded_ref->[$neighborAtom][$bond];
+
+      # Get the distance between the vertex and its bond
+      $a = $bondLength_ref->[$neighborAtom][$bond];
+
+      # Compute the distance between the $a and the $b atoms.
+      $sqrDiff = 0;
+      foreach $axis (1..3)
+      {
+         $sqrDiff +=
+           ($directXYZ_ref->[$currentAtom][$axis] -
+            $directXYZ_ref->[$bondedAtomNumberB][$axis])**2;
+      }
+      $c = sqrt($sqrDiff);
+
+      # Apply the law of cosines: c^2 = a^2 + b^2 - 2ab cos(gamma) to
+      #   solve for gamma (the angle between the bonds) where c is the
+      #   distance between the two bonded atoms, a is the distance
+      #   from the central (vertex) atom to one bonded atom and b is
+      #   the distance from the vertex to the other.
+      $cosGamma = ($a*$a + $b*$b - $c*$c)/(2.0*$a*$b);
+      if ($cosGamma > 1.0)
+      {
+         if (abs($cosGamma - 1.0) < $epsilon)
+            {$gamma = 0;}
+         else
+            {die "Atomic coords give unrealistic cos magnitude: $cosGamma\n";}
+      }
+      elsif ($cosGamma < -1.0)
+      {
+         if (abs($cosGamma + 1.0) < $epsilon)
+            {$gamma = $pi;}
+         else
+            {die "Atomic coords give unrealistic cos magnitude: $cosGamma\n";}
+      }
+      else
+         {$gamma = &acos(($a*$a + $b*$b - $c*$c)/(2.0*$a*$b));}
+      $gamma *= 180.0/$pi; # Convert to degrees.
+
+      # Round to the nearest integer or half-integer. This rounding scheme is
+      #   fairly non-standard and it really only works for positive quantities.
+      $decimal = StructureControl::remainder(1,$gamma);
+      if (($decimal < 0.75) or ($decimal > 0.25))
+         {$gamma = int($gamma) + 0.5;}
+      else
+         {$gamma = int($gamma + 0.5);}
+
+      # Add the bond angle. We have to get the atom number of each atom that is
+      #   participating in the bond angle. We also have to assemble the angle
+      #   tag and check if it is unique among all the known angle tags. If it
+      #   is unique, then we add it to the list of known tags. If it isn't,
+      #   then do nothing.
+      # Note that this angle is added to the list of bond angles that have the
+      #   current $neighborAtom as a vertex.
+
+      # Get the atom number of the vertex atom, the smaller index atom number,
+      #   and the larger index atom number.
+      $atomV = $neighborAtom;
+      $atom1 = $currentAtom;
+      $atom2 = $bondedAtomNumberB;
+      if ($atom1 > $atom2)
+      {
+         $atomTemp = $atom1;
+         $atom1 = $atom2;
+         $atom2 = $atomTemp;
+      }
+
+      # Increment the number of bond angles for this vertex atom.
+      $numBondAngles_ref->[$atomV]++;
+
+      # Get the angle number of this angle in the list of angles that have
+      #   neighborAtom as the vertex. We need it later if we have to add an
+      #   ID tag.
+      $angle = $numBondAngles_ref->[$atomV];
+
+      # Create the trial angle tags for this triplet.
+      $angleTag1 =
+         $atomElementName_ref->[$atom1] . $atomSpeciesID_ref->[$atom1] . " " .
+         $atomElementName_ref->[$atomV] . $atomSpeciesID_ref->[$atomV] . " " .
+         $atomElementName_ref->[$atom2] . $atomSpeciesID_ref->[$atom2] . " " .
+         $gamma;
+      $angleTag2 =
+         $atomElementName_ref->[$atom2] . $atomSpeciesID_ref->[$atom2] . " " .
+         $atomElementName_ref->[$atomV] . $atomSpeciesID_ref->[$atomV] . " " .
+         $atomElementName_ref->[$atom1] . $atomSpeciesID_ref->[$atom1] . " " .
+         $gamma;
+
+      # Search for the angle tag among all known tags.
+      $found = 0;
+      foreach $tag (1..$numUniqueAngleTags)
+      {
+         if ($angleTag1 eq $uniqueAngleTags_ref->[$tag])
+            {$found = $tag; $angleTag = $angleTag1; last;}
+         elsif ($angleTag2 eq $uniqueAngleTags_ref->[$tag])
+            {$found = $tag; $angleTag = $angleTag2; last;}
+      }
+      if ($found == 0)
+      {
+         # Create an angle tag that follows the form of $angleTag1. Any unfound
+         #   angle will either be one of the original pre-reaction angles that
+         #   certainly will follow the $angleTag1 form or will be an angle
+         #   added after the bonding reaciton. In the second case, the form of
+         #   $angleTag1 will *define* the correct name for the angle.
+         $angleTag = $angleTag1;
+         $numUniqueAngleTags++;
+         $angleTagID_ref->[$atomV][$angle] = $numUniqueAngleTags;
+         $uniqueAngleTags_ref->[$numUniqueAngleTags] = $angleTag;
+      }
+      else
+         {$angleTagID_ref->[$atomV][$angle] = $found;}
+
+      # Store the atom numbers for this bond angle.
+      $angleBonded_ref->[$atomV][$angle][1] = $atom1;
+      $angleBonded_ref->[$atomV][$angle][2] = $atom2;
+
+      # Increment the total count of the number of bond angles
+      $numAnglesTotal++;
+   }
+}
+
+sub addBond
+{
+   # Define passed parameters.
+   my $bondedAtomNumberA = $_[0]; # Use A,B to avoid confusion with 1,2.
+   my $bondedAtomNumberB = $_[1]; # Same.
+
+   # Define local parameters.
+   my $tag;
+   my $bondTag;
+   my $found;
+   my $tempAtom;
+   my $numBondsA;
+
+   # Make sure that the A atom is the lower index number.
+   if ($bondedAtomNumberA > $bondedAtomNumberB)
+   {
+      $tempAtom = $bondedAtomNumberA;
+      $bondedAtomNumberA = $bondedAtomNumberB;
+      $bondedAtomNumberB = $tempAtom;
+   }
+
+   # Increment the number of bonds for this atom.
+   $numBonds_ref->[$bondedAtomNumberA]++;
+   $numBondsA = $numBonds_ref->[$bondedAtomNumberA];
+
+   # Store the index number of the atom bonded to A (which is B).
+   $bonded_ref->[$bondedAtomNumberA][$numBonds_ref->[$bondedAtomNumberA]] =
+      $bondedAtomNumberB;
+
+   # Create the tag for this atom pair.
+   $bondTag = $atomElementName_ref->[$bondedAtomNumberA]
+      . $atomSpeciesID_ref->[$bondedAtomNumberA] . " "
+      . $atomElementName_ref->[$bondedAtomNumberB]
+      . $atomSpeciesID_ref->[$bondedAtomNumberB];
+
+   # Determine if this is a unique type of bond or if not, which one it is.
+   $found = 0;
+   foreach $tag (1..$numUniqueBondTags)
+   {
+      if ($bondTag eq $uniqueBondTags_ref->[$tag])
+         {$found = $tag; last;}
+   }
+
+   # If it is unique, then add it to the list of known bond tags. Otherwise,
+   #   just record the ID that this bond matches.
+   if ($found == 0)
+   {
+      $numUniqueBondTags++;
+      $bondTagID_ref->[$bondedAtomNumberA][$numBondsA] = $numUniqueBondTags;
+      $uniqueBondTags_ref->[$numUniqueBondTags] = $bondTag;
+   }
+   else
+      {$bondTagID_ref->[$bondedAtomNumberA][$numBondsA] = $found;}
+
+   # The total number of bonds in the system has already been adjusted before
+   #   this subroutine was called.
+}
+
+
+
+# This is all old stuff from the -H case:
+## We need to make two molecule definition files for each reaction. There is a
+##   pre-reaction template in which the two original molecule fragments (from
+##   the pruned files) do not have any bond between them. There is also a post-
+##   reaction template in which the relevant atoms bonded to the H atoms from
+##   the original molecule fragments are bound to each other.
+## Once each pair of reaction templates is created, we need to make the
+##   associated map file.
+#sub makeReactionTemplates
+#{
+#   # Define passed parameters
+#   my $preOrPost = $_[0];
+#
+#   # Define local variables.
+#   my $prunedMolFile;
+#   my $id;
+#   my $tag;
+#   my $atom;
+#   my $axis;
+#   my $bond;
+#   my $angle;
+#   my $element;
+#   my $hAtom1;
+#   my $hAtom2;
+#   my $bondCount;
+#   my $angleCount;
+#   my $speciesCount;
+#   my $template;
+#   my $numBondsTotal;
+#   my $atomicZ_ref;
+#   my $atomicMasses_ref;
+#   my $numAtoms;
+#   my $setAtom;
+#   my @angleSet;
+#   my @bondSet;
+#   my $found;
+#   my $foundBonded1;
+#   my $foundBonded2;
+#   my @bondRejectSet;
+#   my @hhBondRejectSet;
+##   my @h1BondRejectSet;
+##   my @h2BondRejectSet;
+#   my @angleRejectSet;
+#   my @hhAngleRejectSet;
+##   my @h1AngleRejectSet;
+##   my @h2AngleRejectSet;
+#   my $rxnBindingPair;
+#   my $numOrderedSpecies;
+#   my @orderedSpeciesID;
+#   my $atomElementID_ref;
+#   my $numSpecies_ref;
+#
+#   # Create a directory to store the templates.
+#   mkdir "rxnTemplates";
+#
+#   # Loop over all hAtom pairs.
+#   foreach $hAtom1 (1..$numHAtoms1)
+#   {
+#if ($hAtom1 > 2)
+#   {last;}
+#      foreach $hAtom2 (1..$numHAtoms2)
+#      {
+#if ($hAtom2 > 2)
+#   {last;}
+#         # Define the file name for the pruned molecule.
+#         $prunedMolFile = "olcao_" . $hAtom1 . "_" . $hAtom2 . ".skl";
+#
+#
+#         # Read the skeleton file and extract useful data and references.
+#         StructureControl::readInputFile("pruned/$prunedMolFile",1);
+#         $numAtoms = StructureControl::getNumAtoms;
+#         $directXYZ_ref = StructureControl::getDirectXYZRef;
+#         $atomElementName_ref = StructureControl::getAtomElementNameRef;
+#         $atomElementID_ref = StructureControl::getAtomElementIDRef;
+#         $atomSpeciesID_ref = StructureControl::getAtomSpeciesIDRef;
+#         $atomicZ_ref = StructureControl::getAtomicZRef;
+#         $numSpecies_ref = StructureControl::getNumSpeciesRef;
+#
+#         # Get useful elemental information.
+#         $atomicMasses_ref = ElementData::getAtomicMassesRef;
+#
+#
+#         # Compute the bond length bond analysis for this pruned molecule.
+#         system("bondAnalysis -i pruned/$prunedMolFile -bl -bf 1.1");
+#
+#         # Read the bondAnalysis.bl file.
+#         StructureControl::readBondAnalysisBL("bondAnalysis.bl",
+#            $prunedNumAtoms[$hAtom1][$hAtom2]);
+#
+#
+#         # Compute the bond angle bond analysis for this pruned molecule.
+#         system("bondAnalysis -i pruned/$prunedMolFile -ba -bf 1.1");
+#
+#         # Read the bondAnalysis.ba file.
+#         StructureControl::readBondAnalysisBA("bondAnalysis.ba",
+#            $prunedNumAtoms[$hAtom1][$hAtom2]);
+#
+#         # Get data (or references to data) obtain from the bondAnalysis file.
+#         $numBonds_ref = StructureControl::getNumBondsRef;
+#         $bonded_ref = StructureControl::getBondingListRef;
+#         $bondLength_ref = StructureControl::getBondLengthExtRef;
+#         $bondTagID_ref = StructureControl::getBondTagIDRef;
+#         $uniqueBondTags_ref = StructureControl::getUniqueBondTagsRef;
+#         $numUniqueBondTags = StructureControl::getNumUniqueBondTags;
+#         $numBondAngles_ref = StructureControl::getNumBondAnglesRef;
+#         $angleBonded_ref = StructureControl::getAngleBondedRef;
+#         $angleTagID_ref = StructureControl::getAngleTagIDRef;
+#         $numUniqueAngleTags = StructureControl::getNumUniqueAngleTags;
+#         $uniqueAngleTags_ref = StructureControl::getUniqueAngleTagsRef;
+#         $numBondsTotal = StructureControl::getNumBondsTotal;
+#         $numAnglesTotal = StructureControl::getNumAnglesTotal;
+#
+#         # Make special variable assignments and adjustments for the pre and
+#         #   post conditions.
+#
+#         # In both cases, the atoms will retain the same types.
+#         $numOrderedSpecies = 0;
+#         foreach $atom (1..$numAtoms)
+#         {
+#            $orderedSpeciesID[$atom] = 0;
+#            foreach $element (1..$atomElementID_ref->[$atom]-1)
+#               {$orderedSpeciesID[$atom] += $numSpecies_ref->[$element];}
+#            $orderedSpeciesID[$atom] += $atomSpeciesID_ref->[$atom];
+#
+#            # Get the largest number in the ordered species list. This is
+#            #   equal to the number of unique species in the system.
+#            if ($orderedSpeciesID[$atom] > $numOrderedSpecies)
+#               {$numOrderedSpecies = $orderedSpeciesID[$atom];}
+#         }
+#
+#         # In the pre-reaction state, bond angles that include both of the
+#         #   atoms that were bonded to the reacted H atoms are not permitted.
+#         # In the post-reaction state, the atoms that were bonded to the
+#         #   reacted H atoms are now supposed to be bonded and so we must make
+#         #   sure that they are recognized as bonded.
+#         foreach $atom (1..$numAtoms)
+#         {
+#            foreach $angle (1..$numBondAngles_ref->[$atom])
+#            {
+#               $angleSet[0] = $angleBonded_ref->[$atom][$angle][1];
+#               $angleSet[1] = $atom;
+#               $angleSet[2] = $angleBonded_ref->[$atom][$angle][2];
+#               $foundBonded1 = 0;
+#               foreach $setAtom (0..2)
+#               {
+#                  if ($angleSet[$setAtom] ==
+#                     $prunedBondedAtomNumber1[$hAtom1][$hAtom2])
+#                     {$foundBonded1 = 1; last;}
+#               }
+#               $foundBonded2 = 0;
+#               foreach $setAtom (0..2)
+#               {
+#                  if ($angleSet[$setAtom] ==
+#                     $prunedBondedAtomNumber2[$hAtom1][$hAtom2])
+#                     {$foundBonded2 = 1; last;}
+#               }
+#
+#               if (($foundBonded1 == 1) and ($foundBonded2 == 1))
+#                  {push (@hhAngleRejectSet, "$atom $angle");} # PreRxn Rejects
+#            }
+#         }
+#
+#         # In the pre-reaction state the atoms that were bonded to the H atoms
+#         #   are not bonded to each other. In the post-reaction state those
+#         #   same atoms are now bonded.
+#         foreach $atom (1..$numAtoms)
+#         {
+#            foreach $bond (1..$numBonds_ref->[$atom])
+#            {
+#               # Make certain that we don't double interact with bonds by only
+#               #   analyzing the case where the bonded atom has a higher index.
+#               if ($bonded_ref->[$atom][$bond] > $atom)
+#               {
+#                  $bondSet[0] = $atom;
+#                  $bondSet[1] = $bonded_ref->[$atom][$bond];
+#
+#                  $foundBonded1 = 0;
+#                  foreach $setAtom (0..1)
+#                  {
+#                     if ($bondSet[$setAtom] ==
+#                        $prunedBondedAtomNumber1[$hAtom1][$hAtom2])
+#                        {$foundBonded1 = 1; last;}
+#                  }
+#
+#                  $foundBonded2 = 0;
+#                  foreach $setAtom (0..1)
+#                  {
+#                     if ($bondSet[$setAtom] ==
+#                        $prunedBondedAtomNumber2[$hAtom1][$hAtom2])
+#                        {$foundBonded2 = 1; last;}
+#                  }
+#
+#                  if (($foundBonded1 == 1) and ($foundBonded2 == 1))
+#                     {push (@hhBondRejectSet, "$atom $bond");} # PreRxn Rejects
+#               }
+#            }
+#         }
+#
+#         # Make the actual adjustments and finalize the needed data structures.
+#         # Define the unique file name component.
+#         $rxnBindingPair =
+#            $atomElementName_ref->
+#               [$prunedBondedAtomNumber1[$hAtom1][$hAtom2]] ."-".
+#            $atomSpeciesID_ref->
+#               [$prunedBondedAtomNumber1[$hAtom1][$hAtom2]] ."_".
+#            $atomElementName_ref->
+#               [$prunedBondedAtomNumber2[$hAtom1][$hAtom2]] ."-".
+#            $atomSpeciesID_ref->[$prunedBondedAtomNumber2[$hAtom1][$hAtom2]];
+#         if ($preOrPost == 1) # Pre reaction state.
+#         {
+#            # Define the file name.
+#            #$template = "preRxn_" . $hAtom1 . "_" . $hAtom2 . ".data";
+#            $template = "preRxn_$rxnBindingPair.data";
+#
+#            # The reject bond consist of the bond found between the initially
+#            #   separate molecules only (if it was found).
+#            push (@bondRejectSet, @hhBondRejectSet);
+#
+#            # Update the total number of bonds. The atoms that will link the
+#            #   molecules are not yet supposed to be bonded. In the original
+#            #   $numBondsTotal the linking atoms have a bond between them so we
+#            #   have to get rid of it.
+#            $numBondsTotal -= scalar(@bondRejectSet);
+#
+#            # The reject angles consist of only those that include both atoms
+#            #   that were originally bonded to the H atoms (if any were found).
+#            push (@angleRejectSet, @hhAngleRejectSet);
+#
+#            # Update the total number of angles.
+#            $numAnglesTotal -= scalar(@angleRejectSet);
+#         }
+#         else # Post reaction state.
+#         {
+#            # Define the file name.
+#            #$template = "postRxn_" . $hAtom1 . "_" . $hAtom2 . ".data";
+#            $template = "postRxn_$rxnBindingPair.data";
+#
+##            # There are no bonds that should be rejected in the post rxn state.
+###            # Reject bonds consist of the h-neighbor bonds only. (Two bonds.)
+###            push (@bondRejectSet, @h1BondRejectSet);
+###            push (@bondRejectSet, @h2BondRejectSet);
+##
+###            # The bonds from the hh neighbors to the hh atoms are broken. But
+###            #   the hh atoms form H2 and the hh neighbors are bound to each
+###            #   other. Thus, from the original $numBondsTotal, we lose one
+###            #   bond in total. (Keep the hh, lose the two neighbor-h, gain
+###            #   the neighbor-neighbor.)
+###            $numBondsTotal -= 1;
+#
+#            # The atoms that were bonded to the hh neighbors are now to be
+#            #   bonded. So, we need to increase the number of bonds by one.
+#            $numBondsTotal += 1;
+#
+##            # There are no bond angle rejects in the post rxn state.
+###            # The reject angles consist of all three sets.
+###            push (@angleRejectSet, @hhAngleRejectSet);
+###            push (@angleRejectSet, @h1AngleRejectSet);
+###            push (@angleRejectSet, @h2AngleRejectSet);
+#
+#            # In the post reaction state, the atoms that used to be neighbors to
+#            #   the H atoms are now themselves bonded to each other. Therefore,
+#            #   we need to add all the new bond angles associated with that
+#            #   change. First we add bond angles where the neighbor to $hAtom1
+#            #   is the vertex and then we add bond angles for the case where the
+#            #   neighbor to $hAtom2 is the vertex.
+#            &addBondAngles($prunedBondedAtomNumber1[$hAtom1][$hAtom2],
+#               $prunedBondedAtomNumber2[$hAtom1][$hAtom2]);
+#            &addBondAngles($prunedBondedAtomNumber2[$hAtom1][$hAtom2],
+#               $prunedBondedAtomNumber1[$hAtom1][$hAtom2]);
+#
+#            # Add the bond between the two hh-neighbor atoms for the post
+#            #   reaction state. Note that we have to take care regarding the
+#            #   unique bond labels and such.
+#            # NOTE: A very tricky thing is that the &addBond MUST occur AFTER
+#            #   the &addBondAngles. If you add the bond first, then it will
+#            #   "find" new angles that it shouldn't find.
+#            &addBond($prunedBondedAtomNumber1[$hAtom1][$hAtom2],
+#               $prunedBondedAtomNumber2[$hAtom1][$hAtom2]);
+#
+##            # Because there are no rejects, we do not have to adjust the total
+##            #   number of bond angles due to rejects.
+###            # Update the total number of angles.
+###            $numAnglesTotal -= scalar(@angleRejectSet);
+#         }
+#
+#         # Open the pre or post-reaction molecule template for this hh pair.
+#         open (OUT,">rxnTemplates/$template")
+#            || die "Cannot open $template for writing.\n";
+#
+#         print OUT "$template\n\n";
+#
+#         print OUT "$prunedNumAtoms[$hAtom1][$hAtom2] atoms\n";
+#         print OUT "$numBondsTotal bonds\n";
+#         print OUT "0 angles\n";
+##         print OUT "$numAnglesTotal angles\n";
+#         print OUT "0 dihedrals\n";
+#         print OUT "0 impropers\n";
+#
+#         print OUT "\nMasses\n\n";
+#
+#         foreach $atom (1..$numAtoms)
+#            {print OUT "$atom $atomicMasses_ref->[$atomicZ_ref->[$atom]]\n";}
+#
+##         print OUT "\nCoords\n\n";
+##
+##         foreach $atom (1..$prunedNumAtoms[$hAtom1][$hAtom2])
+##         {
+##            print OUT "$atom";
+##            foreach $axis (1..3)
+##               {print OUT " $directXYZ_ref->[$atom][$axis]";}
+##            print OUT "\n";
+##         }
+#
+#         print OUT "\nTypes\n\n";
+#
+#         foreach $atom (1..$prunedNumAtoms[$hAtom1][$hAtom2])
+#            {print OUT "$atom $orderedSpeciesID[$atom]\n";}
+#
+#         print OUT "\nBonds\n\n";
+#
+#         $bondCount = 0;
+#         foreach $atom (1..$numAtoms)
+#         {
+#            foreach $bond (1..$numBonds_ref->[$atom])
+#            {
+#               # The bonds in the bondAnalysis.bl are all double printed. That
+#               #   is, a bond from atom 1 to 7 is also reported as a bond from
+#               #   atom 7 to 1. We only need to print each bond once so we only
+#               #   print the case where the bonded atom is greater than the
+#               #   current atom.
+#               if ($bonded_ref->[$atom][$bond] > $atom)
+#               {
+#                  $found = 0;
+#                  foreach $setAtom (0..$#bondRejectSet)
+#                  {
+#                     if ("$atom $bond" eq "$bondRejectSet[$setAtom]")
+#                        {$found = 1;}
+#                  }
+#                  if ($found == 1)
+#                     {next;}
+#
+#                  $bondCount++;
+#                  print OUT "$bondCount $bondTagID_ref->[$atom][$bond] $atom "
+#                    . "$bonded_ref->[$atom][$bond] # "
+#                    . "$uniqueBondTags_ref->[$bondTagID_ref->[$atom][$bond]]\n";
+#               }
+#            }
+#         }
+##         
+##         print OUT "\nAngles\n\n";
+##
+##         $angleCount = 0;
+##         foreach $atom (1..$numAtoms)
+##         {
+##            # Unlike for the bonds, the angles are not double printed. Each
+##            #   bond angle is printed only once in a bondAnalysis.ba file
+##            #   because the $atom is always the vertex and of the 1st and 3rd
+##            #   positions, the smaller atom number is always the first. I.e.,
+##            #   there can never be a 3 1 2.
+##            foreach $angle (1..$numBondAngles_ref->[$atom])
+##            {
+##               $found = 0;
+##               foreach $setAtom (0..$#angleRejectSet)
+##               {
+##                  if ("$atom $angle" eq "$angleRejectSet[$setAtom]")
+##                     {$found = 1;}
+##               }
+##               if ($found == 1)
+##                  {next;}
+##
+##               $angleCount++;
+##               print OUT "$angleCount $angleTagID_ref->[$atom][$angle] "
+##                 . "$angleBonded_ref->[$atom][$angle][1] $atom "
+##                 . "$angleBonded_ref->[$atom][$angle][2] # "
+##                 . "$uniqueAngleTags_ref->[$angleTagID_ref->[$atom][$angle]]\n";
+##            }
+##         }
+##
+#         close (OUT);
+#         undef @bondRejectSet;
+#         undef @hhBondRejectSet;
+##         undef @h1BondRejectSet;
+##         undef @h2BondRejectSet;
+#         undef @angleRejectSet;
+#         undef @hhAngleRejectSet;
+##         undef @h1AngleRejectSet;
+##         undef @h2AngleRejectSet;
+#
+#         # Create the map file. We only need one so we make it when we are
+#         #   doing (arbitrarily) the pre-reaction case.
+#         if ($preOrPost == 1)
+#         {
+#            open (MAP,">$rxnBindingPair.map") ||
+#               die "Cannot open $rxnBindingPair.map for writing\n";
+#            print MAP "# Map file for $rxnBindingPair\n\n";
+#            print MAP "$numEdgeIDs[$hAtom1][$hAtom2] edgeIDs\n";
+#            print MAP "$numAtoms equivalences\n\n";
+#            print MAP "BondingIDs\n\n";
+#            print MAP "$prunedBondedAtomNumber1[$hAtom1][$hAtom2]\n";
+#            print MAP "$prunedBondedAtomNumber2[$hAtom1][$hAtom2]\n\n";
+#            print MAP "EdgeIDs\n\n";
+#            foreach $id (1..$numEdgeIDs[$hAtom1][$hAtom2])
+#               {print MAP "$prunedEdgeID[$id][$hAtom1][$hAtom2]\n";}
+#            print MAP "\nEquivalences\n\n";
+#            foreach $id (1..$numAtoms)
+#               {print MAP "$id $id\n";}
+#            close (MAP);
+#         }
+#      }
+#   }
+#}

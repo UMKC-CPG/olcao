@@ -11,15 +11,6 @@ sub printHelp
 #          is produced simply based on geometrical considerations, not on any
 #          quantum mechanical calculations such as the OLCAO bond order.
 #
-#USAGE:  bondAnalysis [-o \$outFile] [-i \$inFile] [-dist \$limitDist]
-#                     [-bs | -ba | -bl | -boo [-Ylm_l \$Ylm_l] | -dx | -st | -co
-#                     |-3dfull  [-a \$aScale -b \$bScale -c \$cScale]]
-#                     |-3dparts [-a \$aScale -b \$bScale -c \$cScale
-#                                -vol \$x \$y \$z]]
-#                     [-bf \$bondingFactor] [-xyz | -abc | -fract]
-#                     [-box \$min1 \$max1 \$min2 \$max2 \$min3 \$max3 \$zone]
-#                     [-help]
-#
 #The -o option allows the user to designate a different name for the resultant
 #   output file rather than the default "bondAnalysis.xx" file.  The "xx" in
 #   the output depends on the data requested, for the -bs option, "xx"="bs",
@@ -115,6 +106,15 @@ sub printHelp
 #   cell.
 # The -help option will print this description and usage information.
 #
+#USAGE:  bondAnalysis [-o \$outFile] [-i \$inFile] [-dist \$limitDist]
+#                     [-bs | -ba | -bl | -boo [-Ylm_l \$Ylm_l] | -dx | -st | -co
+#                     |-3dfull  [-a \$aScale -b \$bScale -c \$cScale]]
+#                     |-3dparts [-a \$aScale -b \$bScale -c \$cScale
+#                                -vol \$x \$y \$z]]
+#                     [-bf \$bondingFactor] [-xyz | -abc | -fract]
+#                     [-box \$min1 \$max1 \$min2 \$max2 \$min3 \$max3 \$zone]
+#                     [-help]
+#
 ENDHELP
    exit(0);
 }
@@ -208,7 +208,7 @@ my $atomLabel = 0;  # This stupid global variable is a product of laziness.  It
                     #   labeled so far.
 
 
-# BEGIN NON-INITIALIZATION EXECTUION
+# BEGIN NON-INITIALIZATION EXECUTION
 
 
 # Initialize the environment.
@@ -635,7 +635,7 @@ sub printBondAngles
          {next;}
 
       # Print the number of bond angles for this atom.
-      print OUT "Num bond angles:  $numBondAngles_ref->[$atom]\n";
+      print OUT "$atom Num bond angles:  $numBondAngles_ref->[$atom]\n";
 
       # Initialize a count of the current bond angle.
       $currentBA = 0;

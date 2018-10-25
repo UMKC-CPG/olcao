@@ -3,25 +3,25 @@ sub printHelp
 {
    print STDOUT <<ENDHELP;
 ###############################################################################
-#Program:  pdb2skl
-#Purpose:  This program will convert a protien data bank .pdb file into an
-#          olcao.skl input file with the atoms all rearranged such that they
+#Program:  skl2pdb
+#Purpose:  This program will convert a olcao skeleton .skl file into a protein
+#          databank .pdb input file with the atoms all rearranged such that they
 #          are sorted according to their elements.  This will also produce a
 #          mapping between the pdb file atoms and the skl atoms.
 #
-#USAGE:  pdb2skl [-i \$pdbInputFile] [-o \$sklOutputFile] [-m \$mapFile]
-#                 [-pdbtypes] [-help]
+#USAGE:  skl2pdb [-i \$sklInputFile] [-o \$pdbOutputFile] [-m \$mapFile]
+#                 [-skltypes] [-help]
 #
 #The -i option is used to request that a specific input file be used for the
 #   conversion.  If this option is not given, then the default value for the
-#   input file is model.pdb.
+#   input file is olcao.skl.
 #The -o option is used to request that a specific output file be written to
 #   for the conversion.  If this option is not given, then the default value
-#   for the output file is skl.dat.
+#   for the output file is olcao.pdb.
 #The -m option is used to request that the mapping between the pdb and skl
 #   files be stored in the file named \$mapFile.
-#The -pdbtypes option will require that the skl.dat file use the types as
-#   defined in the pdb file.  The default is to have no types assigned.
+#The -skltypes option will require that the resultant pdb file use the types as
+#   defined in the skeleton file. The default is to have no types assigned.
 #   
 ###############################################################################
 ENDHELP
@@ -39,40 +39,38 @@ use ElementData;
 use StructureControl;
 
 # Declare global variables.
-my $pdbTypes;
+my $sklTypes;
 my $pdbFile;
 my $sklFile;
 my $mapFile;
 
-# Set default values for various file names.
-&setDefaults;
+# Initialize the environment.
+&initEnvironment;
 
 # Read the command line for requested options.
 &parseCommandLine;
 
-# Open output files for writing.
-&initEnvironment;
-
-# Read the PDB input file and store/calculate all the important information.
-StructureControl::readInputFile($pdbFile,$pdbTypes);
+# Read the skeleton input file and store/calculate all important information.
+StructureControl::readInputFile($sklFile,$sklTypes);
 
 # Print the skl input file.
-StructureControl::printOLCAO(\*SKL,"Generated from PDB file.","cartesian");
+#open (PDB,">$pdbFile") || die "Cannot open $pdbFile for writing.\n";
+StructureControl::printPDB($pdbFile,"molecule");
 
 # Print the data file that maps the pdb nature of each atom to the skl atoms.
-StructureControl::printOLCAOMap(\*MAP);
+#StructureControl::printOLCAOMap(\*MAP);
 
 # END PROGRAM EXECUTION ###################
 
-sub setDefaults
+sub initEnvironment
 {
    # Define the default file names.
-   $pdbFile  = "model.pdb";
+   $pdbFile  = "olcao.pdb";
    $sklFile  = "olcao.skl";
-   $mapFile  = "skl2PDB.map";
+   $mapFile  = "sklPDB.map";
 
    # Assign default behavior for types assignment.
-   $pdbTypes = 0;
+   $sklTypes = 0;
 }
 
 sub parseCommandLine
@@ -85,42 +83,26 @@ sub parseCommandLine
    while ($number < scalar(@ARGV))
    {
       if ($ARGV[$number] eq "-i")
-      {
-         $pdbFile = $ARGV[$number+1];
-         $number++;
-      }
+         {$sklFile = $ARGV[++$number];}
       elsif ($ARGV[$number] eq "-o")
-      {
-         $sklFile = $ARGV[$number+1];
-         $number++;
-      }
+         {$pdbFile = $ARGV[++$number];}
       elsif ($ARGV[$number] eq "-m")
-      {
-         $mapFile = $ARGV[$number+1];
-         $number++;
-      }
-      elsif ($ARGV[$number] eq "-pdbtypes")
-         {$pdbTypes = 1;}
+         {$mapFile = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-skltypes")
+         {$sklTypes = 1;}
       elsif ($ARGV[$number] eq "-help")
          {&printHelp;}
       else
-         {die "Unknown command line parameter.  Aborting\n";}
+         {die "Unknown command line parameter: $ARGV[$number].  Aborting\n";}
 
       $number++;
    }
 
    #Record the command line used to create this set of input files.
    open (COMMANDLINE,">>$commandLine");
-   print COMMANDLINE "pdb2skl ";
+   print COMMANDLINE "skl2pdb ";
    foreach $argument (0..$#ARGV)
       {print COMMANDLINE "$ARGV[$argument] ";}
    print COMMANDLINE "\n";
    close (COMMANDLINE);
-}
-
-sub initEnvironment
-{
-   # Open all files for writing.
-   open (SKL,">$sklFile") || die "Cannot open $sklFile for writing.\n";
-   open (MAP,">$mapFile") || die "Cannot open $mapFile for writing.\n";
 }

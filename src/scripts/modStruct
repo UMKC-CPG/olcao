@@ -75,9 +75,8 @@ sub printHelp
 #   (5,10) which is ~11.18. The length of the new x-axis (width) is defined by
 #   the requirement that the new cell *must* have periodic boundary conditions.
 #   PRESENTLY, THIS ONLY WORKS FOR SIMPLE SIMPLE SIMPLE CASES.
-#   (Note that in the y-axis, this
-#    followed by "filling" of empty space
-#   within the cell.
+#   (Note that in the y-axis, this is followed by "filling" of empty space
+#   within the cell.)
 # The -filter option will eliminate certain atoms from the model that are too
 #   close to other atoms.  If an atom is found to be with \$minDistFilter of
 #   another atom, then it is removed.  THIS DOES NOT REALLY WORK YET.
@@ -105,6 +104,7 @@ sub printHelp
 #   carefully analyzed.  At present only hexagonal cells can be converted to
 #   orthorhombic type and then only after they have been made into a supercell
 #   that doubles the cell size along the direction of the axis to be changed.
+#   Normally, that is a 1 2 1 supercell. The a-axis remains the same.
 # The -perturb option will apply a small shift to the atomic positions of each
 #   atom in the model.  The \$maxPertMag is the magnitude of the shift measured
 #   in angstroms.

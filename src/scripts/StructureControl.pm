@@ -177,6 +177,14 @@ my @bondAnglesExt;# List of bond angle values and extended cell bonded pair
                   # atom numbers for each atom in the central cell.
 my @numBondAngles;# Number of bond angles for each central cell atom.
 my $numBondsTotal;# Number of bonds in the entire system.
+my @bondTagID;    # Defines which unique ID group each bond belongs to.
+my $numUniqueBondTags; # Num unique bonds (sorted lower to higher alphanumeric)
+my @uniqueBondTags; # The list of unique tags for all bonds.
+my $numAnglesTotal; # Number of bond angles in the entire system.
+my $numUniqueAngleTags; # Num unique bond angles (sorted set of tags + angle)
+my @uniqueAngleTags; # The list of unique tags for all bond angles.
+my @angleTagID;   # Defines which unique ID group each angle belongs to.
+my @angleBonded;  # For each atom and angle, the pair of bonded atoms.
 
 # Bond orientational order data.
 my @qBar;         # The complex multicomponent orientational value.
@@ -288,6 +296,12 @@ sub getCoordinationRef
 sub getCoordinationSummaryRef
    {return \@coordinationSummary;}
 
+sub getMaxXYZRef
+   {return \@maxPos;}
+
+sub getMinXYZRef
+   {return \@minPos;}
+
 sub getMagRef
    {return \@mag;}
 
@@ -336,8 +350,35 @@ sub getBondingExtListRef
 sub getBondLengthExtRef
    {return \@bondLengthExt;}
 
+sub getBondTagIDRef
+   {return \@bondTagID;}
+
+sub getNumBondsTotal
+   {return $numBondsTotal;}
+
+sub getUniqueBondTagsRef
+   {return \@uniqueBondTags;}
+
 sub getBondAngleExtRef
    {return \@bondAnglesExt;}
+
+sub getAngleBondedRef
+   {return \@angleBonded;}
+
+sub getAngleTagIDRef
+   {return \@angleTagID;}
+
+sub getNumAnglesTotal
+   {return $numAnglesTotal;}
+
+sub getNumUniqueBondTags
+   {return $numUniqueBondTags;}
+
+sub getNumUniqueAngleTags
+   {return $numUniqueAngleTags;}
+
+sub getUniqueAngleTagsRef
+   {return \@uniqueAngleTags;}
 
 sub getExtScanDistRef
    {return \@extScanDist;}
@@ -389,6 +430,9 @@ sub setABCXYZAssignmentOrder
       $xyzOrder[$axis] = $xyz_ref->[$axis];
    }
 }
+
+sub setBuffer
+   {$buffer=$_[0];}
 
 
 sub setBorder
@@ -529,7 +573,124 @@ sub setScanPoints
 sub setScanElement
    {$scanElement = lc($_[0]);}
 
-
+# Reset all data structures in the StructureControl so that another file can
+#   be read in and manipulated.
+sub reset
+{
+   $pi = 3.1415926535897932384626433832795;
+   $epsilon = 0.00001;
+   $bigInt = 1000000000;
+   $bigReal = 1000000000.0;
+   $bohrRad = 0.5291772180;
+   $hartree = 27.21138386;
+   $olcaoskl = "olcao.skl";
+   $modelxyz = "model.xyz";
+   $modelpdb = "model.pdb";
+   $modelhin = "model.hin";
+   undef (@systemTitle);
+   @systemTitle = "empty";
+   $spaceGroupDB = "$OLCAO_DATA/spaceDB";
+   $atomicBDB    = "$OLCAO_DATA/atomicBDB";
+   $atomicPDB    = "$OLCAO_DATA/atomicPDB";
+   $title = "";
+   $numElements = 0;
+   $numAtoms = 0;
+   $numAtomsExt = 0;
+   undef (@central2ExtItemMap);
+   undef @ext2CentralItemMap;
+   undef @datSklMap;
+   undef @sklDatMap;
+   undef @moleculeName;
+   undef @moleculeSeqNum;
+   undef @residueName;
+   undef @residueSeqNum;
+   undef @atomElementName;
+   undef @atomElementID;
+   undef @elementList;
+   undef @elementCount;
+   undef @atomSpeciesID;
+   undef @numSpecies;
+   undef @speciesList;
+   undef @atomicZ;
+   undef @atomTag;
+   undef @connectionTag;
+   undef @coordination;
+   undef @coordinationSummary;
+   undef @fractABC;
+   undef @directABC;
+   undef @directXYZ;
+   undef @extDirectXYZ;
+   undef @extDirectXYZList;
+   undef @extFractABCList;
+   undef @maxPos;
+   undef @minPos;
+   undef @skipItem1;
+   undef @skipItem2;
+   undef @skipPair;
+   undef @realLattice;
+   undef @realLatticeInv;
+   undef @recipLattice;
+   undef @mag;
+   undef @angle;
+   undef @angleDeg;
+   undef @abcOrder;
+   undef @xyzOrder;
+   undef $realCellVolume;
+   undef $recipCellVolume;
+   undef $doFullCell;
+   undef $spaceGroup;
+   undef $spaceGroupNum;
+   undef $spaceGroupName;
+   undef @supercell;
+   undef @scMirror;
+   undef @sineAngle;
+   undef @negBit;
+   undef @posBit;
+   $buffer=10;
+   undef $elementNames_ref;
+   undef $covalRadii_ref;
+   undef $valenceCharge_ref;
+   undef $minPotAlpha;
+   undef $maxNumPotAlphas;
+   undef $maxNumAtomAlphas;
+   undef $maxNumValeStates;
+   undef $rotMatrix;
+   undef $limitDist;
+   undef $limitDistSqrd;
+   $borderZone=0;
+   undef $borderCoords_ref;
+   undef $borderCoordsExt_ref;
+   undef @borderLow;
+   undef @borderHigh;
+   $rpdfSelect=0;
+   undef @rpdfSelectAtoms;
+   undef @rpdf;
+   undef @minDist;
+   undef @selfMinDist;
+   undef @covalRadii;
+   undef @numBonds;
+   undef @bonded;
+   undef @bondedExt;
+   undef @bondLengthExt;
+   undef @bondAnglesExt;
+   undef @numBondAngles;
+   undef $numBondsTotal;
+   undef @bondTagID;
+   undef @uniqueBondTags;
+   undef $numAnglesTotal;
+   undef $numUniqueAngleTags;
+   undef @uniqueAngleTags;
+   undef @angleTagID;
+   undef @angleBonded;
+   undef @qBar;
+   undef @qOrder;
+   undef @Ylm_Coeff;
+   undef $Ylm_l;
+   $scanElement="";
+   undef $numScanPoints;
+   undef @scanPoints;
+   undef @extScanDist;
+}
 
 
 # This subroutine will read the species used in the OLCAO program as recorded
@@ -612,6 +773,8 @@ sub readInputFile
 
    # Decide which type of file to get the structural data from.
    if ($inputFile =~ /olcao/)
+      {&readOLCAOSkl(@_);}
+   elsif ($inputFile =~ /skl/)
       {&readOLCAOSkl(@_);}
    elsif ($inputFile =~ /pdb/)
       {&readPDB(@_);}
@@ -1019,11 +1182,12 @@ sub readPDB
          #   character. We will fail if it is two characters. I'm not sure at
          #   this point about how to fix this issue.
          $element = lc(substr($line,76,2,"12"));
-         @values = split(/\s+/,$element); # Get rid of trailing spaces.
-         if ($values[0] eq "") # Get rid of leading spaces (if any).
-            {shift @values;}
-         if ($values[0] ne "") # Save the remaining element name.
-            {$atomElementName[$numAtoms] = $values[0];}
+         chomp ($element);
+         if ($element ne "")
+         {
+            @values = split(/\s+/,$element); # Get rid of leading spaces.
+            $atomElementName[$numAtoms] = $values[$#values];
+         }
          else # Or get the element name from the pdbAtomTag.
          {
             # Get the leading character and call that the element name.  NOTE
@@ -1032,7 +1196,9 @@ sub readPDB
             #   necessarily tell if this is Calcium or Carbon Type 'A'.
             #   Presently we just assume that there are no atoms like calcium
             #   in the model.
-            @values = split(//,$pdbAtomTag[$numAtoms]);
+            @values = split(/[0-9]/,$pdbAtomTag[$numAtoms]);
+            if ($values[0] eq "") # Get rid of leading spaces (if any).
+               {shift @values;}
             $atomElementName[$numAtoms] = lc($values[0]);
          }
 
@@ -1747,6 +1913,218 @@ sub addConnectionAtoms
       &getDirectABC($numAtoms);
       &getFractABC($numAtoms);
    }
+}
+
+
+# This subroutine will read a given bondAnalysis.bl file and will populate the
+#   relevant data structures. For this subroutine, we will not assume that we
+#   have access to any other information about the system under study. I.e.,
+#   we may not have previously read in any type of associated olcao.skl file.
+# This reads BOND LENGTHS.
+sub readBondAnalysisBL
+{
+   # Define passed parameters.
+   my $inFile = $_[0];
+   my $numAtoms = $_[1];
+
+   # Define local variables.
+   my $atom;
+   my $bond;
+   my $line;
+   my $row;
+   my $tag;
+   my $found;
+   my @values;
+   my @values2;
+   my $atomTag;
+   my $bondTag;
+   my $atomNumber;
+   my $bondIndex;
+   my $numBondRows;
+   my $numBondsInRow;
+
+   
+   # Open and read the bonds into an array of arrays.
+   open (BONDS,"<$inFile") || die "Cannot open $inFile for reading.\n";
+
+   # Assume that all atoms have zero bonds.
+   foreach $atom (1..$numAtoms)
+      {$numBonds[$atom] = 0;}
+
+   # Initialize a count of the total number of bonds in the system.
+   $numBondsTotal = 0;
+
+   # Initialize a count of the number of unique bond tags.
+   $numUniqueBondTags = 0;
+
+   # Read each set of bond information in the given bondAnalysis file.
+   while ($line = <BONDS>)
+   {
+      # Get the number of bonds, the number of bond rows, and the atom number
+      #   of the current atom.
+      @values = &prepLine("",$line,'\s+');
+      @values2 = split(/_/,"$values[0]");
+      $atomTag = $values2[0]; # Something like b1 or c2 or fe2, etc.
+      $atomNumber = $values2[1];
+      $numBonds[$atomNumber] = $values[2];
+      $numBondRows = ceil($values[2]/4.0);
+      $bondIndex = 0; # Initialize an indexer for the bonds for this atom.
+      foreach $row (1..$numBondRows)
+      {
+         # Compute the number of bonds in this row (may be 4 or less).
+         @values = &prepLine(\*BONDS,"",'\s+');
+         $numBondsInRow = ($#values+1)/2;
+
+         # Read the atom number of the bonded pair.
+         foreach $bond (1..$numBondsInRow)
+         {
+            $bondIndex++;
+            $numBondsTotal++;
+            @values2 = split(/_/,"@values[2*($bond-1)]"); # Like b1, c2, fe2,...
+            $bonded[$atomNumber][$bondIndex] = $values2[1];
+            $bondLengthExt[$atomNumber][$bondIndex] = @values[2*($bond-1)+1];
+
+            if ("$atomTag" gt "$values2[0]")
+               {$bondTag = "$values2[0] $atomTag";}
+            else
+               {$bondTag = "$atomTag $values2[0]";}
+
+            $found = 0;
+            foreach $tag (1..$numUniqueBondTags)
+            {
+              if ($bondTag eq $uniqueBondTags[$tag])
+                 {$found = $tag;}
+            }
+
+            # If we don't find the tag in the list of known tags, then increase
+            #   the number of known tags and store the tag.
+            if ($found == 0)
+            {
+               $numUniqueBondTags++;
+               $found = $numUniqueBondTags;
+               $uniqueBondTags[$found] = $bondTag;
+            }
+
+            # For the current bond, store the unique bond ID tag number.
+            $bondTagID[$atomNumber][$bondIndex] = $found;
+         }
+      }
+   }
+
+   # Cut the bond count in half because all bonds are double-listed in the
+   #   bondAnalysis.bl files.
+   $numBondsTotal /= 2;
+
+   close (BONDS);
+}
+
+
+# This subroutine will read a given bondAnalysis.ba file and will populate the
+#   relevant data structures. For this subroutine, we will not assume that we
+#   have access to any other information about the system under study. I.e.,
+#   we may not have previously read in any type of associated olcao.skl file.
+# This reads BOND ANGLES.
+sub readBondAnalysisBA
+{
+   # Define passed parameters.
+   my $inFile = $_[0];
+   my $numAtoms = $_[1];
+
+   # Define local variables.
+   my $tag;
+   my $atom;
+   my $line;
+   my $angle;
+   my $found;
+   my @values;
+   my @values2;
+   my $atomNumber;
+   my $angleTag;
+   my $currentBondAngle;
+   my $decimal;
+   
+   # Open and read the bond angles into an array of arrays.
+   open (BONDS,"<$inFile") || die "Cannot open $inFile for reading.\n";
+
+   # Assume that all atoms have zero bond angles.
+   foreach $atom (1..$numAtoms)
+      {$numBondAngles[$atom] = 0;}
+
+   # Initialize a count of the total number of bond angles in the system.
+   $numAnglesTotal = 0;
+
+   # Initialize a count of the total number of unique bond angle configurations
+   #   defined by the combination of element-species tags and bond angles.
+   $numUniqueAngleTags = 0;
+
+   # Read each set of bond angle information in the given bondAnalysis file.
+   while ($line = <BONDS>)
+   {
+      # Get the number of bond angles where this atom serves as a vertex. Also,
+      #   increment the number of bond angles in total.
+      @values = &prepLine("",$line,'\s+');
+      $atomNumber = $values[0];
+      $numBondAngles[$atomNumber] = $values[4];
+      $numAnglesTotal += $numBondAngles[$atomNumber];
+
+      # Read information about each bond angle.
+      foreach $angle (1..$numBondAngles[$atomNumber])
+      {
+         # Read the next bond angle data set.
+         @values = &prepLine(\*BONDS,"",'\s+');
+
+         # Round the bond angle to the nearest integer or half-integer. Take
+         #   special note of the different arrangement of parenthesis in the
+         #   rounding "int" call.
+         $decimal = &remainder(1,$values[$#values]);
+         if (($decimal < 0.75) or ($decimal > 0.25))
+            {$currentBondAngle = int($values[$#values]) + 0.5;}
+         else
+            {$currentBondAngle = int($values[$#values] + 0.5);}
+         $bondAnglesExt[$atomNumber][$angle] = $currentBondAngle;
+
+         # Classify the bond angle type as a unique element species combination
+         #   where the 1st and 3rd tags can be in any order (and so we will
+         #   sort them to make identifying unique sets easy). Physically, the
+         #   order is unimportant though. However, the second tag must remain
+         #   as the second because that signifies the vertex atom of the angle.
+         if ($values[0] le $values[2])
+            {$angleTag="@values[0..2] $currentBondAngle";}
+         else
+            {$angleTag="$values[2] $values[1] $values[0] $currentBondAngle";}
+
+         # Search the list of known tags looking for the one we just made.
+         #   Note that when $uniqueAngleTags is empty, then $numUniqueAngleTags
+         #   is equal to 0 and so the inner part of the loop will not be run.
+         $found = 0;
+         foreach $tag (1..$numUniqueAngleTags)
+         {
+            if ($angleTag eq $uniqueAngleTags[$tag])
+               {$found = $tag;}
+         }
+
+         # If we don't find the tag in the list of known tags, then increase
+         #   the number of known tags and store the tag.
+         if ($found == 0)
+         {
+            $numUniqueAngleTags++;
+            $found = $numUniqueAngleTags;
+            $uniqueAngleTags[$found] = $angleTag;
+         }
+
+         # Identify the current atom.
+         $atom = $values[4];
+
+         # For the current angle, store the associated unique tag number.
+         $angleTagID[$atom][$angle] = $found;
+
+         # Store the two atoms associated with this bond angle vertex.
+         $angleBonded[$atom][$angle][1] = $values[3];
+         $angleBonded[$atom][$angle][2] = $values[5];
+      }
+   }
+
+   close (BONDS);
 }
 
 
@@ -3408,13 +3786,33 @@ sub shiftXYZCenter
    # Declare local variables.
    my $atom;
    my $axis;
+   my @centerPos; # This is the Atom System Center
+   my @centerCell; # This is the center of the simulation cell.
+   my @centerDiff; # The difference between the atom system and cell centers.
 
+   # Compute the midpoint of the set of atoms on the basis of the max and min
+   #   positions of atoms. AtomSysCenter = Min + (Max-Min)/2 = (Max+Min)/2
+   foreach $axis (1..3)
+      {$centerPos[$axis] = ($maxPos[$axis] + $minPos[$axis])/2.0;}
+
+   # Compute the midpoint of the simulation cell.
+   foreach $axis (1..3)
+      {$centerCell[$axis] = $mag[$axis]/2.0;}
+
+   # Compute the difference between the cell center and the atom system center.
+   #   Diff = AtomSysCenter - CellCenter
+   foreach $axis (1..3)
+      {$centerDiff[$axis] = ($centerPos[$axis] - $centerCell[$axis]);}
+
+   # Recompute the direct XYZ coordiantes of each atom.
    foreach $atom (1..$numAtoms)
    {
       foreach $axis (1..3)
       {
-         $directXYZ[$atom][$axis] -= $minPos[$axis];
-         $directXYZ[$atom][$axis] += $buffer/2.0;
+         # Shift the current atom's coordiante by the difference between the
+         #   atom system center and the cell center. This will center the
+         #   system of atoms about the center of the cell.
+         $directXYZ[$atom][$axis] -= $centerDiff[$axis];
       }
    }
 }
@@ -3758,6 +4156,11 @@ sub makeOrtho
          $realLattice[$axisABC][$axisXYZ] = 0.0;
       }
    }
+
+   # Obtain the inverse of the real lattice.  This must be done now so that
+   #   we can get the abc coordinates of atoms if we are given xyz.  It must
+   #   be done again later after applying the spacegroup and supercell.
+   &makeLatticeInv(\@realLattice,\@realLatticeInv,0);
 
    # Finally, it is necessary to make sure that all atoms in the model are
    #   within the simulation box.  This is done by first recomputing the
@@ -4256,7 +4659,7 @@ sub printVASP
          {$currElement = ucfirst($currElement);}
 
       # Start looking for the requested potential file's directory.
-      if ($potType eq "pot")
+      if ($potType eq "potLDA")
          {$potDir = $VASPPOT_USPP_LDA;}
       elsif ($potType eq "potGGA")
          {$potDir = $VASPPOT_USPP_GGA;}
@@ -4403,6 +4806,50 @@ ENDINCAR
    # Close the INCAR file.
    close (INCAR);
 
+}
+
+sub printPDB
+{
+   # Define passed parameters.
+   my $pdbFile = $_[0];
+   my $pdbFormat = $_[1];
+
+   # Define local variables.
+   my $atom;
+
+   # Open the PDB file for writing.
+   open (PDB,">$pdbFile") || die "Cannot open $pdbFile for writing.\n";
+
+   # Print the HEADER and header-like REMARKS.
+   print PDB "HEADER\n";
+   print PDB "REMARK   1\n";
+   print PDB "REMARK   1 Created by printPDB.\n";
+   print PDB "REMARK   1\n";
+
+   # Only print crystal cell information if pdbForm indicates that the format
+   #   should include it.
+   if ($pdbFormat eq "crystal")
+   {
+      printf PDB "%6s%9.3f%9.3f%9.3f%7.2f%7.2f%7.2f%10s\n","CRYST1",$mag[1],
+         $mag[2],$mag[3],$angleDeg[1],$angleDeg[2],$angleDeg[3],$spaceGroupName;
+   }
+
+   # Print each of the atoms. The format is specified here:
+   # www.wwpdb.org/documentation/file-format-content/format33/sect9.html#ATOM  
+   foreach $atom (1..$numAtoms)
+   {
+      printf PDB "%6s%5d%3s%-2d%6s%4d%2s%8.3f%8.3f%8.3f%6.2f%6.2f%10s%2s\n",
+         "ATOM  ",$atom,uc($atomElementName[$atom]),$atomSpeciesID[$atom],
+         " MOL A",1,"  ",$directXYZ[$atom][1],$directXYZ[$atom][2],
+         $directXYZ[$atom][3],1.0,0.0,"          ",uc($atomElementName[$atom]);
+   }
+
+   # Terminate the ATOM section.
+   print PDB "TER\n";
+
+   # Print connectivity information.
+
+   close (PDB);
 }
 
 sub printCIF
@@ -5034,6 +5481,8 @@ sub obtainAtomicInteraction
 #         $distance = sqrt($diff[1]*$diff[1] +
 #                          $diff[2]*$diff[2] +
 #                          $diff[3]*$diff[3]);
+
+# Why is this here? FIX by adding appropriate documentation.
 if ($distance == $bigReal)
    {next;}
 
@@ -5496,8 +5945,10 @@ sub computeBondAnglesExt
    my $b;
    my $c;
    my $gamma;
+   my $cosGamma;
    my $xyzAxis;
    my @abDiff;
+   my $sqrDiff;
 
    foreach $atom (1..$numAtoms)
    {
@@ -5547,7 +5998,11 @@ sub computeBondAnglesExt
             #   distance between the two bonded atoms, a is the distance from
             #   the central (vertex) atom to one bonded atom and b is the
             #   distance from the vertex to the other.
-            $gamma = &acos(($a*$a + $b*$b - $c*$c)/(2*$a*$b));
+            $cosGamma = ($a*$a + $b*$b - $c*$c)/(2*$a*$b);
+            if (abs($cosGamma + 1.0) < $epsilon)
+               {$gamma = $pi;}
+            else
+               {$gamma = &acos(($a*$a + $b*$b - $c*$c)/(2*$a*$b));}
 
             # Record for general use in degrees.
             $bondAnglesExt[$atom][$numBondAngles[$atom]] = $gamma*180.0/$pi;
@@ -5819,6 +6274,29 @@ sub crossProductMag
    return $productMag;
 }
 
+
+sub normalizedCrossProduct
+{
+   # Define passed parameters.
+   my $vector1_ref = $_[0];
+   my $vector2_ref = $_[1];
+
+   # Define local variables.
+   my $axis;
+   my @crossProductVector;
+   my $productMag;
+
+   @crossProductVector = &crossProduct($vector1_ref,$vector2_ref);
+
+   $productMag = sqrt($crossProductVector[1]**2 +
+                      $crossProductVector[2]**2 +
+                      $crossProductVector[3]**2);
+
+   foreach $axis (1..3)
+      {$crossProductVector[$axis] /= $productMag;}
+
+   return @crossProductVector;
+}
 
 sub getVectorAngle
 {
@@ -6224,6 +6702,16 @@ sub prepLine
       {shift @values;}
 
    return @values;
+}
+
+sub remainder
+{
+   # Define passed parameters.
+   my $num1 = $_[0];
+   my $num2 = $_[1];
+
+   # Compute and return the remainder.
+   return (($num1/$num2) - int($num1/$num2));
 }
 
 

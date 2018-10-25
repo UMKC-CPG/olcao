@@ -21,7 +21,7 @@ unpackOLCAODB
 vasp2skl
 xcMesh xyz2skl)
 
-set (MODULES ElementData.pm StructureControl.pm)
+set (MODULES ElementData.pm BondData.pm AngleData.pm StructureControl.pm)
 
 install (PROGRAMS ${SCRIPTS} DESTINATION bin)
 install (PROGRAMS ${MODULES} DESTINATION "bin/perl5")
