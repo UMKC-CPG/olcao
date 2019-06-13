@@ -58,7 +58,7 @@ my $title;
 # Read the XYZ input file and store/calculate all the important information.
 StructureControl::readInputFile($xyzFile,$xyzTypes);
 
-# Get the title for th system.
+# Get the title for the system.
 $title = StructureControl::getTitle;
 $title = "Generated from XYZ file: $title";
 

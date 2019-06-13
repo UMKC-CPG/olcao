@@ -1,15 +1,23 @@
 #!/usr/bin/env perl
+sub printHelp
+{
+   print <<ENDHELP;
 #PROGRAM:  makeSGDB
 #PURPOSE:  This program is used to create a data base of space groups and their
 #          symmetry operations for use in reading the olcao.dat input files.
-#UPDATED:  Feb. 2, 2009
+#UPDATED:  May 30, 2019
 #
-#USAGE:  makeSGDB -i $spaceGroupInFile
+#USAGE:  makeSGDB -i \$spaceGroupInFile
 #
 #The -i option is used to specify which data file should be read and converted
 #   into the form readable by the applySpaceGroup program.  This is a required
 #   argument and has no default value.
+#See additional documentation at the end of this script regarding the origins
+#   of the data used here.
 #
+ENDHELP
+exit;
+}
 
 ###############################################
 # Begin program execution #####################
@@ -37,7 +45,9 @@ my $numShifts;      # Number of shifted repetitions of original symmetry ops.
 my $outputFile;     # Name for each space group.
 my $subGroupName;   # Name for the current sub group of the current space group.
 my $spaceLattice;   # Character ID for the type of lattice.
-my $spaceGroupTag;  # String identifying the space group and its subgroup.
+my $spaceGroupTag;  # String identifying the space group and its subgroup. The
+                    #   string is expressed using a uniform ASCII form. See
+                    #   documentation at the end of this script.
 
 # Initialize the environment.
 &initEnv;
@@ -451,19 +461,329 @@ sub makeSoftLinks
    }
 }
 
-sub printHelp
-{
-   print <<ENDHELP;
-#PROGRAM:  makeSGDB
-#PURPOSE:  This program is used to create a data base of space groups and their
-#          symmetry operations for use in reading the olcao.dat input files.
+# SPECIAL DOCUMENTATION:
+# This information is also expressed in the StructureControl.pm module.
 #
-#USAGE:  makeSGDB -i \$spaceGroupInFile
+# The space group can be given as either a number (which will use the standard
+#   default origin and unique axis), or you can specify the exact space group
+#   name using the uniform ASCII form for specifying space groups which was
+#   derived from the list given here:  "Uniform ASCII symbols for space groups,
+#   point groups, and crystal systems.  By P. SUSSE, Poster presented at the
+#   17th General Meeting of the International Mineralogical Association,
+#   Toronto, Canada, Aug. 9 - 14, 1998. s. Abstracts  page A62.  It is also
+#   available at the following web site:
+#   http://www.saint-hilaire.ca/main/space.htm. This site is no longer directly
+#   accessible, but it was archived by the Internet Archive - WayBackMachine.
+#   It can be accessed it this https URL:
+#   web.archive.org/web/20080723040057/www.saint-hilaire.ca/main/space.htm
+#   However, just in case that goes away too, I have copied the content below.
+# The space groups and alternate origins actually available are derived from
+#   the book: A Hypertext Book of Crystallographic Space Group Diagrams and
+#   Tables Copyright 1997-1999.  Birkbeck College, University of London.
+#   Available at the web site:  http://img.chem.ucl.ac.uk/sgp/mainmenu.htm.
+#   All names are from the book. Notational scheme is from the reference above.
 #
-#The -i option is used to specify which data file should be read and converted
-#   into the form readable by the applySpaceGroup program.  This is a required
-#   argument and has no default value.
-#
-ENDHELP
-exit;
-}
+#New notation symbols for space groups, point groups and crystal systems
+
+#    The "Uniform ASCII symbols for space groups, point groups, and crystal systems" was presented at the 17th General Meeting of the International Mineralogical Association, Toronto, Canada, Aug. 9 - 14, 1998 by Doctor Peter Susse.
+
+#    The use of subscript and superscript characters in space group and point group symbols is quite disadvantageous for printing as well as for electronic data processing. While preparing the 6th edition of the mineral database MINABS , new symbols were designed consisting of a string of 5 ASCII characters for SCHOENFLIES style, and of up to 7 characters for the symbols after HERMANN-MAUGUIN. It proved to be very useful to extend the new symbols to crystal systems as well.
+
+#    The symbol for the crystal system is made taking the SCHOENFLIES symbol of the holoedric point group, bringing the subscript characters in line, and filling the remainder of the 5 spaces with asterisks (ASCII 42), while in the point group symbol the remaining spaces are filled with periods (ASCII 46). The space group symbol is made adding the superscript number of SCHOENFLIES.
+
+#    The ASCII format for the HERMANN-MAUGUIN style symbols is achieved by denoting inversion axes with the tilde " ~ " character (ASCII 126). The neutral screw axes 21, 42, and 63 are indicated by an apostrophe " ' " (ASCII 39), while the (right handed) screw axes 31, 41, and 61 are indicated by a right bracket " ] " (ASCII 93), or by a right brace " } " (ASCII 125) in case of 62. The (left handed) screw axes 32, 43, and 65 are denoted using the left bracket " [ " (ASCII 91), or the left brace " { " (ASCII 123) in case of 64.
+
+#    For retrieving purposes in databases, the SCHOENFLIES symbols are useful because of their hierarchical nature and of being independent of crystal settings. The advantage of HERMANN- MAUGUIN symbols is the orientational information they contain. The combination of both, using the new ASCII symbols, is being successfully applied in the database MINABS.
+
+#    If you require more information on this new notation, you may contact Dr. Peter Susse or visit his website.
+
+# 1. New symbols for the seven crystal systems.
+# 
+# ci*** 	triclinic
+# c2h** 	monoclinic
+# d2h** 	orthorhombic
+# d4h** 	tetragonal
+# d3d** 	trigonal
+# d6h** 	hexagonal
+# oh*** 	isometric
+# 
+# 
+# 2. New symbols for the 32 point groups.
+# Left column - new symbol Schoenflies type
+# Right column - Hermann-Mauguin type
+# 
+# c1... 	1
+# ci... 	1~
+# c2... 	2
+# cs... 	m
+# c2h.. 	2/m
+# d2... 	2 2 2
+# c2v.. 	m m 2
+# d2h.. 	m m m
+# c4... 	4
+# s4... 	4~
+# c4h.. 	4/m
+# d4... 	4 2 2
+# c4v.. 	4 m m
+# d2d.. 	4~2 m
+# d4h.. 	4/m m m
+# c3... 	3
+# 	
+# c3i.. 	3~
+# c3v.. 	3 m
+# d3... 	3 2
+# d3d.. 	3~m
+# c6... 	6
+# c3h.. 	6~
+# c6h.. 	6/m
+# d6... 	6 2 2
+# c6v.. 	6 m m
+# d3h.. 	6~2 m
+# d6h.. 	6 m m
+# t.... 	2 3
+# th... 	m 3
+# o.... 	4 3 2
+# td... 	4~3 m
+# oh... 	m 3 m
+# 
+# 
+# 3. New symbols for the 230 space groups.
+# 1st column 	- Space group
+# 2nd column 	- New symbol Schoenflies type
+# 3rd column 	- New symbol Hermann-Mauguin type
+# 4th column 	- Other Orientations
+# 
+# Space 	Sch. type 	H-M type 	Other
+# 1 - 	c1..1 	P1 	 
+# 2 - 	ci... 	1 	      P1~
+# 3 - 	c2... 	1 	      P2 B2
+# 4 - 	c2..2 	P2' 	   B2'
+# 5 - 	c2..3 	C2 	   A2 I2 F2
+# 6 - 	cs..1 	Pm 	   Bm
+# 7 - 	cs..2 	Pc 	   Pa Pn Bd
+# 8 - 	cs..3 	Cm 	   Am Im Fm
+# 9 - 	cs..4 	Cc 	   Aa Ia Fd
+# 10 - 	c2h.1 	P2/m 	   B2/m
+# 11 - 	c2h.2 	P2'/m 	B2'/m
+# 12 - 	c2h.3 	C2/m  	A2/m I2/m F2/m
+# 13 - 	c2h.4 	P2/c 	   P2/a P2/n B2/d
+# 14 - 	c2h.5 	P2'/c 	P2'/a P2'/n B2'/d
+# 15 - 	c2h.6 	C2/c 	   A2/a I2/a F2/d
+# 16 - 	d2..1 	P222 	 
+# 17 - 	d2..2 	P222'   	P2'22 P22'2
+# 18 - 	d2..3 	P2'2'2 	P22'2' P2'22'
+# 19 - 	d2..4 	P2'2'2' 	 
+# 20 - 	d2..5 	C222' 	A2'22 B22'2
+# 21 - 	d2..6 	C222  	A222 B222
+# 22 - 	d2..7 	F222 	 
+# 23 - 	d2..8 	I222 	 
+# 24 - 	d2..9 	I2'2'2' 	 
+# 25 - 	c2v.1  	Pmm2 	   P2mm Pm2m
+# 26 - 	c2v.2 	Pmc2' 	P2'ma Pb2'm Pm2'b Pcm2' P2'am
+# 27 - 	c2v.3 	Pcc2 	   P2aa Pb2b
+# 28 - 	c2v.4 	Pma2 	   P2mb Pc2m Pm2a Pbm2 P2cm
+# 29 - 	c2v.5 	Pca2' 	P2'ab Pc2'b Pb2'a Pbc2' P2'ca
+# 30 - 	c2v.6 	Pnc2 	   P2na Pb2n Pn2b Pcn2 P2an
+# 31 - 	c2v.7 	Pmn2' 	P2'mn Pn2'm Pm2'n Pnm2' P2'nm
+# 32 - 	c2v.8 	Pba2 	   P2cb Pc2a
+# 33 - 	c2v.9 	Pna2 	   P2'nb Pc2'n Pn2'a Pbn2' P2'cn
+# 34 - 	c2v10 	Pnn2 	   P2nn Pn2n
+# 35 - 	c2v11 	Cmm2 	   A2mm Bm2m
+# 36 - 	c2v12 	Cmc2' 	A2'ma Bb2'm Bm2'b Ccm2' A2'am
+# 37 - 	c2v13 	Ccc2 	   A2aa Bb2b
+# 38 - 	c2v14 	Amm2 	   B2mm Cm2m Am2m Bmm2 C2mm
+# 39 - 	c2v15 	Abm2 	   B2cm Cm2a Ac2m Bma2 C2mb
+# 40 - 	c2v16 	Ama2 	   B2mb Cc2m Am2a Bbm2 C2cm
+# 41 - 	c2v17 	Aba2 	   B2cb Cc2a Ac2a Bba2 C2cb
+# 42 - 	c2v18 	Fmm2 	   F2mm Fm2m
+# 43 - 	c2v19 	Fdd2 	   F2dd Fd2d
+# 44 - 	c2v20 	Imm2 	   I2mm Im2m
+# 45 - 	c2v21 	Iba2 	   I2cb Ic2a
+# 46 - 	c2v22 	Ima2 	   I2mb Ic2m Im2a Ibm2 I2cm
+# 47 - 	d2h.1 	Pmmm 	 
+# 48 - 	d2h.2 	Pnnn 	 
+# 49 - 	d2h.3 	Pccm 	   Pmaa Pbmb
+# 50 - 	d2h.4 	Pban 	   Pncb Pcna
+# 51 - 	d2h.5 	Pmma 	   Pbmm Pmcm Pmam Pmmb Pcmm
+# 52 - 	d2h.6 	Pnna 	   Pbnn Pncn Pnan Pnnb Pcnn
+# 53 - 	d2h.7 	Pmna 	   Pbmn Pncm Pman Pnmb Pcnm
+# 54 - 	d2h.8 	Pcca 	   Pbaa Pbcb Pbab Pccb Pcaa
+# 55 - 	d2h.9 	Pbam 	   Pmcb Pcma
+# 56 - 	d2h10 	Pccn 	   Pnaa Pbnb
+# 57 - 	d2h11 	Pbcm 	   Pmca Pbma Pcmb Pcam Pmab
+# 58 - 	d2h12 	Pnnm 	   Pmnn Pnmn
+# 59 - 	d2h13 	Pmmn 	   Pnmm Pmnm
+# 60 - 	d2h14 	Pbcn 	   Pnca Pbna Pcnb Pcan Pnab
+# 61 - 	d2h15 	Pbca 	   Pcab
+# 62 - 	d2h16 	Pnma 	   Pbnm Pmcn Pnam Pmnb Pcmn
+# 63 - 	d2h17 	Cmcm 	   Amma Bbmm Bmmb Ccmm Amam
+# 64 - 	d2h18 	Cmca 	   Abma Bbcm Bmab Ccmb Acam
+# 65 - 	d2h19 	Cmmm 	   Bmmm
+# 66 - 	d2h20 	Cccm 	   Amaa Bbmb
+# 67 - 	d2h21 	Cmma 	   Abmm Bmcm Bmam Cmmb Acmm
+# 68 - 	d2h22 	Ccca 	   Abaa Bbcb Bbab Cccb Acaa
+# 69 - 	d2h23 	Fmmm 	 
+# 70 - 	d2h24 	Fddd 	 
+# 71 - 	d2h25 	Immm 	 
+# 72 - 	d2h26 	Ibam 	   Imcb Icma
+# 73 - 	d2h27 	Ibca 	   Icab
+# 74 - 	d2h28 	Imma 	   Ibmm Imcm Imam Immb Icmm
+# 75 - 	c4..1 	P4 	   C4
+# 76 - 	c4..2 	P4] 	   C4]
+# 77 - 	c4..3 	P4' 	   C4'
+# 78 - 	c4..4 	P4[ 	   C4[
+# 79 - 	c4..5 	I4 	   F4
+# 80 - 	c4..6 	I4] 	   F4]
+# 81 - 	s4..1 	P4~ 	   C4~
+# 82 - 	s4..2 	I4~ 	   F4~
+# 83 - 	c4h.1 	P4/m 	   C4/m
+# 84 - 	c4h.2 	P4'/m 	C4'/m
+# 85 - 	c4h.3 	P4/n 	   C4/a
+# 86 - 	c4h.4 	P4'/n 	C4'/a
+# 87 - 	c4h.5 	I4/m 	   F4/m
+# 88 - 	c4h.6 	I4]/a 	F4]/d
+# 89 - 	d4..1 	P422 	   C422
+# 90 - 	d4..2 	P42'2 	C422'
+# 91 - 	d4..3 	P4]22 	C4]22
+# 92 - 	d4..4 	P4]2'2 	C4]22'
+# 93 - 	d4..5 	P4'22 	C4'22
+# 94 - 	d4..6 	P4'2'2 	C4'22'
+# 95 - 	d4..7 	P4[22 	C4[22
+# 96 - 	d4..8 	P4[2'2 	C4[22'
+# 97 - 	d4..9 	I422 	   F422
+# 98 - 	d4.10 	I4]22 	F4]22
+# 99 - 	c4v.1 	P4mm 	   C4mm
+# 100 - 	c4v.2 	P4bm 	   C4mb
+# 101 - 	c4v.3 	P4'cm 	C4'mc
+# 102 - 	c4v.4 	P4'nm 	C4'mn
+# 103 - 	c4v.5 	P4cc 	   C4cc
+# 104 - 	c4v.6 	P4nc 	   C4cn
+# 105 - 	c4v.7 	P4'mc 	C4'cm
+# 106 - 	c4v.8 	P4'bc 	C4'cb
+# 107 - 	c4v.9 	I4mm 	   F4mm
+# 108 - 	c4v10 	I4cm 	   F4mc
+# 109 - 	c4v11 	I4]md 	F4]dm
+# 110 - 	c4v12 	I4]cd 	F4]dc
+# 111 - 	d2d.1 	P4~2m 	C4~m2
+# 112 - 	d2d.2 	P4~2c 	C4~c2
+# 113 - 	d2d.3 	P4~2'm 	C4~m2'
+# 114 - 	d2d.4 	P4~2'c 	C4~c2'
+# 115 - 	d2d.4 	P4~2'c 	C4~c2'
+# 116 - 	d2d.5 	P4~m2 	C4~2m
+# 117 - 	d2d.6 	P4~c2 	C4~2c
+# 118 - 	d2d.7 	P4~b2 	C4~2b
+# 119 - 	d2d.8 	P4~n2 	C4~2n
+# 120 - 	d2d.9 	I4~m2 	F4~2m
+# 121 - 	d2d10 	I4~c2 	F4~2c
+# 122 - 	d2d11 	I4~2m 	F4~m2
+# 123 - 	d2d12 	I4~2d 	F4~d2
+# 124 - 	d4h.1 	P4/mmm 	C4/mmm
+# 125 - 	d4h.2 	P4/mcc 	C4/mcc
+# 126 - 	d4h.3 	P4/nbm 	C4/amb
+# 127 - 	d4h.4 	P4/nnc 	C4/acn
+# 128 - 	d4h.5 	P4/mbm 	C4/mmb
+# 129 - 	d4h.6 	P4/mnc 	C4/mcn
+# 130 - 	d4h.7 	P4/nmm 	C4/amm
+# 131 - 	d4h.8 	P4/ncc 	C4/acc
+# 132 - 	d4h.9 	P4'/mmc 	C4'/mcm
+# 133 - 	d4h10 	P4'/mcm 	C4'/mmc
+# 134 - 	d4h11 	P4'/nbc 	C4'/acb
+# 135 - 	d4h12 	P4'/nnm 	C4'/amn
+# 136 - 	d4h13 	P4'/mbc 	C4'/mcb
+# 137 - 	d4h14 	P4'/mnm 	C4'/mmn
+# 138 - 	d4h15 	P4'/nmc 	C4'/acm
+# 139 - 	d4h16 	P4'/ncm 	C4'/amc
+# 140 - 	d4h17 	I4/mmm 	F4/mmm
+# 141 - 	d4h18 	I4/mcm 	F4/mmc
+# 142 - 	d4h19 	I4]/amd 	F4]/ddm
+# 143 - 	d4h20 	I4]/acd 	F4]/ddc
+# 144 - 	c3..1 	P3 	 
+# 145 - 	c3..2 	P3] 	 
+# 146 - 	c3..3 	P3[ 	   R3
+# 147 - 	c3i.1 	1 P3~ 	 
+# 148 - 	c3i.2 	R3~ 	 
+# 149 - 	d3..1 	P312 	 
+# 150 - 	d3..2 	P321 	 
+# 151 - 	d3..3 	P3]12 	 
+# 152 - 	d3..4 	P3]21 	 
+# 153 - 	d3..5 	P3[12 	 
+# 154 - 	d3..6 	P3[21 	 
+# 155 - 	d3..7 	R32 	 
+# 156 - 	c3v.1 	P3m1 	 
+# 157 - 	c3v.2 	P31m 	 
+# 158 - 	c3v.3 	P3c1 	 
+# 159 - 	c3v.4 	P31c 	 
+# 160 - 	c3v.5 	R3m 	 
+# 161 - 	c3v.6 	R3c 	 
+# 162 - 	d3d.1 	P3~1m 	 
+# 163 - 	d3d.2 	P3~1c 	 
+# 164 - 	d3d.3 	P3~m1 	 
+# 165 - 	d3d.4 	P3~c1 	 
+# 166 - 	d3d.5 	R3~m 	 
+# 167 - 	d3d.6 	R3~c 	 
+# 168 - 	c6..1 	P6 	 
+# 169 - 	c6..2 	P6] 	 
+# 170 - 	c6..3 	P6[ 	 
+# 171 - 	c6..4 	P6} 	 
+# 172 - 	c6..5 	P6{ 	 
+# 173 - 	c6..6 	P6' 	 
+# 174 - 	c3h.1 	P6~ 	 
+# 175 - 	c6h.1 	P6/m 	 
+# 176 - 	c6h.2 	P6'/m 	 
+# 177 - 	d6..1 	P622 	 
+# 178 - 	d6..2 	P6]22 	 
+# 179 - 	d6..3 	P6[22 	 
+# 180 - 	d6..4 	P6}22 	 
+# 181 - 	d6..5 	P6{22 	 
+# 182 - 	d6..6 	P6'22 	 
+# 183 - 	c6v.1 	P6mm 	 
+# 184 - 	c6v.2 	P6cc 	 
+# 185 - 	c6v.3 	P6'cm 	 
+# 186 - 	c6v.4 	P6'mc 	 
+# 187 - 	d3h.1 	P6~m2 	 
+# 188 - 	d3h.2 	P6~c2 	 
+# 189 - 	d3h.3 	P6~2m 	 
+# 190 - 	d3h.4 	P6~2c 	 
+# 191 - 	d6h.1 	P6/mmm 	 
+# 192 - 	d6h.2 	P6/mcc 	 
+# 193 - 	d6h.3 	P6'/mcm 	 
+# 194 - 	d6h.4 	P6'/mmc 	 
+# 195 - 	t...1 	P23 	 
+# 196 - 	t...2 	F23 	 
+# 197 - 	t...3 	I23 	 
+# 198 - 	t...4 	P2'3 	 
+# 199 - 	t...5 	I2'3 	 
+# 200 - 	th..1 	Pm3 	 
+# 201 - 	th..2 	Pn3 	 
+# 202 - 	th..3 	Fm3 	 
+# 203 - 	th..4 	Fd3 	 
+# 204 - 	th..5 	Im3 	 
+# 205 - 	th..6 	Pa3 	 
+# 206 - 	th..7 	Ia3 	 
+# 207 - 	o...1 	P432 	 
+# 208 - 	o...2 	P4'32 	 
+# 209 - 	o...3 	F432 	 
+# 210 - 	o...4 	F4]32 	 
+# 211 - 	o...5 	I432 	 
+# 212 - 	o...6 	P4[32 	 
+# 213 - 	o...7 	P4]32 	 
+# 214 - 	o...8 	I4]32 	 
+# 215 - 	td..1 	P4~3m 	 
+# 216 - 	td..2 	F4~3m 	 
+# 217 - 	td..3 	I4~3m 	 
+# 218 - 	td..4 	P4~3n 	 
+# 219 - 	td..5 	F4~3c 	 
+# 220 - 	td..6 	I4~3d 	 
+# 221 - 	oh..1 	Pm3m 	 
+# 222 - 	oh..2 	Pn3n 	 
+# 223 - 	oh..3 	Pm3n 	 
+# 224 - 	oh..4 	Pn3m 	 
+# 225 - 	oh..5 	Fm3m 	 
+# 226 - 	oh..6 	Fm3c 	 
+# 227 - 	oh..7 	Fd3m 	 
+# 228 - 	oh..8 	Fd3c 	 
+# 229 - 	oh..9 	Im3m 	 
+# 230 - 	oh.10 	Ia3d 	 
+# 
+# 
+#      If you have any comments or suggestions, please let me know.

@@ -39,7 +39,7 @@ sub printHelp
 #
 # PROGRAM NOTES:
 #
-# This program will construct an input file for the OLCOrhoV Fortran90
+# This program will construct an input file for the OLCAOrhoV Fortran90
 #   program and will then call that program with the appropriate command line
 #   parameters.
 # The input files for this program are: (1) A SCF potential file (defaults to

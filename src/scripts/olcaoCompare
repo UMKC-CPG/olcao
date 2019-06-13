@@ -1,0 +1,159 @@
+#!/usr/bin/env perl
+
+sub printHelp
+{
+   print <<ENDHELP;
+###############################################################################
+#PROGRAM: olcaoCompare
+#LAST UPDATED: May 30, 2019
+#USAGE: olcaoCompare -files \$file1 \$file2 [-diff \$diffAmount]
+#                   [-tag \$reportTag] [-o \$outputFile] [-help]
+#
+#This program is used to compare two files that are expected to be equivalent.
+#  Differences between the files are identified and printed to the screen or
+#  to a report output file. The intent is to compare two OLCAO data files where
+#  one was calculated in the past and included in the OLCAO distribution from
+#  github while the other is computed on the current machine using the current
+#  OLCAO installation. The idea is to identify if the current installation is
+#  producing effectively identical results compared to previous runs.
+#
+#The -files option is required and it takes two arguments: \$file1 and \$file2.
+#  Normally, the second file contains the previously computed data.
+#
+#The -diff option is optional and it takes one real number argument that defines
+#  the degree of acceptable numerical error between real numbers in the two
+#  files. By default the \$diffAmount is 1e-7.
+#
+#The -tag option is optional and it takes a fixed string as input. The string
+#  is used to produce more attractive and informative output. It may have
+#  spaces in it as long as it is surrounded by double quote marks.
+#
+#The -o option is optional and it takes one string variable as input. The
+#  string defines the file that the results will be printed into. If this
+#  option is not given, then the program defaults to print to standard output.
+#
+#The -help option prints this informative message and then exits.
+###############################################################################
+ENDHELP
+   exit;
+}
+
+##################################################
+# BEGIN EXECUTION ################################
+##################################################
+
+# Use necessary modules.
+use strict;
+use warnings;
+use Env;
+use lib "$OLCAO_BIN/perl5";
+use StructureControl;
+
+# Declare global variables.
+my $file1;
+my $file2;
+my $diffAmount;
+my $reportTag;
+my $outputFile;
+my $oFH; # Output file handle
+
+# Initialize the execution environment.
+&initEnv;
+
+# Parse the command line.
+&parseCommandLine;
+
+# Open files.
+&openFiles;
+
+# Compute the file differencees.
+&computeDiff;
+
+# Close files.
+&closeFiles;
+
+##################################################
+# END EXECUTION ##################################
+##################################################
+
+
+# Initialize the script variables.
+sub initEnv
+{
+   $diffAmount = 0.0000001
+   $reportTag = "";
+   $outputFile = "";
+}
+
+
+sub parseCommandLine
+{
+   # Declare local variables.
+   my $number=0;
+   my $commandLine = "command";
+   my $argument;
+   my @values;
+
+   # Initialize the index counter for the command line parameters.
+   while ($number < scalar(@ARGV))
+   {
+      if ($ARGV[$number] eq "-files")
+      {
+         #Get the files to compare.
+         $file1 = $ARGV[++$number];
+         $file2 = $ARGV[++$number];
+      }
+      elsif ($ARGV[$number] eq "-diff")
+         {$diffAmount = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-tag")
+         {$reportTag = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-o")
+         {$outputFile = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-help")
+         {&printHelp;}
+      else
+      {
+         print STDOUT "UNKNOWN PARAMETER $ARGV[$number]. ABORTING.\n";
+         exit;
+      }
+      $number++;
+   }
+
+   #Record the command line used to create this set of input files.
+   open (COMMANDLINE,">>$commandLine");
+   print COMMANDLINE "olcaoCompare ";
+   foreach $argument (@ARGV)
+      {print COMMANDLINE "$argument ";}
+   print COMMANDLINE "\n";
+   close (COMMANDLINE);
+}
+
+sub openFiles
+{
+   # Establish the file handle for the output.
+   if ($outputFile eq "")
+      {$oFH = *STDOUT;}
+   else
+   {
+      open ($oFH, ">$outputFile") ||
+         die "Cannot open $outputFile for writing.\n";
+   }
+}
+
+sub computeDiff
+{
+   # Define local variables.
+   my @fileDiff;
+
+   # Compute the file diff and store the results.
+   @fileDiff = `diff $file1 $file2`;
+
+   print STDOUT @fileDiff;
+}
+
+sub closeFiles
+{
+   # Close the output file handle if it was a real file and not STDOUT.
+   if ($outputFile ne "")
+      {close $oFH;}
+}

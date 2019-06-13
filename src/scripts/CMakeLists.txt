@@ -5,23 +5,23 @@ message("At the set of scripts.")
 
 set (SCRIPTS ab2pf.py addAtoms appendCol atomPosDX
 batchChange batchClean batchSub bondAnalysis
-cif2olcao collectSpectra copyInputs
+cif2olcao collectSpectra condense copyInputs
 dump2skl
-gaussOverlapRT
+gaussInt2C gaussInt3C gaussIntKE gaussIntMom gaussIntNucV gaussOverlapRT
 insert3cbo intGen
 lmp2skl.py
-makeBDB makeBOND makeFittedRhoV makeinput makePDOS makePotDB makeSGDB
-makeSYBD massGather massPrep massSubmit mkdirhier modStruct
+makeBDB makeBOND makeFittedRhoV makeinput makePDOS makePotDB makeReactions
+makeSGDB makeSYBD massGather massPrep massSubmit mkdirhier modStruct
 nanoTube.py normalize
-olcao olcao.py olcaoObject.py olcaoStructures.py
+olcao olcaoCompare olcaoObject.py olcao.py olcaoStructures.py
 pdb2skl plotgraph polcao
-rpdf runIsoAtoms
-scanSpectra selectSYBD skl2vasp spectra2ODX
+rpdf runCheck runIsoAtoms
+scanSpectra selectSYBD skl2pdb skl2vasp spectra2ODX
 unpackOLCAODB
 vasp2skl
 xcMesh xyz2skl)
 
-set (MODULES ElementData.pm BondData.pm AngleData.pm StructureControl.pm)
+set (MODULES AngleData.pm BondData.pm ElementData.pm StructureControl.pm)
 
 install (PROGRAMS ${SCRIPTS} DESTINATION bin)
 install (PROGRAMS ${MODULES} DESTINATION "bin/perl5")

@@ -264,7 +264,7 @@ subroutine printSYBD
          write (30+i,*) pathKPointMag(j)
 
          ! Record the energy values for this KPoint
-         write (30+i,fmt="(10f12.5)") energyEigenValues(:numStates,j,i)*hartree
+         write (30+i,fmt="(11f14.5)") energyEigenValues(:numStates,j,i)*hartree
       enddo
 
       ! Close the output file.

@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+
+# Compare the skeleton file to the one used for previous calculations.
+olcaoCompare -diff 0.0001 -files olcao.skl compare/olcao.skl -tag "Skeleton"
+
+# Create the OLCAO input from the olcao.skl skeleton file and then compare the
+#   files that are produced with input files produced for previous calculations.
+makeinput -kp 10 10 10
+olcaoCompare -files summary compare/summary -tag "Summary"
+olcaoCompare -files inputs/olcao.dat compare/olcao.dat -tag "OLCAO data file"
+olcaoCompare -files inputs/scfV.dat compare/scfV.dat -tag "Initial potential"
+olcaoCompare -files inputs/kp-scf.dat compare/kp-scf.dat -tag "K Points"
+olcaoCompare -files inputs/structure.dat compare/structure.dat -tag "Structure"
+
+# Run all relevant OLCAO programs and compare to previously computed results.
+
+# Run the SCF portion of the calculation.
+olcao
+olcaoCompare -files gs_iter-fb.dat compare/gs_iter-fb.dat -tag "Iterations"
+olcaoCompare -files gs_enrg-fb.dat compare/gs_enrg-fb.dat -tag "Energy"
+olcaoCompare -files gs_scfV-fb.dat compare/gs_scfV-fb.dat -tag "Final potential"
+
+# Run the Density of States portion.
+olcao -dos
+olcaoCompare -files gs_dos-fb.t.plot compare/gs_dos-fb.t.plot -tag "Total DOS"
+olcaoCompare -files gs_dos-fb.p.raw compare/gs_dos-fb.p.raw -tag "Partial DOS"
+olcaoCompare -files gs_dos-fb.loci.plot compare/gs_dos-fb.loci.plot -tag "Localization Index"
+
+# Run the Bond Order and Q* (effective charge) portion.
+olcao -bond
+olcaoCompare -files gs_bond-mb.raw compare/gs_bond-mb.raw -tag "Bond Order, Q*"
+
+# Run the Symmetric Band Structure portion.
+olcao -sybd
+olcaoCompare -files gs_sybd-fb.plot compare/gs_sybd-fb.plot -tag "Symmetric band structure"
+
+# Run the Optical Properties portion.
+olcao -optc
+olcaoCompare -files gs_optc-eb.plot compare/gs_optc-eb.plot -tag "Optical Properties"

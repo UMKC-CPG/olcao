@@ -1,0 +1,14 @@
+title
+Crystalline silicon from:
+Wyckoff, R. W. G.
+Second edition. Interscience Publishers, New York, New York
+Sample at T = 300 K
+found via www.crystallography.net
+end
+cell
+   5.43070 5.43070 5.43070 90.000 90.000 90.000
+fract 1
+Si 0.0000000 0.00000000 0.00000000
+space 227_a
+supercell 1 1 1
+prim
