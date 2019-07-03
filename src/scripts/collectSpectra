@@ -88,7 +88,7 @@ my @spectraFileList;   # List of the names of spectra containing plot files.
 
 # Obtain structure data such as the number of atoms of each element and the
 #   number of atoms of each species of each element.  This information is
-#   obtained from the olcao.mi file that is created during the makeinput
+#   obtained from the olcao.fract-mi file that is created during the makeinput
 #   process.
 &obtainStructure;
 
@@ -253,18 +253,20 @@ sub obtainStructure
 
    # We assume that this program is called from the project home where the
    #   xas input files were made from.  Then, a directory with the same name
-   #   as the projectDir will exist here and there will be an inputs/olcao.mi
-   #   file there.  Get the name of that directory (the last in projectDir).
+   #   as the projectDir will exist here and there will be an
+   #   inputs/olcao.fract-mi file there.  Get the name of that directory (the
+   #   last in projectDir).
    @values = split(/\//,$projectDir);
    $projectName = $values[$#values];
 
    # Initialize the count of the number of atoms in the system.
    $numAtoms = 0;
 
-   # We will open olcao.mi, parse the information, and store the data for use
-   #   later on when we consider making the weighted sums of the xanes spectra.
-   open (OLCAOMI,"<$projectDir/$projectName/inputs/olcao.mi") || 
-        die "Cannot open olcao.mi for reading.\n";
+   # We will open olcao.fract-mi, parse the information, and store the data for
+   #   use later on when we consider making the weighted sums of the xanes
+   #   spectra.
+   open (OLCAOMI,"<$projectDir/$projectName/inputs/olcao.fract-mi") || 
+        die "Cannot open olcao.fract-mi for reading.\n";
 
    # Position the cursor to the point of reading the atom information.
    while ($line = <OLCAOMI>)
@@ -654,18 +656,20 @@ sub normalize
 #   file that contains the total spectra from each of the computed edges.
 #   Also, it will compute the weighted sum of all the edges and store that as
 #   the first column of data.  The weighted sum is obtained in the following
-#   way.  We assume that each species in the system (listed in the input/olcao.mi
-#   file) will have one spectra associated with it for each appropriate edge.
-#   In the case that two or more spectra for a particular atomic species were
+#   way.  We assume that each species in the system (listed in the
+#   input/olcao.fract-mi file) will have one spectra associated with it for
+#   each appropriate edge.
+#
+# In the case that two or more spectra for a particular atomic species were
 #   calculated it will be necessary to average them together by hand first.
 #   In a previous subroutine, the number of atoms of each element (Ne) and the
 #   number of atoms of each species of each element (Nse) were determined from
-#   the input/olcao.mi file.  Using the normalized spectra we multiply each
-#   spectra by (Nse)/(Ne) for that species.  These spectra are added together
-#   to obtain a total weighted spectrum.  (NOTE AGAIN:  If you have e.g. 3
-#   spectra for Si2 then you must average them together by hand and store the
-#   result in a place that this script will find it (i.e. call the averaged
-#   result 1s_pacs-eb.plot and store it in the Si2 directory).
+#   the input/olcao.fract-mi file.  Using the normalized spectra we multiply
+#   each spectra by (Nse)/(Ne) for that species.  These spectra are added
+#   together to obtain a total weighted spectrum.  (NOTE AGAIN:  If you have
+#   e.g. 3 spectra for Si2 then you must average them together by hand and
+#   store the result in a place that this script will find it (i.e. call the
+#   averaged result 1s_pacs-eb.plot and store it in the Si2 directory).
 sub formTotal
 {
    # Define passed variables.

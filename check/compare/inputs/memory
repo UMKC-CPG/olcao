@@ -1,0 +1,11 @@
+Memory Estimates:  (Gigabytes)
+    SCF/OLCAO KPoints:
+     SETUP      MAIN      INTG      BAND      PDOS      BOND      OPTC
+     0.162      0.162     0.960     0.320     0.161     0.160     0.225
+     0.165      0.162     0.960     0.321     0.162     0.162     0.228
+     0.190      0.164     0.960     0.323     0.164     0.163     0.232
+    Alternate KPoints:
+     SETUP      MAIN      INTG      BAND      PDOS      BOND      OPTC
+     0.162      0.162     0.960     0.320     0.161     0.160     0.225
+     0.165      0.162     0.960     0.321     0.162     0.162     0.228
+     0.190      0.164     0.960     0.323     0.164     0.163     0.232

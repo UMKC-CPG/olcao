@@ -80,7 +80,7 @@ my $oFH; # Output file handle
 # Initialize the script variables.
 sub initEnv
 {
-   $diffAmount = 0.0000001
+   $diffAmount = 0.0000001;
    $reportTag = "";
    $outputFile = "";
 }
@@ -146,8 +146,9 @@ sub computeDiff
    my @fileDiff;
 
    # Compute the file diff and store the results.
-   @fileDiff = `diff $file1 $file2`;
+   @fileDiff = `diff -I 'Date is.* Time is.*' $file1 $file2`;
 
+   print STDOUT "$reportTag\n";
    print STDOUT @fileDiff;
 }
 

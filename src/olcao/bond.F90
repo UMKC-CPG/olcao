@@ -107,9 +107,9 @@ subroutine computeBond
    sigmaSqrtPi = sqrt(pi) * sigmaBOND
 
    ! Allocate arrays and matrices for this computation.
-   allocate (chargeIndex     (valeDim))
-   allocate (numAtomBasisFns (numAtomSites))
-   allocate (numOrbIndex     (numAtomSites + 1)) ! Store Q for all atoms+orb
+   allocate (numOrbIndex      (numAtomSites + 1)) ! Store Q for all atoms+orb
+   allocate (chargeIndex      (valeDim))
+   allocate (numAtomBasisFns  (numAtomSites))
 #ifndef GAMMA
    allocate (waveFnSqrd (valeDim))
    if (doBond .eq. 0) then
@@ -140,7 +140,7 @@ subroutine computeBond
 !         & atomTypes(atomSites(i)%atomTypeAssn)%numQN_lValeRadialFns(4)*7
    enddo
 
-   ! Record the total number QN_l resolved orbitals summed over all atoms.
+   ! Record the total number of QN_l resolved orbitals summed over all atoms.
    cumulBondQTotal = numOrbIndex(numAtomSites+1)
 
    ! Initialize the index number in valeDim that each state is at.
@@ -223,9 +223,6 @@ subroutine computeBond
 
    do h = 1, spin
 
-      ! Track the stateSpinKPoint index number.
-      stateSpinKPointIndex = (h-1) * numStates
-
       ! Initialize various arrays and matrices.
       bondOrder          (:,:) = 0.0_double
       bondLength         (:,:) = 0.0_double
@@ -242,10 +239,6 @@ subroutine computeBond
       ! Begin accumulating the BOND values over each kpoint
       do i = 1, numKPoints
 
-         ! Track the stateSpinKPoint index number.
-         if ((spin == 2) .and. (i /= 1)) then
-            stateSpinKPointIndex = stateSpinKPointIndex + numStates
-         endif
 
          ! Determine if we are doing bond+Q* in a post-SCF calculation, or
          !   within an SCF calculation.  (The doBond flag is only set to
@@ -264,8 +257,8 @@ subroutine computeBond
 
          do j = 1, numStates
 
-            ! Track the stateSpinKPoint index number.
-            stateSpinKPointIndex = stateSpinKPointIndex + 1
+            ! Compute the stateSpinKPoint index number.
+            stateSpinKPointIndex = (i-1)*spin*numStates + (h-1)*numStates + j
 
             ! Initialize the bond order for energy dependency.
             bondOrderEnergyDep (:) = 0.0_double
@@ -508,7 +501,7 @@ subroutine computeBond
                         & atomOrbitalCharge(k,chargeIndex(l)) + &
                         & oneValeRealAccum * &
                         & electronPopulation(stateSpinKPointIndex)
-               enddo ! state index l
+               enddo ! basis index l
 
                ! Initialize the indices of the second atom. (1)=init, (2)=fin
                atom2Index(1) = 0
@@ -577,8 +570,8 @@ subroutine computeBond
                      ! Store the determined minimum bond length for this pair.
                      bondLength(k,l) = minDistMag
 
-                     ! Loop over the atom 1 states against the atom 2 states
-                     !   for this band.
+                     ! Loop over the atom 1 basis fns against the atom 2
+                     !   basis fns for this band.
                      do m = atom1Index(1),atom1Index(2)
 
 #ifndef GAMMA
@@ -859,7 +852,7 @@ subroutine computeBond
       endif
 
       ! Begin recording general bond order results to disk.
-      if (outputCodeBondQ == 1) then
+      if (outputCodeBondQ == 1) then ! Old style output.
          do i = 1, numAtomTypes
 
             write (9+h,fmt="(2x,a10,i5,a3,a18)") 'Atom type:',i,' - ',&
@@ -914,7 +907,7 @@ subroutine computeBond
          write (9+h,fmt="(4x,a23,i6)") 'Total Number of Bonds: ',numSystemBonds
          write (9+h,fmt="(4x,a17,f12.4)") 'Total Bondorder: ',systemBondOrder
          write (9+h,fmt="(4x,a14,f12.4)") 'Total Charge: ',systemCharge
-      else
+      else ! New style output.
          ! Print out useful header information.
          write (9+h,fmt=200) "NUM_ATOMS        ",numAtomSites
 
@@ -931,14 +924,29 @@ subroutine computeBond
             write (9+h,fmt=200) "TYPE_ID          ", &
                   & atomTypes(currentType)%typeID
             write (9+h,fmt=300) "ATOM_CHARGE      ", atomCharge(i)
-            write (9+h,fmt=310) "ATOM_ORBITAL_CHARGE"
             numSQN_l = atomTypes(currentType)%numQN_lValeRadialFns(1)
             numPQN_l = atomTypes(currentType)%numQN_lValeRadialFns(2)
             numDQN_l = atomTypes(currentType)%numQN_lValeRadialFns(3)
             numFQN_l = atomTypes(currentType)%numQN_lValeRadialFns(4)
-            do j = 1, numSQN_l + numPQN_l + numDQN_l + numFQN_l
-               write (9+h,fmt=320) atomOrbitalCharge(i,j)
+            write (9+h,fmt=310) "ATOM_ORBITAL_CHARGE ", &
+                  & numSQN_l+numPQN_l+numDQN_l+numFQN_l
+            do j = 1, numSQN_l
+               write (9+h,fmt=320) "s   ", atomOrbitalCharge(i,j)
             enddo
+            do j = 1+numSQN_l, numSQN_l+numPQN_l
+               write (9+h,fmt=320) "p   ", atomOrbitalCharge(i,j)
+            enddo
+            do j = 1+numSQN_l+numPQN_l, numSQN_l+numPQN_l+numDQN_l
+               write (9+h,fmt=320) "d   ", atomOrbitalCharge(i,j)
+            enddo
+            do j = 1+numSQN_l+numPQN_l+numDQN_l,&
+                  & numSQN_l+numPQN_l+numDQN_l+numFQN_l
+               write (9+h,fmt=320) "f   ", atomOrbitalCharge(i,j)
+            enddo
+            
+!            do j = 1, numSQN_l + numPQN_l + numDQN_l + numFQN_l
+!               write (9+h,fmt=320) "s", atomOrbitalCharge(i,j)
+!            enddo
             write (9+h,fmt=200) "NUM_BONDED_ATOMS ", numAtomsBonded(i)
             do j = i+1, numAtomSites
                ! Only include bonds that exist in the statistics.
@@ -1012,8 +1020,8 @@ subroutine computeBond
    ! Define all the formatted output styles.
    200 format (a17,i5)
    300 format (a17,f16.8)
-   310 format (a19)
-   320 format (f16.8)
+   310 format (a20,i6)
+   320 format (a4,f16.8)
    400 format (a17,a3)
 
 end subroutine computeBond

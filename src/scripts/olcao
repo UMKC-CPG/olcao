@@ -757,14 +757,7 @@ sub initExes
       {$exeMechanism = "nice -n $niceValue time";}
 
    # Determine the mechanism for submitting a serial OLCAO job.
-   if ($OLCAO_QUEUE == 0)    #No queue
-      {$subMechanism = "";}
-   elsif ($OLCAO_QUEUE == 1) #PBS
-      {$subMechanism = "";}
-   elsif ($OLCAO_QUEUE == 2) #LSF
-      {$subMechanism = "";}
-   elsif ($OLCAO_QUEUE == 3) #SLURM
-      {$subMechanism = "srun -n1 --exclusive";}
+   $subMechanism = $OLCAO_EXE;
 }
 
 

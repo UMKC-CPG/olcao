@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+
+rm -rf gs* command kp-* olcao.dat runtime scfV.dat setup-fb.out slurm structure.dat summary intermediate/* inputs .inputTemp intermediate

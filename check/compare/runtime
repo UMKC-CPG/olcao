@@ -1,0 +1,117 @@
+setup-fb----spin=1-----------------------------
+Start:  Thu Jun 13 20:39:43 CDT 2019
+15.45user 0.06system 0:15.69elapsed 98%CPU (0avgtext+0avgdata 29288maxresident)k
+12664inputs+33904outputs (1major+9717minor)pagefaults 0swaps
+End:  Thu Jun 13 20:39:59 CDT 2019
+gs_main-fb----spin=1-----------------------------
+Start:  Thu Jun 13 20:39:59 CDT 2019
+Using scfV.dat from /home/prulis/jobs/bn/bn-c/test-34c.
+4.70user 0.34system 0:05.10elapsed 98%CPU (0avgtext+0avgdata 39064maxresident)k
+10888inputs+6184outputs (1major+112310minor)pagefaults 0swaps
+End:  Thu Jun 13 20:40:04 CDT 2019
+gs_intg-fb----spin=1-----------------------------
+Start:  Thu Jun 13 20:40:04 CDT 2019
+Using gs_scfV-fb.dat
+12.56user 0.02system 0:12.64elapsed 99%CPU (0avgtext+0avgdata 13500maxresident)k
+12352inputs+13912outputs (1major+7879minor)pagefaults 0swaps
+End:  Thu Jun 13 20:40:17 CDT 2019
+gs_band-fb----spin=1-----------------------------
+Start:  Thu Jun 13 20:40:17 CDT 2019
+0.40user 0.03system 0:00.45elapsed 95%CPU (0avgtext+0avgdata 36124maxresident)k
+10656inputs+2472outputs (1major+9336minor)pagefaults 0swaps
+End:  Thu Jun 13 20:40:18 CDT 2019
+gs_dos-fb----spin=1-----------------------------
+Start:  Thu Jun 13 20:40:18 CDT 2019
+0.07user 0.17system 0:00.28elapsed 89%CPU (0avgtext+0avgdata 10728maxresident)k
+10208inputs+2248outputs (1major+3500minor)pagefaults 0swaps
+End:  Thu Jun 13 20:40:18 CDT 2019
+Program Sequence Complete.
+setup-fb----spin=1-----------------------------
+Start:  Thu Jun 13 20:40:18 CDT 2019
+
+setup-fb.out file already exists.
+Skipping setup-fb execution.
+
+End:  Thu Jun 13 20:40:18 CDT 2019
+gs_main-fb----spin=1-----------------------------
+Start:  Thu Jun 13 20:40:18 CDT 2019
+
+gs_main-fb.out file already exists.
+Skipping gs_main-fb execution.
+
+End:  Thu Jun 13 20:40:18 CDT 2019
+gs_intg-mb----spin=1-----------------------------
+Start:  Thu Jun 13 20:40:18 CDT 2019
+Using gs_scfV-fb.dat
+12.37user 0.02system 0:12.43elapsed 99%CPU (0avgtext+0avgdata 11188maxresident)k
+0inputs+4344outputs (0major+4863minor)pagefaults 0swaps
+End:  Thu Jun 13 20:40:31 CDT 2019
+gs_band-mb----spin=1-----------------------------
+Start:  Thu Jun 13 20:40:31 CDT 2019
+0.14user 0.02system 0:00.18elapsed 92%CPU (0avgtext+0avgdata 29856maxresident)k
+0inputs+744outputs (0major+4414minor)pagefaults 0swaps
+End:  Thu Jun 13 20:40:32 CDT 2019
+gs_bond-mb----spin=1-----------------------------
+Start:  Thu Jun 13 20:40:32 CDT 2019
+0.02user 0.01system 0:00.06elapsed 70%CPU (0avgtext+0avgdata 9460maxresident)k
+10280inputs+56outputs (1major+2584minor)pagefaults 0swaps
+End:  Thu Jun 13 20:40:32 CDT 2019
+Program Sequence Complete.
+setup-fb----spin=1-----------------------------
+Start:  Thu Jun 13 20:40:32 CDT 2019
+
+setup-fb.out file already exists.
+Skipping setup-fb execution.
+
+End:  Thu Jun 13 20:40:32 CDT 2019
+gs_main-fb----spin=1-----------------------------
+Start:  Thu Jun 13 20:40:32 CDT 2019
+
+gs_main-fb.out file already exists.
+Skipping gs_main-fb execution.
+
+End:  Thu Jun 13 20:40:32 CDT 2019
+gs_intg-fb----spin=1-----------------------------
+Start:  Thu Jun 13 20:40:32 CDT 2019
+
+gs_intg-fb.out file already exists.
+Skipping gs_intg-fb execution.
+
+End:  Thu Jun 13 20:40:32 CDT 2019
+gs_sybd-fb----spin=1-----------------------------
+Start:  Thu Jun 13 20:40:32 CDT 2019
+25.56user 1.01system 0:26.63elapsed 99%CPU (0avgtext+0avgdata 47988maxresident)k
+0inputs+1144outputs (0major+161782minor)pagefaults 0swaps
+End:  Thu Jun 13 20:40:59 CDT 2019
+Program Sequence Complete.
+setup-fb----spin=1-----------------------------
+Start:  Thu Jun 13 20:40:59 CDT 2019
+
+setup-fb.out file already exists.
+Skipping setup-fb execution.
+
+End:  Thu Jun 13 20:40:59 CDT 2019
+gs_main-fb----spin=1-----------------------------
+Start:  Thu Jun 13 20:40:59 CDT 2019
+
+gs_main-fb.out file already exists.
+Skipping gs_main-fb execution.
+
+End:  Thu Jun 13 20:40:59 CDT 2019
+gs_intg-eb----spin=1-----------------------------
+Start:  Thu Jun 13 20:40:59 CDT 2019
+Using gs_scfV-fb.dat
+14.29user 0.11system 0:14.45elapsed 99%CPU (0avgtext+0avgdata 23140maxresident)k
+0inputs+81056outputs (0major+24714minor)pagefaults 0swaps
+End:  Thu Jun 13 20:41:14 CDT 2019
+gs_band-eb----spin=1-----------------------------
+Start:  Thu Jun 13 20:41:14 CDT 2019
+0.84user 0.05system 0:00.91elapsed 98%CPU (0avgtext+0avgdata 38212maxresident)k
+0inputs+4832outputs (0major+10397minor)pagefaults 0swaps
+End:  Thu Jun 13 20:41:15 CDT 2019
+gs_optc-eb----spin=1-----------------------------
+Start:  Thu Jun 13 20:41:15 CDT 2019
+1.22user 0.27system 0:01.52elapsed 98%CPU (0avgtext+0avgdata 28292maxresident)k
+13016inputs+3016outputs (1major+23635minor)pagefaults 0swaps
+End:  Thu Jun 13 20:41:27 CDT 2019
+Program Sequence Complete.

@@ -5,10 +5,10 @@
 ###########################################################
 
 #Define the current branch.
-export BRANCH="CPG/cpg-repo/v34"
+export OLCAO_BRANCH="CPG/cpg-repo/v34"
 
 #Root directory of the OLCAO program suite.
-export OLCAO_DIR="$HOME/$BRANCH"
+export OLCAO_DIR="$HOME/$OLCAO_BRANCH"
 
 #Location of binary executables.
 export OLCAO_BIN="$OLCAO_DIR/bin"
@@ -17,7 +17,10 @@ export OLCAO_BIN="$OLCAO_DIR/bin"
 export OLCAO_DATA="$OLCAO_DIR/share"
 
 #Location for all intermediate directories.
-export OLCAO_TEMP="$HOME/data/scratch/$BRANCH"
+export OLCAO_TEMP="$HOME/data/scratch/$OLCAO_BRANCH"
+
+#Execution mechanism for Fortran programs within the olcao script.
+export OLCAO_EXE="srun -n1 --exclusive"
 
 export PATH=$OLCAO_BIN:$PATH
 export PERL5LIB=$OLCAO_BIN/perl5:$PERL5LIB

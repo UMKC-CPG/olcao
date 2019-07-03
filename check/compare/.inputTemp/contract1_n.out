@@ -1,0 +1,35 @@
+ELEMENT_NAME
+ n 
+NUM_CORE_ORBITALS
+   1   0   0   0
+NUM_VALE_ORBITALS_MB
+   1   1   0   0
+NUM_VALE_ORBITALS_FB
+   1   1   0   0
+NUM_VALE_ORBITALS_EB
+   1   1   0   0
+MAX_NUM_GAUSSIANS
+             20
+MIN_MAX_ALPHAS
+              0.12000000E+00              0.50000000E+05
+ATOMIC_NUMBER
+    0.70000000E+01
+NUCLEAR_ALPHA
+    0.20000000E+02
+S_GAUSSIAN_LIST
+   1   1   1   1   1   1   1   1   1   1   1   1   1   1   1   1   1   1   1   1
+P_GAUSSIAN_LIST
+   1   1   1   1   1   1   1   1   1   1   1   1   1   1   1   1   1   1   1   1
+CALCULATE_CHARGE
+              0
+  Eigenvalues for s states.
+  -13.988639   -0.672782    0.103972    0.855112
+  Eigenvalues for p states.
+   -0.263988    0.175837    0.823518
+ QN_l=           0  orbIndex=           1  Norm=   1.00000000000000     
+ QN_l=           0  orbIndex=           2  Norm=   1.00000000000000     
+ QN_l=           0  orbIndex=           3  Norm=   1.00000000000000     
+ QN_l=           0  orbIndex=           4  Norm=  0.999999999999972     
+ QN_l=           1  orbIndex=           1  Norm=   1.00000000000000     
+ QN_l=           1  orbIndex=           2  Norm=   1.00000000000000     
+ QN_l=           1  orbIndex=           3  Norm=   1.00000000000001     

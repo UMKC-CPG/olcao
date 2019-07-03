@@ -270,6 +270,8 @@ sub printHelp
 #   -statefactor:  The default state factor is 2.5.
 #   -pdb:          No pdb crystal structure diagram file will be made.
 #   -cif:          No cif crystal structure diagram file will be made.
+#   -basisVis:     No files will be made to help visualize the basis.
+#   -nocore:       All "core" orbitals will be orthogonalized vs. the valence.
 #   -help:         No help will be printed.
 ENDHELP
    exit(0);
@@ -307,8 +309,9 @@ my $sybdDB;      # Full path to data base of reciprocal cell paths.
 my $spaceDB;     # Full path to data base of space group operations.
 
 # File names for olcao input generation and olcao calculations.
-my $olcao_skl;    # Input file for generating all other OLCAO input.
-my $olcao_mi;    # Created by makeinput from $olcao_skl with all info explicit.
+my $olcao_skl;   # Input file for generating all other OLCAO input.
+my $olcao_fmi;   # Made by makeinput from $olcao_skl. Explicit fract coords.
+my $olcao_cmi;   # Made by makeinput from $olcao_skl. Explicit cart coords.
 my $olcao_in;    # Primary input file for all OLCAO Fortran90 programs.
 my $potential;   # Initial potential function for SCF.
 my $spinPotential; # Initial spin polarized potential function for SCF.
@@ -762,7 +765,8 @@ sub initNames
 
    # Script inputs and generated outputs used for olcao calculation.
    $olcao_skl      = "olcao.skl";
-   $olcao_mi       = "olcao.mi";
+   $olcao_fmi      = "olcao.fract-mi";
+   $olcao_cmi      = "olcao.cart-mi";
    $olcao_in       = "olcao.dat";
    $potential      = "scfV.dat";
    $kpGroupFile[1] = "kp-scf.dat";
@@ -2645,7 +2649,10 @@ sub printOLCAO
       #  species assignments are explicit.  This is only done for the non-xanes
       #   type of input.
       if ($h==0)
-         {&makeOLCAOMI;}
+      {
+         &makeOLCAOMI($olcao_fmi);
+         &makeOLCAOMI($olcao_cmi);
+      }
 
       # Define the current name for the directory where this data set will go.
       if ($h==0)
@@ -3857,14 +3864,17 @@ sub getKP
 
 sub makeOLCAOMI
 {
+   # Define passed parameters.
+   my $file = $_[0]; # Either $olcao_fmi or $olcao_cmi.
+
    # Define local variables.
    my $element;
    my $species;
    my $atom;
 
-   # Open the new olcao file.
-   open (OLCAOMI,">$inputs/$olcao_mi") ||
-         die "Could not open $olcao_mi for writing\n";
+   # Open the new olcao files (fractional and cartesian).
+   open (OLCAOMI,">$inputs/$file") ||
+         die "Could not open $file for writing\n";
 
    # Create the header for the olcao file
    print OLCAOMI "title\n";
@@ -3874,13 +3884,16 @@ sub makeOLCAOMI
    print OLCAOMI "cell\n";
 
    # Print the cell parameters in a,b,c alpha,beta,gamma format.
-   printf OLCAOMI "%12.8f %12.8f %12.8f %12.8f %12.8f %12.8f\n",
+   printf OLCAOMI "%13.8f %13.8f %13.8f %13.8f %13.8f %13.8f\n",
          $mag_ref->[1]*$bohrRad,$mag_ref->[2]*$bohrRad,$mag_ref->[3]*$bohrRad,
          $angle_ref->[1]*180.0/$pi,$angle_ref->[2]*180.0/$pi,
          $angle_ref->[3]*180.0/$pi;
 
    # Print the header for the atom positions.
-   print OLCAOMI "fract $numAtoms\n";
+   if ("$file" eq "$olcao_fmi")
+      {print OLCAOMI "fract $numAtoms\n";}
+   else
+      {print OLCAOMI "cart $numAtoms\n";}
 
    # Loop to print out the atom positions.
    foreach $atom (1..$numAtoms)
@@ -3889,15 +3902,27 @@ sub makeOLCAOMI
       $element = $elementList[$sortedAtomElementID[$atom]];
       $species = $sortedAtomSpeciesID[$atom];
 
-      printf OLCAOMI "%2s%-4s %12.6f %12.6f %12.6f\n",$element,$species,
-            $sortedFractABC[$atom][1],$sortedFractABC[$atom][2],
-            $sortedFractABC[$atom][3];
+      if ("$file" eq "$olcao_fmi")
+      {
+         printf OLCAOMI "%2s%-4s %12.6f %12.6f %12.6f\n",$element,$species,
+               $sortedFractABC[$atom][1],$sortedFractABC[$atom][2],
+               $sortedFractABC[$atom][3];
+      }
+      else
+      {
+         printf OLCAOMI "%2s%-4s %12.6f %12.6f %12.6f\n",$element,$species,
+               $sortedDirectXYZ[$atom][1]*$bohrRad,
+               $sortedDirectXYZ[$atom][2]*$bohrRad,
+               $sortedDirectXYZ[$atom][3]*$bohrRad;
+      }
    }
 
    # Print the footer for the olcao file.
    print OLCAOMI "space 1_a\n";
    print OLCAOMI "supercell 1 1 1\n";
    print OLCAOMI "full\n";
+
+   close (OLCAOMI);
 }
 
 # This subroutine will:

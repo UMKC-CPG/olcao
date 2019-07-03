@@ -579,7 +579,7 @@ class initStructure:
 
 
 ''' 
-This next class will open an olcao.mi and get the resulting
+This next class will open an olcao.fract-mi and get the resulting
 cell vectors, angles, atom names, positions.
 
 
@@ -595,7 +595,7 @@ class olcaomiFile():
     self.numAtoms=0
 
   def getFile(self):
-    olcaomi=open('olcao.mi','r')
+    olcaomi=open('olcao.fract-mi','r')
     allLines=olcaomi.readlines()
     olcaomi.close()
 

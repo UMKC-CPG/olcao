@@ -571,6 +571,8 @@ sub readData
    # Define local variables.
    my $numBondsTemp;
    my $bondedAtom;
+   my $numOrbitals;
+   my $orbital
    my $line;
    my @values;
    my $QN_l;
@@ -607,9 +609,18 @@ sub readData
          if ($values[0] eq "")
             {shift @values;}
 
-         # Abort when the atom charge is found.
+         # Store the atom's effective charge when found.
          if ("$values[0]" eq "ATOM_CHARGE")
-            {last;}
+            {$atomQStar[$i] = $values[1];}
+
+         # Read past the orbital charges and then quit.
+         if ("$values[0]" eq "ATOM_ORBITAL_CHARGE")
+         {
+            $numOrbitals = $values[1];
+            foreach $orbital (1..$numOrbitals)
+               {<DATA>;}
+            last;
+         }
 
          # Increment the number of filters since we didn't abort.
          $numFilters[$i]++;
@@ -624,9 +635,6 @@ sub readData
          if ($values[0] eq "ELEMENT_NAME")
             {$elementName[$i] = $values[1];}
       }
-
-      # Store the atom's effective charge.
-      $atomQStar[$i] = $values[1];
 
       # Get the intrinsic data for this element from the data base.
       if (lc($elementName[$i]) eq "3c") # Fake atom for a 3-center bond

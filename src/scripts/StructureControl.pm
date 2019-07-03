@@ -694,11 +694,12 @@ sub reset
 
 
 # This subroutine will read the species used in the OLCAO program as recorded
-#   in the olcao.mi file.  This file was created from the makeinput script.
+#   in the olcao.fract-mi file.  This file was created from the makeinput
+#   script.
 sub readOLCAOSpecies
 {
    # Declare local variables.
-   my $structFile = "inputs/olcao.mi";
+   my $structFile = "inputs/olcao.fract-mi";
    my $line="";
    my @values;
    my $tempName;
@@ -2523,6 +2524,17 @@ sub prepSurface
 
    # Sort the cells according to the magnitude of their distance from the
    #   origin. (First shift the cellDist to make sorting correct.)
+   # After applying the sort, each index of the @sortedIndices array will
+   #   contain an index value that references the original cellDist array. So,
+   #   for example, if the cellDist array holds (37.3, 83.9, 11.5, 403.9, 2.1)
+   #   then the sortedIndices array will hold (4, 2, 0, 1, 3). You should
+   #   interpret that as saying "what was in index 4 is now in index 0", "what
+   #   was in index 2 is now in index 1", "what was in index 0 is now in index
+   #   2", etc.
+   # Note importantly that the cellDist array will not actually be sorted here.
+   #   We only have the indices that each cell distance should go in to so as
+   #   to sort it (or anything that had the same original order and that needs
+   #   to be sorted along with it (e.g., the cellDims)).
    shift(@cellDist);
    @sortedIndices = sort {$cellDist[$a] <=> $cellDist[$b]}
          0..$#cellDist;
@@ -4413,7 +4425,9 @@ sub sortAtoms
    foreach $atom (1..$numAtoms)
       {push (@elementNames,lc($atomElementName[$atom]));}
 
-   # Sort the element names to obtain the sorted indices.
+   # Sort the element names to obtain the sorted indices. For a more detailed
+   #   explaination of what is being done here please search for the sorting
+   #   work done on cellSizes and cellDims.
    @sortedIndices = sort {$elementNames[$a] cmp $elementNames[$b]}
          0..$#elementNames;
 

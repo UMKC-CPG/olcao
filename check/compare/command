@@ -1,0 +1,5 @@
+makeinput -kp 2 2 2 
+olcao -dos 
+olcao -bond 
+olcao -sybd 
+olcao -optc 

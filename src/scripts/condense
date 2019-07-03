@@ -142,6 +142,7 @@ my $hookeBondCoeffs_ref;
 my $hookeAngleCoeffs_ref;
 my $numPeriodicElements; # Number of elements from periodic table database
 my $elementNames_ref;
+my $precursorDB = "$OLCAO_DATA/precusorDB";
 
 # Initialize the environment.
 &initEnv;
@@ -318,7 +319,7 @@ sub computeImplicitInput
    # Compute the number of atoms in each of the molecules.
    foreach $mol (1..$numMoleculeTypes)
    {
-      $molFile = "$PRECURSOR_DB/" . lc($moleculeName[$mol]) . ".skl";
+      $molFile = "$precursorDB/" . lc($moleculeName[$mol]) . ".skl";
       open (SKL,"<$molFile") || die "Cannot open $molFile for reading\n";
 
       while ($line = <SKL>)
@@ -333,7 +334,7 @@ sub computeImplicitInput
       close (SKL);
 #      # Obtain the number of lines in the PDB for this molecule that start with
 #      #   "ATOM".
-#      $command = "grep ^ATOM $PRECURSOR_DB/" .
+#      $command = "grep ^ATOM $precursorDB/" .
 #         lc($moleculeName[$mol]) . ".pdb | wc -l";
 #      $currNumAtoms = `$command`;
 #      chomp($currNumAtoms);
@@ -418,9 +419,9 @@ sub makeReactionTemplates
          mkdir("$currRxnMolPair");
 
          # Copy the molecules from the precursor database.
-         copy("$PRECURSOR_DB/$rxnMolName[1][$rxn].skl",
+         copy("$precursorDB/$rxnMolName[1][$rxn].skl",
             "$currRxnMolPair/olcao1.skl");
-         copy("$PRECURSOR_DB/$rxnMolName[2][$rxn].skl",
+         copy("$precursorDB/$rxnMolName[2][$rxn].skl",
             "$currRxnMolPair/olcao2.skl");
 
          # Enter the directory, make the reaction templates, and back out.

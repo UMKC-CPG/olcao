@@ -452,6 +452,16 @@ subroutine readMainControl(readUnit,writeUnit)
       typeSpinSplitTemp(typeID) = splitAmt
    enddo
 
+   ! Do a small bit of error checking. It should not be possible for any of the
+   !   typeSpinSplit quantities to be less than -1.0 or greater than 1.0.
+   do i = 1, numPotTypes
+      if ((typeSpinSplitTemp(i) < -1.0_double) .or. &
+          (typeSpinSplitTemp(i) >  1.0_double)) then
+         write (20,*) "SPIN_SPLIT_FACTOR outside of range [-1.0,1.0]. Stopping."
+         stop
+      endif
+   enddo
+
    ! Now we pass the parameters we just read in to the Potential module so that
    !   it can initialize the values it stores.
    call setPotControlParameters(fbLevel,lastIt,xcCodeTemp,rlxFact,cTest,&

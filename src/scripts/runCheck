@@ -5,7 +5,7 @@ olcaoCompare -diff 0.0001 -files olcao.skl compare/olcao.skl -tag "Skeleton"
 
 # Create the OLCAO input from the olcao.skl skeleton file and then compare the
 #   files that are produced with input files produced for previous calculations.
-makeinput -kp 10 10 10
+makeinput -kp 2 2 2 1>/dev/null
 olcaoCompare -files summary compare/summary -tag "Summary"
 olcaoCompare -files inputs/olcao.dat compare/olcao.dat -tag "OLCAO data file"
 olcaoCompare -files inputs/scfV.dat compare/scfV.dat -tag "Initial potential"

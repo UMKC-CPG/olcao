@@ -21,6 +21,8 @@ if (system("tar -xzf atomicBDB.tgz") != 0)
    {die "Failed to unpack atomicBDB.tgz";}
 if (system("tar -xzf atomicPDB.tgz") != 0)
    {die "Failed to unpack atomicPDB.tgz";}
+if (system("tar -xzf precursorDB.tgz") != 0)
+   {die "Failed to unpack precursorDB.tgz";}
 if (system("tar -xzf spaceDB.tgz") != 0)
    {die "Failed to unpack spaceDB.tgz";}
 if (system("tar -xzf sybdDB.tgz") != 0)

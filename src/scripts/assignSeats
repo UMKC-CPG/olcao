@@ -1,0 +1,686 @@
+#!/usr/bin/env perl
+
+sub printHelp
+{
+   print <<ENDHELP;
+# PROGRAM: assignSeats
+# PURPOSE: Seat the students in a class according to a list of criteria.
+# USAGE: assignSeats [-dates \$datesFile] [-roster \$rosterFile]
+#                    [-script \$scriptFile] [-body \$bodyFile] | -help
+#
+# The -dates option takes a single string as a parameter which is a file name.
+#   If this option is not given, then the default file name of "dates" is
+#   assumed. The file contains a set of lines. Each line consists of a single
+#   integer number followed by a string that lists a date range. The integer
+#   and date range are separated by a ":". The integers correspond to sorting
+#   sequences as follows:
+#   (1)  Sort by last name.
+#   (2)  Sort by first name.
+#   (3)  Sort by student ID number.
+#   (4)  Sort by student level (freshman, sophomore, etc.)
+#   (5)  Sort by degree program (electrical, mechanical, civil, bio, compsci...)
+#   (6)  Sort by lab number.
+#   (7)  Sort by UMKC designation (email name).
+#   (8)  Sort by number of letters in first name.
+#   (9)  Sort by number of letters in last name.
+#   (10) Sort by number of letters in combined first and last name.
+#   (11) Sort by bits per character needed for full name (Shannon entropy).
+#   (12) Sort by bits per character needed for full name (metric entropy).
+#   (13) Sort by a random number generator.
+# The -roster option takes a single string as a parameter. The string is just
+#   the name of the file that holds the roster copied from Pathway. If this
+#   option is not given, then by default it will be set as "roster".
+# The -script option takes a single string as a parameter. The string is just
+#   the name of a file that will be created to contain a script which will be
+#   capable of sending an individual email to each student in the roster. The
+#   email will tell the student what their assigned seats for the semester
+#   will be. If this file name is not given, then by default it will be set as
+#   "emailScript".
+# The -body option takes a single string as a parameter. The string is just the
+#   name of the file that contains the body of the email that will be sent to
+#   each student. The email body is a generic message that is attached to the
+#   bottom of the customized seat assignment message. If this option is not
+#   given, then it is assumed by default to have the value "emailBody".
+ENDHELP
+   exit(0);
+}
+
+# Use necessary modules.
+use strict;
+use warnings;
+use List::Util qw(shuffle);
+use Env;
+use lib "$OLCAO_BIN/perl5";
+use StructureControl;
+
+# Define global variables.
+my $numStudents;
+my $datesFile;
+my $rosterFile;
+my $scriptFile;
+my $bodyFile;
+my $numMethods;
+my @methodList;
+my $numDates;
+my @dateList;
+my @studentIDs;
+my @lastNames;
+my @firstNames;
+my @emailAddresses;
+my @designations;
+my @degreePrograms;
+my @studentLevels;
+my @labNumbers;
+my @firstNameNumLets;
+my @lastNameNumLets;
+my @combinedNumLets;
+my @metricEntropy;
+my @randomOrder;
+my @sortedIndices;
+
+#######################
+# Execute the program #
+#######################
+
+# Initialize default variable values for those global variables that can be
+#   modified on the command line.
+&setDefaultVars;
+
+# Parse the command line.
+&parseCLP;
+
+# Get the list of dates and sorting methods.
+&readDates;
+
+# Read the student roster.
+&readRoster;
+
+# Randomize students so that any ordering in the roster is not evident after
+#   the students are sorted in a later step.
+&randomizeStudents;
+
+# Create student emails.
+&createEmails;
+
+# Create the dates directory.
+&createDates;
+
+# For each date that a new arrangement is needed, sort the students accordingly.
+&sortAndRecord;
+
+# Print a script to email all students their assigned seat numbers.
+&printEmailScript;
+
+#######################
+# End execution       #
+#######################
+
+sub setDefaultVars
+{
+   @methodList = "";
+   @dateList = "";
+   $datesFile = "dateList";
+   $rosterFile = "roster";
+   $scriptFile = "emailScript";
+   $bodyFile = "emailBody";
+}
+
+# Parse the command line parameters.
+sub parseCLP
+{
+   # Define local variables.
+   my $number;
+   my $argument;
+
+   $number = 0;
+
+   # Read command line parameters.
+   while ($number < scalar(@ARGV))
+   {
+      if ($ARGV[$number] eq "-dates")
+         {$datesFile = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-roster")
+         {$rosterFile = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-script")
+         {$scriptFile = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-body")
+         {$bodyFile = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-help")
+         {&printHelp;}
+      else
+      {
+         print STDOUT "UNKNOWN COMMAND LINE PARAMETER $ARGV[$number].".
+                      " ABORTING.\n";
+         exit(0);
+      }
+
+      $number++;
+   }
+
+   # Record the command line used to run this job.
+   open (COMMANDLINE,">>command");
+   print COMMANDLINE "assignSeats ";
+   foreach $argument (0..$#ARGV)
+      {print COMMANDLINE "$ARGV[$argument] ";}
+   print COMMANDLINE "\n";
+   close (COMMANDLINE);
+}
+
+# Read the list of dates and order of methods to sort students by.
+sub readDates
+{
+   # Define local variables.
+   my $line;
+   my @values;
+   my @values2;
+
+   # Open the date list file.
+   open (DATES,"<$datesFile") || die "Cannot open $datesFile.\n";
+
+   # Read the methods and dates.
+   $numMethods = 0;
+   $numDates = 0;
+   while ($line = <DATES>)
+   {
+      # Increment the number of dates that we need to make an arrangement for.
+      $numMethods++;
+      $numDates++;
+
+      # Process the data line.
+      @values = StructureControl::prepLine("",$line,':');
+
+      # Extract the integer from before the ":" and save it as the method.
+      @values2 = StructureControl::prepLine("",$values[0],'\s+');
+      $methodList[$numMethods] = $values2[0];
+
+      # Extract the date range string from after the ":" and save it.
+      @values2 = StructureControl::prepLine("",$values[1],'\s+');
+      $dateList[$numDates] = $values[1];
+   }
+
+   # Close the date list file.
+   close (DATES);
+}
+
+# Read the roster into a data structure.
+sub readRoster
+{
+   # Define local variables.
+   my $line;
+   my @values;
+   my @values2;
+   my $currStudent;
+
+   # It is assumed that the roster is held in a file named "roster".
+   open (ROSTER,"<$rosterFile") || die "Cannot open $rosterFile file.\n";
+
+   # Read past the first header line of the roster.
+   $line = <ROSTER>;
+
+   # Read each student from the roster file.
+   $currStudent = 0;
+   while ($line = <ROSTER>)
+   {
+      # The first line as read from the while-loop truth statement will always
+      #   contain the row number from the Pathway file. The remaining lines of
+      #   the roster file contain the following information:
+      #   (1)  The word "Row" followed by an integer number.
+      #   (2)  Empty line.
+      #   (3)  The word "Photo", no data.
+      #   (4)  Empty line.
+      #   (5)  Student ID number
+      #   (6)  Empty line.
+      #   (7)  Student name: Last, comma, first, space, middle
+      #   (8)  Empty line.
+      #   (9)  UMKC student email address.
+      #   (10) Empty line.
+      #   (11) Grade Basis.
+      #   (12) Empty line.
+      #   (13) Units.
+      #   (14) Empty line.
+      #   (15) Academic plan. (E.g., Electrical, mechanical, civil, bio, etc.)
+      #   (16) Empty line.
+      #   (17) Level. (E.g., Freshman, Sophomore, etc.)
+      #   (18) Empty line.
+      #   (19) Lab number.
+
+      # Because we entered the while-loop we are processing a new student.
+      #   Therefore, we will increment the number of students.
+      $currStudent++;
+
+      # Read the information for this student.
+
+      # Read past the Row number and Photo lines.
+      $line = <ROSTER>;
+      $line = <ROSTER>;
+      $line = <ROSTER>;
+
+      # Read the student ID number.
+      @values = StructureControl::prepLine(\*ROSTER,$line,'\s+');
+      $studentIDs[$currStudent] = $values[0];
+
+      # Get the first and last names of the students. It may be necessary to
+      #   correct for cases where a student's last name has a space in it.
+      $line = <ROSTER>;
+      @values = StructureControl::prepLine(\*ROSTER,$line,'\s+');
+      if (($#values > 0) and ($values[1] =~ /\,/))
+         {$values[0] = $values[0] . $values[1];}
+      @values2 = StructureControl::prepLine("",$values[0],',');
+      $firstNames[$currStudent] = $values2[1];
+      $lastNames[$currStudent] = $values2[0];
+
+      # Compute the number of letters in each name.
+      $firstNameNumLets[$currStudent] = length($firstNames[$currStudent]);
+      $lastNameNumLets[$currStudent] = length($lastNames[$currStudent]);
+      $combinedNumLets[$currStudent] = $firstNameNumLets[$currStudent]
+         + $lastNameNumLets[$currStudent];
+
+      # Get the student email address and thus the UMKC designation.
+      $line = <ROSTER>;
+      @values = StructureControl::prepLine(\*ROSTER,$line,'\s+');
+      $emailAddresses[$currStudent] = $values[0];
+      @values2 = StructureControl::prepLine("",$values[0],'@');
+      $designations[$currStudent] = $values2[0];
+
+      # Read past the grade basis and units.
+      $line = <ROSTER>;
+      $line = <ROSTER>;
+      $line = <ROSTER>;
+      $line = <ROSTER>;
+      $line = <ROSTER>;
+
+      # Read the academic plan.
+      @values = StructureControl::prepLine(\*ROSTER,$line,'\s+');
+      $degreePrograms[$currStudent] = $values[0];
+      if ($values[0] eq "Pre")
+         {$degreePrograms[$currStudent] = "Pre-Pharm";}
+
+      # Read the level.
+      $line = <ROSTER>;
+      @values = StructureControl::prepLine(\*ROSTER,$line,'\s+');
+      $studentLevels[$currStudent] = $values[0];
+
+      # Read the lab number and chop off the 'L' at the end.
+      $line = <ROSTER>;
+      @values = StructureControl::prepLine(\*ROSTER,$line,'\s+');
+      $labNumbers[$currStudent] = $values[0];
+      chop ($labNumbers[$currStudent]);
+
+
+      # Compute the metric entropy for this student's name.
+      &computeMetricEntropy($currStudent);
+   }
+
+   # Record the total number of students.
+   $numStudents = $currStudent;
+
+   # Compute a random number to sort each student by.
+   @randomOrder = shuffle(1..$numStudents);
+   unshift(@randomOrder,"");
+
+   # Close the roster file.
+   close (ROSTER);
+}
+
+# This will compute H = - SUM_x(P(x) ln_2 [P(x)]) which is the Shannon entropy.
+#   Then it will divide by the number of characters in the name to get a
+#   normalized quantity (between 0 and 1) that is the metric entropy.
+sub computeMetricEntropy
+{
+   # Define passed parametrs.
+   my $currStudent = $_[0];
+
+   # Define local variables.
+   my $key;
+   my @keys;
+   my $letter;
+   my $fullName;
+   my @values;
+   my %letterHash;
+
+   # Produce the full name.
+   $fullName = "$firstNames[$currStudent]" . "$lastNames[$currStudent]";
+
+   # Of the types of characters appearing in the student's name, compute the
+   #   probability selecting a given letter type. (If there are more letter 'a'
+   #   characters, then the probability of picking an 'a' at random from the
+   #   name increases.) We do this by counting the number of times each letter
+   #   shows up in a name and then dividing by the total number of letters.
+   @values = StructureControl::prepLine("",$fullName,'');
+   foreach $letter (@values)
+   {
+      # Make a hash of the number of times that each letter shows up.
+      if (defined($letterHash{$letter}))
+         {$letterHash{$letter}++;}
+      else
+         {$letterHash{$letter} = 1;}
+   }
+
+   # Divide each count by the total number of letters.
+   @keys = keys %letterHash;
+   foreach $key (@keys)
+      {$letterHash{$key} /= $combinedNumLets[$currStudent];}
+
+   # Compute the Shannon entropy and then divide by the number of letters to
+   #   get the metric entropy.
+   $metricEntropy[$currStudent] = 0;
+   foreach $key (@keys)
+   {
+      $metricEntropy[$currStudent]
+            -= $letterHash{$key}*log($letterHash{$key})/log(2);
+   }
+   $metricEntropy[$currStudent] /= $combinedNumLets[$currStudent];
+}
+
+# The purpose of this subroutine is to randomize the order of students prior to
+#   any sorting. They are read in from a sorted roster and that sorted order
+#   might carry though any other sorting that is applied to them (particularly
+#   if the sort is a stable sort).
+sub randomizeStudents
+{
+   # Define local variables.
+   my $student;
+   my @tempIndices;
+
+   # Create an array (tempIndices) that contains the numbers one through
+   #   numStudents where the numbers are shuffled.
+   @tempIndices = shuffle(1..$numStudents);
+
+#   (1)  Sort by last name.
+#   (2)  Sort by first name.
+#   (3)  Sort by student ID number.
+#   (4)  Sort by student level (freshman, sophomore, etc.)
+#   (5)  Sort by degree program (electrical, mechanical, civil, bio, compsci...)
+#   (6)  Sort by lab number.
+#   (7)  Sort by UMKC designation (email name).
+#   (8)  Sort by number of letters in first name.
+#   (9)  Sort by number of letters in last name.
+#   (10) Sort by number of letters in combined first and last name.
+#   (11) Sort by the metric entropy of the full name.
+#   (12) Sort by a random number. (No real order.)
+
+   # Reassign all data positions on the basis of the randomly shuffled indices.
+   #   This will prevent any bias from the initial order of input data from
+   #   leaking through to the various assignments. (I.e., the array of student
+   #   last names will have a random order instead of the alphabetically sorted
+   #   order that the roster file provides them in.)
+   @lastNames        = @lastNames[@tempIndices];
+   @firstNames       = @firstNames[@tempIndices];
+   @studentIDs       = @studentIDs[@tempIndices];
+   @studentLevels    = @studentLevels[@tempIndices];
+   @degreePrograms   = @degreePrograms[@tempIndices];
+   @labNumbers       = @labNumbers[@tempIndices];
+   @emailAddresses   = @emailAddresses[@tempIndices]; # Not used for sorting.
+   @designations     = @designations[@tempIndices]; # First part of email.
+   @firstNameNumLets = @firstNameNumLets[@tempIndices];
+   @lastNameNumLets  = @lastNameNumLets[@tempIndices];
+   @combinedNumLets  = @combinedNumLets[@tempIndices];
+   @metricEntropy    = @metricEntropy[@tempIndices];
+   @randomOrder      = @randomOrder[@tempIndices];
+   unshift (@lastNames,"");
+   unshift (@firstNames,"");
+   unshift (@studentIDs,"");
+   unshift (@studentLevels,"");
+   unshift (@degreePrograms,"");
+   unshift (@labNumbers,"");
+   unshift (@emailAddresses,"");
+   unshift (@designations,"");
+   unshift (@firstNameNumLets,"");
+   unshift (@lastNameNumLets,"");
+   unshift (@combinedNumLets,"");
+   unshift (@metricEntropy,"");
+   unshift (@randomOrder,"");
+}
+
+# Create a directory for the current program call and a sub-directory for each
+#   student. In those sub-directories, create an email with an appropriate
+#   header.
+sub createEmails
+{
+   # Define local variables.
+   my $student;
+
+   # Make a directory to hold the student emails.
+   mkdir ("emails");
+   chdir ("emails");
+
+   # Loop over each student and create a directory and the email header.
+   foreach $student (1..$numStudents)
+   {
+      # Make and enter a directory based on the student's ID number. That
+      #   should be a unique and easy reference.
+      mkdir ("$studentIDs[$student]");
+      chdir ("$studentIDs[$student]");
+
+      # Create an email body file.
+      open (EMAIL,">emailBody") || die "Cannot open emailBody for writing.\n";
+      print EMAIL "Hello $firstNames[$student],\n\n";
+      print EMAIL "A list of your assigned seats throughout the semester is ";
+      print EMAIL "as follows:\n\n";
+      close (EMAIL);
+
+      # Go back to the emails directory.
+      chdir ("..");
+   }
+
+   # Go back to the main class directory.
+   chdir ("..");
+}
+
+# Create a directory for each date range that the students will be sorted for.
+#   The contents of each directory will be a file that holds the sorted order
+#   of the students for that date. The point is that it will then be possible
+#   to very easily compare a list of the sorted order of students to a list of
+#   which seat numbers were vacant to produce a list of the students that were
+#   absent so that they can be marked as such.
+sub createDates
+{
+   # Define local variables.
+   my $date;
+   my $dateString;
+   my @values;
+
+   # Make a directory to hold the student emails.
+   mkdir("dates");
+   chdir("dates");
+
+   # Loop through each date and make a directory where the sorted order of
+   #   students will be stored.
+   foreach $date (1..$numDates)
+   {
+      # Extract a string for the date without spaces.
+      @values = StructureControl::prepLine("",$dateList[$date],'\s+');
+      $dateString = join("",@values);
+      $dateList[$date] = $dateString;
+
+      # Make the directory.
+      mkdir ("$dateString");
+   }
+
+   # Go back to the main class directory.
+   chdir ("..");
+}
+
+sub sortAndRecord
+{
+   # Define local variables.
+   my $date;
+   my $tempArray_ref;
+   my $comparisonFlag; # 0 = character based; 1 = numerical based
+
+   foreach $date (1..$numDates)
+   {
+      # Assume that we will sort by numbers unless otherwise requested.
+      $comparisonFlag = 1;
+
+      if ($methodList[$date] == 1)
+         {$tempArray_ref = \@lastNames; $comparisonFlag = 0;}
+      elsif ($methodList[$date] == 2)
+         {$tempArray_ref = \@firstNames; $comparisonFlag = 0;}
+      elsif ($methodList[$date] == 3)
+         {$tempArray_ref = \@studentIDs;}
+      elsif ($methodList[$date] == 4)
+         {$tempArray_ref = \@studentLevels; $comparisonFlag = 0;}
+      elsif ($methodList[$date] == 5)
+         {$tempArray_ref = \@degreePrograms; $comparisonFlag = 0;}
+      elsif ($methodList[$date] == 6)
+         {$tempArray_ref = \@labNumbers;}
+      elsif ($methodList[$date] == 7)
+         {$tempArray_ref = \@designations; $comparisonFlag = 0;}
+      elsif ($methodList[$date] == 8)
+         {$tempArray_ref = \@firstNameNumLets;}
+      elsif ($methodList[$date] == 9)
+         {$tempArray_ref = \@lastNameNumLets;}
+      elsif ($methodList[$date] == 10)
+         {$tempArray_ref = \@combinedNumLets;}
+      elsif ($methodList[$date] == 11)
+         {$tempArray_ref = \@metricEntropy;}
+      elsif ($methodList[$date] == 12)
+         {$tempArray_ref = \@randomOrder;}
+      &sortStudents($tempArray_ref, $comparisonFlag);
+      &appendNewAssignment($date,$tempArray_ref);
+   }
+}
+
+# Sort the students according to the command line request. As a reminder:
+#   (1)  Sort by last name.
+#   (2)  Sort by first name.
+#   (3)  Sort by student ID number.
+#   (4)  Sort by student level (freshman, sophomore, etc.)
+#   (5)  Sort by degree program (electrical, mechanical, civil, bio, compsci...)
+#   (6)  Sort by lab number.
+#   (7)  Sort by UMKC designation (email name).
+#   (8)  Sort by number of letters in first name.
+#   (9)  Sort by number of letters in last name.
+#   (10) Sort by number of letters in combined first and last name.
+#   (11) Sort by the metric entropy of the full name.
+#   (12) Sort by a random number. (No real order.)
+sub sortStudents
+{
+   # Define passed parameters.
+   my $sortByArray_ref = $_[0];
+   my $comparisonFlag = $_[1];
+
+   # After applying the requested sort method, each index of the
+   #   @sortedIndices array will contain the index value of the original array
+   #   that belongs in the current @sortedIndices index.
+   # So, if we are sorting by first names and they are Rakan, Reta, Mena, Rudy,
+   #   and Asad, with Rakan in index 0 and Asad in index 4 of the firstNames
+   #   array, then the sortedIndices array will hold (4, 2, 0, 1, 3). You
+   #   should interpret that as saying "what was in index 4 is now in index 0",
+   #   "what was in index 2 is now in index 1", "what was in index 0 is now in
+   #   index 2", etc.
+   # Note importantly that the firstNames array was not actually sorted at all.
+   #   We only have the indices that each name should go in to in order to sort
+   #   it (or anything that had the same original order and that needed to be
+   #   sorted along with it).
+
+   # If the comparisonFlag is a 0, then sort by alphanumeric character-by-
+   #   character comparison. If it is a 1, then sort by numerical comparison.
+   if ($comparisonFlag == 0)
+   {
+      @sortedIndices = sort {$sortByArray_ref->[$a] cmp $sortByArray_ref->[$b]}
+         1..$numStudents;
+   }
+   else
+   {
+      @sortedIndices = sort {$sortByArray_ref->[$a] <=> $sortByArray_ref->[$b]}
+         1..$numStudents;
+   }
+
+   # Adjust the indices to match the fact that the source indices start at 1.
+   unshift (@sortedIndices,"");
+}
+
+# Open each of the previously created emails and append the seat assignment
+#   for each student according to the current sorting method.
+sub appendNewAssignment
+{
+   # Define passed parameters.
+   my $currDate = $_[0];
+   my $tempArray_ref = $_[1];
+
+   # Define local variables.
+   my $student;
+
+   # Enter the email directory.
+   chdir ("emails");
+
+   # Open and append to the email for each student.
+   foreach $student (1..$numStudents)
+   {
+      chdir ("$studentIDs[$sortedIndices[$student]]");
+      open (EMAIL,">>emailBody")
+            || die "Cannot open emailBody for appending.\n";
+
+      print EMAIL "For $dateList[$currDate] you are assigned ";
+      print EMAIL "to sit in seat $student.\n";
+
+      # Close the email file handle.
+      close (EMAIL);
+
+      # Return to the emails directory.
+      chdir ("..");
+   }
+
+   # Return to the main project directory.
+   chdir ("..");
+
+   # Enter the date list directory.
+   chdir ("dates");
+
+   # Enter the directory of the specific date we are working on.
+   chdir ("$dateList[$currDate]");
+
+   # Create a sorted list of the students for this date range.
+   open (SORTORDER,">sortedOrder")
+         || die "Cannot open sortedOrder for writing.\n";
+
+   # Print the header.
+   print SORTORDER "Seat Number, First Name, Last Name\n";
+
+   # Print the sorted seat position of each student.
+   foreach $student (1..$numStudents)
+   {
+      print SORTORDER "$student $firstNames[$sortedIndices[$student]] " .
+            "$lastNames[$sortedIndices[$student]] " .
+            "$tempArray_ref->[$sortedIndices[$student]] $currDate\n";
+   }
+
+   # Close the sort order file handle.
+   close (SORTORDER);
+
+   # Create a file that will hold student absence information.
+   system ("touch absents");
+
+   # Return to the main class directory.
+   chdir ("../..");
+}
+
+# Print a script that can be called to email each student his/her assigned
+#   seat number according to the sorting criteria that was given.
+sub printEmailScript
+{
+   # Define local variables.
+   my $student;
+   my $seatNumber;
+
+   # Open the script file.
+   open (SCRIPT,">$scriptFile")
+      || die "Cannot open $scriptFile for writing.\n";
+
+   # Define the interpreter.
+   print SCRIPT "#!/usr/bin/bash\n";
+
+   # Print a command to email each student.
+   foreach $student (1..$numStudents)
+   {
+      $seatNumber = ($student-1);
+      print SCRIPT "mailx -s \"Physics 250 assigned seats\" " .
+         "-r rulisp\@umkc.edu $emailAddresses[$sortedIndices[$student]] < " .
+         "emails/$studentIDs[$sortedIndices[$student]]/emailBody\n"; 
+   }
+
+   # Close the script file.
+   close (SCRIPT);
+}

@@ -1,0 +1,179 @@
+#!/usr/bin/env perl
+
+sub printHelp
+{
+   print <<ENDHELP;
+#############################################################################
+# PROGRAM: EnsembleCondense
+# PURPOSE: This program will run an ensemble of precondensation and Lammps 
+#          condensation. It will create several packmol files(precondensations) 
+#          and derive the Lammps data file for each of those then run a Lammps 
+#          condesation.
+
+# USAGE:   EnsembleCondense [-n \$numSimulations] [-c \$numComposition]
+#                           [-r \$numReactions] | [-help]
+ENDHELP
+}
+
+############################################################
+# Begin program execution####################################
+############################################################
+
+# Use necessary modules.
+use strict;
+use warnings;
+use POSIX qw(ceil floor);
+use Env;
+use lib "$OLCAO_BIN/perl5";
+use StructureControl;
+use ElementData;
+use BondData;
+use AngleData;
+use File::Copy;
+
+# Declare Global Variables.
+my $numSimulations; # Number of the simulations to be run at a time.
+my $numComposition; # Number of atomic bond types.
+my $numReactions; # Number of different types of reactions.
+
+# Initialize the environment.
+&initEnv;
+
+# Read the command line parameters.
+&parseCommandLine;
+
+# Read the main input file.
+&parseInputFile;
+
+# Error check the input for consistency.
+&errorCheckInput;
+
+# Compute implicit information not explicitly given in the input file.
+&computeImplicitInput;
+
+###############################################
+# End program execution #######################
+###############################################
+
+
+sub initEnv
+{
+   # Define default values for command line parameters.
+   $numSimulations = 0;
+   $numCompositions = 0;
+   $numReactions = 0;
+}
+
+
+# Loop through the command line parameters checking for each option.
+
+sub parseCommandLine
+{
+   while ($numberSimulation < scalar(@ARGV))
+   {
+      if ($ARGV[$number] eq "-help")
+         {&printHelp;}
+      elsif ($ARGV[$numSimulations] eq "-n")
+         {$inputFile = $ARGV[++$numSimulations];}
+      else
+      {
+         print STDOUT "UNKNOWN COMMAND LINE PARAMETER $ARGV[$number].";
+         print STDOUT " ABORTING.\n";
+         exit;
+      }
+      $numberSimulation++;
+   }
+}
+
+sub parseInputFile
+{
+   # Define local variables.
+   my $line;
+   my @value;
+
+
+   # Open the input file.
+   open (INFILE,"<$inputFile'")
+         || die "Cannot open $inputFile for reading. \n";
+
+
+   #Read the input file.
+   while ($line = <INFILE>)
+   {
+      @values = StructureControl::prepLine("",$line,'\s+');
+
+      # Look for "composition", "cell_size", and "reactions" key words.
+      if (lc($values[0]) eq "composition")
+      {
+         $numMoleculeTypes = $values[1];
+
+         foreach $mol (1..$numMoleculeTypes)
+         {
+            @values = StructureControl::prepLine(\*INFILE,"",'\s+');
+            $moleculeName[$mol] = lc($values[0]);
+            $bindingType[$mol] = lc($values[1]);
+            $numMolecules[$mol] = $values[2];
+         }
+      }
+      elsif (lc($values[0]) eq "cell_size")
+      {
+         $maxCellSize = $values[1];
+         #$minCellSize = $values[2];
+      }
+      elsif (lc($values[0]) eq "reactions")
+      {
+         # Get the number of different types of reactions.
+         $numReactionTypes = $values[1];
+
+         # Read the descriptor for each reaction that includes the name of each
+         #   of the participating molecules and the type of binding that each
+         #   molecule makes available for that reaction to occur.
+         foreach $rxn (1..$numReactionTypes)
+         {
+            @values = StructureControl::prepLine(\*INFILE,"",'\s+');
+            $rxnMolName[1][$rxn] = lc($values[0]);
+            $rxnBinding[1][$rxn] = lc($values[1]);
+            $rxnMolName[2][$rxn] = lc($values[2]);
+            $rxnBinding[2][$rxn] = lc($values[3]);
+            $rxnProbability[$rxn] = $values[4];
+         }
+      }
+      # Look for composition, reactions, cell size and probabilities
+      elsif (lc ($values[0]) eq "composition")
+      {}
+   }
+}
+# Creating the files.
+foreach $numSim (1..$numSimulations);
+#$x = xi + (xf-xi)/$numSimul;
+#xi = $x;
+   {
+
+      mkdir $numSimul->[$element];
+      chdir $numSimul->[$element];
+      open (INP,">condense.in");
+      print INP <<ENDINP;
+composition 3
+B10C2H12 B-1 6
+CH4 C-1 2
+CH3CH3 C-1 1
+
+cell_size 50.0
+
+reactions 3
+B10C2H12 B-1 B10C2H12 B-1 0.85
+B10C2H12 B-1 CH4 C-1 0.85
+B10C2H12 B-1 CH3CH3 C-1 0.75
+ENDINP 
+  chdir(..);
+END
+
+#### Running Condense
+
+####foreach $numSim (1..$numSimulations);
+##{
+#chdir $numSimul->[$element];
+#run condense;
+#chdird(..);
+#End
+#}

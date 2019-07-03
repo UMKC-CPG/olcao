@@ -3,19 +3,22 @@
 # Document the current location
 message("At the set of scripts.")
 
-set (SCRIPTS ab2pf.py addAtoms appendCol atomPosDX
+set (SCRIPTS
+ab2pf.py addAtoms appendCol assignSeats atomPosDX
 batchChange batchClean batchSub bondAnalysis
 cif2olcao collectSpectra condense copyInputs
 dump2skl
+ensembleCondense
 gaussInt2C gaussInt3C gaussIntKE gaussIntMom gaussIntNucV gaussOverlapRT
 insert3cbo intGen
 lmp2skl.py
-makeBDB makeBOND makeFittedRhoV makeinput makePDOS makePotDB makeReactions
-makeSGDB makeSYBD massGather massPrep massSubmit mkdirhier modStruct
+makeBDB makeBOND makeColorSYBD makeFittedRhoV makeinput makePDOS makePotDB
+makeReactions makeSGDB makeSYBD massGather massPrep massSubmit mkdirhier
+modStruct
 nanoTube.py normalize
 olcao olcaoCompare olcaoObject.py olcao.py olcaoStructures.py
 pdb2skl plotgraph polcao
-rpdf runCheck runIsoAtoms
+reconcileAbsences rpdf runCheck runIsoAtoms
 scanSpectra selectSYBD skl2pdb skl2vasp spectra2ODX
 unpackOLCAODB
 vasp2skl

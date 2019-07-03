@@ -180,6 +180,7 @@ sub read2CBO
 {
    # Define local variables.
    my $atom;
+   my $orbital;
    my $bondedAtom;
    my $bondAngle;
    my $line;
@@ -211,21 +212,29 @@ sub read2CBO
       @values = StructureControl::prepLine(\*BO2C,$line,'\s+');
       $boData[$atom][7] = $values[$#values];  # ATOM_CHARGE (real)
       @values = StructureControl::prepLine(\*BO2C,$line,'\s+');
-      $boData[$atom][8] = $values[$#values];  # NUM_BONDED_ATOMS (integer)
-      foreach $bondedAtom (1..$boData[$atom][8])
+      $boData[$atom][8] = $values[$#values];  # ATOM_ORBITAL_CHARGE (integer)
+      foreach $orbital (1..$boData[$atom][8])
       {
          @values = StructureControl::prepLine(\*BO2C,$line,'\s+');
-         $boData[$atom][9][$bondedAtom][1] = $values[0]; # Bonded atom ID num
-         $boData[$atom][9][$bondedAtom][2] = $values[1]; # Bonded length (au)
-         $boData[$atom][9][$bondedAtom][3] = $values[2]; # Bond order
+         $boData[$atom][9][$orbital][1] = $values[0];
+         $boData[$atom][9][$orbital][2] = $values[1];
       }
       @values = StructureControl::prepLine(\*BO2C,$line,'\s+');
-      $boData[$atom][10] = $values[$#values];  # NUM_BOND_ANGLES (integer)
-      foreach $bondAngle (1..$boData[$atom][10])
+      $boData[$atom][10] = $values[$#values];  # NUM_BONDED_ATOMS (integer)
+      foreach $bondedAtom (1..$boData[$atom][10])
+      {
+         @values = StructureControl::prepLine(\*BO2C,$line,'\s+');
+         $boData[$atom][11][$bondedAtom][1] = $values[0]; # Bonded atom ID num
+         $boData[$atom][11][$bondedAtom][2] = $values[1]; # Bonded length (au)
+         $boData[$atom][11][$bondedAtom][3] = $values[2]; # Bond order
+      }
+      @values = StructureControl::prepLine(\*BO2C,$line,'\s+');
+      $boData[$atom][12] = $values[$#values];  # NUM_BOND_ANGLES (integer)
+      foreach $bondAngle (1..$boData[$atom][12])
       {
          $line = <BO2C>;
          chomp $line;
-         $boData[$atom][11][$bondAngle] = $line; # String
+         $boData[$atom][13][$bondAngle] = $line; # String
       }
    }
 
@@ -303,43 +312,43 @@ sub read3CBO
       #   bond.  Note that we will have to decrement the number of bonds that
       #   this atom has for each bond that is removed.
       $found = 0;
-      foreach $bondedAtom (1..$boData[$atom1][8])
+      foreach $bondedAtom (1..$boData[$atom1][10])
       {
-         if ($boData[$atom1][9][$bondedAtom][1] == $atom2)
+         if ($boData[$atom1][11][$bondedAtom][1] == $atom2)
          {
-            splice(@{$boData[$atom1][9]},$bondedAtom,1);
+            splice(@{$boData[$atom1][11]},$bondedAtom,1);
             $found++;
             last;
          }
       }
-      $boData[$atom1][8] -= $found;
+      $boData[$atom1][10] -= $found;
       $found = 0;
-      foreach $bondedAtom (1..$boData[$atom1][8])
+      foreach $bondedAtom (1..$boData[$atom1][10])
       {
-         if ($boData[$atom1][9][$bondedAtom][1] == $atom3)
+         if ($boData[$atom1][11][$bondedAtom][1] == $atom3)
          {
-            splice(@{$boData[$atom1][9]},$bondedAtom,1);
+            splice(@{$boData[$atom1][11]},$bondedAtom,1);
             $found++;
             last;
          }
       }
-      $boData[$atom1][8] -= $found;
+      $boData[$atom1][10] -= $found;
 
       # Now we have to do essentially the same thing for the second atom but
       #   we only have to search for the third atom because the first atom
       #   will always have a lower index number and thus will not be present
       #   in the bond list.
       $found = 0;
-      foreach $bondedAtom (1..$boData[$atom2][8])
+      foreach $bondedAtom (1..$boData[$atom2][10])
       {
-         if ($boData[$atom2][9][$bondedAtom][1] == $atom3)
+         if ($boData[$atom2][11][$bondedAtom][1] == $atom3)
          {
-            splice(@{$boData[$atom2][9]},$bondedAtom,1);
+            splice(@{$boData[$atom2][11]},$bondedAtom,1);
             $found++;
             last;
          }
       }
-      $boData[$atom2][8] -= $found;
+      $boData[$atom2][10] -= $found;
 
       # Read the LATTICE_INDICES_1,2,3.
       @values = StructureControl::prepLine(\*BO3C,$line,'\s+');
@@ -407,21 +416,21 @@ sub read3CBO
       # Now, we are going to add a new bond to a fake atom that represents the
       #   centroid of the three center bond. Therefore, we will first increment
       #   the number of bonds that each atom has.
-      $boData[$atom1][8]++;
-      $boData[$atom2][8]++;
-      $boData[$atom3][8]++;
+      $boData[$atom1][10]++;
+      $boData[$atom2][10]++;
+      $boData[$atom3][10]++;
 
       # Record the data for the new bond.
       $next3CBondAtom = $numAtoms + $bo3c;
-      $boData[$atom1][9][$boData[$atom1][8]][1] = $next3CBondAtom;
-      $boData[$atom1][9][$boData[$atom1][8]][2] = $bondLength[1];
-      $boData[$atom1][9][$boData[$atom1][8]][3] = $current3CBO;
-      $boData[$atom2][9][$boData[$atom2][8]][1] = $next3CBondAtom;
-      $boData[$atom2][9][$boData[$atom2][8]][2] = $bondLength[2];
-      $boData[$atom2][9][$boData[$atom2][8]][3] = $current3CBO;
-      $boData[$atom3][9][$boData[$atom3][8]][1] = $next3CBondAtom;
-      $boData[$atom3][9][$boData[$atom3][8]][2] = $bondLength[3];
-      $boData[$atom3][9][$boData[$atom3][8]][3] = $current3CBO;
+      $boData[$atom1][11][$boData[$atom1][10]][1] = $next3CBondAtom;
+      $boData[$atom1][11][$boData[$atom1][10]][2] = $bondLength[1];
+      $boData[$atom1][11][$boData[$atom1][10]][3] = $current3CBO;
+      $boData[$atom2][11][$boData[$atom2][10]][1] = $next3CBondAtom;
+      $boData[$atom2][11][$boData[$atom2][10]][2] = $bondLength[2];
+      $boData[$atom2][11][$boData[$atom2][10]][3] = $current3CBO;
+      $boData[$atom3][11][$boData[$atom3][10]][1] = $next3CBondAtom;
+      $boData[$atom3][11][$boData[$atom3][10]][2] = $bondLength[3];
+      $boData[$atom3][11][$boData[$atom3][10]][3] = $current3CBO;
 
       # Finally, we have to add the "atoms" to the list of boData.
       $boData[$numAtoms + $bo3c][1]  = $numAtoms + $bo3c;
@@ -431,8 +440,8 @@ sub read3CBO
       $boData[$numAtoms + $bo3c][5]  = 0;
       $boData[$numAtoms + $bo3c][6]  = 0;
       $boData[$numAtoms + $bo3c][7]  = 0.0;
-      $boData[$numAtoms + $bo3c][8]  = 0;
-      $boData[$numAtoms + $bo3c][10] = 0;
+      $boData[$numAtoms + $bo3c][10]  = 0;
+      $boData[$numAtoms + $bo3c][12] = 0;
    }
 
    # Close the three center bond order data file.
@@ -465,13 +474,13 @@ sub write2CBO
       print NEW2CBO "SPECIES_ID          $boData[$atom][5]\n";
       print NEW2CBO "TYPE_ID             $boData[$atom][6]\n";
       print NEW2CBO "ATOM_CHARGE         $boData[$atom][7]\n";
-      print NEW2CBO "NUM_BONDED_ATOMS    $boData[$atom][8]\n";
-      foreach $bond (1..$boData[$atom][8])
+      print NEW2CBO "NUM_BONDED_ATOMS    $boData[$atom][10]\n";
+      foreach $bond (1..$boData[$atom][10])
       {
-         print NEW2CBO "$boData[$atom][9][$bond][1] ".
-               "$boData[$atom][9][$bond][2] $boData[$atom][9][$bond][3]\n";
+         print NEW2CBO "$boData[$atom][11][$bond][1] ".
+               "$boData[$atom][11][$bond][2] $boData[$atom][11][$bond][3]\n";
       }
-      print NEW2CBO "NUM_BOND_ANGLES     $boData[$atom][10]\n";
+      print NEW2CBO "NUM_BOND_ANGLES     $boData[$atom][12]\n";
    }
 
    # Close the newly produced data file.
