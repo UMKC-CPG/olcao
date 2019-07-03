@@ -5,7 +5,7 @@
 ###########################################################
 
 #Define the current branch.
-export OLCAO_BRANCH="CPG/cpg-repo/v34"
+export OLCAO_BRANCH="CPG/cpg-repo/olcao"
 
 #Root directory of the OLCAO program suite.
 export OLCAO_DIR="$HOME/$OLCAO_BRANCH"
