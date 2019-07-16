@@ -142,7 +142,7 @@ my $hookeBondCoeffs_ref;
 my $hookeAngleCoeffs_ref;
 my $numPeriodicElements; # Number of elements from periodic table database
 my $elementNames_ref;
-my $precursorDB = "$OLCAO_DATA/precusorDB";
+my $precursorDB = "$OLCAO_DATA/precursorDB";
 
 # Initialize the environment.
 &initEnv;
@@ -332,12 +332,6 @@ sub computeImplicitInput
          }
       }
       close (SKL);
-#      # Obtain the number of lines in the PDB for this molecule that start with
-#      #   "ATOM".
-#      $command = "grep ^ATOM $precursorDB/" .
-#         lc($moleculeName[$mol]) . ".pdb | wc -l";
-#      $currNumAtoms = `$command`;
-#      chomp($currNumAtoms);
 
       $numMolAtoms[$mol] = $currNumAtoms;
 # For the -H case:
@@ -349,7 +343,7 @@ sub computeImplicitInput
 #      $numMolAtoms[$mol] = $currNumAtoms - 1;
    }
 
-   # Now, assign a molecule number to each atom.
+   # Now, assign a molecule number to each atom in the whole model.
    $atomCount = 0;
    $molCount = 0;
    foreach $mol (1..$numMoleculeTypes)
@@ -394,7 +388,8 @@ sub makeReactionTemplates
    #   the reactionTemplates directory created above.
    foreach $rxn (1..$numReactionTypes)
    {
-      # Construct the name for the current reaction molecule pair.
+      # Construct the name for the current reaction molecule pair ensuring
+      #   that the name will be uniquely ordered.
       if ($rxnMolName[1][$rxn] lt $rxnMolName[2][$rxn])
          {$currRxnMolPair = "$rxnMolName[1][$rxn]__$rxnMolName[2][$rxn]";}
       else

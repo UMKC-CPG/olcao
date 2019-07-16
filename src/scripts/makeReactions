@@ -8,8 +8,8 @@ sub printHelp
 #    bond/react based LAMMPS calculation.
 # REQUIREMENTS: I prefer that programs not have any strange environmental
 #    requirements. However, for this program it needs to be executed inside a
-#    directory where the name is XXX__YYY where XXX and YYY are the names of the
-#    two molecules that will be used to create reaction pairs.
+#    directory where the name is XXX__YYY where XXX and YYY are the names of
+#    the two molecules that will be used to create reaction pairs.
 # ALGORITHM: This program takes two OLCAO skeleton files as input. In turn,
 #    each file is parsed to find and record all of its H atoms and the atoms
 #    bonded to the H atoms. It is assumed that the H atoms between the two
@@ -475,6 +475,12 @@ sub catalogH
    close(BOND);
 }
 
+# This will generate PDB files suitable for packmol from the centered molecule.
+#   The trick is that one PDB will be made for every H atom in the system, with
+#   the exception of scenarios where multiple H atoms bind to the same type of
+#   element-species in the molecule. In those cases, the PDBs from such H atoms
+#   will be identical. (I.e., they will still be made, but they will just
+#   overwrite any previously made PDB files of the same kind.)
 sub generatePackmolPDBs
 {
    # Define passed parameters.
@@ -526,10 +532,9 @@ sub generatePackmolPDBs
             {print SKL $line;}
       }
 
-      # Perform a simple copy all atoms. Also, when we find the
-      #   atom bonded to the H atom, make a record of the element and the
-      #   species number. That information will be used to define the output
-      #   file.
+      # Perform a simple copy of all atoms. Also, when we find the atom that is
+      #   bonded to the H atom, make a record of the element and the species
+      #   number. That information will be used to define the output file.
       foreach $atom (1..$numAtoms)
       {
          # Get the line.
@@ -553,7 +558,7 @@ sub generatePackmolPDBs
          }
          else
             {print SKL $line;}
-# For the -H case replace the above else.
+# For the -H case replace the above else with this one.
 #         elsif ($atom != $hAtomNumber_ref->[$hAtom])
 #            {print SKL $line;}
       }
@@ -1392,7 +1397,7 @@ if ($hAtom2 > 2)
          $numBondsTotal = StructureControl::getNumBondsTotal;
          $numAnglesTotal = StructureControl::getNumAnglesTotal;
 
-         # Make special variable assignments and adjustments for the each phase
+         # Make special variable assignments and adjustments for each phase
          #   and for each pre and post condition and map.
 
 
