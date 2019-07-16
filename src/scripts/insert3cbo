@@ -350,7 +350,14 @@ sub read3CBO
       }
       $boData[$atom2][10] -= $found;
 
-      # Read the LATTICE_INDICES_1,2,3.
+      # Read the LATTICE_INDICES_1,2,3. The LATTICE_INDICES are used to
+      #   identify which replicated cell a particular atom should be in so as
+      #   to achieve minimal distances between the three atoms of a possible
+      #   three-center bond. The LATTICE_INDICES of atom1 should always be zero
+      #   because we will force that atom to always be inside the central cell.
+      #   The atom2 indices will position the atom into an appropriate
+      #   replicated cell so as to be minimally distant from atom1. The same
+      #   is true for the atom3 indices. (I.e., minimally distant from atom1.)
       @values = StructureControl::prepLine(\*BO3C,$line,'\s+');
       $latticeIndices[1][1] = $values[1]; # atom1 a
       $latticeIndices[1][2] = $values[2]; # atom1 b
@@ -440,6 +447,7 @@ sub read3CBO
       $boData[$numAtoms + $bo3c][5]  = 0;
       $boData[$numAtoms + $bo3c][6]  = 0;
       $boData[$numAtoms + $bo3c][7]  = 0.0;
+      $boData[$numAtoms + $bo3c][8]  = 0;
       $boData[$numAtoms + $bo3c][10]  = 0;
       $boData[$numAtoms + $bo3c][12] = 0;
    }
@@ -454,6 +462,8 @@ sub write2CBO
    # Define local variables.
    my $atom;
    my $bond;
+   my $orbital;
+   my $bondAngle;
    my $atomNumber; # Sum of real and fake atoms.
 
    # Open the new file.  For now we will open a differently named file to avoid
@@ -474,6 +484,12 @@ sub write2CBO
       print NEW2CBO "SPECIES_ID          $boData[$atom][5]\n";
       print NEW2CBO "TYPE_ID             $boData[$atom][6]\n";
       print NEW2CBO "ATOM_CHARGE         $boData[$atom][7]\n";
+      print NEW2CBO "ATOM_ORBITAL_CHARGE $boData[$atom][8]\n";
+      foreach $orbital (1..$boData[$atom][8])
+      {
+         print NEW2CBO "$boData[$atom][9][$orbital][1] ".
+               "$boData[$atom][9][$orbital][2]\n";
+      }
       print NEW2CBO "NUM_BONDED_ATOMS    $boData[$atom][10]\n";
       foreach $bond (1..$boData[$atom][10])
       {
@@ -481,6 +497,8 @@ sub write2CBO
                "$boData[$atom][11][$bond][2] $boData[$atom][11][$bond][3]\n";
       }
       print NEW2CBO "NUM_BOND_ANGLES     $boData[$atom][12]\n";
+      foreach $bondAngle (1..$boData[$atom][12])
+         {print NEW2CBO "$boData[$atom][13][$bondAngle]\n";}
    }
 
    # Close the newly produced data file.

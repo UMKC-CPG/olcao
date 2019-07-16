@@ -3813,7 +3813,7 @@ sub printSCFPot
    print SCFPOT "NUM__PLUSUJ__TERMS\n";
    print SCFPOT "0\n";
 
-   print SCFPOT " TOTAL__O__SPIN_UP\n";
+   print SCFPOT " TOTAL__OR__SPIN_UP\n";
    print SCFPOT " SPIN_DN\n";
 
    close (SCFPOT);

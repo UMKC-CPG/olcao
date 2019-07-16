@@ -82,6 +82,10 @@ sub printHelp
 #   is given, then the openDX models will contain specific sets of bonds and
 #   the atoms in the model must be present as one of the ends of the bond.
 #
+#The -vtk option will do the same as the preceding option, but will produce
+#   only one file and in the VTK legacy format. The color coding has yet to
+#   be implemented.
+#
 #The -mesh option will produce a 3D mesh of data points for display in openDX.
 #   The values at each mesh point are computed by averaging the values of
 #   select data (e.g. BO values at the bond midpoint) from nearby data points.
@@ -135,6 +139,7 @@ sub printHelp
 #                 [-profile \$profileAxis]
 #                 [-model [[-atom] | [-bond]] [-rf \$radiusFactor] [-grey]
 #                        [-bo3c]]
+#                 [-vtk]
 #                 [-mesh [-atom \$compAtom] [-steps \$a \$b \$c] [-fwhm \$fwhm]
 #                        [-limit \$limitDist]]
 #                 [-help]
@@ -170,6 +175,7 @@ my $scatterPlot;
 my $bondProfilePlot;
 my $profileAxis;
 my $systemModelDX;
+my $systemModelVTK;
 my $bo3c;
 my $meshDX;
 my @meshBODX;
@@ -367,6 +373,17 @@ elsif ($bondProfilePlot == 1)
    print STDOUT "\nPrinting bond profile data at................$time.\n";
    &printBondProfile;
 }
+elsif ($systemModelVTK == 1)
+{
+   #Print the results in a form usable by the Paraview/VisIT program(s)
+   #   for drawing a structural model with (in the future) bonds colored
+   #   according to bond order, value, and atoms drawn with colors
+   #   corresponding to charge transfer value, etc.
+   $time = `date`;
+   chomp ($time);
+   print STDOUT "\nPrinting VTK Legacy model data at............$time.\n";
+   &printModelVTK;
+}
 $time = `date`;
 chomp ($time);
 
@@ -411,6 +428,7 @@ sub initEnv
                          #   schemes are selected on the command line.
    $systemModelDX   = 0; #Assume to not be doing a system model diagram.
    $bo3c            = 0; #Assume to not be doing a 3-center-bond model diagram.
+   $systemModelVTK  = 0; #Assume to not be doing a VTK system model diagram.
    $meshDX          = 0; #Assume to not be doing a 3D mesh of the data.
    $atomBasedDX     = 1; #Assume any openDX model is made to be atom based.
    $bondBasedDX     = 0; #Assume any openDX model is not made to be bond based.
@@ -493,6 +511,9 @@ sub parseCLP
             }
          }
       }
+      elsif ($ARGV[$number] eq "-vtk")
+            {$systemModelVTK=1;}
+
       elsif ($ARGV[$number] eq "-profile")
       {
          $bondProfilePlot=1;
@@ -551,7 +572,8 @@ sub parseCLP
    }
 
    #Assign a default output of scatter plot if no output mode was given.
-   if (($systemModelDX==0) && ($bondProfilePlot==0) && ($meshDX==0))
+   if (($systemModelDX==0) && ($bondProfilePlot==0) && ($meshDX==0) &&
+       ($systemModelVTK==0))
       {$scatterPlot=1;}
 
    #Record the command line used.
@@ -572,15 +594,35 @@ sub readData
    my $numBondsTemp;
    my $bondedAtom;
    my $numOrbitals;
-   my $orbital
+   my $orbital;
    my $line;
    my @values;
    my $QN_l;
    my $i;
    my $j;
+   my $count;
 
-   # Open the raw data file.
-   open (DATA,"<$dataFile") || die "Cannot open $dataFile for writing.\n";
+   # At this point we have to perfrom an ugly kludge until this fixed
+   #   properly. We will need to open the data file, read it all, and
+   #   determine the set of ELEMENT_NAMEs.
+
+   # FIX
+   # Open the raw data file for the first time.
+   open (DATA, "<$dataFile") || die "Cannot open $dataFile for reading.\n";
+
+   $count = 0;
+   $elementName[0] = "";
+   while ($line = <DATA>)
+   {
+      @values = StructureControl::prepLine("",$line,'\s');
+      if ($values[0] eq "ELEMENT_NAME")
+         {$elementName[++count] = "$values[1]";}
+   }
+
+   close (DATA);
+
+   # Open the raw data file for the second time.
+   open (DATA,"<$dataFile") || die "Cannot open $dataFile for reading.\n";
 
    # Initialize the counter for the total number of bonds.
    $numSystemBonds = 0;
@@ -609,6 +651,12 @@ sub readData
          if ($values[0] eq "")
             {shift @values;}
 
+         #Save the element name for this atom separately since it will
+         #   come in handy to have the name readily accessible when working
+         #   with the bonds later.
+         if ($values[0] eq "ELEMENT_NAME")
+            {$elementName[$i] = $values[1];}
+
          # Store the atom's effective charge when found.
          if ("$values[0]" eq "ATOM_CHARGE")
             {$atomQStar[$i] = $values[1];}
@@ -628,12 +676,6 @@ sub readData
          # Save the filter name and value for this atom.
          $filterName[$i][$numFilters[$i]] = $values[0];
          $filterValue[$i][$numFilters[$i]] = $values[1];
-
-         # Save the element name for this atom separately since it will
-         #   come in handy to have the name readily accessible when working
-         #   with the bonds later.
-         if ($values[0] eq "ELEMENT_NAME")
-            {$elementName[$i] = $values[1];}
       }
 
       # Get the intrinsic data for this element from the data base.
@@ -2313,4 +2355,189 @@ sub addDXBond
    $xyzBondPos[$numBondsDX][1] = $xBondPos[$bondNumber];
    $xyzBondPos[$numBondsDX][2] = $yBondPos[$bondNumber];
    $xyzBondPos[$numBondsDX][3] = $zBondPos[$bondNumber];
+}
+
+# This subroutine takes the data initially displayed in OpenDX format
+#   in the "printModelData" subroutine and instead displays it in
+#   the legacy VTK format for use in programs such as Paraview or VisIT.
+#   Only the model shape is implemented for now, color tables representing
+#   bond strength and charge transfer will be included later. This 
+#   subroutine will repurpose alot of the other subroutines, so as to not
+#   change the program too much. To fix any shortcuts or errors in this
+#   subroutine, look up the specifications for the VTK Legacy format.
+sub printModelVTK
+{
+    #Define local variables.
+   my $i;
+   my $j;
+   my $k;
+   my $numUniqueTags;
+   my $firstBondAtom;
+   my $secondBondAtom;
+   my $totalBondPoints;
+   my $totalVertPoints;
+   
+   #Now we need to collect the bond data since some of the atoms may
+   #  be bonded to atoms outside the current cell.  Consider an atom
+   #  near the far corner of a cubic cell.  It will not bond to an atom
+   #  in the near corner all the way across the cell.  Instead it will
+   #  bond to that same atom in the neighbor cell.  We must determine the
+   #  position of that atom in the neighbor cell, and we must define a bond to
+   #  it.
+   &getExtendedPositions;
+
+
+   # Since this subroutine will only be bond based for the time being,
+   #   then the tags used for it need only specify atoms in the unique
+   #   bonds.
+   {$numUniqueTags = $numUniqueBondTags;}
+
+
+   # Print the lattice info. At the time of writing this, I do not know if
+   #   this step is still necessary, so it will be included just in case.
+   &printLatticeDX;
+
+
+   # Now, loop to print all the Q* and BO information of each requested kind,
+   #   and the requested atom positions. For early implementation of this
+   #   subroutine, only the atoms and bonds will be printed. The Q* data will
+   #   be included either by me or the next person to touch this code once I
+   #   graduate. Please don't forget to include it.
+   for ($i=1;$i<=$numUniqueTags;$i++)
+   {
+
+       # Create the atom list and bond list for this file. This will also
+       #   produce a map between the old atom numbers and the new ones.
+       #   Since OpenDX and VTK both list the positions of atoms/points
+       #   in x y z format, simply using this subroutine as is saves time.
+       &createDXList($i);
+
+
+       # First we open a VTK file and print the header information. For
+       #   Paraview visualization, or to take advantage of newer updates
+       #   to VTK, change the first line to be whatever the newest release
+       #   of VTK DataFile version is, but for VisIT visualization you 
+       #   must, at the time of writing this code, change the version 
+       #   number to 2.0 as VisIT has not been updated in some time.
+       #   To save time, I will be reusing the uniqueTagDX naming variable
+       #   so the feel of the program does not change too drastically.
+       open (VTK,">$uniqueTagDX.vtk") ||
+            die "Cannot open $uniqueTagDX.vtk for writing.\n";
+
+       print VTK <<HEADER;
+# vtk DataFile Version 4.2
+This is a model produce by the OLCAO program suite
+ASCII
+DATASET POLYDATA
+
+HEADER
+
+
+       #First we print all the positions of the atoms in the cell, and all
+       #  of the positions where atoms in the cell bond outside the cell.
+       print VTK "POINTS $numAtomsExtDX float\n";
+       for ($j=1;$j<=$numAtomsExtDX;$j++)
+          {print VTK "$xPosExtDX[$j] $yPosExtDX[$j] $zPosExtDX[$j]\n";}
+       print VTK "\n";
+
+       #Now we list the connections between the data points, POINTS, as
+       #  LINES in the vtk file. The header of this section must include
+       #  the number of lines, followed by the total number of data points
+       #  in the section used to express those lines, so if we're only
+       #  using the number of points per line, and the start and endpoints,
+       #  then we have 3x the number of bonds for the total number. 
+       
+       $totalBondPoints = 3 * $numBondsDX;
+       print VTK "LINES $numBondsDX $totalBondPoints\n";
+       for ($j=1;$j<=$numBondsDX;$j++)
+       {
+          #Subtract 1 because, like OpenDX, VTK is a C based program and its
+          #  array references all start from zero. Note that, since we are
+          #  only using the start and end points to form the lines, the first
+          #  number in each line of the LINES section will always be 2. If 
+          #  more points are needed to display each line, say a midpoint, to
+          #  properly display a cylinder in vtk as the bond instead of just
+          #  a line, the the number would be 3.
+          $firstBondAtom  = $bondAtomDX[$j][1] - 1;
+          $secondBondAtom = $bondAtomDX[$j][2] - 1;
+          print VTK "2 $firstBondAtom $secondBondAtom\n";
+       }
+       print VTK "\n";
+
+       #Now here is where we need to include the additional information to
+       #  display the model in legacy vtk format. This next section marks 
+       #  the atom positions from the POINTS section as vertices in vtk. 
+       #  Marking them as vertices allows programs like Paraview or just VTK
+       #  to apply glyphs to them, and for the purposes of this program, we
+       #  will need to apply spherical glyphs using a filter made for Paraview
+       #  once this program has run. The VERTICES header must include, the
+       #  number of vertices and the number of data points used to express them,
+       #  which is only the number of vertices followed by the index number of
+       #  each atom on every line, so 2x the number of vertices.
+
+       $totalVertPoints = 2 * $numAtomsExtDX;
+       print VTK "VERTICES $numAtomsExtDX $totalVertPoints\n";
+       for ($j=1;$j<=$numAtomsExtDX;$j++)
+       {
+          #For our purposes, we will treat "cells" and "points" as the same thing.
+          #For now, we do not need to specify "CELL_DATA" in this calculation, so
+          #treating them as such saves time. But this should be fixed later, for
+          #more advanced and accurate visualization.
+          #we need to attach a vertex to each point/atom we have. To do this, we
+          #need to specify the number of points, and the index number of that point.
+          #Since C arrays start at zero, we must start from there. Attempts to use 
+          #in Paraview can sometimes be "hit or miss" when applying glyphs to 
+          #vertices. If spherical glyphs are not applying to one or more of your
+          #vertices, change this next print line to a number higher than "1" as a
+          #quick fix. This note should be added as a printed suggestion whenever this
+          #subroutine is run, in the future.
+          $k = $j - 1;
+          print VTK "1 $k\n";
+       }
+       print VTK "\n";
+
+
+       #This final section adds the specified color table to the bonds and atoms.
+       #The color tables for VTK may be left as default, or you may construct a
+       #color table and specify how its used. Each entry in the lookup table is
+       #a rgba array (red green blue alpha) where alpha is tranparency.
+       #To save time, I will be using the default color table just to finish the
+       #VTK file. But in the future a color table should be generated in each file,
+       #specifying what color is associated with what type of atom or what strength
+       #of bond. Someone with more time on their hands should be able to peruse the
+       #legacy file specifications and add this function to the subroutine later on.
+       print VTK "POINT_DATA $numAtomsExtDX\n";
+       print VTK "SCALARS sample_scalars float\n";
+       print VTK "LOOKUP_TABLE default\n";
+
+       #This section will attempt to apply a scaling factor to spherical glyphs 
+       #   applied to the vertices, based on the atomic radii.
+       print VTK "SCALARS atomic_radius float\n";
+       print VTK "LOOKUP_TABLE default\n";
+       for ($j=1;$j<=$numAtomsDX;$j++)
+          {print VTK "$atomRadiusDX[$j]\n";}
+       #print VTK "LOOKUP_TABLE default\n";
+       
+       #This section will, for now, store the charge transfer data as point data.
+       print VTK "SCALARS charge_transfer float\n";
+       print VTK "LOOKUP_TABLE default\n";
+       for ($j=1;$j<=$numAtomsDX;$j++)
+          {print VTK "$atomChargeTransferDX[$j]\n";}
+       #print VTK "LOOKUP_TABLE default\n";
+
+       # As in previous model subroutine, release memory that is not needed anymore.
+       @bondOrderDX=("");
+       @abcBondPos=("");
+       @xyzBondPos=("");
+       @bondAtomDX=("");
+       @atomRadiusDX=("");
+       @atomColorDX=("");
+       @atomChargeTransferDX=("");
+       @xPosExtDX=("");
+       @yPosExtDX=("");
+       @zPosExtDX=("");
+
+       # Close this VTK Legacy file.
+       close (VTK);
+   }
 }

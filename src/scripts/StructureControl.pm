@@ -177,7 +177,7 @@ my @bondAnglesExt;# List of bond angle values and extended cell bonded pair
                   # atom numbers for each atom in the central cell.
 my @numBondAngles;# Number of bond angles for each central cell atom.
 my $numBondsTotal;# Number of bonds in the entire system.
-my @bondTagID;    # Defines which unique ID group each bond belongs to.
+my @bondTagID;    # Defines the unique ID group each bond belongs to.
 my $numUniqueBondTags; # Num unique bonds (sorted lower to higher alphanumeric)
 my @uniqueBondTags; # The list of unique tags for all bonds.
 my $numAnglesTotal; # Number of bond angles in the entire system.
@@ -781,6 +781,8 @@ sub readInputFile
       {&readPDB(@_);}
    elsif ($inputFile =~ /xyz/)
       {&readXYZ(@_);}
+   elsif ($inputFile =~ /dat/) # Not ideal naming convention. FIX
+      {&readStruct(@_);}
    elsif ($inputFile =~ /abc/)
       {&readABC(@_);}
    elsif ($inputFile =~ /hin/)
@@ -1347,6 +1349,103 @@ sub readXYZ
    # Compute the crystal parameters if they are not given explicitly.
    if ($explicitABC == 0)
       {&computeCrystalParameters;}
+
+   # Convert the directXYZ into directABC and then to fractABC.
+   foreach $atom (1..$numAtoms)
+   {
+      &getDirectABC($atom);
+      &getFractABC($atom);
+   }
+
+   # Create a set of data structures that contain information about the
+   #   relationship between atom numbers, elements, and species.  Also make
+   #   lists of the elements in the system and species for each element.
+   &createElementList;
+   &createSpeciesData($useFileSpecies);
+}
+
+
+sub readStruct
+{
+   # Declare passed parameters.
+   my $inFile = $_[0];
+   my $useFileSpecies = $_[1];
+
+   # Declare local parameters.
+   my $atom;
+   my $line;
+   my @values;
+   my @tempValues;
+   my $axis;
+
+   # Assume an empty title.
+   $title = "";
+
+   # Open the file for reading.
+   open (INFILE,"<$inFile") || die "Could not open $inFile for reading\n";
+
+   # Read past the CELL_VECTORS header.
+   <INFILE>;
+
+   # Read the abc lattice parameters in vector xyz format.
+   foreach $axis (1..3) # Loop over abc.
+   {
+      @values = &prepLine(\*INFILE,"",'\s+');
+      $realLattice[$axis][1] = $values[0]*$bohrRad;
+      $realLattice[$axis][2] = $values[1]*$bohrRad;
+      $realLattice[$axis][3] = $values[2]*$bohrRad;
+   }
+
+   # Read past the NUM_ATOM_SITES header.
+   <INFILE>;
+
+   # Read and extract the number of atoms.
+   @values = &prepLine(\*INFILE,"",'\s+');
+   $numAtoms = $values[0];
+
+   # Read past the NUM_TYPE_X_Y_Z_ELEM header.
+   <INFILE>;
+
+   # Read all the type identification of each atom, the atomic coordiantes, and
+   #    the elemental designation of each atom.
+
+   # Read each of the atom element names and direct space xyz coordinates.
+   foreach $atom (1..$numAtoms)
+   {
+      @values = &prepLine(\*INFILE,"",'\s+');
+      $atomElementName[$atom] = lc($values[5]);
+      $directXYZ[$atom][1] = $values[2]*$bohrRad;
+      $directXYZ[$atom][2] = $values[3]*$bohrRad;
+      $directXYZ[$atom][3] = $values[4]*$bohrRad;
+
+      # Store the type number for this atom.
+      if ($useFileSpecies == 1)
+         {$atomSpeciesID[$atom] = $values[1];}
+      else # Assume that the species for this atom is 1.
+         {$atomSpeciesID[$atom] = 1;}
+
+      # Construct the atomTag.
+      $atomTag[$atom] = "$atomElementName[$atom]"."$atomSpeciesID[$atom]\n";
+
+      # Assume an unassigned residue name.
+      $residueName[$atom] = "-";
+
+      # Assume an unassigned residue sequence number.
+      $residueSeqNum[$atom] = 0;
+
+      # Assume only 1 molecule is present.
+      $moleculeSeqNum[$atom] = 1;
+   }
+
+   # Obtain the lattice vectors in a,b,c,alpha,beta,gamma form.
+   &abcAlphaBetaGamma;
+
+   # Obtain the inverse of the real lattice.  This must be done now so that
+   #   we can get the abc coordinates of atoms if we are given xyz.
+   &makeLatticeInv(\@realLattice,\@realLatticeInv,0);
+
+   # Obtain the sine function of each angle.
+   &getAngleSine(\@angle);
 
    # Convert the directXYZ into directABC and then to fractABC.
    foreach $atom (1..$numAtoms)
@@ -1997,8 +2096,8 @@ sub readBondAnalysisBL
                  {$found = $tag;}
             }
 
-            # If we don't find the tag in the list of known tags, then increase
-            #   the number of known tags and store the tag.
+            # If we didn't find the tag in the list of known tags, then
+            #   increase the number of known tags and store the tag.
             if ($found == 0)
             {
                $numUniqueBondTags++;
@@ -6024,6 +6123,83 @@ sub computeBondAnglesExt
       }
    }
 }
+
+
+#sub generateUniqueFragment
+#{
+#   # Define passed parameters.
+#   my $currAtom = $_[0];
+#   my $chainLength = $_[1];
+#   my $currFrag = $_[2];
+#
+#   # Define local variables.
+#   my $atom;
+#   my $numFragBonds;
+#   my $numFragAngles;
+#
+#   # Update the total number of fragments according to the current frag number.
+#   $numFragments = $currFrag;
+#
+#   # Initialize a record of which atoms out of the whole molecule should be
+#   #   kept as a part of this fragment. (Assume that we keep nothing first.)
+#   foreach $atom (1..$numAtoms)
+#      {$fragKeepAtom[$currFrag][$atom] = 0;}
+#
+#   # Now, assume that we keep the H atom that serves as the start of the chain.
+#   $fragKeepAtom[$currFrag][$currAtom] = 1;
+#
+#   # Start a depth-first-search to find all atoms in the fragment that are a
+#   #   distance of no more that $chainLength-1 hops from the H atom.
+#   &markAtomsToKeep(1,$chainLength,$currAtom,$currFrag);
+#
+#   return ($numFragBonds, $numFragAngles);
+#}
+#
+#sub markAtomsToKeep
+#{
+#   # Define passed parameters.
+#   my $currentChainPoint = $_[0];
+#   my $maxChainLen = $_[1];
+#   my $currentAtom = $_[2];
+#   my $currFrag = $_[3];
+#
+#   # Define local variables.
+#   my $bond;
+#
+#   # Mark the current atom as a keeper and increment the count of the number of
+#   #   atoms in this fragment. Note that we have to manage the special case of
+#   #   the first atom (which already has its keepAtom set equal to one). We
+#   #   do this by only incrementing the fragment atom list if the current atom
+#   #   is not already kept. There should never be another case where this
+#   #   subroutine is called on an atom that already has its keepAtom equal to 1.
+#   if ($fragKeepAtom[$currFrag][$currentAtom] == 0)
+#   {
+#      $fragKeepAtom[$currFrag][$currentAtom] = 1;
+#      $fragNumAtoms[$currFrag]++;
+#   }
+#
+#   # If the current chain point is equal to the maximum allowed chain length,
+#   #   then return and don't bother looking for more atoms to keep. However,
+#   #   before we go, we recognize that these atoms are also edge atoms and so
+#   #   we record them.
+#   if ($currentChainPoint == $maxChainLen)
+#   {
+#      $fragNumEdgeIDs[$currFrag]++;
+#      $fragEdgeID[$currFrag][$fragNumEdgeIDs[$currFrag]] = $currentAtom;
+#      return 0;
+#   }
+#   else
+#   {
+#      # Consider each atom that the current atom is bonded to and call the
+#      #   markAtomsToKeep subroutine on each one that isn't already kept.
+#      foreach $bond (1..$numBonds[$currentAtom])
+#      {
+#         if ($fragKeepAtom[$bonded[$currentAtom][$bond]] == 0)
+#            {&markAtomsToKeep($currentChainPoint+1,$maxChainLen,
+#                  $bonded[$currentAtom][$bond],$currFrag;}
+#      }
+#   }
+#}
 
 
 sub sphericalAngles

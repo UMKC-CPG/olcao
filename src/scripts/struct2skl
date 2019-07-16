@@ -3,26 +3,30 @@ sub printHelp
 {
    print STDOUT <<ENDHELP;
 ###############################################################################
-#Program:  xyz2skl
-#Purpose:  This program will convert a file containing a structure in pure xyz
-#          direct space coordinates into an OLCAO skeleton file with the atoms
-#          all rearranged such that they are sorted according to their
-#          elements.  This will also produce a mapping between the xyz file and
-#          the skl atoms.
+#Program:  struct2skl
+#Purpose:  This program will convert a file containing a structure in the
+#          format of an OLCAO structure.dat file into an OLCAO skeleton file
+#          with the atoms all rearranged such that they are sorted according to
+#          their elements.  This will also produce a mapping between the
+#          structure file and the skl atoms.
 #
-#USAGE:  xyz2skl [-i \$xyzInputFile] [-o \$sklOutputFile] [-m \$mapFile]
-#                 [-xyzTypes] [-help]
+#USAGE:  struct2skl [-i \$structInputFile] [-o \$sklOutputFile] [-m \$mapFile]
+#                   [-structTypes] [-makeMol] [-help]
 #
 #The -i option is used to request that a specific input file be used for the
 #   conversion.  If this option is not given, then the default value for the
-#   input file is model.xyz.
+#   input file is structure.dat.
 #The -o option is used to request that a specific output file be written to
 #   for the conversion.  If this option is not given, then the default value
 #   for the output file is skl.dat.
-#The -m option is used to request that the mapping between the xyz and skl
+#The -m option is used to request that the mapping between the struct and skl
 #   files be stored in the file named \$mapFile.
-#The -xyzTypes option will require that the skl.dat file use the types as
-#   defined in the xyz file.  The default is to have no types assigned.
+#The -structTypes option will require that the skl.dat file use the types as
+#   defined in the structure.dat file.  The default is to have no types
+#   assigned. (I.e., all atoms have type # = 1.)
+#The -makeMol option will request that the given structure file be exported
+#   such that the atoms are not inside of a periodic cell. Instead, they will
+#   be in a cluster configuration.
 #   
 ###############################################################################
 ENDHELP
@@ -40,8 +44,8 @@ use ElementData;
 use StructureControl;
 
 # Declare global variables.
-my $xyzTypes;
-my $xyzFile;
+my $structTypes;
+my $structFile;
 my $sklFile;
 my $mapFile;
 my $title;
@@ -55,17 +59,20 @@ my $title;
 # Open output files for writing.
 &initEnvironment;
 
-# Read the XYZ input file and store/calculate all the important information.
-StructureControl::readInputFile($xyzFile,$xyzTypes);
+# Read the structure.dat style input file and store/calculate all the
+#   important information.
+StructureControl::readInputFile($structFile,$structTypes);
 
 # Get the title for the system.
 $title = StructureControl::getTitle;
-$title = "Generated from XYZ file: $title";
+$title = "Generated from $structFile structure file:\n" .
+         "$title\n";
 
 # Print the skl input file.
 StructureControl::printOLCAO(\*SKL,$title,"cartesian");
 
-# Print the data file that maps the xyz nature of each atom to the skl atoms.
+# Print the data file that maps the structure.dat nature of each atom to the
+#   skl atoms.
 StructureControl::printOLCAOMap(\*MAP);
 
 # END PROGRAM EXECUTION ###################
@@ -73,12 +80,12 @@ StructureControl::printOLCAOMap(\*MAP);
 sub setDefaults
 {
    # Define the default file names.
-   $xyzFile  = "model.xyz";
+   $structFile  = "structure.dat";
    $sklFile  = "olcao.skl";
-   $mapFile  = "sklXYZ.map";
+   $mapFile  = "sklStruct.map";
 
    # Assign default behavior for types assignment.
-   $xyzTypes = 0;
+   $structTypes = 0;
 }
 
 sub parseCommandLine
@@ -92,7 +99,7 @@ sub parseCommandLine
    {
       if ($ARGV[$number] eq "-i")
       {
-         $xyzFile = $ARGV[$number+1];
+         $structFile = $ARGV[$number+1];
          $number++;
       }
       elsif ($ARGV[$number] eq "-o")
@@ -105,8 +112,8 @@ sub parseCommandLine
          $mapFile = $ARGV[$number+1];
          $number++;
       }
-      elsif ($ARGV[$number] eq "-xyzTypes")
-         {$xyzTypes = 1;}
+      elsif ($ARGV[$number] eq "-structTypes")
+         {$structTypes = 1;}
       elsif ($ARGV[$number] eq "-help")
          {&printHelp;}
       else
@@ -117,7 +124,7 @@ sub parseCommandLine
 
    #Record the command line used to create this set of input files.
    open (COMMANDLINE,">>$commandLine");
-   print COMMANDLINE "xyz2skl ";
+   print COMMANDLINE "struct2skl ";
    foreach $argument (0..$#ARGV)
       {print COMMANDLINE "$ARGV[$argument] ";}
    print COMMANDLINE "\n";

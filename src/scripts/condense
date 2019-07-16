@@ -13,75 +13,91 @@ sub printHelp
 #   follows:
 #
 #   (1) Composition:
-#   Keyword: "Composition";
-#   Required Value: Integer number of different types of molecule bindings.
-#      Each type of binding on each molecule contributes one to this number.
-#      For example, the B10C2H12 molecule may have a binding to a C atom or
-#      to a B atom. Each case would contribute 1 to the number of different
-#      types of molecular bindings. Continuing the example, one might consider
-#      to differentiate between the different B atoms (e.g., the ones next to
-#      a C atom and the ones with only other B neighbors). In that case, each
-#      type of B that was distinguished would contribute 1 to the number of
-#      different molecular bindings;
-#   Section Definition: One line for each type of molecule. On each line the
-#   first item is the name of a molecule as it would be found in the precursor
-#   database under the filename olcao_MOLECUlENAME.skl. So, for example, the
-#   precursor database file for water is "olcao_H2O.skl". The next item on the
-#   line is the element name and type combination separated by a hyphen. The
-#   last item on the same line is an integer number that indicates how many of
-#   that type of molecule and its binding should be placed in the simulation
-#   box. So, requesting 9 copies of a B10C2H12 molecule with a B1 "opening" for
-#   binding would be done with the following line: "B10C2H12 B-1 9".
+#   Keyword: "composition";
+#   Required Value: Following the word "composition" is an integer that
+#      signifies the number of different types of molecules that will be used
+#      in the simulation. Each type of molecule must be present in the
+#      precursor database.
+#   Section Definition: One line for each type of molecule. Each line contains
+#      a molecule name followed by an integer.
+#   Molecule Name: A molecule name is specified in two parts and reffered to in
+#      total with <MOLECULENAME>. The parts of <MOLECULENAME> are separated by
+#      a "_" and are given by (1) The chemical formula; and (2) an integer that
+#      signifies a particular type assignment for atoms in that molecule and/or
+#      different possible conformations or atomic arrangements for the same
+#      chemical formula. In general, the precursor database is expected to
+#      contain a directory called <MOLECULENAME>. Inside that directory *at a
+#      minimum* is a file with the name <MOLECULENAME>.skl. So, for a specific
+#      example, if <MOLECULENAME> is "h2o_1" then the precursor database should
+#      have a "h2o_1/" directory with a file in it with the name "h2o_1.skl".
+#   Integer: The <MOLECULENAME> part of the line must be followed by an integer
+#      that indicates how many of that type of molecule should be placed in the
+#      simulation box.
+#   NOTE on <MOLECULENAME>: the integer part of the <MOLECULENAME> is used to
+#      distinguish different possible type assignments for atoms in the
+#      molecule so that, for example, in a simplified simulation all of the
+#      atoms could have type = 1. Or, if the molecule was somewhat complicated,
+#      different atoms of the same element could be given different types to
+#      distinguish their different electronic environments. An example would be
+#      b10c2h12. This icosahedral molecule will have different types of B atoms
+#      because some will have C neighbors and some will not. As another
+#      complicated example using b10c2h12, the positions of the 2 C atoms in
+#      the icosahedra can vary with three different possible options: (1) para;
+#      (2) meta; and (3) ortho. Each of those molecules can be specified using
+#      a different integer number as part of the <MOLECULENAME>.
 #
 #   (2) Cell:
-#   Keyword: "Cell_Size";
+#   Keyword: "cell_size";
 #   Required Value: Floating point size of the cell in Angstroms;
 #   Section Definition: Absent. No section information needed.
 #
 #   (3) Reactions:
-#   Keyword: "Reactions";
-#   Required Value: Integer number of different types of reactions.
-#   Section Definition: One line for each type of reaction. Each reaction is
-#   defined by referencing a particular pair of (possibly different types of)
-#   molecules and a particular type of atom within each molecule. The working
-#   assumption in all cases is that every reaction will require that an H atom
-#   is discharged from each molecule before the binding between the requested
-#   underlying atoms can take place. The final piece of information for each
-#   reaction is the probability that the reaction will occur once the
-#   molecular fragments are sufficiently close. So, for example, the reaction
-#   leading to the binding of two CH4 molecules would be expressed on one line
-#   as "CH4 C1 CH4 C1 0.86".
+#   Keyword: "reactions";
+#   Required Value: Integer number of different kinds of reactions.
+#   Section Definition: One line with 5 components for each type of reaction.
+#      Each line contains a pair of <MOLECULENAME> + element-type designations
+#      followed by a real number between 0.0 and 1.0 inclusive. The
+#      <MOLECULENAME> values must be consistent with those specified in the
+#      "Components" section and the element-type values must be elements and
+#      types that are present in the given molecules. The real number is the
+#      probability that the reaction will occur once the molecular fragments
+#      are sufficiently close. So, for example a reaction leading with some
+#      probability (say 0.86) to the binding of two ch4 molecules would be
+#      expressed on one line as: "ch4_1 c-1 ch4_1 c-1 0.86".
+#   NOTE: The working expectation in all cases is that every reaction will
+#      require that an H atom is is discharged from each molecule before the
+#      binding between the requested underlying atoms can take place.
 
 # Example input:
 # 
 # composition 3
-# B10C2H12 B-1 6
-# CH4 C-1 2
-# CH3CH3 C-1 1
+# b10c2h12 b-1 6
+# ch4 c-1 2
+# ch3ch3 c-1 1
 #
 # cell_size 50.0
 #
 # reactions 3
-# B10C2H12 B-1 B10C2H12 B-1 0.85
-# B10C2H12 B-1 CH4 C-1 0.85
-# B10C2H12 B-1 CH3CH3 C-1 0.75
+# b10c2h12 b-1 b10c2h12 b-1 0.85
+# b10c2h12 b-1 ch4 c-1 0.85
+# b10c2h12 b-1 ch3ch3 c-1 0.75
 
 
 # Prepare molecules and reactions.
 #
-# The above input file is read and the "makeReactions" script is executed for
+# The above input file is read and, if the precursor database does not already
+#   contain the desired information, the "makeReactions" script is executed for
 #   each of the molecule reaction pairs. The makeReactions script produces a
 #   number of output files for each pair. The most important are the preRxn and
 #   postRxn molecule template files that will be used to drive the molecule
-#   binding process. The next most important are the individual skeleton files
-#   for each molecule after the appropriate H atom has been removed. Those
-#   skeleton files will be used when packmol is run.
+#   binding process. 
 
 
 # Run Packmol
 #
-# The appropriate skeleton files that were created in the previous step will be
-#   grabbed, converted to PBD format and sent as input to the packmol program.
+# The skeleton files associated with the molecules listed in the condense input
+#   file will be grabbed, converted to PBD format (if the PDB is not already
+#   present) and sent as input to the packmol program.
 
 
 # Prepare LAMMPS input
@@ -134,8 +150,6 @@ my @atomMoleculeID;
 my @rxnMolName;
 my @rxnBinding;
 my @rxnProbability;
-my @molRxn;
-my @fixRxn;
 my $numHookeBonds;
 my $numHookeAngles;
 my $hookeBondCoeffs_ref;
@@ -159,8 +173,8 @@ my $precursorDB = "$OLCAO_DATA/precursorDB";
 # Compute implicit information not explictly given in the input file.
 &computeImplicitInput;
 
-# Create the reaction templates.
-&makeReactionTemplates;
+# Obtain the reaction templates from the database.
+&copyReactionTemplates;
 
 # Assemble the packmol input file and run packmol.
 &runPackmol;
@@ -319,12 +333,13 @@ sub computeImplicitInput
    # Compute the number of atoms in each of the molecules.
    foreach $mol (1..$numMoleculeTypes)
    {
-      $molFile = "$precursorDB/" . lc($moleculeName[$mol]) . ".skl";
+      $molFile = "$precursorDB/" . lc($moleculeName[$mol]) . "/" .
+            lc($moleculeName[$mol]) . ".skl";
       open (SKL,"<$molFile") || die "Cannot open $molFile for reading\n";
 
       while ($line = <SKL>)
       {
-         if ($line =~ /cartesian/)
+         if (($line =~ /^cart/) || ($line =~ /^frac/))
          {
             @values = StructureControl::prepLine("",$line,'\s+');
             $currNumAtoms = $values[1];
@@ -334,13 +349,6 @@ sub computeImplicitInput
       close (SKL);
 
       $numMolAtoms[$mol] = $currNumAtoms;
-# For the -H case:
-#      # Subtract one for each of the "reaction points" that are introduced.
-#      #   Presently, the input only permits one reaction point so we always
-#      #   subtract one. In the future, the input format could be changed. Then,
-#      #   the minus one would need to be a slightly more complicated
-#      #   computation.
-#      $numMolAtoms[$mol] = $currNumAtoms - 1;
    }
 
    # Now, assign a molecule number to each atom in the whole model.
@@ -360,7 +368,29 @@ sub computeImplicitInput
    }
 }
 
-sub makeReactionTemplates
+# A database (called the precursorDB) should already contain certain very
+#   useful input files for the condensation process. Therefore, the desired
+#   files can be copied from the database into the reaction templates
+#   directory, the packmol directory, and the lammps directory. None of the
+#   files should need to be generated "on the fly" for this specific run
+#   of the condense script.
+# The specific files that are needed can be divided into two groups: molecule
+#   files and reaction files. The molecule files each refer to one single
+#   molecule and the reaction files refer to an integrated pair of molecules.
+# Molecule Files: A PDB format file of each molecule is needed to build the
+#   input for the packmol program. An OLCAO-style skeleton file is not needed
+#   explicitly, but it is expected to be present because it is used to generate
+#   all other files.
+# Reaction Files: For each pair of named molecules in a reaction a set of pre-
+#   and post- reaction template files are needed. Similalry, a map file that
+#   connects them is also needed. IMPORTANT NOTE! The reaction templates are
+#   *NOT* exactly the same as the files that will be used by LAMMPS. The
+#   difference is that the type assignments in the template files and the type
+#   assignments in the LAMMPS input/data files may be (likely are) different.
+#   The types from each of the reaction template pairs need to be assigned
+#   in a uniform consistent way across all files. Hence the need for calling
+#   the normalizeBondTypes subroutine, etc.
+sub copyReactionTemplates
 {
    # Define local variables.
    my $id;
@@ -377,8 +407,12 @@ sub makeReactionTemplates
    # Initialize the number of unique reaction molecule pairs to zero.
    $numUniqueRxnMolPairs = 0;
 
-   # Create a directory for the combined set of reaction templates.
-   mkdir ("$rxnTemplateDir");
+   # Create a directory for the combined set of reaction templates if it does
+   #   not already exist. (It might already exist if this condense script is
+   #   being called as a part of an iterative refinement process.)
+   if (! -d "$rxnTemplateDir")
+      {mkdir ("$rxnTemplateDir");}
+   chdir ("$rxnTemplateDir");
 
    # For each unique pair of molecules in the reaction list, copy the molecules
    #   from the precursor database into a working directory and produce the set
@@ -395,7 +429,8 @@ sub makeReactionTemplates
       else
          {$currRxnMolPair = "$rxnMolName[2][$rxn]__$rxnMolName[1][$rxn]";}
 
-      # Search for indentically named pairs of reaction molecules.
+      # Search for indentically named pairs of reaction molecules that have
+      #   previously been processed.
       $found = 0;
       foreach $rxnPair (1..$numUniqueRxnMolPairs)
       {
@@ -404,65 +439,83 @@ sub makeReactionTemplates
       }
 
       # In the event that this pair has not been found before, we record the
-      #   fact that we have now found it and we compute the reaction templates.
+      #   fact that we have now found it and we copy the reaction templates.
       if ($found == 0)
       {
+         # Check that the currMolRxnPair actually exists in the database.
+         if (! -d "$precursorDB/$currRxnMolPair")
+            {die "Unable to find $precursorDB/$currRxnMolPair.\n";}
+
          # Store the current (unique) reaction molecule pair.
          $uniqueRxnMolPairs[++$numUniqueRxnMolPairs] = $currRxnMolPair;
 
-         # Create a directory for this set of reaction templates.
-         mkdir("$currRxnMolPair");
+         # For the current reaction, grab the appropriate reaction templates
+         #   and store them in the collective $rxnTemplatesDir directory with
+         #   appropriate names to distinguish them.
+         $rxnBindingPair = $rxnBinding[1][$rxn] . "_" . $rxnBinding[2][$rxn];
+         $rxnMolBindingPair = $rxnMolName[1][$rxn] ."_". $rxnBinding[1][$rxn] .
+            "_" . $rxnMolName[2][$rxn] . "_" . $rxnBinding[2][$rxn];
 
-         # Copy the molecules from the precursor database.
-         copy("$precursorDB/$rxnMolName[1][$rxn].skl",
-            "$currRxnMolPair/olcao1.skl");
-         copy("$precursorDB/$rxnMolName[2][$rxn].skl",
-            "$currRxnMolPair/olcao2.skl");
+         # Copy all the pre- and post- template files.
+         foreach $letter (1..4)
+         {
+            copy("$precursorDB/$currRxnMolPair/rxnTemplates/preRxn." .
+               "$rxnBindingPair.$phaseLetter[$letter].data",
+               "preRxn.$rxnMolBindingPair." .
+               "$phaseLetter[$letter].data");
+            copy("$precursorDB/$currRxnMolPair/rxnTemplates/postRxn." .
+               "$rxnBindingPair.$phaseLetter[$letter].data",
+               "postRxn.$rxnMolBindingPair." .
+               "$phaseLetter[$letter].data");
+         }
 
-         # Enter the directory, make the reaction templates, and back out.
-         chdir("$currRxnMolPair");
-         system("makeReactions");
-         chdir("..");
+         # Copy the map files.
+         foreach $letter (1..4)
+         {
+            copy("$precursorDB/$currRxnMolPair/rxnTemplates/$rxnBindingPair.".
+               "$phaseLetter[$letter].map",
+               "$rxnMolBindingPair.$phaseLetter[$letter].map");
+         }
+
+#         # Copy the molecules from the precursor database.
+#         copy("$precursorDB/$rxnMolName[1][$rxn].skl",
+#            "$currRxnMolPair/olcao1.skl");
+#         copy("$precursorDB/$rxnMolName[2][$rxn].skl",
+#            "$currRxnMolPair/olcao2.skl");
+#
+#         # Enter the directory, make the reaction templates, and back out.
+#         chdir("$currRxnMolPair");
+#         system("makeReactions");
+#         chdir("..");
       }
 
-      # For the current reaction, grab the appropriate reaction templates and
-      #   store them in the collective $rxnTemplatesDir directory with
-      #   appropriate names to distinguish them.
-      $rxnBindingPair = $rxnBinding[1][$rxn] . "_" . $rxnBinding[2][$rxn];
-      $rxnMolBindingPair = $rxnMolName[1][$rxn] . "_" . $rxnBinding[1][$rxn] .
-         "_" . $rxnMolName[2][$rxn] . "_" . $rxnBinding[2][$rxn];
-      foreach $letter (1..4)
-      {
-         copy("$currRxnMolPair/rxnTemplates/preRxn." .
-            "$rxnBindingPair.$phaseLetter[$letter].data",
-            "$rxnTemplateDir/preRxn.$rxnMolBindingPair." .
-            "$phaseLetter[$letter].data");
-         copy("$currRxnMolPair/rxnTemplates/postRxn." .
-            "$rxnBindingPair.$phaseLetter[$letter].data",
-            "$rxnTemplateDir/postRxn.$rxnMolBindingPair." .
-            "$phaseLetter[$letter].data");
-      }
-
-      # Copy the map files.
-      foreach $letter (1..4)
-      {
-         copy("$currRxnMolPair/rxnTemplates/$rxnBindingPair.".
-            "$phaseLetter[$letter].map","$rxnTemplateDir/$rxnMolBindingPair.".
-            "$phaseLetter[$letter].map");
-      }
-
-      # Craft the molecule command for each reaction template file. Also,
-      #   craft the fix bond/react command for each reaction template in the
-      #   subset. The commands will not be used until later when the LAMMPS
-      #   files are actually made.
-      $molRxn[$rxn] = "molecule pre.$rxnMolBindingPair " .
-         "preRxn.$rxnMolBindingPair.data\n" .
-         "molecule post.$rxnMolBindingPair " .
-         "postRxn.$rxnMolBindingPair.data\n";
-      $fixRxn[$rxn] = "  react $rxnMolBindingPair all 500 0.5 2.0 " .
-         "pre.$rxnMolBindingPair post.$rxnMolBindingPair " .
-         "$rxnMolBindingPair.map prob 0.99 12345 ";
+#      # For the current reaction, grab the appropriate reaction templates and
+#      #   store them in the collective $rxnTemplatesDir directory with
+#      #   appropriate names to distinguish them.
+#      $rxnBindingPair = $rxnBinding[1][$rxn] . "_" . $rxnBinding[2][$rxn];
+#      $rxnMolBindingPair = $rxnMolName[1][$rxn] . "_" . $rxnBinding[1][$rxn] .
+#         "_" . $rxnMolName[2][$rxn] . "_" . $rxnBinding[2][$rxn];
+#      foreach $letter (1..4)
+#      {
+#         copy("$currRxnMolPair/rxnTemplates/preRxn." .
+#            "$rxnBindingPair.$phaseLetter[$letter].data",
+#            "$rxnTemplateDir/preRxn.$rxnMolBindingPair." .
+#            "$phaseLetter[$letter].data");
+#         copy("$currRxnMolPair/rxnTemplates/postRxn." .
+#            "$rxnBindingPair.$phaseLetter[$letter].data",
+#            "$rxnTemplateDir/postRxn.$rxnMolBindingPair." .
+#            "$phaseLetter[$letter].data");
+#      }
+#
+#      # Copy the map files.
+#      foreach $letter (1..4)
+#      {
+#         copy("$currRxnMolPair/rxnTemplates/$rxnBindingPair.".
+#            "$phaseLetter[$letter].map","$rxnTemplateDir/$rxnMolBindingPair.".
+#            "$phaseLetter[$letter].map");
+#      }
    }
+   chdir ("..");
 }
 
 sub runPackmol
@@ -472,9 +525,9 @@ sub runPackmol
    my $rxn;
    my $line;
    my @values;
+   my $molFile;
    my $randSeed;
    my $packmolFile;
-   my $currRxnMolPair;
 
    # Create a directory to run packmol in.
    mkdir ("packmol");
@@ -500,7 +553,7 @@ sub runPackmol
 
    foreach $mol (1..$numMoleculeTypes)
    {
-      print PACK "structure $moleculeName[$mol]_$bindingType[$mol].pdb\n";
+      print PACK "structure $moleculeName[$mol].pdb\n";
       print PACK "  number $numMolecules[$mol]\n";
       print PACK "  inside cube 0.0 0.0 0.0 $cellSize\n";
       print PACK "end structure\n\n";
@@ -510,23 +563,29 @@ sub runPackmol
    close (PACK);
 
    # Copy in the necessary pdb files.
-   foreach $rxn (1..$numReactionTypes)
+   foreach $mol (1..$numMoleculeTypes)
    {
-      # Construct the name for the current reaction molecule pair.
-      if ($rxnMolName[1][$rxn] lt $rxnMolName[2][$rxn])
-         {$currRxnMolPair = "$rxnMolName[1][$rxn]__$rxnMolName[2][$rxn]";}
-      else
-         {$currRxnMolPair = "$rxnMolName[2][$rxn]__$rxnMolName[1][$rxn]";}
-
-#      print STDOUT "currRxnMolPair = $currRxnMolPair\n";
-##      chdir ("${currRxnMolPair}/centered");
-##      my $pwd = `pwd`;
-##      print STDOUT "pwd = $pwd\n";
-#      my @temp = glob ("../$currRxnMolPair/centered/*.pdb");
-#      print STDOUT "temp = @temp\n";
-      foreach my $file (glob "../$currRxnMolPair/centered/*.pdb")
-         {copy("$file",".");}
+      $molFile = "$precursorDB/" . lc($moleculeName[$mol]) . "/" .
+            lc($moleculeName[$mol]) . ".pdb";
+      copy("$molFile",".");
    }
+#   foreach $rxn (1..$numReactionTypes)
+#   {
+#      # Construct the name for the current reaction molecule pair.
+#      if ($rxnMolName[1][$rxn] lt $rxnMolName[2][$rxn])
+#         {$currRxnMolPair = "$rxnMolName[1][$rxn]__$rxnMolName[2][$rxn]";}
+#      else
+#         {$currRxnMolPair = "$rxnMolName[2][$rxn]__$rxnMolName[1][$rxn]";}
+#
+##      print STDOUT "currRxnMolPair = $currRxnMolPair\n";
+###      chdir ("${currRxnMolPair}/centered");
+###      my $pwd = `pwd`;
+###      print STDOUT "pwd = $pwd\n";
+##      my @temp = glob ("../$currRxnMolPair/centered/*.pdb");
+##      print STDOUT "temp = @temp\n";
+#      foreach my $file (glob "../$currRxnMolPair/centered/*.pdb")
+#         {copy("$file",".");}
+#   }
 
    # Execute packmol. There are lots of options for this program. It may be
    #   necessary to enforce a distance between molecules so that no inter-
@@ -536,7 +595,7 @@ sub runPackmol
 
    # Unfortunately, the packmol program seems to not follow the PDB standard
    #   as specified here: http://www.wwpdb.org/documentation/file-format.
-   #   Therefore, we will now correct the file.
+   #   Therefore, we will now correct the PDB file that was output by packmol.
    open (RAW,"<packmol.raw.pdb") ||
       die "Cannot open packmol.raw.pdb for reading.\n";
    open (FIXED,">packmol.fixed.pdb") ||
@@ -636,6 +695,7 @@ sub createLAMMPSFiles
    my $mapFileDir;
    my $mapFileFrom;
    my $mapFileTo;
+   my @phaseRange;
 
    # Create a directory for the LAMMPS data files and enter it.
    mkdir ("lammps");
@@ -1047,6 +1107,16 @@ ENDLAMMPSHEAD
       }
    }
 
+   # Assign the ranges of interaction for the phases of the reaction.
+   $phaseRange[1][1] = "0.0"; # Phase 1 minimum range.
+   $phaseRange[1][2] = "2.0"; # Phase 1 maximum range.
+   $phaseRange[2][1] = "0.0"; # Phase 2 minimum range.
+   $phaseRange[2][2] = "3.5"; # Phase 2 maximum range.
+   $phaseRange[3][1] = "0.0"; # Phase 3 minimum range.
+   $phaseRange[3][2] = "3.5"; # Phase 3 maximum range.
+   $phaseRange[4][1] = "0.0"; # Phase 4 minimum range.
+   $phaseRange[4][2] = "3.5"; # Phase 4 maximum range.
+
    # Insert the bond reactions.
    print LMPIN "\n# Bond Reactions\n";
    print LMPIN "fix reaction all bond/react stabilization no &\n";
@@ -1063,8 +1133,9 @@ ENDLAMMPSHEAD
          $mapFileTo = "$rxnMolName[1][$rxn]"."_$rxnBinding[1][$rxn]".
             "_$rxnMolName[2][$rxn]"."_$rxnBinding[2][$rxn].".
             "$phaseLetter[$letter].map";
-         copy ("../$mapFileDir/$mapFileFrom", "./$mapFileTo");
-         print LMPIN "  react RXN$rxn$phaseLetter[$letter] all 5 0.5 2.5 ".
+         copy ("../reactionTemplates/$mapFileTo", ".");
+         print LMPIN "  react RXN$rxn$phaseLetter[$letter] all 100 ".
+            "$phaseRange[$letter][1] $phaseRange[$letter][2] ".
             "MOLpre$rxn$phaseLetter[$letter] ".
             "MOLpost$rxn$phaseLetter[$letter] " .
             "$mapFileTo prob $rxnProbability[$rxn] $randSeed &\n";
@@ -1101,13 +1172,13 @@ ENDLAMMPSTAIL
 #SBATCH -o lmp.o%J
 #SBATCH -e lmp.e%J
 #SBATCH -N 1
-#SBATCH -n 2
-#SBATCH -t 00:02:30
+#SBATCH -n 8
+#SBATCH -t 00:12:30
 #SBATCH --mem=2G
 #
 export OMP_NUM_THREADS=1
-cd $lmpDir;
-mpirun $HOME/bin/lmp_mpi < lammps.in
+cd $lmpDir
+srun $HOME/bin/lmp_mpi < lammps.in
 
 ENDSLURM
 

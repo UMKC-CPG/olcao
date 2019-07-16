@@ -14,7 +14,9 @@ sub printHelp
 #The -o option allows the user to designate a different name for the resultant
 #   output file rather than the default "bondAnalysis.xx" file.  The "xx" in
 #   the output depends on the data requested, for the -bs option, "xx"="bs",
-#   and for -ba "xx"="ba" and so on.
+#   and for -ba "xx"="ba" and so on. A special case occurs for the -frag option
+#   where the the name specified here serves as an identifier for a set of
+#   output files, each with a different suffix.
 #The -i option allows the user to designate a different name for the input
 #   file rather than the default expected input file of "olcao.skl".  Other
 #   options include files such as the "structure.dat" OLCAO input file, the
@@ -104,6 +106,18 @@ sub printHelp
 #   outside the box are considered.  The default behavior if this option is not
 #   given is to use abc coordinates and include all atoms inside the entire
 #   cell.
+## The -frag option will produce a set of files that describe the bonds and
+##   bond angles of the molecule as a whole AND that describe the bonds and bond
+##   angles associated with fragments of the molecule. Fragments are defined
+##   according to a chain length. For this particular option, there is a side
+##   effect that the \$outFile is interpreted to be an outFileTag that will have
+##   various different suffixes applied.
+## The -c suboption is used to specify a chain length for fragment creation.
+##   The chaing length is an integer number that defines the depth of the search
+##   search tree that is used to find atoms from some starting H atom. If this
+##   option is not given then a default chain length of 3 will be used. (For
+##   example, a chain of H-C-B would be included for fragment generation, but
+##   H-C-B-B would not.)
 # The -help option will print this description and usage information.
 #
 #USAGE:  bondAnalysis [-o \$outFile] [-i \$inFile] [-dist \$limitDist]
@@ -113,6 +127,7 @@ sub printHelp
 #                                -vol \$x \$y \$z]]
 #                     [-bf \$bondingFactor] [-xyz | -abc | -fract]
 #                     [-box \$min1 \$max1 \$min2 \$max2 \$min3 \$max3 \$zone]
+##                     [-frag [-c \$chainLength]]
 #                     [-help]
 #
 ENDHELP
@@ -153,6 +168,8 @@ my $cScale; # Cell scale factor for openscad models.
 my $xVol3D; # x dimension for the 3D printer's volume in mm.
 my $yVol3D; # y dimension for the 3D printer's volume in mm.
 my $zVol3D; # z dimension for the 3D printer's volume in mm.
+#my $chainLength;
+#my $doFrag;
 
 # System defined variables.
 my $numAtoms;         # Number of atoms in the system.
@@ -196,6 +213,10 @@ my @stdSpecBL;
 my @stdSpecBA;
 my @stdAtomBL;
 my @stdAtomBA;
+
+# Fragment data.
+#my $numUniqueFragments;
+#my @fragmentTagList;
 
 # Hard coded parameters.
 my $bondRadiusScale; # Used for openscad models. Default ratio of bond cylinder
@@ -341,9 +362,14 @@ elsif ($operation == 7) # Create the coordination data.
    # Obtain a reference to the coordination summary of each element.
    $coordinationSummary_ref = StructureControl::getCoordinationSummaryRef;
 }
+#elsif ($operation == 10) # Generate fragments.
+#   {&generateFragments;}
 
-# Open the output file.
-&openOutput;
+
+#if ($operation != 10) # Open the output file. (Op. 10 has multiple outputs.)
+#   {&openOutput;}
+&openOutput; # Open the output file for all cases.
+
 
 # Print the results.
 if ($operation == 1)
@@ -364,6 +390,8 @@ elsif ($operation == 8)
    {&printOpenScad(0);}
 elsif ($operation == 9)
    {&printOpenScad(1);}
+#elsif ($operation == 10)
+#   {&printFragments;}
 
 ###############################################
 # End program execution #######################
@@ -376,7 +404,7 @@ sub initEnv
    $inFile = "olcao.skl";
 
    # Assume that the default output file will be ok.  (Assigned automatically).
-   $outFile = "";
+   $outFile = "bondAnalysis";
 
    # Assume the default limit distance.
    $limitDist = 3.0;
@@ -418,6 +446,12 @@ sub initEnv
    $boxBorders[3][1] = 0.0;
    $boxBorders[3][2] = "max";
    $zone = 1; #Inside the box.
+
+#   # Assume that we will not be generating any fragments.
+#   $doFrag = 0;
+#
+#   # Assume a chain length for any requested fragments.
+#   $chainLength = 3;
 
    # Initialize the element data from the database.
    ElementData::initElementData;
@@ -523,6 +557,22 @@ sub parseCommandLine
          $boxBorders[3][2] = $ARGV[++$number];
          $zone = $ARGV[++$number];
       }
+#      elsif ($ARGV[$number] eq "-frag")
+#      {
+#         $operation = 10;
+#         foreach $index (1..1)
+#         {
+#            if ($number+1 > $#ARGV)
+#               {last;}
+#
+#            $nextTag = $ARGV[++$number];
+#
+#            if ($nextTag eq "-c")
+#               {$chainLength = $ARGV[++$number];}
+#            else
+#               {$number--;last;}
+#         }
+#      }
       elsif ($ARGV[$number] eq "-help")
          {&printHelp;}
       else
@@ -545,30 +595,77 @@ sub parseCommandLine
 }
 
 
+#sub generateFragments
+#{
+#   # Define local variables.
+#   my $currElementSpecies;
+#   my $found;
+#   my $tag;
+#   my @fragmentData;
+#
+#   # There will be one fragment generated for each unique element-species tag.
+#   #   First, we initialize the count of unique fragments to zero.
+#   $numUniqueFragments = 0;
+#
+#   # Search all atoms for H atoms and then check if it is bound to a unique
+#   #   element-species.
+#   foreach $atom (1..$numAtoms)
+#   {
+#      # If this is not an H atom, then skip to the next atom.
+#      if ($atomElementName_ref->[$atom] ne "h")
+#         {next;}
+#
+#      # Determine the element-species designation for the atom that is bonded
+#      #   to this current H atom.
+#      $currElementSpecies =
+#            "$atomElementName_ref->[$bondedList_ref->[$atom][1]]" . 
+#            "$atomSpeciesID_ref->[$bondedList_ref->[$atom][1]]";
+#
+#      # Determine if this elementSpecies tag is unique.
+#      $found = 0;
+#      foreach $tag (1..$numUniqueFragments)
+#      {
+#         if ($currElementSpecies eq $fragmentTagList[$tag])
+#            {$found = $tag; last;}
+#      }
+#
+#      # In the event that this is a unique element-species, then we record that
+#      #   we found a unique element-species and then we make a fragment.
+#      if ($found == 0)
+#      {
+#         $numUniqueFragments++;
+#         $fragmentTagList[$numUniqueFragments] = $currElementSpecies;
+#         StructureControl::generateUniqueFragment($atom,$chainLength,
+#               $numUniqueFragments);
+#      }
+#   }
+#}
+
+
 sub openOutput
 {
    # Check if the output file name was not assigned via the command line.
-   if ($outFile eq "")
+   if ($outFile eq "bondAnalysis")
    {
       # Use the default name if it wasn't assigned.
       if ($operation == 1)
-         {$outFile = "bondAnalysis.bs";}
+         {$outFile = $outFile . ".bs";}
       elsif ($operation == 2)
-         {$outFile = "bondAnalysis.ba";}
+         {$outFile = $outFile . ".ba";}
       elsif ($operation == 3)
-         {$outFile = "bondAnalysis.bl";}
+         {$outFile = $outFile . ".bl";}
       elsif ($operation == 4)
-         {$outFile = "bondAnalysis.boo";}
+         {$outFile = $outFile . ".boo";}
       elsif ($operation == 5)
-         {$outFile = "bondAnalysis.dx";}
+         {$outFile = $outFile . ".bx";}
       elsif ($operation == 6)
-         {$outFile = "bondAnalysis.st";}
+         {$outFile = $outFile . ".st";}
       elsif ($operation == 7)
-         {$outFile = "bondAnalysis.co";}
+         {$outFile = $outFile . ".co";}
       elsif ($operation == 8)
-         {$outFile = "bondAnalysis.scad";}
+         {$outFile = $outFile . ".scad";}
       elsif ($operation == 9)
-         {$outFile = "bondAnalysis.scad";}
+         {$outFile = $outFile . ".scad";}
    }
 
    open (OUT,">$outFile") || die "Cannot open $outFile for writing\n";
@@ -2631,3 +2728,80 @@ sub atomWarning
 
    print STDOUT $warning;
 }
+
+#sub printFragments
+#{
+#   # Declare local variables.
+#   my $frag;
+#   my $currFragAtom;
+#   my $fragFileName;
+#
+#   # Pull in useful information from StructureControl.
+#   $numFragments = StructureControl::getNumFragments();
+#   $fragNumBonds_ref = StructureControl::getFragNumBonds();
+#   $fragNumAngles_ref = StructureControl::getFragNumAngles();
+#   $fragNumAtoms_ref = StructureControl::getFragNumAtomsRef()
+#   $fragKeepAtom_ref = StructureControl::getFragKeepAtomRef();
+#   $fragNumEdgeIDs_ref = StructureControl::getFragNumEdgeIDsRef();
+#   $fragEdgeID_ref = StructureControl::getFragEdgeIDRef();
+#
+#   foreach $frag (1..$numFragments)
+#   {
+#      # Define the name of the data file for this fragment.
+#      $fragFileName = $outFile . "_$fragmentTagList[$frag].frag";
+#
+#      # Open a data file for this specific fragment.
+#      open (FRAG,">$fragFileName")
+#            || die "Cannot open $fragFileName for writing\n";
+#
+#      # Print the information that will be needed to create bond-react
+#      #   templates for LAMMPS. Specifically, this is:
+#      #   (1) The number of atoms in the fragment.
+#      #   (2) The element-species tag for each atom.
+#      #   (3) The number of bonds in the fragment.
+#      #   (4) For each atom, a list of which atoms it is bonded to.
+#      #   (5) The number of angles in the fragment.
+#      #   (6) For each atom, a list of which bond angles it is central to.
+#
+#      # Record the number of atoms in this fragment and then print the
+#      #   element-species tag for each.
+#      print FRAG "NumAtoms = $fragNumAtoms_ref->[$frag]\n";
+#
+#      # Consider all atoms in the current molecule but only print information
+#      #   for the atoms that are kept in this fragment.
+#      $currFragAtom = 0;
+#      foreach $atom (1..$numAtoms)
+#      {
+#         # Don't print anything for atoms that are not kept.
+#         if ($fragKeepAtom_ref->[$frag][$atom] == 0)
+#            {next;}
+#         else
+#            {$currFragAtom++;}
+#
+#         # Print the atom index number in this fragment, the element name, the
+#         #   element ID number, and the species ID number.
+#         print FRAG "$currFragAtom $atomElementName_ref->[$atom] " .
+#               "$atomElementID_ref->[$atom] $atomSpeciesID_ref->[$atom]\n";
+#      }
+#
+#      # Record the number and nature of the bonds in this fragment.
+#      #   the bonds.
+#      print FRAG "NumBonds = $fragNumBonds_ref->[$frag]\n";
+#
+#      # Print the bond list.
+#      foreach $bond (1..$fragNumBonds_ref->[$frag])
+#      {print FRAG "\n";}
+#
+#      # Record the number and nature of the bond angles in this fragment.
+#      print FRAG "NumBondAngles = $fragNumAngles_ref->[$frag]\n";
+#
+#      # Print the bond angle list.
+#      foreach $angle (1..$fragNumAngles_ref->[$frag])
+#      {
+#         print FRAG "\n";
+#      }
+#
+#      # Close this data file.
+#      close (FRAG);
+#   }
+#}

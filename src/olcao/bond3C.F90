@@ -192,7 +192,7 @@ subroutine computeBond3C
          enddo
       enddo
       do j = 1, numFOrbitals
-         do k = 1,5
+         do k = 1,7
             valeDimIndex = valeDimIndex + 1
             bondIndex(valeDimIndex) = numOrbIndex(currentType) + numSOrbitals +&
                   & numPOrbitals + numDOrbitals + j
@@ -224,7 +224,7 @@ subroutine computeBond3C
    !   case.) We assume that there are no replicated copies of atom 2 that
    !   are in neighboring cells that atom 1 will be close enough for atom 1 to
    !   bond with. FURTHER, we assume that the final atom of the three center
-   !   bond (atom 3) will follow the same rule regarding its relation to atom 1.
+   !   bond (atom 3) will follow the same rule regarding its relation to atom1.
    !   FINALLY, we assume that the relationship between atom 2 and atom 3 will
    !   follow a similar rule such that *the* atom 2 that atom 3 is bonded to
    !   will be the *same* atom 2 that atom 1 is bonded to (meaning it will not
@@ -289,6 +289,8 @@ subroutine computeBond3C
          atom2Index(2) = atom2Index(1) + numAtomStates(l) - 1
 
          ! Compute distance from atom1 to atom2 and cycle if out of range.
+         ! Also, record index values that uniquely identify which replicated
+         !   lattice that atom2 is in when the minimum distance is achieved.
          call getMinDist(k,l,minDistCount,latticeIndices(:,1),&
                & currentMinDist(1))
          if (minDistCount == 0) cycle
@@ -310,7 +312,8 @@ subroutine computeBond3C
          ! Store the magnitude of the valeDim range.
          currentNode2%valeDimRangeMag = atom2Index(2) - atom2Index(1) + 1
 
-         ! Store the replicated lattice cell indices for atom2.
+         ! Store the replicated lattice cell indices for atom2 when it (or its
+         !   copy) is at a minimum diastance from atom1.
          currentNode2%latticeIndices(:) = latticeIndices(:,1)
 
          ! Store the minimum distance from this atom2 (l) to atom1 (k).
@@ -339,11 +342,17 @@ subroutine computeBond3C
             atom3Index(2) = atom3Index(1) + numAtomStates(m) - 1
 
             ! Compute distance from atom1 to atom3 and cycle if out of range.
+            ! Also, compute index values to uniquely identify which replicated
+            !   lattice cell that atom3 is in when it achieves a minimum
+            !   distance from atom1.
             call getMinDist(k,m,minDistCount,latticeIndices(:,2),&
                   & currentMinDist(1))
             if (minDistCount == 0) cycle
 
             ! Compute distance from atom2 to atom3 and cycle if out of range.
+            ! Also, compute index values to uniquely identify which replicated
+            !   lattice cell that atom3 is in when it achieves a minimum
+            !   distance from atom2.
             call getMinDist(l,m,minDistCount,latticeIndices(:,3),&
                   & currentMinDist(2))
             if (minDistCount == 0) cycle
@@ -370,13 +379,17 @@ subroutine computeBond3C
             currentNode3%distToAtom1 = currentMinDist(1)
             currentNode3%distToAtom2 = currentMinDist(2)
 
-            ! Store the replicated lattice cell indices for atom3.
+            ! Store the replicated lattice cell indices for atom3 when it (or
+            !   its copy) is at a minimum diastance from atom1.
             currentNode3%latticeIndices(:) = latticeIndices(:,2)
 
             ! Store the site number for this atom.
             currentNode3%atomSiteNumber = m
 
-            ! Compute and store the centroid for this set of three atoms.
+            ! Compute and store the centroid for this set of three atoms. The
+            !   equation is essentially just a spatial average of the locations
+            !   of the atoms involved in this possible three center bond.
+            !   Atom 1 is always assumed to be inside the main central cell. 
             currentNode3%centroid(:) = (atomSites(k)%cartPos(:) + &
                   & atomSites(l)%cartPos(:) + &
                   & latticeIndices(1,1) * realVectors(:,1) + &
@@ -427,7 +440,7 @@ subroutine computeBond3C
             !   beginning of the population subroutine. Then we check if the
             !   population of this state is less than smallThresh. If so, then
             !   it is deemed a non-populated state and we can exit the j loop.
-            orderedIndex = j+numStates*(h-1)+numStates*spin*(i-1)
+            orderedIndex = j + numStates*(h-1) + numStates*spin*(i-1)
             if (electronPopulation(orderedIndex) < smallThresh) exit
 
             ! We have found a state with at least some electron population in
@@ -459,15 +472,15 @@ subroutine computeBond3C
                      !   2=atoms 1,3; 3=atoms 2,3. This will be used to compute
                      !   the weighted centroid.
                      call compute3CBO(kPointWeight(i),real(spin,double),&
-                           & chargeScaleFactor,j,BO3C(k)%valeDimRangeMag,&
+                           & chargeScaleFactor,j,currentNode2%valeDimRangeMag,&
                            & BO3C(k)%atom1Index(:),currentNode2%atom2Index(:),&
                            & currentNode3%bondOrder3C,1)
                      call compute3CBO(kPointWeight(i),real(spin,double),&
-                           & chargeScaleFactor,j,BO3C(k)%valeDimRangeMag,&
+                           & chargeScaleFactor,j,currentNode3%valeDimRangeMag,&
                            & BO3C(k)%atom1Index(:),currentNode3%atom3Index(:),&
                            & currentNode3%bondOrder3C,2)
                      call compute3CBO(kPointWeight(i),real(spin,double),&
-                           & chargeScaleFactor,j,currentNode2%valeDimRangeMag,&
+                           & chargeScaleFactor,j,currentNode3%valeDimRangeMag,&
                            & currentNode2%atom2Index(:),&
                            & currentNode3%atom3Index(:),&
                            & currentNode3%bondOrder3C,3)
@@ -528,9 +541,9 @@ subroutine computeBond3C
             do while (associated(currentNode3))
 
 ! Establish rejection criteria.
-if ((currentNode3%bondOrder3C(1) < 0.0_double) .or. &
-  & (currentNode3%bondOrder3C(2) < 0.0_double) .or. &
-  & (currentNode3%bondOrder3C(3) < 0.0_double)) then
+if ((currentNode3%bondOrder3C(1) < 0.1_double) .or. &
+  & (currentNode3%bondOrder3C(2) < 0.1_double) .or. &
+  & (currentNode3%bondOrder3C(3) < 0.1_double)) then
 currentNode3 => currentNode3%next
 cycle
 endif
@@ -658,9 +671,9 @@ subroutine getMinDist (i,j,minDistCount,latticeIndices,minDist)
 
       ! Compute the seperation vector for the atoms in this combo.
       displacement(:) = atomSites(i)%cartPos(:) - atomSites(j)%cartPos(:) - &
-            & m * realVectors(:,1) - &
-            & n * realVectors(:,2) - &
-            & o * realVectors(:,3)
+            & m * realVectors(:,1) - &  ! The xyz from a
+            & n * realVectors(:,2) - &  ! The xyz from b
+            & o * realVectors(:,3)      ! The xyz from c
 
       ! Compute the distance for the atoms of this cell combo.
       currentDist = sqrt(sum(displacement(:)**2))

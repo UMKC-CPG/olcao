@@ -9,15 +9,24 @@ sub printHelp
 #          condensation. It will create several packmol files(precondensations) 
 #          and derive the Lammps data file for each of those then run a Lammps 
 #          condesation.
-
-# USAGE:   EnsembleCondense [-n \$numSimulations] [-c \$numComposition]
-#                           [-r \$numReactions] | [-help]
+#
+# USAGE:   ensembleCondense [-i \$inputFile] [-n \$numSimulations]
+#                           [-c \$numComposition] [-r \$numReactions] | [-help]
+#
+# The -i option can be used to specify the name of the input file (\$inputFile).
+#   If this option is not given then a default value of "ensemble.in" will be
+#   used.
+# The -n \$numSimulations option can be used to define the size of the ensemble
+#   by giving the number of simultaneous simulations (\$numSimulations). If
+#   this option is not provided, then a default value of 20 will be used.
+#############################################################################
 ENDHELP
+   exit(0);
 }
 
-############################################################
-# Begin program execution####################################
-############################################################
+###############################################
+# Begin program execution #####################
+###############################################
 
 # Use necessary modules.
 use strict;
@@ -31,10 +40,24 @@ use BondData;
 use AngleData;
 use File::Copy;
 
+
 # Declare Global Variables.
+my $inputFile; # Base input file for generating ensembles.
 my $numSimulations; # Number of the simulations to be run at a time.
-my $numComposition; # Number of atomic bond types.
+my $numCompositions; # Number of atomic bond types.
 my $numReactions; # Number of different types of reactions.
+my $numMoleculeTypes;
+my $numReactionTypes;
+my @numMolecules;
+my @moleculeName;
+my @bindingType;
+my $maxCellSize;
+my $minCellSize;
+my @rxnMolName;
+my @rxnBinding;
+my @rxnProbability;
+my $C = 0;
+
 
 # Initialize the environment.
 &initEnv;
@@ -45,11 +68,23 @@ my $numReactions; # Number of different types of reactions.
 # Read the main input file.
 &parseInputFile;
 
-# Error check the input for consistency.
-&errorCheckInput;
+## Error check the input for consistency.
+#&errorCheckInput;
 
-# Compute implicit information not explicitly given in the input file.
-&computeImplicitInput;
+## Compute implicit information not explicitly given in the input file.
+#&computeImplicitInput;
+
+# Generate initial ensemble.
+&initEnsemble;
+
+# Test parallelization.
+&runParallelCondense;
+
+# Start evolutionary algorithm.
+&evolveEnsemble;
+
+# Process the final output.
+&processResults;
 
 ###############################################
 # End program execution #######################
@@ -59,46 +94,70 @@ my $numReactions; # Number of different types of reactions.
 sub initEnv
 {
    # Define default values for command line parameters.
-   $numSimulations = 0;
+   $inputFile = "ensemble.in";
+   $numSimulations = 3;
    $numCompositions = 0;
    $numReactions = 0;
 }
 
 
 # Loop through the command line parameters checking for each option.
-
 sub parseCommandLine
 {
-   while ($numberSimulation < scalar(@ARGV))
+   # Define local variables.
+   my $number; # A simple counter for tracking which command line parameter we
+               #   are currently on during the search through @ARGV.
+   my $argument;
+
+
+   # Read the command line parameters.
+   $number = 0;
+   while ($number < scalar(@ARGV))
    {
       if ($ARGV[$number] eq "-help")
          {&printHelp;}
-      elsif ($ARGV[$numSimulations] eq "-n")
-         {$inputFile = $ARGV[++$numSimulations];}
+      elsif ($ARGV[$number] eq "-i")
+         {$inputFile = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-n")
+         {$numSimulations = $ARGV[++$number];}
       else
       {
          print STDOUT "UNKNOWN COMMAND LINE PARAMETER $ARGV[$number].";
          print STDOUT " ABORTING.\n";
          exit;
       }
-      $numberSimulation++;
+      $number++;
    }
+
+   # Record the command line used to run this job.
+   open (COMMANDLINE,">>command");
+   print COMMANDLINE "ensembleCondense ";
+   foreach $argument (0..$#ARGV)
+      {print COMMANDLINE "$ARGV[$argument] ";}
+   print COMMANDLINE "\n";
+   close (COMMANDLINE);
 }
 
 sub parseInputFile
 {
-   # Define local variables.
-   my $line;
-   my @value;
 
+   # Define local variables.
+   my $mol;
+   my $rxn;
+   my $line;
+   my @values;
+   my $sim;
+
+   $C = $minCellSize;
 
    # Open the input file.
-   open (INFILE,"<$inputFile'")
+   open (INFILE,"<$inputFile")
          || die "Cannot open $inputFile for reading. \n";
 
 
    #Read the input file.
    while ($line = <INFILE>)
+
    {
       @values = StructureControl::prepLine("",$line,'\s+');
 
@@ -117,8 +176,8 @@ sub parseInputFile
       }
       elsif (lc($values[0]) eq "cell_size")
       {
-         $maxCellSize = $values[1];
-         #$minCellSize = $values[2];
+         $minCellSize = $values[1];
+         $maxCellSize = $values[2];
       }
       elsif (lc($values[0]) eq "reactions")
       {
@@ -138,42 +197,71 @@ sub parseInputFile
             $rxnProbability[$rxn] = $values[4];
          }
       }
-      # Look for composition, reactions, cell size and probabilities
-      elsif (lc ($values[0]) eq "composition")
-      {}
    }
 }
-# Creating the files.
-foreach $numSim (1..$numSimulations);
-#$x = xi + (xf-xi)/$numSimul;
-#xi = $x;
+#composition 3
+#B10C2H12 B-1 6
+#CH4 C-1 2
+#CH3CH3 C-1 1
+#
+#cell_size $C
+#
+#reactions 3
+#B10C2H12 B-1 B10C2H12 B-1 0.85
+#B10C2H12 B-1 CH4 C-1 0.85
+#B10C2H12 B-1 CH3CH3 C-1 0.75
+
+sub initEnsemble
+{
+   # Define local variables.
+   my $sim;
+   my $C = $minCellSize;
+
+   foreach $sim (1..$numSimulations)
    {
-
-      mkdir $numSimul->[$element];
-      chdir $numSimul->[$element];
-      open (INP,">condense.in");
+      mkdir "$sim";
+      chdir "$sim";
+      open (INP,">condense.in") || die "Cannot open condense.in for writing.\n";
       print INP <<ENDINP;
-composition 3
-B10C2H12 B-1 6
+composition 1
 CH4 C-1 2
-CH3CH3 C-1 1
 
-cell_size 50.0
+cell_size $C
 
-reactions 3
-B10C2H12 B-1 B10C2H12 B-1 0.85
-B10C2H12 B-1 CH4 C-1 0.85
-B10C2H12 B-1 CH3CH3 C-1 0.75
-ENDINP 
-  chdir(..);
-END
+reactions 1
+CH4 C-1 CH4 C-1 0.85
+ENDINP
+     chdir("..");
+     $C += ($maxCellSize - $minCellSize)/($numSimulations-1);
+   }
+}
 
-#### Running Condense
+sub runParallelCondense
+{
+   # Define local variables.
+   my $sim;
 
-####foreach $numSim (1..$numSimulations);
-##{
-#chdir $numSimul->[$element];
-#run condense;
-#chdird(..);
-#End
-#}
+   foreach $sim (1..$numSimulations)
+   {
+      chdir ("$sim");
+      #system("srun -n1 condense &");
+      chdir ("..");
+   }
+   #wait();
+   foreach $sim (1..$numSimulations)
+   {
+      chdir ("$sim");
+   #   system("srun -n1 runLammps &");
+      chdir ("..");
+   }
+   #wait();
+}
+
+sub evolveEnsemble
+{
+}
+
+sub processResults
+{
+}
+
