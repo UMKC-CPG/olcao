@@ -616,7 +616,7 @@ sub readData
    {
       @values = StructureControl::prepLine("",$line,'\s');
       if ($values[0] eq "ELEMENT_NAME")
-         {$elementName[++count] = "$values[1]";}
+         {$elementName[++$count] = "$values[1]";}
    }
 
    close (DATA);

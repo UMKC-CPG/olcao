@@ -21,7 +21,7 @@ module O_Bond3C
       real (kind=double) :: distToAtom2
       real (kind=double), dimension (4) :: bondOrder3C ! Index 1 = BO between
             ! atoms 1,2; Index 2 = BO between atoms 1,3; Index 3 = BO between
-            ! atoms 2,3; INdex 4 = Total three center bond order.
+            ! atoms 2,3; Index 4 = Sum of two-center bond order s.
       real (kind=double), dimension (3) :: centroid ! Geometric centroid
       real (kind=double), dimension (3) :: bondCentroid ! Centroid weighted by
             ! the magnitudes of the BO between atom pairs.  (This should
@@ -109,7 +109,7 @@ subroutine computeBond3C
    real (kind=double) :: currentDistMag
    real (kind=double) :: expAlpha
    real (kind=double) :: expFactor
-   real (kind=double) :: chargeScaleFactor ! A # from 0-1 that scales
+   real (kind=double) :: chargeScaleFactor ! A number from 0-1 that scales
          ! contributions to the bondOrder according to the electron population
          ! in the current state.
    real (kind=double), dimension (2) :: currentMinDist
@@ -446,8 +446,7 @@ subroutine computeBond3C
             ! We have found a state with at least some electron population in
             !   it. The bond order calculation will be scale according to the
             !   amount of charge.
-            chargeScaleFactor = electronPopulation(orderedIndex) / &
-                  & (kPointWeight(i)/real(spin,double))
+            chargeScaleFactor = electronPopulation(orderedIndex)
 
             ! Loop across all atoms in the BO3C array and traverse the attached
             !   linked list data structure.
@@ -704,8 +703,8 @@ subroutine getMinDist (i,j,minDistCount,latticeIndices,minDist)
 end subroutine getMinDist
 
 
-subroutine compute3CBO (kPointWeight,spin,scaleFactor,j,index2Mag,index1,&
-      & index2,bondOrder3C,atomPairCode)
+subroutine compute3CBO (kPointWeight,spin,chargeScaleFactor,j,index2Mag,&
+      & index1,index2,bondOrder3C,atomPairCode)
 
    ! Import necessary modules.
    use O_Kinds
@@ -721,7 +720,7 @@ subroutine compute3CBO (kPointWeight,spin,scaleFactor,j,index2Mag,index1,&
    ! Define passed parameters.
    real (kind=double), intent (in) :: kPointWeight
    real (kind=double), intent (in) :: spin
-   real (kind=double), intent (in) :: scaleFactor
+   real (kind=double), intent (in) :: chargeScaleFactor
    integer, intent (in) :: j ! State index number
    integer, intent (in) :: index2Mag ! Magnitude of the valeDim index2 range
    integer, dimension (:), intent (in) :: index1 ! atom1 valeDim index range
@@ -765,9 +764,9 @@ subroutine compute3CBO (kPointWeight,spin,scaleFactor,j,index2Mag,index1,&
       ! Store the contribution to the atom pair bond order and the atom
       !   triplet bond order.
       bondOrder3C(atomPairCode) = bondOrder3C(atomPairCode) + &
-            & oneValeRealAccum * kPointWeight / spin * scaleFactor
+            & oneValeRealAccum * chargeScaleFactor
       bondOrder3C(4) = bondOrder3C(4) + &
-            & oneValeRealAccum * kPointWeight / spin * scaleFactor
+            & oneValeRealAccum * chargeScaleFactor
    enddo
 
 end subroutine compute3CBO
