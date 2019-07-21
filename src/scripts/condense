@@ -140,10 +140,8 @@ my $cellSize;
 my $numMoleculeTypes;
 my $numReactionTypes;
 my $numUniqueRxnMolPairs;
-my @uniqueRxnMolPairs;
 my $rxnTemplateDir;
 my @moleculeName;
-my @bindingType;
 my @numMolecules;
 my @numMolAtoms;
 my @atomMoleculeID;
@@ -166,9 +164,6 @@ my $precursorDB = "$OLCAO_DATA/precursorDB";
 
 # Read the main input file.
 &parseInputFile;
-
-# Error check the input for consistency.
-&errorCheckInput;
 
 # Compute implicit information not explictly given in the input file.
 &computeImplicitInput;
@@ -255,8 +250,7 @@ sub parseInputFile
          {
             @values = StructureControl::prepLine(\*INFILE,"",'\s+');
             $moleculeName[$mol] = lc($values[0]);
-            $bindingType[$mol] = lc($values[1]);
-            $numMolecules[$mol] = $values[2];
+            $numMolecules[$mol] = $values[1];
          }
       }
       elsif (lc($values[0]) eq "cell_size")
@@ -279,41 +273,6 @@ sub parseInputFile
             $rxnProbability[$rxn] = $values[4];
          }
       }
-   }
-}
-
-sub errorCheckInput
-{
-   # Define local variables.
-   my $rxn;
-   my $mol;
-   my $found;
-
-   # Make sure that each of the components of the reaction actually appears in
-   #   the list of molecules that should compose the condensation.
-   foreach $rxn (1..$numReactionTypes)
-   {
-      # Search for the first molecule+binding of this reaction.
-      $found = 0;
-      foreach $mol (1..$numMoleculeTypes)
-      {
-         if (($rxnMolName[1][$rxn] eq $moleculeName[$mol]) and
-             ($rxnBinding[1][$rxn] eq $bindingType[$mol]))
-            {$found = $mol;}
-      }
-      if ($found == 0)
-         {die "The first molecule+binding of reaction $rxn is not present.\n";}
-
-      # Search for the second molecule+binding of this reaction.
-      $found = 0;
-      foreach $mol (1..$numMoleculeTypes)
-      {
-         if (($rxnMolName[2][$rxn] eq $moleculeName[$mol]) and
-             ($rxnBinding[2][$rxn] eq $bindingType[$mol]))
-            {$found = $mol;}
-      }
-      if ($found == 0)
-         {die "The second molecule+binding of reaction $rxn is not present.\n";}
    }
 }
 
@@ -414,12 +373,8 @@ sub copyReactionTemplates
       {mkdir ("$rxnTemplateDir");}
    chdir ("$rxnTemplateDir");
 
-   # For each unique pair of molecules in the reaction list, copy the molecules
-   #   from the precursor database into a working directory and produce the set
-   #   of reaction templates. Once all reaction templates for a given pair of
-   #   precursor molecules has been made, then copy out the select subset of
-   #   reaction templates that are needed for this simulation and store them in
-   #   the reactionTemplates directory created above.
+   # For each reaction, copy the reaction templates and map files from the
+   #   precursor database.
    foreach $rxn (1..$numReactionTypes)
    {
       # Construct the name for the current reaction molecule pair ensuring
@@ -429,92 +384,137 @@ sub copyReactionTemplates
       else
          {$currRxnMolPair = "$rxnMolName[2][$rxn]__$rxnMolName[1][$rxn]";}
 
-      # Search for indentically named pairs of reaction molecules that have
-      #   previously been processed.
-      $found = 0;
-      foreach $rxnPair (1..$numUniqueRxnMolPairs)
+      # Check that the currMolRxnPair actually exists in the database.
+      if (! -d "$precursorDB/$currRxnMolPair")
+         {die "Unable to find $precursorDB/$currRxnMolPair.\n";}
+
+      # For the current reaction, grab the appropriate reaction templates
+      #   and store them in the collective $rxnTemplatesDir directory with
+      #   appropriate names to distinguish them.
+      $rxnBindingPair = $rxnBinding[1][$rxn] . "_" . $rxnBinding[2][$rxn];
+      $rxnMolBindingPair = $rxnMolName[1][$rxn] ."_". $rxnBinding[1][$rxn] .
+         "_" . $rxnMolName[2][$rxn] . "_" . $rxnBinding[2][$rxn];
+
+      # Copy all the pre- and post- template files.
+      foreach $letter (1..4)
       {
-         if ($currRxnMolPair eq $uniqueRxnMolPairs[$rxnPair])
-            {$found = $rxnPair; last;}
+         copy("$precursorDB/$currRxnMolPair/rxnTemplates/preRxn." .
+            "$rxnBindingPair.$phaseLetter[$letter].data",
+            "preRxn.$rxnMolBindingPair." .
+            "$phaseLetter[$letter].data");
+         copy("$precursorDB/$currRxnMolPair/rxnTemplates/postRxn." .
+            "$rxnBindingPair.$phaseLetter[$letter].data",
+            "postRxn.$rxnMolBindingPair." .
+            "$phaseLetter[$letter].data");
       }
 
-      # In the event that this pair has not been found before, we record the
-      #   fact that we have now found it and we copy the reaction templates.
-      if ($found == 0)
+      # Copy the map files.
+      foreach $letter (1..4)
       {
-         # Check that the currMolRxnPair actually exists in the database.
-         if (! -d "$precursorDB/$currRxnMolPair")
-            {die "Unable to find $precursorDB/$currRxnMolPair.\n";}
-
-         # Store the current (unique) reaction molecule pair.
-         $uniqueRxnMolPairs[++$numUniqueRxnMolPairs] = $currRxnMolPair;
-
-         # For the current reaction, grab the appropriate reaction templates
-         #   and store them in the collective $rxnTemplatesDir directory with
-         #   appropriate names to distinguish them.
-         $rxnBindingPair = $rxnBinding[1][$rxn] . "_" . $rxnBinding[2][$rxn];
-         $rxnMolBindingPair = $rxnMolName[1][$rxn] ."_". $rxnBinding[1][$rxn] .
-            "_" . $rxnMolName[2][$rxn] . "_" . $rxnBinding[2][$rxn];
-
-         # Copy all the pre- and post- template files.
-         foreach $letter (1..4)
-         {
-            copy("$precursorDB/$currRxnMolPair/rxnTemplates/preRxn." .
-               "$rxnBindingPair.$phaseLetter[$letter].data",
-               "preRxn.$rxnMolBindingPair." .
-               "$phaseLetter[$letter].data");
-            copy("$precursorDB/$currRxnMolPair/rxnTemplates/postRxn." .
-               "$rxnBindingPair.$phaseLetter[$letter].data",
-               "postRxn.$rxnMolBindingPair." .
-               "$phaseLetter[$letter].data");
-         }
-
-         # Copy the map files.
-         foreach $letter (1..4)
-         {
-            copy("$precursorDB/$currRxnMolPair/rxnTemplates/$rxnBindingPair.".
-               "$phaseLetter[$letter].map",
-               "$rxnMolBindingPair.$phaseLetter[$letter].map");
-         }
-
-#         # Copy the molecules from the precursor database.
-#         copy("$precursorDB/$rxnMolName[1][$rxn].skl",
-#            "$currRxnMolPair/olcao1.skl");
-#         copy("$precursorDB/$rxnMolName[2][$rxn].skl",
-#            "$currRxnMolPair/olcao2.skl");
-#
-#         # Enter the directory, make the reaction templates, and back out.
-#         chdir("$currRxnMolPair");
-#         system("makeReactions");
-#         chdir("..");
+         copy("$precursorDB/$currRxnMolPair/rxnTemplates/$rxnBindingPair.".
+            "$phaseLetter[$letter].map",
+            "$rxnMolBindingPair.$phaseLetter[$letter].map");
       }
-
-#      # For the current reaction, grab the appropriate reaction templates and
-#      #   store them in the collective $rxnTemplatesDir directory with
-#      #   appropriate names to distinguish them.
-#      $rxnBindingPair = $rxnBinding[1][$rxn] . "_" . $rxnBinding[2][$rxn];
-#      $rxnMolBindingPair = $rxnMolName[1][$rxn] . "_" . $rxnBinding[1][$rxn] .
-#         "_" . $rxnMolName[2][$rxn] . "_" . $rxnBinding[2][$rxn];
-#      foreach $letter (1..4)
-#      {
-#         copy("$currRxnMolPair/rxnTemplates/preRxn." .
-#            "$rxnBindingPair.$phaseLetter[$letter].data",
-#            "$rxnTemplateDir/preRxn.$rxnMolBindingPair." .
-#            "$phaseLetter[$letter].data");
-#         copy("$currRxnMolPair/rxnTemplates/postRxn." .
-#            "$rxnBindingPair.$phaseLetter[$letter].data",
-#            "$rxnTemplateDir/postRxn.$rxnMolBindingPair." .
-#            "$phaseLetter[$letter].data");
-#      }
-#
-#      # Copy the map files.
-#      foreach $letter (1..4)
-#      {
-#         copy("$currRxnMolPair/rxnTemplates/$rxnBindingPair.".
-#            "$phaseLetter[$letter].map","$rxnTemplateDir/$rxnMolBindingPair.".
-#            "$phaseLetter[$letter].map");
-#      }
    }
+
+#   # For each unique pair of molecules in the reaction list, copy the molecules
+#   #   from the precursor database into a working directory and produce the set
+#   #   of reaction templates. Once all reaction templates for a given pair of
+#   #   precursor molecules has been made, then copy out the select subset of
+#   #   reaction templates that are needed for this simulation and store them in
+#   #   the reactionTemplates directory created above.
+#   foreach $rxn (1..$numReactionTypes)
+#   {
+#      # Construct the name for the current reaction molecule pair ensuring
+#      #   that the name will be uniquely ordered.
+#      if ($rxnMolName[1][$rxn] lt $rxnMolName[2][$rxn])
+#         {$currRxnMolPair = "$rxnMolName[1][$rxn]__$rxnMolName[2][$rxn]";}
+#      else
+#         {$currRxnMolPair = "$rxnMolName[2][$rxn]__$rxnMolName[1][$rxn]";}
+#
+#      # Search for indentically named pairs of reaction molecules that have
+#      #   previously been processed.
+#      $found = 0;
+#      foreach $rxnPair (1..$numUniqueRxnMolPairs)
+#      {
+#         if ($currRxnMolPair eq $uniqueRxnMolPairs[$rxnPair])
+#            {$found = $rxnPair; last;}
+#      }
+#
+#      # In the event that this pair has not been found before, we record the
+#      #   fact that we have now found it and we copy the reaction templates.
+#      if ($found == 0)
+#      {
+#         # Check that the currMolRxnPair actually exists in the database.
+#         if (! -d "$precursorDB/$currRxnMolPair")
+#            {die "Unable to find $precursorDB/$currRxnMolPair.\n";}
+#
+#         # For the current reaction, grab the appropriate reaction templates
+#         #   and store them in the collective $rxnTemplatesDir directory with
+#         #   appropriate names to distinguish them.
+#         $rxnBindingPair = $rxnBinding[1][$rxn] . "_" . $rxnBinding[2][$rxn];
+#         $rxnMolBindingPair = $rxnMolName[1][$rxn] ."_". $rxnBinding[1][$rxn] .
+#            "_" . $rxnMolName[2][$rxn] . "_" . $rxnBinding[2][$rxn];
+#
+#         # Copy all the pre- and post- template files.
+#         foreach $letter (1..4)
+#         {
+#            copy("$precursorDB/$currRxnMolPair/rxnTemplates/preRxn." .
+#               "$rxnBindingPair.$phaseLetter[$letter].data",
+#               "preRxn.$rxnMolBindingPair." .
+#               "$phaseLetter[$letter].data");
+#            copy("$precursorDB/$currRxnMolPair/rxnTemplates/postRxn." .
+#               "$rxnBindingPair.$phaseLetter[$letter].data",
+#               "postRxn.$rxnMolBindingPair." .
+#               "$phaseLetter[$letter].data");
+#         }
+#
+#         # Copy the map files.
+#         foreach $letter (1..4)
+#         {
+#            copy("$precursorDB/$currRxnMolPair/rxnTemplates/$rxnBindingPair.".
+#               "$phaseLetter[$letter].map",
+#               "$rxnMolBindingPair.$phaseLetter[$letter].map");
+#         }
+#
+##         # Copy the molecules from the precursor database.
+##         copy("$precursorDB/$rxnMolName[1][$rxn].skl",
+##            "$currRxnMolPair/olcao1.skl");
+##         copy("$precursorDB/$rxnMolName[2][$rxn].skl",
+##            "$currRxnMolPair/olcao2.skl");
+##
+##         # Enter the directory, make the reaction templates, and back out.
+##         chdir("$currRxnMolPair");
+##         system("makeReactions");
+##         chdir("..");
+#      }
+#
+##      # For the current reaction, grab the appropriate reaction templates and
+##      #   store them in the collective $rxnTemplatesDir directory with
+##      #   appropriate names to distinguish them.
+##      $rxnBindingPair = $rxnBinding[1][$rxn] . "_" . $rxnBinding[2][$rxn];
+##      $rxnMolBindingPair = $rxnMolName[1][$rxn] . "_" . $rxnBinding[1][$rxn] .
+##         "_" . $rxnMolName[2][$rxn] . "_" . $rxnBinding[2][$rxn];
+##      foreach $letter (1..4)
+##      {
+##         copy("$currRxnMolPair/rxnTemplates/preRxn." .
+##            "$rxnBindingPair.$phaseLetter[$letter].data",
+##            "$rxnTemplateDir/preRxn.$rxnMolBindingPair." .
+##            "$phaseLetter[$letter].data");
+##         copy("$currRxnMolPair/rxnTemplates/postRxn." .
+##            "$rxnBindingPair.$phaseLetter[$letter].data",
+##            "$rxnTemplateDir/postRxn.$rxnMolBindingPair." .
+##            "$phaseLetter[$letter].data");
+##      }
+##
+##      # Copy the map files.
+##      foreach $letter (1..4)
+##      {
+##         copy("$currRxnMolPair/rxnTemplates/$rxnBindingPair.".
+##            "$phaseLetter[$letter].map","$rxnTemplateDir/$rxnMolBindingPair.".
+##            "$phaseLetter[$letter].map");
+##      }
+#   }
    chdir ("..");
 }
 
@@ -798,13 +798,16 @@ sub createLAMMPSFiles
 
             $orderedSpeciesPairCoeffs[$species][2] =
                $ljPairCoeffs_ref->[$atomicZ_ref->[$atom]][2];
+
+            # Quit now that we found it.
+            last;
          }
       }
 
       foreach $bond (1..$numBonds_ref->[$atom])
       {
          # Determine if this bond has been counted already. If so, then skip to
-         #   the next bond.
+         #   the next bond. We only count each bond once.
          if ($atom > $bonded_ref->[$atom][$bond])
             {next;}
 
@@ -812,10 +815,19 @@ sub createLAMMPSFiles
          $bondCount++;
 
          # Get the current tag for this bond and then extract the atomic
-         #   Z number for the atom bonded to $atom.
+         #   Z numbers for both the $atom and the atom bonded to $atom.
          $currentTag = $uniqueBondTags_ref->[$bondTagID_ref->[$atom][$bond]];
-         $atom1Z = $atomicZ_ref->[$atom];
          @values = StructureControl::prepLine("",$currentTag,'\s+');
+
+         # Extract the Z numbers by search because the tag was alphabetized so
+         #   that there is no guarentee that the first part of the tag
+         #   corresponds to $atom.
+         @values2 = StructureControl::prepLine("",$values[0],'[0-9]+');
+         foreach $element (1..$numPeriodicElements)
+         {
+            if ("$values2[0]" eq "$elementNames_ref->[$element]")
+               {$atom1Z = $element; last;}
+         }
          @values2 = StructureControl::prepLine("",$values[1],'[0-9]+');
          foreach $element (1..$numPeriodicElements)
          {
@@ -835,10 +847,14 @@ sub createLAMMPSFiles
          # Collect the coefficients for each of the unique bond types.
          foreach $hookeBond (1..$numHookeBonds)
          {
-            if ((($atom1Z == $hookeBondCoeffs_ref->[$hookeBond][1]) and
-                 ($atom2Z == $hookeBondCoeffs_ref->[$hookeBond][2])) or
-                (($atom2Z == $hookeBondCoeffs_ref->[$hookeBond][1]) and
-                 ($atom1Z == $hookeBondCoeffs_ref->[$hookeBond][2])))
+#            if ((($atom1Z == $hookeBondCoeffs_ref->[$hookeBond][1]) and
+#                 ($atom2Z == $hookeBondCoeffs_ref->[$hookeBond][2])) or
+#                (($atom2Z == $hookeBondCoeffs_ref->[$hookeBond][1]) and
+#                 ($atom1Z == $hookeBondCoeffs_ref->[$hookeBond][2])))
+            # This should be possible if the bonds.dat file always has the
+            #   lower Z number atom listed first.
+            if (($atom1Z == $hookeBondCoeffs_ref->[$hookeBond][1]) and
+                ($atom2Z == $hookeBondCoeffs_ref->[$hookeBond][2]))
             {
                $uniqueBondCoeffs[$bondTagID_ref->[$atom][$bond]][1] =
                   $hookeBondCoeffs_ref->[$hookeBond][3];
@@ -858,16 +874,24 @@ sub createLAMMPSFiles
          $angleCount++;
 
          # Get the current tag for this bond angle and then extract the atomic
-         #   Z numbers for the non-vertex atoms.
+         #   Z numbers for the vertex atom and the non-vertex atoms.
          $currentTag =
             $uniqueAngleTags_ref->[$angleTagID_ref->[$atom][$angle]];
-         $atom1Z = $atomicZ_ref->[$atom];
          @values = StructureControl::prepLine("",$currentTag,'\s+');
+
+         # Extract the Z numbers by search. (Probably the middle part can be
+         #   directly extracted because it should always correspond to $atom.
          @values2 = StructureControl::prepLine("",$values[0],'[0-9]+');
          foreach $element (1..$numPeriodicElements)
          {
             if ("$values2[0]" eq "$elementNames_ref->[$element]")
                {$atom0Z = $element; last;}
+         }
+         @values2 = StructureControl::prepLine("",$values[1],'[0-9]+');
+         foreach $element (1..$numPeriodicElements)
+         {
+            if ("$values2[0]" eq "$elementNames_ref->[$element]")
+               {$atom1Z = $element; last;}
          }
 
          @values2 = StructureControl::prepLine("",$values[2],'[0-9]+');
@@ -917,7 +941,7 @@ sub createLAMMPSFiles
    print LMPDAT "$numOrderedSpecies atom types\n";
    print LMPDAT "$numUniqueBondTags bond types\n";
    print LMPDAT "$numUniqueAngleTags angle types\n\n";
-   print LMPDAT "1 extra bond per atom\n";
+#   print LMPDAT "1 extra bond per atom\n";
    print LMPDAT "0.000 $cellSize xlo xhi\n";
    print LMPDAT "0.000 $cellSize ylo yhi\n";
    print LMPDAT "0.000 $cellSize zlo zhi\n\n";
@@ -983,7 +1007,7 @@ sub createLAMMPSFiles
       #   Note that the assumption is that all atoms of the same molecule
       #   appear next to each other in the list of atoms. Otherwise this does
       #   not work.
-      $maxVelocity = 2.5;
+      $maxVelocity = 0.5;
       if ($atomMoleculeID[$atom] != $currentMol)
       {
          foreach $axis (1..3)
@@ -1178,7 +1202,7 @@ ENDLAMMPSTAIL
 #
 export OMP_NUM_THREADS=1
 cd $lmpDir
-srun $HOME/bin/lmp_mpi < lammps.in
+mpirun $HOME/bin/lmp_mpi < lammps.in
 
 ENDSLURM
 
@@ -1203,6 +1227,7 @@ sub normalizeBondTypes
    my $bond;
    my $atom;
    my $mol;
+   my $bondTag;
    my $uniqueBond;
    my @uniqueBondTypes;
    my $numUniqueBonds;
@@ -1397,12 +1422,24 @@ sub normalizeBondTypes
             @values = StructureControl::prepLine("",
                "$lammpsFile[++$lineNum]",'\s+');
 
+            # Each bond line has a form like: 14 2 21 33 # si1 n2 with meaning:
+            #   Bond number = 14; bond type = 2; bond is between atoms 21 & 33.
+            #   Atom 21 is silicon type 1 and atom 33 is nitrogen type 2.
+            # We need to make an alphabetized bondTag like "n2 si1" because all
+            #   of the uniqueBonds are alphabetized.
+            if ("$values[5]" gt "$values[6]")
+               {$bondTag = "$values[6] $values[5]";}
+            else
+               {$bondTag = "$values[5] $values[6]";}
+
             foreach $uniqueBond (1..$numUniqueBonds)
             {
-               if (($values[5] eq $uniqueBondTypes[$uniqueBond][1]) and
-                   ($values[6] eq $uniqueBondTypes[$uniqueBond][2]))
+               if ((($values[5] eq $uniqueBondTypes[$uniqueBond][1]) and
+                    ($values[6] eq $uniqueBondTypes[$uniqueBond][2])) or
+                   (($values[5] eq $uniqueBondTypes[$uniqueBond][2]) and
+                    ($values[6] eq $uniqueBondTypes[$uniqueBond][1])))
                   {print LMP "$bond $uniqueBond $values[2] $values[3] " .
-                     "$values[4] $values[5] $values[6]\n"; last;}
+                     "$values[4] $bondTag\n"; last;}
             }
          }
          $lineNum++;
@@ -1449,13 +1486,22 @@ sub normalizeBondTypes
                @values = StructureControl::prepLine("","$molFile[++$lineNum]",
                   '\s+');
 
+               # As before for the main LAMMPS data file, we will need to
+               #   use alphabetized tags.
+               if ("$values[5]" gt "$values[6]")
+                  {$bondTag = "$values[6] $values[5]";}
+               else
+                  {$bondTag = "$values[5] $values[6]";}
+
                # Determine what type of bond this is from the unique list.
                foreach $uniqueBond (1..$numUniqueBonds)
                {
-                  if (("$uniqueBondTypes[$uniqueBond][1]" eq "$values[5]") and
-                      ("$uniqueBondTypes[$uniqueBond][2]" eq "$values[6]"))
+                  if ((("$uniqueBondTypes[$uniqueBond][1]" eq "$values[5]") and
+                       ("$uniqueBondTypes[$uniqueBond][2]" eq "$values[6]")) or
+                      (("$uniqueBondTypes[$uniqueBond][2]" eq "$values[5]") and
+                       ("$uniqueBondTypes[$uniqueBond][1]" eq "$values[6]")))
                      {print MOL "$bond $uniqueBond $values[2] $values[3] " .
-                        "$values[4] $values[5] $values[6]\n"; last;}
+                        "$values[4] $bondTag\n"; last;}
                }
             }
          }
