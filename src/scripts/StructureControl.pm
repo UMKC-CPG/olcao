@@ -4631,7 +4631,7 @@ sub printOLCAO
                $fractABC[$atom][1],$fractABC[$atom][2],$fractABC[$atom][3];
       }
    }
-   else
+   else # Cartesian
    {
       foreach $atom (1..$numAtoms)
       {
@@ -5524,6 +5524,7 @@ sub mapExtToCentral
 #   items with the accompanying tag and space restrictions.
 # Case #4 is used for the bond orientational order calculation.  This is not
 #   usable at the moment.
+# Case #5 computes distances between points in a scan line and atomic positions.
 sub obtainAtomicInteraction
 {
    # Define passed parameters.
@@ -5585,7 +5586,7 @@ sub obtainAtomicInteraction
             {$diff[$axis]=$item1XYZ_ref->[$item1][$axis] -
                           $item2XYZ_ref->[$item2][$axis];}
 
-         # Calculate the direct distance between the two atoms.
+         # Calculate the direct distance between the two items.
          $distance = Cdistance($limitDistSqrd,$limitDist,
                $item1XYZ_ref->[$item1][1],$item1XYZ_ref->[$item1][2],
                $item1XYZ_ref->[$item1][3],$item2XYZ_ref->[$item2][1],
@@ -5595,12 +5596,15 @@ sub obtainAtomicInteraction
 #                          $diff[2]*$diff[2] +
 #                          $diff[3]*$diff[3]);
 
-# Why is this here? FIX by adding appropriate documentation.
-if ($distance == $bigReal)
-   {next;}
+         # In the event that the distance between the two items is judged to
+         #   be beyond a set "limitDist" then the Cdistance subroutine will
+         #   return a quantity equal to $bigReal. Thus, this interaction datum
+         #   should not be recorded.
+         if ($distance == $bigReal)
+            {next;}
 
          # Record the requested information based on these relative
-         #   spherical coordinates, atom numbers, and interaction type.
+         #   spherical coordinates, item numbers, and interaction type.
          &recordInteractionData($interactionType,$distance,\@diff,
                $item1,$item2);
       }
