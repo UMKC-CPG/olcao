@@ -153,8 +153,10 @@ subroutine makeValenceRho
    do i = 1, numKPoints
 
       ! Initialize space to read the wave functions.  Note that this matrix is
-      !   a double complex matric because the wave function data contains both
-      !   real and imaginary parts and has no symmetry.
+      !   a double complex matrix because the wave function data contains both
+      !   real and imaginary parts and has no symmetry that might permit
+      !   packing or use of triangular form (if it were a Hermitian matrix
+      !   instead).
       ! Note that it is only necessary to go through the initialization action
       !   if there are more than 1 kpoint.  For the 1 kpoint case, the valeVale
       !   matrix was not changed so it can still be used here.  Also note
@@ -384,7 +386,8 @@ subroutine makeValenceRho
             & kineticEnergyTrace(1) + nucPotTrace(1)
 
 
-      ! Write the two electron numbers (energy, and ???)
+      ! Write the two electron numbers (both are energy values, but they
+      !   are computed through different means.)
       write (20,fmt='(a17,f18.8)') 'Electron Energy = ',electronEnergy(1)
       write (20,fmt='(a17,f18.8)') 'Electron Sum    = ',sumElecEnergy
    else

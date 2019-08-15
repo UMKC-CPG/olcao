@@ -182,14 +182,14 @@ $line = <SYBDRAW>;
 @TempArray1 = split (/ +/,$line);
 $NumKPoints=$TempArray1[1];
 $NumStates=$TempArray1[2];
-if (int($NumStates/10) < $NumStates/10)
-   {$NumStates=(int($NumStates/10)+1)*10;}
+if (int($NumStates/11) < $NumStates/11)
+   {$NumStates=(int($NumStates/11)+1)*11;}
 for ($i=0;$i<$NumKPoints;$i++)
 {
    $line = <SYBDRAW>;
    chomp $line;
    print SYBDFINAL "$line";
-   for ($j=1;$j<=$NumStates/10;$j++)
+   for ($j=1;$j<=$NumStates/11;$j++)
    {
       $line = <SYBDRAW>;
       chomp ($line);

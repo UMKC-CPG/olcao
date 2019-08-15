@@ -1100,6 +1100,7 @@ sub readPDB
    my $recordName;
    my $found;
    my @values;
+   my @values2;
    my $explicitABC;
    my $axis;
    my $atom;
@@ -1172,24 +1173,28 @@ sub readPDB
          #   name + species number combination. First we need to get rid of
          #   the leading spaces and trailing spaces from the tempTag before
          #   we store it in the pdbAtomTag.
-         @values = split(/\s+/,$tempTag); # Get rid of trailing spaces.
-         if ($values[0] eq "") # Get rid of leading spaces (if any).
-            {shift @values;}
-         $pdbAtomTag[$numAtoms] = shift @values;
+         @values = &prepLine("",$tempTag,'\s+');
+         $pdbAtomTag[$numAtoms] = $values[0];
 
          # Now, if the element symbol is provided on this ATOM line of the PDB
          #   file, then we get that name and use it to construct the atomTag.
+         #   This is the preferred way to specify the element for this atom.
          #   If the element symbol is *not* provided, then we make a guess as
          #   to the element name on the basis of the pdbAtomTag. Essentially,
-         #   we will only guess correctly if the element symbol is one
-         #   character. We will fail if it is two characters. I'm not sure at
-         #   this point about how to fix this issue.
-         $element = lc(substr($line,76,2,"12"));
+         #   if we have to guess, then we will only be certain to guess
+         #   correctly if the element symbol is one character. We will fail if
+         #   it is two characters. I'm not sure at this point about how to fix
+         #   this issue.
+         if (length($line) >= 77)
+            {$element = lc(substr($line,76,2,"12"));}
+         else
+            {$element = "";}
          chomp ($element);
          if ($element ne "")
          {
-            @values = split(/\s+/,$element); # Get rid of leading spaces.
-            $atomElementName[$numAtoms] = $values[$#values];
+            @values = &prepLine("",$element,'\s+'); # Get rid of spaces.
+            @values2 = &prepLine("",$values[0],'[0-9]'); # Get rid of numbers.
+            $atomElementName[$numAtoms] = $values2[0];
          }
          else # Or get the element name from the pdbAtomTag.
          {
@@ -1269,10 +1274,7 @@ sub readPDB
          foreach $species (1..$numSpecies[$currElementID])
          {
             if ($pdbAtomTag[$atom] eq $pdbSpeciesList[$currElementID][$species])
-            {
-               $found = $species;
-               last;
-            }
+               {$found = $species; last;}
          }
 
          if ($found == 0)
@@ -2176,11 +2178,15 @@ sub readBondAnalysisBA
          # Round the bond angle to the nearest integer or half-integer. Take
          #   special note of the different arrangement of parenthesis in the
          #   rounding "int" call.
-         $decimal = &remainder(1,$values[$#values]);
-         if (($decimal < 0.75) or ($decimal > 0.25))
-            {$currentBondAngle = int($values[$#values]) + 0.5;}
+         $decimal = ($values[$#values] - int($values[$#values]));
+         if ($decimal > 0.75)
+            {$currentBondAngle = int($values[$#values])+1.0;}
+         elsif ($decimal > 0.5)
+            {$currentBondAngle = int($values[$#values])+0.5;}
+         elsif ($decimal > 0.25)
+            {$currentBondAngle = int($values[$#values])+0.5;}
          else
-            {$currentBondAngle = int($values[$#values] + 0.5);}
+            {$currentBondAngle = int($values[$#values]);}
          $bondAnglesExt[$atomNumber][$angle] = $currentBondAngle;
 
          # Classify the bond angle type as a unique element species combination
@@ -6898,6 +6904,56 @@ sub prepLine
    return @values;
 }
 
+sub findNumber
+{
+   # Define passed parameters.
+   my $itemToFind = $_[0];
+   my $array = $_[1];
+   my $startIndex = $_[2];
+   my $endIndex = $_[3];
+
+   # Define local variables.
+   my $arrayIndex;
+   my $found;
+
+   # Assume that the item will not be found in the array.
+   $found = 0;
+
+   # Search the array for the item.
+   foreach $arrayIndex ($startIndex..$endIndex)
+   {
+      if ($array->[$arrayIndex] == $itemToFind)
+         {$found = $arrayIndex; last;}
+   }
+
+   return $found;
+}
+
+sub findString
+{
+   # Define passed parameters.
+   my $itemToFind = $_[0];
+   my $array = $_[1];
+   my $startIndex = $_[2];
+   my $endIndex = $_[3];
+
+   # Define local variables.
+   my $arrayIndex;
+   my $found;
+
+   # Assume that the item will not be found in the array.
+   $found = 0;
+
+   # Search the array for the item.
+   foreach $arrayIndex ($startIndex..$endIndex)
+   {
+      if ($array->[$arrayIndex] eq $itemToFind)
+         {$found = $arrayIndex; last;}
+   }
+
+   return $found;
+}
+
 sub remainder
 {
    # Define passed parameters.
@@ -6905,7 +6961,8 @@ sub remainder
    my $num2 = $_[1];
 
    # Compute and return the remainder.
-   return (($num1/$num2) - int($num1/$num2));
+#   return (($num1/$num2) - int($num1/$num2));
+   return ($num2 - int($num2));
 }
 
 

@@ -109,7 +109,7 @@ sub prepLine
 sub getNumHookeAngles
    {return $numHookeAngles;}
 
-sub getHookeAngleCoeffs
+sub getHookeAngleCoeffsRef
    {return \@hookeAngleCoeffs;}
 
 1;
