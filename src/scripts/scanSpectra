@@ -293,6 +293,8 @@ sub formAndPrintSpectra
    my $fileName;
    my $spacePoint;
    my $atom;
+   my $column;
+   my $found;
    my @spectra;
    my @totalSpectra;
    my @allLineSpectra;
@@ -320,35 +322,74 @@ sub formAndPrintSpectra
    $sigma = 1.0 / (2.0*sqrt(2.0*log(2.0)) / $gaussianFWHM);
    $alpha = 1/(2.0*$sigma*$sigma);
 
+   if ($doPDOS == 1)
+   {
+      open(PDOS,"<$pdosFileName") || die "Cannot open PDOS. Stopping\n";
+      @spectra = <PDOS>;
+      $columnLabels = shift(@spectra);
+      @values = StructureControl::prepLine("",$columnLabels,'\s+');
+      $numPdosAtoms = $#values;
+      foreach $column (1..$numPdosAtoms)
+      {
+         @values2 = StructureControl::prepLine("",$values[$column],'_');
+         $pdosAtomNumberList[$column] = $values2[1];
+      }
+   }
+
    # Begin by opening each atom file and obtaining necessary information.
    foreach $atom (1..$numAtoms)
    {
-      # Abort this atom if it is not the correct element.
-      if ($atomElementName_ref->[$atom] ne $element)
-         {next;}
+      if ($doPDOS == 0)
+      {
+         # Abort this atom if it is not the correct element.
+         if ($atomElementName_ref->[$atom] ne $element)
+            {next;}
 
-      $fileName = "norms/".$element."-".$edge."/".$element.
-            $atomSpeciesID_ref->[$atom]."_".$atom."-".$edge.".norm";
-      open (XAS,"<$fileName") || die "Cannot open $fileName for reading.\n";
+         $fileName = "norms/".$element."-".$edge."/".$element.
+               $atomSpeciesID_ref->[$atom]."_".$atom."-".$edge.".norm";
+         open (XAS,"<$fileName") || die "Cannot open $fileName for reading.\n";
 
-      # Read the normalized spectra.  Columns given as 1=energy, 2=total,
-      #   3=x, 4=y, 5=z.
-      @spectra = <XAS>;
+         # Read the normalized spectra.  Columns given as 1=energy, 2=total,
+         #   3=x, 4=y, 5=z.
+         @spectra = <XAS>;
+      }
+      else
+      {
+         $found = 0;
+         foreach $column (1..$numPdosAtoms)
+         {
+            if ($atom == $pdosAtomNumberList[$column])
+               {$found = $column; last;}
+         }
+         if ($found == 0)
+            {next;}
+         else
+            {$pdosAtomColumn = $found;}
+      }
 
       # Get the number of energy points.
       $numEnergyPoints = scalar @spectra;
 
-      # Get the initial energy value.
-      @values = split(/\s+/,$spectra[0]);
-      if ($values[0] eq "")
-         {shift @values;}
-      $initialEnergy = $values[0];
+      # Get the initial and final energy values.
+      if ($doPDOS == 0)
+      {
+         # Get the initial energy value.
+         @values = split(/\s+/,$spectra[0]);
+         if ($values[0] eq "")
+            {shift @values;}
+         $initialEnergy = $values[0];
 
-      # Get the final energy value.
-      @values = split(/\s+/,$spectra[$#spectra]);
-      if ($values[0] eq "")
-         {shift @values;}
-      $finalEnergy = $values[0];
+         # Get the final energy value.
+         @values = split(/\s+/,$spectra[$#spectra]);
+         if ($values[0] eq "")
+            {shift @values;}
+         $finalEnergy = $values[0];
+      }
+      else
+      {
+         $initialEnergy = $minEnergy;
+         $finalEnergy = $maxEnergy;
+      }
 
       # Compute the energy delta.
       $energyDelta = ($finalEnergy - $initialEnergy) / ($numEnergyPoints-1);
@@ -359,11 +400,15 @@ sub formAndPrintSpectra
          @values = split(/\s+/,$spectra[$energyPoint]);
          if ($values[0] eq "")
             {shift @values;}
-         $totalSpectra[$atom][$energyPoint] = $values[1];
+         if ($doPDOS == 0)
+            {$totalSpectra[$atom][$energyPoint] = $values[1];}
+         else
+            {$totalSpectra[$atom][$energyPoint] = $values[$pdosAtomColumn];}
       }
 
       # Close the file.
-      close (XAS);
+      if ($doPDOS == 0)
+         {close (XAS);}
    }
 
    # Print the header.

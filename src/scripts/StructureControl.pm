@@ -177,7 +177,7 @@ my @bondAnglesExt;# List of bond angle values and extended cell bonded pair
                   # atom numbers for each atom in the central cell.
 my @numBondAngles;# Number of bond angles for each central cell atom.
 my $numBondsTotal;# Number of bonds in the entire system.
-my @bondTagID;    # Defines the unique ID group each bond belongs to.
+my @bondTagID;    # Defines which unique ID group each bond belongs to.
 my $numUniqueBondTags; # Num unique bonds (sorted lower to higher alphanumeric)
 my @uniqueBondTags; # The list of unique tags for all bonds.
 my $numAnglesTotal; # Number of bond angles in the entire system.
@@ -197,6 +197,7 @@ my $scanElement="";
 my $numScanPoints;
 my @scanPoints;
 my @extScanDist;
+my @extPoreMap;
 
 # Define the functions that return needed variables or, in the case of arrays,
 #   references to needed variables.
@@ -383,6 +384,9 @@ sub getUniqueAngleTagsRef
 sub getExtScanDistRef
    {return \@extScanDist;}
 
+sub getExtPoreMapRef
+   {return \@extPoreMap;}
+
 sub getQOrderRef
    {return \@qOrder;}
 
@@ -477,6 +481,31 @@ sub setRPDFSelectAtoms
 
 sub setYlm_l
    {$Ylm_l = $_[0];}
+
+sub setXYZMeshPoints
+{
+   # Declare passed parameters.
+   my @numMeshPoints;
+
+   $numMeshPoints[1] = $_[0];
+   $numMeshPoints[2] = $_[1];
+   $numMeshPoints[3] = $_[2];
+   
+   # Declare local variables.
+   my $xPoint;
+   my $yPoint;
+   my $zPoint;
+
+   # Initialize all points of the pore map to zero
+   foreach $xPoint (1..$numMeshPoints[1])
+   {
+      foreach $yPoint (1..$numMeshPoints[2])
+      {
+         foreach $zPoint (1..$numMeshPoints[3])
+            {$extPoreMap[$xPoint][$yPoint][$zPoint] = 0;}
+      }
+   }
+}
 
 sub setScanPoints
 {
@@ -690,6 +719,7 @@ sub reset
    undef $numScanPoints;
    undef @scanPoints;
    undef @extScanDist;
+   undef @extPoreMap;
 }
 
 
@@ -3943,14 +3973,34 @@ sub translateAtoms
    my $atom;
    my $axis;
 
-   foreach $atom (1..$numAtoms)
+   # If the translation request uses the special 0 0 0 designation, then shift
+   #   the atoms to the center of the cell. Otherwise, shift that atoms
+   #   according to the requested translation.
+   if (($translation_ref->[1] == 0) && ($translation_ref->[2] == 0) &&
+       ($translation_ref->[3] == 0))
    {
-      foreach $axis (1..3)
-         {$directXYZ[$atom][$axis] += $translation_ref->[$axis];}
+      # Find the center and then shift the atoms to the center.
+      &getMinMaxXYZ;
+      &shiftXYZCenter;
 
       # Convert to direct a,b,c and then to fractional a,b,c.
-      &getDirectABC($atom);
-      &getFractABC($atom);
+      foreach $atom (1..$numAtoms)
+      {
+         &getDirectABC($atom);
+         &getFractABC($atom);
+      }
+   }
+   else
+   {
+      foreach $atom (1..$numAtoms)
+      {
+         foreach $axis (1..3)
+            {$directXYZ[$atom][$axis] += $translation_ref->[$axis];}
+
+         # Convert to direct a,b,c and then to fractional a,b,c.
+         &getDirectABC($atom);
+         &getFractABC($atom);
+      }
    }
 
    # Make sure that all atoms are inside the simulation box.
@@ -5176,6 +5226,94 @@ sub createBondingList
    &mapExtToCentral;
 }
 
+sub computePoreMap
+{
+   # Define passed parameters.
+   my $resolution_ref = $_[0]; # Step size in angstroms x,y,z (not abc yet).
+   my $numMeshPoints_ref = $_[1]; # In each x,y,z direction (not abc yet).
+
+   # Declare local variables.
+   my @indexNum;
+   my $axis;
+   my $atom;
+   my $xPoint;
+   my $yPoint;
+   my $zPoint;
+   my $currCovalRadiusSqrd;
+   my @miniCubeSize; # Circumscribes a sphere of size equal to the coval rad.
+   my $distanceSqrd;
+
+   # Determine the number of cells in each direction needed to account for all
+   #   intercell interactions.
+   &computeNumCells($numAtoms,\@fractABC,\@negBit,\@posBit);
+
+   # Compute the position of each atom in each of the non-origin cells where
+   #   it is needed because it interacts with an atom in the origin cell.
+   $numAtomsExt = &computeExtendedPos(\@negBit,\@posBit,$numAtoms,
+         $numAtomsExt,\@fractABC,\@central2ExtItemMap,\@ext2CentralItemMap,
+         \@extDirectXYZ,\@extDirectXYZList,\@extFractABCList);
+
+   # For each atom, visit its coordinate and fill in the pore map that
+   #   surrounds it within a scaled distance of the colavent radius with "1"s.
+   foreach $atom (1..$numAtomsExt)
+   {
+      # Get the already scaled covalent radius for this atom.
+      $currCovalRadiusSqrd =
+         ($covalRadii_ref->[$atomicZ[$ext2CentralItemMap[$atom]]])**2;
+
+      # Find the closest positional index numbers in the pore map to the atom
+      #   site.
+      foreach $axis (1..3) 
+      {
+         # Round the ratio of the position in angstroms over the resolution.
+         $indexNum[$axis]
+            = int($extDirectXYZList[$atom][$axis]/$resolution_ref->[$axis]);
+
+         # Compute the exact size of the mini cube for this atom.
+         $miniCubeSize[$axis] = sqrt($currCovalRadiusSqrd)
+               / $resolution_ref->[$axis];
+
+         # Round the minicube size to find grid positions.
+         if (($miniCubeSize[$axis] - int($miniCubeSize[$axis])) > 0.5)
+            {$miniCubeSize[$axis] = int($miniCubeSize[$axis]) + 1;}
+         else
+            {$miniCubeSize[$axis] = int($miniCubeSize[$axis]);}
+      }
+
+      # Triple loop over x,y,z of minicube dimensions without indentation.
+      foreach $xPoint (($indexNum[1]-$miniCubeSize[1])
+                     ..($indexNum[1]+$miniCubeSize[1]))
+      {
+         # Only consider mesh points inside the central system cell.
+         if (($xPoint < 1) or ($xPoint > $numMeshPoints_ref->[1]))
+            {next;}
+      foreach $yPoint (($indexNum[2]-$miniCubeSize[2])
+                     ..($indexNum[2]+$miniCubeSize[2]))
+      {
+         # Only consider mesh points inside the central system cell.
+         if (($yPoint < 1) or ($yPoint > $numMeshPoints_ref->[2]))
+            {next;}
+      foreach $zPoint (($indexNum[3]-$miniCubeSize[3])
+                     ..($indexNum[3]+$miniCubeSize[3]))
+      {
+         # Only consider mesh points inside the central system cell.
+         if (($zPoint < 1) or ($zPoint > $numMeshPoints_ref->[3]))
+            {next;}
+
+         # Compute the square of the exact distance between this mesh
+         #   point and the atom.
+         $distanceSqrd = CdistanceSqrd($limitDistSqrd,$limitDist,
+            $extDirectXYZList[$atom][1],$extDirectXYZList[$atom][2],
+            $extDirectXYZList[$atom][3],$xPoint*$resolution_ref->[1],
+            $yPoint*$resolution_ref->[2],$zPoint*$resolution_ref->[3]);
+         
+         if ($distanceSqrd < $currCovalRadiusSqrd)
+            {$extPoreMap[$xPoint][$yPoint][$zPoint] = 1;}
+      }
+      }
+      }
+   }
+}
 
 sub createExtBondingList
 {
@@ -6135,83 +6273,6 @@ sub computeBondAnglesExt
 }
 
 
-#sub generateUniqueFragment
-#{
-#   # Define passed parameters.
-#   my $currAtom = $_[0];
-#   my $chainLength = $_[1];
-#   my $currFrag = $_[2];
-#
-#   # Define local variables.
-#   my $atom;
-#   my $numFragBonds;
-#   my $numFragAngles;
-#
-#   # Update the total number of fragments according to the current frag number.
-#   $numFragments = $currFrag;
-#
-#   # Initialize a record of which atoms out of the whole molecule should be
-#   #   kept as a part of this fragment. (Assume that we keep nothing first.)
-#   foreach $atom (1..$numAtoms)
-#      {$fragKeepAtom[$currFrag][$atom] = 0;}
-#
-#   # Now, assume that we keep the H atom that serves as the start of the chain.
-#   $fragKeepAtom[$currFrag][$currAtom] = 1;
-#
-#   # Start a depth-first-search to find all atoms in the fragment that are a
-#   #   distance of no more that $chainLength-1 hops from the H atom.
-#   &markAtomsToKeep(1,$chainLength,$currAtom,$currFrag);
-#
-#   return ($numFragBonds, $numFragAngles);
-#}
-#
-#sub markAtomsToKeep
-#{
-#   # Define passed parameters.
-#   my $currentChainPoint = $_[0];
-#   my $maxChainLen = $_[1];
-#   my $currentAtom = $_[2];
-#   my $currFrag = $_[3];
-#
-#   # Define local variables.
-#   my $bond;
-#
-#   # Mark the current atom as a keeper and increment the count of the number of
-#   #   atoms in this fragment. Note that we have to manage the special case of
-#   #   the first atom (which already has its keepAtom set equal to one). We
-#   #   do this by only incrementing the fragment atom list if the current atom
-#   #   is not already kept. There should never be another case where this
-#   #   subroutine is called on an atom that already has its keepAtom equal to 1.
-#   if ($fragKeepAtom[$currFrag][$currentAtom] == 0)
-#   {
-#      $fragKeepAtom[$currFrag][$currentAtom] = 1;
-#      $fragNumAtoms[$currFrag]++;
-#   }
-#
-#   # If the current chain point is equal to the maximum allowed chain length,
-#   #   then return and don't bother looking for more atoms to keep. However,
-#   #   before we go, we recognize that these atoms are also edge atoms and so
-#   #   we record them.
-#   if ($currentChainPoint == $maxChainLen)
-#   {
-#      $fragNumEdgeIDs[$currFrag]++;
-#      $fragEdgeID[$currFrag][$fragNumEdgeIDs[$currFrag]] = $currentAtom;
-#      return 0;
-#   }
-#   else
-#   {
-#      # Consider each atom that the current atom is bonded to and call the
-#      #   markAtomsToKeep subroutine on each one that isn't already kept.
-#      foreach $bond (1..$numBonds[$currentAtom])
-#      {
-#         if ($fragKeepAtom[$bonded[$currentAtom][$bond]] == 0)
-#            {&markAtomsToKeep($currentChainPoint+1,$maxChainLen,
-#                  $bonded[$currentAtom][$bond],$currFrag;}
-#      }
-#   }
-#}
-
-
 sub sphericalAngles
 {
    # Define passed parameters.
@@ -6954,7 +7015,7 @@ sub findString
    return $found;
 }
 
-sub remainder
+sub intRemainder
 {
    # Define passed parameters.
    my $num1 = $_[0];
@@ -7088,6 +7149,37 @@ double Cdistance(double limitDistSqrd, double limitDist,
       r = diff[0]*diff[0] + diff[1]*diff[1] + diff[2]*diff[2];
       if (r<limitDistSqrd)
          {return sqrt(r);}
+      else
+         {return 1000000000.0;}
+   }
+}
+
+double CdistanceSqrd(double limitDistSqrd, double limitDist,
+                     double p1x, double p1y, double p1z,
+                     double p2x, double p2y, double p2z)
+{
+   double diff[] = {p2x-p1x, p2y-p1y, p2z-p1z};
+   double r;
+   int i;
+   int tooFar;
+
+   tooFar = 0;
+   for (i=0;i<=2;i++)
+   {
+      if (diff[i] > limitDist)
+      {
+         tooFar = 1;
+         break;
+      }
+   }
+
+   if (tooFar)
+      {return 1000000000.0;}
+   else
+   {
+      r = diff[0]*diff[0] + diff[1]*diff[1] + diff[2]*diff[2];
+      if (r<limitDistSqrd)
+         {return r;}
       else
          {return 1000000000.0;}
    }

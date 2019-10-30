@@ -1,12 +1,15 @@
 #!/usr/bin/env perl
+sub printHelp
+{
+   print <<ENDHELP;
 #Progam: appendCol
 #Last Updated:  Nov. 19, 2010
-#USAGE  appendCol -col $colNum -from $fromFile -to $toFile [-fromhead $fromHead]
-#                 [-tohead $toHead] [-title] [-add] [-avg] [-factor $multFactor]
-#                 [-format $format] [-help]
+#USAGE  appendCol -col \$colNum -from \$fromFile -to \$toFile [-fromhead \$fromHead]
+#                 [-tohead \$toHead] [-title] [-add] [-avg] [-factor \$multFactor]
+#                 [-format \$format] [-help]
 
 #The -col parameter will accept a number indicating which column is to be
-#     appended to the $toFile.
+#     appended to the \$toFile.
 #The -from and -to parameters specify which file the column of data is to be
 #     taken from, and which file it is to be appended to.
 #The -fromhead and -tohead parameters indicate how many lines of header exist in
@@ -15,7 +18,7 @@
 #     space seperated labels for each column of data.  The to title will be
 #     kept, and the appropriate column of the from file will be appended.
 #The -add parameter will make the column being appended be added to the last
-#     column in the $toFile instead of being appended to it.
+#     column in the \$toFile instead of being appended to it.
 #The -avg parameter acts just like the -add parameter except that it will
 #     record the average value not the sum.
 #The -factor parameter will take one parameter that is a multiplication factor
@@ -29,10 +32,16 @@
 #     be, "%15.7e".
 #NOTE THAT THE OUTPUT OF THIS PROGRAM WILL OVERWRITE THE TOFILE.  IF YOU WANT
 #     TO SAVE IT, YOU MUST COPY IT!
+ENDHELP
+   exit;
+}
 
 # Use necessary pramgas.
 use strict;
 use warnings;
+use Env;
+use lib "$OLCAO_BIN/perl5";
+use StructureControl;
 
 # Define global variables.
 my $isTitle;
@@ -47,6 +56,7 @@ my $factor;
 my $format;
 my $multFactor;
 my $colNum;
+my $numCols;
 my $fromFile;
 my $toFile;
 my $i;
@@ -69,8 +79,7 @@ my $emptyTOFile;
 &manageText;
 
 # Read the data in the "TO" file if it exists.
-if ($emptyTOFile == 0)
-   {&readTOData;}
+&readTOData;
 
 # Read the data in the "FROM" file and construct a new "TO" data set.
 &readFROMData;
@@ -182,28 +191,44 @@ sub manageText
       else
          {$toTitle = "";}
 
-      @values = split (/\s+/,$fromTitle);
-      if ($values[0] eq "")
-         {shift (@values);}
+      @values = StructureControl::prepLine("",$fromTitle,'\s+');
 
       $toTitle = "$toTitle"."$values[$colNum-1]";
    }
 }
 
-#Read all the TO data.
+# Read all the TO data. It is assumed that there is a value in every column in
+#   every row, no exceptions.
 sub readTOData
 {
-   @toData = <TO>;
-   chomp (@toData);
-   $dataRowTO = $#toData;
+   if ($emptyTOFile == 1)
+   {
+      $dataRowTO = 0;
+      $numCols = 0;
+   }
+   else
+   {
+      @toData = <TO>;
+      chomp (@toData);
+      $dataRowTO = $#toData;
 
-   close (TO);
+      @values = StructureControl::prepLine("",$toData[0],'\s+');
+      $numCols = $#values+1;
+
+      close (TO);
+   }
 }
 
 
+# Read the FROM data and ensure that it is of the correct length to fit in the
+#   TO data. Conversely, fix the toData if the FROM data extends beyond the TO
+#   data. (These two scenarios would usually only occur if the data file being
+#   produced contained pairs of very different X,Y data columns such as with
+#   scatter plots or collections of localization index plots.)
 sub readFROMData
 {
    # Define local variables.
+   my $col;
    my $lineFrom;
    my $lastValue;
    my $currLine;
@@ -215,21 +240,31 @@ sub readFROMData
    my $findingChars;
    my @fromData;
 
+   # Read the entire fromDATA file into memory and chomp off tailing newlines.
    @fromData = <FROM>;
    chomp (@fromData);
+
+   # Store the number of FROM data lines and compare it to the toData number
+   #   to make sure that all rows have data for every column.
    $dataRowFROM = $#fromData;
+
 
    # Initialize the count of the current line being operated on.
    $currLine = -1;
 
+   # Modify the toData with the just read in fromData.
    foreach $lineFrom (@fromData)
    {
       # Increment the index of which line we are on.
       $currLine++;
 
+      # Split the From line by spaces. (I'm not sure if the LIMIT parameter
+      #   should be used or not. I can't recall why it is there just now...)
       @values = split(/\s+/,$lineFrom,$colNum+2);  #  +2 just to be safe.
       if ($values[0] eq "")
          {shift (@values);}
+
+      # Get the specific value to be appended from the FROM data.
       $fromValue = $values[$colNum-1];
 
       if ($emptyTOFile == 1)
@@ -239,6 +274,8 @@ sub readFROMData
       }
       else
       {
+         # It will be assumed that all rows have data in every column for the
+         #   $add==1 and $avg==1 cases.
          if (($add == 1) || ($avg == 1))
          {
             $lastDatumTO = "";
@@ -271,8 +308,18 @@ sub readFROMData
          }
          else
          {
-            $leadingDataTO = "$toData[$currLine] ";
-            $lastDatumTO = 0;   # Probably not necessary.
+            if ($currLine > $dataRowTO)
+            {
+               $leadingDataTO = "";
+               foreach $col (1..$numCols)
+                  {$leadingDataTO = $leadingDataTO . "0.00000000 ";}
+               $lastDatumTO = 0;   # Probably not necessary.
+            }
+            else
+            {
+               $leadingDataTO = "$toData[$currLine] ";
+               $lastDatumTO = 0;   # Probably not necessary.
+            }
          }
       }
 
@@ -293,12 +340,20 @@ sub readFROMData
       $toData[$currLine] = sprintf "$leadingDataTO$format",$lastValue;
    }
    close (FROM);
+
+   # Add zeros to any rows in the read data that did not have a from data row.
+   $lastValue = "0.00000000";
+   foreach $currLine (($dataRowFROM+1)..$dataRowTO)
+   {
+      $leadingDataTO = "$toData[$currLine] ";
+      $toData[$currLine] = sprintf "$leadingDataTO$format",$lastValue;
+   }
 }
 
 sub writeTOData
 {
-   if (($emptyTOFile == 0) && ($dataRowTO != $dataRowFROM))
-      {die "Num rows in TO file not equal to num rows in FROM file\n";}
+#   if (($emptyTOFile == 0) && ($dataRowTO != $dataRowFROM))
+#      {die "Num rows in TO file not equal to num rows in FROM file\n";}
 
    open (TO,">$toFile");
    if ($isTitle==1)
@@ -308,36 +363,4 @@ sub writeTOData
    for ($i=0;$i<=$dataRowFROM;$i++)
       {print TO "$toData[$i]\n";}
    close (TO);
-}
-
-
-sub printHelp
-{
-   print <<ENDHELP;
-#USAGE  appendCol -col \$colNum -from \$fromFile -to \$toFile [-fromhead \$fromHead]
-#                 [-tohead \$toHead] [-title] [-add] [-avg] [-factor \$multFactor]
-#                 [-help]
-
-#The -col parameter will accept a number indicating which column is to be
-#     appended to the \$toFile.
-#The -from and -to parameters specify which file the column of data is to be
-#     taken from, and which file it is to be appended to.
-#The -fromHead and -toHead parameters indicate how many lines of header exist in
-#     each file.  In both cases, the headers will be removed
-#The -title parameter indicates that both files have a single line title of
-#     space seperated labels for each column of data.  The to title will be
-#     kept, and the appropriate column of the from file will be appended.
-#The -add parameter will make the column being appended be added to the last
-#     column in the \$toFile instead of being appended to it.
-#The -avg parameter acts just like the -add parameter except that it will
-#     record the average value not the sum.
-#The -factor parameter will take one parameter that is a multiplication factor
-#     which will be applied to the appending column.  If this switch is
-#     included along with the -add switch then the column will be multiplied
-#     by this value and then added to the existing column.  (This is an easy
-#     way to do subtraction by using a multFactor of -1.)
-#NOTE THAT THE OUTPUT OF THIS PROGRAM WILL OVERWRITE THE TOFILE.  IF YOU WANT
-#     TO SAVE IT, YOU MUST COPY IT!
-ENDHELP
-   exit;
 }

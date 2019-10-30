@@ -78,13 +78,13 @@ module O_Input
    real (kind=double) :: maxTransEnSIGE ! Given in eV, stored in a.u.
    real (kind=double) :: cutoffEnSIGE   ! Given in eV, stored in a.u.
 
-   ! Define control variables that apply only to the wave program.
+   ! Define control variables that apply only to the field program.
    integer :: doRho ! Flag indicating whether or not to include state
          ! occupancy when making the plot.
-   integer :: styleWAVE ! Flag requesting the form of the output.  1=3D
+   integer :: styleFIELD ! Flag requesting the form of the output.  1=3D
          ! OpenDX & 1D projections; 2=3D OpenDX only; 3=1D projections only.
-   real (kind=double) :: eminWAVE ! Given in eV, stored in a.u.
-   real (kind=double) :: emaxWAVE ! Given in eV, stored in a.u.
+   real (kind=double) :: eminFIELD ! Given in eV, stored in a.u.
+   real (kind=double) :: emaxFIELD ! Given in eV, stored in a.u.
 
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    ! Begin list of module subroutines.!
@@ -160,8 +160,8 @@ subroutine parseInput
    ! Read sige input control parameters.
    call readSigeControl(readUnit,writeUnit)
 
-   ! Read wave input control parameters.
-   call readWaveControl(readUnit,writeUnit)
+   ! Read field input control parameters.
+   call readFieldControl(readUnit,writeUnit)
 
    ! Close the primary input file.
    close(5)
@@ -688,7 +688,7 @@ subroutine readSigeControl(readUnit,writeUnit)
 end subroutine readSigeControl
 
 
-subroutine readWaveControl(readUnit,writeUnit)
+subroutine readFieldControl(readUnit,writeUnit)
 
    ! Use necessary modules
    use O_Lattice
@@ -703,19 +703,20 @@ subroutine readWaveControl(readUnit,writeUnit)
    integer, intent(in)    :: writeUnit  ! The unit number of the file to which
                                         ! we are writing.
 
-   ! Read the input wave function / charge density plotting control variables.
-   call readAndCheckLabel(readUnit,writeUnit,len('WAVE_INPUT_DATA'),&
-         & 'WAVE_INPUT_DATA')
+   ! Read the input wave function / charge density / potential function
+   !   plotting control variables.
+   call readAndCheckLabel(readUnit,writeUnit,len('FIELD_INPUT_DATA'),&
+         & 'FIELD_INPUT_DATA')
    call readNumMeshPoints(readUnit,writeUnit)
-   call readData(readUnit,writeUnit,eminWAVE,emaxWAVE,0,'')
+   call readData(readUnit,writeUnit,eminFIELD,emaxFIELD,0,'')
    call readData(readUnit,writeUnit,doRho,0,'')
-   call readData(readUnit,writeUnit,styleWAVE,0,'')
+   call readData(readUnit,writeUnit,styleFIELD,0,'')
 
    ! Apply the necessary conversions of the data to atomic units.
-   eminWAVE = eminWAVE / hartree
-   emaxWAVE = emaxWAVE / hartree
+   eminFIELD = eminFIELD / hartree
+   emaxFIELD = emaxFIELD / hartree
 
-end subroutine readWaveControl
+end subroutine readFieldControl
 
 
 end module O_Input

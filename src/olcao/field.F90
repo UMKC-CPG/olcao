@@ -1,4 +1,4 @@
-module O_Wave
+module O_Field
 
    ! Import necessary modules.
    use O_Kinds
@@ -29,7 +29,7 @@ real (kind=double) :: accumChargeKP
 
 contains
 
-subroutine computeWaveFnMesh
+subroutine computeFieldMesh
 
    ! The goal of this subroutine
 
@@ -44,10 +44,11 @@ subroutine computeWaveFnMesh
    use O_AtomicSites,  only: valeDim, numAtomSites, atomSites
    use O_PSCFBandHDF5, only: eigenVectorsBand_did, valeStatesBand
    use O_Kpoints,      only: numKPoints, kPointWeight, phaseFactor
-   use O_Input,        only: numStates, styleWAVE, eminWAVE, emaxWAVE, doRho, &
+   use O_Input,        only: numStates, styleFIELD, eminFIELD, emaxFIELD, doRho, &
          & numElectrons
    use O_OpenDX,       only: printODXFieldHead, printODXFieldTail, &
          & printODXAtomPos, printODXLattice
+   use O_XDMF_VTK,     only: printXDMFMetaFile
    use O_AtomicTypes,  only: numAtomTypes, atomTypes, maxNumAtomAlphas, &
          & maxNumStates, maxNumValeRadialFns
    use O_Lattice,      only: logBasisFnThresh, numCellsReal, cellSizesReal, &
@@ -93,8 +94,8 @@ subroutine computeWaveFnMesh
    !   polarized calculations we have:  Index1 = Spin up, Index2 = spin down,
    !   Index3 = Neutral, Index4 = Neutral.  These values will be appropriately
    !   combined to form the data listed in the initEnv subroutine.
-   real (kind=double), dimension (spin) :: potFnEval
-   real (kind=double), allocatable, dimension (:,:) :: currNumElec
+   real (kind=double), allocatable, dimension (:,:,:) :: potFnEval
+real (kind=double), allocatable, dimension (:,:) :: currNumElec
 !complex (kind=double), allocatable, dimension (:) :: tempPointValue
    real (kind=double), allocatable, dimension (:) :: currentPointValue
 #ifndef GAMMA
@@ -157,6 +158,7 @@ subroutine computeWaveFnMesh
    call initEnv
 
    ! Allocate space for locally defined allocatable arrays
+   allocate (potFnEval             (numMeshPoints(1),numMeshPoints(2),spin))
 #ifndef GAMMA
    allocate (waveFnEval            (numKPoints,numCols-spin))
    allocate (modifiedBasisFns      (maxNumAtomAlphas,maxNumStates,&
@@ -188,7 +190,7 @@ allocate (currNumElec (numKPoints,spin))
 
    ! If we will create an OpenDX file, then we will print the header for the
    !   field data, the lattice information, and the atomic positions now.
-   if ((styleWAVE == 1) .or. (styleWAVE == 2)) then
+   if ((styleFIELD == 1) .or. (styleFIELD == 2)) then
 !write (20,*) "numCols =",numCols
       call printODXFieldHead (numCols)
       call printODXAtomPos
@@ -308,7 +310,7 @@ accumChargeKP = 0.0_double
          !   function summation for this kpoint and spin.
          minStateIndex = 0
          do k = 1, numStates
-            if (energyEigenValues(k,i,j)*hartree >= eminWAVE) then
+            if (energyEigenValues(k,i,j)*hartree >= eminFIELD) then
                minStateIndex = k
                exit
             endif
@@ -319,7 +321,7 @@ accumChargeKP = 0.0_double
          !   requested highest energy state.
          maxStateIndex = numStates
          do k = 2, numStates
-            if (energyEigenValues(k,i,j)*hartree > emaxWAVE) then
+            if (energyEigenValues(k,i,j)*hartree > emaxFIELD) then
                maxStateIndex = k-1
                exit
             endif
@@ -427,7 +429,7 @@ accumChargeKP = accumChargeKP + accumCharge(j,i)
    do a = 1, numMeshPoints(1)
 
       ! Initialize the evaluation of this mesh point.
-      potFnEval(1:spin) = 0.0_double
+      potFnEval(:,:,1:spin) = 0.0_double
 #ifndef GAMMA
       waveFnEval(1:numKPoints,1:numCols-spin) = cmplx(0.0_double,0.0_double)
 #else
@@ -535,7 +537,7 @@ accumChargeKP = accumChargeKP + accumCharge(j,i)
                & 2.0_double * sqrt(atomMeshSepSqrd * &
                & negligLimit(currentAtomType(2)))
 
-         ! The maxLatticRadius will always be smaller than the one used for
+         ! The maxLatticeRadius will always be smaller than the one used for
          !   integration so we don't bother checking to see if we have enough
          !   lattice points to complete the calculation.
 
@@ -750,7 +752,7 @@ accumChargeKP = accumChargeKP + accumCharge(j,i)
             ! Accumulate the contribution of this replicated potential site's
             !   Gaussian set for the current mesh point.
             do k = 1, spin
-               potFnEval(k) = potFnEval(k) + &
+               potFnEval(a,b,k) = potFnEval(a,b,k) + &
                      & sum(currentPotCoeffs(1:lastContribPotAlphaIndex,k) * &
                      & expPotAlphaDist(1:lastContribPotAlphaIndex))
             enddo
@@ -794,7 +796,7 @@ accumChargeKP = accumChargeKP + accumCharge(j,i)
       !   this point assuming non-interacting neutral atoms).
       currentPointValue(spin+1) = currentPointValue(1) - &
             & currentPointValue(spin+1)
-         
+
 !write (20,*) "waveFnEval(:,1)=",waveFnEval(:,1)
 !write (20,*) "cPV(1)=",currentPointValue(1)
 
@@ -805,10 +807,10 @@ accumChargeKP = accumChargeKP + accumCharge(j,i)
 
       ! Record the potential function evaluation.  Always the last or last two
       !   indices.
-      currentPointValue(numCols-spin+1:numCols) = potFnEval(1:spin)
+      currentPointValue(numCols-spin+1:numCols) = potFnEval(a,b,1:spin)
 
       ! If openDX Files are being created, then print to them.
-      if ((styleWAVE == 1) .or. (styleWAVE == 2)) then
+      if ((styleFIELD == 1) .or. (styleFIELD == 2)) then
          do i = 1, numCols
             write (57+i,ADVANCE="NO",fmt="(1x,e13.5)") currentPointValue(i)
 
@@ -843,7 +845,7 @@ accumChargeKP = accumChargeKP + accumCharge(j,i)
 !write (20,*) "accumCharge(1,:)=",accumCharge(1,:)
 
    ! Finalize printing of the OpenDX field data.
-   if ((styleWAVE == 1) .or. (styleWAVE == 2)) then
+   if ((styleFIELD == 1) .or. (styleFIELD == 2)) then
 
       ! Write a newline to finish out any uneven (incomplete) lines if needed.
       if (mod(currentPointCount,5) /= 0) then
@@ -869,6 +871,7 @@ accumChargeKP = accumChargeKP + accumCharge(j,i)
    deallocate (currentlmIndex)
    deallocate (currentValeQN_lList)
    deallocate (accumCharge)
+   deallocate (potFnEval)
 #ifndef GAMMA
    deallocate (waveFnEval)
    deallocate (atomicOrbital)
@@ -888,7 +891,7 @@ accumChargeKP = accumChargeKP + accumCharge(j,i)
    ! Log the end of the wave function evaluation.
    call timeStampEnd(25)
 
-end subroutine computeWaveFnMesh
+end subroutine computeFieldMesh
 
 
 ! This subroutine will set some default (hard coded) values for some array
@@ -1176,7 +1179,7 @@ subroutine makeNeutralCoeffs
 end subroutine makeNeutralCoeffs
 
 
-subroutine cleanUpWave
+subroutine cleanUpField
 
    ! Make sure that no variables are accidentally defined.
    implicit none
@@ -1185,6 +1188,6 @@ subroutine cleanUpWave
    deallocate (colLabel)
    deallocate (profile)
 
-end subroutine cleanUpWave
+end subroutine cleanUpField
 
-end module O_Wave
+end module O_Field

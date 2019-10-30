@@ -1,8 +1,12 @@
-program waveFnPlotDX
+program fieldDataPlot
 
-   ! The goal of this program is to plot specific wave function states by
-   !   evaluating the analytical wave functions or wave functions squared on
-   !   a defined 3D uniform mesh.
+   ! The goal of this program is to produce plottable data of the solid state
+   !   wave function, data derived form it (e.g. the charge density), and/or
+   !   ancillary data such as the potential function. It permits plotting of
+   !   specific wave function states according to energy level by numerically
+   !   evaluating the analytical wave functions, wave functions squared, etc.
+   !   on a defined 3D uniform mesh. The data may be stored in either plain
+   !   text OpenDX format or in XDMF+HDF5 format for Paraview.
 
    ! Import the necessary modules.
    use O_Kinds
@@ -13,8 +17,9 @@ program waveFnPlotDX
    use O_Potential,       only: spin, initPotCoeffs
    use O_CommandLine,     only: parseWaveCommandLine
    use O_Input,           only: numStates, parseInput
-   use O_Wave,            only: computeWaveFnMesh, cleanUpWave
+   use O_Field,           only: computeFieldMesh, cleanUpField
    use O_KPoints,         only: numKPoints, computePhaseFactors
+   use O_FieldHDF5,       only: initFieldHDF5, closeFieldHDF5
    use O_PSCFBandHDF5,    only: accessPSCFBandHDF5, closeAccessPSCFBandHDF5
    use O_SecularEquation, only: energyEigenValues, readEnergyEigenValuesBand
    use O_Lattice,         only: initializeLattice, initializeFindVec, &
@@ -39,6 +44,7 @@ program waveFnPlotDX
    ! Parse the command line parameters
    call parseWaveCommandLine
 
+
    ! Read in the input to initialize all the key data structure variables.
    call parseInput
 
@@ -47,6 +53,10 @@ program waveFnPlotDX
    !   file.  These values can, however, be easily determined from the input
    !   file.
    call getImplicitInfo
+
+
+   ! Initialize the HDF5 data file that will be used.
+   call initFieldHDF5
 
 
    ! Access the HDF5 data stored by band.
@@ -91,19 +101,27 @@ program waveFnPlotDX
    ! Initialize certain parameters for constructing and traversing the 3D mesh.
    call initialize3DMesh
 
-   ! Compute the wave function squared values for each mesh point and print.
-   call computeWaveFnMesh
+
+   ! Compute the requested field values for each mesh point and store in HDF5.
+   call computeFieldMesh
+
 
    ! Clean up any left over arrays that need to be deallocated.
-   call cleanUpWave
+   call cleanUpField
 
-   ! Close the HDF data file.
+
+   ! Close the HDF5 band data file.
    call closeAccessPSCFBandHDF5
+
+
+   ! Close the HDF5 field data file.
+   call closeFieldHDF5
+
 
    ! Open a file to signal completion of the program.
    open (unit=2,file='fort.2',status='new')
 
-end program waveFnPlotDX
+end program fieldDataPlot
 
 subroutine getImplicitInfo
 

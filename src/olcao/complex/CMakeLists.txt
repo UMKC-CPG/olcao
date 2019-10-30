@@ -5,7 +5,7 @@ message("At the complex OLCAO application.")
 
 # Library for gaussIntegrals.f90
 add_library(GaussIntegrals STATIC ../../kinds.f90 ../../constants.f90
-  ../gaussIntegrals.f90)
+   ../gaussIntegrals.f90)
 
 # Library containing common source files that all executables need
 add_library(Common OBJECT ../../kinds.f90 ../../constants.f90
@@ -57,10 +57,11 @@ add_executable(OLCAOoptc $<TARGET_OBJECTS:Common> ../basis.f90
    ../OLCAO_OptcWrap.f90 )
 target_link_libraries(OLCAOoptc GaussIntegrals)
 
-add_executable(OLCAOwave $<TARGET_OBJECTS:Common> ../basis.f90 
+add_executable(OLCAOfield $<TARGET_OBJECTS:Common> ../basis.f90 
    ../hdf5PSCFBand.F90 ../hdf5MainEval.f90 ../hdf5MainEvec.F90 
-   ../hdf5MainPotRho.f90 ../hdf5Main.f90 ../matrixSubs.F90 ../secularEqn.F90 
-   ../populate.F90 ../openDX.f90 ../wave.F90 ../OLCAO_Wave.f90 )
+   ../hdf5MainPotRho.f90 ../hdf5Main.f90 ../hdf5Field.F90 ../matrixSubs.F90
+   ../secularEqn.F90 ../populate.F90 ../openDX.f90 ../xdmf.f90 ../field.F90
+   ../OLCAO_Field.f90 )
 
 install(TARGETS OLCAOsetup OLCAOmain OLCAOintg OLCAOband OLCAOdos
-   OLCAObond OLCAOoptc OLCAOwave DESTINATION bin)
+   OLCAObond OLCAOoptc OLCAOfield DESTINATION bin)

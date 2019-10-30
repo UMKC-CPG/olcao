@@ -336,7 +336,7 @@ my @memEstBand;    # Band memory based on kpoints, file set, and basis set.
 my @memEstPdos;    # Pdos memory based on kpoints, file set, and basis set.
 my @memEstBond;    # Bond memory based on kpoints, file set, and basis set.
 my @memEstOptc;    # Optc memory based on kpoints, file set, and basis set.
-my @memEstWave;    # Wave memory based on kpoints, file set, and basis set.
+my @memEstField;   # Field memory based on kpoints, file set, and basis set.
 my $datSklMap;     # Map between atom numbers of olcao.dat and olcao.skl.
 my $tarMethod;     # How files should be tarred together;0=linux;1=unix.
 
@@ -3385,8 +3385,8 @@ sub printOLCAOInput
    print OLCAO "$eDeltaSIGE                     ! SIGE delta energy\n";
    print OLCAO "$sigmaSIGE                      ! SIGE broadening\n";
 
-   # Print wave function squared input control parameters.
-   print OLCAO "WAVE_INPUT_DATA\n";
+   # Print field input control parameters.
+   print OLCAO "FIELD_INPUT_DATA\n";
    print OLCAO "10 10 10                      ! a,b,c # of mesh points\n";
    print OLCAO "-100000.0 100000.0            ! min,max range of energy\n";
    print OLCAO "0                             ! 0=Psi^2; 1=Rho\n";

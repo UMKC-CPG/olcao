@@ -30,7 +30,7 @@ module O_SetupIntegralsHDF5
    integer(hid_t), allocatable, dimension (:) :: atomPotKPointOL_gid
 
    ! The dataspaces of each dataset in atomIntgGroup_gid are the same in
-   !   all characteristics (type, dimension, etc.) and therefor can be
+   !   all characteristics (type, dimension, etc.) and therefore can be
    !   given a static ID definition now.
    integer(hid_t) :: valeVale_dsid
 
@@ -83,7 +83,7 @@ subroutine initSetupIntegralHDF5 (setup_fid)
 #endif
    atomDims(2) = valeDim*(valeDim+1)/2 ! Linear storage of 1/2 matrix.
 
-   ! Check that the chunk size is not too large (the assumption here is that
+   ! Check that the chunk size is not too large. The assumption here is that
    !   the number being stored are 8 byte reals and that we should not go over
    !   2 billion bytes. Note that if x*y = >250M and we want a*b = 250M then
    !   the additional requirement x/y = a/b leads to b = sqrt(250M/>250M)*y.
@@ -127,7 +127,7 @@ subroutine initSetupIntegralHDF5 (setup_fid)
    allocate (atomPotOverlap_did  (numKPoints,potDim))
 
    ! Then loop over the kpoints and assign a gid name equal to the kpoint # for
-   !   the atomic-potentian hamiltonian terms.
+   !   the atomic-potential hamiltonian terms.
    do i = 1, numKPoints
       write (currentName,fmt="(i7.7)") i
       currentName = trim (currentName)
@@ -185,9 +185,9 @@ subroutine accessSetupIntegralHDF5 (setup_fid)
    use HDF5
 
    ! Import necessary object modules.
-   use O_KPoints     ! For numKPoints
-   use O_Potential   ! For potDim
-   use O_AtomicSites ! For valeDim
+   use O_KPoints,     only: numKPoints
+   use O_Potential,   only: potDim
+   use O_AtomicSites, only: valeDim
 
    ! Define the passed parameters.
    integer(hid_t) :: setup_fid
@@ -287,8 +287,8 @@ subroutine closeSetupIntegralHDF5
    use HDF5
 
    ! Import necessary object modules.
-   use O_KPoints     ! For numKPoints
-   use O_Potential   ! For potDim
+   use O_KPoints,   only: numKPoints
+   use O_Potential, only: potDim
 
    ! Make sure that no variables are implicitly declared.
    implicit none

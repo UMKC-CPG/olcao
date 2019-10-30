@@ -12,7 +12,7 @@ sub printHelp
 #              [[-pacs \$edge]  | [
 #              [-bond [\$edge]] [-scfbond [\$edge]]
 #              [-dos  [\$edge]] [-scfdos  [\$edge]]
-#              [-wave [\$edge]] [-scfwave [\$edge]]
+#              [-field [\$edge]] [-scffield [\$edge]]
 #              [-sige [\$edge]] [-scfsige [\$edge]]
 #              [-optc [\$edge]]
 #              [-sybd [\$edge]]] |
@@ -86,9 +86,14 @@ sub printHelp
 #       calculation.  It will default to using a full basis.  The different
 #       kpoint mesh will require a recomputation of the intg and band.  (This
 #       is where the alternate kpoints comes in handy.)
-#-wave will compute the square of the wave function present in the simulation
-#       box.  The control parameters are in the setup input file.  By default
-#       it will use a full basis.
+#-field will compute the complex wave function (or real for Gamma k-point), the
+#       square of the wave function (i.e., the charge density rho), the
+#       electronic potential function, the spin dependent wave function charge
+#       density, and potential, and the difference between the interacting and
+#       non-interacting system wave function, rho, and potential (also with
+#       spin dependency). The control parameters are in the input file.
+#       By default it will use a full basis. (As a note, all of this data is
+#       "field" data and hence the name of the option.)
 ######################################################################
 ENDHELP
    exit(0);
@@ -132,10 +137,10 @@ my $sybdRun;
 my $bondRun;
 my $optcRun;
 my $sigeRun;
-my $waveRun;
+my $fieldRun;
 my $dosRunSCF;
 my $bondRunSCF;
-my $waveRunSCF;
+my $fieldRunSCF;
 
 # Basis information.
 my $scfBasis;
@@ -175,7 +180,7 @@ my $bond;
 my $optc;
 my $pacs;
 my $sige;
-my $wave;
+my $field;
 
 # Auxiliary suffix components.
 my $loci;
@@ -282,10 +287,10 @@ sub setDefaultVars
    $bondRun=0;        #Should a bond task be done?
    $optcRun=0;        #Should a optc task be done?
    $sigeRun=0;        #Should a sige task be done?
-   $waveRun=0;        #Should a wave task be done?
+   $fieldRun=0;       #Should a field task be done?
    $dosRunSCF=0;      #Run PDOS in SCF?
    $bondRunSCF=0;     #Run bond in SCF?
-   $waveRunSCF=0;     #Run wave in SCF?
+   $fieldRunSCF=0;    #Run field in SCF?
    $scfBasis="fb";    #Code for which scf basis to be use.  (Default is full.)
    $scfBasisSet=0;    #Will be set to 1 if given explicitly on the command line.
    $pscfBasis="no";   #Code for which pscf basis to be use.  (Default is none.)
@@ -405,9 +410,9 @@ sub parseCLP
             {$pscfBasis = "fb";}  #Full Basis
          $pscfBasisSet = 1;
       }
-      elsif ($ARGV[$number] eq "-wave")
+      elsif ($ARGV[$number] eq "-field")
       {
-         $waveRun = 1;
+         $fieldRun = 1;
          if (($#ARGV == $number) || ($ARGV[$number+1] =~ /\-/))
             {$edge = "gs";}
          else
@@ -416,9 +421,9 @@ sub parseCLP
             {$pscfBasis = "fb";}  #Full Basis
          $pscfBasisSet = 1;
       }
-      elsif ($ARGV[$number] eq "-wavescf")
+      elsif ($ARGV[$number] eq "-fieldscf")
       {
-         $waveRunSCF = 1;
+         $fieldRunSCF = 1;
          if (($#ARGV == $number) || ($ARGV[$number+1] =~ /\-/))
             {$edge = "gs";}
          else
@@ -583,7 +588,7 @@ sub initFileNames
    $optc      = "optc";
    $pacs      = "pacs";
    $sige      = "sige";
-   $wave      = "wave";
+   $field     = "field";
 
    #DEFINE AUXILIARY SUFFIX COMPONENTS
    $loci      = ".loci";
@@ -715,7 +720,7 @@ sub initExes
    $executables[5] = "OLCAOdos";
    $executables[6] = "OLCAObond";
    $executables[7] = "OLCAOoptc";
-   $executables[8] = "OLCAOwave";
+   $executables[8] = "OLCAOfield";
 
    # Open the each kpoint file and check to see if it requests a gamma kpoint.
    $scfGamma  = &checkGammaKP("$kp_scf$dat");
@@ -890,8 +895,8 @@ sub runOLCAO
                {&runTask ($optc,$pscfBasis,$edge);}
             elsif ($sigeRun==1)
                {&runTask ($sige,$pscfBasis,$edge);}
-            elsif ($waveRun==1)
-               {&runTask ($wave,$pscfBasis,$edge);}
+            elsif ($fieldRun==1)
+               {&runTask ($field,$pscfBasis,$edge);}
          }
       }
    }
@@ -1074,7 +1079,7 @@ sub copyInput
       &move("gs_$band$taskBasis$alt$hdf","$band$tempBasis$hdf");
       &move("$taskEdge$band$taskBasis$alt$hdf","$band$tempBasis.2$hdf");
    }
-   elsif ("$taskName" eq "$wave")
+   elsif ("$taskName" eq "$field")
    {
       &move("$taskEdge$band$taskBasis$alt$hdf","$band$tempBasis$hdf");
       &getPotCoeffs($taskName,$taskBasis,$taskEdge);
@@ -1277,7 +1282,7 @@ sub determineCLP
       #   components in serial or all together (the default).
       $taskCLP = "$taskCLP" . "$serialxyz ";
    }
-   elsif ("$taskName" eq "$wave")
+   elsif ("$taskName" eq "$field")
    {
       # The first CLP indicates which basis to use.
       $taskCLP = "$pscfBasisCode ";
@@ -1324,7 +1329,7 @@ sub executeProgram
    elsif (("$taskName" eq "$optc") || ("$taskName" eq "$pacs") ||
           ("$taskName" eq "$sige"))
       {$executable = $executables[7];}
-   elsif ("$taskName" eq "$wave")
+   elsif ("$taskName" eq "$field")
       {$executable = $executables[8];}
 
 
@@ -1648,17 +1653,17 @@ sub manageOutput
          &move("fort.50","$proj_home/$taskEdge$pacs$taskBasis$alt$plot");
       }
    }
-   elsif ("$taskName" eq "$wave")
+   elsif ("$taskName" eq "$field")
    {
       &move("$band$tempBasis$hdf","$taskEdge$band$taskBasis$alt$hdf");
       &move("fort.8","$taskEdge$intg$taskBasis.SCFV$alt.8");
 
       # The profile files are always created.
-      &move("fort.30","$proj_home/$taskEdge$wave$taskBasis$alt" .
+      &move("fort.30","$proj_home/$taskEdge$field$taskBasis$alt" .
                       "$profile-a$dat");
-      &move("fort.31","$proj_home/$taskEdge$wave$taskBasis$alt" .
+      &move("fort.31","$proj_home/$taskEdge$field$taskBasis$alt" .
                       "$profile-b$dat");
-      &move("fort.32","$proj_home/$taskEdge$wave$taskBasis$alt" .
+      &move("fort.32","$proj_home/$taskEdge$field$taskBasis$alt" .
                       "$profile-c$dat");
       if (-e "fort.56") # Only move openDX files if they were created.
       {
@@ -1666,24 +1671,24 @@ sub manageOutput
          &move("fort.57","$proj_home/$lattice$dx");
          if ($spinPol == 2)
          {
-            &move("fort.58","$proj_home/$taskEdge$wave$taskBasis$alt" .
+            &move("fort.58","$proj_home/$taskEdge$field$taskBasis$alt" .
                             "$valeRho$upPdn$dx");
-            &move("fort.59","$proj_home/$taskEdge$wave$taskBasis$alt" .
+            &move("fort.59","$proj_home/$taskEdge$field$taskBasis$alt" .
                             "$valeRho$upMdn$dx");
-            &move("fort.60","$proj_home/$taskEdge$wave$taskBasis$alt" .
+            &move("fort.60","$proj_home/$taskEdge$field$taskBasis$alt" .
                             "$valeRho$upPdn$minusNeut$dx");
-            &move("fort.61","$proj_home/$taskEdge$wave$taskBasis$alt" .
+            &move("fort.61","$proj_home/$taskEdge$field$taskBasis$alt" .
                             "$pot$up$dx");
-            &move("fort.62","$proj_home/$taskEdge$wave$taskBasis$alt" .
+            &move("fort.62","$proj_home/$taskEdge$field$taskBasis$alt" .
                             "$pot$dn$dx");
          }
          else
          {
-            &move("fort.58","$proj_home/$taskEdge$wave$taskBasis$alt" .
+            &move("fort.58","$proj_home/$taskEdge$field$taskBasis$alt" .
                             "$valeRho$dx");
-            &move("fort.59","$proj_home/$taskEdge$wave$taskBasis$alt" .
+            &move("fort.59","$proj_home/$taskEdge$field$taskBasis$alt" .
                             "$valeRho$minusNeut$dx");
-            &move("fort.60","$proj_home/$taskEdge$wave$taskBasis$alt" .
+            &move("fort.60","$proj_home/$taskEdge$field$taskBasis$alt" .
                             "$pot$dx");
          }
       }

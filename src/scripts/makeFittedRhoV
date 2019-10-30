@@ -274,7 +274,6 @@ sub computeDiff
    #   computed from the structure.dat file where the element data was also
    #   obtained.) Also read past the "TOTAL__OR__SPIN_UP" label.
    <INPOT>;
-   <INPOT>;
 
    # If we need to do the spin down data, then read past the first section.
    if ($spinDn == 1)
@@ -288,6 +287,7 @@ sub computeDiff
          foreach $lineIP (1..$values[0])
             {<INPOT>;}
       }
+      <INPOT>;
    }
 
    # Loop over each type and perform a difference calculation.

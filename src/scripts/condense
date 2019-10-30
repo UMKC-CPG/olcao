@@ -1282,13 +1282,39 @@ sub normalizeTypes
          @values = StructureControl::prepLine("",$line,'\s+');
          $numAngleTypes = $values[0];
       }
+      elsif ($line =~ /Masses/)
+      {
+         $lineNum++;
+         foreach $atom (1..$numAtomTypes)
+         {
+            @values = StructureControl::prepLine("",
+                  "$lammpsFile[++$lineNum]",'\s+');
+
+            # Construct the atom type tag.
+            $atomType = "$values[3] $values[4] $values[5]";
+
+            # Determine if this atom type has been seen before.
+            $found = 0;
+            foreach $uniqueAtom (1..$numUniqueAtomTypes)
+            {
+               if ($uniqueAtomTypes[$uniqueAtom] eq $atomType)
+                  {$found = $uniqueAtom; last;}
+            }
+
+            if ($found == 0)
+            {
+               $numUniqueAtomTypes++;
+               $uniqueAtomTypes[$numUniqueAtomTypes] = $atomType;
+            }
+         }
+      }
       elsif ($line =~ /Bond Coeffs/)
       {
          $lineNum++;
          foreach $bond (1..$numBondTypes)
          {
             @values = StructureControl::prepLine("",
-               "$lammpsFile[++$lineNum]",'\s+');
+                  "$lammpsFile[++$lineNum]",'\s+');
 
             $bondType1 = "$values[4] $values[5] $values[6]";
             $bondType2 = "$values[7] $values[8] $values[9]";
@@ -1316,7 +1342,7 @@ sub normalizeTypes
          foreach $angle (1..$numAngleTypes)
          {
             @values = StructureControl::prepLine("",
-               "$lammpsFile[++$lineNum]",'\s+');
+                  "$lammpsFile[++$lineNum]",'\s+');
             $angleType1 = "$values[4] $values[5] $values[6]";
             $angleType2 = "$values[7] $values[8] $values[9]";
             $angleType3 = "$values[10] $values[11] $values[12]";

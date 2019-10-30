@@ -54,6 +54,13 @@ subroutine initElementData
    integer   :: info
    integer   :: i
 
+   ! Determine if the elemental data has already been read in or not. If this
+   !   data has already been read in, then we abort and do not read it in
+   !   again.
+   if (allocated(elementNames)) then
+      return
+   endif
+
    ! Determine the file name that contains the elemental data information.
    call get_environment_variable(NAME="OLCAO_DATA",VALUE=dataDirectory,&
          & STATUS=info)
@@ -220,6 +227,9 @@ subroutine initElementData
    do i = 1, numUniqueElements
       read (313,*) greyDX(i)
    enddo
+
+   ! Close the element data file.
+   close (313)
 
 end subroutine initElementData
 

@@ -10,6 +10,7 @@ cif2olcao collectSpectra condense copyInputs
 dump2skl
 ensembleCondense
 gaussInt2C gaussInt3C gaussIntKE gaussIntMom gaussIntNucV gaussOverlapRT
+getPlane
 insert3cbo intGen
 lmp2skl.py
 makeBDB makeBOND makeColorSYBD makeFittedRhoV makeinput makePDOS makePotDB

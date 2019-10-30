@@ -9,7 +9,7 @@ sub printHelp
 #           analysis, etc.
 #
 # The -i option allows the user to specify an alternate input file.  If not
-#   given, then the default value of "olcao.dat" will be used.
+#   given, then the default value of "olcao.skl" will be used.
 # The -o opiton allows the user to specify an alternate output file.  If not
 #   given, then the default value of "olcao.new" will be used.
 # The -t option allows the user to specify a title to be included in the newly
@@ -35,6 +35,9 @@ sub printHelp
 #   file be linearly translated by \$trans[1], \$trans[2], and \$trans[3] in
 #   those specific XYZ directions.  (At present the translations are only in
 #   the XYZ directions and so trans[1..3] must be in XYZ direct coordinates.
+#   A special translation of "0 0 0" will request that the model be shifted so
+#   that it is centered within the cell. This is really only applicable to
+#   molecular systems.
 # The -rotA option requests that the atomic positions in the atomic structure
 #   file be rotated given the *A*xis of rotation.  The \$rot[1], \$rot[2], and
 #   \$rot[3] values are a vector specifying the axis of rotation in directXYZ
