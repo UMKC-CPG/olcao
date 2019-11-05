@@ -1,0 +1,169 @@
+#! /usr/bin/perl
+
+# PROGRAM:  getPlane
+# PURPOSE:  Give a set of three Cartesian coordinate points, this program will
+#   determine the center point between them, and provide a vector that is
+#   normal to the plane defined by those points.  This information is useful
+#   for the OpenDX module called MapToPlane.
+#
+# USAGE:  getPlane -i $filename -c $inUnitCode $outUnitCode
+#
+# The -i parameter is used to specify the input file name.  If this parameter
+#   is not given then the default name of "planePoints" is used.  This file
+#   should have the coordinates in x,y,z Cartesian form.  You can have any line
+#   commented with a "#" at the beginning of the line.  You need three lines,
+#   one for each point.
+# The -c parameter is used to convert the units of the input file coordiantes
+#   to another set of units.  The inUnitCode and outUnitCode can have values
+#   of either 1 or 2.  1 = Angstroms; 2 = atomic units.  Thus, using -c 1 2
+#   will convert the input coordnates from angstroms to atomic units.  And,
+#   using -c 2 1 will convert the input coordinates from atomic units to
+#   angstroms.  Using -c 1 1 or -c 2 2 is meaningless and does nothing in any
+#   case.
+
+use warnings;
+use strict;
+
+#Define global variables:
+my $filename;
+my $commandLine;
+my $argument;
+my $pointNum;
+my $line;
+my $number;
+my $inUnitCode;   # 1=Ang. 2=a.u.
+my $outUnitCode;  # 1=Ang. 2=a.u.
+my $i;
+my @values;
+my @xPos;
+my @yPos;
+my @zPos;
+my @mid;
+my @centroid;
+my @vectorDiff1;
+my @vectorDiff2;
+my @normal;
+
+# Define default values for various parameters.
+$filename = "planePoints";
+$commandLine = "command";
+$inUnitCode = 1;  # Assume angstroms
+$outUnitCode = 1; # Assume angstroms
+
+# Parse the command line
+$number = 0;
+while ($number < scalar(@ARGV))
+{
+   if ($ARGV[$number] eq "-i")
+      {$filename = $ARGV[++$number];}
+   elsif ($ARGV[$number] eq "-c")
+   {
+      $inUnitCode = $ARGV[++$number];
+      $outUnitCode = $ARGV[++$number];
+   }
+   else
+      {
+         print STDOUT "UNKNOWN COMMAND LINE PARAMETER $ARGV[$number].";
+         print STDOUT " ABORTING.\n";
+         exit;
+      }
+
+      $number++;
+
+   #Record the command line used to create this set of input files.
+   open (COMMANDLINE,">>$commandLine");
+   print COMMANDLINE "getPlane ";
+   foreach $argument (0..$#ARGV)
+      {print COMMANDLINE "$ARGV[$argument] ";}
+   print COMMANDLINE "\n";
+   close (COMMANDLINE);
+}
+
+# Check that the input and output codes are valid.
+if (($inUnitCode != 1) && ($inUnitCode != 2))
+   {die "inUnitCode $inUnitCode should be either 1 or 2.\n";}
+if (($outUnitCode != 1) && ($outUnitCode != 2))
+   {die "outUnitCode $outUnitCode should be either 1 or 2.\n";}
+
+# Open the input file for reading.
+open (POS,"<$filename") || die 'Could not open file $filename.\n';
+
+# Read the file for the three points needed to define this plane.  Any line
+#   that begins with a '#' is a comment line and will be ignored.
+$pointNum = 0;
+while ($line=<POS>)
+{
+   # Check for comment lines.
+   if ($line =~/^\#/)
+      {next;}
+   else
+      {$pointNum++;}
+
+   chomp ($line);
+   @values = split(/\s+/,"$line");
+   if ($values[0] eq "")
+      {shift @values;}
+
+   $xPos[$pointNum] = $values[0];
+   $yPos[$pointNum] = $values[1];
+   $zPos[$pointNum] = $values[2];
+}
+
+# Convert the coordinates to the requested unit.
+if ($inUnitCode != $outUnitCode)
+{
+   if ($inUnitCode == 1)
+   {
+      for ($i=1;$i<=3;$i++)
+      {
+         $xPos[$i] /= 0.52917720859;
+         $yPos[$i] /= 0.52917720859;
+         $zPos[$i] /= 0.52917720859;
+      }
+   }
+   elsif ($inUnitCode == 2)
+   {
+      for ($i=1;$i<=3;$i++)
+      {
+         $xPos[$i] *= 0.52917720859;
+         $yPos[$i] *= 0.52917720859;
+         $zPos[$i] *= 0.52917720859;
+      }
+   }
+}
+
+# Determine the center point of the triangle by first finding the midpoint
+#   between points 1 and 2.  Then find the point 1/3 of the way between point 3
+#   and the midpoint, closer to the midpoint.  This is the triangle's centroid.
+
+$mid[1] = ($xPos[1] + $xPos[2])/2.0;
+$mid[2] = ($yPos[1] + $yPos[2])/2.0;
+$mid[3] = ($zPos[1] + $zPos[2])/2.0;
+
+$centroid[1] = $mid[1] + ($xPos[3] - $mid[1])/3.0;
+$centroid[2] = $mid[2] + ($yPos[3] - $mid[2])/3.0;
+$centroid[3] = $mid[3] + ($zPos[3] - $mid[3])/3.0;
+
+# Determine the normal to this plane.  This is obtained from the cross
+#   product of two vectors.  The first vector is the difference between
+#   point2 and point1 while the second vetor is the difference between point3
+#   and point1.
+
+$vectorDiff1[1] = $xPos[2] - $xPos[1];
+$vectorDiff1[2] = $yPos[2] - $yPos[1];
+$vectorDiff1[3] = $zPos[2] - $zPos[1];
+
+$vectorDiff2[1] = $xPos[3] - $xPos[1];
+$vectorDiff2[2] = $yPos[3] - $yPos[1];
+$vectorDiff2[3] = $zPos[3] - $zPos[1];
+
+$normal[1] = $vectorDiff1[2]*$vectorDiff2[3] - $vectorDiff1[3]*$vectorDiff2[2];
+$normal[2] =-$vectorDiff1[1]*$vectorDiff2[3] + $vectorDiff1[3]*$vectorDiff2[1];
+$normal[3] = $vectorDiff1[1]*$vectorDiff2[2] - $vectorDiff1[2]*$vectorDiff2[1];
+
+
+# Print the results
+printf STDOUT "Center point of the triangle is:  %f %f %f\n",$centroid[1],
+      $centroid[2],$centroid[3];
+printf STDOUT "Normal of the plane is:           %f %f %f\n",$normal[1],
+      $normal[2],$normal[3];

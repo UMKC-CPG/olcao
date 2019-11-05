@@ -60,7 +60,7 @@ target_link_libraries(gOLCAOoptc gGaussIntegrals)
 add_executable(gOLCAOfield $<TARGET_OBJECTS:gCommon> ../basis.f90 
    ../hdf5PSCFBand.F90 ../hdf5MainEval.f90 ../hdf5MainEvec.F90 
    ../hdf5MainPotRho.f90 ../hdf5Main.f90 ../hdf5Field.F90 ../matrixSubs.F90
-   ../secularEqn.F90 ../populate.F90 ../openDX.f90 ../xdmf.f90 ../field.F90
+   ../secularEqn.F90 ../populate.F90 ../openDX.f90 ../xdmf_vtk.f90 ../field.F90
    ../OLCAO_Field.f90 )
 
 # At this point we need to add the -DGAMMA preprocessor definition to the

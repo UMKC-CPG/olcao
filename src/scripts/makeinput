@@ -3390,7 +3390,9 @@ sub printOLCAOInput
    print OLCAO "10 10 10                      ! a,b,c # of mesh points\n";
    print OLCAO "-100000.0 100000.0            ! min,max range of energy\n";
    print OLCAO "0                             ! 0=Psi^2; 1=Rho\n";
-   print OLCAO "1                             ! 1=3D+1D; 2=3D; 3=1D.\n";
+   print OLCAO "0                             ! 1=Produce OpenDX output\n";
+   print OLCAO "1                             ! 1=Produce XDMF+HDF5 output\n";
+   print OLCAO "1                             ! 1=Produce 1D profile output\n";
 
    # Print the end of data marker
    print OLCAO "END_OF_DATA\n";

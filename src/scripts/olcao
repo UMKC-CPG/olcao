@@ -194,7 +194,8 @@ my $eps2;
 my $cond;
 my $refr;
 my $pot;
-my $valeRho;
+my $rho;
+my $wave;
 my $up;
 my $dn; # Down
 my $upPdn; # Up + Down
@@ -210,6 +211,7 @@ my $dat;
 my $alt;
 my $dx;
 my $hdf;
+my $xdmf3;
 
 # Eecutable names.
 my @executables;
@@ -602,7 +604,8 @@ sub initFileNames
    $cond      = ".cond";
    $refr      = ".refr";
    $pot       = ".pot";
-   $valeRho   = ".rhoV";
+   $rho       = ".rho";
+   $wave      = ".wave";
    $up        = ".up";
    $dn        = ".dn";
    $upPdn     = ".up+dn";
@@ -617,6 +620,7 @@ sub initFileNames
    $dat   = ".dat";
    $dx    = ".dx";
    $hdf   = ".hdf5";
+   $xdmf3 = ".xdmf3";
 }
 
 
@@ -1658,25 +1662,30 @@ sub manageOutput
       &move("$band$tempBasis$hdf","$taskEdge$band$taskBasis$alt$hdf");
       &move("fort.8","$taskEdge$intg$taskBasis.SCFV$alt.8");
 
-      # The profile files are always created.
-      &move("fort.30","$proj_home/$taskEdge$field$taskBasis$alt" .
-                      "$profile-a$dat");
-      &move("fort.31","$proj_home/$taskEdge$field$taskBasis$alt" .
-                      "$profile-b$dat");
-      &move("fort.32","$proj_home/$taskEdge$field$taskBasis$alt" .
-                      "$profile-c$dat");
-      if (-e "fort.56") # Only move openDX files if they were created.
+      # If the profile files were created, then move them.
+      if (-e "fort.30")
+      {
+         &move("fort.30","$proj_home/$taskEdge$field$taskBasis$alt" .
+                         "$profile-a$dat");
+         &move("fort.31","$proj_home/$taskEdge$field$taskBasis$alt" .
+                         "$profile-b$dat");
+         &move("fort.32","$proj_home/$taskEdge$field$taskBasis$alt" .
+                         "$profile-c$dat");
+      }
+
+      # Only move openDX files if they were created.
+      if (-e "fort.56")
       {
          &move("fort.56","$proj_home/$atomPos$dx");
          &move("fort.57","$proj_home/$lattice$dx");
          if ($spinPol == 2)
          {
             &move("fort.58","$proj_home/$taskEdge$field$taskBasis$alt" .
-                            "$valeRho$upPdn$dx");
+                            "$rho$upPdn$dx");
             &move("fort.59","$proj_home/$taskEdge$field$taskBasis$alt" .
-                            "$valeRho$upMdn$dx");
+                            "$rho$upMdn$dx");
             &move("fort.60","$proj_home/$taskEdge$field$taskBasis$alt" .
-                            "$valeRho$upPdn$minusNeut$dx");
+                            "$rho$upPdn$minusNeut$dx");
             &move("fort.61","$proj_home/$taskEdge$field$taskBasis$alt" .
                             "$pot$up$dx");
             &move("fort.62","$proj_home/$taskEdge$field$taskBasis$alt" .
@@ -1685,12 +1694,19 @@ sub manageOutput
          else
          {
             &move("fort.58","$proj_home/$taskEdge$field$taskBasis$alt" .
-                            "$valeRho$dx");
+                            "$rho$dx");
             &move("fort.59","$proj_home/$taskEdge$field$taskBasis$alt" .
-                            "$valeRho$minusNeut$dx");
+                            "$rho$minusNeut$dx");
             &move("fort.60","$proj_home/$taskEdge$field$taskBasis$alt" .
                             "$pot$dx");
          }
+      }
+
+      # Only move XDMF-HDF5 files if they were created.
+      if (-e "fort.78")
+      {
+         &move("fort.78","$proj_home/$taskEdge$field$taskBasis$alt$xdmf3");
+         &move("$field$tempBasis$hdf","$taskEdge$field$taskBasis$alt$hdf");
       }
    }
 

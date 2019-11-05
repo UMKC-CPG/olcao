@@ -25,11 +25,11 @@ module O_FieldHDF5
 
    ! Define the group IDs of the subgroups for the wave function, charge
    !   density, and potential function data.
-   integer(hid_t) :: wave_gid
+   integer(hid_t) :: wav_gid
    integer(hid_t) :: rho_gid
    integer(hid_t) :: pot_gid
 
-   ! The dataspaces of the wave, rho, and pot datasets are all the same in all
+   ! The dataspaces of the wav, rho, and pot datasets are all the same in all
    !   key respects (type, dimension, etc.) and therefore can be given a static
    !   shared dsid definition now for abc dimensional axes.
    integer(hid_t) :: abc_dsid
@@ -46,9 +46,18 @@ module O_FieldHDF5
    ! Presently, the number of datasets under each group is fixed, but as always
    !   it might be a good idea to make it flexible for potential unforseen
    !   future uses.
-   integer(hid_t), dimension (4) :: wave_did ! (up,down,real,imag)
-   integer(hid_t), dimension (4) :: rho_did !  (up,down,live,diff)
-   integer(hid_t), dimension (4) :: pot_did !  (up,down,live,diff)
+   integer(hid_t), dimension (4) :: wav_did ! (sum,diff,live-N sum,live-N diff)
+   integer(hid_t), dimension (4) :: rho_did ! (sum,diff,live-N sum,live-N diff)
+   integer(hid_t), dimension (4) :: pot_did ! (sum,diff,live-N sum,live-N diff)
+
+   ! Integer to identify which axis is the one that needs to be tracked for the
+   !   determination of when to write data chunks.
+   integer :: triggerAxis
+
+   ! Because the data may be large we don't store it all in memory at the same
+   !   time. Thus, we need to write only portions to disk at a time. Therefore,
+   !   we need to define a chunk dataspace for the file.
+   integer (hid_t) :: fileFieldChunk_dsid
 
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    ! Begin list of module subroutines.!
@@ -68,7 +77,7 @@ subroutine initFieldHDF5
    implicit none
 
    ! Declare local variables.
-   integer :: numDataPoints
+   integer :: maxNumDataPoints
    integer :: hdferr
 
    ! Log the time we start to field the HDF5 files.
@@ -96,8 +105,8 @@ subroutine initFieldHDF5
    if (hdferr /= 0) stop 'Failed to create field-temp.hdf5 file.'
 
    ! Create the groups of the field hdf5 file.
-   call h5gcreate_f (field_fid,"/waveGroup",wave_gid,hdferr)
-   if (hdferr /= 0) stop 'Failed to create wave group'
+   call h5gcreate_f (field_fid,"/wavGroup",wav_gid,hdferr)
+   if (hdferr /= 0) stop 'Failed to create wav group'
    call h5gcreate_f (field_fid,"/rhoGroup",rho_gid,hdferr)
    if (hdferr /= 0) stop 'Failed to create charge density (rho) group'
    call h5gcreate_f (field_fid,"/potGroup",pot_gid,hdferr)
@@ -115,18 +124,43 @@ subroutine initFieldHDF5
    !   correctly for sufficiently large abcDims(:) values because of integer
    !   overflow. Need to write this is a way that is immune to integer overflow
    !   problems.
-   numDataPoints = abcDims(1)*abcDims(2)
-   if (numDataPoints > 250000000) then
-      abcDimsChunk(1:2) = int(250000000/numDataPoints * abcDims(1:2))
-   else
-      abcDimsChunk(1:2) = abcDims(1:2)
-   endif
-   abcDimsChunk(3) = 1
+   ! Compute the largest chunk size that contains fewer than the hard-coded
+   !   maximum number of datapoints yet that still retains the largest extent
+   !   along the a, b, and c axes as possible in that priority order.
+   maxNumDataPoints = 250000000
 
-   ! Create the dataspace that will be used for each dataset. The same
-   !   dataspace definition works for all of the datasets.
+   ! Check that the minimum space requirement is met to store data easily
+   if (abcDims(1) > maxNumDataPoints) then  ! Note the greater-than sign.
+      stop 'Increase maxNumDataPoints'
+   else
+      ! Assume that the chunk dimensions will be limited by the a-axis.
+      abcDimsChunk(1) = abcDims(1)
+      abcDimsChunk(2:3) = 1
+      triggerAxis = 1
+
+      ! Check if we can store two dimensions at a time.
+      if (abcDims(1)*abcDims(2) < maxNumDataPoints) then ! Note less-than.
+         abcDimsChunk(1:2) = abcDims(1:2)
+         abcDimsChunk(3) = 1
+         triggerAxis = 2
+
+         ! Check if we can store all three dimensions.
+         if (abcDims(1)*abcDims(2)*abcDims(3) < maxNumDataPoints) then ! Note <
+            abcDimsChunk(1:3) = abcDims(1:3)
+            triggerAxis = 3
+         endif
+      endif
+   endif
+
+   ! Create the dataspace that will be used for each dataset within the file.
+   !   The same dataspace definition works for all of the datasets.
    call h5screate_simple_f(3,abcDims,abc_dsid,hdferr)
    if (hdferr /= 0) stop 'Failed to create abc_dsid'
+
+   ! Create the dataspace that will be used to describe the data in memory
+   !   before being written to a file.
+   call h5screate_simple_f(3,abcDimsChunk,fileFieldChunk_dsid,hdferr)
+   if (hdferr /= 0) stop 'Failed to create fileFieldChunk_dsid'
 
    ! Define the properties of the datasets to be made.
 
@@ -142,63 +176,74 @@ subroutine initFieldHDF5
 
    ! Create the datasets that will be used.
 
+   ! Possible Future: Not currently implemented this way.
    ! First we make all the wave function datasets. This includes the real and
-   !   imaginary spin up and spin down data. Note that when a spin non-
+   !   imaginary spin sum and spin diff data. Note that when a spin non-
    !   polarized calculation is done then the total (up+down) will be stored in
-   !   the "up" dataset. Note further that when a gamma k-point calculation is
-   !   done only the real_up will be used.
-   call h5dcreate_f (wave_gid,"real_up",H5T_NATIVE_DOUBLE,abc_dsid,&
-         & wave_did(1),hdferr,abc_plid)
-   if (hdferr /= 0) stop 'Failed to create real spin up wave did'
-   call h5dcreate_f (wave_gid,"real_dn",H5T_NATIVE_DOUBLE,abc_dsid,&
-         & wave_did(2),hdferr,abc_plid)
-   if (hdferr /= 0) stop 'Failed to create real spin down wave did'
-   call h5dcreate_f (wave_gid,"imag_up",H5T_NATIVE_DOUBLE,abc_dsid,&
-         & wave_did(3),hdferr,abc_plid)
-   if (hdferr /= 0) stop 'Failed to create imaginary spin up wave did'
-   call h5dcreate_f (wave_gid,"imag_dn",H5T_NATIVE_DOUBLE,abc_dsid,&
-         & wave_did(4),hdferr,abc_plid)
-   if (hdferr /= 0) stop 'Failed to create imaginary spin down wave did'
+   !   the "sum" dataset. Note further that when a gamma k-point calculation is
+   !   done only the real_up+dn and (if needed for gamma spin-polarized
+   !   calculations) real_up-dn will be used.
+   !
+   ! Current implementation:
+   ! First we make all the wave function squared datasets. This includes the
+   !   sum and difference spin psi^2 obtained from the interacting (live)
+   !   material and also sum and diff spin psi^2 constructed from the difference
+   !   between the interacting material and that which would be created from
+   !   isolated (i.e. non-interacting) atoms. Note that when a spin non-
+   !   polarized calculation is done then the total (up+down) will be stored in
+   !   the "sum" dataset.
+   call h5dcreate_f (wav_gid,"wav_live_up+dn",H5T_NATIVE_DOUBLE,abc_dsid,&
+         & wav_did(1),hdferr,abc_plid)
+   if (hdferr /= 0) stop 'Failed to create live spin sum wav did'
+   call h5dcreate_f (wav_gid,"wav_live_up-dn",H5T_NATIVE_DOUBLE,abc_dsid,&
+         & wav_did(2),hdferr,abc_plid)
+   if (hdferr /= 0) stop 'Failed to create live spin diff wav did'
+   call h5dcreate_f (wav_gid,"wav_diff_up+dn",H5T_NATIVE_DOUBLE,abc_dsid,&
+         & wav_did(3),hdferr,abc_plid)
+   if (hdferr /= 0) stop 'Failed to create psi^2 spin sum wav difference did'
+   call h5dcreate_f (wav_gid,"wav_diff_up-dn",H5T_NATIVE_DOUBLE,abc_dsid,&
+         & wav_did(4),hdferr,abc_plid)
+   if (hdferr /= 0) stop 'Failed to create psi^2 spin diff wav difference did'
 
    ! Now we will make the charge density (rho) datasets. This includes the
-   !   up and down spin charge density obtained from the interacting (live)
-   !   material and also the up and down spin constructed from the difference
+   !   sum and diff spin charge density obtained from the interacting (live)
+   !   material and also sum and diff spin data constructed from the difference
    !   between the interacting material and that which would be created from
    !   isolated (i.e. non-interacting) atoms. Further, as with the wave
    !   function above, if the calculation is non spin-polarized then the total
-   !   (up+down) will be stored in the "up" portion.
-   call h5dcreate_f (rho_gid,"live_up",H5T_NATIVE_DOUBLE,abc_dsid,&
+   !   (up+down) will be stored in the "up+dn" portion.
+   call h5dcreate_f (rho_gid,"rho_live_up+dn",H5T_NATIVE_DOUBLE,abc_dsid,&
          & rho_did(1),hdferr,abc_plid)
-   if (hdferr /= 0) stop 'Failed to create interacting (live) spin up rho did'
-   call h5dcreate_f (rho_gid,"live_dn",H5T_NATIVE_DOUBLE,abc_dsid,&
+   if (hdferr /= 0) stop 'Failed to create interacting (live) spin sum rho did'
+   call h5dcreate_f (rho_gid,"rho_live_up-dn",H5T_NATIVE_DOUBLE,abc_dsid,&
          & rho_did(2),hdferr,abc_plid)
-   if (hdferr /= 0) stop 'Failed to create interacting (live) spin down rho did'
-   call h5dcreate_f (rho_gid,"diff_up",H5T_NATIVE_DOUBLE,abc_dsid,&
+   if (hdferr /= 0) stop 'Failed to create interacting (live) spin diff rho did'
+   call h5dcreate_f (rho_gid,"rho_diff_up+dn",H5T_NATIVE_DOUBLE,abc_dsid,&
          & rho_did(3),hdferr,abc_plid)
    if (hdferr /= 0) stop &
-         & 'Failed to create interacting-isolated spin up rho difference did'
-   call h5dcreate_f (rho_gid,"diff_dn",H5T_NATIVE_DOUBLE,abc_dsid,&
+         & 'Failed to create interacting-isolated spin sum rho difference did'
+   call h5dcreate_f (rho_gid,"rho_diff_up-dn",H5T_NATIVE_DOUBLE,abc_dsid,&
          & rho_did(4),hdferr,abc_plid)
    if (hdferr /= 0) stop &
-         & 'Failed to create interacting-isolated spin down rho difference did'
+         & 'Failed to create interacting-isolated spin diff rho difference did'
 
    ! Finally, we make the potential datasets. As with the charge density, the
-   !   up, down, interacting (live), and interacting-isolated difference atomic
-   !   potential function is obtained.
-   call h5dcreate_f (pot_gid,"live_up",H5T_NATIVE_DOUBLE,abc_dsid,&
+   !   sum, diff, interacting (live), and interacting-isolated difference
+   !   atomic potential function is obtained.
+   call h5dcreate_f (pot_gid,"pot_live_up+dn",H5T_NATIVE_DOUBLE,abc_dsid,&
          & pot_did(1),hdferr,abc_plid)
-   if (hdferr /= 0) stop 'Failed to create interacting (live) spin up pot did'
-   call h5dcreate_f (pot_gid,"live_dn",H5T_NATIVE_DOUBLE,abc_dsid,&
+   if (hdferr /= 0) stop 'Failed to create interacting (live) spin sum pot did'
+   call h5dcreate_f (pot_gid,"pot_live_up-dn",H5T_NATIVE_DOUBLE,abc_dsid,&
          & pot_did(2),hdferr,abc_plid)
-   if (hdferr /= 0) stop 'Failed to create interacting (live) spin down pot did'
-   call h5dcreate_f (pot_gid,"diff_up",H5T_NATIVE_DOUBLE,abc_dsid,&
+   if (hdferr /= 0) stop 'Failed to create interacting (live) spin diff pot did'
+   call h5dcreate_f (pot_gid,"pot_diff_up+dn",H5T_NATIVE_DOUBLE,abc_dsid,&
          & pot_did(3),hdferr,abc_plid)
    if (hdferr /= 0) stop &
-         & 'Failed to create interacting-isolated spin up pot difference did'
-   call h5dcreate_f (pot_gid,"diff_dn",H5T_NATIVE_DOUBLE,abc_dsid,&
+         & 'Failed to create interacting-isolated spin sum pot difference did'
+   call h5dcreate_f (pot_gid,"pot_diff_up-dn",H5T_NATIVE_DOUBLE,abc_dsid,&
          & pot_did(4),hdferr,abc_plid)
    if (hdferr /= 0) stop &
-         & 'Failed to create interacting-isolated spin down pot difference did'
+         & 'Failed to create interacting-isolated spin diff pot difference did'
 
    ! Log the time we finish setting up the HDF5 files.
    call timeStampEnd(27)
@@ -241,8 +286,8 @@ subroutine accessFieldHDF5
    abcDims(:) = numMeshPoints(:)
 
    ! Open the groups of the hdf5 field file.
-   call h5gopen_f (field_fid,"/waveGroup",wave_gid,hdferr)
-   if (hdferr /= 0) stop 'Failed to open waveGroup'
+   call h5gopen_f (field_fid,"/wavGroup",wav_gid,hdferr)
+   if (hdferr /= 0) stop 'Failed to open wavGroup'
    call h5gopen_f (field_fid,"/rhoGroup",rho_gid,hdferr)
    if (hdferr /= 0) stop 'Failed to open rhoGroup'
    call h5gopen_f (field_fid,"/potGroup",pot_gid,hdferr)
@@ -251,14 +296,14 @@ subroutine accessFieldHDF5
    ! Open the datasets.
 
    ! Wave function datasets first.
-   call h5dopen_f (wave_gid,"real_up",wave_did(1),hdferr)
-   if (hdferr /= 0) stop 'Failed to open real up wave did'
-   call h5dopen_f (wave_gid,"real_dn",wave_did(2),hdferr)
-   if (hdferr /= 0) stop 'Failed to open real down wave did'
-   call h5dopen_f (wave_gid,"imag_up",wave_did(3),hdferr)
-   if (hdferr /= 0) stop 'Failed to open imaginary up wave did'
-   call h5dopen_f (wave_gid,"imag_dn",wave_did(4),hdferr)
-   if (hdferr /= 0) stop 'Failed to open imaginary down wave did'
+   call h5dopen_f (wav_gid,"real_up",wav_did(1),hdferr)
+   if (hdferr /= 0) stop 'Failed to open real up wav did'
+   call h5dopen_f (wav_gid,"real_dn",wav_did(2),hdferr)
+   if (hdferr /= 0) stop 'Failed to open real down wav did'
+   call h5dopen_f (wav_gid,"imag_up",wav_did(3),hdferr)
+   if (hdferr /= 0) stop 'Failed to open imaginary up wav did'
+   call h5dopen_f (wav_gid,"imag_dn",wav_did(4),hdferr)
+   if (hdferr /= 0) stop 'Failed to open imaginary down wav did'
 
    ! Charge density (rho) datasets second.
    call h5dopen_f (rho_gid,"live_up",rho_did(1),hdferr)
@@ -284,12 +329,12 @@ subroutine accessFieldHDF5
    !   the same and so only one copy is necessary. (Actually, this value is
    !   not really used, but in the "close" subroutine we close this id so we
    !   should make sure to have it open before attempting to close it.
-   call h5dget_create_plist_f (wave_did(1),abc_plid,hdferr)
+   call h5dget_create_plist_f (wav_did(1),abc_plid,hdferr)
    if (hdferr /= 0) stop 'Failed to obtain abc_plid'
 
    ! Obtain the dataspace that is used for each dataset. The same dataspace
    !   definition works for all of the datasets.
-   call h5dget_space_f (wave_did(1),abc_dsid,hdferr)
+   call h5dget_space_f (wav_did(1),abc_dsid,hdferr)
    if (hdferr /= 0) stop 'Failed to obtain abc_dsid'
 
 end subroutine accessFieldHDF5
@@ -313,14 +358,14 @@ subroutine closeFieldHDF5
    ! Close the datasets next.
 
    ! Close the wave function datasets first.
-   call h5dclose_f (wave_did(1),hdferr)
-   if (hdferr /= 0) stop 'Failed to close wave_did(1)'
-   call h5dclose_f (wave_did(2),hdferr)
-   if (hdferr /= 0) stop 'Failed to close wave_did(2)'
-   call h5dclose_f (wave_did(3),hdferr)
-   if (hdferr /= 0) stop 'Failed to close wave_did(3)'
-   call h5dclose_f (wave_did(4),hdferr)
-   if (hdferr /= 0) stop 'Failed to close wave_did(4)'
+   call h5dclose_f (wav_did(1),hdferr)
+   if (hdferr /= 0) stop 'Failed to close wav_did(1)'
+   call h5dclose_f (wav_did(2),hdferr)
+   if (hdferr /= 0) stop 'Failed to close wav_did(2)'
+   call h5dclose_f (wav_did(3),hdferr)
+   if (hdferr /= 0) stop 'Failed to close wav_did(3)'
+   call h5dclose_f (wav_did(4),hdferr)
+   if (hdferr /= 0) stop 'Failed to close wav_did(4)'
 
    ! Close the charge density (rho) datasets second.
    call h5dclose_f (rho_did(1),hdferr)
@@ -347,8 +392,8 @@ subroutine closeFieldHDF5
    if (hdferr /= 0) stop 'Failed to close abc_dsid'
 
    ! Close the groups.
-   call h5gclose_f (wave_gid,hdferr)
-   if (hdferr /= 0) stop 'Failed to close wave_gid'
+   call h5gclose_f (wav_gid,hdferr)
+   if (hdferr /= 0) stop 'Failed to close wav_gid'
    call h5gclose_f (rho_gid,hdferr)
    if (hdferr /= 0) stop 'Failed to close rho_gid'
    call h5gclose_f (pot_gid,hdferr)

@@ -12,26 +12,62 @@ subroutine printXDMFMetaFile
    implicit none
 
    ! Define local variables.
+   integer :: i
+   character*14, dimension(12) :: dataSetNames
+   character*10, dimension(12) :: groupNames
+
+   ! Establish the names for the data sets and groups.
+   dataSetNames(1) = "pot_diff_up+dn"
+   dataSetNames(2) = "pot_diff_up-dn"
+   dataSetNames(3) = "pot_live_up+dn"
+   dataSetNames(4) = "pot_live_up-dn"
+   dataSetNames(5) = "rho_diff_up+dn"
+   dataSetNames(6) = "rho_diff_up-dn"
+   dataSetNames(7) = "rho_live_up+dn"
+   dataSetNames(8) = "rho_live_up-dn"
+   dataSetNames(9) = "wav_diff_up+dn"
+   dataSetNames(10) = "wav_diff_up-dn"
+   dataSetNames(11) = "wav_live_up+dn"
+   dataSetNames(12) = "wav_live_up-dn"
+   groupNames(1) = "/potGroup/"
+   groupNames(2) = "/potGroup/"
+   groupNames(3) = "/potGroup/"
+   groupNames(4) = "/potGroup/"
+   groupNames(5) = "/rhoGroup/"
+   groupNames(6) = "/rhoGroup/"
+   groupNames(7) = "/rhoGroup/"
+   groupNames(8) = "/rhoGroup/"
+   groupNames(9) = "/wavGroup/"
+   groupNames(10) = "/wavGroup/"
+   groupNames(11) = "/wavGroup/"
+   groupNames(12) = "/wavGroup/"
 
    ! Open the field file.
-   open (unit=58,file="fort.58",status='new',form='formatted')
+   open (unit=78,file="fort.78",status='new',form='formatted')
 
    ! Write the header for this file opening the XML tags.
-   write (58,fmt="(a)") "<?xml version=""1.0"" encoding=""utf-8""?>"
-   write (58,fmt="(a)") "<XDMF xmlns:xi=""http://www.w3.org/2001/XInclude"" Version=""3.0"">"
-   write (58,fmt="(a)") "  <Domain>"
-   write (58,fmt="(a)") "    <Grid Name=""Grid"">"
-   write (58,fmt="(a)") "      <Geometry Origin="""" Type=""ORIGIN_DXDYDZ"">"
-   write (58,fmt="(a)") "        <DataItem DataType=""Float"" Dimensions=""3"" Format=""XML"" Precision=""8"">0 0 0</DataItem>"
-   write (58,fmt="(a)") "        <DataItem DataType=""Float"" Dimensions=""3"" Format=""XML"" Precision=""8"">1 1 1</DataItem>"
-   write (58,fmt="(a)") "      </Geometry>"
-   write (58,fmt="(a,3i10,a)") "      <Topology Dimensions=",numMeshPoints(:)," Type=""3DCoRectMesh""/>"
-   write (58,fmt="(a)") "      <Attribute Center=""Point"" Name=""real_up"" Type=""Scalar"">"
-   write (58,fmt="(a,3i10,a)") "        <DataItem DataType=""Float"" Dimensions=",numMeshPoints(:)," Format=""HDF"">field.hdf5:/waveGroup</DataItem>"
-   write (58,fmt="(a)") "      </Attribute>"
-   write (58,fmt="(a)") "    </Grid>"
-   write (58,fmt="(a)") "  </Domain>"
-   write (58,fmt="(a)") "</XDMF>"
+   write (78,fmt="(a)") "<?xml version=""1.0"" encoding=""utf-8""?>"
+   write (78,fmt="(a)") "<!DOCTYPE Xdmf SYSTEM ""Xdmf.dtd"" []>"
+   write (78,fmt="(a)") "<Xdmf Version=""3.0"" xmlns:xi=""[http://www.w3.org/2001/XInclude]"">"
+   write (78,fmt="(a)") "  <Domain>"
+   write (78,fmt="(a)") "    <Grid Name=""Grid"" GridType=""Uniform"">"
+   write (78,fmt="(a)") "      <Geometry Name=""Geometry"" GeometryType=""ORIGIN_DXDYDZ"">"
+   write (78,fmt="(a)") "        <DataItem NumberType=""Float"" Dimensions=""3"" Format=""XML"" Precision=""8"">0 0 0</DataItem>"
+   write (78,fmt="(a)") "        <DataItem NumberType=""Float"" Dimensions=""3"" Format=""XML"" Precision=""8"">1 1 1</DataItem>"
+   write (78,fmt="(a)") "      </Geometry>"
+   write (78,fmt="(a,3i10,a)") "      <Topology Dimensions=""",numMeshPoints(:),""" TopologyType=""3DCoRectMesh""/>"
+   do i = 1, 12
+      write (78,fmt="(a,a,a)") "      <Attribute Center=""Node"" Name=""",dataSetNames(i),""" AttributeType=""Scalar"">"
+      write (78,ADVANCE="NO",fmt="(a,3i10)") "        <DataItem NumberType=""Float"" Dimensions=""",numMeshPoints(:)
+      write (78,fmt="(a,a,a,a)") """ Format=""HDF"">field.hdf5:",groupNames(i),dataSetNames(i),"</DataItem>"
+      write (78,fmt="(a)") "      </Attribute>"
+   enddo
+   write (78,fmt="(a)") "    </Grid>"
+   write (78,fmt="(a)") "  </Domain>"
+   write (78,fmt="(a)") "</Xdmf>"
+
+   ! Close the XDMF file.
+   close (78)
 
 end subroutine printXDMFMetaFile
 

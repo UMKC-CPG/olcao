@@ -81,8 +81,9 @@ module O_Input
    ! Define control variables that apply only to the field program.
    integer :: doRho ! Flag indicating whether or not to include state
          ! occupancy when making the plot.
-   integer :: styleFIELD ! Flag requesting the form of the output.  1=3D
-         ! OpenDX & 1D projections; 2=3D OpenDX only; 3=1D projections only.
+   integer :: doODXFIELD ! Flag requesting a set of OpenDX output files.
+   integer :: doXDMFFIELD ! Flag requesting HDF5 and XDMF output files.
+   integer :: doProfileFIELD ! Flag requesting a set of 1D profile files.
    real (kind=double) :: eminFIELD ! Given in eV, stored in a.u.
    real (kind=double) :: emaxFIELD ! Given in eV, stored in a.u.
 
@@ -710,7 +711,9 @@ subroutine readFieldControl(readUnit,writeUnit)
    call readNumMeshPoints(readUnit,writeUnit)
    call readData(readUnit,writeUnit,eminFIELD,emaxFIELD,0,'')
    call readData(readUnit,writeUnit,doRho,0,'')
-   call readData(readUnit,writeUnit,styleFIELD,0,'')
+   call readData(readUnit,writeUnit,doODXField,0,'')
+   call readData(readUnit,writeUnit,doXDMFField,0,'')
+   call readData(readUnit,writeUnit,doProfileField,0,'')
 
    ! Apply the necessary conversions of the data to atomic units.
    eminFIELD = eminFIELD / hartree

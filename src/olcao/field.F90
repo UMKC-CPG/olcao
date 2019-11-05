@@ -34,6 +34,7 @@ subroutine computeFieldMesh
    ! The goal of this subroutine
 
    ! Import the necessary modules.
+   use HDF5
    use O_Kinds
    use O_TimeStamps
    use O_Potential,    only: spin, potCoeffs
@@ -43,9 +44,11 @@ subroutine computeFieldMesh
    use O_PotTypes,     only: maxNumPotAlphas, potTypes
    use O_AtomicSites,  only: valeDim, numAtomSites, atomSites
    use O_PSCFBandHDF5, only: eigenVectorsBand_did, valeStatesBand
+   use O_FieldHDF5,    only: wav_did, rho_did, pot_did, triggerAxis, &
+         & abcDimsChunk, fileFieldChunk_dsid
    use O_Kpoints,      only: numKPoints, kPointWeight, phaseFactor
-   use O_Input,        only: numStates, styleFIELD, eminFIELD, emaxFIELD, doRho, &
-         & numElectrons
+   use O_Input,        only: numStates, doODXField, doXDMFField, &
+         & doProfileField, eminFIELD, emaxFIELD, doRho, numElectrons
    use O_OpenDX,       only: printODXFieldHead, printODXFieldTail, &
          & printODXAtomPos, printODXLattice
    use O_XDMF_VTK,     only: printXDMFMetaFile
@@ -66,6 +69,7 @@ subroutine computeFieldMesh
    implicit none
 
    ! Define local variables.
+   integer :: hdferr
    integer :: a,b,c
    integer :: i,j,k,l,m,n  ! Loop index variables.
    integer :: dim1
@@ -74,6 +78,7 @@ subroutine computeFieldMesh
    integer :: energyLevelCounter
    integer :: minStateIndex
    integer :: maxStateIndex
+   integer (hsize_t), dimension (3) :: currentStartIndices
    real (kind=double) :: cutoff
    real (kind=double) :: currentPopulation
    real (kind=double) :: shiftedSepSqrd  ! Separation (r) between atom & mesh.
@@ -89,15 +94,17 @@ subroutine computeFieldMesh
 #endif
 
 
-   ! Data for each mesh point.  For spin non-polarized calculations, we have:
-   !   Index1 = Total, Index2 = Neutral, Index3 = Potential.  For spin
-   !   polarized calculations we have:  Index1 = Spin up, Index2 = spin down,
-   !   Index3 = Neutral, Index4 = Neutral.  These values will be appropriately
-   !   combined to form the data listed in the initEnv subroutine.
-   real (kind=double), allocatable, dimension (:,:,:) :: potFnEval
+   ! Data for each mesh point.  For spin non-polarized calculations, we have
+   !   for the last array dimension: Index1 = Total, Index2 = Neutral, Index3 =
+   !   Potential.  For spin polarized calculations we have for the last array
+   !   dimension:  Index1 = Spin up, Index2 = spin down, Index3 = Neutral,
+   !   Index4 = Neutral.  These values will be appropriately combined to form
+   !   the data listed in the initEnv subroutine. (They may not currently be
+   !   combined. Seems to be just interacting and just non-interacting, not the
+   !   difference.)
+   real (kind=double), allocatable, dimension (:,:,:,:) :: dataChunk
 real (kind=double), allocatable, dimension (:,:) :: currNumElec
 !complex (kind=double), allocatable, dimension (:) :: tempPointValue
-   real (kind=double), allocatable, dimension (:) :: currentPointValue
 #ifndef GAMMA
    complex (kind=double), allocatable, dimension (:,:) :: waveFnEval
 #else
@@ -158,7 +165,8 @@ real (kind=double), allocatable, dimension (:,:) :: currNumElec
    call initEnv
 
    ! Allocate space for locally defined allocatable arrays
-   allocate (potFnEval             (numMeshPoints(1),numMeshPoints(2),spin))
+   allocate (dataChunk (numCols,abcDimsChunk(1),abcDimsChunk(2),&
+         & abcDimsChunk(3)))
 #ifndef GAMMA
    allocate (waveFnEval            (numKPoints,numCols-spin))
    allocate (modifiedBasisFns      (maxNumAtomAlphas,maxNumStates,&
@@ -173,7 +181,6 @@ real (kind=double), allocatable, dimension (:,:) :: currNumElec
    allocate (structuredElectronPopulation (numStates,numKPoints,spin))
 allocate (accumCharge           (spin,numKPoints))
 !allocate (tempPointValue        (numCols-spin))
-   allocate (currentPointValue     (numCols))
    allocate (currentBasisFns       (maxNumAtomAlphas,maxNumStates,2))
    allocate (currentPotCoeffs      (maxNumPotAlphas,spin))
    allocate (currentPotAlphas      (maxNumPotAlphas))
@@ -190,11 +197,15 @@ allocate (currNumElec (numKPoints,spin))
 
    ! If we will create an OpenDX file, then we will print the header for the
    !   field data, the lattice information, and the atomic positions now.
-   if ((styleFIELD == 1) .or. (styleFIELD == 2)) then
+   if (doODXField == 1) then
 !write (20,*) "numCols =",numCols
       call printODXFieldHead (numCols)
       call printODXAtomPos
       call printODXLattice
+   endif
+
+   if (doXDMFField == 1) then
+      call printXDMFMetaFile
    endif
 
    ! Initialize the profile data structure.
@@ -233,13 +244,13 @@ allocate (currNumElec (numKPoints,spin))
    allocate (tempRealValeVale(valeDim,numStates))
    allocate (tempImagValeVale(valeDim,numStates))
    allocate (accumWaveFnCoeffs(valeDim,numCols-spin,numKPoints)) ! No coeffs
-         ! are needed for the total or spin-up, spin-down potential.
+         ! are needed for the total or (spin-up, spin-down) potential.
    accumWaveFnCoeffs(:,:,:) = cmplx(0.0_double,0.0_double)
 #else
 !   allocate (valeValeGamma(valeDim,valeDim,spin))
    allocate (valeValeGamma(valeDim,numStates,spin))
    allocate (accumWaveFnCoeffsGamma(valeDim,numCols-spin)) ! No coeffs are
-         ! for the total or spin-up, spin-down potential.  (Only 1 kp.)
+         ! for the total or (spin-up, spin-down) potential.  (Only 1 kp.)
    accumWaveFnCoeffsGamma(:,:) = 0.0_double
 #endif
 
@@ -344,11 +355,11 @@ currNumElec(i,j) = sum(structuredElectronPopulation(&
 !enddo
 !write (20,*) "k,valeVale state squared=",k,tempPointValue(1)
 
-            if (doRho == 0) then
+            if (doRho == 0) then ! Wave function
 !write (20,*) "kPointWeight(i),spin=",kPointWeight(i),spin
 !call flush (20)
                currentPopulation = kPointWeight(i)/real(spin,double)
-            else
+            else ! Charge density
 !write (20,*) "k,i,j structEPop(k,i,j)=",&
 ! & k,i,j,structuredElectronPopulation(k,i,j)
 !call flush (20)
@@ -392,9 +403,9 @@ accumChargeKP = accumChargeKP + accumCharge(j,i)
 #else
          do k = minStateIndex, maxStateIndex
 
-            if (doRho == 0) then
+            if (doRho == 0) then ! Wave function
                currentPopulation = kPointWeight(i)/real(spin,double)
-            else
+            else ! Charge density
                currentPopulation = structuredElectronPopulation(k,i,j)
             endif
 
@@ -424,12 +435,19 @@ accumChargeKP = accumChargeKP + accumCharge(j,i)
    ! Initialize the count of the number of mesh points computed.
    currentPointCount = 0
 
+   ! Initialize the data chunk that will hold each of the resultant data types.
+   dataChunk(:,:,:,:) = 0.0_double
+
+   ! Define the initial points of the hyperslab if XDMF HDF5 output is needed.
+   if (doXDMFField == 1) then
+      currentStartIndices(:) = 0
+   endif
+
    do c = 1, numMeshPoints(3)
    do b = 1, numMeshPoints(2)
    do a = 1, numMeshPoints(1)
 
       ! Initialize the evaluation of this mesh point.
-      potFnEval(:,:,1:spin) = 0.0_double
 #ifndef GAMMA
       waveFnEval(1:numKPoints,1:numCols-spin) = cmplx(0.0_double,0.0_double)
 #else
@@ -457,7 +475,8 @@ accumChargeKP = accumChargeKP + accumCharge(j,i)
       !   waveFnSqrd at the current mesh point defined by a,b,c loop indices.
       do i = 1, numAtomSites
 
-         ! Obtain key information about this atom.
+         ! Obtain key information about this atom. (The use of "2" is
+         !   arbitrary.)
          call initializeAtomSite(i,2,currentAtomType,currentElements,&
             & currentNumTotalStates,currentNumCoreStates,currentNumValeStates,&
             & currentNumAlphas,currentlmIndex,currentlmAlphaIndex,&
@@ -514,7 +533,8 @@ accumChargeKP = accumChargeKP + accumCharge(j,i)
          do j = 1, numKPoints
             do k = 1, numCols-spin  ! -spin because pot is not treated this way
                do l = 1,currentNumValeStates(2)
-                  modifiedBasisFns(:,l,k,j) = currentBasisFns(:,l,2) * &
+                  modifiedBasisFns(1:currentNumAlphas(2),l,k,j) = &
+                        & currentBasisFns(1:currentNumAlphas(2),l,2) * &
                         & accumWaveFnCoeffs(currentValeStateIndex+l,k,j)
                enddo
             enddo
@@ -522,7 +542,8 @@ accumChargeKP = accumChargeKP + accumCharge(j,i)
 #else
          do k = 1, numCols-spin  ! -spin because pot is not treated this way
             do l = 1,currentNumValeStates(2)
-               modifiedBasisFnsGamma(:,l,k) = currentBasisFns(:,l,2) * &
+               modifiedBasisFnsGamma(1:currentNumAlphas(2),l,k) = &
+                     & currentBasisFns(1:currentNumAlphas(2),l,2) * &
                      & accumWaveFnCoeffsGamma(currentValeStateIndex+l,k)
             enddo
          enddo
@@ -752,7 +773,7 @@ accumChargeKP = accumChargeKP + accumCharge(j,i)
             ! Accumulate the contribution of this replicated potential site's
             !   Gaussian set for the current mesh point.
             do k = 1, spin
-               potFnEval(a,b,k) = potFnEval(a,b,k) + &
+               dataChunk(spin+1+k,a,b,c) = dataChunk(spin+1+k,a,b,c) + &
                      & sum(currentPotCoeffs(1:lastContribPotAlphaIndex,k) * &
                      & expPotAlphaDist(1:lastContribPotAlphaIndex))
             enddo
@@ -769,50 +790,46 @@ accumChargeKP = accumChargeKP + accumCharge(j,i)
 !write (20,*) "currNumElec(:,1)=",currNumElec(:,1)
       if (spin == 1) then
          waveFnEval(:,1) = conjg(waveFnEval(:,1)) * waveFnEval(:,1)
-         currentPointValue(1) = sum(waveFnEval(:,1) * currNumElec(:,1))
+         dataChunk(1,a,b,c) = sum(waveFnEval(:,1) * currNumElec(:,1))
          waveFnEval(:,2) = conjg(waveFnEval(:,2)) * waveFnEval(:,2)
-         currentPointValue(2) = sum(waveFnEval(:,2) * &
+         dataChunk(2,a,b,c) = sum(waveFnEval(:,2) * &
                & 0.5_double * kPointWeight(:))
       else
          waveFnEval(:,1) = conjg(waveFnEval(:,1)) * waveFnEval(:,1)
-         currentPointValue(1) = sum(waveFnEval(:,1) * currNumElec(:,1))
+         dataChunk(1,a,b,c) = sum(waveFnEval(:,1) * currNumElec(:,1))
          waveFnEval(:,2) = conjg(waveFnEval(:,2)) * waveFnEval(:,2)
-         currentPointValue(2) = sum(waveFnEval(:,2) * currNumElec(:,2))
+         dataChunk(2,a,b,c) = sum(waveFnEval(:,2) * currNumElec(:,2))
          waveFnEval(:,3) = conjg(waveFnEval(:,3)) * waveFnEval(:,3)
-         currentPointValue(3) = sum(waveFnEval(:,3) * &
+         dataChunk(3,a,b,c) = sum(waveFnEval(:,3) * &
                & numElectrons * 0.5_double * kPointWeight(:))
 
          ! Compute the total charge as the sum of the up and down.
-         currentPointValue(1) = currentPointValue(1) + currentPointValue(2)
+         dataChunk(1,a,b,c) = dataChunk(1,a,b,c) + dataChunk(2,a,b,c)
 
          ! Compute the spin difference charge as the difference between the
          !   up and down.  Note that this computation *must* be done *after*
          !   the computation of the total charge.
-         currentPointValue(2) = currentPointValue(1) - &
-               & 2.0_double * currentPointValue(2)
+         dataChunk(2,a,b,c) = dataChunk(1,a,b,c) - &
+               & 2.0_double * dataChunk(2,a,b,c)
       endif
 
       ! Compute (the charge density for this point) - (the charge density for
       !   this point assuming non-interacting neutral atoms).
-      currentPointValue(spin+1) = currentPointValue(1) - &
-            & currentPointValue(spin+1)
+      dataChunk(spin+1,a,b,c) = dataChunk(1,a,b,c) - &
+            & dataChunk(spin+1,a,b,c)
 
 !write (20,*) "waveFnEval(:,1)=",waveFnEval(:,1)
-!write (20,*) "cPV(1)=",currentPointValue(1)
+!write (20,*) "cPV(1)=",dataChunk(1,a,b,c)
 
 #else
-      currentPointValue(1:numCols-spin) = &
+      dataChunk(1:numCols-spin,a,b,c) = &
             & waveFnEvalGamma(1:numCols-spin) * waveFnEvalGamma(1:numCols-spin)
 #endif
 
-      ! Record the potential function evaluation.  Always the last or last two
-      !   indices.
-      currentPointValue(numCols-spin+1:numCols) = potFnEval(a,b,1:spin)
-
       ! If openDX Files are being created, then print to them.
-      if ((styleFIELD == 1) .or. (styleFIELD == 2)) then
+      if (doODXField == 1) then
          do i = 1, numCols
-            write (57+i,ADVANCE="NO",fmt="(1x,e13.5)") currentPointValue(i)
+            write (57+i,ADVANCE="NO",fmt="(1x,e13.5)") dataChunk(i,a,b,c)
 
             ! Move to the next line if we are at the end of this one.
             if (mod(currentPointCount,5) .eq. 0) then
@@ -822,11 +839,40 @@ accumChargeKP = accumChargeKP + accumCharge(j,i)
       endif
 
       ! Accumulate the data for the profiles.
-      do i = 1,numCols
-         profile(1,i,a) = profile(1,i,a) + currentPointValue(i)  ! 1=a axis
-         profile(2,i,b) = profile(2,i,b) + currentPointValue(i)  ! 2=b axis
-         profile(3,i,c) = profile(3,i,c) + currentPointValue(i)  ! 3=c axis
-      enddo
+      if (doProfileField == 1) then
+         do i = 1,numCols
+            profile(1,i,a) = profile(1,i,a) + dataChunk(i,a,b,c)  ! 1=a axis
+            profile(2,i,b) = profile(2,i,b) + dataChunk(i,a,b,c)  ! 2=b axis
+            profile(3,i,c) = profile(3,i,c) + dataChunk(i,a,b,c)  ! 3=c axis
+         enddo
+      endif
+
+      if ((doXDMFField == 1) .and. (triggerAxis == 1) .and. &
+        & (a == numMeshPoints(1))) then
+
+!         ! Write all of the requested data.
+!         call hdf5WriteFieldData
+            
+         ! Select the hyperslab to write to for all data sets.
+         call h5sselect_hyperslab_f (fileFieldChunk_dsid,H5S_SELECT_SET_F,&
+               & currentStartIndices,abcDimsChunk,hdferr)
+         if (hdferr /= 0) stop 'Failed to select fileFieldChunk hyperslab. a'
+
+         ! Now, record the data.
+         call h5dwrite_f (wav_did(1),H5T_NATIVE_DOUBLE,dataChunk(1,:,:,:),&
+               & abcDimsChunk,hdferr,fileFieldChunk_dsid,fileFieldChunk_dsid)
+         if (hdferr /= 0) stop 'Failed to write wav_did(1) a'
+
+         ! Shift the initial points of the hyperslab.
+         currentStartIndices(1) = 0
+         if (b == numMeshPoints(2)) then
+            currentStartIndices(2) = 0
+            currentStartIndices(3) = c+1
+         else
+            currentStartIndices(2) = b+1
+            currentStartIndices(3) = c ! Technically not necessary. Already set
+         endif
+      endif
 
       ! Record that this loop has finished.
       if (mod(currentPointCount,10) .eq. 0) then
@@ -839,13 +885,48 @@ accumChargeKP = accumChargeKP + accumCharge(j,i)
       endif
       call flush (20)
 
-   enddo
-   enddo
-   enddo
-!write (20,*) "accumCharge(1,:)=",accumCharge(1,:)
+   enddo ! a-axis loop
+
+      if ((doXDMFField == 1) .and. (triggerAxis == 2) .and. &
+        & (b == numMeshPoints(2))) then
+
+         ! Select the hyperslab to write to for all data sets.
+         call h5sselect_hyperslab_f (fileFieldChunk_dsid,H5S_SELECT_SET_F,&
+               & currentStartIndices,abcDimsChunk,hdferr)
+         if (hdferr /= 0) stop 'Failed to select hyperslab for fileFieldChunk b'
+
+         ! Now, record the data.
+         call h5dwrite_f (wav_did(1),H5T_NATIVE_DOUBLE,dataChunk(1,:,:,:),&
+               & abcDimsChunk,hdferr,fileFieldChunk_dsid,fileFieldChunk_dsid)
+         if (hdferr /= 0) stop 'Failed to write wav_did(1) b'
+
+         ! Shift the initial points of the hyperslab.
+         currentStartIndices(1) = 0
+         currentStartIndices(2) = 0
+         currentStartIndices(3) = c+1
+      endif
+
+   enddo ! b-axis loop
+
+      ! Store the current chunks on disk as HDF5 data if necessary.
+      if ((doXDMFField == 1) .and. (triggerAxis == 3) .and. &
+        & (c == numMeshPoints(3))) then
+
+         ! Select the hyperslab to write to for all data sets.
+         call h5sselect_hyperslab_f (fileFieldChunk_dsid,H5S_SELECT_SET_F,&
+               & currentStartIndices,abcDimsChunk,hdferr)
+         if (hdferr /= 0) stop 'Failed to select hyperslab for fileFieldChunk c'
+
+         ! Now, record the data.
+         call h5dwrite_f (wav_did(1),H5T_NATIVE_DOUBLE,dataChunk(1,:,:,:),&
+               & abcDimsChunk,hdferr,fileFieldChunk_dsid,fileFieldChunk_dsid)
+         if (hdferr /= 0) stop 'Failed to write wav_did(1) c'
+      endif
+
+   enddo ! c-axis loop
 
    ! Finalize printing of the OpenDX field data.
-   if ((styleFIELD == 1) .or. (styleFIELD == 2)) then
+   if (doODXField == 1) then
 
       ! Write a newline to finish out any uneven (incomplete) lines if needed.
       if (mod(currentPointCount,5) /= 0) then
@@ -860,7 +941,9 @@ accumChargeKP = accumChargeKP + accumCharge(j,i)
 
 
    ! Print the profile data.
-   call printProfileData
+   if (doProfileField == 1) then
+      call printProfileData
+   endif
 
 
    ! Deallocate unnecessary arrays and matrices.
@@ -871,7 +954,6 @@ accumChargeKP = accumChargeKP + accumCharge(j,i)
    deallocate (currentlmIndex)
    deallocate (currentValeQN_lList)
    deallocate (accumCharge)
-   deallocate (potFnEval)
 #ifndef GAMMA
    deallocate (waveFnEval)
    deallocate (atomicOrbital)
