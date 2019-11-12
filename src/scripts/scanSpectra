@@ -1,23 +1,28 @@
 #!/usr/bin/env perl
-
+sub printHelp
+{
+   print <<ENDHELP;
 ###############################################################################
 #PROGRAM scanSpectra
 #
-# The purpose of this program is to compute a series of average XANES spectra,
-#   where each term in the series is associated with a specific a,b,c point in
-#   a model.  A key assumption is that this program is run from the directory
-#   that contains all the computed spectra for a particular element/edge
-#   combination (e.g. pwd = $HOME/xas/somesystem/norms/o-k and all the o-k
-#   spectra for the whole model are in that directory).
+#PURPOSE: The purpose of this program is to compute a series of partial density
+#   of states spectra. This program takes the output of makePDOS plot as its
+#   inputs for the partial density of states (PDOS) spectra calculations. A key
+#   assumption is that this program is run from the directory that contains all
+#   the computed data for partial density of states(PDOS).
+#  
+#USAGE:  scanSpectra [-elem \$element] [-edge \$edge] 
+#                    [-erange \$minEnergy \$maxEnergy] [-f \$fileName] 
+#                    [-s \$startx \$starty \$startz -e \$endx \$endy \$endz]
+#                    [-mesh \$numA \$numB \$numC [-g \$gaussianFWHM]]
+#                    [-doXANES] [-n \$numSpacePoints] [-l \$limitDist]
+#                    [-o \$outFile] | -help
 #
-#USAGE:  scanSpectra -elem $element -edge $edge
-#                    [-s $startx $starty $startz -e $endx $endy $endz]
-#                    [-mesh $numA $numB $numC [-g $gaussianFWHM]]
-#                    [-n $numSpacePoints] [-l $limitDist] [-o $outFile] | -help
-#
-# The -elem option is required and it specifies which element we seek to scan.
-# The -edge option is required and it specifies which edge of the given element
-#   we seek to scan.
+# The -elem option specifies which element we seek to scan.
+# The -edge option specifies which edge of the given element we seek to scan.
+# The -erange option specifies the maximum and minimum energy range of the
+#   spectra to include in the scan. If not given the full energy range is used.
+# The -f option is the name of the file in the current directory to be plotted.
 # The -s switch defines the x, y, z location of the starting position for the
 #   scan of XANES spectra.
 # The -e switch defines the x, y, z location of the ending position for the
@@ -27,7 +32,9 @@
 #   switches.
 # The -g suboption defines the full width at half the maximum height of the
 #   gaussian that is used to weight the spectral averaging on the mesh points.
-#   If not given then the default value of 3.0 A is used.
+# The -doXANES option is for XANES calculation. If you do not specify XANES 
+#   calculations, by default it will calculate dos spectra.
+# If not given then the default value of 3.0 A is used.
 # The -n option will define the number of points between the start and end
 #   that will be collected.  If this option is not given, then the default
 #   value of 101 will be used.  Only necessary for line scans, not mesh scans.
@@ -38,6 +45,9 @@
 #   the default name of "output.dat" will be used.
 # The -help option prints this friendly message.
 ###############################################################################
+ENDHELP
+   exit;
+}
 
 
 ##################################################
@@ -52,31 +62,41 @@ use Env;
 use lib "$OLCAO_BIN/perl5";
 use StructureControl;
 
+
 # Declare global variables.
 my $doMesh;
-my $element;
-my $edge;
-my $numAtoms;
-my $numAtomsExt;
-my $ext2CentralAtomMap_ref;
-my $atomElementName_ref;
-my $atomSpeciesID_ref;
-my $extScanDist_ref;
-my $spectraDir;
+my $doPDOS;
+my $doXANES;
+my $edge;     # Edge of the element we are trying to scan.
+my $fileName; # Name of the file in the current directory to be plotted.
+my $element;  # Element we are trying to scan.
+my $numAtoms; # The number of atoms in the system.
+my $atomElementName_ref; # A reference to the elemental names of each atom in the system.
+my $numAtomsExt;    # The number of extended atoms in the system.
+my $minEnergy;  # Minimum energy of the atom we are trying to scan.
+my $maxEnergy;  # Maximum energy of the atom we are trying to scan.
+my $ext2CentralAtomMap_ref; # Mapping between extended and original cell numbers.
+my $extScanDist_ref;   # Reference to the data structure that holds 
+                       #the distance information.
+my $atomSpeciesID_ref; # Species number of each atom in the sysytem.
 my $numSpacePoints;
 my $numEnergyPoints;
+my $limitDist;      # Distance threshold for taking some requested actions.
+my @start;          # Starting positions for the scan of DOS.
+my @end;            # Ending positions for the scan of DOS.
+my $outFile;        # Output file we get after calculation.
+my $gaussianFWHM;
+my @lineSpectra;
+my @numMeshPoints;
+my @erange;
 my $initialEnergy;
 my $finalEnergy;
 my $energyDelta;
-my $limitDist;
-my @numMeshPoints;
-my @start;
-my @end;
-#my $negBit_ref;
-#my $posBit_ref;
-my @lineSpectra;
-my $outFile;
-my $gaussianFWHM;
+my $columnLabels;
+my $numPdosAtoms;
+my @values2;
+my @pdosAtomNumberList;
+my $pdosAtomColumn;
 
 # Initialize the program environment variables.
 &initEnv;
@@ -90,7 +110,7 @@ StructureControl::readInputFile("olcao.skl", 0);
 # Read the OLCAO species from the olcao.fract-mi file.
 StructureControl::readOLCAOSpecies;
 
-# Set the limit for atom interaction.  (Radius of inclusion)
+# Set the limit for atom interaction.(Radius of inclusion)
 StructureControl::setLimitDist($limitDist);
 
 # Define the element of interest.
@@ -115,10 +135,6 @@ $atomSpeciesID_ref = StructureControl::getAtomSpeciesIDRef;
 
 # Obtain a reference to the mapping between extended and original cell numbers.
 $ext2CentralAtomMap_ref = StructureControl::getExt2CentralItemMapRef;
-
-# Obtain references to the neg and pos bits indicating periodic cells used.
-#$negBit_ref = StructureControl::getNegBitRef;
-#$posBit_ref = StructureControl::getPosBitRef;
 
 # Obtain the number of atoms and extended atoms in the system.
 $numAtoms    = StructureControl::getNumAtoms;
@@ -151,17 +167,22 @@ sub initEnv
    #   determination about what we are doing from the command line.
    $doMesh = 0;
 
+   # By default, we assume that we are visualizing PDOS.
+   $doPDOS = 1;
 
    # Initialize the element and edge to empty strings so that we can check
    #   for their absence on the command line.
-   $element = "";
+   $element = "br";
    $edge = "";
 
 
    # Initialize the value for the gaussian FWHM that is used to weight the
    #   spectra when averaging at the mesh points.
    $gaussianFWHM = 3.0;
-
+   
+   # Set the energy range for the elements.
+   $minEnergy = -30;
+   $maxEnergy =  30; 
 
    #Record the command line used to create this set of input files.
    open (COMMANDLINE,">>$commandLine");
@@ -190,6 +211,8 @@ sub parseCommandLine
       }
       elsif ($ARGV[$number] eq "-g")
          {$gaussianFWHM = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-doXANES")
+         {$doPDOS = 0;}
       elsif ($ARGV[$number] eq "-s")
       {
          $start[1] = $ARGV[++$number];
@@ -202,10 +225,17 @@ sub parseCommandLine
          $end[2] = $ARGV[++$number];
          $end[3] = $ARGV[++$number];
       }
+      elsif ($ARGV[$number] eq "-erange")
+      {
+         $minEnergy = $ARGV[++$number];
+         $maxEnergy = $ARGV[++$number];
+      }
       elsif ($ARGV[$number] eq "-elem")
          {$element = lc($ARGV[++$number]);}
       elsif ($ARGV[$number] eq "-edge")
          {$edge = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-f")
+         {$fileName = $ARGV[++$number];} 
       elsif ($ARGV[$number] eq "-n")
          {$numSpacePoints = $ARGV[++$number];}
       elsif ($ARGV[$number] eq "-l")
@@ -222,67 +252,18 @@ sub parseCommandLine
       $number++;
    }
 
-   # Complain if the $element and $edge variables were not given.
-   if ($element eq "")
-   {
-      print STDOUT "You failed to give the element of interest.\n";
-      exit;
-   }
-   if ($edge eq "")
-   {
-      print STDOUT "You failed to give the edge of interest.\n";
-      exit;
-   }
+#   # Complain if the $element and $edge variables were not given.
+#   if ($element eq "")
+#   {
+#      print STDOUT "You failed to give the element of interest.\n";
+#      exit;
+#   }
+#   if ($edge eq "")
+#   {
+#      print STDOUT "You failed to give the edge of interest.\n";
+#      exit;
+#   }
 }
-
-
-sub printHelp
-{
-   print <<ENDHELP;
-###############################################################################
-#PROGRAM scanSpectra
-#LAST UPDATED: Sept. 24, 2007
-#
-# The purpose of this program is to compute a series of average XANES spectra,
-#   where each term in the series is associated with a specific a,b,c point in
-#   a model.  A key assumption is that this program is run from the directory
-#   that contains all the computed spectra for a particular element/edge
-#   combination (e.g. pwd = \$HOME/xas/somesystem/norms/o-k and all the o-k
-#   spectra for the whole model are in that directory).
-#
-#USAGE:  scanSpectra -elem \$element -edge \$edge
-#                    [-s \$startx \$starty \$startz -e \$endx \$endy \$endz]
-#                    [-mesh \$numA \$numB \$numC [-g \$gaussianFWHM]]
-#                    [-n \$numSpacePoints] [-l \$limitDist] [-o \$outFile] | -help
-#
-# The -elem option is required and it specifies which element we seek to scan.
-# The -edge option is required and it specifies which edge of the given element
-#   we seek to scan.
-# The -s switch defines the x, y, z location of the starting position for the
-#   scan of XANES spectra.
-# The -e switch defines the x, y, z location of the ending position for the
-#   scan of XANES spectra.
-# The -mesh switch defines the number of points along each a,b,c direction
-#   that should be sampled.  This is mutually exclusive with the -s and -e
-#   switches.
-# The -g suboption defines the full width at half the maximum height of the
-#   gaussian that is used to weight the spectral averaging on the mesh points.
-#   If not given then the default value of 3.0 A is used.
-# The -n option will define the number of points between the start and end
-#   that will be collected.  If this option is not given, then the default
-#   value of 101 will be used.  Only necessary for line scans, not mesh scans.
-# The -l option is used to define the radius of the sphere within which atoms
-#   can contribute to the total XANES spectra for that point.  If not given,
-#   then the default value of 4 A is used.
-# The -o option defines the name for the output file.  If not specified, then
-#   the default name of "output.dat" will be used.
-# The -help option prints this friendly message.
-###############################################################################
-ENDHELP
-   exit;
-}
-
-
 
 sub formAndPrintSpectra
 {
@@ -290,7 +271,6 @@ sub formAndPrintSpectra
    my $doMesh = $_[0];
 
    # Declare local variables.
-   my $fileName;
    my $spacePoint;
    my $atom;
    my $column;
@@ -299,9 +279,6 @@ sub formAndPrintSpectra
    my @totalSpectra;
    my @allLineSpectra;
    my @values;
-   my $cellBitA;
-   my $cellBitB;
-   my $cellBitC;
    my $currentDist;
    my $energyPoint;
    my $spectralArea;
@@ -324,7 +301,7 @@ sub formAndPrintSpectra
 
    if ($doPDOS == 1)
    {
-      open(PDOS,"<$pdosFileName") || die "Cannot open PDOS. Stopping\n";
+      open(PDOS,"<$fileName") || die "Cannot open $fileName. Stopping\n";
       @spectra = <PDOS>;
       $columnLabels = shift(@spectra);
       @values = StructureControl::prepLine("",$columnLabels,'\s+');
@@ -413,7 +390,7 @@ sub formAndPrintSpectra
 
    # Print the header.
    if ($doMesh == 0)
-      {&printODXHeader(\*OUTPUT);}  # Print the OpenDX header.
+      {&printODXHeader(\*OUTPUT);}  # Print the openDX header.
    else
       {&printHeader(\*OUTPUT);} # Print the non-openDX header.
 
@@ -553,8 +530,6 @@ sub formAndPrintSpectra
    # Close the file.
    close (OUTPUT);
 }
-
-
 
 sub printODXHeader
 {
