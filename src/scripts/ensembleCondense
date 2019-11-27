@@ -7,8 +7,8 @@ sub printHelp
 # PROGRAM: EnsembleCondense
 # PURPOSE: This program will run an ensemble of precondensation and Lammps 
 #          condensation. It will create several packmol files(precondensations) 
-#          and derive the Lammps data file for each of those then run a Lammps 
-#          condesation.
+#          by calling another script called condense and derive the Lammps data 
+#          file for each of those then run a Lammps condesation.
 #
 # USAGE:   ensembleCondense [-i \$inputFile] [-n \$numSimulations]
 #                           [-c \$numComposition] [-r \$numReactions] | [-help]
@@ -63,7 +63,7 @@ my @rxnMaxProbability;
 my $pm;
 my $C = 0;
 my $probabilityB;
-
+my $mol=0;
 
 # Initialize the environment.
 &initEnv;
@@ -101,7 +101,7 @@ sub initEnv
 {
    # Define default values for command line parameters.
    $inputFile = "ensemble.in";
-   $numSimulations = 3;
+   $numSimulations = 2;
    $numCompositions = 0;
    $numReactions = 0;
 }
@@ -168,10 +168,15 @@ sub parseInputFile
 
    {
       @values = StructureControl::prepLine("",$line,'\s+');
+      #print STDOUT "@values\n";
 
       # Look for "composition", "cell_size", and "reactions" key words.
-      if (lc($values[0]) eq "composition")
+      if (lc($values[0]) eq "num_models")
       {
+        $numSimulations = $values[1];
+      }
+      elsif (lc($values[0]) eq "composition")
+      {  
          $numMoleculeTypes = $values[1];
 
          foreach $mol (1..$numMoleculeTypes)
@@ -180,6 +185,7 @@ sub parseInputFile
             $moleculeName[$mol] = lc($values[0]);
             $bindingType[$mol] = lc($values[1]);
             $numMolecules[$mol] = $values[2];
+            #print STDOUT "@values\n";
          }
       }
       elsif (lc($values[0]) eq "cell_size")
@@ -204,6 +210,7 @@ sub parseInputFile
             $rxnBinding[2][$rxn] = lc($values[3]);
             $rxnMinProbability[$rxn] = $values[4];
             $rxnMaxProbability[$rxn] = $values[5];
+            print STDOUT "@values\n";
          }
       }
    }
@@ -223,6 +230,7 @@ sub parseInputFile
 sub initEnsemble
 {
    # Define local variables.
+   # my $mol;
    my $sim;
    my $C = $minCellSize;
    my $probability = $rxnMinProbability[1];
@@ -244,26 +252,18 @@ sub initEnsemble
       chdir "$sim";
       open (INP,">condense.in") || die "Cannot open condense.in for writing.\n";
 
-#      print INP "composition $numCompositions\n";
-#      foreach $comp (1..$numCompositions)
-#         {print INP "$composition[$comp] $numMolecules[$comp]\n";}
-#
-#     print INP "cell_size $C\n";
-#
-#     print INP "reactions $numReactions\n";
-#     foreach $rxn (1..$numReaction)
-#        {print INP "$rxnComp[$rxn][1] $rxnComp[$rxn][2] $probability[$rxn]\n";}
+      print INP "composition $numMoleculeTypes\n";
+      foreach $mol (1..$numMoleculeTypes)
+      {
+      print INP "$moleculeName[$mol] family1 $numMolecules[$mol]\n";
+      }
+      print INP "\ncell_size $C\n\n";
+      print INP "reactions $numReactionTypes\n";
+      foreach $mol (1..$numMoleculeTypes)
+      {
+      print INP "$moleculeName[$mol] $bindingType[$mol] $moleculeName[$mol] $bindingType[$mol] $probability\n";
+      }
 
-      print INP <<ENDINP;
-composition 1
-ch4_1 family1 2
-
-cell_size $C
-
-reactions 1
-ch4_1 c-1 ch4_1 c-1 $probability
-
-ENDINP
      chdir("..");
      #$C += ($maxCellSize - $minCellSize)/($numSimulations-1);
      #$probability += ($rxnMaxProbability[1] - $rxnMinProbability[1])/($numSimulations-1);
@@ -279,7 +279,7 @@ sub runParallelCondense
 {
    # Define local variables.
    my $sim;
-
+   my $out;
    foreach $sim (1..$numSimulations)
    {
 print STDOUT "About to run $sim\n";
@@ -292,9 +292,11 @@ print STDOUT "About to run $sim\n";
 
    foreach $sim (1..$numSimulations)
    {
-      chdir ("$sim");
-      `srun -N 1 -c 2 Lammps &`;
-      chdir ("..");
+      chdir ("$sim/lammps");
+      #system ("lammps");
+      $out = `srun -N 1 -c 1 lmp < lammps.in`;
+      system("dump2skl -d dump.coarse -a lammps.dat -t 500");
+      chdir ("../..");
       #wait();
    }
 }
@@ -303,278 +305,8 @@ sub evolveEnsemble
 {
 }
 
+ 
 sub processResults
 {
 }
 
-
-#
-#
-#
-##!/usr/bin/env perl
-#
-#sub printHelp
-#{
-#   print <<ENDHELP;
-##############################################################################
-## PROGRAM: EnsembleCondense
-## PURPOSE: This program will run an ensemble of precondensation and Lammps 
-##          condensation. It will create several packmol files(precondensations) 
-##          and derive the Lammps data file for each of those then run a Lammps 
-##          condesation.
-##
-## USAGE:   ensembleCondense [-i \$inputFile] [-n \$numSimulations]
-##                           [-c \$numComposition] [-r \$numReactions] | [-help]
-##
-## The -i option can be used to specify the name of the input file (\$inputFile).
-##   If this option is not given then a default value of "ensemble.in" will be
-##   used.
-## The -n \$numSimulations option can be used to define the size of the ensemble
-##   by giving the number of simultaneous simulations (\$numSimulations). If
-##   this option is not provided, then a default value of 20 will be used.
-##############################################################################
-#ENDHELP
-#   exit(0);
-#}
-#
-################################################
-## Begin program execution #####################
-################################################
-#
-## Use necessary modules.
-#use strict;
-#use warnings;
-#use POSIX qw(ceil floor);
-#use Env;
-#use lib "$OLCAO_BIN/perl5";
-#use StructureControl;
-#use ElementData;
-#use BondData;
-#use AngleData;
-#use File::Copy;
-#
-#
-## Declare Global Variables.
-#my $inputFile; # Base input file for generating ensembles.
-#my $numSimulations; # Number of the simulations to be run at a time.
-#my $numCompositions; # Number of atomic bond types.
-#my $numReactions; # Number of different types of reactions.
-#my $numMoleculeTypes;
-#my $numReactionTypes;
-#my @numMolecules;
-#my @moleculeName;
-#my @bindingType;
-#my $maxCellSize;
-#my $minCellSize;
-#my @rxnMolName;
-#my @rxnBinding;
-#my @rxnProbability;
-#my $C = 0;
-#
-#
-## Initialize the environment.
-#&initEnv;
-#
-## Read the command line parameters.
-#&parseCommandLine;
-#
-## Read the main input file.
-#&parseInputFile;
-#
-### Error check the input for consistency.
-##&errorCheckInput;
-#
-### Compute implicit information not explicitly given in the input file.
-##&computeImplicitInput;
-#
-## Generate initial ensemble.
-#&initEnsemble;
-#
-## Test parallelization.
-#&runParallelCondense;
-#
-## Start evolutionary algorithm.
-#&evolveEnsemble;
-#
-## Process the final output.
-#&processResults;
-#
-################################################
-## End program execution #######################
-################################################
-#
-#
-#sub initEnv
-#{
-#   # Define default values for command line parameters.
-#   $inputFile = "ensemble.in";
-#   $numSimulations = 3;
-#   $numCompositions = 0;
-#   $numReactions = 0;
-#}
-#
-#
-## Loop through the command line parameters checking for each option.
-#sub parseCommandLine
-#{
-#   # Define local variables.
-#   my $number; # A simple counter for tracking which command line parameter we
-#               #   are currently on during the search through @ARGV.
-#   my $argument;
-#
-#
-#   # Read the command line parameters.
-#   $number = 0;
-#   while ($number < scalar(@ARGV))
-#   {
-#      if ($ARGV[$number] eq "-help")
-#         {&printHelp;}
-#      elsif ($ARGV[$number] eq "-i")
-#         {$inputFile = $ARGV[++$number];}
-#      elsif ($ARGV[$number] eq "-n")
-#         {$numSimulations = $ARGV[++$number];}
-#      else
-#      {
-#         print STDOUT "UNKNOWN COMMAND LINE PARAMETER $ARGV[$number].";
-#         print STDOUT " ABORTING.\n";
-#         exit;
-#      }
-#      $number++;
-#   }
-#
-#   # Record the command line used to run this job.
-#   open (COMMANDLINE,">>command");
-#   print COMMANDLINE "ensembleCondense ";
-#   foreach $argument (0..$#ARGV)
-#      {print COMMANDLINE "$ARGV[$argument] ";}
-#   print COMMANDLINE "\n";
-#   close (COMMANDLINE);
-#}
-#
-#sub parseInputFile
-#{
-#
-#   # Define local variables.
-#   my $mol;
-#   my $rxn;
-#   my $line;
-#   my @values;
-#   my $sim;
-#
-#   $C = $minCellSize;
-#
-#   # Open the input file.
-#   open (INFILE,"<$inputFile")
-#         || die "Cannot open $inputFile for reading. \n";
-#
-#
-#   #Read the input file.
-#   while ($line = <INFILE>)
-#
-#   {
-#      @values = StructureControl::prepLine("",$line,'\s+');
-#
-#      # Look for "composition", "cell_size", and "reactions" key words.
-#      if (lc($values[0]) eq "composition")
-#      {
-#         $numMoleculeTypes = $values[1];
-#
-#         foreach $mol (1..$numMoleculeTypes)
-#         {
-#            @values = StructureControl::prepLine(\*INFILE,"",'\s+');
-#            $moleculeName[$mol] = lc($values[0]);
-#            $bindingType[$mol] = lc($values[1]);
-#            $numMolecules[$mol] = $values[2];
-#         }
-#      }
-#      elsif (lc($values[0]) eq "cell_size")
-#      {
-#         $minCellSize = $values[1];
-#         $maxCellSize = $values[2];
-#      }
-#      elsif (lc($values[0]) eq "reactions")
-#      {
-#         # Get the number of different types of reactions.
-#         $numReactionTypes = $values[1];
-#
-#         # Read the descriptor for each reaction that includes the name of each
-#         #   of the participating molecules and the type of binding that each
-#         #   molecule makes available for that reaction to occur.
-#         foreach $rxn (1..$numReactionTypes)
-#         {
-#            @values = StructureControl::prepLine(\*INFILE,"",'\s+');
-#            $rxnMolName[1][$rxn] = lc($values[0]);
-#            $rxnBinding[1][$rxn] = lc($values[1]);
-#            $rxnMolName[2][$rxn] = lc($values[2]);
-#            $rxnBinding[2][$rxn] = lc($values[3]);
-#            $rxnProbability[$rxn] = $values[4];
-#         }
-#      }
-#   }
-#}
-##composition 3
-##B10C2H12 B-1 6
-##CH4 C-1 2
-##CH3CH3 C-1 1
-##
-##cell_size $C
-##
-##reactions 3
-##B10C2H12 B-1 B10C2H12 B-1 0.85
-##B10C2H12 B-1 CH4 C-1 0.85
-##B10C2H12 B-1 CH3CH3 C-1 0.75
-#
-#sub initEnsemble
-#{
-#   # Define local variables.
-#   my $sim;
-#   my $C = $minCellSize;
-#
-#   foreach $sim (1..$numSimulations)
-#   {
-#      mkdir "$sim";
-#      chdir "$sim";
-#      open (INP,">condense.in") || die "Cannot open condense.in for writing.\n";
-#      print INP <<ENDINP;
-#composition 1
-#CH4 C-1 2
-#
-#cell_size $C
-#
-#reactions 1
-#CH4 C-1 CH4 C-1 0.85
-#ENDINP
-#     chdir("..");
-#     $C += ($maxCellSize - $minCellSize)/($numSimulations-1);
-#   }
-#}
-#
-#sub runParallelCondense
-#{
-#   # Define local variables.
-#   my $sim;
-#
-#   foreach $sim (1..$numSimulations)
-#   {
-#      chdir ("$sim");
-#      #system("srun -n1 condense &");
-#      chdir ("..");
-#   }
-#   #wait();
-#   foreach $sim (1..$numSimulations)
-#   {
-#      chdir ("$sim");
-#   #   system("srun -n1 runLammps &");
-#      chdir ("..");
-#   }
-#   #wait();
-#}
-#
-#sub evolveEnsemble
-#{
-#}
-#
-#sub processResults
-#{
-#}
-#
