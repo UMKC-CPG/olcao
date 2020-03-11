@@ -64,32 +64,6 @@ my $pm;
 my $C = 0;
 my $probabilityB;
 my $mol=0;
-my @Car;
-my @Bor;
-my @Hyd;
-my $countH=0;
-my $countB=0;
-my $countC=0;
-my %elements;
-my $elements_keys;
-my @arr_sim;
-my $percentage;
-my $sim;
-my $numAtoms;
-my $stoich_values;
-my $target_element_percentage;
-my $target_element;
-my @hydrogen_arr;
-my $h_diff;
-my @sorted_hydrogen_arr;
-my $killing_rate;
-my $number_ofmodels_tokill;
-my $first;
-my @models_to_kill;
-my @content_of_condense;
-my $probability;
-
-
 
 # Initialize the environment.
 &initEnv;
@@ -201,20 +175,9 @@ sub parseInputFile
 
       # Look for "composition", "cell_size", and "reactions" key words.
       if (lc($values[0]) eq "num_models")
+
       {
         $numSimulations = $values[1];
-      }
-      elsif (lc($values[0]) eq "target_element")
-      {
-        $target_element = $values[1];
-      }
-      elsif (lc($values[0]) eq "target_element_percentage")
-      {
-         $target_element_percentage = $values[1];
-       }
-      elsif (lc($values[0]) eq "killing_rate")
-      {
-         $killing_rate = $values[1];
       }
       elsif (lc($values[0]) eq "composition")
       {  
@@ -271,7 +234,9 @@ sub parseInputFile
 sub initEnsemble
 {
    # Define local variables.
-   #my $sim;
+
+   # my $mol;
+   my $sim;
    my $C = $minCellSize;
    $probability = $rxnMinProbability[1];
     
@@ -313,22 +278,9 @@ $pm->wait_all_children;
 sub runParallelCondense
 {
    # Define local variables.
-  # my $sim;
+   my $sim;
    my $out;
-   my $inputFile_olcao="olcao.skl";
-   my $line;
-   my $atom;
-   my $numAtoms;
-   my @values;
-   my $timestep=1000;
-   my $x=0;
-   my $i;
-   until ($x==2)
-   {
-   #push (@models_to_kill, 1);
-  # until (scalar(@models_to_kill)=0)
-   #{
-    #shift @models_to_kill; 
+
    foreach $sim (1..$numSimulations)
    {
       chdir ("$sim");
@@ -428,7 +380,16 @@ sub runParallelCondense
 #}
 print "Sorted array is @sorted_hydrogen_arr\n";
 
-$x++;
+
+   foreach $sim (1..$numSimulations)
+   {
+      chdir ("$sim/lammps");
+      #system ("lammps");
+      $out = `srun -N 1 -c 1 lmp < lammps.in`;
+      system("dump2skl -d dump.coarse -a lammps.dat -t 500");
+      chdir ("../..");
+      #wait();
+   }
 }
 print "$target_element_percentage\n";
 }
