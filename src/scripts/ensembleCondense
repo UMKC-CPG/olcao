@@ -64,6 +64,32 @@ my $pm;
 my $C = 0;
 my $probabilityB;
 my $mol=0;
+my @Car;
+my @Bor;
+my @Hyd;
+my $countH=0;
+my $countB=0;
+my $countC=0;
+my %elements;
+my $elements_keys;
+my @arr_sim;
+my $percentage;
+my $sim;
+my $numAtoms;
+my $stoich_values;
+my $target_element_percentage;
+my $target_element;
+my @hydrogen_arr;
+my $h_diff;
+my @sorted_hydrogen_arr;
+my $killing_rate;
+my $number_ofmodels_tokill;
+my $first;
+my @models_to_kill;
+my @content_of_condense;
+my $probability;
+
+
 
 # Initialize the environment.
 &initEnv;
@@ -85,6 +111,9 @@ my $mol=0;
 
 # Test parallelization.
 &runParallelCondense;
+
+# Get Steoichiometry
+#&stoichiometry;
 
 # Start evolutionary algorithm.
 &evolveEnsemble;
@@ -175,6 +204,18 @@ sub parseInputFile
       {
         $numSimulations = $values[1];
       }
+      elsif (lc($values[0]) eq "target_element")
+      {
+        $target_element = $values[1];
+      }
+      elsif (lc($values[0]) eq "target_element_percentage")
+      {
+         $target_element_percentage = $values[1];
+       }
+      elsif (lc($values[0]) eq "killing_rate")
+      {
+         $killing_rate = $values[1];
+      }
       elsif (lc($values[0]) eq "composition")
       {  
          $numMoleculeTypes = $values[1];
@@ -230,13 +271,9 @@ sub parseInputFile
 sub initEnsemble
 {
    # Define local variables.
-   # my $mol;
-   my $sim;
+   #my $sim;
    my $C = $minCellSize;
-   my $probability = $rxnMinProbability[1];
-   #my $probabilityB = $rxnMinProbability[1];
-   #my $probabilityC = $rxnMinProbability[1];
-   #my $probabilityH = $rxnMinProbability[1];
+   $probability = $rxnMinProbability[1];
     
    my $pm = Parallel::ForkManager->new($numSimulations);
 
@@ -265,8 +302,6 @@ sub initEnsemble
       }
 
      chdir("..");
-     #$C += ($maxCellSize - $minCellSize)/($numSimulations-1);
-     #$probability += ($rxnMaxProbability[1] - $rxnMinProbability[1])/($numSimulations-1);
      $pm->finish;
    
    }
@@ -278,29 +313,126 @@ $pm->wait_all_children;
 sub runParallelCondense
 {
    # Define local variables.
-   my $sim;
+  # my $sim;
    my $out;
+   my $inputFile_olcao="olcao.skl";
+   my $line;
+   my $atom;
+   my $numAtoms;
+   my @values;
+   my $timestep=1000;
+   my $x=0;
+   my $i;
+   until ($x==2)
+   {
+   #push (@models_to_kill, 1);
+  # until (scalar(@models_to_kill)=0)
+   #{
+    #shift @models_to_kill; 
    foreach $sim (1..$numSimulations)
    {
-print STDOUT "About to run $sim\n";
       chdir ("$sim");
       system("condense");
-      #system("srun -N 1 -n1 condense &");
-      chdir ("..");
-      #wait();
-   }
-
-   foreach $sim (1..$numSimulations)
-   {
-      chdir ("$sim/lammps");
-      #system ("lammps");
+      chdir ("lammps");
       $out = `srun -N 1 -c 1 lmp < lammps.in`;
-      system("dump2skl -d dump.coarse -a lammps.dat -t 500");
-      chdir ("../..");
-      #wait();
-   }
-}
+      system("dump2skl -d dump.coarse -a lammps.dat -t $timestep");
+      #open the olcao skleton file for reading
+      open (OLC, "<$inputFile_olcao")
+              || die "cannot open $inputFile_olcao for reading. \n";
+      #read the input file (olcoa.skl)
+      while ($line = <OLC>)
+      {
+       @values = StructureControl::prepLine("",$line,'\s+');
+       # Look for atom names
+       if (lc($values[0]) =~ "frac")
+       {
+          $numAtoms = $values[1];
+           foreach $atom (1..$numAtoms)
+           {
+             @values = StructureControl::prepLine(\*OLC,"",'\s+');
+             $elements_keys = $values[0];
+             if (exists($arr_sim[$sim]{$elements_keys}))
+             {
+                $arr_sim[$sim]{$elements_keys}+=1;
+             }
+             else
+             {
+                $arr_sim[$sim]{$elements_keys} = 1;
+             }
+           }
+        }
+       }
+         # Calculate the elements percentage in each model
+         foreach $elements_keys (keys $arr_sim[$sim])
+         {
+           if (lc($elements_keys) eq lc($target_element))
+           {  
+             print "Number of $elements_keys in model $sim is $arr_sim[$sim]{$elements_keys}\n";
+             $percentage = ($arr_sim[$sim]{$elements_keys}/$numAtoms)*100;
+             print "the percentage of $elements_keys in model $sim is $percentage\n";
+             $h_diff = abs ($percentage - $target_element_percentage);
+             $hydrogen_arr[$sim-1]=$h_diff;
+             #Note to self: Remember to add a success criteria, don't keep killing half of them if you can keep them.
+             print "Array of Hydrogen is @hydrogen_arr\n";
+                         
+            # @sorted_hydrogen_arr = sort {$hydrogen_arr[$a] <=> $hydrogen_arr[$b]} 1..$#hydrogen_arr;
+             
+             #$number_ofmodels_tokill= $numSimulations*$killing_rate/100;
+             #$first = $numSimulations - $number_ofmodels_tokill;
+             #@models_to_kill= @sorted_hydrogen_arr[$first..$#sorted_hydrogen_arr];
+           }
+         }
+     chdir ("../..");
+    }
+      while (scalar(@arr_sim) > 0)
+         {shift @arr_sim;}
+             @sorted_hydrogen_arr = sort {$hydrogen_arr[$a] <=> $hydrogen_arr[$b]} 0..$#hydrogen_arr;
+              foreach $i (0..$#sorted_hydrogen_arr)
+             {
+              $sorted_hydrogen_arr[$i] = $sorted_hydrogen_arr[$i]+1
 
+              }
+ 
+             $number_ofmodels_tokill= $numSimulations*$killing_rate/100;
+             $first = $numSimulations - $number_ofmodels_tokill;
+             @models_to_kill= @sorted_hydrogen_arr[$first..$#sorted_hydrogen_arr];
+             
+             #$unsuccessful = 
+ #while (scalar(@models_to_kill) > 0)
+ #{
+   foreach $sim (@models_to_kill)
+     {
+        chdir ("$sim");
+        open (INP,"<condense.in") || die "Cannot open condense.in for reading.\n";
+        @content_of_condense = <INP>;
+        close (INP);
+               print "content equal @content_of_condense\n";
+        print "content 7 equal $content_of_condense[6]\n";
+        if ($target_element_percentage - $percentage > 0)
+         #I need to limit the probability to 1 and 0, it takes 10 itereations to reach 1 from a zero, in case we do more than 10 generations the probability will end up more than 1, use a while loop.
+        {
+          $probability = $probability + 0.1;
+          
+         }
+         else 
+         {
+          $probability = $probability - 0.1;
+          } 
+          $content_of_condense[6] = "ch4_1 c-1 ch4_1 c-1 $probability";
+           open (INP,">condense.in") || die "Cannot open condense.in for writing. \n";
+           print INP "@content_of_condense";
+           close (INP);
+           chdir ("..");
+     }
+ #}
+#}
+print "Sorted array is @sorted_hydrogen_arr\n";
+
+$x++;
+}
+print "$target_element_percentage\n";
+}
+#}
 sub evolveEnsemble
 {
 }
