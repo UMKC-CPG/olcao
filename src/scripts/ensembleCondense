@@ -211,6 +211,7 @@ sub parseInputFile
 
       # Look for "composition", "cell_size", and "reactions" key words.
       if (lc($values[0]) eq "num_models")
+
       {
         $numSimulations = $values[1];
       }
@@ -285,6 +286,11 @@ sub parseInputFile
 sub initEnsemble
 {
    # Define local variables.
+
+
+   # my $mol;
+   my $sim;
+
    my $C = $minCellSize;
    $probability = $rxnMinProbability[1];
     
@@ -311,8 +317,10 @@ sub initEnsemble
          print INP "$moleculeName[$mol] $bindingType[$mol] $moleculeName[$mol] $bindingType[$mol] $probability\n";
       }
 
+
       chdir("..");
       $pm->finish;
+
    
     }
     $pm->wait_all_children;
@@ -471,6 +479,7 @@ sub runParallelCondense
            }
          }
 
+
          # Calculate the elements percentage in each model
          foreach $elements_keys (keys $arr_sim[$sim])
          {
@@ -546,6 +555,7 @@ sub runParallelCondense
        close (INP);
        chdir ("..");
    }
+
   #}
 #}
    print "Sorted array is @sorted_hydrogen_arr\n";
@@ -553,6 +563,7 @@ sub runParallelCondense
    $x++;
  }
  print "$target_element_percentage\n";
+
 }
 #}
 sub evolveEnsemble
