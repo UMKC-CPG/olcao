@@ -13,12 +13,12 @@ sub printHelp
 # USAGE:   ensembleCondense [-i \$inputFile] [-n \$numSimulations]
 #                           [-c \$numComposition] [-r \$numReactions] | [-help]
 #
-# The -i option can be used to specify the name of the input file (\$inputFile).
-#   If this option is not given then a default value of "ensemble.in" will be
-#   used.
-# The -n \$numSimulations option can be used to define the size of the ensemble
-#   by giving the number of simultaneous simulations (\$numSimulations). If
-#   this option is not provided, then a default value of 20 will be used.
+#          -i option can be used to specify the name of the input file (\$inputFile).
+#          If this option is not given then a default value of "ensemble.in" will be
+#          used.
+#          -n \$numSimulations option can be used to define the size of the ensemble
+#          by giving the number of simultaneous simulations (\$numSimulations). If
+#          this option is not provided, then a default value of 20 will be used.
 #############################################################################
 ENDHELP
    exit(0);
@@ -64,6 +64,34 @@ my $pm;
 my $C = 0;
 my $probabilityB;
 my $mol=0;
+my @Car;
+my @Bor;
+my @Hyd;
+my $countH=0;
+my $countB=0;
+my $countC=0;
+my %elements;
+my $elements_keys;
+my @arr_sim;
+my $percentage;
+my $sim;
+my $numAtoms;
+my $stoich_values;
+my $target_element_percentage;
+my $target_element;
+my @hydrogen_arr;
+my $h_diff;
+my @sorted_hydrogen_arr;
+my $killing_rate;
+my $number_ofmodels_tokill;
+my $first;
+my @models_to_kill;
+my @content_of_condense;
+my $probability;
+my $wanted_density;
+ 
+
+
 
 # Initialize the environment.
 &initEnv;
@@ -99,7 +127,7 @@ my $mol=0;
 # End program execution #######################
 ###############################################
 
-
+# Initializing the environment and setting default values. ##################################################
 sub initEnv
 {
    # Define default values for command line parameters.
@@ -110,7 +138,7 @@ sub initEnv
 }
 
 
-# Loop through the command line parameters checking for each option.
+# Loop through the command line parameters checking for each option.##########################################
 sub parseCommandLine
 {
    # Define local variables.
@@ -124,11 +152,17 @@ sub parseCommandLine
    while ($number < scalar(@ARGV))
    {
       if ($ARGV[$number] eq "-help")
-         {&printHelp;}
+      {
+         &printHelp;
+      }
       elsif ($ARGV[$number] eq "-i")
-         {$inputFile = $ARGV[++$number];}
+      {
+         $inputFile = $ARGV[++$number];
+      }
       elsif ($ARGV[$number] eq "-n")
-         {$numSimulations = $ARGV[++$number];}
+      {
+         $numSimulations = $ARGV[++$number];
+      }
       else
       {
          print STDOUT "UNKNOWN COMMAND LINE PARAMETER $ARGV[$number].";
@@ -142,11 +176,15 @@ sub parseCommandLine
    open (COMMANDLINE,">>command");
    print COMMANDLINE "ensembleCondense ";
    foreach $argument (0..$#ARGV)
-      {print COMMANDLINE "$ARGV[$argument] ";}
+   {
+      print COMMANDLINE "$ARGV[$argument] ";
+   }
    print COMMANDLINE "\n";
    close (COMMANDLINE);
 }
 
+
+# Read the input file "ensemble.in" for the system specifications provided by the user.#########################
 sub parseInputFile
 {
 
@@ -168,16 +206,30 @@ sub parseInputFile
 
    #Read the input file.
    while ($line = <INFILE>)
-
    {
       @values = StructureControl::prepLine("",$line,'\s+');
-      #print STDOUT "@values\n";
 
       # Look for "composition", "cell_size", and "reactions" key words.
       if (lc($values[0]) eq "num_models")
 
       {
         $numSimulations = $values[1];
+      }
+      elsif (lc($values[0]) eq "target_element")
+      {
+        $target_element = $values[1];
+      }
+      elsif (lc($values[0]) eq "target_element_percentage")
+      {
+         $target_element_percentage = $values[1];
+      } 
+      elsif (lc($values[0]) eq "density")
+      {
+	 $wanted_density= $values[1];
+      }
+      elsif (lc($values[0]) eq "killing_rate")
+      {
+         $killing_rate = $values[1];
       }
       elsif (lc($values[0]) eq "composition")
       {  
@@ -189,7 +241,6 @@ sub parseInputFile
             $moleculeName[$mol] = lc($values[0]);
             $bindingType[$mol] = lc($values[1]);
             $numMolecules[$mol] = $values[2];
-            #print STDOUT "@values\n";
          }
       }
       elsif (lc($values[0]) eq "cell_size")
@@ -231,12 +282,15 @@ sub parseInputFile
 #B10C2H12 B-1 CH4 C-1 0.85
 #B10C2H12 B-1 CH3CH3 C-1 0.75
 
+# Create the necessary files for each ensemble member.############################################################################## 
 sub initEnsemble
 {
    # Define local variables.
 
+
    # my $mol;
    my $sim;
+
    my $C = $minCellSize;
    $probability = $rxnMinProbability[1];
     
@@ -246,10 +300,7 @@ sub initEnsemble
    {
       $pm->start and next;
       $C = $minCellSize + ($maxCellSize - $minCellSize)/($numSimulations-1)*($sim-1);
-      $probability =  $rxnMinProbability[1] + ($rxnMaxProbability[1] - $rxnMinProbability[1])/($numSimulations-1)*($sim-1);
-      #$probabilityC =  $rxnMinProbability[1] + ($rxnMaxProbability[1] - $rxnMinProbability[1])/($numSimulations-1)*($sim-1);
-      #$probabilityH =  $rxnMinProbability[1] + ($rxnMaxProbability[1] - $rxnMinProbability[1])/($numSimulations-1)*($sim-1);
-      say "Hello World $sim\n";
+      $probability = $rxnMinProbability[1] + ($rxnMaxProbability[1] - $rxnMinProbability[1])/($numSimulations-1)*($sim-1);
       mkdir "$sim";
       chdir "$sim";
       open (INP,">condense.in") || die "Cannot open condense.in for writing.\n";
@@ -257,141 +308,262 @@ sub initEnsemble
       print INP "composition $numMoleculeTypes\n";
       foreach $mol (1..$numMoleculeTypes)
       {
-      print INP "$moleculeName[$mol] family1 $numMolecules[$mol]\n";
+         print INP "$moleculeName[$mol] family1 $numMolecules[$mol]\n";
       }
       print INP "\ncell_size $C\n\n";
       print INP "reactions $numReactionTypes\n";
       foreach $mol (1..$numMoleculeTypes)
       {
-      print INP "$moleculeName[$mol] $bindingType[$mol] $moleculeName[$mol] $bindingType[$mol] $probability\n";
+         print INP "$moleculeName[$mol] $bindingType[$mol] $moleculeName[$mol] $bindingType[$mol] $probability\n";
       }
 
-     chdir("..");
-     $pm->finish;
+
+      chdir("..");
+      $pm->finish;
+
    
-   }
-say "I am after the loop\n";
-$pm->wait_all_children;
+    }
+    $pm->wait_all_children;
 
 }
 
+# Running and evaluating each ensemble member.####################################################################################
 sub runParallelCondense
 {
-   # Define local variables.
-   my $sim;
+   # Declare local variables.
    my $out;
-
-   foreach $sim (1..$numSimulations)
+   my $inputFile_olcao="olcao.skl";
+   my $line;
+   my $atom;
+   my $numAtoms;
+   my @values;
+   my $timestep;
+   my $x=0;
+   my $i;
+   my $highbound;
+   my $lowbound;
+   my @SortedDensityDiff;
+   my %DensityAndTimesteps;
+   my @DensityDiff;
+   my $vol;
+   my $boxbound;
+   my $chosen_timestep;      #the timestep we chose to get the closest volume.
+   my $actual_cell_vol;   #cell volume read from the lammps dump file (dump.coarse)
+   my $line_OLCTEMP;
+   my $density_diff;      #The difference between the wanted density and the density calculated at each timestep.
+   my $actual_density;    #The density of the model calculated at each time step 
+ 
+   
+   until ($x==1)
    {
-      chdir ("$sim");
-      system("condense");
-      chdir ("lammps");
-      $out = `srun -N 1 -c 1 lmp < lammps.in`;
-      system("dump2skl -d dump.coarse -a lammps.dat -t $timestep");
-      #open the olcao skleton file for reading
-      open (OLC, "<$inputFile_olcao")
-              || die "cannot open $inputFile_olcao for reading. \n";
-      #read the input file (olcoa.skl)
-      while ($line = <OLC>)
-      {
-       @values = StructureControl::prepLine("",$line,'\s+');
-       # Look for atom names
-       if (lc($values[0]) =~ "frac")
-       {
-          $numAtoms = $values[1];
-           foreach $atom (1..$numAtoms)
+     #push (@models_to_kill, 1);
+     # until (scalar(@models_to_kill)=0)
+     #{
+     #shift @models_to_kill; 
+     foreach $sim (1..$numSimulations)
+     {
+        chdir ("$sim");
+        print "\n\n\n\n\n The following section is the output for Model number $sim\n";
+        system("condense");
+        chdir ("lammps");
+        $out = `srun -N 1 -c 1 lmp < lammps.in`;
+      
+        #open the lammps dump file to read the right cell size and corresponding timestep.
+        open (DMP, "<dump.coarse") 
+		|| die "cannot open dump.coarse for reading. \n";
+
+        #Moving the cursor a 1000 bytes down to avoid timestep 0. Timestep 0 is not a valid input for the dump2skl script.
+        seek (DMP, 1000, 0);
+
+        #looking form the keayword "TIMESTEP" inside the dump.coarse file.
+        while ($line = <DMP>)
+        {  
+           if ($line =~ "TIMESTEP")
            {
-             @values = StructureControl::prepLine(\*OLC,"",'\s+');
-             $elements_keys = $values[0];
-             if (exists($arr_sim[$sim]{$elements_keys}))
-             {
-                $arr_sim[$sim]{$elements_keys}+=1;
-             }
-             else
-             {
-                $arr_sim[$sim]{$elements_keys} = 1;
-             }
+              $timestep = <DMP>;
+              print "timestep is $timestep\n";
+              <DMP>;
+              <DMP>;
+              <DMP>;
+              $boxbound = <DMP>;
+              
+              @values = StructureControl::prepLine("",$boxbound,'\s+');
+              
+              $lowbound = $values[0];
+              $highbound = $values[1];
+              $actual_cell_vol = abs ($highbound - $lowbound)**3;
+
+              system("dump2skl -d dump.coarse -a lammps.dat -t $timestep");
+              
+              open (OLCTEMP, "<olcao.skl") 
+		|| die "cannot open olcao.skl for reading. \n";
+              
+              while ($line_OLCTEMP = <OLCTEMP>)
+              {
+                 my %hash;
+                 @values = StructureControl::prepLine("",$line_OLCTEMP,'\s+');
+                
+                 # Look for atom names and count them.
+                 if (lc($values[0]) =~ "frac")
+                 {
+                    $numAtoms = $values[1];
+                    foreach $atom (1..$numAtoms)
+                    {
+                       @values = StructureControl::prepLine(\*OLCTEMP,"",'\s+');
+                       $elements_keys = $values[0];
+                       if (exists($hash{$elements_keys}))
+                       {
+                          $hash{$elements_keys}+=1;
+                          
+                 print " number of c in dump is $hash{c}\n";
+                       }
+                       else
+                       {
+                          $hash{$elements_keys} = 1;
+                       }
+
+                    }
+                 # Calculating the density at each timestep
+                 $actual_density = (($hash{c}*12.011)+($hash{h}*1.0079))/$actual_cell_vol;
+                 print "actual density is $actual_density\n";
+                 $density_diff= abs ($actual_density-$wanted_density);
+                 print "density diffrence is $density_diff\n";
+                 $DensityAndTimesteps{$density_diff}=$timestep;
+                 }
+                 undef (%hash); 
+               }       
+              close (OLCTEMP);
+              
            }
+		
         }
-       }
+        foreach $vol (keys %DensityAndTimesteps)
+        {  
+           push (@DensityDiff, $vol);
+           @SortedDensityDiff = sort {$a <=> $b} @DensityDiff;
+        }
+        print "sorted lengths are @SortedDensityDiff\n";
+        print "smallest difference is $SortedDensityDiff[0]\n";
+       
+        $chosen_timestep = $DensityAndTimesteps{$SortedDensityDiff[0]};
+        print "chosen timestep is $chosen_timestep\n";          
+        close (DMP);
+
+        system("dump2skl -d dump.coarse -a lammps.dat -t $chosen_timestep");
+
+        #open the olcao skleton file for reading
+        open (OLC, "<$inputFile_olcao")
+              || die "cannot open $inputFile_olcao for reading. \n";
+
+        #read the input file (olcoa.skl)
+        while ($line = <OLC>)
+        {
+           @values = StructureControl::prepLine("",$line,'\s+');
+           # Look for atom names
+           if (lc($values[0]) =~ "frac")
+           {
+              $numAtoms = $values[1];
+              foreach $atom (1..$numAtoms)
+              {
+                 @values = StructureControl::prepLine(\*OLC,"",'\s+');
+                 $elements_keys = $values[0];
+                 if (exists($arr_sim[$sim]{$elements_keys}))
+                 {
+                    $arr_sim[$sim]{$elements_keys}+=1;
+                 }
+                 else
+                 {
+                    $arr_sim[$sim]{$elements_keys} = 1;
+                 }
+              }
+           }
+         }
+
+
          # Calculate the elements percentage in each model
          foreach $elements_keys (keys $arr_sim[$sim])
          {
-           if (lc($elements_keys) eq lc($target_element))
-           {  
-             print "Number of $elements_keys in model $sim is $arr_sim[$sim]{$elements_keys}\n";
-             $percentage = ($arr_sim[$sim]{$elements_keys}/$numAtoms)*100;
-             print "the percentage of $elements_keys in model $sim is $percentage\n";
-             $h_diff = abs ($percentage - $target_element_percentage);
-             $hydrogen_arr[$sim-1]=$h_diff;
-             #Note to self: Remember to add a success criteria, don't keep killing half of them if you can keep them.
-             print "Array of Hydrogen is @hydrogen_arr\n";
+            if (lc($elements_keys) eq lc($target_element))
+            {  
+               print "Number of $elements_keys in model $sim is $arr_sim[$sim]{$elements_keys}\n";
+               $percentage = ($arr_sim[$sim]{$elements_keys}/$numAtoms)*100;
+               open (EVO,">>hEvolve") || die "Cannot open hEveolve for writing. \n";
+               print EVO "$x $target_element_percentage $percentage $probability\n";
+               close (EVO);
+               print "the percentage of $elements_keys in model $sim is $percentage\n";
+               $h_diff = abs ($percentage - $target_element_percentage);
+               $hydrogen_arr[$sim-1]=$h_diff;
+               #Note to self: Remember to add a success criteria, don't keep killing half of them if you can keep them.
+               print "Array of Hydrogen is @hydrogen_arr\n";
                          
-            # @sorted_hydrogen_arr = sort {$hydrogen_arr[$a] <=> $hydrogen_arr[$b]} 1..$#hydrogen_arr;
-             
-             #$number_ofmodels_tokill= $numSimulations*$killing_rate/100;
-             #$first = $numSimulations - $number_ofmodels_tokill;
-             #@models_to_kill= @sorted_hydrogen_arr[$first..$#sorted_hydrogen_arr];
-           }
-         }
-     chdir ("../..");
+            }
+          }
+          chdir ("../..");
     }
-      while (scalar(@arr_sim) > 0)
-         {shift @arr_sim;}
-             @sorted_hydrogen_arr = sort {$hydrogen_arr[$a] <=> $hydrogen_arr[$b]} 0..$#hydrogen_arr;
-              foreach $i (0..$#sorted_hydrogen_arr)
-             {
-              $sorted_hydrogen_arr[$i] = $sorted_hydrogen_arr[$i]+1
+    while (scalar(@arr_sim) > 0)
+    {
+       shift @arr_sim;
+    }
+    @sorted_hydrogen_arr = sort {$hydrogen_arr[$a] <=> $hydrogen_arr[$b]} 0..$#hydrogen_arr;
+    foreach $i (0..$#sorted_hydrogen_arr)
+    {
+          $sorted_hydrogen_arr[$i] = $sorted_hydrogen_arr[$i]+1
 
-              }
+    }
  
-             $number_ofmodels_tokill= $numSimulations*$killing_rate/100;
-             $first = $numSimulations - $number_ofmodels_tokill;
-             @models_to_kill= @sorted_hydrogen_arr[$first..$#sorted_hydrogen_arr];
-             
-             #$unsuccessful = 
- #while (scalar(@models_to_kill) > 0)
- #{
-   foreach $sim (@models_to_kill)
-     {
-        chdir ("$sim");
-        open (INP,"<condense.in") || die "Cannot open condense.in for reading.\n";
-        @content_of_condense = <INP>;
-        close (INP);
-               print "content equal @content_of_condense\n";
-        print "content 7 equal $content_of_condense[6]\n";
-        if ($target_element_percentage - $percentage > 0)
-         #I need to limit the probability to 1 and 0, it takes 10 itereations to reach 1 from a zero, in case we do more than 10 generations the probability will end up more than 1, use a while loop.
-        {
-          $probability = $probability + 0.1;
+    $number_ofmodels_tokill= $numSimulations*$killing_rate/100;
+    $number_ofmodels_tokill= int ($number_ofmodels_tokill);
+    $first = $numSimulations - $number_ofmodels_tokill;
+    @models_to_kill= @sorted_hydrogen_arr[$first..$#sorted_hydrogen_arr];
+    print "Models to kill are  @models_to_kill\n"; 
+    #$unsuccessful = 
+    #while (scalar(@models_to_kill) > 0)
+    #{
+    foreach $sim (@models_to_kill)
+    {
+       chdir ("$sim");
+       open (INP,"<condense.in") || die "Cannot open condense.in for reading.\n";
+       @content_of_condense = <INP>;
+       close (INP);
+       print "content equal @content_of_condense\n";
+       print "content 7 equal $content_of_condense[6]\n";
+       if ($probability > 0 && $probability <= 0.9)
+       {
+          if ($target_element_percentage - $percentage > 0)
+          {
+             $probability = $probability - 0.05;
+             if ($probability < 0)
+             {
+                $probability = 0;
+             }
           
-         }
-         else 
-         {
-          $probability = $probability - 0.1;
-          } 
-          $content_of_condense[6] = "ch4_1 c-1 ch4_1 c-1 $probability";
-           open (INP,">condense.in") || die "Cannot open condense.in for writing. \n";
-           print INP "@content_of_condense";
-           close (INP);
-           chdir ("..");
-     }
- #}
-#}
-print "Sorted array is @sorted_hydrogen_arr\n";
-
-
-   foreach $sim (1..$numSimulations)
-   {
-      chdir ("$sim/lammps");
-      #system ("lammps");
-      $out = `srun -N 1 -c 1 lmp < lammps.in`;
-      system("dump2skl -d dump.coarse -a lammps.dat -t 500");
-      chdir ("../..");
-      #wait();
+           }
+           else 
+           {
+              $probability = $probability + 0.05;
+           }
+       }
+       foreach $i (0..$#content_of_condense)
+       {
+          if ($content_of_condense[$i]=~"ch4_1 c-1 ch4_1 c-1")
+          {
+             $content_of_condense[$i]="ch4_1 c-1 ch4_1 c-1 $probability";
+          }
+       } 
+       open (INP,">condense.in") || die "Cannot open condense.in for writing. \n";
+       print INP "@content_of_condense";
+       close (INP);
+       chdir ("..");
    }
-}
-print "$target_element_percentage\n";
+
+  #}
+#}
+   print "Sorted array is @sorted_hydrogen_arr\n";
+
+   $x++;
+ }
+ print "$target_element_percentage\n";
+
 }
 #}
 sub evolveEnsemble
