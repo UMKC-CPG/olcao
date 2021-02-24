@@ -1,0 +1,309 @@
+#!/usr/bin/env perl
+
+sub printHelp
+{
+   print <<ENDHELP;
+###############################################################################
+#PROGRAM porosity
+#
+#PURPOSE: calculate porosity of solid state material
+#
+#USAGE: porosity -m \$numA \$numB \$numC 
+#                [-l \$limitDist] [-i \$inFile] | -help
+#                [-sf \$scaleFactor]
+#                [-r \$resolution] 
+#
+# The -m switch defines the number of points along each a,b,c direction
+#   that should be sampled. 
+# The -l option is used to define the radius of the sphere within which atoms
+#   can contribute to the total XANES spectra for that point.  If not given,
+#   then the default value of 4 A is used.
+# The -i option defines the name for the intput file.  If not specified, then
+#   the default name of "olcao.skl" will be used.
+# The -help option prints this friendly message.
+# The -sf switch allows the size of the covalent radii to be scaled. That atomic 
+#   radius is used to define the pore boundaries. 
+# The -r switch allows for the resolution to be defined that will establish the
+#   mesh size. 
+###############################################################################
+ENDHELP
+   exit;
+}
+
+
+##################################################
+# BEGIN EXECUTION ################################
+##################################################
+
+
+# Use necessary modules.
+use strict;
+use warnings;
+use Env;
+use lib "$OLCAO_BIN/perl5";
+use StructureControl;
+use ElementData;
+
+# Declare global variables.
+my $doMesh;
+my $doRes;
+my $numAtoms;
+my $numAtomsExt;
+my $ext2CentralAtomMap_ref;
+my $atomElementName_ref;
+my $atomZ_ref;
+my $extPoreMap_ref;
+my $limitDist;
+my @numMeshPoints;
+my $numSpacePoints;
+my $inFile;
+my $elementNames_ref;
+my $covalRadii_ref;
+my $mag_ref;
+my $porePointCount;
+my $scaleFactor;
+my $resolution;
+my @axisResolution;
+
+# Initialize the program environment variables.
+&initEnv;
+
+# Set up data base.
+&setupDataBaseRef;
+
+# Parse the command line.
+&parseCommandLine;
+
+# Read the input file.
+StructureControl::readInputFile("olcao.skl", 0);
+
+# Get magnitude.
+$mag_ref = StructureControl::getMagRef;
+
+# Compute resolution and mesh as needed.
+if ($doMesh == 1)
+   {&computeResolution;}
+elsif ($doRes == 1)
+   {&computeMeshAndRefineRes;}
+else
+   {die "Use the -r or -m option!";}
+
+# Apply scale factor to database.
+ElementData::applyBondFactor($scaleFactor);
+
+# Set the limit for atom interaction.  (Radius of inclusion)
+StructureControl::setLimitDist($limitDist);
+
+# Set up the sampling points.
+StructureControl::setXYZMeshPoints(@numMeshPoints[1..3]);
+
+# Visit every atom and mark all points near each atom as
+#   not void space.
+StructureControl::computePoreMap(\@axisResolution,\@numMeshPoints);
+
+# Obtain a reference to the data structure that holds the distance information.
+$extPoreMap_ref = StructureControl::getExtPoreMapRef;
+
+# Obtain a reference to the elemental names of each atom in the system.
+$atomElementName_ref = StructureControl::getAtomElementNameRef;
+
+# Obtain a reference to the z number of each atom in the system.
+$atomZ_ref = StructureControl::getAtomicZRef;
+
+# Obtain a reference to the mapping between extended and original cell numbers.
+$ext2CentralAtomMap_ref = StructureControl::getExt2CentralItemMapRef;
+
+# Obtain the number of atoms and extended atoms in the system.
+$numAtoms    = StructureControl::getNumAtoms;
+$numAtomsExt = StructureControl::getNumAtomsExt;
+
+# Calculate number of void points.
+&calcVoidPoints();
+
+# Compute porosity.
+&computePorosity;
+
+##################################################
+# END EXECUTION ##################################
+##################################################
+
+
+sub initEnv
+{
+   # Assume the default name for the input.
+   $inFile = "olcao.skl";
+
+   # Assume that the search sphere has a radius of 4 A.
+   $limitDist = 4.0;
+
+   # Assume default scale factor.
+   $scaleFactor = 1.0;
+
+   $doMesh = 0;
+   $doRes = 0;
+}
+
+
+sub parseCommandLine
+{
+   # Declare local variables.
+   my $number = 0;
+   my $i;
+   my $commandLine = "command";
+
+   while ($number < scalar(@ARGV))
+   {
+      if ($ARGV[$number] eq "-m")
+      {
+         $doMesh = 1;
+         $doRes = 0;
+         $numMeshPoints[1] = $ARGV[++$number];
+         $numMeshPoints[2] = $ARGV[++$number];
+         $numMeshPoints[3] = $ARGV[++$number];
+         $numSpacePoints=$numMeshPoints[1]*$numMeshPoints[2]*$numMeshPoints[3];
+      }
+      elsif ($ARGV[$number] eq "-l")
+         {$limitDist = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-i")
+         {$inFile = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-help")
+         {&printHelp;}
+      elsif ($ARGV[$number] eq "-sf")
+         {$scaleFactor = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-r")
+         {
+            $doRes = 1;
+            $doMesh = 0;
+            $resolution = $ARGV[++$number];
+         }
+      else
+      {
+         print STDOUT "UNKNOWN COMMAND LINE PARAMETER $ARGV[$number].\n";
+         exit;
+      }
+      $number++;
+   }
+
+   #Record the command line used to create this set of input files.
+   open (COMMANDLINE,">>$commandLine");
+   print COMMANDLINE "porosity ";
+   for ($i = 0; $i <= $#ARGV; $i++)
+      {print COMMANDLINE "$ARGV[$i] ";}
+   print COMMANDLINE "\n";
+   close (COMMANDLINE);
+}
+
+sub computeResolution
+{
+   # Define local variables.
+   my $axis;
+
+   foreach $axis (1..3)
+      {$axisResolution[$axis] = $mag_ref->[$axis]/$numMeshPoints[$axis];}
+}
+
+sub computeMeshAndRefineRes
+{
+   # Define local variables.
+   my $axis;
+   my $pointsPerCell;
+
+   # Refine the resolution.
+   foreach $axis (1..3)
+   {
+      $pointsPerCell = $mag_ref->[$axis] / $resolution;
+      if (($pointsPerCell - int($pointsPerCell)) > 0.5)
+         {$pointsPerCell = int($pointsPerCell) + 1;}
+      else
+         {$pointsPerCell = int($pointsPerCell);}
+
+      $axisResolution[$axis] = $mag_ref->[$axis] / $pointsPerCell;
+   }
+#print STDOUT "axisResolution = @axisResolution[1..3]\n";
+
+   # Compute the mesh with the new resolution.
+   foreach $axis (1..3)
+      {$numMeshPoints[$axis] = $mag_ref->[$axis] / $axisResolution[$axis];}
+   $numSpacePoints=$numMeshPoints[1]*$numMeshPoints[2]*$numMeshPoints[3];
+
+#print STDOUT "numMeshPoints = @numMeshPoints[1..3]\n";
+}
+
+sub setupDataBaseRef
+{
+   # Initialize the element data from the database.
+   ElementData::initElementData;
+
+   # Obtain references to the database.
+   $elementNames_ref  = ElementData::getElementNamesRef;
+   $covalRadii_ref    = ElementData::getCovalRadiiRef;
+}
+
+sub calcVoidPoints
+{
+
+   # Declare local variables.
+   my $aPoint;
+   my $bPoint;
+   my $cPoint;
+   my $atom;
+   my $currentDist;
+   my $totalPorosity;
+   my $found;
+   my $localAtom;
+   my $totalPointCount;
+
+   # Print a progress note.
+   print STDOUT "Counting number of pore points.\n";
+
+   # Begin computing if each mesh point is in or out of a pore.
+   $porePointCount = 0;
+   $totalPointCount = 0;
+   foreach $aPoint (1..$numMeshPoints[1])
+   {
+   foreach $bPoint (1..$numMeshPoints[2])
+   {
+   foreach $cPoint (1..$numMeshPoints[3])
+   {
+#      $totalPointCount++;
+#      if ($totalPointCount%10 == 0)
+#         {print STDOUT "|";}
+#      else
+#         {print STDOUT ".";}
+#
+#      if ($totalPointCount%50 == 0)
+#         {print STDOUT " $totalPointCount\n";}
+
+      if ($extPoreMap_ref->[$aPoint][$bPoint][$cPoint] == 0)
+         {$porePointCount++;}
+   }
+   }
+   }
+
+   # Print porosity information.
+   print STDOUT "number of pore points = $porePointCount\n";
+}
+
+sub computePorosity
+{
+   # Delcare local variables.
+   my $cellVolume;
+   my $volPerPoint;
+   my $poreVolume;
+   my $porosity;
+
+   # Calculate cell volume.
+   $cellVolume = $mag_ref->[1]*$mag_ref->[2]*$mag_ref->[3];
+
+   # Calculate volume per point.
+   $volPerPoint = $cellVolume/$numSpacePoints;
+
+   # Calculate pore volume.
+   $poreVolume = $volPerPoint*$porePointCount;
+   
+   # Calculate porosity.
+   $porosity = $poreVolume/$cellVolume;
+   
+   print STDOUT "total pore volume = $poreVolume A^3\n";
+   print STDOUT "porosity = $porosity \n";
+}

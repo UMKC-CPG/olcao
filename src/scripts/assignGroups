@@ -3,10 +3,12 @@
 sub printHelp
 {
    print <<ENDHELP;
-# PROGRAM: assignSeats
-# PURPOSE: Seat the students in a class according to a list of criteria.
-# USAGE: assignSeats [-dates \$datesFile] [-roster \$rosterFile]
-#                    [-script \$scriptFile] [-body \$bodyFile] | -help
+# PROGRAM: assignGroups
+# PURPOSE: Group the students in a class according to some criterion.
+# USAGE: assignGroups [-dates \$datesFile] [-roster \$rosterFile]
+#                     [-groups \$groupFile] [-size \$primaryGroupSize]
+#                     [-isLab] [-csvFile \$csvFile] [-script \$scriptFile]
+#                     [-body \$bodyFile] | -help
 #
 # The -dates option takes a single string as a parameter which is a file name.
 #   If this option is not given, then the default file name of "dates" is
@@ -30,6 +32,24 @@ sub printHelp
 # The -roster option takes a single string as a parameter. The string is just
 #   the name of the file that holds the roster copied from Pathway. If this
 #   option is not given, then by default it will be set as "roster".
+# The -groups option takes a single string as a parameter. The string is just
+#   the name of a file that contains a list of the names that will be used
+#   for the groups. Group names will be used in the order provided in the
+#   file. If this option is not given, then by default it will be set as
+#   "groupNames"
+# The -size option takes a single integer as a parameter that defines the
+#   number of students to be placed in each group. If the number of students
+#   does not divide evenly by given size then groups of progressively smaller
+#   size will be considered down to a minimum of 3. (E.g., if the size is 5
+#   and the number of students is 29 then there will be 5 groups of 5 and one
+#   group of 4. If the number of students is 28 there will be 1 group of 3.
+#   If the number of students is 27 then there will be 3 groups of 5 and 2
+#   groups of 6. NOTE: The default group size is 4.
+# The -isLab option is used to indicate that the roster comes from a lab
+#   class and thus will contain extra information that a normal class
+#   would not have.
+# The -csvFile option is used to define the name of the csv output file
+#   to be created. The default name is "breakoutrooms.csv".
 # The -script option takes a single string as a parameter. The string is just
 #   the name of a file that will be created to contain a script which will be
 #   capable of sending an individual email to each student in the roster. The
@@ -57,8 +77,17 @@ use StructureControl;
 my $numStudents;
 my $datesFile;
 my $rosterFile;
+my $groupFile;
+my $csvFile;
 my $scriptFile;
 my $bodyFile;
+my $primaryGroupSize;
+my @groupSizes;
+my @groupNames;
+my $numGroupNames;
+my $numGroupsNeeded;
+my @studentGroupIndex;
+my $isLab;
 my $numMethods;
 my @methodList;
 my $numDates;
@@ -67,7 +96,7 @@ my @studentIDs;
 my @lastNames;
 my @firstNames;
 my @emailAddresses;
-my @designations;
+my @designations; # Prefix before the @ in the email address
 my @degreePrograms;
 my @studentLevels;
 my @labNumbers;
@@ -95,6 +124,10 @@ my @sortedIndices;
 # Read the student roster.
 &readRoster;
 
+# Read the group names and compute the group sizes.
+&readGroupNames;
+&computeGroupSizes;
+
 # Randomize students so that any ordering in the roster is not evident after
 #   the students are sorted in a later step.
 &randomizeStudents;
@@ -105,7 +138,7 @@ my @sortedIndices;
 # Create the dates directory.
 &createDates;
 
-# For each date that a new arrangement is needed, sort the students accordingly.
+# For each date that a new assignment is needed, sort the students accordingly.
 &sortAndRecord;
 
 # Print a script to email all students their assigned seat numbers.
@@ -121,6 +154,10 @@ sub setDefaultVars
    @dateList = "";
    $datesFile = "dateList";
    $rosterFile = "roster";
+   $groupFile = "groupNames";
+   $primaryGroupSize = 4;
+   $isLab = 0;
+   $csvFile = "breakoutrooms.csv";
    $scriptFile = "emailScript";
    $bodyFile = "emailBody";
 }
@@ -141,6 +178,14 @@ sub parseCLP
          {$datesFile = $ARGV[++$number];}
       elsif ($ARGV[$number] eq "-roster")
          {$rosterFile = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-group")
+         {$groupFile = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-size")
+         {$primaryGroupSize = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-isLab")
+         {$isLab = 1;}
+      elsif ($ARGV[$number] eq "-csvFile")
+         {$csvFile = $ARGV[++$number];}
       elsif ($ARGV[$number] eq "-script")
          {$scriptFile = $ARGV[++$number];}
       elsif ($ARGV[$number] eq "-body")
@@ -159,7 +204,7 @@ sub parseCLP
 
    # Record the command line used to run this job.
    open (COMMANDLINE,">>command");
-   print COMMANDLINE "assignSeats ";
+   print COMMANDLINE "assignGroups ";
    foreach $argument (0..$#ARGV)
       {print COMMANDLINE "$ARGV[$argument] ";}
    print COMMANDLINE "\n";
@@ -241,8 +286,8 @@ sub readRoster
       #   (15) Academic plan. (E.g., Electrical, mechanical, civil, bio, etc.)
       #   (16) Empty line.
       #   (17) Level. (E.g., Freshman, Sophomore, etc.)
-      #   (18) Empty line.
-      #   (19) Lab number.
+      #   (18) Empty line.  ONLY USED if $isLab == 1
+      #   (19) Lab number.  ONLY USED if $isLab == 1
 
       # Because we entered the while-loop we are processing a new student.
       #   Therefore, we will increment the number of students.
@@ -300,11 +345,14 @@ sub readRoster
       @values = StructureControl::prepLine(\*ROSTER,$line,'\s+');
       $studentLevels[$currStudent] = $values[0];
 
-      # Read the lab number and chop off the 'L' at the end.
-      $line = <ROSTER>;
-      @values = StructureControl::prepLine(\*ROSTER,$line,'\s+');
-      $labNumbers[$currStudent] = $values[0];
-      chop ($labNumbers[$currStudent]);
+      if ($isLab == 1)
+      {
+         # Read the lab number and chop off the 'L' at the end.
+         $line = <ROSTER>;
+         @values = StructureControl::prepLine(\*ROSTER,$line,'\s+');
+         $labNumbers[$currStudent] = $values[0];
+         chop ($labNumbers[$currStudent]);
+      }
 
 
       # Compute the metric entropy for this student's name.
@@ -372,6 +420,50 @@ sub computeMetricEntropy
    $metricEntropy[$currStudent] /= $combinedNumLets[$currStudent];
 }
 
+# Read the list of group names.
+sub readGroupNames
+{
+   # Define local variables.
+   my $line;
+
+   # Open the groupFile.
+   open (GROUPS, "<$groupFile") || die "Cannot open $groupFile for reading\n";
+
+   # Each line contains just one name so we can grab it all at once easily.
+   @groupNames = <GROUPS>;
+   chomp (@groupNames);
+
+   # Compute the number of group names.
+   $numGroupNames = scalar(@groupNames);
+
+   # Close the groupFile.
+   close (GROUPS);
+}
+
+# Compute the number of students in each group.
+sub computeGroupSizes
+{
+   # Define local variables.
+   my $i;
+
+   # Complain if the number of available group names is less than the number
+   #   of groups needed to cover the roster.
+   if ($numGroupNames < $numStudents/$primaryGroupSize)
+      {die "You need at least $numStudents / $primaryGroupSize groups.\n";}
+
+   # Compute the number of groups needed.
+   $numGroupsNeeded = int($numStudents/$primaryGroupSize);
+
+   # Record the primary size for each group.
+   foreach $i (0..$numGroupsNeeded-1)
+      {$groupSizes[$i] = $primaryGroupSize;}
+
+   # Increase some group sizes to account for remainder after uneven division.
+   foreach $i (1..($numStudents%$primaryGroupSize))
+      {$groupSizes[$i-1]++;}
+}
+
+
 # The purpose of this subroutine is to randomize the order of students prior to
 #   any sorting. They are read in from a sorted roster and that sorted order
 #   might carry though any other sorting that is applied to them (particularly
@@ -409,7 +501,8 @@ sub randomizeStudents
    @studentIDs       = @studentIDs[@tempIndices];
    @studentLevels    = @studentLevels[@tempIndices];
    @degreePrograms   = @degreePrograms[@tempIndices];
-   @labNumbers       = @labNumbers[@tempIndices];
+   if ($isLab == 1)
+      {@labNumbers       = @labNumbers[@tempIndices];}
    @emailAddresses   = @emailAddresses[@tempIndices]; # Not used for sorting.
    @designations     = @designations[@tempIndices]; # First part of email.
    @firstNameNumLets = @firstNameNumLets[@tempIndices];
@@ -422,7 +515,8 @@ sub randomizeStudents
    unshift (@studentIDs,"");
    unshift (@studentLevels,"");
    unshift (@degreePrograms,"");
-   unshift (@labNumbers,"");
+   if ($isLab == 1)
+      {unshift (@labNumbers,"");}
    unshift (@emailAddresses,"");
    unshift (@designations,"");
    unshift (@firstNameNumLets,"");
@@ -431,6 +525,7 @@ sub randomizeStudents
    unshift (@metricEntropy,"");
    unshift (@randomOrder,"");
 }
+
 
 # Create a directory for the current program call and a sub-directory for each
 #   student. In those sub-directories, create an email with an appropriate
@@ -455,8 +550,7 @@ sub createEmails
       # Create an email body file.
       open (EMAIL,">emailBody") || die "Cannot open emailBody for writing.\n";
       print EMAIL "Hello $firstNames[$student],\n\n";
-      print EMAIL "A list of your assigned seats throughout the semester is ";
-      print EMAIL "as follows:\n\n";
+      print EMAIL "Your assigned role for the Town Hall project is:\n\n";
       close (EMAIL);
 
       # Go back to the emails directory.
@@ -466,6 +560,7 @@ sub createEmails
    # Go back to the main class directory.
    chdir ("..");
 }
+
 
 # Create a directory for each date range that the students will be sorted for.
 #   The contents of each directory will be a file that holds the sorted order
@@ -524,7 +619,12 @@ sub sortAndRecord
       elsif ($methodList[$date] == 5)
          {$tempArray_ref = \@degreePrograms; $comparisonFlag = 0;}
       elsif ($methodList[$date] == 6)
-         {$tempArray_ref = \@labNumbers;}
+      {
+         if ($isLab == 1)
+            {$tempArray_ref = \@labNumbers;}
+         else
+            {die "No lab numbers available to sort by from roster.\n"}
+      }
       elsif ($methodList[$date] == 7)
          {$tempArray_ref = \@designations; $comparisonFlag = 0;}
       elsif ($methodList[$date] == 8)
@@ -538,7 +638,8 @@ sub sortAndRecord
       elsif ($methodList[$date] == 12)
          {$tempArray_ref = \@randomOrder;}
       &sortStudents($tempArray_ref, $comparisonFlag);
-      &appendNewAssignment($date,$tempArray_ref);
+      &makeNewGroupAssignment($date, $tempArray_ref);
+      &appendAssignmentToEmail($date, $tempArray_ref);
    }
 }
 
@@ -592,9 +693,73 @@ sub sortStudents
    unshift (@sortedIndices,"");
 }
 
+# Make a new CSV file for the current group assignment.
+sub makeNewGroupAssignment
+{
+   # Define passed parameters.
+   my $currDate = $_[0];
+   my $tempArray_ref = $_[1];
+
+   # Define local variables.
+   my $student;
+   my $group;
+   my $member;
+
+   # Enter the date list directory.
+   chdir ("dates");
+
+   # Enter the directory of the specific date we are working on.
+   chdir ("$dateList[$currDate]");
+
+   # Create a sorted list of the students for this date range.
+   open (SORTORDER,">sortedOrder")
+         || die "Cannot open sortedOrder for writing.\n";
+
+   # Print the header.
+   print SORTORDER "Seat Number, First Name, Last Name, Sort Key, Date #\n";
+
+   # Print the sorted seat position of each student.
+   foreach $student (1..$numStudents)
+   {
+      print SORTORDER "$student $firstNames[$sortedIndices[$student]] " .
+            "$lastNames[$sortedIndices[$student]] " .
+            "$tempArray_ref->[$sortedIndices[$student]] $currDate\n";
+   }
+
+   # Close the sort order file handle.
+   close (SORTORDER);
+
+   # Create a comma separated value (CSV) list of group names and the
+   #   students assigned to them.
+   open (CSV, ">$csvFile") || die "Cannot create $csvFile for writing.\n";
+
+   # Print the header.
+   print CSV "Pre-assigned Room Name,Email Address\n";
+
+   # Print the group assignments and link the student to the group index.
+   $student = 0;
+   foreach $group (1..$numGroupsNeeded)
+   {
+      foreach $member (1..$groupSizes[$group-1])
+      {
+         print CSV "$groupNames[$group-1],$emailAddresses[++$student]\n";
+         $studentGroupIndex[$student] = $group - 1;
+      }
+   }
+
+   # Close the CSV file.
+   close (CSV);
+
+   # Create a file that will hold student absence information.
+   system ("touch absents");
+
+   # Return to the main class directory.
+   chdir ("../..");
+}
+
 # Open each of the previously created emails and append the seat assignment
 #   for each student according to the current sorting method.
-sub appendNewAssignment
+sub appendAssignmentToEmail
 {
    # Define passed parameters.
    my $currDate = $_[0];
@@ -613,8 +778,7 @@ sub appendNewAssignment
       open (EMAIL,">>emailBody")
             || die "Cannot open emailBody for appending.\n";
 
-      print EMAIL "For $dateList[$currDate] you are assigned ";
-      print EMAIL "to sit in seat $student.\n";
+      print EMAIL "$groupNames[$studentGroupIndex[$student]]\n";
 
       # Close the email file handle.
       close (EMAIL);
@@ -663,7 +827,6 @@ sub printEmailScript
 {
    # Define local variables.
    my $student;
-   my $seatNumber;
 
    # Open the script file.
    open (SCRIPT,">$scriptFile")
@@ -675,8 +838,7 @@ sub printEmailScript
    # Print a command to email each student.
    foreach $student (1..$numStudents)
    {
-      $seatNumber = ($student-1);
-      print SCRIPT "mailx -s \"Physics 250 assigned seats\" " .
+      print SCRIPT "mailx -s \"GE-CRT-SC: Town Hall Role\" " .
          "-r rulisp\@umkc.edu $emailAddresses[$sortedIndices[$student]] < " .
          "emails/$studentIDs[$sortedIndices[$student]]/emailBody\n"; 
    }

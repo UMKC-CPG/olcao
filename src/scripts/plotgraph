@@ -101,39 +101,46 @@ ENDHELP
 ######################################################################
 #Import current user environment variables.
 use Env;
+use strict;
 #Make some useful default variable assignments.  Many of these can be
 #	overridden by command line parameters.  Pay special attention
 #	to the defaults for $xmax, $xmin and $ymax, $ymin.  These are
 #	the axis ranges that the data will be graphed on.  More
 #	comments are made on this topic later on.
-$title="Plotted by $USER";
-$printcommand=0;
-$xcol=1;
-@ycol=(2);
-$xmin=0;
-$xmax=0;
-$ymin=0;
-$ymax=0;
-$minorXTics=10;
-$minorYTics=10;
-$totalpdos=0;
-$EOS=0;
-$POINTS=0;
-$LI=0;
-$ITER=0;
-$PDOS=0;
-$SYBD=0;
-$XRANGE=0;  #This RANGE variable is set to true (1) as soon as it is defined.
-$YRANGE=0;  #This RANGE variable is set to true (1) as soon as it is defined.
-$shiftSet=0;
-$shift=0;
-$log=0;
-$filename1="";
-$filename2="";
-$noEf=0;  #The default setting is to plot a fermi energy line.
-$command=join(" ",@ARGV);
-$location=`pwd`;
+my $title="Plotted by $USER";
+my $printcommand=0;
+my $xcol=1;
+my @ycol=(2);
+my $xmin=0;
+my $xmax=0;
+my $ymin=0;
+my $ymax=0;
+my $minorXTics=10;
+my $minorYTics=10;
+my $totalpdos=0;
+my $EOS=0;
+my $POINTS=0;
+my $LI=0;
+my $ITER=0;
+my $PDOS=0;
+my $SYBD=0;
+my $XRANGE=0;  #This RANGE variable is set to true (1) as soon as it is defined.
+my $YRANGE=0;  #This RANGE variable is set to true (1) as soon as it is defined.
+my $shiftSet=0;
+my $shift=0;
+my $log=0;
+my $filename1="";
+my $filename2="";
+my $lineStyle="";
+my @titles="";
+my $noEf=0;  #The default setting is to plot a fermi energy line.
+my $command=join(" ",@ARGV);
+my $location=`pwd`;
 chomp($location);
+my $numColumns;
+my $numVertLines;
+my @sybdLabel;
+my @vertLine;
 
 #Here we parse the command line string for the necessary parameters.
 #	After this while loop the xcol, ycol parameters
@@ -147,7 +154,7 @@ chomp($location);
 #Check if the user just wants help first.
 if ($ARGV[$#ARGV] eq "-help")
    {&printhelp;}
-$number=0;
+my $number=0;
 while ( $ARGV[$number] ne "")
 {
    if ($ARGV[$number] eq "-x")
@@ -158,13 +165,13 @@ while ( $ARGV[$number] ne "")
    elsif ($ARGV[$number] eq "-y")
    {
       $number=$number+1;
-      $ynumber=0;
+      my $ynumber=0;
       while (($ARGV[$number] =~ /^[0-9]+$/) || ($ARGV[$number] =~ /\.\./))
       {
          if ($ARGV[$number] =~ /\.\./)
          {
-            @numberPair = split (/\.\./,"$ARGV[$number]");
-            for ($i=$numberPair[0];$i<=$numberPair[1];$i++)
+            my @numberPair = split (/\.\./,"$ARGV[$number]");
+            for (my $i=$numberPair[0];$i<=$numberPair[1];$i++)
             {
                $ycol[$ynumber]=$i;
                $ynumber++;
@@ -401,11 +408,11 @@ elsif ($ITER)
    #   Usually the first and last iterations are not of major consequence
    #   when looking at this kind of data because they are far from the action.
    open (NEW_DATA, "> iteration_plot_data");
-   $dataline=<IN>;
+   my $dataline=<IN>;
    #This dataline_old and while loop stuff is odd looking but its purpose
    #   is to prevent from writing out the last line of the original input
    #   file to the NEW_DATA file.
-   $dataline_old="";
+   my $dataline_old="";
    while ($dataline=<IN>)
    {
       print NEW_DATA "$dataline_old";
@@ -427,7 +434,7 @@ elsif ($PDOS)
    }
    if (!$YRANGE)
    {
-      $ref_to_ycol=\@ycol;
+      my $ref_to_ycol=\@ycol;
       $ymax=&maxof($filename1,$ymax,$ref_to_ycol);
       $ymin=0;
       if ($filename2 ne "")
@@ -446,12 +453,12 @@ elsif ($PDOS)
 
    #Extract the column names requested.
    open (IN,"<$filename1");
-   $line = <IN>;
+   my $line = <IN>;
    chomp ($line);
    close (IN);
 
-   @columnNames = split (/\s+/,"$line");
-   for ($i=0;$i<=$#ycol;$i++)
+   my @columnNames = split (/\s+/,"$line");
+   for (my $i=0;$i<=$#ycol;$i++)
       {$titles[$i]=$columnNames[$ycol[$i]];}
 }
 elsif ($LI)
@@ -479,10 +486,10 @@ elsif ($SYBD)
    open (IN,"< $filename1");
    $numColumns=0;
    $numVertLines=0;
-   while ($line = <IN>)
+   while (my $line = <IN>)
    {
       chomp ($line);
-      @values = split(/\s+/,"$line");
+      my @values = split(/\s+/,"$line");
       if ($values[0] eq "")
          {shift @values;}
       if ($#values < $numColumns)
@@ -575,7 +582,7 @@ if (!$noEf && !$EOS && !$SYBD)
 
 if ($SYBD)
 {
-   for ($i=1;$i<=$numVertLines;$i++)
+   for (my $i=1;$i<=$numVertLines;$i++)
    {
       print OUT "set arrow $i from $vertLine[$i], $ymin to $vertLine[$i],";
       print OUT " $ymax nohead\n";
@@ -583,7 +590,7 @@ if ($SYBD)
       print OUT " graph -0.04 center\n";
    }
    print OUT "plot ";
-   for ($i=2;$i<=$numColumns;$i++)
+   for (my $i=2;$i<=$numColumns;$i++)
    {
       if ($i>2)
          {print OUT "     ";}
@@ -595,12 +602,12 @@ if ($SYBD)
 elsif ($PDOS)
 {
    print OUT "plot ";
-   for ($i=0;$i<=$#ycol;$i++)
+   for (my $i=0;$i<=$#ycol;$i++)
    {
       if ($i>0)
          {print OUT "     ";}
-      $currentShift=$shift*$i;
-      $lineID = $i+1;
+      my $currentShift=$shift*$i;
+      my $lineID = $i+1;
       print OUT "\"$filename1\" using (\$$xcol):(\$$ycol[$i]+";
       print OUT "$currentShift) title \"$titles[$i]\" with";
       print OUT " $lineStyle,\\\n";
@@ -614,12 +621,12 @@ elsif ($PDOS)
 else
 {
    print OUT "plot ";
-   for ($i=0;$i<=$#ycol;$i++)
+   for (my $i=0;$i<=$#ycol;$i++)
    {
       if ($i>0)
          {print OUT "     ";}
-      $currentShift=$shift*$i;
-      $lineID = $i+1;
+      my $currentShift=$shift*$i;
+      my $lineID = $i+1;
       print OUT "\"$filename1\" using (\$$xcol):(\$$ycol[$i]+$currentShift)";
       print OUT " notitle with $lineStyle, \\\n";
    }
@@ -634,7 +641,7 @@ if ($filename2 ne "")
    if (!$EOS)
       {print OUT "-";}
    print OUT "\$$ycol[0]";
-   foreach $column (@ycol)
+   foreach my $column (@ycol)
    {
       if ($column != $ycol[0])
       {
@@ -669,13 +676,13 @@ sub maxof
    open(IN, "< $_[0]");
    my $maxnum=$_[1];
    my $col_list=$_[2];
-   while ($dataline = <IN>)
+   while (my $dataline = <IN>)
    {
       chop $dataline;
-      @values = split / +/, $dataline;
+      my @values = split / +/, $dataline;
       my $total=0;
 #Only look at the data in the requested columns.
-      foreach $column (@{$col_list})
+      foreach my $column (@{$col_list})
 #Sum the values of the requested columns to find the maximum possible
 #	y-axis range value for a given data point.
          {$total+=$values[$column];}
@@ -700,12 +707,12 @@ sub maxofcol
    open(IN, "< $_[0]");
    my $col_number=$_[1];
 #First we seed $maxnum with the first value in the datafile.
-   $dataline = <IN>;
+   my $dataline = <IN>;
    chomp $dataline;
-   @values = split (/\s+/,"$dataline");
+   my @values = split (/\s+/,"$dataline");
    if ($values[0] eq "")
       {shift @values;}
-   $maxnum = $values[$col_number];
+   my $maxnum = $values[$col_number];
 #Then we loop to find the highest number thereafter.
    while ($dataline = <IN>)
    {
@@ -729,12 +736,12 @@ sub minofcol
    open(IN, "< $_[0]");
    my $col_number=$_[1];
 #First we seed $minnum with the first value in the datafile.
-   $dataline = <IN>;
+   my $dataline = <IN>;
    chomp $dataline;
-   @values = split (/\s+/,"$dataline");
+   my @values = split (/\s+/,"$dataline");
    if ($values[0] eq "")
       {shift @values;}
-   $minnum = $values[$col_number];
+   my $minnum = $values[$col_number];
 #Then we loop to find the lowest number thereafter.
    while ($dataline = <IN>)
    {

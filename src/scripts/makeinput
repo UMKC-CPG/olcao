@@ -15,6 +15,7 @@ sub printHelp
 #                 [-subpot \$potSubOut \$potSubIn [-subpot ...]]
 #                 [[[-scfkp \$a \$b \$c] [-pscfkp \$a \$b \$c]
 #                   [-altkp \$a \$b \$c]] | [-kp \$a \$b \$c]]
+#                 [-printbz]
 #                 [-xcmesh [-numvect \$numSampVectors]
 #                          [-weight \$xcInWeight \$xcOutWeight]
 #                          [-samp \$xcInSamp \$xcOutSamp \$xcSpacingSamp]]
@@ -159,6 +160,10 @@ sub printHelp
 
 #The -kp option will apply the same kpoint selection to the scf, alt, and
 #  post-scf kpoints.
+
+#The -printbz option will cause an additional file to be created as part of
+#  the input. This file contains a decription of the Brillouin zone suitable
+#  for importing in a python script.
 
 #The -xcmesh option will define the construction of the real space mesh for
 #  sampling the charge density for the exchange correlation evaluation.  The
@@ -399,7 +404,8 @@ my $kpShift;  # Lattice dependent shift of the regular kpoint mesh.
 my @kpMesh;   # Num. of kpoints in each dim. for Scf, Pscf, and Alt.[SPA][1..3]
 my @kpNum;    # Total number of kpoints after symmetry reduction.
 my @kpNote;   # String for each group indicating general or gamma.  [1..3]
-my @setKPFlag;# Flag  1=done; 0=not done.  Set kpoints on command line.
+my @setKPFlag;# Flag 1=done; 0=not done. Set kpoints on command line.
+my $printBZ;  # Flag 1=do it; 0=do not. Print a file describing the BZ.
 
 # Variables that control structure analysis and description.
 my $cellName; # String of bravis lattice cell name.
@@ -882,6 +888,7 @@ sub initDefaults
       $kpNote[$axis] = "(General)";
    }
    $kpWeightSum = 2;
+   $printBZ = 0;
 
    # Initial setting to track the number of basis set substitutions.
    $numBasisSubs = 0;
@@ -1023,6 +1030,8 @@ sub parseCommandLine
          foreach $kpGroup (1..3)
             {$setKPFlag[$kpGroup] = 1;}
       }
+      elsif ($ARGV[$number] eq "-printbz")
+         {$printBZ = 1;}
       elsif ($ARGV[$number] eq "-subbasis")
       {
          $numBasisSubs++;
@@ -2756,7 +2765,7 @@ sub makeKP
    foreach $kpGroup (1..3)
    {
       &printKPInFile(@{$kpMesh[$kpGroup]}[1..3],$kpGroup);
-      system("makekpoints");
+      system("makekpoints $printBZ");
       $kpNum[$kpGroup] = `wc -l $kpOutFile`;  # Count the lines.
       @values=StructureControl::prepLine("",$kpNum[$kpGroup],'\s+');
       $kpNum[$kpGroup] = $values[0] - 3; # Subtract the three line header.
@@ -3368,7 +3377,7 @@ sub printOLCAOInput
    print OLCAO "$numCoreXanes                    ! Number of possible core orbitals to excite\n";
    foreach $orbital (1..$numCoreXanes)
    {
-      print OLCAO "$xanesControl[$orbital] -1  ! QN_n QN_l Init1 Init2 TEDiff\n";
+      print OLCAO "$xanesControl[$orbital] -1 ! QN_n QN_l Init1 Init2 TEDiff\n";
    }
 
    # Print Optical properties input data

@@ -1,15 +1,21 @@
 #!/usr/bin/env perl
+sub printHelp
+{
+   print <<ENDHELP;
 #PURPOSE:  To write a data file that is usable by origin to plot a symmetric
 #         band diagram using the Origin band script.
 #AUTHOR:  Paul Rulis
-#LAST MODIFIED:  Oct 27, 2004
+#LAST MODIFIED:  Dec. 11, 2019
 #
-#USAGE:  makeSYBD [-dat $datFile] [-out $outFile] [-raw $rawFile]
-#                 [-plot $plotFile] [-basis $basis] [-edge $edge] | [-help]
+#USAGE:  makeSYBD [-dat \$datFile] [-out \$outFile] [-raw \$rawFile]
+#                 [-plot \$plotFile] [-basis \$basis] [-edge \$edge] | [-help]
 #
 #If no file parameters are given then it is assumed that the files to be used
 #   are "gs_sybd-fb.dat", "gs_sybd-fb.out", and "gs_sybd-fb.raw".  The default
 #   basis value is "fb", and the default edge is "gs".
+ENDHELP
+   exit;
+}
 
 #First we parse the command line.
 
@@ -26,35 +32,17 @@ while ($ARGV[$number] ne "")
    if ($ARGV[$number] eq "-help")
       {&printHelp;}
    elsif ($ARGV[$number] eq "-dat")
-   {
-      $datFile = $ARGV[$number+1];
-      $number++;
-   }
+      {$datFile = $ARGV[++$number];}
    elsif ($ARGV[$number] eq "-out")
-   {
-      $outFile = $ARGV[$number+1];
-      $number++;
-   }
+      {$outFile = $ARGV[++$number];}
    elsif ($ARGV[$number] eq "-raw")
-   {
-      $rawFile = $ARGV[$number+1];
-      $number++;
-   }
+      {$rawFile = $ARGV[++$number];}
    elsif ($ARGV[$number] eq "-plot")
-   {
-      $plotFile = $ARGV[$number+1];
-      $number++;
-   }
+      {$plotFile = $ARGV[++$number];}
    elsif ($ARGV[$number] eq "-basis")
-   {
-      $basis="-"."$ARGV[$number+1]";
-      $number++;
-   }
+      {$basis="-"."$ARGV[++$number]";}
    elsif ($ARGV[$number] eq "-edge")
-   {
-      $edge="$ARGV[$number+1]";
-      $number++;
-   }
+      {$edge="$ARGV[++$number]";}
    else
    {
       print STDOUT "UNKNOWN COMMAND LINE PARAMETER $ARGV[$number]. ABORTING.\n";
@@ -70,21 +58,6 @@ for ($i = 0; $i <= $#ARGV; $i++)
    {print COMMANDLINE "$ARGV[$i] ";}
 print COMMANDLINE "\n";
 close (COMMANDLINE);
-
-sub printHelp
-{
-print <<ENDHELP;
-#USAGE:  makeSYBD [-dat \$datFile] [-out \$outFile] [-raw \$rawFile]
-#                   [-plot \$plotFile] [-basis \$basis] [-edge \$edge] |
-#                   [-help]
-#
-#If no file parameters are given then it is assumed that the files to be
-#   used are "gs_sybd-fb.dat", "gs_sybd-fb.out", and "gs_sybd-fb.raw",
-#   "gs_sybd-fb.plot" respectively.  The default basis value is "fb", and the
-#   default edge is "gs".
-ENDHELP
-   exit;
-}
 
 $dat = ".dat";
 $raw = ".raw";

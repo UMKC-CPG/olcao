@@ -147,6 +147,8 @@ subroutine convertKPointsToXYZ
 
    ! Do the conversion.  We must use a temp variable since each kpoint
    !   component is used to calculate the other components of that kpoint.
+   !   I.e., we are *overwriting* the abc fractional coordinates with
+   !   xyz Cartesian.
    write (20,*) 'Kpoints in x,y,z cartesian form in recip space cell are:'
    do i = 1, numKPoints
       kPointX = dot_product(kPoints(:,i),recipVectors(1,:))

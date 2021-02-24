@@ -398,7 +398,8 @@ subroutine makeValenceRho
       sumElecEnergy = 0.5_double * (sum(potCoeffs(:,1) * &
             & (potRho(:,1) + potRho(:,2))) + kineticEnergyTrace(1) + &
             & kineticEnergyTrace(2) + nucPotTrace(1) + nucPotTrace(2))
-      ! Write the two electron numbers (energy, and ???)
+      ! Write the two electron numbers. (Both are energy values, but they are
+      !   computed thorugh different means.
       write (20,fmt='(a24,f18.8)') '(UP)   Electron Energy = ',electronEnergy(1)
       write (20,fmt='(a24,f18.8)') '(UP)   Electron Sum    = ',sumElecEnergy
 

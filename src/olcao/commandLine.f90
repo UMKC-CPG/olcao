@@ -54,7 +54,7 @@ subroutine parseSetupCommandLine
    ! Use necessary modules.
    use O_TimeStamps
 
-   ! Make sure that there are not accidental variable declarations.
+   ! Make sure that there are no accidental variable declarations.
    implicit none
 
    ! Open the file that will be written to as output for this program.

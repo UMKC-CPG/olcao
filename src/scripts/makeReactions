@@ -71,15 +71,15 @@ sub printHelp
 #    matches. This variable defines the number of atoms (starting at the point
 #    of "contact" between the two molecules) to include in the reaction
 #    template from molecule 1. The -c2 option defines the same for molecule 2.
-#    This does not include the point of contact atoms. So, if the binding
-#    If the molecules are CH4 and B10C2H12 and the contact points are an H atom
-#    bound to the C atom from CH4 and a B or a C atom from B10C2H12. Then a
-#    -c1 of 3 would include the H atom bound to the central C atom, the central
-#    C atom of the CH4 itself, and all three other H atoms. A -c2 of 2 would
-#    include the H atom bound to either a B or C atom then the B or C atom
-#    itself. Further, a -c2 of 3 would additionally include each of the
-#    neighboring B or C atoms to the bound B or C atom. By default the chain
-#    length values are set to 4 for both molecules.
+#    This does not include the point of contact atoms. Consider the molecules
+#    CH4 and B10C2H12 and the contact points of an H atom bound to the C
+#    atom from CH4 and an H atom bound to a B or a C atom from B10C2H12. Then a
+#    -c1 of 3 for the CH4 molecule would include the H atom bound to the
+#    central C atom, the central C atom of the CH4 itself, and all three other
+#    H atoms. A -c2 of 2 would include the H atom bound to either a B or C atom
+#    then the B or C atom itself. Further, a -c2 of 3 would additionally
+#    include each of the neighboring B or C atoms to the bound B or C atom. By
+#    default the chain length values are set to 4 for both molecules.
 #
 # The -d1 option defines the delete tree depth variable \$delTreeDepth1 and the
 #    \$delTreeTarget element_species that is used to remove atoms from the
@@ -105,10 +105,11 @@ sub printHelp
 #    used then either the top left or bottom left CH3 group will be the only
 #    atoms *not* added to the delete tree and the C in that group will be the
 #    binding point. (That outcome assumes that both C are type 1.) By default
-#    the depth value is zero and so the target does not need to be specified.
-#    In that case the atom directly bonded to an H atom is the target. If any
-#    depth greater than zero is specified, then it is necessary to also specify
-#    the element and species that is the end of the tree.
+#    the depth value is zero and the target will be whatever element is
+#    attached to the H triggering H atom. If any depth greater than zero is
+#    desired, then it is necessary to also specify the element and species that
+#    is the end of the tree. (That is the whole point of this option. With
+#    this option, the user specifies the target element and species.)
 #
 # The -h option defines the distance that H atoms will be separated from each
 #    other when the templates are created. By default the H atom separation is
@@ -217,7 +218,7 @@ my $bonded_ref;   # The atom numbers that each atom is bonded to.
 my $numBondAngles_ref; # Number of bond angles for each atom.
 my $angleBonded_ref; # The atom numbers that the vertex atoms are bonded to.
 my @keepAtom;     # List of which atoms in the merged molecule to keep.
-my @prunedNumAtoms; # For each hh pair, the number of atoms left in the mol.
+my @prunedNumAtoms; # For each hh pair, the number of atoms *left* in the mol.
 my @prunedNumAtoms1; # For each hh pair, the number of atoms left in sub-mol. 1
 my @prunedNumAtoms2; # For each hh pair, the number of atoms left in sub-mol. 2
 my $directXYZ_ref;
@@ -451,7 +452,8 @@ sub prepMolecules
    # Create a directory to store the merged results in.
    mkdir ("centered");
 
-   # Molecule 1 first
+   # Molecule 1 first. Read the file, get the magnitudes of the lattice
+   #   vectors, and find the largest.
    StructureControl::readInputFile($inFile1,1);
    $mag_ref = StructureControl::getMagRef;
    @sortedMag = sort { $a <=> $b } @{$mag_ref}[1..3];
@@ -460,7 +462,8 @@ sub prepMolecules
 
    StructureControl::reset();
 
-   # Molecule 2 second
+   # Molecule 2 second. Read the file, get the magnitudes of the lattice
+   #   vectors, and find the largest.
    StructureControl::readInputFile($inFile2,1);
    $mag_ref = StructureControl::getMagRef;
    @sortedMag = sort { $a <=> $b } @{$mag_ref}[1..3];
@@ -625,7 +628,12 @@ sub catalogH
       # Find all the atoms that need to be deleted from this molecule and
       #   record their atom numbers and associated information. Note that
       #   presently, this is a weak algorithm that only deals with the
-      #   depth == 0,1 cases.
+      #   depth == 0,1 cases. That is, if the depth is > 1 the algorithm will
+      #   run exactly the same right now as if a depth of 1 was given. In the
+      #   future, it would be good to have the depth and the target work
+      #   together so that if a molecule had multiple atoms of the same target
+      #   type we could plan to skip one to "get to" the other. For now though,
+      #   that can't happen.
       if ($delTreeDepth == 0)
       {
          # In this case, the alignment atom and the binding atom are the
@@ -651,7 +659,7 @@ sub catalogH
          $targetElement = lc($values[0]);
          $targetSpecies = $values[1];
 
-         # Now we assume that no atoms will be delete.
+         # Now we assume that no atoms will be deleted.
          foreach $id (1..$numAtoms)
             {$markedAtoms[$id] = 0;}
 
@@ -1678,7 +1686,9 @@ sub pruneMergedMolecule
          #   after the second depth-first search we have the total number and
          #   can compute the number of pruned atoms for the second molecule.
 
-         # Initialize the number of pruned atoms to 2 (the two H atoms).
+         # Initialize the number of pruned atoms to 2 (the two H atoms). Recall
+         #   that this is the number of atoms *left* in the molecule *after*
+         #   pruning occurs. It is *not* the number of atoms *to prune away*.
          $prunedNumAtoms[$hAtom1][$hAtom2] = 2;
 
          # Probe the first molecule.
@@ -1836,6 +1846,8 @@ sub pruneMergedMolecule
 #   }
 #}
 
+# Depth first search of the bonding network to identify atoms that should not
+#   be pruned away to create the merged and pruned molecule.
 sub markAtomsToKeep
 {
    # Define passed parameters.
@@ -1852,26 +1864,36 @@ sub markAtomsToKeep
    my @chainLevel;
    my $currentChainLevel;
 
-   # Add all bonded neighbors with keep==0 to queue.
-
-   # While queue is not empty
-   #    Shift from the queue.
-   #    Increase the currentChainPoint (ccp) by 1.
-   #    Increase pruned num atoms
-   #    If keep==1 reduce the ccp by one and then do nothing.
-   #    If keep==0 set keep = 1
-   #    If ccp is < maxCCP
-   #       then add all bonded neighbors with keep==0 to queue
-   #       else add self to edge to list
-   #
+   # Only the trigger atoms will have a non-zero keep value when this
+   #   subroutine is called. (They have a value of 1.) The neighbors that are
+   #   bonded to the trigger atoms with keep==0 need to be added to the queue
+   #   along with a record of their chain level (which will be 2).
+   # This is the initialization process.
    $currentChainLevel = 2;
    foreach $bond (1..$numBonds_ref->[$currentAtom])
    {
       if ($keepAtom[$bonded_ref->[$currentAtom][$bond]] == 0)
       {
          push(@chainLevel,$currentChainLevel);
-         push(@queue,$bonded_ref->[$currentAtom][$bond]);}
+         push(@queue,$bonded_ref->[$currentAtom][$bond]);
+      }
    }
+
+   # While queue is not empty:
+   #    Shift the current atom and chain level from the queue.
+   #    If keep==0 and we are withing chain length then mark atom to keep it.
+   #    Otherwise, we found an atom beyond the chain length or that has
+   #       already been identified as a keeper so we can skip to the next item
+   #       in the queue.
+   #
+   #    If we didn't skip to the next queue item we decide if we are within
+   #       the chain length or at the end of it.
+   #
+   #    If we are within the chain length the add each bonded atom (that isn't
+   #       already a keeper and isn't in the queue) to the queue.
+   #    Otherwise we are at the end of the chain and we mark this atom as an
+   #       edge and record it as so.
+   #
    while (@queue)
    {
       $currentAtom = shift(@queue);
@@ -1879,12 +1901,15 @@ sub markAtomsToKeep
       if (($keepAtom[$currentAtom] == 0) and
           ($currentChainLevel <= $maxChainLen))
       {
+         # Mark this atom as a keeper and increment the number of atoms that
+         #   will be retained after pruning.
          $keepAtom[$currentAtom] = 1;
          $prunedNumAtoms[$hAtom1][$hAtom2]++;
       }
       else
          {next;}
 
+      # 
       if ($currentChainLevel < $maxChainLen)
       {
          foreach $bond (1..$numBonds_ref->[$currentAtom])
@@ -1898,12 +1923,14 @@ sub markAtomsToKeep
 
             if (($keepAtom[$bonded_ref->[$currentAtom][$bond]] == 0) and
                 ($found == -1))
-               {push(@chainLevel,$currentChainLevel+1);
-               push(@queue,$bonded_ref->[$currentAtom][$bond]);}
+            {
+               push(@chainLevel,$currentChainLevel+1);
+               push(@queue,$bonded_ref->[$currentAtom][$bond]);
+            }
          }
             
       }
-      else
+      else # Identify the edge atom.
       {
          $numEdgeIDs[$hAtom1][$hAtom2]++;
          $edgeID[$numEdgeIDs[$hAtom1][$hAtom2]][$hAtom1][$hAtom2]

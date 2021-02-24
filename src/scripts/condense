@@ -1176,7 +1176,7 @@ ENDLAMMPSTAIL
 #SBATCH --mem=2G
 #
 export OMP_NUM_THREADS=1
-cd $lmpDir
+cd \$SLURM_SUBMIT_DIR
 mpirun $HOME/bin/lmp_mpi_gcc4_intel2016 < lammps.in
 ENDSLURM
 
@@ -1597,11 +1597,6 @@ sub normalizeTypes
       @values = StructureControl::prepLine("",$uniqueAtomTypes[$atomType],
             '\s+');
       $atom1Z = ElementData::getElementZ($values[0]);
-#      foreach $element (1..$numPeriodicElements)
-#      {
-#         if ($values[0] eq $elementNames_ref->[$element])
-#            {$atom1Z = $element; last;}
-#      }
       $uniqueLJPairCoeffs[$atomType] = "$ljPairCoeffs_ref->[$atom1Z][1] ".
          "$ljPairCoeffs_ref->[$atom1Z][2]";
       $uniqueMasses[$atomType] = $atomicMasses_ref->[$atom1Z];
