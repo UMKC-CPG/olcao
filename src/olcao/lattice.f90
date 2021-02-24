@@ -695,9 +695,9 @@ subroutine cellBorderCheck (vectors, tempDimensions, negligLimit, &
    enddo
 
    ! Begin testing the 7 possible locations that would indicate whether
-   !   this cell has some part within the negligability distance.  This is
-   !   done by following a path from one point to the next via a sequence of
-   !   cellShifts.
+   !   this cell has some part within the negligability distance. This is
+   !   done by following a path from one point to the next via a specific
+   !   sequence of cellShifts.
 
    currentTest(:) = tempDimensions(:)
    currentTest(1) = currentTest(1) + cellShifts(1)
@@ -955,7 +955,7 @@ subroutine initializeFindVec
    !           component in the Wigner-Seitz cell.  Therefor, the comparison
    !           of this segment continues.
    !      b)   If the segment is "outside" then the segment can never be a
-   !           component in the Wigner-Seitz cell.  Therefor all consideration
+   !           component in the Wigner-Seitz cell.  Therefore all consideration
    !           of this pair from (2) is stopped and the next pair is
    !           considered.
    ! 4)  If a segment completes all the comparisons of (3) without being

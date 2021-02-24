@@ -62,6 +62,8 @@ my $title;
 my $numElements;     # The number of unique elements in the system.
 my $numAtoms;        # The number of atoms in the system.
 my $numAtomsExt;     # The number of relevant atoms in the periodic system.
+my $numAtomUniqSpecies; # The number of unique atomic species in the system.
+my @atomUniqSpecies; # A unique index number for each atomic species.
 my @central2ExtItemMap;  # Maps from central cell atom # to extended list.
 my @ext2CentralItemMap;  # Maps from extended atom # to central cell atom #.
 my @datSklMap;       # A Map, given dat atom#, gives skl atom#.
@@ -110,6 +112,11 @@ my @abcOrder;        # Order in which abc lattice vectors relate to @xyzOrder.
 my @xyzOrder;        # Order in which xyz axes are used by @abcOrder;
 my $realCellVolume;  # Volume of the real space cell in angstroms.
 my $recipCellVolume; # Volume of the reciprocal space cell in angstroms.
+
+
+# Brillouin zone descriptors.
+my @bZoneSurfaces;   # Array holding surface normal vectors of the BZs.
+my @bZoneVertices;   # Array holding vertices of each BZ.
 
 
 # Extra lattice data and replicated cell data.
@@ -236,6 +243,9 @@ sub getNumAtoms
 
 sub getNumAtomsExt
    {return $numAtomsExt;}
+
+sub getAtomUniqSpecies
+   {return \@atomUniqSpecies;}
 
 sub getDatSklMapRef
    {return \@datSklMap;}
@@ -639,6 +649,7 @@ sub reset
    undef @elementCount;
    undef @atomSpeciesID;
    undef @numSpecies;
+   undef @atomUniqSpecies;
    undef @speciesList;
    undef @atomicZ;
    undef @atomTag;
@@ -704,6 +715,7 @@ sub reset
    undef @bondAnglesExt;
    undef @numBondAngles;
    undef $numBondsTotal;
+   undef $numUniqueBondTags;
    undef @bondTagID;
    undef @uniqueBondTags;
    undef $numAnglesTotal;
@@ -3634,6 +3646,19 @@ sub makeLatticeInv
    }
 }
 
+
+sub computeBZ_WS
+{
+   # Define passed parameters.
+   my $inLattice_ref = $_[0];
+   my $zoneLevel = $_[1];
+   my $zone_ref = $_[2];
+
+   # Define local variables.
+
+   # 
+}
+
 # Given some (real/reciprocal) set of lattice vectors, this subroutine will
 #   produce the lattice volume.
 sub makeLatticeVolume
@@ -5089,6 +5114,99 @@ sub printCIF
 
    #Close it.
    close (CIF);
+}
+
+
+sub printLMP
+{
+   # Define short names for passed parameters.
+   my $lmpFile = $_[0];
+
+   # Define local variables.
+   my $atom;
+   my $element;
+   my $species;
+   my $xy;
+   my $xz;
+   my $yz;
+   my $numUniqueSpecies;
+   my $currentElement;
+   my $currentSpecies;
+   my $atomicMasses_ref;
+   $atomicMasses_ref = ElementData::getAtomicMassesRef;
+
+   # Compute the number of unique species.
+   $numUniqueSpecies = 0;
+   foreach $element (1..$numElements)
+   {
+      foreach $species (1..$numSpecies[$element])
+         {$numUniqueSpecies++;}
+   }
+
+   # Open the lammps file for writing.
+   open (LMP, ">$lmpFile") || die "Cannot open $lmpFile for writing.\n";
+
+   # Print the header.
+   print LMP "$lmpFile\n\n";
+
+   # Print the number of items and number of types.
+   print LMP "$numAtoms atoms\n";
+   print LMP "$numUniqueSpecies atom types\n";
+
+   # Print the orthogonal cell information.
+   print LMP "0.000 $mag[1] xlo xhi\n";
+   print LMP "0.000 $mag[2] ylo yhi\n";
+   print LMP "0.000 $mag[3] zlo zhi\n";
+
+   # If the cell is non-orthogonal, then compute and print the tilt parameters.
+   #   See: https://lammps.sandia.gov/doc/Howto_triclinic.html
+   if (($angleDeg[1] != 90) || ($angleDeg[2] != 90) || ($angleDeg[3] != 90))
+   {
+      $xy = $mag[2] * cos($angle[3]);
+      $xz = $mag[3] * cos($angle[2]);
+      $yz = ($mag[2]*$mag[3]*cos($angle[1]) - $xy*$xz)
+            / sqrt($mag[2]*$mag[2] - $xy*$xy);
+      print LMP "$xy $xz $yz xy xz yz\n\n";
+   }
+
+   # Print information about the masses.
+   print LMP "Masses\n\n";
+   $currentElement = 0;
+   $currentSpecies = 0;
+   $numUniqueSpecies = 0;
+   foreach $atom (1..$numAtoms)
+   {
+      if ($atomElementID[$atom] != $currentElement)
+      {
+         $currentElement = $atomElementID[$atom];
+         $currentSpecies = $atomSpeciesID[$atom];
+         $numUniqueSpecies++;
+         print LMP "$numUniqueSpecies $atomicMasses_ref->[$atomicZ[$atom]] ";
+         print LMP "# $atomElementName[$atom] $currentSpecies\n";
+      }
+      elsif ($atomSpeciesID[$atom] != $currentSpecies)
+      {
+         $currentSpecies = $atomSpeciesID[$atom];
+         $numUniqueSpecies++;
+         print LMP "$numUniqueSpecies $atomicMasses_ref->[$atomicZ[$atom]] ";
+         print LMP "# $atomElementName[$atom] $currentSpecies\n";
+      }
+
+      $atomUniqSpecies[$atom] = $currentSpecies;
+   }
+
+   # Print information about the atoms.
+   print LMP "\nAtoms\n\n";
+   foreach $atom (1..$numAtoms)
+   {
+      print LMP "$atom $atomUniqSpecies[$atom] ";
+      print LMP "$directXYZ[$atom][1] $directXYZ[$atom][2] ";
+      print LMP "$directXYZ[$atom][3] ";
+      print LMP "# $atomElementName[$atom] $currentSpecies\n";
+   }
+
+   # Close the lammps file.
+   close (LMP);
 }
 
 

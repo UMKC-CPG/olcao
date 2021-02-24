@@ -36,13 +36,13 @@ module O_PotentialUpdate
    real (kind=double), allocatable, dimension (:,:,:) :: tempUsedPotCoeffs
 
 
-!   ! Define variables used to update the solid state potential.
-!   real (kind=double), allocatable, dimension (:,:) :: xl0,xl1,xl2 ! Holds the
-!         !   actually used potential coefficients from the current and previous
-!         !   two iterations.
-!   real (kind=double), allocatable, dimension (:,:) :: yl0,yl1,yl2 ! Holds the
-!         !   guesses for the next set of potential coefficients from the
-!         !   current and previous two iterations.
+   ! Define variables used to update the solid state potential.
+   real (kind=double), allocatable, dimension (:,:) :: xl0,xl1,xl2 ! Holds the
+         !   actually used potential coefficients from the current and previous
+         !   two iterations.
+   real (kind=double), allocatable, dimension (:,:) :: yl0,yl1,yl2 ! Holds the
+         !   guesses for the next set of potential coefficients from the
+         !   current and previous two iterations.
 
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    ! Begin list of module subroutines.!
@@ -1193,6 +1193,10 @@ subroutine makeSCFPot (totalEnergy)
    endif
 
    if (totalEnergy > 0.0_double) then
+      write (20,*) "Kinetic energy = ", kineticEnergy
+      write (20,*) "Electrostatic energy = ", elecStatEnergy
+      write (20,*) "Exchange correlation energy = ", exchCorrEnergy
+      write (20,*) "Total energy = ", totalEnergy
       write (20,*) "Total energy is positive!"
       write (20,*) "Your structure might have a serious problem. Aborting."
       stop
@@ -1216,85 +1220,85 @@ subroutine makeSCFPot (totalEnergy)
    !   in the second array index are one higher than the numbers expressed in
    !   the Anderson paper. That is, index 1 is for x^l+0 and index 2 is for
    !   x^l-1 and index 3 is for x^l-2, etc.
-   if (.not. allocated(usedPotCoeffs)) then
-      allocate (convergenceRecord(feedbackLevel+1))
-      allocate (totalEnergyRecord(feedbackLevel+2,spin))
-      convergenceRecord(:) = 100000.0_double ! Some large number
-      totalEnergyRecord(:,:) = 0.0_double
-
-      allocate (usedPotCoeffs(potDim,feedbackLevel+1,spin)) ! Anderson's x
-      allocate (guessedPotCoeffs(potDim,feedbackLevel+1,spin)) ! Anderson's y
-
-      allocate (tempPotCoeffs(potDim,spin))
-      allocate (tempGuessedPotCoeffs(potDim,feedbackLevel+1,spin))
-      allocate (tempUsedPotCoeffs(potDim,feedbackLevel+1,spin))
-
-      do i = 1, spin
-         do j = 1, feedbackLevel+1
-            usedPotCoeffs(:,j,i) = potCoeffs(:,i)
-            guessedPotCoeffs(:,j,i) = elecStatPot(:,1) + elecStatPot(:,2) &
-                  & + exchCorrPot(:,i)
-         enddo
-      enddo
-   endif
-
-   ! Allocate space to hold the output potentials
-!   allocate (outputPot (potDim,spin))
-!   if (.not.allocated(xl0)) then
-!      allocate (xl0 (potDim,spin))
-!      allocate (xl1 (potDim,spin))
-!      allocate (xl2 (potDim,spin))
-!      allocate (yl0 (potDim,spin))
-!      allocate (yl1 (potDim,spin))
-!      allocate (yl2 (potDim,spin))
+!   if (.not. allocated(usedPotCoeffs)) then
+!      allocate (convergenceRecord(feedbackLevel+1))
+!      allocate (totalEnergyRecord(feedbackLevel+2,spin))
+!      convergenceRecord(:) = 100000.0_double ! Some large number
+!      totalEnergyRecord(:,:) = 0.0_double
+!
+!      allocate (usedPotCoeffs(potDim,feedbackLevel+1,spin)) ! Anderson's x
+!      allocate (guessedPotCoeffs(potDim,feedbackLevel+1,spin)) ! Anderson's y
+!
+!      allocate (tempPotCoeffs(potDim,spin))
+!      allocate (tempGuessedPotCoeffs(potDim,feedbackLevel+1,spin))
+!      allocate (tempUsedPotCoeffs(potDim,feedbackLevel+1,spin))
 !
 !      do i = 1, spin
-!         xl1(:,i) = potCoeffs(:,i)
-!         xl2(:,i) = potCoeffs(:,i)
-!         yl1(:,i) = elecStatPot(:,1) + elecStatPot(:,2) + exchCorrPot(:,i)
-!         yl2(:,i) = elecStatPot(:,1) + elecStatPot(:,2) + exchCorrPot(:,i)
+!         do j = 1, feedbackLevel+1
+!            usedPotCoeffs(:,j,i) = potCoeffs(:,i)
+!            guessedPotCoeffs(:,j,i) = elecStatPot(:,1) + elecStatPot(:,2) &
+!                  & + exchCorrPot(:,i)
+!         enddo
 !      enddo
 !   endif
 
+   ! Allocate space to hold the output potentials
+   allocate (outputPot (potDim,spin))
+   if (.not.allocated(xl0)) then
+      allocate (xl0 (potDim,spin))
+      allocate (xl1 (potDim,spin))
+      allocate (xl2 (potDim,spin))
+      allocate (yl0 (potDim,spin))
+      allocate (yl1 (potDim,spin))
+      allocate (yl2 (potDim,spin))
 
-   allocate (potDifference(potDim,spin)) ! For measuring convergence.
-   do i = 1, spin
+      do i = 1, spin
+         xl1(:,i) = potCoeffs(:,i)
+         xl2(:,i) = potCoeffs(:,i)
+         yl1(:,i) = elecStatPot(:,1) + elecStatPot(:,2) + exchCorrPot(:,i)
+         yl2(:,i) = elecStatPot(:,1) + elecStatPot(:,2) + exchCorrPot(:,i)
+      enddo
+   endif
 
-      ! NOT BEING USED NOW, DIDN'T WORK SO GREAT. That may be due to not
-      !   matching the changes in energy with the "correct" pair of used vs.
-      !   guessed coefficients. Not sure so I'm leaving it for now ...
-      ! If the total energy of the current iteration is worse (higher) than the
-      !   total energy of each of the previously saved iterations, then we will
-      !   reverse the assignment of used and guessed potential coefficients for
-      !   this iteration. This will have the effect of "pushing against" the
-      !   particular blending that produced this slightly worse energy.
-!write (20,*) totalEnergy, totalEnergyRecord(:)
-if (spin == 1) then
-   totalEnergyRecord(1,:) = totalEnergy
-else
-   totalEnergyRecord(1,:) = totalEnergySpin(:)
-endif
-!if (totalEnergy < maxval(totalEnergyRecord(:))) then
-!   totalEnergyImprovement = 1
+
+!   allocate (potDifference(potDim,spin)) ! For measuring convergence.
+!   do i = 1, spin
+!
+!      ! NOT BEING USED NOW, DIDN'T WORK SO GREAT. That may be due to not
+!      !   matching the changes in energy with the "correct" pair of used vs.
+!      !   guessed coefficients. Not sure so I'm leaving it for now ...
+!      ! If the total energy of the current iteration is worse (higher) than the
+!      !   total energy of each of the previously saved iterations, then we will
+!      !   reverse the assignment of used and guessed potential coefficients for
+!      !   this iteration. This will have the effect of "pushing against" the
+!      !   particular blending that produced this slightly worse energy.
+!!write (20,*) totalEnergy, totalEnergyRecord(:)
+!if (spin == 1) then
+!   totalEnergyRecord(1,:) = totalEnergy
 !else
-!   totalEnergyImprovement = 0
+!   totalEnergyRecord(1,:) = totalEnergySpin(:)
 !endif
-
-!      if (totalEnergyImprovement == 1) then
-         usedPotCoeffs(:,1,i) = potCoeffs(:,i) ! Anderson's x^l
-         guessedPotCoeffs(:,1,i) = elecStatPot(:,1) + elecStatPot(:,2) &
-               & + exchCorrPot(:,i) ! Anderson's y^l
-!      else
-!         guessedPotCoeffs(:,1,i) = potCoeffs(:,i) ! Anderson's x^l
-!         usedPotCoeffs(:,1,i) = elecStatPot(:,1) + elecStatPot(:,2) &
+!!if (totalEnergy < maxval(totalEnergyRecord(:))) then
+!!   totalEnergyImprovement = 1
+!!else
+!!   totalEnergyImprovement = 0
+!!endif
+!
+!!      if (totalEnergyImprovement == 1) then
+!         usedPotCoeffs(:,1,i) = potCoeffs(:,i) ! Anderson's x^l
+!         guessedPotCoeffs(:,1,i) = elecStatPot(:,1) + elecStatPot(:,2) &
 !               & + exchCorrPot(:,i) ! Anderson's y^l
-!      endif
-
-      ! Form the difference between the potential coefficients that have been
-      !   guessed for the next iteration and those that were used in the current
-      !   iteration.
-      potDifference(:,i) = guessedPotCoeffs(:,1,i) - usedPotCoeffs(:,1,i)
-   enddo
+!!      else
+!!         guessedPotCoeffs(:,1,i) = potCoeffs(:,i) ! Anderson's x^l
+!!         usedPotCoeffs(:,1,i) = elecStatPot(:,1) + elecStatPot(:,2) &
+!!               & + exchCorrPot(:,i) ! Anderson's y^l
+!!      endif
+!
+!      ! Form the difference between the potential coefficients that have been
+!      !   guessed for the next iteration and those that were used in the current
+!      !   iteration.
+!      potDifference(:,i) = guessedPotCoeffs(:,1,i) - usedPotCoeffs(:,1,i)
+!   enddo
 !do i = 1, potDim
 !write (20,*) "exchCorr",exchCorrPot(i,1),exchCorrPot(i,2)
 !enddo
@@ -1302,16 +1306,16 @@ endif
 !write (20,*) "elecStat1,2",elecStatPot(i,1),elecStatPot(i,2)
 !enddo
 
-!   do i = 1, spin
-!      xl0(:,i) = potCoeffs(:,i)
-!      yl0(:,i) = elecStatPot(:,1) + elecStatPot(:,2) + exchCorrPot(:,i)
-!
-!      ! Form the difference between last iteration and the current new
-!      !   calculation of the potential.  (Note that this calculation will be
-!      !   mixed later with the potential of last iteration to make the
-!      !   convergence more smooth.)
-!      outputPot(:,i) = yl0(:,i) - xl0(:,i)
-!   enddo
+   do i = 1, spin
+      xl0(:,i) = potCoeffs(:,i)
+      yl0(:,i) = elecStatPot(:,1) + elecStatPot(:,2) + exchCorrPot(:,i)
+
+      ! Form the difference between last iteration and the current new
+      !   calculation of the potential.  (Note that this calculation will be
+      !   mixed later with the potential of last iteration to make the
+      !   convergence more smooth.)
+      outputPot(:,i) = yl0(:,i) - xl0(:,i)
+   enddo
 
 
    ! Deallocate matrices that have been copied to temporary arrays.
@@ -1362,8 +1366,8 @@ endif
       !   potential vector difference to get the difference in real space.
       do j = 1, spin
          do k = 1, numRayPoints
-!            realSpacePotDiff(k,j) = sum(exchRhoOp(:,k,1) * outputPot(:,j))
-            realSpacePotDiff(k,j) = sum(exchRhoOp(:,k,1) * potDifference(:,j))
+            realSpacePotDiff(k,j) = sum(exchRhoOp(:,k,1) * outputPot(:,j))
+!            realSpacePotDiff(k,j) = sum(exchRhoOp(:,k,1) * potDifference(:,j))
          enddo
 
          ! Determine the delta to be tested.
@@ -1379,13 +1383,13 @@ endif
    enddo
 
    ! Deallocate arrays to obtain the testableDelta
-   deallocate (potDifference)
+!   deallocate (potDifference)
    deallocate (realSpacePotDiff)
    deallocate (averageDelta)
    deallocate (maxDelta)
    deallocate (exchRhoOp)
    deallocate (radialWeight)
-!   deallocate (outputPot)
+   deallocate (outputPot)
 
    ! Generate the potentials for the next iteration using the method D.G.
    !   Anderson, J. Assoc. Comp. Mach. 12, 547 (1965).
@@ -1396,11 +1400,11 @@ endif
    !   small, the first order M=1 extrapolation is used instead.  M is
    !   effectively reduced to 0 or 1 if the iteration is 0, 1, or 2.
 
-!   allocate ( rl0 (potDim))
-!   allocate ( rl1 (potDim))
-!   allocate ( rl2 (potDim))
-!   allocate (drl1 (potDim))
-!   allocate (drl2 (potDim))
+   allocate ( rl0 (potDim))
+   allocate ( rl1 (potDim))
+   allocate ( rl2 (potDim))
+   allocate (drl1 (potDim))
+   allocate (drl2 (potDim))
 
 
    ! At this point we must determine what potential coefficients to use during
@@ -1455,11 +1459,11 @@ endif
 !      call blendPotentialsSCF(1,potDim,potCoeffs(:,i),&
 !            & guessedPotCoeffs(:,:,i),usedPotCoeffs(:,:,i),totalEnergyRecord)
 !   enddo
-   do i = 1, spin
-      call blendPotentialsSCF(1,potDim,potCoeffs(:,i),&
-            & guessedPotCoeffs(:,:,i),usedPotCoeffs(:,:,i),&
-            & totalEnergyRecord(:,i))
-   enddo
+   !do i = 1, spin
+   !   call blendPotentialsSCF(1,potDim,potCoeffs(:,i),&
+   !         & guessedPotCoeffs(:,:,i),usedPotCoeffs(:,:,i),&
+   !         & totalEnergyRecord(:,i))
+   !enddo
 !   if (currIteration > feedbackLevel+2) then
 !      do i = 1, spin
 !         call blendPotentialsTE(1,potDim,potCoeffs(:,i),&
@@ -1468,7 +1472,7 @@ endif
 !      enddo
 !   endif
 
-   call shiftPotentials(guessedPotCoeffs,usedPotCoeffs,totalEnergyRecord)
+   !call shiftPotentials(guessedPotCoeffs,usedPotCoeffs,totalEnergyRecord)
 
 !   if (spin == 1) then ! Do the simple spin non-polarized case.
 !      call blendPotentialsSCF(1,potDim,potCoeffs(:,1),&
@@ -1520,70 +1524,70 @@ endif
 !   usedPotCoeffs(:,:,2)    = jointUsedPotCoeffs(potDim+1:potDim*2,:)
 
 
-!   ! This is basically copied from the old code with little modification for
-!   !   the names since I don't know what they mean or do in most cases.
-!   do i = 1, spin
-!      th1 = 0.0_double
-!      th2 = 0.0_double
-!      if (feedbackLevel /= 0) then
-!         if (currIteration > 1) then
-!            rl0(:)  = yl0(:,i) - xl0(:,i)
-!            rl1(:)  = yl1(:,i) - xl1(:,i)
-!            rl2(:)  = yl2(:,i) - xl2(:,i)
-!            drl1(:) = rl0(:) - rl1(:)
-!            drl2(:) = rl0(:) - rl2(:)
-!
-!            ! This part is new.  Make temp matrices holding the potAlphaOverlap
-!            !   times the drl1, and drl2 vectors.
-!
-!            ! Initialize the summation variables
-!            s11 = 0.0_double
-!            s12 = 0.0_double
-!            s22 = 0.0_double
-!            t1  = 0.0_double
-!            t2  = 0.0_double
-!
-!            ! The cases for the drl1 vector are done first. 
-!            do j = 1, potDim
-!               tempOverlap(:,j) = potAlphaOverlap(:,j) * drl1(j)
-!               s11 = s11 + sum(tempOverlap(:,j) * drl1(:))
-!               t1  = t1  + sum(tempOverlap(:,j) * rl0(:))
-!            enddo
-!
-!            ! The cases for the drl2 vector are done second.
-!            do j = 1, potDim
-!               tempOverlap(:,j) = potAlphaOverlap(:,j) * drl2(j)
-!               s12 = s12 + sum(tempOverlap(:,j) * drl1(:))
-!               s22 = s22 + sum(tempOverlap(:,j) * drl2(:))
-!               t2  = t2  + sum(tempOverlap(:,j) * rl0(:))
-!            enddo
-!            th1 = t1/s11
-!            if (feedbackLevel /= 1) then
-!               if (currIteration > 2) then
-!
-!                  ! Calculate the determinate.
-!                  det = s11*s22 - s12*s12
-!                  if (det/(s11*s22) >= 0.00000001_double) then
-!                     th1 = ( s22*t1 - s12*t2)/det
-!                     th2 = (-s12*t1 + s11*t2)/det
-!                  endif
-!               endif
-!            endif
-!         endif
-!      endif
-!
-!      ! Form the next iteration and save the previous two.
-!      potCoeffs(:,i) = &
-!            & (1.0_double - relaxFactor) * &
-!            & ((1.0_double-th1-th2)*xl0(:,i) + th1*xl1(:,i) + th2*xl2(:,i)) + &
-!            & relaxFactor * &
-!            & ((1.0_double-th1-th2)*yl0(:,i) + th1*yl1(:,i) + th2*yl2(:,i))
-!
-!      xl2(:,i) = xl1(:,i)
-!      xl1(:,i) = xl0(:,i)
-!      yl2(:,i) = yl1(:,i)
-!      yl1(:,i) = yl0(:,i)
-!   enddo
+   ! This is basically copied from the old code with little modification for
+   !   the names since I don't know what they mean or do in most cases.
+   do i = 1, spin
+      th1 = 0.0_double
+      th2 = 0.0_double
+      if (feedbackLevel /= 0) then
+         if (currIteration > 1) then
+            rl0(:)  = yl0(:,i) - xl0(:,i)
+            rl1(:)  = yl1(:,i) - xl1(:,i)
+            rl2(:)  = yl2(:,i) - xl2(:,i)
+            drl1(:) = rl0(:) - rl1(:)
+            drl2(:) = rl0(:) - rl2(:)
+
+            ! This part is new.  Make temp matrices holding the potAlphaOverlap
+            !   times the drl1, and drl2 vectors.
+
+            ! Initialize the summation variables
+            s11 = 0.0_double
+            s12 = 0.0_double
+            s22 = 0.0_double
+            t1  = 0.0_double
+            t2  = 0.0_double
+
+            ! The cases for the drl1 vector are done first. 
+            do j = 1, potDim
+               tempOverlap(:,j) = potAlphaOverlap(:,j) * drl1(j)
+               s11 = s11 + sum(tempOverlap(:,j) * drl1(:))
+               t1  = t1  + sum(tempOverlap(:,j) * rl0(:))
+            enddo
+
+            ! The cases for the drl2 vector are done second.
+            do j = 1, potDim
+               tempOverlap(:,j) = potAlphaOverlap(:,j) * drl2(j)
+               s12 = s12 + sum(tempOverlap(:,j) * drl1(:))
+               s22 = s22 + sum(tempOverlap(:,j) * drl2(:))
+               t2  = t2  + sum(tempOverlap(:,j) * rl0(:))
+            enddo
+            th1 = t1/s11
+            if (feedbackLevel /= 1) then
+               if (currIteration > 2) then
+
+                  ! Calculate the determinate.
+                  det = s11*s22 - s12*s12
+                  if (det/(s11*s22) >= 0.00000001_double) then
+                     th1 = ( s22*t1 - s12*t2)/det
+                     th2 = (-s12*t1 + s11*t2)/det
+                  endif
+               endif
+            endif
+         endif
+      endif
+
+      ! Form the next iteration and save the previous two.
+      potCoeffs(:,i) = &
+            & (1.0_double - relaxFactor) * &
+            & ((1.0_double-th1-th2)*xl0(:,i) + th1*xl1(:,i) + th2*xl2(:,i)) + &
+            & relaxFactor * &
+            & ((1.0_double-th1-th2)*yl0(:,i) + th1*yl1(:,i) + th2*yl2(:,i))
+
+      xl2(:,i) = xl1(:,i)
+      xl1(:,i) = xl0(:,i)
+      yl2(:,i) = yl1(:,i)
+      yl1(:,i) = yl0(:,i)
+   enddo
 
 
    ! Record the potential terms (alphas), potential coefficients, total charge
@@ -1756,11 +1760,11 @@ endif
    deallocate (kineticEnergyTrace)
    deallocate (tempOverlap)
    deallocate (potAlphaOverlap)
-!   deallocate (rl0)
-!   deallocate (rl1)
-!   deallocate (rl2)
-!   deallocate (drl1)
-!   deallocate (drl2)
+   deallocate (rl0)
+   deallocate (rl1)
+   deallocate (rl2)
+   deallocate (drl1)
+   deallocate (drl2)
 
    ! Log the date and time we end.
    call timeStampEnd (18)
@@ -3882,22 +3886,22 @@ subroutine cleanUpPotentialUpdate
 
    implicit none
 
-   if (allocated (usedPotCoeffs)) then
-      deallocate (usedPotCoeffs)
-      deallocate (guessedPotCoeffs)
-      deallocate (tempUsedPotCoeffs)
-      deallocate (tempGuessedPotCoeffs)
-      deallocate (tempPotCoeffs)
-   endif
-
-!   if (allocated (xl0)) then
-!      deallocate (xl0)
-!      deallocate (xl1)
-!      deallocate (xl2)
-!      deallocate (yl0)
-!      deallocate (yl1)
-!      deallocate (yl2)
+!   if (allocated (usedPotCoeffs)) then
+!      deallocate (usedPotCoeffs)
+!      deallocate (guessedPotCoeffs)
+!      deallocate (tempUsedPotCoeffs)
+!      deallocate (tempGuessedPotCoeffs)
+!      deallocate (tempPotCoeffs)
 !   endif
+
+   if (allocated (xl0)) then
+      deallocate (xl0)
+      deallocate (xl1)
+      deallocate (xl2)
+      deallocate (yl0)
+      deallocate (yl1)
+      deallocate (yl2)
+   endif
 
 end subroutine cleanUpPotentialUpdate
 

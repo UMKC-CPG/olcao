@@ -8,10 +8,16 @@ sub printHelp
 #          the ElementData.pm perl module.  The resultant converged potentials
 #          will be used to create an atomic potential function database.
 #
-# USAGE:   runIsoAtoms [-element \$targetZ] -help
+# USAGE:   runIsoAtoms [-element \$targetZ] [-nocore] -help
 #
 # The -element option takes one atomic Z number as an argument and will run an
 #   isolated atom calculation for that element only.
+# The -nocore option will pass on the -nocore option to makeinput so that the
+#   all-electron electronic structure is computed. (It is somewhat counter-
+#   intuitive that an option called -nocore should yield an all-electron
+#   result. But, the idea is that -nocore *will not* include any core orbitals
+#   in the list of orbitals that are orthogonalized away. Therefore, all of
+#   the core orbitals *will be* included in the list of orbitals to compute.)
 # The -help option will print a helpful guide to the program.
 ENDHELP
 }
@@ -33,6 +39,7 @@ my $numElements;  # Total number of elements in the OLCAO program.
 my $element; # Element index counter.
 my $atom;  # Atom index counter.
 my $elementNames_ref;  # Reference to the name of every atom.
+my $nocore;  # Use the -nocore option.
 my $targetZ;
 
 # Initialize environment.
@@ -54,6 +61,9 @@ sub initEnv
 {
    # Assume that we will do all elements.
    $targetZ = 0;
+
+   # Assume that we will not use the -nocore option.
+   $nocore = "";
 }
 
 sub parseCommandLine
@@ -73,6 +83,8 @@ sub parseCommandLine
          {&printHelp;}
       elsif ($ARGV[$number] eq "-element")
          {$targetZ = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-nocore")
+         {$nocore = " -nocore";}
       else
       {
          print STDOUT "UNKNOWN COMMAND LINE PARAMETER $ARGV[$number].";
@@ -135,7 +147,7 @@ supercell 1 1 1
 prim
 ENDSKL
 
-      system("makeinput");
+      system("makeinput$nocore");
       system("$OLCAO_BIN/olcao");
       chdir "..";
    }

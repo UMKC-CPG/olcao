@@ -344,9 +344,6 @@ sub formAndPrintSpectra
             {$pdosAtomColumn = $found;}
       }
 
-      # Get the number of energy points.
-      $numEnergyPoints = scalar @spectra;
-
       # Get the initial and final energy values.
       if ($doPDOS == 0)
       {
@@ -367,6 +364,9 @@ sub formAndPrintSpectra
          $initialEnergy = $minEnergy;
          $finalEnergy = $maxEnergy;
       }
+
+      # Get the number of energy points.
+      $numEnergyPoints = scalar @spectra;
 
       # Compute the energy delta.
       $energyDelta = ($finalEnergy - $initialEnergy) / ($numEnergyPoints-1);

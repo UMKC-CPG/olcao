@@ -20,7 +20,7 @@ nanoTube.py normalize
 olcao olcaoCompare olcaoObject.py olcao.py olcaoStructures.py
 pdb2skl plotgraph polcao
 reconcileAbsences rpdf runCheck runIsoAtoms
-scanSpectra selectSYBD skl2pdb skl2vasp spectra2ODX
+scanSpectra selectSYBD skl2lmp skl2pdb skl2vasp spectra2ODX
 unpackOLCAODB
 vasp2skl
 xcMesh xyz2skl)
