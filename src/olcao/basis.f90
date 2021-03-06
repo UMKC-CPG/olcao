@@ -100,7 +100,7 @@ subroutine renormalizeBasis
    angNorm(10) = 2.8906114426405543_double ! sqrt(105/4pi)  * xyz/r^3
    angNorm(11) = 1.4453057213202771_double ! sqrt(105/16pi) * z(x^2-y^2)/r^3
    angNorm(12) = 0.5900435899266435_double ! sqrt(35/32pi)  * x(x^2-3y^2)/r^3
-   angNorm(13) = 0.5900435899266435_double ! sqrt(35/32pi)  * y(y^2-3x^2)/r^3
+   angNorm(13) = 0.5900435899266435_double ! sqrt(35/32pi)  * y(3x^2-y^2)/r^3
    angNorm(14) = 0.3731763325901154_double ! sqrt(7/16pi)   * z(5z^2-3r^2)/r^3
    angNorm(15) = 0.4570457994644657_double ! sqrt(21/32pi)  * x(5z^2-r^2)/r^3
    angNorm(16) = 0.4570457994644657_double ! sqrt(21/32pi)  * y(5z^2-r^2)/r^3

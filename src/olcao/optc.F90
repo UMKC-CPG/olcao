@@ -469,9 +469,9 @@ subroutine getEnergyStatistics
 
                ! Check if the energy difference is less than the maximum
                !   transition energy that the input file requested computation
-               !   for.  If it fails, then we go to the next initial state because
-               !   all the remaining final states for this energy will be
-               !   greater.
+               !   for. If it fails, then we go to the next initial state
+               !   because all the remaining final states for this energy will
+               !   be greater.
                if (currentEnergyDiff > maxTransEnergy) then
                   exit
                endif
@@ -741,7 +741,7 @@ subroutine computeTransitions
          endif
          call flush (20)
 
-      enddo
+      enddo ! i numKPoints
 
       ! Add a final return if one was not already made.
       if (mod(numKPoints,10) /= 0) then
