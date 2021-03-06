@@ -3,6 +3,7 @@
 !module O_LAPACKDGESV
 !   interface
 !      subroutine dgesv(N, NRHS, A, LDA, IPIV, B, LDB, INFO)
+!         use O_Kinds
 !         integer :: N
 !         integer :: NRHS
 !         real (kind=double), dimension(LDA,N) :: A
@@ -14,9 +15,9 @@
 !      end subroutine dgesv
 !   end interface
 !
-!   contains
-!
-!subroutine solveDGESV (N, NRHS, A, B, INFO)
+!!   contains
+!!
+!!subroutine solveDGESV (N, NRHS, A, B, INFO)
 !end module O_LAPACKDGESV
 
 module PointGroupOperations_O
@@ -36,7 +37,6 @@ module PointGroupOperations_O
 
    ! Begin list of module subroutines.
    contains
-
 
    ! This subroutine will read data from the given unit.  It will initialize
    !   the number of point group operations and the values of the point group
@@ -239,6 +239,9 @@ module Lattice_O
    integer, allocatable, dimension (:) :: numBZFacets
    real (kind=double), dimension (4,26) :: planeEquation
    real (kind=double), dimension (3,26) :: latticePointXYZ
+   real (kind=double), dimension (3) :: recipMag
+   real (kind=double), dimension (3) :: angle ! Radians
+   real (kind=double), dimension (3) :: angleDeg
 
    type vertexType
       real (kind=double), dimension (3) :: coord
@@ -266,6 +269,7 @@ module Lattice_O
    integer :: numFullEdges
 
    type facetType
+      integer :: pointID
       integer :: numVertices
       type (vertexType), dimension (20) :: vertex
    end type facetType
@@ -331,6 +335,27 @@ module Lattice_O
       realVolume = abs(realVolume) ! Volume is always positive.
       recipVolume = ((2.0_double*Pi)**3)/realVolume
 
+      ! Compute the reciprocal cell vector magnitudes.
+      do i = 1, 3
+         recipMag(i) = sqrt(sum(recipLattice(:,i)**2))
+      enddo
+
+      angle(1) = acos((recipLattice(1,2) * recipLattice(1,3) + &
+                     & recipLattice(2,2) * recipLattice(2,3) + &
+                     & recipLattice(3,2) * recipLattice(3,3)) / &
+                     & (recipMag(2)*recipMag(3)))
+      angle(2) = acos((recipLattice(1,1) * recipLattice(1,3) + &
+                     & recipLattice(2,1) * recipLattice(2,3) + &
+                     & recipLattice(3,1) * recipLattice(3,3)) / &
+                     & (recipMag(1)*recipMag(3)))
+      angle(3) = acos((recipLattice(1,1) * recipLattice(1,2) + &
+                     & recipLattice(2,1) * recipLattice(2,2) + &
+                     & recipLattice(3,1) * recipLattice(3,2)) / &
+                     & (recipMag(1)*recipMag(2)))
+      angleDeg(1) = angle(1) * 180.0_double / pi
+      angleDeg(2) = angle(2) * 180.0_double / pi
+      angleDeg(3) = angle(3) * 180.0_double / pi
+
    end subroutine computeLatticeData
 
 
@@ -351,6 +376,9 @@ module Lattice_O
 
       ! Construct a list of all facets involved.
       call makeFacetList(maxBZ)
+
+      ! Add vertices to each facet.
+      call addFacetVertices(maxBZ)
 
 !      ! Construct a list of all possible vertices. A vertex is created by the
 !      !   the intersection of three non-parallel planes. Each plane is defined
@@ -388,264 +416,313 @@ module Lattice_O
 !
    end subroutine computeBrillouinZones
 
-subroutine makeFacetList (maxBZ)
 
-   implicit none
 
-   ! Define passed dummy parameters.
-   integer :: maxBZ
+   subroutine makeFacetList (currentBZ)
 
-   ! Define local variables.
-   integer :: i, j, k
-   integer :: onOtherPlane, beyondOtherPlane, oppositeQuadrants
-   integer :: numFacets
-   integer, dimension(26) :: facetList
-   real (kind=double) :: t, d ! See algebraic description below.
-   real (kind=double), dimension(3) :: intersectionPoint
-   real (kind=double) :: smallThresh
+      implicit none
 
-   ! Certain calculations require floating point comparisons that are
-   !   inherently not exact on a finite precision computer. Therefore, we
-   !   use this threshold to define effective equality.
-   smallThresh = 1e-8_double
+      ! Define passed dummy parameters.
+      integer :: currentBZ
 
-   ! The goal of the algorithm is to create a list of all the planes that
-   !   contribute to the Brillouin zone (and, of course, exclude those planes
-   !   that do not contribute). A plane is recognized as a contributor if there
-   !   is a line from the origin to the lattice point of the plane that does
-   !   not cross through any other plane. Conversely, a plane is recognized to
-   !   not contribute to the Brillouin zone if a line from the point on the
-   !   plane nearest to the origin passes through any other plane, or if that
-   !   same point happens to lie exactly on some other plane.
-   ! The algorithm works by first assuming that all 26 planes will contribute.
-   !   Then, each plan is reviewed to see if either (a) its nearest point lies
-   !   on some other plane or (b) a line from the origin to that same nearest
-   !   point passes through another plane.
+      ! Define local variables.
+      integer :: i, j
+      integer :: onOtherPlane, beyondOtherPlane
 
-   ! First, we need to create algebraic expressions for each of the planes
-   !   available for us to intersect.
-   call makePlaneEquations
-
-   numFacets = 0
-   do i = 1, 26
-
-      ! Determine if the current lattice point (that defines some plane) also
-      !   happens to lie *on* a plane defined by some other lattice point. If
-      !   so, then the plane defined by the current lattice point is
-      !   disqualified as a participant in the construction of the Brillouin
-      !   zone. Assume that the current lattice point will not sit on some
+      ! The goal of the algorithm is to create a list of all the planes that
+      !   contribute to the Brillouin zone (and, of course, exclude those
+      !   planes that do not contribute). A plane is recognized as a
+      !   contributor if there is a line from the origin to the lattice point
+      !   of the plane that does not cross through any other plane. Conversely,
+      !   a plane is recognized to not contribute to the Brillouin zone if a
+      !   line from the point on the plane nearest to the origin passes through
+      !   any other plane, or if that same point happens to lie exactly on some
       !   other plane.
-      onOtherPlane = 0
-      do j = 1, 26
+      ! The algorithm works by first assuming that all 26 planes will
+      !   contribute. Then, each plan is reviewed to see if either (a) its
+      !   nearest point lies on some other plane or (b) a line from the origin
+      !   to that same nearest point passes through another plane.
 
-         ! Do not check against oneself.
-         if (i == j) cycle
+      ! First, we need to create algebraic expressions for each of the planes
+      !   available for us to intersect.
+      call makePlaneEquations
 
-         if (abs(sum(planeEquation(1:3,j) &
-               & * (planeEquation(1:3,i) - planeEquation(1:3,j)))) &
-               & < smallThresh) then
-            onOtherPlane = 1
-write (6,*) "Lattice point i sits on plane j."
-            exit
-         endif
-      enddo
+      numBZFacets(currentBZ) = 0
+      do i = 1, 26
 
-      ! If plane i does not lie on another plane, then we need to next
-      !   determine if it lies beyond another plane. (I.e., does the point on
-      !   plane i that is nearest to the origin have a line segment between it
-      !   and the origin that passes through any other plane?)
-      if (onOtherPlane == 0) then
-write (6,*) "Checking for position."
-
-         beyondOtherPlane = 0
+         ! Determine if the current lattice point (that defines some plane) also
+         !   happens to lie *on* a plane defined by some other lattice point. If
+         !   so, then the plane defined by the current lattice point is
+         !   disqualified as a participant in the construction of the Brillouin
+         !   zone. Assume that the current lattice point will not sit on some
+         !   other plane.
+         onOtherPlane = 0
          do j = 1, 26
 
             ! Do not check against oneself.
             if (i == j) cycle
 
-            ! The general parametric form for the equation of a line is:
-            !   x = x_0 + tu;  y = y_0 + tv;  z = z_0 + tw. Our case is a
-            !   special case because the vector <u, v, w> is the same as the
-            !   position vector <x_0, y_0, z_0> of the lattice point used to
-            !   define plane i. Therefore our line is defined according to:
-            !   x = u(1+t);  y = v(1+t);  z = w(1+t).
-            ! If we substitute these values for x, y, and z into the definition
-            !   for the plane defined by the lattice point j we can solve for
-            !   t in terms of u, v, w and l, m, n, which are the Cartesian
-            !   coordinates of the position vector used to define plane j.
-            ! The equation for plane j is: l(x - l) + m(y - m) + n(z - n) = 0.
-            !   Upon substitution we have:
-            !   l(u(1+t) - l) + m(v(1+t) - m) + n(w(1+t) - n) = 0.
-            ! Solving for t yields:
-            !   t = (l(l-u) + m(m-v) + n(n-w)) / (lu + mv + nw)
-            !   t = (l^2 - lu + m^2 - mv + n^2 - nw) / (lu + mv + nw)
-            !   t = (l^2 + m^2 + n^2 - lu - mv - nw) / (lu + mv + nw)
-            !   t = (l^2 + m^2 + n^2 - d) / d; d = (lu + mv + nw)
-            !   t = ((l^2 + m^2 + n^2) / d) - 1
-            ! Given t we can plug in to the above parametric equations for a
-            !   line to get the point at which the line intersects the plane j.
-            !   If the origin is between this point and the point that defines
-            !   plane i then plane j does not block plane i. On the other hand,
-            !   if this point and the point that defines plane i are in the
-            !   same octant then we compute the distance from the origin to
-            !   each point. If this point is closer to the origin than the
-            !   point that defines plane i, then plane j does block plane i and
-            !   that ensures that plane i cannot contribute to the Brillouin
-            !   zone. If this point is farther from the origin than the point
-            !   that defines plane i, then plane j does not block all of plane
-            !   i and so does not preclude plane i from contributing to the
-            !   Brillouin zone. (At the same time, it also does not ensure that
-            !   plane i *does* contribute. That will depend on the other planes
-            !   too.)
-            d = sum(planeEquation(1:3,i) * planeEquation(1:3,j))
-            t = (sum(planeEquation(1:3,i)**2) / d) - 1.0_double
-            intersectionPoint(:) = planeEquation(1:3,j) * (1.0_double + t)
-
-            ! Check if the intersectionPoint and the point that defines plane i
-            !   are in the same (or opposite) quadrants. We will assume that
-            !   the points are in opposite quadrants. If any Cartesian
-            !   coordinate component pair has the same sign, then that is a
-            !   clear indication that they cannot be in the same quadrant.
-            oppositeQuadrants = 1
-            do k = 1, 3
-               if (((intersectionPoint(k) > 0.0_double) .and. &
-                     & (planeEquation(k,i) > 0.0_double)) .or. &
-                     & ((intersectionPoint(k) < 0.0_double) .and. &
-                     & (planeEquation(k,i) < 0.0_double))) then
-                  oppositeQuadrants = 0
-                  exit
-               endif
-            enddo
-
-            ! If the point that defines plane i and the line that goes through
-            !   that point and the origin then intersects with plane j in the
-            !   opposite quadrant then we can be certain that plane j will not
-            !   impede plane i from participating in the construction of the
-            !   Brillouin zone.
-            if (oppositeQuadrants == 1) then
-write (6,*) "Found opposite quadrants", i, j
-               cycle
-            endif
-
-            ! On the other hand, the intersection point and the point that is
-            !   used to define plane i are in the same quadrant, then we need
-            !   to determine which one is closer to the origin. If the point
-            !   used to define plane i is more distant than the intersection
-            !   point, then plane i is "beyond the other plane" and so it
-            !   cannot contribute to the Brillouin zone.
-            if (sum(planeEquation(1:3,i)**2) > sum(intersectionPoint(:)**2)) &
-                  & then
-               beyondOtherPlane = 1
+            if (abs(sum(planeEquation(1:3,j) &
+                  & * (planeEquation(1:3,i) - planeEquation(1:3,j)))) &
+                  & < smallThresh) then
+               onOtherPlane = 1
                exit
             endif
          enddo
+
+         ! If plane i does not lie on another plane, then we need to next
+         !   determine if it lies beyond another plane. (I.e., does the point
+         !   on plane i that is nearest to the origin have a line segment
+         !   between it and the origin that passes through any other plane?)
+         if (onOtherPlane == 0) then
+
+            beyondOtherPlane = checkBeyondOtherPlane(planeEquation(1:3,i), &
+                  & (/i, 0, 0/))
+         endif
+
+         ! Plane i has satisfied all the requirements of being included in the
+         !   construction of the Brillouin zone if it is not on another plane
+         !   and not beyond another plane. Upon satisfaction of the
+         !   requirements we increase the number of facets for the Brillouin
+         !   zone and record the index number of i.
+         if ((onOtherPlane == 0) .and. (beyondOtherPlane == 0)) then
+            numBZFacets(currentBZ) = numBZFacets(currentBZ) + 1
+            facetList(numBZFacets(currentBZ))%pointID = i
+         endif
+      enddo
+
+
+      ! At this point we have found all the facets that should be used to make
+      !   the Brillouin zone.
+      write (6,*) numBZFacets(currentBZ)
+      write (6,*) facetList(1:numBZFacets(currentBZ))%pointID
+      do i = 1, numBZFacets(currentBZ)
+         write (6,*) planeEquation(1:3,facetList(i)%pointID)
+      enddo
+
+   end subroutine makeFacetList
+
+
+   subroutine addFacetVertices(currentBZ)
+
+      implicit none
+
+      ! Define passed parameters.
+      integer :: currentBZ
+
+      ! Define local variables.
+      integer :: info
+      integer :: g, h, i, j, k
+      integer, dimension(3) :: pivotIndices
+      real (kind=double), dimension(3,3) :: A
+      real (kind=double), dimension(3) :: B
+
+write (6,*) "Adding Facet Vertices"
+
+      ! Initialize the number of vertices at each facet.
+      do i = 1, numBZFacets(currentBZ)
+         facetList(i)%numVertices = 0
+      enddo
+
+      ! For each facet, we will iterate over all pairs of other facets to
+      !   find the set of vertices that belong to the current facet.
+      do i = 1, numBZFacets(currentBZ)
+         do j = i+1, numBZFacets(currentBZ)
+            do k = j+1, numBZFacets(currentBZ)
+
+               A(1,:) = planeEquation(1:3, facetList(i)%pointID)
+               B(1) = planeEquation(4, facetList(i)%pointID)
+!write (6,*) "Eqn1:", A(1,:), B(1)
+
+               A(2,:) = planeEquation(1:3, facetList(j)%pointID)
+               B(2) = planeEquation(4, facetList(j)%pointID)
+
+               A(3,:) = planeEquation(1:3, facetList(k)%pointID)
+               B(3) = planeEquation(4, facetList(k)%pointID)
+
+               call dgesv(3, 1, A, 3, pivotIndices, B, 3, info)
+               if (info == 0) then
+
+                  ! We found a possible vertex. We now need to make sure that
+                  !   it is not outside of any planes. (It is certainly *on*
+                  !   three planes because that is how we generated the point.
+                  !   However, aside from those three, we need to be sure that
+                  !   it is not outside the BZ.)
+write (6,*) "Checking Vertex:", i, j, k
+                  if(checkBeyondOtherPlane(B(:), (/i, j, k/)) == 0) then
+write (6,*) "Vertex found:", i, j, k
+write (6,*) "PivotIndices:", pivotIndices(:)
+write (6,*) "Point:", B(:)
+write (6,*) "PointPivot:", B(pivotIndices(:))
+write (6,*) "Recording"
+
+                     do h = 1, 3
+                        select case (h)
+                           case (1)
+                              g = i
+                           case (2)
+                              g = j
+                           case (3)
+                              g = k
+                        end select
+
+                        facetList(g)%numVertices = facetList(g)%numVertices + 1
+write (6,*) "g=", g, " numVertices=", facetList(g)%numVertices
+                        facetList(g)%vertex( &
+                              & facetList(g)%numVertices)%coord(:) = B(:)
+                        facetList(g)%vertex(facetList(g)%numVertices)&
+                              & %planeTripleIndex(1) = i
+                        facetList(g)%vertex(facetList(g)%numVertices)&
+                              & %planeTripleIndex(2) = j
+                        facetList(g)%vertex(facetList(g)%numVertices)&
+                              & %planeTripleIndex(3) = k
+                     enddo
+                  endif
+               endif
+            enddo
+         enddo
+      enddo
+   end subroutine addFacetVertices
+
+
+   ! Check if the plane defined by the lattice index i OR if the point given
+   !   by the coordinates coords happen to lie beyond some other plane.
+   function checkBeyondOtherPlane(coords, noTestPlanes)
+
+      implicit none
+
+      ! Define passed parameters.
+      !integer :: i ! Index of the plane i.
+      real (kind=double), dimension(3) :: coords
+      integer, dimension(3) :: noTestPlanes
+
+      ! Define the return value.
+      integer :: checkBeyondOtherPlane
+
+      ! Define local variables.
+      integer :: j, k
+      integer :: beyondOtherPlane, oppositeQuadrants
+      real (kind=double) :: t, d ! See algebraic description below.
+      real (kind=double), dimension(3) :: intersectionPoint
+      real (kind=double), dimension(3) :: testPoint
+
+      ! This subroutine needs to work in basically the same way regardless of
+      !   whether the point we are checking is given implicitly as a plane
+      !   index i or as x, y, z coordinates (coords). So, we first regularize
+      !   the inputs.
+      ! The expectation is that *if* the coords are given, then the three
+      !   planes that should not be included in the test will be listed in the
+      !   three elements of the noTestPlanes array. On the other hand, if the
+      !   coords are not given because we are testing the point that 
+      !   verse. I.e., if i is non-zero, then the coords can be ignored.
+      if (noTestPlanes(3) == 0) then
+         testPoint(1:3) = planeEquation(1:3,noTestPlanes(1))
+      else
+         testPoint(:) = coords(:)
       endif
 
-      ! Plane i has satisfied all the requirements of being included in the
-      !   construction of the Brillouin zone if it is not on another plane and
-      !   not beyond another plane. Upon satisfaction of the requirements we
-      !   increase the number of facets for the Brillouin zone and record the
-      !   index number of i.
-      if ((onOtherPlane == 0) .and. (beyondOtherPlane == 0)) then
-         numFacets = numFacets + 1
-         facetList(numFacets) = i
-      endif
-   enddo
+      beyondOtherPlane = 0
+      do j = 1, 26
 
-!      ! Determine if a line from the origin and normal to facet i passes
-!      !   through any of the facets found so far. If the line does pass through
-!      !   any facet found so far, then we turn on the flag to indicate that an
-!      !   intersection was found.
-!      sameSideAsOrigin = 1
-!      do j = 1, numFacets(1)
-!
-!         ! Get shorthand variables for the coefficients for known facet j.
-!         coeffs_j(:) = planeEquation(:,facetList(j,1))
-!         latticePointXYZ_j(:) = latticePointXYZ(:,facetList(j,1))
-!write (6,fmt="(a3,i3,a4,3d12.4)") "cj(", j, ") = ", coeffs_j(1:3)
-!write (6,fmt="(a7,i3,a4,3d12.4)") "lpXYZj(", j, ") = ", latticePointXYZ_j(:)
-!
-!!write (6,*) coeffs_j(1)*(coeffs_i(1) - coeffs_j(1))
-!!write (6,*) coeffs_j(2)*(coeffs_i(2) - coeffs_j(2))
-!!write (6,*) coeffs_j(3)*(coeffs_i(3) - coeffs_j(3))
-!!write (6,*) sum(coeffs_j(1:3)*(coeffs_i(1:3) - coeffs_j(1:3))), coeffs_j(4)
-!         if (abs(sum(coeffs_j(1:3) &
-!               & * (latticePointXYZ_i(1:3) - latticePointXYZ_j(1:3))) &
-!               & - coeffs_j(4)) < smallThresh) then
-!            sameSideAsOrigin = 0
-!write (6,*) "Plane i and the origin are on opposite sides of plane j"
-!            exit
-!         endif
-!      enddo
-!
-!      ! Only if no intersection was found do we append facet i to the list of
-!      !   preliminarily acceptable facets.
-!      if (sameSideAsOrigin == 1) then
-!         numFacets(1) = numFacets(1) + 1
-!         facetList(numFacets(1),1) = i
-!      endif
-!   enddo
-!
-!
-!
-!
-!   numFacets(2) = 0
-!   do i = 1, numFacets(1)
-!
-!      coeffs_i(:) = planeEquation(:,facetList(i,1))
-!      latticePointXYZ_i(:) = latticePointXYZ(:,facetList(i,1))
-!write (6,fmt="(a7,i3,a4,3d12.4)") "lpXYZi(", i, ") = ", latticePointXYZ_i(:)
-!write (6,fmt="(a,i3,a4,4d12.4)") "ci(", i, ") = ", coeffs_i(1:4)
-!
-!      sameSideAsOrigin = 1
-!      do j = 1, numFacets(1)
-!
-!         if (i==j) cycle
-!
-!         coeffs_j(:) = planeEquation(:,facetList(j,1))
-!write (6,fmt="(a3,i3,a4,3d12.4)") "cj(", j, ") = ", coeffs_j(1:3)
-!         latticePointXYZ_j(:) = latticePointXYZ(:,facetList(j,1))
-!write (6,fmt="(a7,i3,a4,3d12.4)") "lpXYZj(", j, ") = ", latticePointXYZ_j(:)
-!
-!!         if (abs(sum(coeffs_i(1:3)*coeffs_j(1:3)) - coeffs_i(4)) &
-!!               & < smallThresh) then
-!!            sameSideAsOrigin = 0
-!!write (6,*) "Lattice point i sits inside plane j."
-!!            exit
-!!         endif
-!
-!!         if (abs(sum(coeffs_i(1:3)*(coeffs_j(1:3) - coeffs_i(1:3))) &
-!!               & - coeffs_i(4)) < smallThresh) then
-!!            sameSideAsOrigin = 0
-!!write (6,*) "Lattice point i sits inside plane j."
-!!            exit
-!!         endif
-!
-!         if (abs(sum(coeffs_j(1:3) &
-!               & * (latticePointXYZ_i(:) - latticePointXYZ_j(:)))) &
-!               & < smallThresh) then
-!            sameSideAsOrigin = 0
-!write (6,*) "Lattice point i sits inside plane j."
-!            exit
-!         endif
-!      enddo
-!
-!      if (sameSideAsOrigin == 1) then
-!          numFacets(2) = numFacets(2) + 1
-!          facetList(numFacets(2),2) = facetList(i,1)
-!      endif
-!   enddo
+         ! Do not check against any of the noTestPlanes.
+         do k = 1, 3
+            if (j == (noTestPlanes(k))) cycle
+         enddo
 
-   ! At this point we have found all the facets that should be used to make
-   !   the Brillouin zone.
-   write (6,*) numFacets
-   write (6,*) facetList(1:numFacets)
-   do i = 1, numFacets
-      write (6,*) planeEquation(1:3,facetList(i))
-   enddo
+         ! The general parametric form for the equation of a line is:
+         !   x = x_0 + tu;  y = y_0 + tv;  z = z_0 + tw. Our case is a
+         !   special case because the vector <u, v, w> is the same as the
+         !   position vector <x_0, y_0, z_0> of the lattice point used to
+         !   define plane i. Therefore our line is defined according to:
+         !   x = u(1+t);  y = v(1+t);  z = w(1+t).
+         ! If we substitute these values for x, y, and z into the
+         !   definition for the plane defined by the lattice point j we
+         !   can solve for t in terms of u, v, w and l, m, n. <l, m, n>
+         !   are the Cartesian coordinates of the position vector used
+         !   to define plane j.
+         ! The eqn for plane j is: l(x - l) + m(y - m) + n(z - n) = 0.
+         !   Upon substitution we have:
+         !   l(u(1+t) - l) + m(v(1+t) - m) + n(w(1+t) - n) = 0.
+         ! Solving for t yields:
+         !   t = (l(l-u) + m(m-v) + n(n-w)) / (lu + mv + nw)
+         !   t = (l^2 - lu + m^2 - mv + n^2 - nw) / (lu + mv + nw)
+         !   t = (l^2 + m^2 + n^2 - lu - mv - nw) / (lu + mv + nw)
+         !   t = (l^2 + m^2 + n^2 - d) / d; d = (lu + mv + nw)
+         !   t = ((l^2 + m^2 + n^2) / d) - 1
+         ! Given t we can plug in to the above parametric equations for a
+         !   line to get the point at which the line intersects the
+         !   plane j. If the origin is between this point and the point
+         !   that defines plane i then plane j does not block plane i.
+         ! On the other hand, if this point and the point that defines
+         !   plane i are in the same octant then we compute the distance
+         !   from the origin to each point. If this point is closer to
+         !   the origin than the point that defines plane i, then plane j
+         !   does block plane i and that ensures that plane i cannot
+         !   contribute to the Brillouin zone. If this point is farther
+         !   from the origin than the point that defines plane i, then
+         !   plane j does not block all of plane i and so does not
+         !   preclude plane i from contributing to the Brillouin zone.
+         !   (At the same time, it also does not ensure that plane i
+         !   *does* contribute. That will depend on the other planes
+         !   too.)
+         d = sum(testPoint(1:3) * planeEquation(1:3,j))
+         if (abs(d) < smallThresh) cycle ! Planes are parallel.
 
-end subroutine makeFacetList
+         t = (sum(planeEquation(1:3,j)**2) / d) - 1.0_double
 
+         ! The intersection point is a point *on plane j*, but it is
+         !   determined by using plane i coordinates. Recall that
+         !   <u, v, w> defines the plane i.
+         intersectionPoint(:) = testPoint(:) * (1.0_double + t)
+   !write (6,fmt="(a6,3e15.5,i3)") "testP: ", testPoint(1:3), i
+   !write (6,fmt="(a6,3e15.5,i3)") "pEqnj: ", planeEquation(1:3,j), j
+   !write (6,fmt="(a6,3e15.5,i3)") "intPt: ", intersectionPoint(:), j
+
+         ! Check if the intersectionPoint and the point that defines
+         !   plane i are in the same (or opposite) quadrants. We will
+         !   assume that the points are in opposite quadrants. If any
+         !   Cartesian coordinate component pair has the same sign, then
+         !   that is a clear indication that they cannot be in the same
+         !   quadrant.
+         oppositeQuadrants = 1
+         do k = 1, 3
+            if (((intersectionPoint(k) > 0.0_double) .and. &
+                  & (testPoint(k) > 0.0_double)) .or. &
+                  & ((intersectionPoint(k) < 0.0_double) .and. &
+                  & (testPoint(k) < 0.0_double))) then
+               oppositeQuadrants = 0
+               exit
+            endif
+         enddo
+
+         ! If the point that defines plane i and the line that goes
+         !   through that point and the origin then intersects with
+         !   plane j in the opposite quadrant then we can be certain
+         !   that plane j will not impede plane i from participating in
+         !   the construction of the Brillouin zone.
+         if (oppositeQuadrants == 1) then
+   write (6,*) "Found opposite quadrants", noTestPlanes(:), j
+            cycle
+         endif
+
+         ! On the other hand, the intersection point and the point that
+         !   is used to define plane i are in the same quadrant, then we
+         !   need to determine which one is closer to the origin. If the
+         !   point used to define plane i is more distant than the
+         !   intersection point, then plane i is "beyond the other
+         !   plane" and so it cannot contribute to the Brillouin zone.
+         if (sum(testPoint(:)**2)>sum(intersectionPoint(:)**2)) &
+               & then
+            beyondOtherPlane = 1
+   !write (6,*) "Found that i is beyond j", i, j
+            exit
+         endif
+      enddo
+
+      ! Store the result to return.
+      checkBeyondOtherPlane = beyondOtherPlane
+
+end function checkBeyondOtherPlane
 
 !
 !
@@ -1143,35 +1220,156 @@ end subroutine makeFacetList
       integer :: maxBZ ! Highest BZ we will print.
 
       ! Define local variables.
-      integer :: i, j, k ! Loop indices.
+      integer :: i, j, k, l, m ! Loop indices.
+      integer :: numTotalVertices
+      real (kind=double), dimension(3) :: fractABC
+      character*25 :: filename
 
       ! Step through each of the Brillouin zones we will make.
       do i = 1, maxBZ
 
-         ! Print all of the vertices.
-         write (51+i,*) "Vertices"
-         do j = 1, numBZVertices(i)
-            write (51+i,*) uniqueVertexList(j)%coord(:)
-         enddo
+!         ! Print all of the vertices.
+!         write (51+i,*) "Vertices"
+!         do j = 1, numBZVertices(i)
+!            write (51+i,*) uniqueVertexList(j)%coord(:)
+!         enddo
+!
+!         ! Print all of the edges.
+!         write (51+i,*) "Edges"
+!         do j = 1, numBZEdges(i)
+!            write (51+i,*) uniqueEdgeList(j)%vertex(1)%coord(:)
+!            write (51+i,*) uniqueEdgeList(j)%vertex(2)%coord(:)
+!         enddo
 
-         ! Print all of the edges.
-         write (51+i,*) "Edges"
-         do j = 1, numBZEdges(i)
-            write (51+i,*) uniqueEdgeList(j)%vertex(1)%coord(:)
-            write (51+i,*) uniqueEdgeList(j)%vertex(2)%coord(:)
-         enddo
+!write (51+i,fmt="(a15)") "xs = np.array(["
+!do j = 1, numBZFacets(i)
+!   do k = 1, facetList(j)%numVertices - 1
+!      write (51+i,advance="NO",fmt="(f16.12, a2)") &
+!            & facetList(j)%vertex(k)%coord(1), ", "
+!   enddo
+!      write (51+i,advance="NO",fmt="(f16.12, a2)") &
+!            & facetList(j)%vertex(facetList(j)%numVertices)%coord(1), ", "
+!enddo
+!write (51+i,fmt="(a2)") "])"
+!
+!write (51+i,fmt="(a15)") "ys = np.array(["
+!do j = 1, numBZFacets(i)
+!   do k = 1, facetList(j)%numVertices - 1
+!      write (51+i,advance="NO",fmt="(f16.12, a2)") &
+!            & facetList(j)%vertex(k)%coord(2), ", "
+!   enddo
+!      write (51+i,advance="NO",fmt="(f16.12, a2)") &
+!            & facetList(j)%vertex(facetList(j)%numVertices)%coord(2), ", "
+!enddo
+!write (51+i,fmt="(a2)") "])"
+!
+!write (51+i,fmt="(a15)") "zs = np.array(["
+!do j = 1, numBZFacets(i)
+!   do k = 1, facetList(j)%numVertices - 1
+!      write (51+i,advance="NO",fmt="(f16.12, a2)") &
+!            & facetList(j)%vertex(k)%coord(3), ", "
+!   enddo
+!      write (51+i,advance="NO",fmt="(f16.12, a2)") &
+!            & facetList(j)%vertex(facetList(j)%numVertices)%coord(3), ", "
+!enddo
+!write (51+i,fmt="(a6)") "])"
 
          ! Print all of the facets.
-         write (51+i,*) "Facets"
+write (6,*) "numFacets: ", numBZFacets(i)
+         write (51+i,fmt="(a9)") "faces = ["
+         numTotalVertices = 0
          do j = 1, numBZFacets(i)
-            do k = 1, facetList(numBZFacets(i))%numVertices
-               write (51+i,*) facetList(numBZFacets(i))%vertex(k)%coord(:)
+write (6,*) "numVertices: ", j, facetList(j)%numVertices
+            write (51+i,advance="NO",fmt="(a1)") "["
+            do k = 1, facetList(j)%numVertices
+               numTotalVertices = numTotalVertices + 1
+               write (51+i,advance="NO",fmt="(a1)") "["
+               write (51+i,advance="NO",fmt="(f16.12, a2)") &
+                     & facetList(j)%vertex(k)%coord(1), ", "
+               write (51+i,advance="NO",fmt="(f16.12, a2)") &
+                     & facetList(j)%vertex(k)%coord(2), ", "
+               write (51+i,advance="NO",fmt="(f16.12, a3)") &
+                     & facetList(j)%vertex(k)%coord(3), "], "
             enddo
 
             ! Write the first vertex again to close the polygon
-            write (51+i,*) facetList(numBZFacets(i))%vertex(1)%coord(:)
+            write (51+i,advance="NO",fmt="(a1)") "["
+            write (51+i,advance="NO",fmt="(f16.12, a2)") &
+                  & facetList(j)%vertex(1)%coord(1), ", "
+            write (51+i,advance="NO",fmt="(f16.12, a2)") &
+                  & facetList(j)%vertex(1)%coord(2), ", "
+            write (51+i,advance="NO",fmt="(f16.12, a3)") &
+                  & facetList(j)%vertex(1)%coord(3), "]"
+
+            if (j < numBZFacets(i)) then
+               write (51+i,fmt="(a2)") "],"
+            else
+               write (51+i,fmt="(a2)") "]]"
+            endif
          enddo
+
+         write (filename,fmt="(a9)") "model.xyz"
+         open (unit=55, file=filename, form='formatted', status='new')
+
+         write (55,fmt="(i5)") 26
+         write (55,fmt="(a)") "TitleTitle"
+         do j = 1, 26
+            write (55,*) "C ", planeEquation(1:3,j) * 10.0
+         enddo
+
+         write (55,fmt="(i5)") numTotalVertices
+         write (55,fmt="(a)") "TitleTitle"
+!         do j = 1, numBZFacets(i)
+         do j = 1, 1
+            do k = 1, facetList(j)%numVertices
+               write (55,*) "B ", facetList(j)%vertex(k)%coord(:)*10.0_double
+            enddo
+         enddo
+   
+
+!         write (filename,fmt="(a6)") "BZ.cif"
+!         open (unit=55, file=filename, form='formatted', status='new')
+!   
+!         write (55,fmt="(a)") "data_recipcell"
+!         write (55,fmt="(a)") "_symmetry_cell_setting triclinic"
+!         write (55,fmt="(a)") "_symmetry_space_group_name_H-M 'P 1'"
+!         write (55,fmt="(a)") "loop_"
+!         write (55,fmt="(a)") "   _symmetry_equiv_pos_as_xyz"
+!         write (55,fmt="(a)") "              X,Y,Z"
+!         write (55,fmt="(a, f16.8)") "_cell_length_a ", recipMag(1)*10.0_double
+!         write (55,fmt="(a, f16.8)") "_cell_length_b ", recipMag(2)*10.0_double
+!         write (55,fmt="(a, f16.8)") "_cell_length_c ", recipMag(3)*10.0_double
+!         write (55,fmt="(a, f16.8)") "_cell_angle_alpha ", angleDeg(1)
+!         write (55,fmt="(a, f16.8)") "_cell_angle_beta ", angleDeg(2)
+!         write (55,fmt="(a, f16.8)") "_cell_angle_gamma ", angleDeg(3)
+!         write (55,fmt="(a)") "loop_"
+!         write (55,fmt="(a)") "   _atom_site_label"
+!         write (55,fmt="(a)") "   _atom_site_type_symbol"
+!         write (55,fmt="(a)") "   _atom_site_fract_x"
+!         write (55,fmt="(a)") "   _atom_site_fract_y"
+!         write (55,fmt="(a)") "   _atom_site_fract_z"
+!!write (55,*) "numFacets: ", numBZFacets(i)
+!         do j = 1, numBZFacets(i)
+!!write (55,*) "numVertices: ", j, facetList(j)%numVertices
+!            do k = 1, facetList(j)%numVertices
+!               ! Compute the fractional abc coordinate.
+!               do l = 1, 3 ! abc
+!                  fractABC(l) = 0
+!                  do m = 1, 3 ! xyz
+!                     fractABC(l) = fractABC(l) + &
+!                           & facetList(j)%vertex(k)%coord(m) &
+!                           & * recipLattice(m,l) &
+!                           & * 2.0_double * pi 
+!!                           & / 2.0_double / pi / recipVolume
+!!         recipLattice(:,i) = 2.0_double * Pi * recipLattice(:,i) / realVolume
+!                  enddo
+!               enddo
+!               write (55,fmt="(a4,3f16.8)") "C 1 ", fractABC(:)
+!!               write (55,*) "C 1 ", facetList(j)%vertex(k)%coord(:)*10.0_double
+!            enddo
+!         enddo
       enddo
+
 
    end subroutine printBrillouinZones
 
@@ -1580,7 +1778,7 @@ module CommandLine_O
    ! Integer to track which number command line argument is to be read in next.
    integer :: nextArg
 
-   ! Flags to output variaous kpoint datasets.
+   ! Flags to control the supplementary files to output.
    integer :: doBrillouinZone
 
    contains
@@ -1608,10 +1806,89 @@ module CommandLine_O
       call getarg (nextArg, commandBuffer)
       nextArg = nextArg + 1
       read (commandBuffer,*) doBrillouinZone
-   
+
    end subroutine parseCommandLine
 
 end module CommandLine_O
+
+
+!module VPython_O
+!
+!   ! Make sure that no unwanted variables are created accidentally.
+!   implicit none
+!
+!   ! Define module data.
+!
+!   contains
+!
+!   subroutine makeVPythonHeader(maxBZ)
+!
+!      implicit none
+!
+!      ! Define passed parameters
+!      integer :: maxBZ
+!
+!      ! Define local variables
+!      integer :: i
+!
+!      do i = 1, maxBZ
+!
+!         write (61+i,fmt="(a)") "#!/usr/bin/env python3"
+!         write (61+i,*)
+!         write (61+i,fmt="(a)") "import vpython as vp"
+!         write (61+i,*)
+!         write (61+i,fmt="(a)") "# Define global variables"
+!         write (61+i,fmt="(a)") "# Time controls"
+!         write (61+i,fmt="(a)") "delta_t = 0.5"
+!         write (61+i,fmt="(a)") "frame_rate = 30"
+!         write (61+i,*)
+!         write (61+i,fmt="(a)") "# Canvas parameters"
+!         write (61+i,fmt="(a)") "w = 1200"
+!         write (61+i,fmt="(a)") "h = 800"
+!         write (61+i,*)
+!         write (61+i,fmt="(a)") "# Camera parameters"
+!         write (61+i,fmt="(a)") "camera_radius"
+!         write (61+i,*)
+!         write (61+i,fmt="(a)") "# Plane nature"
+!         write (61+i,fmt="(a)") "plane_thickness = 0.03"
+!         write (61+i,*)
+!         write (61+i,*)
+!         write (61+i,fmt="(a)") "# Create the initial scene"
+!         write (61+i,*)
+!         write (61+i,fmt="(a)") "# Create the canvas"
+!         write (61+i,fmt="(a,i1,a)") &
+!& "scene = vp.canvas(title='Making BZ ", i, "', x=0, y=0, width=w, height=h,"
+!         write (61+i,fmt="(a,i1,a)") &
+!& "                  center=vp.vector(0, 0, 0), background=vp.vector(0, 0, 0),"
+!         write (61+i,fmt="(a)") &
+!& "                  autoscale=False)"
+!         write (61+i,*)
+!         write (61+i,*)
+!         write (61+i,fmt="(a)") "# Setup the camera"
+!         write (61+i,fmt="(a)") &
+!& "scene.camera.pos = vp.vector(camera_radius, camera_radius, camera_radius)"
+!         write (61+i,fmt="(a)") &
+!& "scene.camera.axis = -scene.camera.pos"
+!         write (61+i,*)
+!         write (61+i,*)
+!      enddo
+!
+!   end subroutine makeVPythonHeader
+!
+!   subroutine makeVPythonRecipLattice(maxBZ)
+!
+!      ! Make things safe
+!      implicit none
+!
+!      ! Define passed parameters
+!      integer :: maxBZ
+!
+!      ! Define local variables
+!      
+!
+!   end subroutine makeVPythonRecipLattice
+!
+!end module VPython_O
 
 
 program makekpoints
@@ -1627,6 +1904,7 @@ program makekpoints
    use PointGroupOperations_O
    use Lattice_O
    use KPointMesh_O
+   use VPython_O
    use CommandLine_O
 
 
@@ -1653,15 +1931,39 @@ program makekpoints
       endif
    enddo
 
-   ! If this program is called multiple times (which it might be by makeinput)
-   !   then this will prevent recalculation of the Brillouin zone figure.
+!   ioerr = 0
+!   do i = 1, doBrillouinZone
+!      write (filename,fmt="(a3,i1,a3)") "BZ.", i, ".py"
+!      open (unit=61+i, file=filename, form='formatted', status='new', &
+!            & iostat=ioerr)
+!      if (ioerr /= 0) then
+!         exit
+!      endif
+!   enddo
+      
+
+   ! If this program is called multiple times (which would usually happen
+   !   under many common conditions when using makeinput) then this will
+   !   prevent recalculation of the supplementary files.
    if (ioerr /= 0) then
       doBrillouinZone = 0
+!      doComputationalVis = 0
    endif
+
+!   ! Create the header for computational visualization if requested.
+!   if (doComputationalVis == 1) then
+!      call makeVPythonHeader(doBrillouinZone)
+!   endif
 
    ! Read the lattice and compute all of its information.
    call readRealLattice(50)
    call computeLatticeData
+
+!   ! Create reciprocal lattice for computational visualization if requested.
+!   if (doComputationalVis == 1) then
+!      call makeVPythonRecipLattice(doBrillouinZone)
+!   endif
+
 
    ! Read the point group operations and compute their values on the given
    ! a,b,c lattice.
@@ -1686,8 +1988,12 @@ call flush(6)
       call computeBrillouinZones(doBrillouinZone)
 write (6,*) "About to print"
 call flush(6)
-      !call printBrillouinZones(doBrillouinZone)
+      call printBrillouinZones(doBrillouinZone)
    endif
+
+#ifdef COMPVIS
+   write (6,*) "CompVis turned on!!!"
+#endif
 
    close (50)
    close (51)

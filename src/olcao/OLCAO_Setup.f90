@@ -106,7 +106,7 @@ subroutine setupSCF
    call getECMeshParameters
 
 
-   ! Now, the dimensions of the system are known.  Therefor we can
+   ! Now, the dimensions of the system are known.  Therefore we can
    !   initialize the HDF5 file structure format, and datasets.
    call initSetupHDF5 (maxNumRayPoints)
 
