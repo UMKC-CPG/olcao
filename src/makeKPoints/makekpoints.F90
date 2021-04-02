@@ -239,9 +239,10 @@ module Lattice_O
    integer, allocatable, dimension (:) :: numBZFacets
    real (kind=double), dimension (4,26) :: planeEquation
    real (kind=double), dimension (3,26) :: latticePointXYZ
-   real (kind=double), dimension (3) :: recipMag
-   real (kind=double), dimension (3) :: angle ! Radians
-   real (kind=double), dimension (3) :: angleDeg
+   real (kind=double), dimension (3) :: recipMag ! Along reciprocal abc axes.
+   real (kind=double), dimension (3) :: realMag ! Along real abc axes
+   real (kind=double), dimension (3) :: recipAngle ! Radians
+   real (kind=double), dimension (3) :: recipAngleDeg
 
    type vertexType
       real (kind=double), dimension (3) :: coord
@@ -286,7 +287,16 @@ module Lattice_O
       ! Define dummy parameter.
       integer, intent (in) :: fileUnit
 
-      read (fileUnit,*) realLattice(:,:)
+      ! Define local variables
+      integer :: i
+
+      read (fileUnit,*) realLattice(:,:) ! Reads xyz of a, then b, then c
+
+      ! Compute the magnitudes of the real lattice abc vectors.
+      do i = 1, 3
+         realMag(i) = sqrt(sum(realLattice(:,i)**2))
+      enddo
+
    end subroutine readRealLattice
 
 
@@ -340,24 +350,212 @@ module Lattice_O
          recipMag(i) = sqrt(sum(recipLattice(:,i)**2))
       enddo
 
-      angle(1) = acos((recipLattice(1,2) * recipLattice(1,3) + &
-                     & recipLattice(2,2) * recipLattice(2,3) + &
-                     & recipLattice(3,2) * recipLattice(3,3)) / &
-                     & (recipMag(2)*recipMag(3)))
-      angle(2) = acos((recipLattice(1,1) * recipLattice(1,3) + &
-                     & recipLattice(2,1) * recipLattice(2,3) + &
-                     & recipLattice(3,1) * recipLattice(3,3)) / &
-                     & (recipMag(1)*recipMag(3)))
-      angle(3) = acos((recipLattice(1,1) * recipLattice(1,2) + &
-                     & recipLattice(2,1) * recipLattice(2,2) + &
-                     & recipLattice(3,1) * recipLattice(3,2)) / &
-                     & (recipMag(1)*recipMag(2)))
-      angleDeg(1) = angle(1) * 180.0_double / pi
-      angleDeg(2) = angle(2) * 180.0_double / pi
-      angleDeg(3) = angle(3) * 180.0_double / pi
+      recipAngle(1) = acos((recipLattice(1,2) * recipLattice(1,3) + &
+                          & recipLattice(2,2) * recipLattice(2,3) + &
+                          & recipLattice(3,2) * recipLattice(3,3)) / &
+                          & (recipMag(2)*recipMag(3)))
+      recipAngle(2) = acos((recipLattice(1,1) * recipLattice(1,3) + &
+                          & recipLattice(2,1) * recipLattice(2,3) + &
+                          & recipLattice(3,1) * recipLattice(3,3)) / &
+                          & (recipMag(1)*recipMag(3)))
+      recipAngle(3) = acos((recipLattice(1,1) * recipLattice(1,2) + &
+                          & recipLattice(2,1) * recipLattice(2,2) + &
+                          & recipLattice(3,1) * recipLattice(3,2)) / &
+                          & (recipMag(1)*recipMag(2)))
+      recipAngleDeg(1) = recipAngle(1) * 180.0_double / pi
+      recipAngleDeg(2) = recipAngle(2) * 180.0_double / pi
+      recipAngleDeg(3) = recipAngle(3) * 180.0_double / pi
 
    end subroutine computeLatticeData
 
+end module Lattice_O
+
+
+
+#ifdef COMPVIS
+module VPython_O
+
+   ! Use necessary modules.
+   use Lattice_O
+
+   ! Make sure that no unwanted variables are created accidentally.
+   implicit none
+
+   ! Define module data.
+   real (kind=double) :: sphereRadius
+   real (kind=double) :: cameraRadius
+   real (kind=double) :: planeThickness
+   real (kind=double) :: planeExtent
+
+   contains
+
+   subroutine makeVPythonHeader(maxBZ)
+
+      implicit none
+
+      ! Define passed parameters
+      integer :: maxBZ
+
+      ! Define local variables
+      integer :: i
+
+      ! Compute or define the sizes of things.
+      sphereRadius = minval(recipMag(:)) / 10.0_double
+      cameraRadius = maxval(recipMag(:)) * 4.0_double
+      planeThickness = 0.03
+      planeExtent = maxval(recipMag(:)) * 2.0_double
+
+      do i = 1, maxBZ
+
+         write (61+i,fmt="(a)") "#!/usr/bin/env python3"
+         write (61+i,fmt="(a)")
+         write (61+i,fmt="(a)") "import vpython as vp"
+         write (61+i,fmt="(a)")
+         write (61+i,fmt="(a)") "# Define global variables"
+         write (61+i,fmt="(a)") "# Time controls"
+         write (61+i,fmt="(a)") "delta_t = 0.5"
+         write (61+i,fmt="(a)") "frame_rate = 30"
+         write (61+i,fmt="(a)")
+         write (61+i,fmt="(a)") "# Canvas parameters"
+         write (61+i,fmt="(a)") "w = 1200"
+         write (61+i,fmt="(a)") "h = 675"
+         write (61+i,fmt="(a)")
+         write (61+i,fmt="(a)") "# Camera parameters"
+         write (61+i,fmt="(a,sp,e12.5)") "camera_radius = ", cameraRadius
+         write (61+i,fmt="(a)")
+         write (61+i,fmt="(a)") "# Object nature"
+         write (61+i,fmt="(a,sp,e12.5)") "plane_thickness = ", planeThickness
+         write (61+i,fmt="(a,sp,e12.5)") "sphere_radius = ", sphereRadius
+         write (61+i,fmt="(a)")
+         write (61+i,fmt="(a)") "# Object lists"
+         write (61+i,fmt="(a)") "recip_point = []"
+         write (61+i,fmt="(a)") "recip_plane = []"
+         write (61+i,fmt="(a)") "bz_point = []"
+         write (61+i,fmt="(a)") "bz_plane = []"
+         write (61+i,fmt="(a)")
+         write (61+i,fmt="(a)") "# Create the initial scene"
+         write (61+i,fmt="(a)")
+         write (61+i,fmt="(a)") "# Create the canvas"
+         write (61+i,fmt="(a,i1,a)") &
+"scene = vp.canvas(title='Making BZ ", i, "', x=0, y=0, width=w, height=h,"
+         write (61+i,fmt="(a,i1,a)") &
+"                  center=vp.vector(0, 0, 0), background=vp.vector(0, 0, 0),"
+         write (61+i,fmt="(a)") &
+"                  autoscale=False)"
+         write (61+i,fmt="(a)")
+         write (61+i,fmt="(a)")
+         write (61+i,fmt="(a)") "# Setup the camera"
+         write (61+i,fmt="(a)") &
+"scene.camera.pos = vp.vector(camera_radius, camera_radius, camera_radius)"
+         write (61+i,fmt="(a)") &
+"scene.camera.axis = -scene.camera.pos"
+         write (61+i,fmt="(a)")
+         write (61+i,fmt="(a)")
+      enddo
+
+   end subroutine makeVPythonHeader
+
+   subroutine makeVPythonRecipLattice(maxBZ)
+
+      ! Make things safe
+      implicit none
+
+      ! Define passed parameters
+      integer :: maxBZ
+
+      ! Define local variables
+      integer :: h, i, j, k, s, pointCount
+      character*8 :: formatString
+
+      ! Create a sphere at each reciprocal lattice point. Make 0,0,0 separate.
+      do h = 1, maxBZ
+         pointCount = 0
+         do i = -1, 1
+            do j = -1, 1
+               do k = -1, 1
+
+                  ! Cycle at the origin to make it separately at the end.
+                  if ((i==0) .and. (j==0) .and. (k==0)) then
+                     cycle
+                  endif
+
+                  ! Increment the count of lattice points.
+                  pointCount = pointCount + 1
+                  if (pointCount <= 10) then
+                     write (formatString,fmt="(a)") "(i0.1,a)"
+                  else
+                     write (formatString,fmt="(a)") "(i0.2,a)"
+                  endif
+
+                  ! Print the sphere at this lattice site.
+                  write (61+h,fmt="(a)") "recip_point.append("
+                  write (61+h,advance="no",fmt="(a)") &
+"        vp.sphere(pos=vp.vector("
+                  do s = 1, 3
+                     write(61+h,advance="no",fmt="(sp,e10.3)") & ! sp causes +
+                           (i*recipLattice(s,1) &
+                           + j*recipLattice(s,2) &
+                           + k*recipLattice(s,3))
+                     if (s < 3) then
+                        write(61+h,advance="no",fmt="(a)") ", "
+                     endif
+                  enddo
+                  write(61+h,fmt="(a)") "),"
+                  write(61+h,advance="no",fmt="(a)") "                  radius="
+                  write(61+h,advance="no",fmt="(sp,e10.3)") sphereRadius
+                  write(61+h,fmt="(a)") "))"
+
+                  ! Print a smaller sphere at the associated BZ point site.
+                  write (61+h,fmt="(a)") "bz_point.append("
+                  write (61+h,advance="no",fmt="(a)") &
+"        vp.sphere(pos=vp.vector("
+                  do s = 1, 3
+                     write(61+h,advance="no",fmt="(sp,e10.3)") & ! sp causes +
+                           (i*recipLattice(s,1) &
+                           + j*recipLattice(s,2) &
+                           + k*recipLattice(s,3)) / 2.0_double
+                     if (s < 3) then
+                        write(61+h,advance="no",fmt="(a)") ", "
+                     endif
+                  enddo
+                  write(61+h,fmt="(a)") "),"
+                  write(61+h,advance="no",fmt="(a)") "                  radius="
+                  write(61+h,advance="no",fmt="(sp,e10.3)") sphereRadius / 3.0
+                  write(61+h,fmt="(a)") "))"
+
+               enddo ! k
+            enddo ! j
+         enddo ! i
+
+         ! Add the 0, 0, 0 reciprocal lattice point.
+         write(61+h,advance="no",fmt="(a)") &
+"recip_point.append(vp.sphere(pos=vp.vector(0, 0, 0), radius="
+         write(61+h,advance="no",fmt="(sp,e10.3)") sphereRadius
+         write(61+h,fmt="(a)") "))"
+      enddo ! h
+      
+
+   end subroutine makeVPythonRecipLattice
+
+end module VPython_O
+#endif
+
+
+
+module BrillouinZones_O
+
+   ! Use necessary modeuls.
+   use Lattice_O
+#ifdef COMPVIS
+   use VPython_O
+#endif
+
+   ! Make sure that no variables are implicitly declared
+   implicit none
+
+   ! Define module data.
+
+   contains
 
    subroutine computeBrillouinZones (maxBZ)
 
@@ -418,16 +616,22 @@ module Lattice_O
 
 
 
-   subroutine makeFacetList (currentBZ)
+   subroutine makeFacetList (currBZ)
 
+      ! Use nece
+
+      ! Make sure that no variables are accidentally declared.
       implicit none
 
       ! Define passed dummy parameters.
-      integer :: currentBZ
+      integer :: currBZ
 
       ! Define local variables.
       integer :: i, j
       integer :: onOtherPlane, beyondOtherPlane
+#ifdef COMPVIS
+      character*8 :: formatString_i, formatString_j
+#endif
 
       ! The goal of the algorithm is to create a list of all the planes that
       !   contribute to the Brillouin zone (and, of course, exclude those
@@ -439,17 +643,28 @@ module Lattice_O
       !   any other plane, or if that same point happens to lie exactly on some
       !   other plane.
       ! The algorithm works by first assuming that all 26 planes will
-      !   contribute. Then, each plan is reviewed to see if either (a) its
+      !   contribute. Then, each plane is reviewed to see if either (a) its
       !   nearest point lies on some other plane or (b) a line from the origin
       !   to that same nearest point passes through another plane.
 
       ! First, we need to create algebraic expressions for each of the planes
       !   available for us to intersect.
-      call makePlaneEquations
+      call makePlaneEquations (currBZ)
 
-      numBZFacets(currentBZ) = 0
+      ! Now, consider each plane in turn.
+      numBZFacets(currBZ) = 0
       do i = 1, 26
 
+#ifdef COMPVIS
+         ! Prepare a format string for array indices.
+         if (i < 11) then
+            write (formatString_i,fmt="(a)") "(i0.1,a)"
+         else
+            write (formatString_i,fmt="(a)") "(i0.2,a)"
+         endif
+         write (61+currBZ,advance="no",fmt="(a)") "bz_point["
+         write (61+currBZ,fmt=formatString_i) i-1, "].color = vp.color.red"
+#endif
          ! Determine if the current lattice point (that defines some plane) also
          !   happens to lie *on* a plane defined by some other lattice point. If
          !   so, then the plane defined by the current lattice point is
@@ -461,14 +676,44 @@ module Lattice_O
 
             ! Do not check against oneself.
             if (i == j) cycle
+#ifdef COMPVIS
+               ! Prepare a format string and make plane j visible.
+               if (j < 11) then
+                  write (formatString_j,fmt="(a)") "(i0.1,a)"
+               else
+                  write (formatString_j,fmt="(a)") "(i0.2,a)"
+               endif
+               write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
+               write (61+currBZ,fmt=formatString_j) j-1, &
+"].visible = True"
+#endif
 
             if (abs(sum(planeEquation(1:3,j) &
                   & * (planeEquation(1:3,i) - planeEquation(1:3,j)))) &
                   & < smallThresh) then
                onOtherPlane = 1
+#ifdef COMPVIS
+write (6,*) "TEST", abs(sum(planeEquation(1:3,j) &
+                  & * (planeEquation(1:3,i) - planeEquation(1:3,j))))
+               write (61+currBZ,fmt="(a)") "vp.sleep(10)"
+               write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
+               write (61+currBZ,fmt=formatString_j) j-1, &
+"].visible = False"
+#endif
                exit
+#ifdef COMPVIS
+            else
+               write (61+currBZ,fmt="(a)") "vp.sleep(0.1)"
+               write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
+               write (61+currBZ,fmt=formatString_j) j-1, &
+"].visible = False"
+#endif
             endif
          enddo
+#ifdef COMPVIS
+         write (61+currBZ,advance="no",fmt="(a)") "bz_point["
+         write (61+currBZ,fmt=formatString_i) i-1, "].color = vp.color.white"
+#endif
 
          ! If plane i does not lie on another plane, then we need to next
          !   determine if it lies beyond another plane. (I.e., does the point
@@ -486,29 +731,29 @@ module Lattice_O
          !   requirements we increase the number of facets for the Brillouin
          !   zone and record the index number of i.
          if ((onOtherPlane == 0) .and. (beyondOtherPlane == 0)) then
-            numBZFacets(currentBZ) = numBZFacets(currentBZ) + 1
-            facetList(numBZFacets(currentBZ))%pointID = i
+            numBZFacets(currBZ) = numBZFacets(currBZ) + 1
+            facetList(numBZFacets(currBZ))%pointID = i
          endif
       enddo
 
 
       ! At this point we have found all the facets that should be used to make
       !   the Brillouin zone.
-      write (6,*) numBZFacets(currentBZ)
-      write (6,*) facetList(1:numBZFacets(currentBZ))%pointID
-      do i = 1, numBZFacets(currentBZ)
+      write (6,*) numBZFacets(currBZ)
+      write (6,*) facetList(1:numBZFacets(currBZ))%pointID
+      do i = 1, numBZFacets(currBZ)
          write (6,*) planeEquation(1:3,facetList(i)%pointID)
       enddo
 
    end subroutine makeFacetList
 
 
-   subroutine addFacetVertices(currentBZ)
+   subroutine addFacetVertices(currBZ)
 
       implicit none
 
       ! Define passed parameters.
-      integer :: currentBZ
+      integer :: currBZ
 
       ! Define local variables.
       integer :: info
@@ -520,15 +765,15 @@ module Lattice_O
 write (6,*) "Adding Facet Vertices"
 
       ! Initialize the number of vertices at each facet.
-      do i = 1, numBZFacets(currentBZ)
+      do i = 1, numBZFacets(currBZ)
          facetList(i)%numVertices = 0
       enddo
 
       ! For each facet, we will iterate over all pairs of other facets to
       !   find the set of vertices that belong to the current facet.
-      do i = 1, numBZFacets(currentBZ)
-         do j = i+1, numBZFacets(currentBZ)
-            do k = j+1, numBZFacets(currentBZ)
+      do i = 1, numBZFacets(currBZ)
+         do j = i+1, numBZFacets(currBZ)
+            do k = j+1, numBZFacets(currBZ)
 
                A(1,:) = planeEquation(1:3, facetList(i)%pointID)
                B(1) = planeEquation(4, facetList(i)%pointID)
@@ -722,7 +967,7 @@ write (6,*) "g=", g, " numVertices=", facetList(g)%numVertices
       ! Store the result to return.
       checkBeyondOtherPlane = beyondOtherPlane
 
-end function checkBeyondOtherPlane
+   end function checkBeyondOtherPlane
 
 !
 !
@@ -794,12 +1039,18 @@ end function checkBeyondOtherPlane
    !   l*x + m*y + n*z = d with d = l^2 + m^2 + n^2. To "store" the equation
    !   for each plane we will simply hold the Cartesian <l, m, n> vector and
    !   the value of d.
-   subroutine makePlaneEquations
+   subroutine makePlaneEquations (currBZ)
 
       implicit none
 
+      ! Define passed parameters.
+      integer :: currBZ
+
       ! Define local variables.
       integer :: i, j, k, s, planeIndex
+#ifdef COMPVIS
+      character*8 :: formatString
+#endif
 
       ! The plane equations must be expressed in Cartesian coordinates.
       !   Therefore, for each of the 26 possible (we exclude the origin zero
@@ -835,6 +1086,81 @@ end function checkBeyondOtherPlane
                      & latticePointXYZ(1:3,planeIndex) * 0.5_double
                planeEquation(4,planeIndex) = &
                      & sum((latticePointXYZ(:,planeIndex) * 0.5_double)**2)
+
+#ifdef COMPVIS
+               ! Prepare a format string for array indices.
+               if (planeIndex < 11) then
+                  write (formatString,fmt="(a)") "(i0.1,a)"
+               else
+                  write (formatString,fmt="(a)") "(i0.2,a)"
+               endif
+
+               ! Create, pause, and then hide the recip lattice planes and the
+               !   Brillouin zone planes.
+               write (61+currBZ,fmt="(a)") "recip_plane.append("
+               write (61+currBZ,advance="no",fmt="(a)") &
+"        vp.cylinder(pos=vp.vector("
+               do s = 1, 3
+                  write (61+currBZ,advance="no",fmt="(sp,e10.3)") &
+                        latticePointXYZ(s,planeIndex)
+                  if (s < 3) then
+                     write (61+currBZ,advance="no",fmt="(a)") ", "
+                  endif
+               enddo
+               write (61+currBZ,fmt="(a)") "),"
+               write (61+currBZ,advance="no",fmt="(a)") &
+"                    axis=vp.vector("
+               do s = 1, 3
+                  write (61+currBZ,advance="no",fmt="(sp,e10.3)") &
+                        latticePointXYZ(s,planeIndex) + planeThickness
+                  if (s < 3) then
+                     write (61+currBZ,advance="no",fmt="(a)") ", "
+                  endif
+               enddo
+               write (61+currBZ,fmt="(a)") "),"
+               write (61+currBZ,advance="no",fmt="(a)") &
+"                    radius="
+               write (61+currBZ,advance="no",fmt="(sp,e10.3)") planeExtent
+               write (61+currBZ,fmt="(a)") ", length=0.003))"
+               write (61+currBZ,fmt="(a)") "bz_plane.append("
+               write (61+currBZ,advance="no",fmt="(a)") &
+"        vp.cylinder(pos=vp.vector("
+               do s = 1, 3
+                  write (61+currBZ,advance="no",fmt="(sp,e10.3)") &
+                        planeEquation(s,planeIndex)
+                  if (s < 3) then
+                     write (61+currBZ,advance="no",fmt="(a)") ", "
+                  endif
+               enddo
+               write (61+currBZ,fmt="(a)") "),"
+               write (61+currBZ,advance="no",fmt="(a)") &
+"                    axis=vp.vector("
+               do s = 1, 3
+                  write (61+currBZ,advance="no",fmt="(sp,e10.3)") &
+                        planeEquation(s,planeIndex) + planeThickness
+                  if (s < 3) then
+                     write (61+currBZ,advance="no",fmt="(a)") ", "
+                  endif
+               enddo
+               write (61+currBZ,fmt="(a)") "),"
+               write (61+currBZ,advance="no",fmt="(a)") &
+"                    radius="
+               write (61+currBZ,advance="no",fmt="(sp,e10.3)") planeExtent
+               write (61+currBZ,fmt="(a)") ", length=0.003))"
+               write (61+currBZ,advance="no",fmt="(a)") "recip_point["
+               write (61+currBZ,fmt=formatString) planeIndex-1, &
+"].color = vp.color.red"
+               !write (61+currBZ,fmt="(a)") "vp.sleep(3)"
+               write (61+currBZ,advance="no",fmt="(a)") "recip_point["
+               write (61+currBZ,fmt=formatString) planeIndex-1, &
+"].color = vp.color.white"
+               write (61+currBZ,advance="no",fmt="(a)") "recip_plane["
+               write (61+currBZ,fmt=formatString) planeIndex-1, &
+"].visible = False"
+               write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
+               write (61+currBZ,fmt=formatString) planeIndex-1, &
+"].visible = False"
+#endif
             enddo
          enddo
       enddo
@@ -1339,9 +1665,9 @@ write (6,*) "numVertices: ", j, facetList(j)%numVertices
 !         write (55,fmt="(a, f16.8)") "_cell_length_a ", recipMag(1)*10.0_double
 !         write (55,fmt="(a, f16.8)") "_cell_length_b ", recipMag(2)*10.0_double
 !         write (55,fmt="(a, f16.8)") "_cell_length_c ", recipMag(3)*10.0_double
-!         write (55,fmt="(a, f16.8)") "_cell_angle_alpha ", angleDeg(1)
-!         write (55,fmt="(a, f16.8)") "_cell_angle_beta ", angleDeg(2)
-!         write (55,fmt="(a, f16.8)") "_cell_angle_gamma ", angleDeg(3)
+!         write (55,fmt="(a, f16.8)") "_cell_angle_alpha ", recipAngleDeg(1)
+!         write (55,fmt="(a, f16.8)") "_cell_angle_beta ", recipAngleDeg(2)
+!         write (55,fmt="(a, f16.8)") "_cell_angle_gamma ", recipAngleDeg(3)
 !         write (55,fmt="(a)") "loop_"
 !         write (55,fmt="(a)") "   _atom_site_label"
 !         write (55,fmt="(a)") "   _atom_site_type_symbol"
@@ -1373,7 +1699,7 @@ write (6,*) "numVertices: ", j, facetList(j)%numVertices
 
    end subroutine printBrillouinZones
 
-end module Lattice_O
+end module BrillouinZones_O
 
 
 module KPointMesh_O
@@ -1812,84 +2138,6 @@ module CommandLine_O
 end module CommandLine_O
 
 
-!module VPython_O
-!
-!   ! Make sure that no unwanted variables are created accidentally.
-!   implicit none
-!
-!   ! Define module data.
-!
-!   contains
-!
-!   subroutine makeVPythonHeader(maxBZ)
-!
-!      implicit none
-!
-!      ! Define passed parameters
-!      integer :: maxBZ
-!
-!      ! Define local variables
-!      integer :: i
-!
-!      do i = 1, maxBZ
-!
-!         write (61+i,fmt="(a)") "#!/usr/bin/env python3"
-!         write (61+i,*)
-!         write (61+i,fmt="(a)") "import vpython as vp"
-!         write (61+i,*)
-!         write (61+i,fmt="(a)") "# Define global variables"
-!         write (61+i,fmt="(a)") "# Time controls"
-!         write (61+i,fmt="(a)") "delta_t = 0.5"
-!         write (61+i,fmt="(a)") "frame_rate = 30"
-!         write (61+i,*)
-!         write (61+i,fmt="(a)") "# Canvas parameters"
-!         write (61+i,fmt="(a)") "w = 1200"
-!         write (61+i,fmt="(a)") "h = 800"
-!         write (61+i,*)
-!         write (61+i,fmt="(a)") "# Camera parameters"
-!         write (61+i,fmt="(a)") "camera_radius"
-!         write (61+i,*)
-!         write (61+i,fmt="(a)") "# Plane nature"
-!         write (61+i,fmt="(a)") "plane_thickness = 0.03"
-!         write (61+i,*)
-!         write (61+i,*)
-!         write (61+i,fmt="(a)") "# Create the initial scene"
-!         write (61+i,*)
-!         write (61+i,fmt="(a)") "# Create the canvas"
-!         write (61+i,fmt="(a,i1,a)") &
-!& "scene = vp.canvas(title='Making BZ ", i, "', x=0, y=0, width=w, height=h,"
-!         write (61+i,fmt="(a,i1,a)") &
-!& "                  center=vp.vector(0, 0, 0), background=vp.vector(0, 0, 0),"
-!         write (61+i,fmt="(a)") &
-!& "                  autoscale=False)"
-!         write (61+i,*)
-!         write (61+i,*)
-!         write (61+i,fmt="(a)") "# Setup the camera"
-!         write (61+i,fmt="(a)") &
-!& "scene.camera.pos = vp.vector(camera_radius, camera_radius, camera_radius)"
-!         write (61+i,fmt="(a)") &
-!& "scene.camera.axis = -scene.camera.pos"
-!         write (61+i,*)
-!         write (61+i,*)
-!      enddo
-!
-!   end subroutine makeVPythonHeader
-!
-!   subroutine makeVPythonRecipLattice(maxBZ)
-!
-!      ! Make things safe
-!      implicit none
-!
-!      ! Define passed parameters
-!      integer :: maxBZ
-!
-!      ! Define local variables
-!      
-!
-!   end subroutine makeVPythonRecipLattice
-!
-!end module VPython_O
-
 
 program makekpoints
 
@@ -1903,9 +2151,12 @@ program makekpoints
    ! Import necessary modules.
    use PointGroupOperations_O
    use Lattice_O
+   use BrillouinZones_O
    use KPointMesh_O
-   use VPython_O
    use CommandLine_O
+#ifdef COMPVIS
+   use VPython_O
+#endif
 
 
    ! Make sure no funny variables are defined.
@@ -1931,38 +2182,46 @@ program makekpoints
       endif
    enddo
 
-!   ioerr = 0
-!   do i = 1, doBrillouinZone
-!      write (filename,fmt="(a3,i1,a3)") "BZ.", i, ".py"
-!      open (unit=61+i, file=filename, form='formatted', status='new', &
-!            & iostat=ioerr)
-!      if (ioerr /= 0) then
-!         exit
-!      endif
-!   enddo
-      
-
    ! If this program is called multiple times (which would usually happen
    !   under many common conditions when using makeinput) then this will
-   !   prevent recalculation of the supplementary files.
+   !   prevent recalculation of the supplementary Brillouin zone files.
    if (ioerr /= 0) then
       doBrillouinZone = 0
-!      doComputationalVis = 0
    endif
 
-!   ! Create the header for computational visualization if requested.
-!   if (doComputationalVis == 1) then
-!      call makeVPythonHeader(doBrillouinZone)
-!   endif
+#ifdef COMPVIS
+   ioerr = 0
+   do i = 1, doBrillouinZone
+      write (filename,fmt="(a3,i1,a3)") "BZ.", i, ".py"
+      open (unit=61+i, file=filename, form='formatted', status='new', &
+            iostat=ioerr)
+      if (ioerr /= 0) then
+         exit
+      endif
+   enddo
+
+   ! Similar to the above except for the computational visualization. Also,
+   !   it is assumed that this program will never be called for any practical
+   !   purpose beyond computational visualization if COMPVIS is defined. So,
+   !   on any subsequent call to this program (so ioerr == 0) we can return.
+   if (ioerr /= 0) then
+      stop
+   endif
+#endif
+
 
    ! Read the lattice and compute all of its information.
    call readRealLattice(50)
    call computeLatticeData
 
-!   ! Create reciprocal lattice for computational visualization if requested.
-!   if (doComputationalVis == 1) then
-!      call makeVPythonRecipLattice(doBrillouinZone)
-!   endif
+
+#ifdef COMPVIS
+   ! Create the header for computational visualization if requested.
+   call makeVPythonHeader(doBrillouinZone)
+
+   ! Create reciprocal lattice for computational visualization if requested.
+   call makeVPythonRecipLattice(doBrillouinZone)
+#endif
 
 
    ! Read the point group operations and compute their values on the given
@@ -1983,22 +2242,17 @@ program makekpoints
    ! In the case that the user wants information about a the Brillouin zone,
    !   then we compute and print it.
    if (doBrillouinZone > 0) then
-write (6,*) "About to compute"
-call flush(6)
       call computeBrillouinZones(doBrillouinZone)
-write (6,*) "About to print"
-call flush(6)
       call printBrillouinZones(doBrillouinZone)
    endif
-
-#ifdef COMPVIS
-   write (6,*) "CompVis turned on!!!"
-#endif
 
    close (50)
    close (51)
    do i = 1, doBrillouinZone
       close (51+i)
+#ifdef COMPVIS
+      close (61+i)
+#endif
    enddo
 
 end program makekpoints

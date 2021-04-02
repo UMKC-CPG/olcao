@@ -16,6 +16,7 @@ sub printHelp
 #                 [[[-scfkp \$a \$b \$c] [-pscfkp \$a \$b \$c]
 #                   [-altkp \$a \$b \$c]] | [-kp \$a \$b \$c]]
 #                 [-printbz]
+#                 [-compvis]
 #                 [-xcmesh [-numvect \$numSampVectors]
 #                          [-weight \$xcInWeight \$xcOutWeight]
 #                          [-samp \$xcInSamp \$xcOutSamp \$xcSpacingSamp]]
@@ -165,6 +166,10 @@ sub printHelp
 #  the input. This file contains a decription of the Brillouin zone suitable
 #  for importing in a python script.
 
+#The -compvis option will cause makeinput to use alternative executables for
+#  many called programs. The alternative executables are designed to output
+#  a file that helps visualize the execution of the program.
+
 #The -xcmesh option will define the construction of the real space mesh for
 #  sampling the charge density for the exchange correlation evaluation.  The
 #  mesh is spherical and atom centered.  The -level option sets the number of
@@ -313,6 +318,10 @@ my $atomicPDB;   # Full path to the atomic potential function data base.
 my $sybdDB;      # Full path to data base of reciprocal cell paths.
 my $spaceDB;     # Full path to data base of space group operations.
 
+# Names of called programs.
+my $makekpoints_exec;
+my $contract_exec;
+
 # File names for olcao input generation and olcao calculations.
 my $olcao_skl;   # Input file for generating all other OLCAO input.
 my $olcao_fmi;   # Made by makeinput from $olcao_skl. Explicit fract coords.
@@ -406,6 +415,7 @@ my @kpNum;    # Total number of kpoints after symmetry reduction.
 my @kpNote;   # String for each group indicating general or gamma.  [1..3]
 my @setKPFlag;# Flag 1=done; 0=not done. Set kpoints on command line.
 my $printBZ;  # Flag 1=do it; 0=do not. Print a file describing the BZ.
+my $compVis;  # Flag 1=do it; 0=do not. Make certain program execution vis.
 
 # Variables that control structure analysis and description.
 my $cellName; # String of bravis lattice cell name.
@@ -808,6 +818,10 @@ sub initDefaults
    my $axis;
    my $kpGroup;
 
+   # Define the default name of any executables to be called.
+   $makekpoints_exec = "makekpoints";
+   $contract_exec = "contract";
+
    # Will any potentials be modified.  (Default=0=no)
    $modPot = 0;
    $modElementName = "";
@@ -832,7 +846,6 @@ sub initDefaults
    $xcOutSamp=3.5;
    $xcSpacingSamp=0.8;
    $numSampVectors=100;
-
 
    # Default DOS options
    $eDeltaDOS=0.01;
@@ -889,6 +902,7 @@ sub initDefaults
    }
    $kpWeightSum = 2;
    $printBZ = 0;
+   $compVis = 0;
 
    # Initial setting to track the number of basis set substitutions.
    $numBasisSubs = 0;
@@ -1032,6 +1046,11 @@ sub parseCommandLine
       }
       elsif ($ARGV[$number] eq "-printbz")
          {$printBZ = 1;}
+      elsif ($ARGV[$number] eq "-compvis")
+      {
+         $compVis = 1;
+         $makekpoints_exec = "makekpoints_cv";
+      }
       elsif ($ARGV[$number] eq "-subbasis")
       {
          $numBasisSubs++;
@@ -2765,7 +2784,7 @@ sub makeKP
    foreach $kpGroup (1..3)
    {
       &printKPInFile(@{$kpMesh[$kpGroup]}[1..3],$kpGroup);
-      system("makekpoints $printBZ");
+      system("$makekpoints_exec $printBZ");
       $kpNum[$kpGroup] = `wc -l $kpOutFile`;  # Count the lines.
       @values=StructureControl::prepLine("",$kpNum[$kpGroup],'\s+');
       $kpNum[$kpGroup] = $values[0] - 3; # Subtract the three line header.
@@ -2906,7 +2925,7 @@ sub contractBasis
             &copy("$atomicBDB/$elementList[$element]/gauss.fit","gauss.fit");
 
             # Run the contraction program and rename the results files.
-            system("contract $doBasisVis");
+            system("$contract_exec $doBasisVis");
             $tempFileName = $currBasisFile . ".out";
             &move("contract.out","$tempFileName");
             $tempFileName = $currBasisFile . ".dat";
@@ -2928,7 +2947,7 @@ sub contractBasis
                      "contract.dat");
 
                # Run the contraction program and rename the results files.
-               system("contract 0");
+               system("$contract_exec 0");
                $tempFileName = $currBasisFileNC . ".out";
                &move("contract.out","$tempFileName");
                $tempFileName = $currBasisFileNC . ".dat";
@@ -4715,7 +4734,7 @@ sub makeSubFile
 
    # If bash was used, then make the submission file executable.
    if ($queue == 0)
-      {system ("chmod u+x $subDir/$bash_sub");}
+      {system("chmod u+x $subDir/$bash_sub");}
 }
 
 
