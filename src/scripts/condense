@@ -1578,7 +1578,8 @@ sub normalizeTypes
          if (($atom1Z == $hookeAngleCoeffs_ref->[$hookeAngle][1]) and
              ($atom2Z == $hookeAngleCoeffs_ref->[$hookeAngle][2]) and
              ($atom3Z == $hookeAngleCoeffs_ref->[$hookeAngle][3]) and
-             ($currBondAngle == $hookeAngleCoeffs_ref->[$hookeAngle][5]))
+             (abs($currBondAngle - $hookeAngleCoeffs_ref->[$hookeAngle][5])
+                <= $hookeAngleCoeffs_ref->[$hookeAngle][6]))
          {
             $uniqueAngleCoeffs[$uniqueAngle][1] =
                   $hookeAngleCoeffs_ref->[$hookeAngle][4];

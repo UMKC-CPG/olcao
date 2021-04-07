@@ -1,25 +1,3 @@
-!#include "../config.h"
-
-!module O_LAPACKDGESV
-!   interface
-!      subroutine dgesv(N, NRHS, A, LDA, IPIV, B, LDB, INFO)
-!         use O_Kinds
-!         integer :: N
-!         integer :: NRHS
-!         real (kind=double), dimension(LDA,N) :: A
-!         integer :: LDA
-!         integer, dimension(N) :: IPIV
-!         real (kind=double), dimension(LDB,N) :: B
-!         integer :: LDB
-!         integer :: INFO
-!      end subroutine dgesv
-!   end interface
-!
-!!   contains
-!!
-!!subroutine solveDGESV (N, NRHS, A, B, INFO)
-!end module O_LAPACKDGESV
-
 module PointGroupOperations_O
 
    ! Import necessary modules
@@ -95,16 +73,6 @@ module PointGroupOperations_O
          ! Read the translation line.
          read (fileUnit,*) translations(:,i) ![new abc]
 
-!         ! Make sure that this point group operation does not match any
-!         !   previously read in point group operations.  If it does not match
-!         !   then we can save it.  Matches might happen if two space group
-!         !   operations had the same xyz contribution components for each new
-!         !   xyz value but different translation effects.  1=duplicate;0=not
-!         if (samePointOps(tempPointOp) == 0) then
-!            numPointOps = numPointOps + 1
-!            pointOps(:,:,numPointOps) = tempPointOp(:,:)
-!         endif
-
       enddo ! i=1,numPointOps
 
       ! Read past all the space group operations that are just point group
@@ -116,55 +84,6 @@ module PointGroupOperations_O
       enddo
 
    end subroutine readPointOps
-
-
-   function samePointOps (tempPointOp)
-
-      ! Import necessary parameter modules.
-      use O_Kinds
-
-      ! Make sure no funny variables are defined.
-      implicit none
-
-      ! Define dummy parameters.
-      real (kind=double), intent (in), dimension (3,3) :: tempPointOp
-
-      ! Define local variables.
-      integer :: i,j,k
-      integer :: notAMatch
-
-      ! Define return value.
-      integer :: samePointOps
-
-      ! This is done through two assumptions that work opposite to each other.
-
-      ! Assume that this temp point group operation doesn't match previous ones.
-      samePointOps = 0
-
-      do i = 1, numPointOps
-
-         ! Assume that the tempPointOp DOES match the current pointOp.
-         notAMatch=0
-
-         do j = 1,3
-            do k = 1,3
-               if (tempPointOp(k,j) /= pointOps(k,j,i)) then
-                  ! This operation is not a match.
-                  notAMatch = 1
-                  exit
-               endif
-            enddo
-            if (notAMatch == 1) exit
-         enddo
-
-         ! If it still DOES match, then we found a duplicate and we report it.
-         if (notAMatch == 0) then
-            samePointOps = 1
-            exit
-         endif
-      enddo
-
-   end function samePointOps
 
 
    ! This subroutine will take as input a real space lattice and a reciprocal
@@ -248,26 +167,24 @@ module Lattice_O
       real (kind=double), dimension (3) :: coord
       integer, dimension (3) :: planeTripleIndex
    end type vertexType
-   type (vertexType), dimension (100000) :: fullVertexList
    type (vertexType), dimension (100) :: uniqueVertexList
-   integer :: numFullVertices
 
    type edgeType
       type (vertexType), dimension (2) :: vertex
-      integer, dimension (2) :: sharedPlaneIndex ! The two vertices are made
-            ! from the same two planes. Here, we hold the plane index numbers
-            ! of those two planes.
-      integer, dimension (2,2) :: sharedPlaneTripleIndexIndices ! Each of the
-            ! plane index numbers is also held in the vertex as one of its
-            ! planeTripleIndex numbers. Here, we hold the array index number
-            ! (1, 2, or 3) that links the sharePlaneIndex number to their
-            ! positions inside the vertex%planeTripleIndex array. (1,:) links
-            ! sharedPlaneIndex(1) to vertices 1 and 2. (2,:) links the
-            ! sharedPlaneIndex(2) to vertices 1 and 2.
+!      integer, dimension (2) :: sharedPlaneIndex ! The two vertices are made
+!            ! from the same two planes. Here, we hold the plane index numbers
+!            ! of those two planes.
+!      integer, dimension (2,2) :: sharedPlaneTripleIndexIndices ! Each of the
+!            ! plane index numbers is also held in the vertex as one of its
+!            ! planeTripleIndex numbers. Here, we hold the array index number
+!            ! (1, 2, or 3) that links the sharePlaneIndex number to their
+!            ! positions inside the vertex%planeTripleIndex array. (1,:) links
+!            ! sharedPlaneIndex(1) to vertices 1 and 2. (2,:) links the
+!            ! sharedPlaneIndex(2) to vertices 1 and 2.
    end type edgeType
-   type (edgeType), dimension (1000) :: fullEdgeList
+!   type (edgeType), dimension (1000) :: fullEdgeList
    type (edgeType), dimension (1000) :: uniqueEdgeList
-   integer :: numFullEdges
+!   integer :: numFullEdges
 
    type facetType
       integer :: pointID
@@ -432,6 +349,7 @@ module VPython_O
          write (61+i,fmt="(a)") "recip_plane = []"
          write (61+i,fmt="(a)") "bz_point = []"
          write (61+i,fmt="(a)") "bz_plane = []"
+         write (61+i,fmt="(a)") "facet_vertex = []"
          write (61+i,fmt="(a)")
          write (61+i,fmt="(a)") "# Create the initial scene"
          write (61+i,fmt="(a)")
@@ -454,6 +372,7 @@ module VPython_O
       enddo
 
    end subroutine makeVPythonHeader
+
 
    subroutine makeVPythonRecipLattice(maxBZ)
 
@@ -501,7 +420,8 @@ module VPython_O
                      endif
                   enddo
                   write(61+h,fmt="(a)") "),"
-                  write(61+h,advance="no",fmt="(a)") "                  radius="
+                  write(61+h,advance="no",fmt="(a)") &
+"                  radius="
                   write(61+h,advance="no",fmt="(sp,e10.3)") sphereRadius
                   write(61+h,fmt="(a)") "))"
 
@@ -578,47 +498,20 @@ module BrillouinZones_O
       ! Add vertices to each facet.
       call addFacetVertices(maxBZ)
 
-!      ! Construct a list of all possible vertices. A vertex is created by the
-!      !   the intersection of three non-parallel planes. Each plane is defined
-!      !   by being 1/2 of a reciprocal lattice vector distant from the origin
-!      !   of the reciprocal lattice. Each vertex will be recorded as a set of
-!      !   coordinates in reciprocal space along with the set of which three
-!      !   planes were used to create the vertex. An additional list of the
-!      !   *unique* vertices will be stored.
-!      write (52,*) "About to makeFullVertexList"
-!      call flush (52)
-!      call makeFullVertexList
-!
-!      ! For each plane, produce a record of the vertices that this plane
-!      !   participates in. If it participates in a minimum of three, then it
-!      !   defines a facet of the Brillouin zone and it is stored as a list of
-!      !   the vertices. The vertices for this facet are stored in a spatially
-!      !   ring-sorted order. (I.e., one vertex is selected arbitrarily and then
-!      !   then others are stored sequentially according to their proximity to
-!      !   the previously stored vertex with ties being inconsequential to the
-!      !   end result. This will store the vertices in a ring.) The vertices for
-!      !   this facet are also added to the list of unique vertices. Of course,
-!      !   when adding, they are compared against the existing vertices in the
-!      !   list to prevent double listing in the unique set.
-!      write (52,*) "About to makeFacetListUniqueVerticesAndFullEdgeList"
-!      call flush (52)
-!      call makeFacetListUniqueVerticesAndFullEdgeList
-!
-!      ! Create a list of edges by traversing the list of facets and
-!      !   accumulating each unique sequential pair of vertices plus the final
-!      !   first-vertex + last-vertex pair.
-!      write (52,*) "About to makeUniqueEdgeList"
-!      call flush (52)
-!      call makeUniqueEdgeList
-!
-!
+      ! Sort the order of the vertices for each facet so that they are in
+      !   the order of a ring.
+      call ringSortFacetVertices(maxBZ)
+
+      ! Create a list of edges by traversing the list of facets and
+      !   accumulating each unique sequential pair of vertices plus the final
+      !   first-vertex + last-vertex pair.
+      call makeUniqueEdgeList(maxBZ)
+
    end subroutine computeBrillouinZones
 
 
 
    subroutine makeFacetList (currBZ)
-
-      ! Use nece
 
       ! Make sure that no variables are accidentally declared.
       implicit none
@@ -655,75 +548,75 @@ module BrillouinZones_O
       numBZFacets(currBZ) = 0
       do i = 1, 26
 
-#ifdef COMPVIS
-         ! Prepare a format string for array indices.
-         if (i < 11) then
-            write (formatString_i,fmt="(a)") "(i0.1,a)"
-         else
-            write (formatString_i,fmt="(a)") "(i0.2,a)"
-         endif
-         write (61+currBZ,advance="no",fmt="(a)") "bz_point["
-         write (61+currBZ,fmt=formatString_i) i-1, "].color = vp.color.red"
-#endif
-         ! Determine if the current lattice point (that defines some plane) also
-         !   happens to lie *on* a plane defined by some other lattice point. If
-         !   so, then the plane defined by the current lattice point is
-         !   disqualified as a participant in the construction of the Brillouin
-         !   zone. Assume that the current lattice point will not sit on some
-         !   other plane.
+!#ifdef COMPVIS
+!         ! Prepare a format string for array indices.
+!         if (i < 11) then
+!            write (formatString_i,fmt="(a)") "(i0.1,a)"
+!         else
+!            write (formatString_i,fmt="(a)") "(i0.2,a)"
+!         endif
+!         write (61+currBZ,advance="no",fmt="(a)") "bz_point["
+!         write (61+currBZ,fmt=formatString_i) i-1, "].color = vp.color.red"
+!#endif
+         ! Determine if the current lattice point, i, (that defines some plane)
+         !   also happens to lie *on* a plane defined by some other lattice
+         !   point, j. If so, then the plane defined by the current lattice
+         !   point is disqualified as a participant in the construction of the
+         !   Brillouin zone. Assume that the current lattice point will not
+         !   sit on some other plane.
          onOtherPlane = 0
          do j = 1, 26
 
             ! Do not check against oneself.
             if (i == j) cycle
-#ifdef COMPVIS
-               ! Prepare a format string and make plane j visible.
-               if (j < 11) then
-                  write (formatString_j,fmt="(a)") "(i0.1,a)"
-               else
-                  write (formatString_j,fmt="(a)") "(i0.2,a)"
-               endif
-               write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
-               write (61+currBZ,fmt=formatString_j) j-1, &
-"].visible = True"
-#endif
+!#ifdef COMPVIS
+!               ! Prepare a format string and make plane j visible.
+!               if (j < 11) then
+!                  write (formatString_j,fmt="(a)") "(i0.1,a)"
+!               else
+!                  write (formatString_j,fmt="(a)") "(i0.2,a)"
+!               endif
+!               write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
+!               write (61+currBZ,fmt=formatString_j) j-1, "].visible = True"
+!#endif
 
             if (abs(sum(planeEquation(1:3,j) &
                   & * (planeEquation(1:3,i) - planeEquation(1:3,j)))) &
                   & < smallThresh) then
                onOtherPlane = 1
-#ifdef COMPVIS
-write (6,*) "TEST", abs(sum(planeEquation(1:3,j) &
-                  & * (planeEquation(1:3,i) - planeEquation(1:3,j))))
-               write (61+currBZ,fmt="(a)") "vp.sleep(10)"
-               write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
-               write (61+currBZ,fmt=formatString_j) j-1, &
-"].visible = False"
-#endif
+!#ifdef COMPVIS
+!               write (61+currBZ,fmt="(a)") "vp.sleep(0.010)"
+!               write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
+!               write (61+currBZ,fmt=formatString_j) j-1, "].visible = False"
+!#endif
                exit
-#ifdef COMPVIS
-            else
-               write (61+currBZ,fmt="(a)") "vp.sleep(0.1)"
-               write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
-               write (61+currBZ,fmt=formatString_j) j-1, &
-"].visible = False"
-#endif
+!#ifdef COMPVIS
+!            else
+!               write (61+currBZ,fmt="(a)") "vp.sleep(0.01)"
+!               write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
+!               write (61+currBZ,fmt=formatString_j) j-1, &
+!"].visible = False"
+!#endif
             endif
-         enddo
-#ifdef COMPVIS
-         write (61+currBZ,advance="no",fmt="(a)") "bz_point["
-         write (61+currBZ,fmt=formatString_i) i-1, "].color = vp.color.white"
-#endif
+         enddo ! j loop
 
-         ! If plane i does not lie on another plane, then we need to next
-         !   determine if it lies beyond another plane. (I.e., does the point
+
+         ! If plane i does not lie *on* another plane, then we need to next
+         !   determine if it lies *beyond* another plane. (I.e., does the point
          !   on plane i that is nearest to the origin have a line segment
          !   between it and the origin that passes through any other plane?)
          if (onOtherPlane == 0) then
 
-            beyondOtherPlane = checkBeyondOtherPlane(planeEquation(1:3,i), &
-                  & (/i, 0, 0/))
+!#ifdef COMPVIS
+!            write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
+!            write (61+currBZ,fmt=formatString_i) i-1, "].visible = True"
+!            write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
+!            write (61+currBZ,fmt=formatString_i) i-1, "].color = vp.color.white"
+!#endif
+
+            beyondOtherPlane = checkBeyondOtherPlane(planeEquation(1:3,i), i)
          endif
+
 
          ! Plane i has satisfied all the requirements of being included in the
          !   construction of the Brillouin zone if it is not on another plane
@@ -731,20 +624,24 @@ write (6,*) "TEST", abs(sum(planeEquation(1:3,j) &
          !   requirements we increase the number of facets for the Brillouin
          !   zone and record the index number of i.
          if ((onOtherPlane == 0) .and. (beyondOtherPlane == 0)) then
+
+!#ifdef COMPVIS
+!            write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
+!            write (61+currBZ,fmt=formatString_i) i-1, "].opacity = 0.00"
+!            write (61+currBZ,advance="no",fmt="(a)") "bz_point["
+!            write (61+currBZ,fmt=formatString_i) i-1, "].color = vp.color.white"
+!#endif
             numBZFacets(currBZ) = numBZFacets(currBZ) + 1
             facetList(numBZFacets(currBZ))%pointID = i
+!#ifdef COMPVIS
+!         else
+!            write (61+currBZ,advance="no",fmt="(a)") "bz_point["
+!            write (61+currBZ,fmt=formatString_i) i-1, "].color = vp.color.white"
+!            write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
+!            write (61+currBZ,fmt=formatString_i) i-1, "].visible = False"
+!#endif
          endif
-      enddo
-
-
-      ! At this point we have found all the facets that should be used to make
-      !   the Brillouin zone.
-      write (6,*) numBZFacets(currBZ)
-      write (6,*) facetList(1:numBZFacets(currBZ))%pointID
-      do i = 1, numBZFacets(currBZ)
-         write (6,*) planeEquation(1:3,facetList(i)%pointID)
-      enddo
-
+      enddo ! i loop
    end subroutine makeFacetList
 
 
@@ -757,27 +654,72 @@ write (6,*) "TEST", abs(sum(planeEquation(1:3,j) &
 
       ! Define local variables.
       integer :: info
-      integer :: g, h, i, j, k
+      integer :: g, h, i, j, k, l
       integer, dimension(3) :: pivotIndices
       real (kind=double), dimension(3,3) :: A
       real (kind=double), dimension(3) :: B
+#ifdef COMPVIS
+      character*8 :: formatString_i, formatString_j, formatString_k
+      integer :: s
+#endif
 
-write (6,*) "Adding Facet Vertices"
 
       ! Initialize the number of vertices at each facet.
       do i = 1, numBZFacets(currBZ)
          facetList(i)%numVertices = 0
       enddo
 
+      ! Initialize the number of unique vertices.
+      numBZVertices(currBZ) = 0
+
       ! For each facet, we will iterate over all pairs of other facets to
-      !   find the set of vertices that belong to the current facet.
+      !   find the set of vertices that belong to the current facet. That is,
+      !   we will evaluate every possible facet triplet.
       do i = 1, numBZFacets(currBZ)
+!#ifdef COMPVIS
+!         if (facetList(i)%pointID < 11) then
+!            write (formatString_i,fmt="(a)") "(i0.1,a)"
+!         else
+!            write (formatString_i,fmt="(a)") "(i0.2,a)"
+!         endif
+!         write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
+!         write (61+currBZ,fmt=formatString_i) facetList(i)%pointID - 1, &
+!               & "].visible = True"
+!         write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
+!         write (61+currBZ,fmt=formatString_i) facetList(i)%pointID - 1, &
+!               & "].opacity = 0.2"
+!#endif
          do j = i+1, numBZFacets(currBZ)
+!#ifdef COMPVIS
+!            if (facetList(j)%pointID < 11) then
+!               write (formatString_j,fmt="(a)") "(i0.1,a)"
+!            else
+!               write (formatString_j,fmt="(a)") "(i0.2,a)"
+!            endif
+!            write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
+!            write (61+currBZ,fmt=formatString_j) facetList(j)%pointID - 1, &
+!                  & "].visible = True"
+!            write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
+!            write (61+currBZ,fmt=formatString_j) facetList(j)%pointID - 1, &
+!                  & "].opacity = 0.2"
+!#endif
             do k = j+1, numBZFacets(currBZ)
+!#ifdef COMPVIS
+!               if (facetList(k)%pointID < 11) then
+!                  write (formatString_k,fmt="(a)") "(i0.1,a)"
+!               else
+!                  write (formatString_k,fmt="(a)") "(i0.2,a)"
+!               endif
+!               write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
+!               write (61+currBZ,fmt=formatString_k) facetList(k)%pointID - 1, &
+!                     & "].visible = True"
+!               write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
+!               write (61+currBZ,fmt=formatString_k) facetList(k)%pointID - 1, &
+!                     & "].opacity = 0.2"
+!#endif
 
                A(1,:) = planeEquation(1:3, facetList(i)%pointID)
                B(1) = planeEquation(4, facetList(i)%pointID)
-!write (6,*) "Eqn1:", A(1,:), B(1)
 
                A(2,:) = planeEquation(1:3, facetList(j)%pointID)
                B(2) = planeEquation(4, facetList(j)%pointID)
@@ -786,6 +728,15 @@ write (6,*) "Adding Facet Vertices"
                B(3) = planeEquation(4, facetList(k)%pointID)
 
                call dgesv(3, 1, A, 3, pivotIndices, B, 3, info)
+
+               ! Ensure that the vertex position does not have a -0.0 or a
+               !   very small rounding error.
+               do l = 1, 3
+                  if (abs(B(l)) < smallThresh) then
+                     B(l) = 0.0_double
+                  endif
+               enddo
+
                if (info == 0) then
 
                   ! We found a possible vertex. We now need to make sure that
@@ -793,14 +744,28 @@ write (6,*) "Adding Facet Vertices"
                   !   three planes because that is how we generated the point.
                   !   However, aside from those three, we need to be sure that
                   !   it is not outside the BZ.)
-write (6,*) "Checking Vertex:", i, j, k
-                  if(checkBeyondOtherPlane(B(:), (/i, j, k/)) == 0) then
-write (6,*) "Vertex found:", i, j, k
-write (6,*) "PivotIndices:", pivotIndices(:)
-write (6,*) "Point:", B(:)
-write (6,*) "PointPivot:", B(pivotIndices(:))
-write (6,*) "Recording"
+                  if(checkBeyondOtherPlane(B(:), 0) == 0) then
+#ifdef COMPVIS
+                     ! Print a sphere at this vertex site.
+                     write (61+currBZ,fmt="(a)") "facet_vertex.append("
+                     write (61+currBZ,advance="no",fmt="(a)") &
+"        vp.sphere(pos=vp.vector("
+                     do s = 1, 3
+                        write(61+currBZ,advance="no",fmt="(sp,e10.3)") B(s)
+                        if (s < 3) then
+                           write(61+currBZ,advance="no",fmt="(a)") ", "
+                        endif
+                     enddo
+                     write(61+currBZ,fmt="(a)") "),"
+                     write(61+currBZ,advance="no",fmt="(a)") &
+"                  radius="
+                     write(61+currBZ,advance="no",fmt="(sp,e10.3)") &
+                           & sphereRadius / 4.0
+                     write(61+currBZ,fmt="(a)") ", color=vp.color.green))"
+!                     write(61+currBZ,fmt="(a)") "vp.sleep(0.5)"
+#endif
 
+                     ! Add this vertex to each of the associated facets.
                      do h = 1, 3
                         select case (h)
                            case (1)
@@ -812,7 +777,6 @@ write (6,*) "Recording"
                         end select
 
                         facetList(g)%numVertices = facetList(g)%numVertices + 1
-write (6,*) "g=", g, " numVertices=", facetList(g)%numVertices
                         facetList(g)%vertex( &
                               & facetList(g)%numVertices)%coord(:) = B(:)
                         facetList(g)%vertex(facetList(g)%numVertices)&
@@ -821,25 +785,47 @@ write (6,*) "g=", g, " numVertices=", facetList(g)%numVertices
                               & %planeTripleIndex(2) = j
                         facetList(g)%vertex(facetList(g)%numVertices)&
                               & %planeTripleIndex(3) = k
-                     enddo
-                  endif
-               endif
-            enddo
-         enddo
-      enddo
+                     enddo ! h
+
+                     ! Add this vertex to the list of vertices.
+                     numBZVertices(currBZ) = numBZVertices(currBZ) + 1
+                     uniqueVertexList(numBZVertices(currBZ))%coord(:) = B(:)
+                     uniqueVertexList(numBZVertices(currBZ))%planeTripleIndex=&
+                           (/i, j, k/)
+
+                  endif ! checkBeyondOtherPlane
+               endif ! dsegv success
+!#ifdef COMPVIS
+!               write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
+!               write (61+currBZ,fmt=formatString_k) facetList(k)%pointID - 1, &
+!                     & "].visible = False"
+!#endif
+            enddo ! k
+!#ifdef COMPVIS
+!            write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
+!            write (61+currBZ,fmt=formatString_j) facetList(j)%pointID - 1, &
+!                  & "].visible = False"
+!#endif
+         enddo ! j
+!#ifdef COMPVIS
+!         write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
+!         write (61+currBZ,fmt=formatString_i) facetList(i)%pointID - 1, &
+!               & "].visible = False"
+!#endif
+      enddo ! i
    end subroutine addFacetVertices
 
 
    ! Check if the plane defined by the lattice index i OR if the point given
    !   by the coordinates coords happen to lie beyond some other plane.
-   function checkBeyondOtherPlane(coords, noTestPlanes)
+   function checkBeyondOtherPlane(coords, latticeIndex)
 
       implicit none
 
       ! Define passed parameters.
       !integer :: i ! Index of the plane i.
       real (kind=double), dimension(3) :: coords
-      integer, dimension(3) :: noTestPlanes
+      integer :: latticeIndex
 
       ! Define the return value.
       integer :: checkBeyondOtherPlane
@@ -850,18 +836,24 @@ write (6,*) "g=", g, " numVertices=", facetList(g)%numVertices
       real (kind=double) :: t, d ! See algebraic description below.
       real (kind=double), dimension(3) :: intersectionPoint
       real (kind=double), dimension(3) :: testPoint
+!#ifdef COMPVIS
+!      character*8 :: formatString_j
+!#endif
 
       ! This subroutine needs to work in basically the same way regardless of
       !   whether the point we are checking is given implicitly as a plane
       !   index i or as x, y, z coordinates (coords). So, we first regularize
       !   the inputs.
-      ! The expectation is that *if* the coords are given, then the three
-      !   planes that should not be included in the test will be listed in the
-      !   three elements of the noTestPlanes array. On the other hand, if the
-      !   coords are not given because we are testing the point that 
-      !   verse. I.e., if i is non-zero, then the coords can be ignored.
-      if (noTestPlanes(3) == 0) then
-         testPoint(1:3) = planeEquation(1:3,noTestPlanes(1))
+      ! The expectation is that *if* the lattice index is given, then the
+      !   test point is the plane equation given by the index number. Note that
+      !   this plane equation will then be compared to other plane equations
+      !   and so we should skip the comparison when the plane being compared
+      !   is the same as the once defined by the lattice index. (See below.)
+      !   On the other hand, if the lattice index is 0, then it expected that
+      !   the coords will define the point to be compared AND that this point
+      !   should be compared against all plane equations.
+      if (latticeIndex > 0) then
+         testPoint(1:3) = planeEquation(1:3, latticeIndex)
       else
          testPoint(:) = coords(:)
       endif
@@ -869,19 +861,31 @@ write (6,*) "g=", g, " numVertices=", facetList(g)%numVertices
       beyondOtherPlane = 0
       do j = 1, 26
 
-         ! Do not check against any of the noTestPlanes.
-         do k = 1, 3
-            if (j == (noTestPlanes(k))) cycle
-         enddo
+         ! Do not check against the plane given by the lattice index. Obviously
+         !   if the lattice index is given as zero, then all planes are
+         !   checked.
+         if (j == latticeIndex) cycle
+
+!#ifdef COMPVIS
+!         if (j < 11) then
+!            write (formatString_j,fmt="(a)") "(i0.1,a)"
+!         else
+!            write (formatString_j,fmt="(a)") "(i0.2,a)"
+!         endif
+!         write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
+!         write (61+currBZ,fmt=formatString_j) j-1, "].visible = True"
+!         write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
+!         write (61+currBZ,fmt=formatString_j) j-1, "].color = vp.color.white"
+!#endif
 
          ! The general parametric form for the equation of a line is:
          !   x = x_0 + tu;  y = y_0 + tv;  z = z_0 + tw. Our case is a
          !   special case because the vector <u, v, w> is the same as the
-         !   position vector <x_0, y_0, z_0> of the lattice point used to
-         !   define plane i. Therefore our line is defined according to:
+         !   position vector <x_0, y_0, z_0> of the BZ point used to define
+         !   plane i. Therefore our line is defined according to:
          !   x = u(1+t);  y = v(1+t);  z = w(1+t).
          ! If we substitute these values for x, y, and z into the
-         !   definition for the plane defined by the lattice point j we
+         !   definition for the plane defined by the BZ point j we
          !   can solve for t in terms of u, v, w and l, m, n. <l, m, n>
          !   are the Cartesian coordinates of the position vector used
          !   to define plane j.
@@ -911,7 +915,12 @@ write (6,*) "g=", g, " numVertices=", facetList(g)%numVertices
          !   *does* contribute. That will depend on the other planes
          !   too.)
          d = sum(testPoint(1:3) * planeEquation(1:3,j))
-         if (abs(d) < smallThresh) cycle ! Planes are parallel.
+         if (abs(d) < smallThresh) then
+            ! Planes are perpendicular, there can be no intersection of a line
+            !   from plane defined by testPoint to origin with any point on
+            !   plane defined by planeEquation.
+            cycle
+         endif
 
          t = (sum(planeEquation(1:3,j)**2) / d) - 1.0_double
 
@@ -919,15 +928,12 @@ write (6,*) "g=", g, " numVertices=", facetList(g)%numVertices
          !   determined by using plane i coordinates. Recall that
          !   <u, v, w> defines the plane i.
          intersectionPoint(:) = testPoint(:) * (1.0_double + t)
-   !write (6,fmt="(a6,3e15.5,i3)") "testP: ", testPoint(1:3), i
-   !write (6,fmt="(a6,3e15.5,i3)") "pEqnj: ", planeEquation(1:3,j), j
-   !write (6,fmt="(a6,3e15.5,i3)") "intPt: ", intersectionPoint(:), j
 
          ! Check if the intersectionPoint and the point that defines
          !   plane i are in the same (or opposite) quadrants. We will
          !   assume that the points are in opposite quadrants. If any
          !   Cartesian coordinate component pair has the same sign, then
-         !   that is a clear indication that they cannot be in the same
+         !   that is a clear indication that they must be in the same
          !   quadrant.
          oppositeQuadrants = 1
          do k = 1, 3
@@ -946,7 +952,15 @@ write (6,*) "g=", g, " numVertices=", facetList(g)%numVertices
          !   that plane j will not impede plane i from participating in
          !   the construction of the Brillouin zone.
          if (oppositeQuadrants == 1) then
-   write (6,*) "Found opposite quadrants", noTestPlanes(:), j
+!#ifdef COMPVIS
+!            write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
+!            write (61+currBZ,fmt=formatString_j) j-1, "].color = vp.color.red"
+!            write (61+currBZ,fmt="(a)") "vp.sleep(0.5)"
+!            write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
+!            write (61+currBZ,fmt=formatString_j) j-1, "].color = vp.color.white"
+!            write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
+!            write (61+currBZ,fmt=formatString_j) j-1, "].visible = False"
+!#endif
             cycle
          endif
 
@@ -956,80 +970,273 @@ write (6,*) "g=", g, " numVertices=", facetList(g)%numVertices
          !   point used to define plane i is more distant than the
          !   intersection point, then plane i is "beyond the other
          !   plane" and so it cannot contribute to the Brillouin zone.
-         if (sum(testPoint(:)**2)>sum(intersectionPoint(:)**2)) &
-               & then
+         if (sum(testPoint(:)**2) > sum(intersectionPoint(:)**2)) then
             beyondOtherPlane = 1
-   !write (6,*) "Found that i is beyond j", i, j
+!#ifdef COMPVIS
+!            write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
+!            write (61+currBZ,fmt=formatString_j) j-1, &
+!                  "].color = vp.color.orange"
+!            write (61+currBZ,fmt="(a)") "vp.sleep(10)"
+!            write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
+!            write (61+currBZ,fmt=formatString_j) j-1, "].color = vp.color.white"
+!            write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
+!            write (61+currBZ,fmt=formatString_j) j-1, "].visible = False"
+!#endif
             exit
+!#ifdef COMPVIS
+!         else
+!            write (61+currBZ,fmt="(a)") "vp.sleep(0.1)"
+!            write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
+!            write (61+currBZ,fmt=formatString_j) j-1, "].visible = False"
+!#endif
          endif
-      enddo
+      enddo ! j
 
       ! Store the result to return.
       checkBeyondOtherPlane = beyondOtherPlane
 
    end function checkBeyondOtherPlane
 
-!
-!
-!   subroutine makeFullVertexList
-!
-!      implicit none
-!
-!      ! Define local variables.
-!      integer :: info
-!      integer :: i, j, k
-!      integer, dimension (3) :: pivotIndices
-!      real (kind=double), dimension (3,3) :: A
-!      real (kind=double), dimension (3) :: B, x
-!
-!      ! First, we need to create algebraic expressions for each of the planes
-!      !   available for us to intersect.
-!      call makePlaneEquations
-!
-!      ! Initialize the number of vertices in the full vertex list.
-!      numFullVertices = 0
-!
-!      ! Iterate over all triple sets of planes.
-!      do i = 1, 26
-!         do j = i+1, 26
-!            do k = j+1, 26
-!
-!               A(:,1) = planeEquation(1:3,i)
-!               B(1) = planeEquation(4,i)
-!
-!               A(:,2) = planeEquation(1:3,j)
-!               B(2) = planeEquation(4,j)
-!
-!               A(:,3) = planeEquation(1:3,k)
-!               B(3) = planeEquation(4,k)
-!
-!               call dgesv(3, 1, A, 3, pivotIndices, B, 3, info)
-!               if (info == 0) then
-!write (52,*) "Found a valid vertex", i, j, k
-!call flush (52)
-!
-!                  ! We found a valid vertex. Increment our global count.
-!                  numFullVertices = numFullVertices + 1
-!
-!                  ! Store the x, y, z coordinates of this vertex.
-!                  fullVertexList(numFullVertices)%coord(:) = B(pivotIndices(:))
-!
-!                  ! Store the indices that define the set of planes used to
-!                  !   make the current vertex.
-!                  fullVertexList(numFullVertices)%planeTripleIndex(1) = i
-!                  fullVertexList(numFullVertices)%planeTripleIndex(2) = j
-!                  fullVertexList(numFullVertices)%planeTripleIndex(3) = k
-!               else
-!write (52,*) "Found an invalid vertex", i, j, k
-!call flush (52)
-!               endif
-!            enddo
-!         enddo
-!      enddo
-!write (52,*) "numFullVertices=", numFullVertices
-!call flush(52)
-!   end subroutine makeFullVertexList
-!
+
+   subroutine ringSortFacetVertices(currBZ)
+
+      implicit none
+
+      ! Define the passed parameter.
+      integer :: currBZ
+
+      ! Define local variables.
+      integer :: i, j, k, l
+      integer :: nextVertex
+      integer, allocatable, dimension(:) :: usedVertices
+      real(kind=double) :: argument
+      real(kind=double) :: maxAngle
+      real(kind=double) :: currentAngle
+      real(kind=double), dimension (3) :: centerVector
+      real(kind=double), dimension (3) :: vertexVertexVector
+      type (facetType) :: tempFacet
+#ifdef COMPVIS
+      write(61+currBZ,fmt="(a)") "facetVec = vp.arrow(shaftwidth=0.05)"
+      write(61+currBZ,fmt="(a)") &
+            & "centerVec = vp.arrow(shaftwidth=0.05, color=vp.color.green)"
+      write(61+currBZ,fmt="(a)") "centerVec.visible = False"
+      write(61+currBZ,fmt="(a)") &
+            & "vvVec = vp.arrow(shaftwidth=0.05, color=vp.color.orange)"
+      write(61+currBZ,fmt="(a)") "vvVec.visible = False"
+#endif
+
+      do i = 1, numBZFacets(currBZ)
+
+#ifdef COMPVIS
+         write(61+currBZ,advance="no",fmt="(a)") "facetVec.axis=vp.vector("
+         do j = 1, 3
+            write(61+currBZ,advance="no",fmt=("(sp,e10.3)")) &
+                  & planeEquation(j,facetlist(i)%pointID)
+            if (j < 3) then
+               write (61+currBZ,advance="no",fmt="(a)") ", "
+            endif
+         enddo
+         write(61+currBZ,fmt="(a)") ")"
+         write(61+currBZ,fmt="(a)") "vp.sleep(0.5)"
+#endif
+
+         ! Initialize the temp facet that will hold the ring sorted vertices.
+         tempFacet%pointID = facetList(i)%pointID
+         tempFacet%numVertices = facetList(i)%numVertices
+         call copyVertex(facetList(i)%vertex(1), tempFacet%vertex(1))
+
+         ! Allocate space to hold the list of used vertices as we use them.
+         !   Because we always assign the first, it is already used and so
+         !   we will mark it as such. Also, we will initialize the list of
+         !   other used vertices to zero so that any comparison against their
+         !   value will pass.
+         allocate(usedVertices(facetList(i)%numVertices))
+         usedVertices(:) = 0
+         usedVertices(1) = 1
+
+         ! Now, we need to add numVertices to the tempFacet. For each vertex
+         !   that we want to add we will choose from all vertices in the
+         !   current facet (i). The one we will pick to add to the tempFacet
+         !   will be the one with the most positive angle between the position
+         !   of the most recently added vertex and the center point of the
+         !   facet.
+         do j = 2, tempFacet%numVertices
+
+            ! Assume that the max angle is zero.
+            maxAngle = 0
+
+            ! Compute the vector from the previously added vertex to the
+            !   center point of the plane.
+            centerVector(:) = planeEquation(1:3,tempFacet%pointID) &
+                  & - tempFacet%vertex(j-1)%coord(:)
+#ifdef COMPVIS
+            write(61+currBZ,fmt="(a)") "centerVec.visible = True"
+            write(61+currBZ,advance="no",fmt="(a)") "centerVec.axis=vp.vector("
+            do k = 1, 3
+               write(61+currBZ,advance="no",fmt=("(sp,e10.3)")) centerVector(k)
+               if (k < 3) then
+                  write (61+currBZ,advance="no",fmt="(a)") ", "
+               endif
+            enddo
+            write(61+currBZ,fmt="(a)") ")"
+            write(61+currBZ,advance="no",fmt="(a)") "centerVec.pos=vp.vector("
+            do k = 1, 3
+               write(61+currBZ,advance="no",fmt="(sp,e10.3)") &
+                     & tempFacet%vertex(j-1)%coord(k)
+               if (k < 3) then
+                  write (61+currBZ,advance="no",fmt="(a)") ", "
+               endif
+            enddo
+            write(61+currBZ,fmt="(a)") ")"
+            write(61+currBZ,fmt="(a)") "vp.sleep(2.5)"
+#endif
+
+            ! Iterate through all other vertices of this facet to find the
+            !   one with the largest positive angle A-B-C where A is the
+            !   point defined by the centerVector, B is the point of the
+            !   previously added vertex, and C is each of the other vertices
+            !   in this facet.
+            kloop: do k = 2, facetList(i)%numVertices
+               do l = 1, facetList(i)%numVertices
+                  if (usedVertices(l) == k) then
+                     cycle kloop
+                  endif
+               enddo
+               vertexVertexVector(:) = facetList(i)%vertex(k)%coord(:) &
+                     & - tempFacet%vertex(j-1)%coord(:)
+               do l = 1, 3
+                  if (abs(vertexVertexVector(l)) < smallThresh) then
+                     vertexVertexVector(l) = 0.0_double
+                  endif
+               enddo
+#ifdef COMPVIS
+               write(61+currBZ,fmt="(a)") "vvVec.visible = True"
+               write(61+currBZ,advance="no",fmt="(a)") "vvVec.axis=vp.vector("
+               do l = 1, 3
+                  write(61+currBZ,advance="no",fmt=("(sp,e10.3)")) &
+                        & vertexVertexVector(l)
+                  if (l < 3) then
+                     write (61+currBZ,advance="no",fmt="(a)") ", "
+                  endif
+               enddo
+               write(61+currBZ,fmt="(a)") ")"
+               write(61+currBZ,advance="no",fmt="(a)") "vvVec.pos=vp.vector("
+               do l = 1, 3
+                  write(61+currBZ,advance="no",fmt="(sp,e10.3)") &
+                        & tempFacet%vertex(j-1)%coord(l)
+                  if (l < 3) then
+                     write (61+currBZ,advance="no",fmt="(a)") ", "
+                  endif
+               enddo
+               write(61+currBZ,fmt="(a)") ")"
+               write(61+currBZ,fmt="(a)") "vp.sleep(2.5)"
+#endif
+
+               ! Theta = acos ((A dot B) / |A| * |B|)
+               argument = sum(centerVector(:) * vertexVertexVector(:)) &
+                     & / sqrt(sum(centerVector(:)**2)) &
+                     & / sqrt(sum(vertexVertexVector(:)**2))
+               if (abs((abs(argument) - 1.0_double)) < smallThresh) then
+                  argument = sign(1.0_double, argument)
+               endif
+               currentAngle = acos(argument)
+
+               if (currentAngle > maxAngle) then
+                  maxAngle = currentAngle
+                  nextVertex = k
+               endif
+            enddo kloop
+
+            ! After reviewing all other vertices we know the next vertex.
+            call copyVertex(facetList(i)%vertex(nextVertex), &
+                  & tempFacet%vertex(j))
+
+            ! Store this vertex in the list of used vertices.
+            usedVertices(j) = nextVertex
+            
+         enddo ! j
+
+         ! Free the list of used vertices.
+         deallocate(usedVertices)
+
+         ! Now, all the vertices in the tempFacet are copied back over the
+         !   vertices in the facetList(i) facet.
+         do j = 1, facetList(i)%numVertices
+            call copyVertex(tempFacet%vertex(j), facetList(i)%vertex(j))
+         enddo
+
+      enddo ! i
+   end subroutine ringSortFacetVertices
+
+
+   subroutine makeUniqueEdgeList (currBZ)
+
+      implicit none
+
+      ! Define passed dummy variables.
+      integer :: currBZ
+
+      ! Define local variables.
+      integer :: i, j
+
+      ! Traverse the ring list of each facet and add the unique edges to the
+      !   list of unique edges.
+      do i = 1, numBZFacets(currBZ)
+
+         do j = 1, facetList(i)%numVertices - 1
+            call addUniqueEdge(facetList(i)%vertex(j), &
+                  & facetList(i)%vertex(j+1), currBZ)
+         enddo
+
+         ! Add the last edge from the final vertex back to the first one.
+         call addUniqueEdge(facetList(i)%vertex(facetList(i)%numVertices), &
+               & facetList(i)%vertex(1), currBZ)
+      enddo
+   end subroutine makeUniqueEdgeList
+
+
+   subroutine addUniqueEdge (vertex1, vertex2, currBZ)
+
+      implicit none
+
+      ! Define passed dummy parameters.
+      integer :: currBZ
+      type (vertexType) :: vertex1
+      type (vertexType) :: vertex2
+
+      ! Define local variables.
+      integer :: i, j
+      integer :: edgeAlreadyPresent
+
+      ! Traverse the current list of unique edges to see of the proposed
+      !   (vertex1, vertex2) pair is already listed. If so, then don't do
+      !   anything. If not, then add it!
+
+      ! Assume that the proposed edge is not present.
+      edgeAlreadyPresent = 0
+
+      do i = 1, numBZEdges(currBZ)
+
+         ! Check if the proposed edge matches this edge.
+         if ((verticesEqual(vertex1, uniqueEdgeList(i)%vertex(1)) .and. &
+               (verticesEqual(vertex2, uniqueEdgeList(i)%vertex(2)))) .or. &
+               (verticesEqual(vertex1, uniqueEdgeList(i)%vertex(2)) .and. &
+               (verticesEqual(vertex2, uniqueEdgeList(i)%vertex(1))))) then
+            edgeAlreadyPresent = 1
+            exit
+         endif
+      enddo
+
+      if (edgeAlreadyPresent == 0) then
+         numBZEdges(currBZ) = numBZEdges(currBZ) + 1
+         call copyVertex(vertex1, uniqueEdgeList(numBZEdges(currBZ))%vertex(1))
+         call copyVertex(vertex2, uniqueEdgeList(numBZEdges(currBZ))%vertex(2))
+      else
+         return
+      endif
+   end subroutine addUniqueEdge
+
+
    ! Take each plane (defined as being perpendicular to the members of the set
    !   of neighboring recipical lattice points) and compute the equation that
    !   defines it. Note: given a Cartesian coordinate vector with magnitudes
@@ -1077,6 +1284,10 @@ write (6,*) "g=", g, " numVertices=", facetList(g)%numVertices
                   latticePointXYZ(s,planeIndex) = (i*recipLattice(s,1) &
                                                 + j*recipLattice(s,2) &
                                                 + k*recipLattice(s,3))
+                  ! Eliminate machine rounding errors and any possible -0.0s.
+                  if (abs(latticePointXYZ(s,planeIndex)) < smallThresh) then
+                     latticePointXYZ(s,planeIndex) = 0.0_double
+                  endif
                enddo
 
                ! Store them and the solution (constant) term. Note that the
@@ -1151,7 +1362,7 @@ write (6,*) "g=", g, " numVertices=", facetList(g)%numVertices
                write (61+currBZ,fmt=formatString) planeIndex-1, &
 "].color = vp.color.red"
                !write (61+currBZ,fmt="(a)") "vp.sleep(3)"
-               write (61+currBZ,advance="no",fmt="(a)") "recip_point["
+               write (61+currBZ,advance="no",fmt="(a)") "bz_point["
                write (61+currBZ,fmt=formatString) planeIndex-1, &
 "].color = vp.color.white"
                write (61+currBZ,advance="no",fmt="(a)") "recip_plane["
@@ -1166,375 +1377,53 @@ write (6,*) "g=", g, " numVertices=", facetList(g)%numVertices
       enddo
 
    end subroutine makePlaneEquations
-!
-!
-!   subroutine makeFacetListUniqueVerticesAndFullEdgeList
-!
-!      implicit none
-!
-!      ! Define local variables.
-!      integer :: i, j, k, l, m
-!      integer :: found
-!      integer, dimension (2) :: sharedPlaneArrayIndex
-!      integer, dimension (2) :: iPlaneArrayIndex
-!      type (vertexType) :: tempVertex
-!      type (facetType) :: tempAllVerticesFacet
-!      type (facetType) :: tempUniqueVerticesFacet
-!
-!      ! Initialize the count of the number of facets and edges.
-!      numBZFacets(1) = 0
-!      numBZEdges(1) = 0
-!      numBZVertices(1) = 0
-!      numFullEdges = 0
-!
-!      ! Consider each plane and then determine how many vertices are associated
-!      !   with it. If the plane has at least three, then we record it as a
-!      !   facet. We also record that vertex into a unique vertex list.
-!      do i = 1, 26
-!write (52,*) "Iteration i=", i
-!call flush (52)
-!
-!         ! Initialize a count of the number of vertices for the current plane.
-!         tempAllVerticesFacet%numVertices = 0
-!         tempUniqueVerticesFacet%numVertices = 0
-!
-!         ! Consider each vertex in turn and determine if the current plane
-!         !   shows up in the list of planes that define it (the
-!         !   planeTripleIndex). If it does, then we record this vertex in the
-!         !   temp facet. It will be copied later if there are enough vertices
-!         !   associated with it.
-!         do j = 1, numFullVertices
-!            do k = 1, 3
-!               if (fullVertexList(j)%planeTripleIndex(k) == i) then
-!                  tempAllVerticesFacet%numVertices &
-!                        & = tempAllVerticesFacet%numVertices + 1
-!                  call copyVertex(tempAllVerticesFacet%vertex( &
-!                        & tempAllVerticesFacet%numVertices), &
-!                        & fullVertexList(j))
-!
-!                  ! Determine if this is a unique vertex to add to the facet.
-!                  found = 0
-!                  do l = 1, tempUniqueVerticesFacet%numVertices
-!                     if (vertexCoordsEqual(tempUniqueVerticesFacet%vertex(l), &
-!                           & fullVertexList(j))) then
-!                        found = l
-!                        exit
-!                     endif
-!                  enddo
-!                  if (found == 0) then
-!                     tempUniqueVerticesFacet%numVertices &
-!                           & = tempUniqueVerticesFacet%numVertices + 1
-!                     call copyVertex(tempUniqueVerticesFacet%vertex( &
-!                           & tempUniqueVerticesFacet%numVertices), &
-!                           & fullVertexList(j))
-!                  endif
-!                  exit
-!               endif
-!            enddo
-!         enddo
-!
-!         ! If this plane has < three unique vertices, it cannot be a facet.
-!         if (tempUniqueVerticesFacet%numVertices < 3) then
-!            cycle
-!         endif
-!
-!         ! At this point, we have found a plane with enough vertices.
-!write (52,*) "Found a plane with tempUniqueVerticesFacet%numVertices=", &
-!   & tempUniqueVerticesFacet%numVertices
-!call flush (52)
-!
-!         ! We know that there are at least three vertices that are unique.
-!         !   However, the specific vertices pulled from the list of all
-!         !   vertices may not be the "right" ones. Now that we know all of
-!         !   the vertices in this facet we will pull out the ones that form
-!         !   a ring and put them in the unique vertices list.
-!
-!         ! Find a pair of vertices that have two shared planes that are the
-!         !   same.
-!         do j = 1, numFullVertices
-!
-!            do k = j+1, numFullVertices
-!
-!               if (verticesConnected(fullVertexList(j),fullVertexList(k))) then
-!
-!               endif
-!            enddo
-!         enddo
-!
-!         ! Increment the count of facets in the system and record all of its
-!         !   relevant information.
-!         numBZFacets(1) = numBZFacets(1) + 1
-!         facetList(numBZFacets(1))%numVertices &
-!                  & = tempUniqueVerticesFacet%numVertices
-!
-!         ! All of the vertices in this facet will have plane "i" as one of
-!         !   the planes listed in their planeTripleIndex. What we want to
-!         !   do now though is reorder the vertices according to a ring-
-!         !   sorting so that they define the perimeter of a polygon. We will
-!         !   do that by finding the *other* common plane that pairs of
-!         !   vertices share. (I.e., all vertices share one common plane, but
-!         !   other planes can be present in *at most* two vertices. Those
-!         !   two vertices need to be placed in adjacent array indices.
-!         ! So, vertex one is assumed to be settled in the ring. Then, we
-!         !   will start adding vertices to the ring at index two and then we
-!         !   add index three, etc.
-!         call copyVertex(facetList(numBZFacets(1))%vertex(1), &
-!               & tempAllVerticesFacet%vertex(1))
-!         do j = 2, tempFacet%numVertices
-!            
-!            ! Find the vertex that has the same (non-"i") plane as the
-!            !   vertex before it (j-1).
-!            do k = j, tempFacet%numVertices
-!               
-!               ! Check each of the non-"i" planes in the planeTripleIndex of
-!               !   both vertices to find a match. We assume that no match
-!               !   will be found.
-!               sharedPlaneArrayIndex(:) = 0
-!               iPlaneArrayIndex(:) = 0
-!               do l = 1, 3 ! planeTripleIndex for the j loop
-!
-!                  ! Record the iPlaneIndex for the j vertex when we find it.
-!                  !   Then cycle, because the iPlaneIndex is not the plane
-!                  !   we want to match.
-!                  if (tempFacet%vertex(j-1)%planeTripleIndex(l) == i) then
-!                     iPlaneArrayIndex(1) = l
-!                     cycle
-!                  endif
-!
-!                  do m = 1, 3 ! planeTripleIndex for the k loop
-!
-!                     ! Record the iPlaneIndex for the k vertex. Then cycle
-!                     !   because we will never need to match the iPlaneIndex
-!                     if (tempFacet%vertex(k)%planeTripleIndex(m) == i) then
-!                        iPlaneArrayIndex(2) = m
-!                        cycle
-!                     endif
-!
-!                     ! Look for a match and turn on a flag if we find it.
-!                     !   If a match is found, then also record the edge
-!                     !   that it defines. Note that we don't exit because
-!                     !   we might still need to find the iPlaneIndex
-!                     if (tempFacet%vertex(j-1)%planeTripleIndex(l) == &
-!                           & tempFacet%vertex(k)%planeTripleIndex(m)) then
-!                        sharedPlaneArrayIndex(1) = l
-!                        sharedPlaneArrayIndex(2) = m
-!                     endif
-!                  enddo
-!               enddo
-!
-!               ! If we didn't find a match, then go to the next vertex. We
-!               !   only need to test one of the array index values.
-!               if (sharedPlaneArrayIndex(1) == 0) then
-!                  cycle
-!               endif
-!
-!               ! At this point we can say that we found a match. So, we
-!               !   process it.
-!
-!               ! Record the edge in the fullEdgeList.
-!               numFullEdges = numFullEdges + 1
-!
-!               call copyVertex(fullEdgeList(numFullEdges)%vertex(1), &
-!                     & tempFacet%vertex(j-1))
-!               call copyVertex(fullEdgeList(numFullEdges)%vertex(2), &
-!                     & tempFacet%vertex(k))
-!
-!               ! Store the plane indices of the two planes that define the
-!               !   two vertices of this edge.
-!               fullEdgeList(numFullEdges)%sharedPlaneIndex(1) = i
-!               fullEdgeList(numFullEdges)%sharedPlaneIndex(2) &
-!                     & = tempFacet%vertex(j-1)%planeTripleIndex(l)
-!
-!               ! Store the array indices of the planeTripleIndex associated
-!               !    with the vertices' planes.
-!               fullEdgeList(numFullEdges) &
-!                     & %sharedPlaneTripleIndexIndices(1,1) &
-!                     & = sharedPlaneArrayIndex(1)
-!               fullEdgeList(numFullEdges) &
-!                     & %sharedPlaneTripleIndexIndices(1,2) &
-!                     & = iPlaneArrayIndex(1)
-!               fullEdgeList(numFullEdges) &
-!                     & %sharedPlaneTripleIndexIndices(2,1) &
-!                     & = sharedPlaneArrayIndex(2)
-!               fullEdgeList(numFullEdges) &
-!                     & %sharedPlaneTripleIndexIndices(2,2) &
-!                     & = iPlaneArrayIndex(2)
-!
-!               ! We can now put the vertex that defines the next point on
-!               !   the ring into its correct position in the facet vertex
-!               !   array.
-!               call copyVertex(facetList(numBZFacets(1))%vertex(j), &
-!                     & tempFacet%vertex(k))
-!               call copyVertex(tempVertex, tempFacet%vertex(j))
-!               call copyVertex(tempFacet%vertex(j), tempFacet%vertex(k))
-!               call copyVertex(tempFacet%vertex(k), tempVertex)
-!
-!               ! Once stored, we can exit this loop.
-!               exit
-!            enddo
-!         enddo
-!
-!         ! Add each of the vertices to the list of unique vertices.
-!         do j = 1, facetList(numBZFacets(1))%numVertices
-!            found = 0
-!            do k = 1, numBZVertices(1)
-!               if (verticesEqual(uniqueVertexList(k), &
-!                        & facetList(numBZFacets(1))%vertex(j))) then
-!                  found = k
-!               endif
-!            enddo
-!            if (found == 0) then
-!               numBZVertices(1) = numBZVertices(1) + 1
-!               call copyVertex(uniqueVertexList(numBZVertices(1)), &
-!                     & facetList(numBZFacets(1))%vertex(j))
-!            endif
-!         enddo
-!      enddo
-!
-!   end subroutine makeFacetListUniqueVerticesAndFullEdgeList
-!
-!
-!   function verticesEqual(vertex1, vertex2)
-!
-!      implicit none
-!
-!      ! Define dummy parameters.
-!      type (vertexType) :: vertex1, vertex2
-!
-!      ! Define the return variable.
-!      logical :: verticesEqual
-!
-!      ! Define local variables.
-!      integer :: i, j
-!      real (kind=double) :: threshold
-!
-!      ! Assume that the two vertices are equal and define the threshold.
-!      verticesEqual = .true.
-!      threshold = 0.000001
-!
-!      do i = 1, 3
-!         if (abs(vertex1%coord(i) - vertex2%coord(i)) > threshold) then
-!            verticesEqual = .false.
-!            return
-!         endif
-!
-!         if (vertex1%planeTripleIndex(i) /= vertex2%planeTripleIndex(i)) then
-!            verticesEqual = .false.
-!            return
-!         endif
-!      enddo
-!
-!   end function verticesEqual
-!
-!
-!   function vertexCoordsEqual(vertex1, vertex2)
-!
-!      implicit none
-!
-!      ! Define dummy parameters.
-!      type (vertexType) :: vertex1, vertex2
-!
-!      ! Define the return variable.
-!      logical :: vertexCoordsEqual
-!
-!      ! Define local variables.
-!      integer :: i, j
-!      real (kind=double) :: threshold
-!
-!      ! Assume that the two vertices are equal and define the threshold.
-!      verticesEqual = .true.
-!      threshold = 0.000001
-!
-!      do i = 1, 3
-!         if (abs(vertex1%coord(i) - vertex2%coord(i)) > threshold) then
-!            verticesEqual = .false.
-!            return
-!         endif
-!      enddo
-!
-!   end function vertexCoordsEqual
-!
-!
-!   subroutine copyVertex(vertex1, vertex2)
-!
-!      implicit none
-!
-!      ! Define dummy parameters.
-!      type (vertexType) :: vertex1, vertex2
-!
-!      ! Perform the copy.
-!      vertex1%coord(:) = vertex2%coord(:)
-!      vertex1%planeTripleIndex(:) = vertex2%planeTripleIndex(:)
-!
-!   end subroutine copyVertex
-!
-!   
-!   subroutine makeUniqueEdgeList
-!
-!      implicit none
-!
-!      ! Define local variables.
-!      integer :: i, j
-!      integer :: found
-!
-!      do i = 1, numFullEdges
-!         found = 0
-!         do j = 1, numBZEdges(1)
-!            if (edgesEqual(fullEdgeList(i), uniqueEdgeList(j))) then
-!               found = 1
-!               exit
-!            endif
-!         enddo
-!
-!         if (found == 0) then
-!            numBZEdges(1) = numBZEdges(1) + 1
-!            call copyEdge(uniqueEdgeList(numBZEdges(1)), fullEdgeList(i))
-!         endif
-!      enddo
-!   end subroutine makeUniqueEdgeList
-!
-!
-!   function edgesEqual (edge1, edge2)
-!
-!      implicit none
-!
-!      ! Define dummy parameters.
-!      type (edgeType) :: edge1, edge2
-!
-!      ! Define the return variable.
-!      logical :: edgesEqual
-!
-!      ! Define local variables.
-!      integer :: i, j
-!      real (kind=double) :: threshold
-!
-!      if ((verticesEqual(edge1%vertex(1), edge2%vertex(1)) .and. &
-!            & verticesEqual(edge1%vertex(2), edge2%vertex(2))) .or. &
-!            & (verticesEqual(edge1%vertex(1), edge2%vertex(2)) .and. &
-!            & verticesEqual(edge1%vertex(2), edge2%vertex(1)))) then
-!         edgesEqual = .true.
-!      else
-!         edgesEqual = .false.
-!      endif
-!
-!   end function edgesEqual
-!
-!
-!   subroutine copyEdge(edge1, edge2)
-!
-!      implicit none
-!
-!      ! Define dummy parameters.
-!      type (edgeType) :: edge1, edge2
-!
-!      call copyVertex(edge1%vertex(1), edge2%vertex(1))
-!      call copyVertex(edge1%vertex(2), edge2%vertex(2))
-!
-!      edge1%sharedPlaneIndex(:) = edge2%sharedPlaneIndex(:)
-!      edge1%sharedPlaneTripleIndexIndices(:,:) &
-!            & = edge2%sharedPlaneTripleIndexIndices(:,:)
-!
-!   end subroutine copyEdge
+
+
+   function verticesEqual(vertex1, vertex2)
+ 
+      implicit none
+ 
+      ! Define dummy parameters.
+      type (vertexType) :: vertex1, vertex2
+ 
+      ! Define the return variable.
+      logical :: verticesEqual
+ 
+      ! Define local variables.
+      integer :: i, j
+      real (kind=double) :: threshold
+ 
+      ! Assume that the two vertices are equal and define the threshold.
+      verticesEqual = .true.
+      threshold = 0.000001
+ 
+      do i = 1, 3
+         if (abs(vertex1%coord(i) - vertex2%coord(i)) > threshold) then
+            verticesEqual = .false.
+            return
+         endif
+ 
+         if (vertex1%planeTripleIndex(i) /= vertex2%planeTripleIndex(i)) then
+            verticesEqual = .false.
+            return
+         endif
+      enddo
+ 
+   end function verticesEqual
+
+
+   subroutine copyVertex(vertex1, vertex2)
+
+      implicit none
+
+      ! Define dummy parameters.
+      type (vertexType) :: vertex1, vertex2
+
+      ! Perform the copy.
+      vertex2%coord(:) = vertex1%coord(:)
+      vertex2%planeTripleIndex(:) = vertex1%planeTripleIndex(:)
+
+   end subroutine copyVertex
 
 
    subroutine printBrillouinZones (maxBZ)
@@ -1547,68 +1436,22 @@ write (6,*) "g=", g, " numVertices=", facetList(g)%numVertices
 
       ! Define local variables.
       integer :: i, j, k, l, m ! Loop indices.
-      integer :: numTotalVertices
+      real (kind=double) :: scaleFactor
       real (kind=double), dimension(3) :: fractABC
       character*25 :: filename
+
+      scaleFactor = 100.0_double
 
       ! Step through each of the Brillouin zones we will make.
       do i = 1, maxBZ
 
-!         ! Print all of the vertices.
-!         write (51+i,*) "Vertices"
-!         do j = 1, numBZVertices(i)
-!            write (51+i,*) uniqueVertexList(j)%coord(:)
-!         enddo
-!
-!         ! Print all of the edges.
-!         write (51+i,*) "Edges"
-!         do j = 1, numBZEdges(i)
-!            write (51+i,*) uniqueEdgeList(j)%vertex(1)%coord(:)
-!            write (51+i,*) uniqueEdgeList(j)%vertex(2)%coord(:)
-!         enddo
-
-!write (51+i,fmt="(a15)") "xs = np.array(["
-!do j = 1, numBZFacets(i)
-!   do k = 1, facetList(j)%numVertices - 1
-!      write (51+i,advance="NO",fmt="(f16.12, a2)") &
-!            & facetList(j)%vertex(k)%coord(1), ", "
-!   enddo
-!      write (51+i,advance="NO",fmt="(f16.12, a2)") &
-!            & facetList(j)%vertex(facetList(j)%numVertices)%coord(1), ", "
-!enddo
-!write (51+i,fmt="(a2)") "])"
-!
-!write (51+i,fmt="(a15)") "ys = np.array(["
-!do j = 1, numBZFacets(i)
-!   do k = 1, facetList(j)%numVertices - 1
-!      write (51+i,advance="NO",fmt="(f16.12, a2)") &
-!            & facetList(j)%vertex(k)%coord(2), ", "
-!   enddo
-!      write (51+i,advance="NO",fmt="(f16.12, a2)") &
-!            & facetList(j)%vertex(facetList(j)%numVertices)%coord(2), ", "
-!enddo
-!write (51+i,fmt="(a2)") "])"
-!
-!write (51+i,fmt="(a15)") "zs = np.array(["
-!do j = 1, numBZFacets(i)
-!   do k = 1, facetList(j)%numVertices - 1
-!      write (51+i,advance="NO",fmt="(f16.12, a2)") &
-!            & facetList(j)%vertex(k)%coord(3), ", "
-!   enddo
-!      write (51+i,advance="NO",fmt="(f16.12, a2)") &
-!            & facetList(j)%vertex(facetList(j)%numVertices)%coord(3), ", "
-!enddo
-!write (51+i,fmt="(a6)") "])"
-
          ! Print all of the facets.
-write (6,*) "numFacets: ", numBZFacets(i)
          write (51+i,fmt="(a9)") "faces = ["
-         numTotalVertices = 0
          do j = 1, numBZFacets(i)
-write (6,*) "numVertices: ", j, facetList(j)%numVertices
             write (51+i,advance="NO",fmt="(a1)") "["
             do k = 1, facetList(j)%numVertices
-               numTotalVertices = numTotalVertices + 1
+               facetList(j)%vertex(k)%coord(:) = &
+                     & facetList(j)%vertex(k)%coord(:) * scaleFactor
                write (51+i,advance="NO",fmt="(a1)") "["
                write (51+i,advance="NO",fmt="(f16.12, a2)") &
                      & facetList(j)%vertex(k)%coord(1), ", "
@@ -1616,7 +1459,7 @@ write (6,*) "numVertices: ", j, facetList(j)%numVertices
                      & facetList(j)%vertex(k)%coord(2), ", "
                write (51+i,advance="NO",fmt="(f16.12, a3)") &
                      & facetList(j)%vertex(k)%coord(3), "], "
-            enddo
+            enddo ! k
 
             ! Write the first vertex again to close the polygon
             write (51+i,advance="NO",fmt="(a1)") "["
@@ -1624,7 +1467,7 @@ write (6,*) "numVertices: ", j, facetList(j)%numVertices
                   & facetList(j)%vertex(1)%coord(1), ", "
             write (51+i,advance="NO",fmt="(f16.12, a2)") &
                   & facetList(j)%vertex(1)%coord(2), ", "
-            write (51+i,advance="NO",fmt="(f16.12, a3)") &
+            write (51+i,advance="NO",fmt="(f16.12, a1)") &
                   & facetList(j)%vertex(1)%coord(3), "]"
 
             if (j < numBZFacets(i)) then
@@ -1632,70 +1475,58 @@ write (6,*) "numVertices: ", j, facetList(j)%numVertices
             else
                write (51+i,fmt="(a2)") "]]"
             endif
-         enddo
+         enddo ! j numBZFacets(i)
 
-         write (filename,fmt="(a9)") "model.xyz"
-         open (unit=55, file=filename, form='formatted', status='new')
+         ! Print all of the edges.
+         write (51+i,fmt="(a9)") "edges = ["
+         do j = 1, numBZEdges(i)
+            uniqueEdgeList(j)%vertex(1)%coord(:) = &
+                  & uniqueEdgeList(j)%vertex(1)%coord(:) * scaleFactor
+            uniqueEdgeList(j)%vertex(2)%coord(:) = &
+                  & uniqueEdgeList(j)%vertex(2)%coord(:) * scaleFactor
 
-         write (55,fmt="(i5)") 26
-         write (55,fmt="(a)") "TitleTitle"
-         do j = 1, 26
-            write (55,*) "C ", planeEquation(1:3,j) * 10.0
-         enddo
+            write (51+i,advance="NO",fmt="(a2)") "[["
+            write (51+i, advance="NO",fmt="(f16.12, a2)") &
+                  & uniqueEdgeList(j)%vertex(1)%coord(1), ", "
+            write (51+i, advance="NO",fmt="(f16.12, a2)") &
+                  & uniqueEdgeList(j)%vertex(1)%coord(2), ", "
+            write (51+i, advance="NO",fmt="(f16.12, a3)") &
+                  & uniqueEdgeList(j)%vertex(1)%coord(3), "], "
+            write (51+i,advance="NO",fmt="(a1)") "["
+            write (51+i, advance="NO",fmt="(f16.12, a2)") &
+                  & uniqueEdgeList(j)%vertex(2)%coord(1), ", "
+            write (51+i, advance="NO",fmt="(f16.12, a2)") &
+                  & uniqueEdgeList(j)%vertex(2)%coord(2), ", "
+            write (51+i, advance="NO",fmt="(f16.12)") &
+                  & uniqueEdgeList(j)%vertex(2)%coord(3)
 
-         write (55,fmt="(i5)") numTotalVertices
-         write (55,fmt="(a)") "TitleTitle"
-!         do j = 1, numBZFacets(i)
-         do j = 1, 1
-            do k = 1, facetList(j)%numVertices
-               write (55,*) "B ", facetList(j)%vertex(k)%coord(:)*10.0_double
-            enddo
-         enddo
-   
+            if (j < numBZEdges(i)) then
+               write (51+i,fmt="(a4)") "]], "
+            else
+               write (51+i,fmt="(a3)") "]]]"
+            endif
+         enddo ! j numBZEdges(i)
 
-!         write (filename,fmt="(a6)") "BZ.cif"
-!         open (unit=55, file=filename, form='formatted', status='new')
-!   
-!         write (55,fmt="(a)") "data_recipcell"
-!         write (55,fmt="(a)") "_symmetry_cell_setting triclinic"
-!         write (55,fmt="(a)") "_symmetry_space_group_name_H-M 'P 1'"
-!         write (55,fmt="(a)") "loop_"
-!         write (55,fmt="(a)") "   _symmetry_equiv_pos_as_xyz"
-!         write (55,fmt="(a)") "              X,Y,Z"
-!         write (55,fmt="(a, f16.8)") "_cell_length_a ", recipMag(1)*10.0_double
-!         write (55,fmt="(a, f16.8)") "_cell_length_b ", recipMag(2)*10.0_double
-!         write (55,fmt="(a, f16.8)") "_cell_length_c ", recipMag(3)*10.0_double
-!         write (55,fmt="(a, f16.8)") "_cell_angle_alpha ", recipAngleDeg(1)
-!         write (55,fmt="(a, f16.8)") "_cell_angle_beta ", recipAngleDeg(2)
-!         write (55,fmt="(a, f16.8)") "_cell_angle_gamma ", recipAngleDeg(3)
-!         write (55,fmt="(a)") "loop_"
-!         write (55,fmt="(a)") "   _atom_site_label"
-!         write (55,fmt="(a)") "   _atom_site_type_symbol"
-!         write (55,fmt="(a)") "   _atom_site_fract_x"
-!         write (55,fmt="(a)") "   _atom_site_fract_y"
-!         write (55,fmt="(a)") "   _atom_site_fract_z"
-!!write (55,*) "numFacets: ", numBZFacets(i)
-!         do j = 1, numBZFacets(i)
-!!write (55,*) "numVertices: ", j, facetList(j)%numVertices
-!            do k = 1, facetList(j)%numVertices
-!               ! Compute the fractional abc coordinate.
-!               do l = 1, 3 ! abc
-!                  fractABC(l) = 0
-!                  do m = 1, 3 ! xyz
-!                     fractABC(l) = fractABC(l) + &
-!                           & facetList(j)%vertex(k)%coord(m) &
-!                           & * recipLattice(m,l) &
-!                           & * 2.0_double * pi 
-!!                           & / 2.0_double / pi / recipVolume
-!!         recipLattice(:,i) = 2.0_double * Pi * recipLattice(:,i) / realVolume
-!                  enddo
-!               enddo
-!               write (55,fmt="(a4,3f16.8)") "C 1 ", fractABC(:)
-!!               write (55,*) "C 1 ", facetList(j)%vertex(k)%coord(:)*10.0_double
-!            enddo
-!         enddo
-      enddo
+         ! Print all of the vertices
+         write (51+i,fmt="(a12)") "vertices = ["
+         do j = 1, numBZVertices(i)
+            uniqueVertexList(j)%coord(:) = &
+                  & uniqueVertexList(j)%coord(:) * scaleFactor
+            write (51+i,advance="NO",fmt="(a1)") "["
+            write (51+i,advance="NO",fmt="(f16.12, a2)") &
+                  & uniqueVertexList(j)%coord(1), ", "
+            write (51+i,advance="NO",fmt="(f16.12, a2)") &
+                  & uniqueVertexList(j)%coord(2), ", "
+            write (51+i,advance="NO",fmt="(f16.12)") &
+                  & uniqueVertexList(j)%coord(3)
 
+            if (j < numBZVertices(i)) then
+               write (51+i,fmt="(a3)") "], "
+            else
+               write (51+i,fmt="(a2)") "]]"
+            endif
+         enddo ! j numBZEdges(i)
+      enddo ! i maxBZ
 
    end subroutine printBrillouinZones
 
@@ -2081,7 +1912,7 @@ module KPointMesh_O
       integer, intent (in) :: fileUnit
 
       ! Define local variables.
-      integer :: i
+      integer :: i, j
 
       write (fileUnit,fmt="(a17)") "NUM_BLOCH_VECTORS"
       write (fileUnit,fmt="(i9.9)") numFoldedKPoints
@@ -2091,6 +1922,17 @@ module KPointMesh_O
          write (fileUnit,fmt="(i5,2x,f20.16,3(2x,f12.8))") i,kPointWeight(i),&
                & abcFoldedKPoints(:,i)
       enddo
+
+!      if (doBrillouinZone == 1) then
+!         do i = 1, maxBZ
+!            write (fileUnit+i,fmt="(a18)") "folded_kpoints = ["
+!            do j = 1, numFoldedKPoints
+!               write (fileUnit+i,advance="no",fmt="(a1)") "["
+!               do k = 1, 3
+!               enddo
+!            enddo
+!         enddo
+!      endif
    end subroutine printKPoints
 
 end module KPointMesh_O
@@ -2246,6 +2088,9 @@ program makekpoints
       call printBrillouinZones(doBrillouinZone)
    endif
 
+   ! Clean up any data allocations.
+   call cleanUp
+
    close (50)
    close (51)
    do i = 1, doBrillouinZone
@@ -2254,5 +2099,19 @@ program makekpoints
       close (61+i)
 #endif
    enddo
+
+   contains
+
+   subroutine cleanUp
+
+      ! Import necessary modules.
+      use Lattice_O
+
+      if (doBrillouinZone > 0) then
+         deallocate (numBZVertices)
+         deallocate (numBZEdges)
+         deallocate (numBZFacets)
+      endif
+   end subroutine cleanUp
 
 end program makekpoints
