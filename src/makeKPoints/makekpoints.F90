@@ -1,3 +1,50 @@
+module CommandLine_O
+
+   use O_Kinds
+
+   ! Make sure no funny variables are defined.
+   implicit none
+
+   ! Integer to track which number command line argument is to be read in next.
+   integer :: nextArg
+
+   ! Flags to control the supplementary files to output.
+   integer :: doBrillouinZone
+   real (kind=double) :: scaleFactor
+
+   contains
+
+   subroutine parseCommandLine
+   
+      ! Make sure that there are no accidental variable declarations.
+      implicit none
+   
+      ! Define the local variables used for reading.
+      character*25 :: commandBuffer
+   
+      ! Make sure that the first command line parameter to be read is #1.
+      nextArg = 1
+   
+      ! Initialize the command line parameters
+      doBrillouinZone = 0
+      scaleFactor = 10.0_double
+   
+      ! Get the command line argument that flags whether or not to output
+      !   descriptive information about the Brillouin zone. The number supplied
+      !   is the highest Brillouin zone number to analyze. (If a 1 is given,
+      !   then we analyze the first BZ. If a 2 is given, then we analyze the
+      !   first and second BZ. If a 3 is given, then we do the 1st, 2nd, and
+      !   3rd. Etc.)
+      call getarg (nextArg, commandBuffer)
+      nextArg = nextArg + 1
+      read (commandBuffer,*) doBrillouinZone
+
+   end subroutine parseCommandLine
+
+end module CommandLine_O
+
+
+
 module PointGroupOperations_O
 
    ! Import necessary modules
@@ -171,20 +218,8 @@ module Lattice_O
 
    type edgeType
       type (vertexType), dimension (2) :: vertex
-!      integer, dimension (2) :: sharedPlaneIndex ! The two vertices are made
-!            ! from the same two planes. Here, we hold the plane index numbers
-!            ! of those two planes.
-!      integer, dimension (2,2) :: sharedPlaneTripleIndexIndices ! Each of the
-!            ! plane index numbers is also held in the vertex as one of its
-!            ! planeTripleIndex numbers. Here, we hold the array index number
-!            ! (1, 2, or 3) that links the sharePlaneIndex number to their
-!            ! positions inside the vertex%planeTripleIndex array. (1,:) links
-!            ! sharedPlaneIndex(1) to vertices 1 and 2. (2,:) links the
-!            ! sharedPlaneIndex(2) to vertices 1 and 2.
    end type edgeType
-!   type (edgeType), dimension (1000) :: fullEdgeList
    type (edgeType), dimension (1000) :: uniqueEdgeList
-!   integer :: numFullEdges
 
    type facetType
       integer :: pointID
@@ -284,6 +319,195 @@ module Lattice_O
       recipAngleDeg(3) = recipAngle(3) * 180.0_double / pi
 
    end subroutine computeLatticeData
+
+
+   subroutine printLatticeData (maxBZ)
+
+      use CommandLine_O
+
+      implicit none
+
+      ! Define passed parameters.
+      integer :: maxBZ
+
+      ! Define local variables.
+      integer :: h, i, j, k, l
+      integer :: vertexCount
+      type (vertexType), dimension (8) :: recipLattVertices
+      type (edgeType), dimension(12) :: recipLattEdges
+      type (facetType), dimension(6) :: recipLattFaces
+
+      ! Create the list of vertices
+      vertexCount = 0
+      do i = 0, 1
+      do j = 0, 1
+      do k = 0, 1
+         vertexCount = vertexCount + 1
+         do l = 1, 3
+            recipLattVertices(vertexCount)%coord(l) = &
+                  & i * recipLattice(l,1) + &
+                  & j * recipLattice(l,2) + &
+                  & k * reciplattice(l,3)
+         enddo
+         recipLattVertices(vertexCount)%coord(:) = &
+               & recipLattVertices(vertexCount)%coord(:) * scaleFactor
+      enddo
+      enddo
+      enddo
+
+      ! Create the list of edges.
+      call copyVertex(recipLattVertices(1),recipLattEdges(1)%vertex(1))
+      call copyVertex(recipLattVertices(2),recipLattEdges(1)%vertex(2))
+      call copyVertex(recipLattVertices(1),recipLattEdges(2)%vertex(1))
+      call copyVertex(recipLattVertices(3),recipLattEdges(2)%vertex(2))
+      call copyVertex(recipLattVertices(2),recipLattEdges(3)%vertex(1))
+      call copyVertex(recipLattVertices(4),recipLattEdges(3)%vertex(2))
+      call copyVertex(recipLattVertices(3),recipLattEdges(4)%vertex(1))
+      call copyVertex(recipLattVertices(4),recipLattEdges(4)%vertex(2))
+      call copyVertex(recipLattVertices(5),recipLattEdges(5)%vertex(1))
+      call copyVertex(recipLattVertices(6),recipLattEdges(5)%vertex(2))
+      call copyVertex(recipLattVertices(5),recipLattEdges(6)%vertex(1))
+      call copyVertex(recipLattVertices(7),recipLattEdges(6)%vertex(2))
+      call copyVertex(recipLattVertices(6),recipLattEdges(7)%vertex(1))
+      call copyVertex(recipLattVertices(8),recipLattEdges(7)%vertex(2))
+      call copyVertex(recipLattVertices(7),recipLattEdges(8)%vertex(1))
+      call copyVertex(recipLattVertices(8),recipLattEdges(8)%vertex(2))
+      call copyVertex(recipLattVertices(2),recipLattEdges(9)%vertex(1))
+      call copyVertex(recipLattVertices(6),recipLattEdges(9)%vertex(2))
+      call copyVertex(recipLattVertices(4),recipLattEdges(10)%vertex(1))
+      call copyVertex(recipLattVertices(8),recipLattEdges(10)%vertex(2))
+      call copyVertex(recipLattVertices(1),recipLattEdges(11)%vertex(1))
+      call copyVertex(recipLattVertices(5),recipLattEdges(11)%vertex(2))
+      call copyVertex(recipLattVertices(3),recipLattEdges(12)%vertex(1))
+      call copyVertex(recipLattVertices(7),recipLattEdges(12)%vertex(2))
+
+
+      ! Create the list of faces.
+      recipLattFaces(1)%numVertices = 4
+      call copyVertex(recipLattVertices(1),recipLattFaces(1)%vertex(1))
+      call copyVertex(recipLattVertices(2),recipLattFaces(1)%vertex(2))
+      call copyVertex(recipLattVertices(4),recipLattFaces(1)%vertex(3))
+      call copyVertex(recipLattVertices(3),recipLattFaces(1)%vertex(4))
+      recipLattFaces(2)%numVertices = 4
+      call copyVertex(recipLattVertices(1),recipLattFaces(2)%vertex(1))
+      call copyVertex(recipLattVertices(2),recipLattFaces(2)%vertex(2))
+      call copyVertex(recipLattVertices(6),recipLattFaces(2)%vertex(3))
+      call copyVertex(recipLattVertices(5),recipLattFaces(2)%vertex(4))
+      recipLattFaces(3)%numVertices = 4
+      call copyVertex(recipLattVertices(1),recipLattFaces(3)%vertex(1))
+      call copyVertex(recipLattVertices(3),recipLattFaces(3)%vertex(2))
+      call copyVertex(recipLattVertices(7),recipLattFaces(3)%vertex(3))
+      call copyVertex(recipLattVertices(5),recipLattFaces(3)%vertex(4))
+      recipLattFaces(4)%numVertices = 4
+      call copyVertex(recipLattVertices(2),recipLattFaces(4)%vertex(1))
+      call copyVertex(recipLattVertices(4),recipLattFaces(4)%vertex(2))
+      call copyVertex(recipLattVertices(8),recipLattFaces(4)%vertex(3))
+      call copyVertex(recipLattVertices(6),recipLattFaces(4)%vertex(4))
+      recipLattFaces(5)%numVertices = 4
+      call copyVertex(recipLattVertices(3),recipLattFaces(5)%vertex(1))
+      call copyVertex(recipLattVertices(4),recipLattFaces(5)%vertex(2))
+      call copyVertex(recipLattVertices(8),recipLattFaces(5)%vertex(3))
+      call copyVertex(recipLattVertices(7),recipLattFaces(5)%vertex(4))
+      recipLattFaces(6)%numVertices = 4
+      call copyVertex(recipLattVertices(5),recipLattFaces(6)%vertex(1))
+      call copyVertex(recipLattVertices(6),recipLattFaces(6)%vertex(2))
+      call copyVertex(recipLattVertices(8),recipLattFaces(6)%vertex(3))
+      call copyVertex(recipLattVertices(7),recipLattFaces(6)%vertex(4))
+
+
+      ! Print the reciprocal lattice vertices.
+      do h = 1, maxBZ
+         write (51+h,fmt="(a26)") "recip_lattice_vertices = ["
+         do i = 1, 8
+            write (51+h,advance="NO",fmt="(a1)") "["
+            write (51+h,advance="NO",fmt="(f16.12, a2)") &
+                  & recipLattVertices(i)%coord(1), ", "
+            write (51+h,advance="NO",fmt="(f16.12, a2)") &
+                  & recipLattVertices(i)%coord(2), ", "
+            write (51+h,advance="NO",fmt="(f16.12)") &
+                  & recipLattVertices(i)%coord(3)
+            if (i < 8) then
+               write (51+h,fmt="(a3)") "],"
+            else
+               write (51+h,fmt="(a2)") "]]"
+            endif
+         enddo
+      enddo
+
+      ! Print the reciprocal lattice edges.
+      do h = 1, maxBZ
+         write (51+h,fmt="(a23)") "recip_lattice_edges = ["
+         do i = 1, 12
+            write (51+h,advance="NO",fmt="(a2)") "[["
+            write (51+h,advance="NO",fmt="(f16.12, a2)") &
+               & recipLattEdges(i)%vertex(1)%coord(1), ", "
+            write (51+h,advance="NO",fmt="(f16.12, a2)") &
+               & recipLattEdges(i)%vertex(1)%coord(2), ", "
+            write (51+h,advance="NO",fmt="(f16.12, a3)") &
+               & recipLattEdges(i)%vertex(1)%coord(3), "], "
+            write (51+h,advance="NO",fmt="(a1)") "["
+            write (51+h,advance="NO",fmt="(f16.12, a2)") &
+               & recipLattEdges(i)%vertex(2)%coord(1), ", "
+            write (51+h,advance="NO",fmt="(f16.12, a2)") &
+               & recipLattEdges(i)%vertex(2)%coord(2), ", "
+            write (51+h,advance="NO",fmt="(f16.12)") &
+               & recipLattEdges(i)%vertex(2)%coord(3)
+
+            if (i < 12) then
+               write (51+h,fmt="(a4)") "]], "
+            else
+               write (51+h,fmt="(a3)") "]]]"
+            endif
+         enddo
+      enddo
+
+      ! Print the reciprocal lattice faces.
+      do h = 1, maxBZ
+         write (51+h,fmt="(a23)") "recip_lattice_faces = ["
+         do i = 1, 6
+            write (51+h,advance="NO",fmt="(a1)") "["
+            do j = 1, recipLattFaces(i)%numVertices
+               write (51+h,advance="NO",fmt="(a1)") "["
+               write (51+h,advance="NO",fmt="(f16.12, a2)") &
+                     & recipLattFaces(i)%vertex(j)%coord(1), ", "
+               write (51+h,advance="NO",fmt="(f16.12, a2)") &
+                     & recipLattFaces(i)%vertex(j)%coord(2), ", "
+               write (51+h,advance="NO",fmt="(f16.12, a3)") &
+                     & recipLattFaces(i)%vertex(j)%coord(3), "], "
+            enddo
+
+            ! Write the first vertex again to close the polygon.
+            write (51+h,advance="NO",fmt="(a1)") "["
+            write (51+h,advance="NO",fmt="(f16.12, a2)") &
+                  & recipLattFaces(i)%vertex(1)%coord(1), ", "
+            write (51+h,advance="NO",fmt="(f16.12, a2)") &
+                  & recipLattFaces(i)%vertex(1)%coord(2), ", "
+            write (51+h,advance="NO",fmt="(f16.12, a1)") &
+                  & recipLattFaces(i)%vertex(1)%coord(3), "]"
+
+            if (i < 6) then
+               write (51+h,fmt="(a2)") "],"
+            else
+               write (51+h,fmt="(a2)") "]]"
+            endif
+         enddo
+      enddo
+   end subroutine printLatticeData
+
+
+   subroutine copyVertex(vertex1, vertex2)
+
+      implicit none
+
+      ! Define dummy parameters.
+      type (vertexType) :: vertex1, vertex2
+
+      ! Perform the copy.
+      vertex2%coord(:) = vertex1%coord(:)
+      vertex2%planeTripleIndex(:) = vertex1%planeTripleIndex(:)
+
+   end subroutine copyVertex
+
 
 end module Lattice_O
 
@@ -548,16 +772,16 @@ module BrillouinZones_O
       numBZFacets(currBZ) = 0
       do i = 1, 26
 
-!#ifdef COMPVIS
-!         ! Prepare a format string for array indices.
-!         if (i < 11) then
-!            write (formatString_i,fmt="(a)") "(i0.1,a)"
-!         else
-!            write (formatString_i,fmt="(a)") "(i0.2,a)"
-!         endif
-!         write (61+currBZ,advance="no",fmt="(a)") "bz_point["
-!         write (61+currBZ,fmt=formatString_i) i-1, "].color = vp.color.red"
-!#endif
+#ifdef COMPVIS
+         ! Prepare a format string for array indices.
+         if (i < 11) then
+            write (formatString_i,fmt="(a)") "(i0.1,a)"
+         else
+            write (formatString_i,fmt="(a)") "(i0.2,a)"
+         endif
+         write (61+currBZ,advance="no",fmt="(a)") "bz_point["
+         write (61+currBZ,fmt=formatString_i) i-1, "].color = vp.color.blue"
+#endif
          ! Determine if the current lattice point, i, (that defines some plane)
          !   also happens to lie *on* a plane defined by some other lattice
          !   point, j. If so, then the plane defined by the current lattice
@@ -607,12 +831,12 @@ module BrillouinZones_O
          !   between it and the origin that passes through any other plane?)
          if (onOtherPlane == 0) then
 
-!#ifdef COMPVIS
-!            write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
-!            write (61+currBZ,fmt=formatString_i) i-1, "].visible = True"
-!            write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
-!            write (61+currBZ,fmt=formatString_i) i-1, "].color = vp.color.white"
-!#endif
+#ifdef COMPVIS
+            write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
+            write (61+currBZ,fmt=formatString_i) i-1, "].visible = True"
+            write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
+            write (61+currBZ,fmt=formatString_i) i-1, "].color = vp.color.white"
+#endif
 
             beyondOtherPlane = checkBeyondOtherPlane(planeEquation(1:3,i), i)
          endif
@@ -625,12 +849,12 @@ module BrillouinZones_O
          !   zone and record the index number of i.
          if ((onOtherPlane == 0) .and. (beyondOtherPlane == 0)) then
 
-!#ifdef COMPVIS
-!            write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
-!            write (61+currBZ,fmt=formatString_i) i-1, "].opacity = 0.00"
-!            write (61+currBZ,advance="no",fmt="(a)") "bz_point["
-!            write (61+currBZ,fmt=formatString_i) i-1, "].color = vp.color.white"
-!#endif
+#ifdef COMPVIS
+            write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
+            write (61+currBZ,fmt=formatString_i) i-1, "].opacity = 0.20"
+            write (61+currBZ,advance="no",fmt="(a)") "bz_point["
+            write (61+currBZ,fmt=formatString_i) i-1, "].color = vp.color.white"
+#endif
             numBZFacets(currBZ) = numBZFacets(currBZ) + 1
             facetList(numBZFacets(currBZ))%pointID = i
 !#ifdef COMPVIS
@@ -676,47 +900,47 @@ module BrillouinZones_O
       !   find the set of vertices that belong to the current facet. That is,
       !   we will evaluate every possible facet triplet.
       do i = 1, numBZFacets(currBZ)
-!#ifdef COMPVIS
-!         if (facetList(i)%pointID < 11) then
-!            write (formatString_i,fmt="(a)") "(i0.1,a)"
-!         else
-!            write (formatString_i,fmt="(a)") "(i0.2,a)"
-!         endif
-!         write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
-!         write (61+currBZ,fmt=formatString_i) facetList(i)%pointID - 1, &
-!               & "].visible = True"
-!         write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
-!         write (61+currBZ,fmt=formatString_i) facetList(i)%pointID - 1, &
-!               & "].opacity = 0.2"
-!#endif
+#ifdef COMPVIS
+         if (facetList(i)%pointID < 11) then
+            write (formatString_i,fmt="(a)") "(i0.1,a)"
+         else
+            write (formatString_i,fmt="(a)") "(i0.2,a)"
+         endif
+         write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
+         write (61+currBZ,fmt=formatString_i) facetList(i)%pointID - 1, &
+               & "].visible = True"
+         write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
+         write (61+currBZ,fmt=formatString_i) facetList(i)%pointID - 1, &
+               & "].opacity = 0.2"
+#endif
          do j = i+1, numBZFacets(currBZ)
-!#ifdef COMPVIS
-!            if (facetList(j)%pointID < 11) then
-!               write (formatString_j,fmt="(a)") "(i0.1,a)"
-!            else
-!               write (formatString_j,fmt="(a)") "(i0.2,a)"
-!            endif
-!            write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
-!            write (61+currBZ,fmt=formatString_j) facetList(j)%pointID - 1, &
-!                  & "].visible = True"
-!            write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
-!            write (61+currBZ,fmt=formatString_j) facetList(j)%pointID - 1, &
-!                  & "].opacity = 0.2"
-!#endif
+#ifdef COMPVIS
+            if (facetList(j)%pointID < 11) then
+               write (formatString_j,fmt="(a)") "(i0.1,a)"
+            else
+               write (formatString_j,fmt="(a)") "(i0.2,a)"
+            endif
+            write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
+            write (61+currBZ,fmt=formatString_j) facetList(j)%pointID - 1, &
+                  & "].visible = True"
+            write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
+            write (61+currBZ,fmt=formatString_j) facetList(j)%pointID - 1, &
+                  & "].opacity = 0.2"
+#endif
             do k = j+1, numBZFacets(currBZ)
-!#ifdef COMPVIS
-!               if (facetList(k)%pointID < 11) then
-!                  write (formatString_k,fmt="(a)") "(i0.1,a)"
-!               else
-!                  write (formatString_k,fmt="(a)") "(i0.2,a)"
-!               endif
-!               write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
-!               write (61+currBZ,fmt=formatString_k) facetList(k)%pointID - 1, &
-!                     & "].visible = True"
-!               write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
-!               write (61+currBZ,fmt=formatString_k) facetList(k)%pointID - 1, &
-!                     & "].opacity = 0.2"
-!#endif
+#ifdef COMPVIS
+               if (facetList(k)%pointID < 11) then
+                  write (formatString_k,fmt="(a)") "(i0.1,a)"
+               else
+                  write (formatString_k,fmt="(a)") "(i0.2,a)"
+               endif
+               write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
+               write (61+currBZ,fmt=formatString_k) facetList(k)%pointID - 1, &
+                     & "].visible = True"
+               write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
+               write (61+currBZ,fmt=formatString_k) facetList(k)%pointID - 1, &
+                     & "].opacity = 0.2"
+#endif
 
                A(1,:) = planeEquation(1:3, facetList(i)%pointID)
                B(1) = planeEquation(4, facetList(i)%pointID)
@@ -760,12 +984,13 @@ module BrillouinZones_O
                      write(61+currBZ,advance="no",fmt="(a)") &
 "                  radius="
                      write(61+currBZ,advance="no",fmt="(sp,e10.3)") &
-                           & sphereRadius / 4.0
+                           & sphereRadius / 1.0
                      write(61+currBZ,fmt="(a)") ", color=vp.color.green))"
-!                     write(61+currBZ,fmt="(a)") "vp.sleep(0.5)"
+                     write(61+currBZ,fmt="(a)") "vp.sleep(5.5)"
 #endif
 
-                     ! Add this vertex to each of the associated facets.
+                     ! Add this vertex to each of the associated facets, but
+                     !   only if it is unique for the facet.
                      do h = 1, 3
                         select case (h)
                            case (1)
@@ -776,42 +1001,78 @@ module BrillouinZones_O
                               g = k
                         end select
 
-                        facetList(g)%numVertices = facetList(g)%numVertices + 1
+                        ! We will pull a nasty trick to perform the addition
+                        !   and ensure that the vertex is unique for this
+                        !   facet. We are going to add the vertex to the list
+                        !   of vertices for this facet, *BUT* we will only
+                        !   increase the number of vertices if this last one
+                        !   added is actually unique. We do this so that we
+                        !   can create a vertex that can be used in the
+                        !   comparison routine and because we will only ever
+                        !   print/use the "numVertices" vertices in the list
+                        !   for the facet.
+
                         facetList(g)%vertex( &
-                              & facetList(g)%numVertices)%coord(:) = B(:)
-                        facetList(g)%vertex(facetList(g)%numVertices)&
+                              & facetList(g)%numVertices+1)%coord(:) = B(:)
+                        facetList(g)%vertex(facetList(g)%numVertices+1)&
                               & %planeTripleIndex(1) = i
-                        facetList(g)%vertex(facetList(g)%numVertices)&
+                        facetList(g)%vertex(facetList(g)%numVertices+1)&
                               & %planeTripleIndex(2) = j
-                        facetList(g)%vertex(facetList(g)%numVertices)&
+                        facetList(g)%vertex(facetList(g)%numVertices+1)&
                               & %planeTripleIndex(3) = k
+
+                        ! Actually, we will increment the number now and then
+                        !   if we find any matches we will decrement the number
+                        !   and quit.
+                        facetList(g)%numVertices = facetList(g)%numVertices + 1
+                        do l = 1, facetList(g)%numVertices - 1
+                           if (vertexPosEqual(facetList(g)%vertex(l), &
+                                 & facetList(g)%vertex(&
+                                 & facetlist(g)%numVertices))) then
+                              ! We found an equal vertex. Restore the number
+                              !   of vertices and quit.
+                              facetList(g)%numVertices = &
+                                    & facetList(g)%numVertices - 1
+                              exit
+                           endif
+                        enddo ! l
                      enddo ! h
 
-                     ! Add this vertex to the list of vertices.
+                     ! Add this vertex to the list of vertices only if it is
+                     !   unique. We will do the same trick here as we did
+                     !   above.
                      numBZVertices(currBZ) = numBZVertices(currBZ) + 1
                      uniqueVertexList(numBZVertices(currBZ))%coord(:) = B(:)
                      uniqueVertexList(numBZVertices(currBZ))%planeTripleIndex=&
                            (/i, j, k/)
-
+                     do l = 1, numBZVertices(currBZ) - 1
+                        if (vertexPosEqual(uniqueVertexList(l), &
+                              & uniqueVertexList(numBZVertices(currBZ)))) then
+                           ! We found an equal vertex. Restor the number of
+                           !   vertices and quit.
+                           numBZVertices(currBZ) = numBZVertices(currBZ) - 1
+                           exit
+                        endif
+                     enddo
                   endif ! checkBeyondOtherPlane
                endif ! dsegv success
-!#ifdef COMPVIS
-!               write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
-!               write (61+currBZ,fmt=formatString_k) facetList(k)%pointID - 1, &
-!                     & "].visible = False"
-!#endif
+#ifdef COMPVIS
+               write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
+               write (61+currBZ,fmt=formatString_k) facetList(k)%pointID - 1, &
+                     & "].visible = False"
+#endif
             enddo ! k
-!#ifdef COMPVIS
-!            write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
-!            write (61+currBZ,fmt=formatString_j) facetList(j)%pointID - 1, &
-!                  & "].visible = False"
-!#endif
+#ifdef COMPVIS
+            write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
+            write (61+currBZ,fmt=formatString_j) facetList(j)%pointID - 1, &
+                  & "].visible = False"
+#endif
          enddo ! j
-!#ifdef COMPVIS
-!         write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
-!         write (61+currBZ,fmt=formatString_i) facetList(i)%pointID - 1, &
-!               & "].visible = False"
-!#endif
+#ifdef COMPVIS
+         write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
+         write (61+currBZ,fmt=formatString_i) facetList(i)%pointID - 1, &
+               & "].visible = False"
+#endif
       enddo ! i
    end subroutine addFacetVertices
 
@@ -1015,30 +1276,30 @@ module BrillouinZones_O
       real(kind=double), dimension (3) :: centerVector
       real(kind=double), dimension (3) :: vertexVertexVector
       type (facetType) :: tempFacet
-#ifdef COMPVIS
-      write(61+currBZ,fmt="(a)") "facetVec = vp.arrow(shaftwidth=0.05)"
-      write(61+currBZ,fmt="(a)") &
-            & "centerVec = vp.arrow(shaftwidth=0.05, color=vp.color.green)"
-      write(61+currBZ,fmt="(a)") "centerVec.visible = False"
-      write(61+currBZ,fmt="(a)") &
-            & "vvVec = vp.arrow(shaftwidth=0.05, color=vp.color.orange)"
-      write(61+currBZ,fmt="(a)") "vvVec.visible = False"
-#endif
+!#ifdef COMPVIS
+!      write(61+currBZ,fmt="(a)") "facetVec = vp.arrow(shaftwidth=0.05)"
+!      write(61+currBZ,fmt="(a)") &
+!            & "centerVec = vp.arrow(shaftwidth=0.05, color=vp.color.green)"
+!      write(61+currBZ,fmt="(a)") "centerVec.visible = False"
+!      write(61+currBZ,fmt="(a)") &
+!            & "vvVec = vp.arrow(shaftwidth=0.05, color=vp.color.orange)"
+!      write(61+currBZ,fmt="(a)") "vvVec.visible = False"
+!#endif
 
       do i = 1, numBZFacets(currBZ)
 
-#ifdef COMPVIS
-         write(61+currBZ,advance="no",fmt="(a)") "facetVec.axis=vp.vector("
-         do j = 1, 3
-            write(61+currBZ,advance="no",fmt=("(sp,e10.3)")) &
-                  & planeEquation(j,facetlist(i)%pointID)
-            if (j < 3) then
-               write (61+currBZ,advance="no",fmt="(a)") ", "
-            endif
-         enddo
-         write(61+currBZ,fmt="(a)") ")"
-         write(61+currBZ,fmt="(a)") "vp.sleep(0.5)"
-#endif
+!#ifdef COMPVIS
+!         write(61+currBZ,advance="no",fmt="(a)") "facetVec.axis=vp.vector("
+!         do j = 1, 3
+!            write(61+currBZ,advance="no",fmt=("(sp,e10.3)")) &
+!                  & planeEquation(j,facetlist(i)%pointID)
+!            if (j < 3) then
+!               write (61+currBZ,advance="no",fmt="(a)") ", "
+!            endif
+!         enddo
+!         write(61+currBZ,fmt="(a)") ")"
+!         write(61+currBZ,fmt="(a)") "vp.sleep(0.5)"
+!#endif
 
          ! Initialize the temp facet that will hold the ring sorted vertices.
          tempFacet%pointID = facetList(i)%pointID
@@ -1069,27 +1330,27 @@ module BrillouinZones_O
             !   center point of the plane.
             centerVector(:) = planeEquation(1:3,tempFacet%pointID) &
                   & - tempFacet%vertex(j-1)%coord(:)
-#ifdef COMPVIS
-            write(61+currBZ,fmt="(a)") "centerVec.visible = True"
-            write(61+currBZ,advance="no",fmt="(a)") "centerVec.axis=vp.vector("
-            do k = 1, 3
-               write(61+currBZ,advance="no",fmt=("(sp,e10.3)")) centerVector(k)
-               if (k < 3) then
-                  write (61+currBZ,advance="no",fmt="(a)") ", "
-               endif
-            enddo
-            write(61+currBZ,fmt="(a)") ")"
-            write(61+currBZ,advance="no",fmt="(a)") "centerVec.pos=vp.vector("
-            do k = 1, 3
-               write(61+currBZ,advance="no",fmt="(sp,e10.3)") &
-                     & tempFacet%vertex(j-1)%coord(k)
-               if (k < 3) then
-                  write (61+currBZ,advance="no",fmt="(a)") ", "
-               endif
-            enddo
-            write(61+currBZ,fmt="(a)") ")"
-            write(61+currBZ,fmt="(a)") "vp.sleep(2.5)"
-#endif
+!#ifdef COMPVIS
+!            write(61+currBZ,fmt="(a)") "centerVec.visible = True"
+!            write(61+currBZ,advance="no",fmt="(a)") "centerVec.axis=vp.vector("
+!            do k = 1, 3
+!               write(61+currBZ,advance="no",fmt=("(sp,e10.3)")) centerVector(k)
+!               if (k < 3) then
+!                  write (61+currBZ,advance="no",fmt="(a)") ", "
+!               endif
+!            enddo
+!            write(61+currBZ,fmt="(a)") ")"
+!            write(61+currBZ,advance="no",fmt="(a)") "centerVec.pos=vp.vector("
+!            do k = 1, 3
+!               write(61+currBZ,advance="no",fmt="(sp,e10.3)") &
+!                     & tempFacet%vertex(j-1)%coord(k)
+!               if (k < 3) then
+!                  write (61+currBZ,advance="no",fmt="(a)") ", "
+!               endif
+!            enddo
+!            write(61+currBZ,fmt="(a)") ")"
+!            write(61+currBZ,fmt="(a)") "vp.sleep(2.5)"
+!#endif
 
             ! Iterate through all other vertices of this facet to find the
             !   one with the largest positive angle A-B-C where A is the
@@ -1109,28 +1370,28 @@ module BrillouinZones_O
                      vertexVertexVector(l) = 0.0_double
                   endif
                enddo
-#ifdef COMPVIS
-               write(61+currBZ,fmt="(a)") "vvVec.visible = True"
-               write(61+currBZ,advance="no",fmt="(a)") "vvVec.axis=vp.vector("
-               do l = 1, 3
-                  write(61+currBZ,advance="no",fmt=("(sp,e10.3)")) &
-                        & vertexVertexVector(l)
-                  if (l < 3) then
-                     write (61+currBZ,advance="no",fmt="(a)") ", "
-                  endif
-               enddo
-               write(61+currBZ,fmt="(a)") ")"
-               write(61+currBZ,advance="no",fmt="(a)") "vvVec.pos=vp.vector("
-               do l = 1, 3
-                  write(61+currBZ,advance="no",fmt="(sp,e10.3)") &
-                        & tempFacet%vertex(j-1)%coord(l)
-                  if (l < 3) then
-                     write (61+currBZ,advance="no",fmt="(a)") ", "
-                  endif
-               enddo
-               write(61+currBZ,fmt="(a)") ")"
-               write(61+currBZ,fmt="(a)") "vp.sleep(2.5)"
-#endif
+!#ifdef COMPVIS
+!               write(61+currBZ,fmt="(a)") "vvVec.visible = True"
+!               write(61+currBZ,advance="no",fmt="(a)") "vvVec.axis=vp.vector("
+!               do l = 1, 3
+!                  write(61+currBZ,advance="no",fmt=("(sp,e10.3)")) &
+!                        & vertexVertexVector(l)
+!                  if (l < 3) then
+!                     write (61+currBZ,advance="no",fmt="(a)") ", "
+!                  endif
+!               enddo
+!               write(61+currBZ,fmt="(a)") ")"
+!               write(61+currBZ,advance="no",fmt="(a)") "vvVec.pos=vp.vector("
+!               do l = 1, 3
+!                  write(61+currBZ,advance="no",fmt="(sp,e10.3)") &
+!                        & tempFacet%vertex(j-1)%coord(l)
+!                  if (l < 3) then
+!                     write (61+currBZ,advance="no",fmt="(a)") ", "
+!                  endif
+!               enddo
+!               write(61+currBZ,fmt="(a)") ")"
+!               write(61+currBZ,fmt="(a)") "vp.sleep(2.5)"
+!#endif
 
                ! Theta = acos ((A dot B) / |A| * |B|)
                argument = sum(centerVector(:) * vertexVertexVector(:)) &
@@ -1208,7 +1469,7 @@ module BrillouinZones_O
       integer :: i, j
       integer :: edgeAlreadyPresent
 
-      ! Traverse the current list of unique edges to see of the proposed
+      ! Traverse the current list of unique edges to see if the proposed
       !   (vertex1, vertex2) pair is already listed. If so, then don't do
       !   anything. If not, then add it!
 
@@ -1218,10 +1479,10 @@ module BrillouinZones_O
       do i = 1, numBZEdges(currBZ)
 
          ! Check if the proposed edge matches this edge.
-         if ((verticesEqual(vertex1, uniqueEdgeList(i)%vertex(1)) .and. &
-               (verticesEqual(vertex2, uniqueEdgeList(i)%vertex(2)))) .or. &
-               (verticesEqual(vertex1, uniqueEdgeList(i)%vertex(2)) .and. &
-               (verticesEqual(vertex2, uniqueEdgeList(i)%vertex(1))))) then
+         if ((vertexPosEqual(vertex1, uniqueEdgeList(i)%vertex(1)) .and. &
+               (vertexPosEqual(vertex2, uniqueEdgeList(i)%vertex(2)))) .or. &
+               (vertexPosEqual(vertex1, uniqueEdgeList(i)%vertex(2)) .and. &
+               (vertexPosEqual(vertex2, uniqueEdgeList(i)%vertex(1))))) then
             edgeAlreadyPresent = 1
             exit
          endif
@@ -1378,7 +1639,39 @@ module BrillouinZones_O
 
    end subroutine makePlaneEquations
 
+   ! Compare the positions of two vertices and declare them equal even if the
+   !   vertices are defined using different planeTripleIndices. (Because not
+   !   all vertices need to be compared that way.)
+   function vertexPosEqual(vertex1, vertex2)
+ 
+      implicit none
+ 
+      ! Define dummy parameters.
+      type (vertexType) :: vertex1, vertex2
+ 
+      ! Define the return variable.
+      logical :: vertexPosEqual
+ 
+      ! Define local variables.
+      integer :: i, j
+      real (kind=double) :: threshold
+ 
+      ! Assume that the two vertices are equal and define the threshold.
+      vertexPosEqual = .true.
+      threshold = 0.000001
+ 
+      do i = 1, 3
+         if (abs(vertex1%coord(i) - vertex2%coord(i)) > threshold) then
+            vertexPosEqual = .false.
+            return
+         endif
+      enddo
+ 
+   end function vertexPosEqual
 
+
+   ! Compare two vertices according to both their positions and the values of
+   !   their planeTripleIndices.
    function verticesEqual(vertex1, vertex2)
  
       implicit none
@@ -1412,21 +1705,10 @@ module BrillouinZones_O
    end function verticesEqual
 
 
-   subroutine copyVertex(vertex1, vertex2)
-
-      implicit none
-
-      ! Define dummy parameters.
-      type (vertexType) :: vertex1, vertex2
-
-      ! Perform the copy.
-      vertex2%coord(:) = vertex1%coord(:)
-      vertex2%planeTripleIndex(:) = vertex1%planeTripleIndex(:)
-
-   end subroutine copyVertex
-
-
    subroutine printBrillouinZones (maxBZ)
+
+      ! Use necessary modules.
+      use CommandLine_O
 
       ! Make sure no funny variables are defined.
       implicit none
@@ -1436,11 +1718,8 @@ module BrillouinZones_O
 
       ! Define local variables.
       integer :: i, j, k, l, m ! Loop indices.
-      real (kind=double) :: scaleFactor
       real (kind=double), dimension(3) :: fractABC
       character*25 :: filename
-
-      scaleFactor = 100.0_double
 
       ! Step through each of the Brillouin zones we will make.
       do i = 1, maxBZ
@@ -1904,15 +2183,20 @@ module KPointMesh_O
 
    ! This subroutine will print the folded abc kpoint information in a format
    !   suitable for reading by the olcao program.
-   subroutine printKPoints (fileUnit)
+   subroutine printKPoints (fileUnit, maxBZ, recipLattice)
+
+      use CommandLine_O
 
       implicit none
 
       ! Define dummy parameters.
       integer, intent (in) :: fileUnit
+      integer :: maxBZ
+      real (kind=double), dimension(3,3) :: recipLattice
 
       ! Define local variables.
-      integer :: i, j
+      integer :: i, j, k, l
+      real (kind=double), dimension(3) :: xyzKPoint
 
       write (fileUnit,fmt="(a17)") "NUM_BLOCH_VECTORS"
       write (fileUnit,fmt="(i9.9)") numFoldedKPoints
@@ -1923,62 +2207,115 @@ module KPointMesh_O
                & abcFoldedKPoints(:,i)
       enddo
 
-!      if (doBrillouinZone == 1) then
-!         do i = 1, maxBZ
-!            write (fileUnit+i,fmt="(a18)") "folded_kpoints = ["
-!            do j = 1, numFoldedKPoints
-!               write (fileUnit+i,advance="no",fmt="(a1)") "["
-!               do k = 1, 3
-!               enddo
-!            enddo
-!         enddo
-!      endif
+      ! Print the mesh point positions, the folded point positions, and then
+      !   the weights.
+      if (maxBZ > 0) then
+         do i = 1, maxBZ
+            write (fileUnit+i,fmt="(a16)") "mesh_kpoints = ["
+            do j = 1, numMeshKPoints
+
+               ! Convert the abc coordinate to xyz.
+               do k = 1, 3 ! xyz axes
+
+                  ! Initialize the x, y, or z coordinate.
+                  xyzKPoint(k) = 0.0_double
+
+                  do l = 1, 3 ! abc axes
+                     
+                     xyzKPoint(k) = xyzKPoint(k) &
+                           + abcMeshKPoints(l,j) * recipLattice(k,l) &
+                           * scaleFactor
+                  enddo
+               enddo
+
+               write (fileUnit+i,advance="no",fmt="(a1)") "["
+               write (fileUnit+i,advance="no",fmt="(f16.12, a2)") &
+                     & xyzKPoint(1), ", "
+               write (fileUnit+i,advance="no",fmt="(f16.12, a2)") &
+                     & xyzKPoint(2), ", "
+               write (fileUnit+i,advance="no",fmt="(f16.12, a1)") &
+                     & xyzKPoint(3), "]"
+
+               if (j < numMeshKPoints) then
+                  write (fileUnit+i,fmt="(a2)") ", "
+               else
+                  write (fileUnit+i,fmt="(a1)") "]"
+               endif
+            enddo ! j
+
+            write (fileUnit+i,fmt="(a18)") "folded_kpoints = ["
+            do j = 1, numFoldedKPoints
+
+               ! Convert the abc coordinate to xyz.
+               do k = 1, 3 ! xyz axes
+
+                  ! Initialize the x, y, or z coordinate.
+                  xyzKPoint(k) = 0.0_double
+
+                  do l = 1, 3 ! abc axes
+                     
+                     xyzKPoint(k) = xyzKPoint(k) &
+                           + abcFoldedKPoints(l,j) * recipLattice(k,l) &
+                           * scaleFactor
+                  enddo
+               enddo
+
+               write (fileUnit+i,advance="no",fmt="(a1)") "["
+               write (fileUnit+i,advance="no",fmt="(f16.12, a2)") &
+                     & xyzKPoint(1), ", "
+               write (fileUnit+i,advance="no",fmt="(f16.12, a2)") &
+                     & xyzKPoint(2), ", "
+               write (fileUnit+i,advance="no",fmt="(f16.12, a1)") &
+                     & xyzKPoint(3), "]"
+
+               if (j < numFoldedKPoints) then
+                  write (fileUnit+i,fmt="(a2)") ", "
+               else
+                  write (fileUnit+i,fmt="(a1)") "]"
+               endif
+            enddo ! j
+
+            ! Write the kpoint weights.
+            write (fileUnit+i,fmt="(a18)") "kpoint_weights = ["
+            do j = 1, numFoldedKPoints - 1
+               write (fileUnit+i,fmt="(a1, f16.12, a2)") "[", &
+                     & kPointWeight(j), "],"
+            enddo ! j
+            write (fileUnit+i,fmt="(a1, f16.12, a2)") "[", &
+                  & kPointWeight(j), "]]"
+         enddo ! i
+      endif
    end subroutine printKPoints
 
 end module KPointMesh_O
 
 
-module CommandLine_O
-
-   ! Make sure no funny variables are defined.
-   implicit none
-
-   ! Integer to track which number command line argument is to be read in next.
-   integer :: nextArg
-
-   ! Flags to control the supplementary files to output.
-   integer :: doBrillouinZone
-
-   contains
-
-   subroutine parseCommandLine
-   
-      ! Make sure that there are no accidental variable declarations.
-      implicit none
-   
-      ! Define the local variables used for reading.
-      character*25 :: commandBuffer
-   
-      ! Make sure that the first command line parameter to be read is #1.
-      nextArg = 1
-   
-      ! Initialize the command line parameters
-      doBrillouinZone = 0
-   
-      ! Get the command line argument that flags whether or not to output
-      !   descriptive information about the Brillouin zone. The number supplied
-      !   is the highest Brillouin zone number to analyze. (If a 1 is given,
-      !   then we analyze the first BZ. If a 2 is given, then we analyze the
-      !   first and second BZ. If a 3 is given, then we do the 1st, 2nd, and
-      !   3rd. Etc.)
-      call getarg (nextArg, commandBuffer)
-      nextArg = nextArg + 1
-      read (commandBuffer,*) doBrillouinZone
-
-   end subroutine parseCommandLine
-
-end module CommandLine_O
-
+!module PrintRecipModel_O
+!
+!   use CommandLine_O
+!
+!   implicit none
+!
+!   contains
+!
+!   subroutine printVertices
+!   end subroutine printVertices
+!
+!   subroutine printEdges
+!   end subroutine printEdges
+!
+!   subroutine printFaces (maxBZ, numBZFacets, facetList)
+!
+!      implicit none
+!
+!      ! Define passed parameters.
+!      integer :: maxBZ
+!      integer, dimension(:) :: numBZFacets
+!      type (facetType), 
+!
+!   end subroutine printFaces
+!
+!end module PrintRecipModel_O
 
 
 program makekpoints
@@ -2055,6 +2392,9 @@ program makekpoints
    ! Read the lattice and compute all of its information.
    call readRealLattice(50)
    call computeLatticeData
+   if (doBrillouinZone > 0) then
+      call printLatticeData(doBrillouinZone) ! Print if requested
+   endif
 
 
 #ifdef COMPVIS
@@ -2072,14 +2412,14 @@ program makekpoints
    call computeABCRecipPointOps(realLattice,recipLattice)
 
    ! Read the kpoint mesh parameters, initialize the mesh, fold the mesh, and
-   !   print the results.  It should be generally understood that the variables
-   !   with abc in the name refer to the reciprocal lattice abc vectors and not
-   !   the real space lattice.  This is only given explictly for the variable
-   !   abcRecipPointOps though.
+   !   print the results.  It should be generally understood that the
+   !   variables with abc in the name refer to the reciprocal lattice
+   !   abcvectors and not the real space lattice.  This is only given
+   !   explictly for the variable abcRecipPointOps though.
    call readMeshParameters(50)
    call initMesh
    call foldMesh (numPointOps,abcRecipPointOps)
-   call printKPoints(51)
+   call printKPoints(51,doBrillouinZone,recipLattice)
 
    ! In the case that the user wants information about a the Brillouin zone,
    !   then we compute and print it.
