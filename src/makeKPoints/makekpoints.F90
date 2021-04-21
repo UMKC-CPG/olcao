@@ -831,14 +831,14 @@ module BrillouinZones_O
          !   between it and the origin that passes through any other plane?)
          if (onOtherPlane == 0) then
 
-#ifdef COMPVIS
-            write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
-            write (61+currBZ,fmt=formatString_i) i-1, "].visible = True"
-            write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
-            write (61+currBZ,fmt=formatString_i) i-1, "].color = vp.color.white"
-#endif
+!#ifdef COMPVIS
+!            write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
+!            write (61+currBZ,fmt=formatString_i) i-1, "].visible = True"
+!            write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
+!            write (61+currBZ,fmt=formatString_i) i-1, "].color = vp.color.white"
+!#endif
 
-            beyondOtherPlane = checkBeyondOtherPlane(planeEquation(1:3,i), i)
+            beyondOtherPlane = checkBeyondOtherPlane(planeEquation(1:3,i), i, 0)
          endif
 
 
@@ -850,8 +850,8 @@ module BrillouinZones_O
          if ((onOtherPlane == 0) .and. (beyondOtherPlane == 0)) then
 
 #ifdef COMPVIS
-            write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
-            write (61+currBZ,fmt=formatString_i) i-1, "].opacity = 0.20"
+!            write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
+!            write (61+currBZ,fmt=formatString_i) i-1, "].opacity = 0.20"
             write (61+currBZ,advance="no",fmt="(a)") "bz_point["
             write (61+currBZ,fmt=formatString_i) i-1, "].color = vp.color.white"
 #endif
@@ -866,6 +866,8 @@ module BrillouinZones_O
 !#endif
          endif
       enddo ! i loop
+
+write (6,*) "numBZFacets = ", numBZFacets(currBZ)
    end subroutine makeFacetList
 
 
@@ -880,6 +882,7 @@ module BrillouinZones_O
       integer :: info
       integer :: g, h, i, j, k, l
       integer, dimension(3) :: pivotIndices
+      logical :: found
       real (kind=double), dimension(3,3) :: A
       real (kind=double), dimension(3) :: B
 #ifdef COMPVIS
@@ -900,47 +903,47 @@ module BrillouinZones_O
       !   find the set of vertices that belong to the current facet. That is,
       !   we will evaluate every possible facet triplet.
       do i = 1, numBZFacets(currBZ)
-#ifdef COMPVIS
-         if (facetList(i)%pointID < 11) then
-            write (formatString_i,fmt="(a)") "(i0.1,a)"
-         else
-            write (formatString_i,fmt="(a)") "(i0.2,a)"
-         endif
-         write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
-         write (61+currBZ,fmt=formatString_i) facetList(i)%pointID - 1, &
-               & "].visible = True"
-         write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
-         write (61+currBZ,fmt=formatString_i) facetList(i)%pointID - 1, &
-               & "].opacity = 0.2"
-#endif
+!#ifdef COMPVIS
+!         if (facetList(i)%pointID < 11) then
+!            write (formatString_i,fmt="(a)") "(i0.1,a)"
+!         else
+!            write (formatString_i,fmt="(a)") "(i0.2,a)"
+!         endif
+!         write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
+!         write (61+currBZ,fmt=formatString_i) facetList(i)%pointID - 1, &
+!               & "].visible = True"
+!         write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
+!         write (61+currBZ,fmt=formatString_i) facetList(i)%pointID - 1, &
+!               & "].opacity = 0.2"
+!#endif
          do j = i+1, numBZFacets(currBZ)
-#ifdef COMPVIS
-            if (facetList(j)%pointID < 11) then
-               write (formatString_j,fmt="(a)") "(i0.1,a)"
-            else
-               write (formatString_j,fmt="(a)") "(i0.2,a)"
-            endif
-            write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
-            write (61+currBZ,fmt=formatString_j) facetList(j)%pointID - 1, &
-                  & "].visible = True"
-            write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
-            write (61+currBZ,fmt=formatString_j) facetList(j)%pointID - 1, &
-                  & "].opacity = 0.2"
-#endif
+!#ifdef COMPVIS
+!            if (facetList(j)%pointID < 11) then
+!               write (formatString_j,fmt="(a)") "(i0.1,a)"
+!            else
+!               write (formatString_j,fmt="(a)") "(i0.2,a)"
+!            endif
+!            write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
+!            write (61+currBZ,fmt=formatString_j) facetList(j)%pointID - 1, &
+!                  & "].visible = True"
+!            write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
+!            write (61+currBZ,fmt=formatString_j) facetList(j)%pointID - 1, &
+!                  & "].opacity = 0.2"
+!#endif
             do k = j+1, numBZFacets(currBZ)
-#ifdef COMPVIS
-               if (facetList(k)%pointID < 11) then
-                  write (formatString_k,fmt="(a)") "(i0.1,a)"
-               else
-                  write (formatString_k,fmt="(a)") "(i0.2,a)"
-               endif
-               write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
-               write (61+currBZ,fmt=formatString_k) facetList(k)%pointID - 1, &
-                     & "].visible = True"
-               write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
-               write (61+currBZ,fmt=formatString_k) facetList(k)%pointID - 1, &
-                     & "].opacity = 0.2"
-#endif
+!#ifdef COMPVIS
+!               if (facetList(k)%pointID < 11) then
+!                  write (formatString_k,fmt="(a)") "(i0.1,a)"
+!               else
+!                  write (formatString_k,fmt="(a)") "(i0.2,a)"
+!               endif
+!               write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
+!               write (61+currBZ,fmt=formatString_k) facetList(k)%pointID - 1, &
+!                     & "].visible = True"
+!               write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
+!               write (61+currBZ,fmt=formatString_k) facetList(k)%pointID - 1, &
+!                     & "].opacity = 0.2"
+!#endif
 
                A(1,:) = planeEquation(1:3, facetList(i)%pointID)
                B(1) = planeEquation(4, facetList(i)%pointID)
@@ -962,32 +965,39 @@ module BrillouinZones_O
                enddo
 
                if (info == 0) then
+if (i == 1) then
+   write (6,*) facetList(i)%numVertices, i, j, k, info
+   write (6,fmt="(3f12.6)") B(:)
+endif
 
                   ! We found a possible vertex. We now need to make sure that
                   !   it is not outside of any planes. (It is certainly *on*
                   !   three planes because that is how we generated the point.
                   !   However, aside from those three, we need to be sure that
                   !   it is not outside the BZ.)
-                  if(checkBeyondOtherPlane(B(:), 0) == 0) then
-#ifdef COMPVIS
-                     ! Print a sphere at this vertex site.
-                     write (61+currBZ,fmt="(a)") "facet_vertex.append("
-                     write (61+currBZ,advance="no",fmt="(a)") &
-"        vp.sphere(pos=vp.vector("
-                     do s = 1, 3
-                        write(61+currBZ,advance="no",fmt="(sp,e10.3)") B(s)
-                        if (s < 3) then
-                           write(61+currBZ,advance="no",fmt="(a)") ", "
-                        endif
-                     enddo
-                     write(61+currBZ,fmt="(a)") "),"
-                     write(61+currBZ,advance="no",fmt="(a)") &
-"                  radius="
-                     write(61+currBZ,advance="no",fmt="(sp,e10.3)") &
-                           & sphereRadius / 1.0
-                     write(61+currBZ,fmt="(a)") ", color=vp.color.green))"
-                     write(61+currBZ,fmt="(a)") "vp.sleep(5.5)"
-#endif
+                  if(checkBeyondOtherPlane(B(:), 0, i) == 0) then
+if (i == 1) then
+   write (6,*) "Got one"
+endif
+!#ifdef COMPVIS
+!                     ! Print a sphere at this vertex site.
+!                     write (61+currBZ,fmt="(a)") "facet_vertex.append("
+!                     write (61+currBZ,advance="no",fmt="(a)") &
+!"        vp.sphere(pos=vp.vector("
+!                     do s = 1, 3
+!                        write(61+currBZ,advance="no",fmt="(sp,e10.3)") B(s)
+!                        if (s < 3) then
+!                           write(61+currBZ,advance="no",fmt="(a)") ", "
+!                        endif
+!                     enddo
+!                     write(61+currBZ,fmt="(a)") "),"
+!                     write(61+currBZ,advance="no",fmt="(a)") &
+!"                  radius="
+!                     write(61+currBZ,advance="no",fmt="(sp,e10.3)") &
+!                           & sphereRadius / 1.0
+!                     write(61+currBZ,fmt="(a)") ", color=vp.color.green))"
+!                     write(61+currBZ,fmt="(a)") "vp.sleep(5.5)"
+!#endif
 
                      ! Add this vertex to each of the associated facets, but
                      !   only if it is unique for the facet.
@@ -1005,37 +1015,38 @@ module BrillouinZones_O
                         !   and ensure that the vertex is unique for this
                         !   facet. We are going to add the vertex to the list
                         !   of vertices for this facet, *BUT* we will only
-                        !   increase the number of vertices if this last one
-                        !   added is actually unique. We do this so that we
-                        !   can create a vertex that can be used in the
+                        !   keep the increased number of vertices if this last
+                        !   one added is actually unique. We do this so that
+                        !   we can create a vertex that can be used in the
                         !   comparison routine and because we will only ever
                         !   print/use the "numVertices" vertices in the list
                         !   for the facet.
 
+                        facetList(g)%numVertices = facetList(g)%numVertices + 1
                         facetList(g)%vertex( &
-                              & facetList(g)%numVertices+1)%coord(:) = B(:)
-                        facetList(g)%vertex(facetList(g)%numVertices+1)&
+                              & facetList(g)%numVertices)%coord(:) = B(:)
+                        facetList(g)%vertex(facetList(g)%numVertices)&
                               & %planeTripleIndex(1) = i
-                        facetList(g)%vertex(facetList(g)%numVertices+1)&
+                        facetList(g)%vertex(facetList(g)%numVertices)&
                               & %planeTripleIndex(2) = j
-                        facetList(g)%vertex(facetList(g)%numVertices+1)&
+                        facetList(g)%vertex(facetList(g)%numVertices)&
                               & %planeTripleIndex(3) = k
 
-                        ! Actually, we will increment the number now and then
-                        !   if we find any matches we will decrement the number
-                        !   and quit.
-                        facetList(g)%numVertices = facetList(g)%numVertices + 1
+                        found = .false.
                         do l = 1, facetList(g)%numVertices - 1
                            if (vertexPosEqual(facetList(g)%vertex(l), &
                                  & facetList(g)%vertex(&
                                  & facetlist(g)%numVertices))) then
-                              ! We found an equal vertex. Restore the number
-                              !   of vertices and quit.
-                              facetList(g)%numVertices = &
-                                    & facetList(g)%numVertices - 1
+                              ! We found an equal vertex. Quit!
+                              found = .true.
                               exit
                            endif
                         enddo ! l
+                        if (found) then
+                           ! Restore the number of vertices in this facet.
+                           facetList(g)%numVertices = &
+                                 & facetList(g)%numVertices - 1
+                        endif
                      enddo ! h
 
                      ! Add this vertex to the list of vertices only if it is
@@ -1045,41 +1056,45 @@ module BrillouinZones_O
                      uniqueVertexList(numBZVertices(currBZ))%coord(:) = B(:)
                      uniqueVertexList(numBZVertices(currBZ))%planeTripleIndex=&
                            (/i, j, k/)
+
+                     found = .false.
                      do l = 1, numBZVertices(currBZ) - 1
                         if (vertexPosEqual(uniqueVertexList(l), &
                               & uniqueVertexList(numBZVertices(currBZ)))) then
-                           ! We found an equal vertex. Restor the number of
-                           !   vertices and quit.
-                           numBZVertices(currBZ) = numBZVertices(currBZ) - 1
+                           ! We found an equal vertex. Quit!
                            exit
                         endif
-                     enddo
+                     enddo ! l
+                     if (found) then
+                        ! Restore the number of unique vertices overall.
+                        numBZVertices(currBZ) = numBZVertices(currBZ) - 1
+                     endif
                   endif ! checkBeyondOtherPlane
                endif ! dsegv success
-#ifdef COMPVIS
-               write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
-               write (61+currBZ,fmt=formatString_k) facetList(k)%pointID - 1, &
-                     & "].visible = False"
-#endif
+!#ifdef COMPVIS
+!               write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
+!               write (61+currBZ,fmt=formatString_k) facetList(k)%pointID - 1, &
+!                     & "].visible = False"
+!#endif
             enddo ! k
-#ifdef COMPVIS
-            write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
-            write (61+currBZ,fmt=formatString_j) facetList(j)%pointID - 1, &
-                  & "].visible = False"
-#endif
+!#ifdef COMPVIS
+!            write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
+!            write (61+currBZ,fmt=formatString_j) facetList(j)%pointID - 1, &
+!                  & "].visible = False"
+!#endif
          enddo ! j
-#ifdef COMPVIS
-         write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
-         write (61+currBZ,fmt=formatString_i) facetList(i)%pointID - 1, &
-               & "].visible = False"
-#endif
+!#ifdef COMPVIS
+!         write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
+!         write (61+currBZ,fmt=formatString_i) facetList(i)%pointID - 1, &
+!               & "].visible = False"
+!#endif
       enddo ! i
    end subroutine addFacetVertices
 
 
    ! Check if the plane defined by the lattice index i OR if the point given
    !   by the coordinates coords happen to lie beyond some other plane.
-   function checkBeyondOtherPlane(coords, latticeIndex)
+   function checkBeyondOtherPlane(coords, latticeIndex, extra)
 
       implicit none
 
@@ -1087,6 +1102,7 @@ module BrillouinZones_O
       !integer :: i ! Index of the plane i.
       real (kind=double), dimension(3) :: coords
       integer :: latticeIndex
+integer :: extra
 
       ! Define the return value.
       integer :: checkBeyondOtherPlane
@@ -1097,9 +1113,11 @@ module BrillouinZones_O
       real (kind=double) :: t, d ! See algebraic description below.
       real (kind=double), dimension(3) :: intersectionPoint
       real (kind=double), dimension(3) :: testPoint
-!#ifdef COMPVIS
-!      character*8 :: formatString_j
-!#endif
+#ifdef COMPVIS
+      character*8 :: formatString_j
+      integer :: currBZ
+      currBZ = 1
+#endif
 
       ! This subroutine needs to work in basically the same way regardless of
       !   whether the point we are checking is given implicitly as a plane
@@ -1127,17 +1145,19 @@ module BrillouinZones_O
          !   checked.
          if (j == latticeIndex) cycle
 
-!#ifdef COMPVIS
-!         if (j < 11) then
-!            write (formatString_j,fmt="(a)") "(i0.1,a)"
-!         else
-!            write (formatString_j,fmt="(a)") "(i0.2,a)"
-!         endif
-!         write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
-!         write (61+currBZ,fmt=formatString_j) j-1, "].visible = True"
-!         write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
-!         write (61+currBZ,fmt=formatString_j) j-1, "].color = vp.color.white"
-!#endif
+#ifdef COMPVIS
+if (extra == 1) then
+         if (j < 11) then
+            write (formatString_j,fmt="(a)") "(i0.1,a)"
+         else
+            write (formatString_j,fmt="(a)") "(i0.2,a)"
+         endif
+         write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
+         write (61+currBZ,fmt=formatString_j) j-1, "].visible = True"
+         write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
+         write (61+currBZ,fmt=formatString_j) j-1, "].color = vp.color.white"
+endif
+#endif
 
          ! The general parametric form for the equation of a line is:
          !   x = x_0 + tu;  y = y_0 + tv;  z = z_0 + tw. Our case is a
@@ -1214,6 +1234,7 @@ module BrillouinZones_O
          !   the construction of the Brillouin zone.
          if (oppositeQuadrants == 1) then
 !#ifdef COMPVIS
+!if (extra == 1) then
 !            write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
 !            write (61+currBZ,fmt=formatString_j) j-1, "].color = vp.color.red"
 !            write (61+currBZ,fmt="(a)") "vp.sleep(0.5)"
@@ -1221,11 +1242,12 @@ module BrillouinZones_O
 !            write (61+currBZ,fmt=formatString_j) j-1, "].color = vp.color.white"
 !            write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
 !            write (61+currBZ,fmt=formatString_j) j-1, "].visible = False"
+!endif
 !#endif
             cycle
          endif
 
-         ! On the other hand, the intersection point and the point that
+         ! On the other hand, if the intersection point and the point that
          !   is used to define plane i are in the same quadrant, then we
          !   need to determine which one is closer to the origin. If the
          !   point used to define plane i is more distant than the
@@ -1234,6 +1256,7 @@ module BrillouinZones_O
          if (sum(testPoint(:)**2) > sum(intersectionPoint(:)**2)) then
             beyondOtherPlane = 1
 !#ifdef COMPVIS
+!if (extra == 1) then
 !            write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
 !            write (61+currBZ,fmt=formatString_j) j-1, &
 !                  "].color = vp.color.orange"
@@ -1242,14 +1265,17 @@ module BrillouinZones_O
 !            write (61+currBZ,fmt=formatString_j) j-1, "].color = vp.color.white"
 !            write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
 !            write (61+currBZ,fmt=formatString_j) j-1, "].visible = False"
+!endif
 !#endif
             exit
-!#ifdef COMPVIS
-!         else
-!            write (61+currBZ,fmt="(a)") "vp.sleep(0.1)"
-!            write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
-!            write (61+currBZ,fmt=formatString_j) j-1, "].visible = False"
-!#endif
+#ifdef COMPVIS
+         else
+if (extra == 1) then
+            write (61+currBZ,fmt="(a)") "vp.sleep(5.1)"
+            write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
+            write (61+currBZ,fmt=formatString_j) j-1, "].visible = False"
+endif
+#endif
          endif
       enddo ! j
 
@@ -1732,21 +1758,21 @@ module BrillouinZones_O
                facetList(j)%vertex(k)%coord(:) = &
                      & facetList(j)%vertex(k)%coord(:) * scaleFactor
                write (51+i,advance="NO",fmt="(a1)") "["
-               write (51+i,advance="NO",fmt="(f16.12, a2)") &
+               write (51+i,advance="NO",fmt="(d16.8, a2)") &
                      & facetList(j)%vertex(k)%coord(1), ", "
-               write (51+i,advance="NO",fmt="(f16.12, a2)") &
+               write (51+i,advance="NO",fmt="(d16.8, a2)") &
                      & facetList(j)%vertex(k)%coord(2), ", "
-               write (51+i,advance="NO",fmt="(f16.12, a3)") &
+               write (51+i,advance="NO",fmt="(d16.8, a3)") &
                      & facetList(j)%vertex(k)%coord(3), "], "
             enddo ! k
 
             ! Write the first vertex again to close the polygon
             write (51+i,advance="NO",fmt="(a1)") "["
-            write (51+i,advance="NO",fmt="(f16.12, a2)") &
+            write (51+i,advance="NO",fmt="(d16.8, a2)") &
                   & facetList(j)%vertex(1)%coord(1), ", "
-            write (51+i,advance="NO",fmt="(f16.12, a2)") &
+            write (51+i,advance="NO",fmt="(d16.8, a2)") &
                   & facetList(j)%vertex(1)%coord(2), ", "
-            write (51+i,advance="NO",fmt="(f16.12, a1)") &
+            write (51+i,advance="NO",fmt="(d16.8, a1)") &
                   & facetList(j)%vertex(1)%coord(3), "]"
 
             if (j < numBZFacets(i)) then
