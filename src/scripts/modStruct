@@ -225,7 +225,7 @@ foreach my $op (1..$numOps)
    elsif ($ops[$op] == 9)
       {StructureControl::cutBlock($zone,$abcxyzFlag,\@blockBorder);}
    elsif ($ops[$op] == 10)
-      {StructureControl::cutSphere($zone,$abcxyzFlag,$targetAtom,$sphereRad,
+      {StructureControl::cutSphere($zone,$abcxyzFlag,$sphereRad,$targetAtom,
                                   \@sphereLoc);}
 }
 

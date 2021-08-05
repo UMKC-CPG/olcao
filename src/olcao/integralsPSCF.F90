@@ -1706,11 +1706,11 @@ end subroutine saveCurrentAccumulation
 #ifndef GAMMA
 subroutine getIntgResults (valeVale,coreValeOL,&
       & currentKPoint,runCode,valeValeBand_did,valeValeBand_dims,&
-      & noSaveValeVale,spinDirection)
+      & saveValeVale,spinDirection)
 #else
 subroutine getIntgResults (valeValeGamma,coreValeOLGamma,&
       & runCode,valeValeBand_did,valeValeBand_dims,&
-      & noSaveValeVale,spinDirection)
+      & saveValeVale,spinDirection)
 #endif
 
    ! Import the necessary modules
@@ -1745,7 +1745,7 @@ subroutine getIntgResults (valeValeGamma,coreValeOLGamma,&
    integer :: runCode  ! 1=overlap; 2=hamiltonian; 3,4,5=MOME x,y,z
    integer (hid_t) :: valeValeBand_did
    integer (hsize_t), dimension (2) :: valeValeBand_dims
-   integer :: noSaveValeVale
+   integer :: saveValeVale
    integer :: spinDirection
 
    ! Define local variables for logging and loop control
@@ -1861,7 +1861,7 @@ subroutine getIntgResults (valeValeGamma,coreValeOLGamma,&
 
          ! Open the integral dataset for this atom.
          call h5dopen_f (intg_gid,currentName,intg_did,hdferr)
-         if (hdferr /= 0) stop 'Can not open integral dataset'
+         if (hdferr /= 0) stop 'Cannot open integral dataset'
 
          ! The loopIndex information does not depend on spin direction.
          write (currentName,*) i
@@ -1869,18 +1869,18 @@ subroutine getIntgResults (valeValeGamma,coreValeOLGamma,&
 
          ! Open the loopIndex dataset for this atom.
          call h5dopen_f (loopIndices_gid,currentName,loopIndices_did,hdferr)
-         if (hdferr /= 0) stop 'Can not open loop index dataset'
+         if (hdferr /= 0) stop 'Cannot open loop index dataset'
       else
          write (currentName,*) i
          currentName = trim (currentName)
 
          ! Open the integral dataset for this atom.
          call h5dopen_f (intg_gid,currentName,intg_did,hdferr)
-         if (hdferr /= 0) stop 'Can not open integral dataset'
+         if (hdferr /= 0) stop 'Cannot open integral dataset'
 
          ! Open the loopIndex dataset for this atom.
          call h5dopen_f (loopIndices_gid,currentName,loopIndices_did,hdferr)
-         if (hdferr /= 0) stop 'Can not open loop index dataset'
+         if (hdferr /= 0) stop 'Cannot open loop index dataset'
       endif
 
       ! Determine the number of chunks that make up this dataset.
@@ -1889,9 +1889,9 @@ subroutine getIntgResults (valeValeGamma,coreValeOLGamma,&
       !   The dataspace covers all the data on the file.  The exact data to
       !   read will be selected in each j-loop iteration via hyperslab.
       call h5dget_space_f (intg_did,fileIntg_dsid,hdferr)
-      if (hdferr /= 0) stop 'Can not get space'
+      if (hdferr /= 0) stop 'Cannot get space'
       call h5dget_create_plist_f (intg_did,fileIntg_plid,hdferr)
-      if (hdferr /= 0) stop 'Can not get create plist'
+      if (hdferr /= 0) stop 'Cannot get create plist'
       call h5pget_chunk_f (fileIntg_plid,2,chunkDims,hdferr)
       if (hdferr == -1) stop 'Failed to get chunk size'
       call h5sget_simple_extent_npoints_f (fileIntg_dsid,numPoints,hdferr)
@@ -1906,9 +1906,9 @@ subroutine getIntgResults (valeValeGamma,coreValeOLGamma,&
       !   read.  This dataspace covers all the loop index data on the file.
       !   The exact loop indices to read will be chosen in the j-loop.
       call h5dget_space_f (loopIndices_did,fileLoopIndices_dsid,hdferr)
-      if (hdferr /= 0) stop 'Can not get loop index space'
+      if (hdferr /= 0) stop 'Cannot get loop index space'
       call h5dget_create_plist_f (loopIndices_did,fileLoopIndices_plid,hdferr)
-      if (hdferr /= 0) stop 'Can not get loop index create plist'
+      if (hdferr /= 0) stop 'Cannot get loop index create plist'
       call h5pget_chunk_f (fileLoopIndices_plid,2,loopIndexDims,hdferr)
       if (hdferr == -1) stop 'Failed to get loop index chunk size'
       call h5sget_simple_extent_npoints_f (fileLoopIndices_dsid,numPoints,&
@@ -2163,7 +2163,7 @@ subroutine getIntgResults (valeValeGamma,coreValeOLGamma,&
          !   type of calculation when we have some 300 kpoints.)  This is
          !   also why this question is not asked for the Gamma kpoint
          !   situation below.
-         if (noSaveValeVale == 0) then
+         if (saveValeVale == 1) then
             call h5dwrite_f (valeValeBand_did,H5T_NATIVE_DOUBLE,&
                   & packedValeVale(:,:),valeValeBand_dims,hdferr)
             if (hdferr == -1) stop 'Failed to write packed vale vale band'
@@ -2174,7 +2174,7 @@ subroutine getIntgResults (valeValeGamma,coreValeOLGamma,&
          deallocate (valeCore)
       else  ! No core dim in whole system so orthogonalization is not needed.
          deallocate (coreCore)
-         if (noSaveValeVale == 0) then
+         if (saveValeVale == 1) then
             allocate (packedValeVale(2,valeDim*(valeDim+1)/2))
 
             ! Initialize the index counter for packing.
@@ -2281,7 +2281,7 @@ subroutine getIntgResults (valeValeGamma,coreValeOLGamma,&
          deallocate (valeCoreGamma)
       else  ! No core dimension in the whole system.
          deallocate (coreCoreGamma)
-         if (noSaveValeVale == 0) then
+         if (saveValeVale == 1) then
             allocate (packedValeVale(1,valeDim*(valeDim+1)/2))
 
             ! Initialize the index counter for packing.

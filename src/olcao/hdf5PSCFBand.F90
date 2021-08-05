@@ -163,62 +163,64 @@ subroutine initPSCFBandHDF5(numStates)
       valeValeBandChunk(2) = valeValeBand(2)
    endif
 
-   ! The symmetric band calculation will not use these HDF5 settings for output.
-   if (doSybd .eq. 0) then
+   ! Presently the SYBD calculation does not need to allocate any of this or
+   !   store any hdf5 results.
+   if (doSYBD == 0) then
 
       ! Create the property list for the band hdf5 file and turn off
       !   chunk caching.
       call h5pcreate_f    (H5P_FILE_ACCESS_F,band_plid,hdferr)
-      if (hdferr == -1) stop 'Can not create band_plid'
+      if (hdferr == -1) stop 'Cannot create band_plid'
       call h5pget_cache_f (band_plid,mdc_nelmts,rdcc_nelmts,rdcc_nbytes,&
             & rdcc_w0,hdferr)
-      if (hdferr == -1) stop 'Can not get h5p_cache'
+      if (hdferr == -1) stop 'Cannot get h5p_cache'
       call h5pset_cache_f (band_plid,mdc_nelmts,0_size_t,0_size_t,rdcc_w0,&
             & hdferr)
-      if (hdferr == -1) stop 'Can not set h5p_cache'
+      if (hdferr == -1) stop 'Cannot set h5p_cache'
    
-
-      ! Create the HDF5 file that will hold the results of the band calculation
-      !   to be used by other programs (bond,optc,dos).
+   
+      ! Create the HDF5 file that will hold the results of the band or sybd
+      !   calculation to be used by other programs (bond,optc,dos or psybd post-
+      !   processing).
       call h5fcreate_f ("band-temp.hdf5",H5F_ACC_EXCL_F,band_fid,hdferr,&
             H5P_DEFAULT_F,band_plid)
-      if (hdferr == -1) stop 'Can not create band_fid'
-
-
+      if (hdferr == -1) stop 'Cannot create band_fid'
+   
+   
       ! Create the top level groups in the band output file.
       call h5gcreate_f (band_fid,"eigenVectors",eigenVectorsBand_gid,hdferr)
-      if (hdferr == -1) stop 'Can not create eigenVectorsBand_gid'
+      if (hdferr == -1) stop 'Cannot create eigenVectorsBand_gid'
       call h5gcreate_f (band_fid,"eigenValues",eigenValuesBand_gid,hdferr)
-      if (hdferr == -1) stop 'Can not create eigenValuesBand_gid'
+      if (hdferr == -1) stop 'Cannot create eigenValuesBand_gid'
       call h5gcreate_f (band_fid,"overlap",valeValeBand_gid,hdferr)
-      if (hdferr == -1) stop 'Can not create valeValeBand_gid'
+      if (hdferr == -1) stop 'Cannot create valeValeBand_gid'
       if (coreDim /= 0) then
          call h5gcreate_f (band_fid,"orthoCoeff",coreValeBand_gid,hdferr)
-         if (hdferr == -1) stop 'Can not create coreValeBand_gid'
+         if (hdferr == -1) stop 'Cannot create coreValeBand_gid'
       endif
-
+   
       ! Create the dataspaces that will be used for each group.
       call h5screate_simple_f (2,valeStatesBand,valeStatesBand_dsid,hdferr)
-      if (hdferr == -1) stop 'Can not create valeStatesBand_dsid'
+      if (hdferr == -1) stop 'Cannot create valeStatesBand_dsid'
       call h5screate_simple_f (1,statesBand,statesBand_dsid,hdferr)
-      if (hdferr == -1) stop 'Can not create statesBand_dsid'
+      if (hdferr == -1) stop 'Cannot create statesBand_dsid'
       call h5screate_simple_f (2,valeValeBand,valeValeBand_dsid,hdferr)
-      if (hdferr == -1) stop 'Can not create valeValeBand_dsid'
+      if (hdferr == -1) stop 'Cannot create valeValeBand_dsid'
       if (coreDim /= 0) then
          call h5screate_simple_f (2,coreValeBand,coreValeBand_dsid,hdferr)
-         if (hdferr == -1) stop 'Can not create coreValeBand_dsid'
+         if (hdferr == -1) stop 'Cannot create coreValeBand_dsid'
       endif
-
+   
       ! Create the property lists first, then set them properties one at a time.
       call h5pcreate_f      (H5P_DATASET_CREATE_F,valeStatesBand_plid,hdferr)
-      if (hdferr == -1) stop 'Can not create valeStatesBand_plid'
+      if (hdferr == -1) stop 'Cannot create valeStatesBand_plid'
       call h5pcreate_f      (H5P_DATASET_CREATE_F,statesBand_plid,hdferr)
-      if (hdferr == -1) stop 'Can not create statesBand_plid'
+      if (hdferr == -1) stop 'Cannot create statesBand_plid'
       call h5pcreate_f      (H5P_DATASET_CREATE_F,valeValeBand_plid,hdferr)
-      if (hdferr == -1) stop 'Can not create valeValeBand_plid'
+      if (hdferr == -1) stop 'Cannot create valeValeBand_plid'
       if (coreDim /= 0) then
          call h5pcreate_f      (H5P_DATASET_CREATE_F,coreValeBand_plid,hdferr)
-         if (hdferr == -1) stop 'Can not create coreValeBand_plid'
+         if (hdferr == -1) stop 'Cannot create coreValeBand_plid'
       endif
       call h5pset_layout_f  (valeStatesBand_plid,H5D_CHUNKED_F,hdferr)
       call h5pset_layout_f  (statesBand_plid,H5D_CHUNKED_F,hdferr)
@@ -263,14 +265,14 @@ subroutine initPSCFBandHDF5(numStates)
             call h5dcreate_f(coreValeBand_gid,currentName,&
                   & H5T_NATIVE_DOUBLE,coreValeBand_dsid,coreValeBand_did(1,i),&
                   & hdferr,coreValeBand_plid)
-            if (hdferr == -1) stop 'Can not create coreValeBand_did1'
+            if (hdferr == -1) stop 'Cannot create coreValeBand_did1'
 #ifndef GAMMA
             write (currentName,fmt="(a4,i7.7)") "imag",i
             currentName = trim (currentName)
             call h5dcreate_f(coreValeBand_gid,currentName,&
                   & H5T_NATIVE_DOUBLE,coreValeBand_dsid,&
                   & coreValeBand_did(2,i),hdferr,coreValeBand_plid)
-            if (hdferr == -1) stop 'Can not create coreValeBand_did2'
+            if (hdferr == -1) stop 'Cannot create coreValeBand_did2'
 #endif
          endif
          write (currentName,fmt="(i7.7)") i
@@ -278,7 +280,7 @@ subroutine initPSCFBandHDF5(numStates)
          call h5dcreate_f(valeValeBand_gid,currentName,&
                & H5T_NATIVE_DOUBLE,valeValeBand_dsid,valeValeBand_did(i),&
                & hdferr,valeValeBand_plid)
-            if (hdferr == -1) stop 'Can not create valeValeBand_did'
+            if (hdferr == -1) stop 'Cannot create valeValeBand_did'
       enddo
 
 
@@ -290,21 +292,21 @@ subroutine initPSCFBandHDF5(numStates)
             call h5dcreate_f(eigenVectorsBand_gid,currentName,&
                   & H5T_NATIVE_DOUBLE,valeStatesBand_dsid,&
                   & eigenVectorsBand_did(1,i,j),hdferr,valeStatesBand_plid)
-            if (hdferr == -1) stop 'Can not create eigenVectorsBand_did1'
+            if (hdferr == -1) stop 'Cannot create eigenVectorsBand_did1'
 #ifndef GAMMA
             write (currentName,fmt="(a4,i7.7,i7.7)") "imag",i,j
             currentName = trim (currentName)
             call h5dcreate_f(eigenVectorsBand_gid,currentName,&
                   & H5T_NATIVE_DOUBLE,valeStatesBand_dsid,&
                   & eigenVectorsBand_did(2,i,j),hdferr,valeStatesBand_plid)
-            if (hdferr == -1) stop 'Can not create eigenVectorsBand_did2'
+            if (hdferr == -1) stop 'Cannot create eigenVectorsBand_did2'
 #endif
             write (currentName,fmt="(i7.7,i7.7)") i,j
             currentName = trim (currentName)
             call h5dcreate_f(eigenValuesBand_gid,currentName,H5T_NATIVE_DOUBLE,&
                   & statesBand_dsid,eigenValuesBand_did(i,j),hdferr,&
                   & statesBand_plid)
-            if (hdferr == -1) stop 'Can not create eigenValuesBand_did'
+            if (hdferr == -1) stop 'Cannot create eigenValuesBand_did'
          enddo
       enddo
    endif
@@ -332,47 +334,47 @@ subroutine closePSCFBandHDF5
    !   only if the symmetric band calculation was not done since it does not
    !   use any of these.
 
-   if (doSybd .eq. 0) then
+   if (doSYBD .eq. 0) then
 
       ! Close the band dataspaces first (only if this was a band calculation
       !   where data was written and not a dos, optc, bond, wave, etc type of
       !   calculation where data was only read).
       call h5sclose_f (valeStatesBand_dsid,hdferr)
-      if (hdferr == -1) stop 'Can not close valeStatesBand_dsid'
+      if (hdferr == -1) stop 'Cannot close valeStatesBand_dsid'
       call h5sclose_f (statesBand_dsid,hdferr)
-      if (hdferr == -1) stop 'Can not close statesBand_dsid'
+      if (hdferr == -1) stop 'Cannot close statesBand_dsid'
       call h5sclose_f (valeValeBand_dsid,hdferr)
-      if (hdferr == -1) stop 'Can not close valeValeBand_dsid'
+      if (hdferr == -1) stop 'Cannot close valeValeBand_dsid'
       if (coreValeBand(1) /= 0) then
          call h5sclose_f (coreValeBand_dsid,hdferr)
-         if (hdferr == -1) stop 'Can not close coreValeBand_dsid'
+         if (hdferr == -1) stop 'Cannot close coreValeBand_dsid'
       endif
 
       ! Close the band datasets for the overlap coreVale and valeVale matrices.
       do i = 1, numKPoints
          if (coreValeBand(1) /= 0) then
             call h5dclose_f (coreValeBand_did(1,i),hdferr)
-            if (hdferr == -1) stop 'Can not close coreValeBand_did1'
+            if (hdferr == -1) stop 'Cannot close coreValeBand_did1'
 #ifndef GAMMA
             call h5dclose_f (coreValeBand_did(2,i),hdferr)
-            if (hdferr == -1) stop 'Can not close coreValeBand_did2'
+            if (hdferr == -1) stop 'Cannot close coreValeBand_did2'
 #endif
          endif
          call h5dclose_f (valeValeBand_did(i),hdferr)
-         if (hdferr == -1) stop 'Can not close valeValeBand_did'
+         if (hdferr == -1) stop 'Cannot close valeValeBand_did'
       enddo
 
       ! Close the band datasets for the eigenvalues and eigenvectors next.
       do i = 1, numKPoints
          do j = 1, spin
             call h5dclose_f (eigenVectorsBand_did(1,i,j),hdferr)
-            if (hdferr == -1) stop 'Can not close eigenVectorsBand_did1'
+            if (hdferr == -1) stop 'Cannot close eigenVectorsBand_did1'
 #ifndef GAMMA
             call h5dclose_f (eigenVectorsBand_did(2,i,j),hdferr)
-            if (hdferr == -1) stop 'Can not close eigenVectorsBand_did2'
+            if (hdferr == -1) stop 'Cannot close eigenVectorsBand_did2'
 #endif
             call h5dclose_f (eigenValuesBand_did(i,j),hdferr)
-            if (hdferr == -1) stop 'Can not close eigenValuesBand_did'
+            if (hdferr == -1) stop 'Cannot close eigenValuesBand_did'
          enddo
       enddo
 
@@ -621,59 +623,59 @@ subroutine closeAccessPSCFBandHDF5
    do i = 1, numKPoints
       if (coreValeBand(1) /= 0) then
          call h5dclose_f (coreValeBand_did(1,i),hdferr)
-         if (hdferr == -1) stop 'Can not close coreValeBand_did1'
+         if (hdferr == -1) stop 'Cannot close coreValeBand_did1'
 #ifndef GAMMA
          call h5dclose_f (coreValeBand_did(2,i),hdferr)
-         if (hdferr == -1) stop 'Can not close coreValeBand_did2'
+         if (hdferr == -1) stop 'Cannot close coreValeBand_did2'
 #endif
       endif
       call h5dclose_f (valeValeBand_did(i),hdferr)
-      if (hdferr == -1) stop 'Can not close valeValeBand_did'
+      if (hdferr == -1) stop 'Cannot close valeValeBand_did'
    enddo
 
    ! Close the band datasets for the eigenvalues and eigenvectors next.
    do i = 1, numKPoints
       do j = 1, spin
          call h5dclose_f (eigenVectorsBand_did(1,i,j),hdferr)
-         if (hdferr == -1) stop 'Can not close eigenVectorsBand_did1'
+         if (hdferr == -1) stop 'Cannot close eigenVectorsBand_did1'
 #ifndef GAMMA
          call h5dclose_f (eigenVectorsBand_did(2,i,j),hdferr)
-         if (hdferr == -1) stop 'Can not close eigenVectorsBand_did2'
+         if (hdferr == -1) stop 'Cannot close eigenVectorsBand_did2'
 #endif
          call h5dclose_f (eigenValuesBand_did(i,j),hdferr)
-         if (hdferr == -1) stop 'Can not close eigenValuesBand_did'
+         if (hdferr == -1) stop 'Cannot close eigenValuesBand_did'
       enddo
    enddo
 
    ! Close the band property lists.
    call h5pclose_f (valeStatesBand_plid,hdferr)
-   if (hdferr == -1) stop 'Can not close valeStatesBand_plid'
+   if (hdferr == -1) stop 'Cannot close valeStatesBand_plid'
    call h5pclose_f (statesBand_plid,hdferr)
-   if (hdferr == -1) stop 'Can not close statesBand_plid'
+   if (hdferr == -1) stop 'Cannot close statesBand_plid'
    call h5pclose_f (valeValeBand_plid,hdferr)
-   if (hdferr == -1) stop 'Can not close valeValeBand_plid'
+   if (hdferr == -1) stop 'Cannot close valeValeBand_plid'
    if (coreValeBand(1) /= 0) then
       call h5pclose_f (coreValeBand_plid,hdferr)
-      if (hdferr == -1) stop 'Can not close coreValeBand_plid'
+      if (hdferr == -1) stop 'Cannot close coreValeBand_plid'
    endif
    call h5pclose_f (band_plid,hdferr)
-   if (hdferr == -1) stop 'Can not close band_plid'
+   if (hdferr == -1) stop 'Cannot close band_plid'
 
    ! Close the band top level groups.
    call h5gclose_f (eigenVectorsBand_gid,hdferr)
-   if (hdferr == -1) stop 'Can not close eigenVectorsBand_gid'
+   if (hdferr == -1) stop 'Cannot close eigenVectorsBand_gid'
    call h5gclose_f (eigenValuesBand_gid,hdferr)
-   if (hdferr == -1) stop 'Can not close eigenValuesBand_gid'
+   if (hdferr == -1) stop 'Cannot close eigenValuesBand_gid'
    call h5gclose_f (valeValeBand_gid,hdferr)
-   if (hdferr == -1) stop 'Can not close valeValeBand_gid'
+   if (hdferr == -1) stop 'Cannot close valeValeBand_gid'
    if (coreValeBand(1) /= 0) then
       call h5gclose_f (coreValeBand_gid,hdferr)
-      if (hdferr == -1) stop 'Can not close coreValeBand_gid'
+      if (hdferr == -1) stop 'Cannot close coreValeBand_gid'
    endif
 
    ! Close the band file.
    call h5fclose_f (band_fid,hdferr)
-   if (hdferr == -1) stop 'Can not close band_fid'
+   if (hdferr == -1) stop 'Cannot close band_fid'
 
 
    ! In the case that we are closing access to the band hdf5 file from a
@@ -684,43 +686,43 @@ subroutine closeAccessPSCFBandHDF5
       ! Close the overlap datasets in the second band file.
       do i = 1, numKPoints
          call h5dclose_f (valeValeBand2_did(i),hdferr)
-         if (hdferr == -1) stop 'Can not close valeValeBand2_did'
+         if (hdferr == -1) stop 'Cannot close valeValeBand2_did'
       enddo
 
       ! Close the wavefunction datasets in the second band file.
       do i = 1, numKPoints
          do j = 1, spin
             call h5dclose_f (eigenVectorsBand2_did(1,i,j),hdferr)
-            if (hdferr == -1) stop 'Can not close eigenVectorsBand2_did1'
+            if (hdferr == -1) stop 'Cannot close eigenVectorsBand2_did1'
 #ifndef GAMMA
             call h5dclose_f (eigenVectorsBand2_did(2,i,j),hdferr)
-            if (hdferr == -1) stop 'Can not close eigenVectorsBand2_did2'
+            if (hdferr == -1) stop 'Cannot close eigenVectorsBand2_did2'
 #endif
             call h5dclose_f (eigenValuesBand2_did(i,j),hdferr)
-            if (hdferr == -1) stop 'Can not close eigenValuesBand2_did'
+            if (hdferr == -1) stop 'Cannot close eigenValuesBand2_did'
          enddo
       enddo
 
       ! Close the band top level groups.
       call h5gclose_f (eigenVectorsBand2_gid,hdferr)
-      if (hdferr == -1) stop 'Can not close eigenVectorsBand2_gid'
+      if (hdferr == -1) stop 'Cannot close eigenVectorsBand2_gid'
       call h5gclose_f (eigenValuesBand2_gid,hdferr)
-      if (hdferr == -1) stop 'Can not close eigenValuesBand2_gid'
+      if (hdferr == -1) stop 'Cannot close eigenValuesBand2_gid'
       call h5gclose_f (valeValeBand2_gid,hdferr)
-      if (hdferr == -1) stop 'Can not close valeValeBand2_gid'
+      if (hdferr == -1) stop 'Cannot close valeValeBand2_gid'
 
       ! Close the HDF5 file access property list
       call h5pclose_f (band2_plid,hdferr)
-      if (hdferr == -1) stop 'Can not close band2_plid'
+      if (hdferr == -1) stop 'Cannot close band2_plid'
 
       ! Close the HDF5 file that holds the results of the band calculation.
       call h5fclose_f (band2_fid,hdferr)
-      if (hdferr == -1) stop 'Can not close band2_fid'
+      if (hdferr == -1) stop 'Cannot close band2_fid'
    endif
 
    ! Close access to the HDF interface.
    call h5close_f (hdferr)
-   if (hdferr == -1) stop 'Can not close HDF5 interface'
+   if (hdferr == -1) stop 'Cannot close HDF5 interface'
 
 end subroutine closeAccessPSCFBandHDF5
 
@@ -752,14 +754,14 @@ subroutine saveCoreValeOL (coreValeOLGamma,i)
 #ifndef GAMMA
       call h5dwrite_f (coreValeBand_did(1,i),H5T_NATIVE_DOUBLE,&
             & real(coreValeOL(:coreDim,:valeDim,1),double),coreValeBand,hdferr)
-      if (hdferr /= 0) stop 'Can not write real core vale band.'
+      if (hdferr /= 0) stop 'Cannot write real core vale band.'
       call h5dwrite_f (coreValeBand_did(2,i),H5T_NATIVE_DOUBLE,&
             & aimag(coreValeOL(:coreDim,:valeDim,1)),coreValeBand,hdferr)
-      if (hdferr /= 0) stop 'Can not write imag core vale band.'
+      if (hdferr /= 0) stop 'Cannot write imag core vale band.'
 #else
       call h5dwrite_f (coreValeBand_did(1,i),H5T_NATIVE_DOUBLE,&
             & coreValeOLGamma(:coreDim,:ValeDim),coreValeBand,hdferr)
-      if (hdferr /= 0) stop 'Can not write real core vale band.'
+      if (hdferr /= 0) stop 'Cannot write real core vale band.'
 #endif
    endif
 

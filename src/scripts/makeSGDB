@@ -25,7 +25,7 @@ exit;
 
 # Use necessary modules.
 use strict;
-#use warnings;
+use warnings;
 use Env;
 use lib "$OLCAO_BIN/perl5";
 use StructureControl;
@@ -140,8 +140,8 @@ sub makeDB
          # Write the title for this space group.
          print OUTDATA $spaceGroupTag;
 
-         # Write the root space group number for this space group.
-         print OUTDATA "$groupNumber\n";
+         # Write the root space group number and subgroup for this space group.
+         print OUTDATA "$groupNumber $subGroup\n";
 
          # Read all the symmetry operations.
          &readSymmetryComponents;
@@ -231,7 +231,7 @@ sub readSymmetryComponents
       if ($line eq "\n")
          {last;}
       elsif ($line =~ /\(/)
-         {&applyShiftedRepitition($line,$currentNumSymmetryOps);}
+         {&applyShiftedRepetition($line,$currentNumSymmetryOps);}
       else
       {
          $currentNumSymmetryOps++;
@@ -337,7 +337,7 @@ sub getAxisOpComponents
    return @componentList;
 }
 
-sub applyShiftedRepitition
+sub applyShiftedRepetition
 {
    # Define passed parameters.
    my $line = $_[0];;

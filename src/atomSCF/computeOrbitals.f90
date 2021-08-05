@@ -844,6 +844,11 @@ subroutine orbitalInfo (currentOrb)
    numZeros   = 0
    numExtrema = 0
 
+   ! Initialize with the assumption that we are in neither a zero nor an
+   !   extremum.
+   insideZero = 0
+   insideExtrema = 0
+
    ! Assume this value for the first radial zero point.
    radialZero(1) = 0.0_double
 
@@ -1107,518 +1112,518 @@ subroutine orbitalInfo (currentOrb)
 end subroutine orbitalInfo
 
 
-      SUBROUTINE TRIDIB(N,EPS1,D,E,E2,LB,UB,M11,M,W,IND,IERR,RV4,RV5)
-!
-      DOUBLE PRECISION EPS1,D,E,E2,W,RV4,RV5,MACHEP,LB,UB, &
-     & U,V,T1,T2,XU,X0,X1
-      INTEGER I,J,K,L,M,N,P,Q,R,S,II,M1,M2,M11,M22,TAG,IERR,ISTURM
-      DIMENSION D(N),E(N),E2(N),W(M),RV4(N),RV5(N)
-!     REAL U,V,LB,T1,T2,UB,XU,X0,X1,EPS1,MACHEP
-!     REAL ABS,AMAX1,AMIN1,FLOAT
-      INTEGER IND(M)
-!
-!     THIS SUBROUTINE IS A TRANSLATION OF THE ALGOL PROCEDURE BISECT,
-!     NUM. MATH. 9, 386-393(1967) BY BARTH, MARTIN, AND WILKINSON.
-!     HANDBOOK FOR AUTO. COMP., VOL.II-LINEAR ALGEBRA, 249-256(1971).
-!
-!     THIS SUBROUTINE FINDS THOSE EIGENVALUES OF A TRIDIAGONAL
-!     SYMMETRIC MATRIX BETWEEN SPECIFIED BOUNDARY INDICES,
-!     USING BISECTION.
-!
-!     ON INPUT-
-!
-!        N IS THE ORDER OF THE MATRIX,
-!
-!        EPS1 IS AN ABSOLUTE ERROR TOLERANCE FOR THE COMPUTED
-!          EIGENVALUES.  IF THE INPUT EPS1 IS NON-POSITIVE,
-!          IT IS RESET FOR EACH SUBMATRIX TO A DEFAULT VALUE,
-!          NAMELY, MINUS THE PRODUCT OF THE RELATIVE MACHINE
-!          PRECISION AND THE 1-NORM OF THE SUBMATRIX,
-!
-!        D CONTAINS THE DIAGONAL ELEMENTS OF THE INPUT MATRIX,
-!
-!        E CONTAINS THE SUBDIAGONAL ELEMENTS OF THE INPUT MATRIX
-!          IN ITS LAST N-1 POSITIONS.  E(1) IS ARBITRARY,
-!
-!        E2 CONTAINS THE SQUARES OF THE CORRESPONDING ELEMENTS OF E.
-!          E2(1) IS ARBITRARY,
-!
-!        M11 SPECIFIES THE LOWER BOUNDARY INDEX FOR THE DESIRED
-!          EIGENVALUES,
-!
-!        M SPECIFIES THE NUMBER OF EIGENVALUES DESIRED.  THE UPPER
-!          BOUNDARY INDEX M22 IS THEN OBTAINED AS M22=M11+M-1.
-!
-!     ON OUTPUT-
-!
-!        EPS1 IS UNALTERED UNLESS IT HAS BEEN RESET TO ITS
-!          (LAST) DEFAULT VALUE,
-!
-!        D AND E ARE UNALTERED,
-!
-!        ELEMENTS OF E2, CORRESPONDING TO ELEMENTS OF E REGARDED
-!          AS NEGLIGIBLE, HAVE BEEN REPLACED BY ZERO CAUSING THE
-!          MATRIX TO SPLIT INTO A DIRECT SUM OF SUBMATRICES.
-!          E2(1) IS ALSO SET TO ZERO,
-!
-!        LB AND UB DEFINE AN INTERVAL CONTAINING EXACTLY THE DESIRED
-!          EIGENVALUES,
-!
-!        W CONTAINS, IN ITS FIRST M POSITIONS, THE EIGENVALUES
-!          BETWEEN INDICES M11 AND M22 IN ASCENDING ORDER,
-!
-!        IND CONTAINS IN ITS FIRST M POSITIONS THE SUBMATRIX INDICES
-!          ASSOCIATED WITH THE CORRESPONDING EIGENVALUES IN W --
-!          1 FOR EIGENVALUES BELONGING TO THE FIRST SUBMATRIX FROM
-!          THE TOP, 2 FOR THOSE BELONGING TO THE SECOND SUBMATRIX, ETC.,
-!
-!        IERR IS SET TO
-!          ZERO       FOR NORMAL RETURN,
-!          3*N+1      IF MULTIPLE EIGENVALUES AT INDEX M11 MAKE
-!                     UNIQUE SELECTION IMPOSSIBLE,
-!          3*N+2      IF MULTIPLE EIGENVALUES AT INDEX M22 MAKE
-!                     UNIQUE SELECTION IMPOSSIBLE,
-!
-!        RV4 AND RV5 ARE TEMPORARY STORAGE ARRAYS.
-!
-!     NOTE THAT SUBROUTINE TQL1, IMTQL1, OR TQLRAT IS GENERALLY FASTER
-!     THAN TRIDIB, IF MORE THAN N/4 EIGENVALUES ARE TO BE FOUND.
-!
-!     QUESTIONS AND COMMENTS SHOULD BE DIRECTED TO B. S. GARBOW,
-!     APPLIED MATHEMATICS DIVISION, ARGONNE NATIONAL LABORATORY
-!
-!     ------------------------------------------------------------------
-!
-!     ********** MACHEP IS A MACHINE DEPENDENT PARAMETER SPECIFYING
-!                THE RELATIVE PRECISION OF FLOATING POINT ARITHMETIC.
-!
-!                **********
-      MACHEP = 2.0D0**(-47)
-!
-      IERR = 0
-      TAG = 0
-      XU = D(1)
-      X0 = D(1)
-      U = 0.0D0
-!     ********** LOOK FOR SMALL SUB-DIAGONAL ENTRIES AND DETERMINE AN
-!                INTERVAL CONTAINING ALL THE EIGENVALUES **********
-      DO 40 I = 1, N
-         X1 = U
-         U = 0.0D0
-         IF (I .NE. N) U = ABS(E(I+1))
-         XU = DMIN1(D(I)-(X1+U),XU)
-         X0 = DMAX1(D(I)+(X1+U),X0)
-         IF (I .EQ. 1) GO TO 20
-         IF (ABS(E(I)) .GT. MACHEP * (ABS(D(I)) + ABS(D(I-1)))) &
-     &      GO TO 40
-   20    E2(I) = 0.0D0
-   40 CONTINUE
-!
-      X1 = DMAX1(ABS(XU),ABS(X0)) * MACHEP * FLOAT(N)
-      XU = XU - X1
-      T1 = XU
-      X0 = X0 + X1
-      T2 = X0
-!     ********** DETERMINE AN INTERVAL CONTAINING EXACTLY
-!                THE DESIRED EIGENVALUES **********
-      P = 1
-      Q = N
-      M1 = M11 - 1
-      IF (M1 .EQ. 0) GO TO 75
-      ISTURM = 1
-   50 V = X1
-      X1 = XU + (X0 - XU) * 0.5D0
-      IF (X1 .EQ. V) GO TO 980
-      GO TO 320
-   60 IF (S - M1) 65, 73, 70
-   65 XU = X1
-      GO TO 50
-   70 X0 = X1
-      GO TO 50
-   73 XU = X1
-      T1 = X1
-   75 M22 = M1 + M
-      IF (M22 .EQ. N) GO TO 90
-      X0 = T2
-      ISTURM = 2
-      GO TO 50
-   80 IF (S - M22) 65, 85, 70
-   85 T2 = X1
-   90 Q = 0
-      R = 0
-!     ********** ESTABLISH AND PROCESS NEXT SUBMATRIX, REFINING
-!                INTERVAL BY THE GERSCHGORIN BOUNDS **********
-  100 IF (R .EQ. M) GO TO 1001
-      TAG = TAG + 1
-      P = Q + 1
-      XU = D(P)
-      X0 = D(P)
-      U = 0.0D0
-!
-      DO 120 Q = P, N
-         X1 = U
-         U = 0.0D0
-         V = 0.0D0
-         IF (Q .EQ. N) GO TO 110
-         U = ABS(E(Q+1))
-         V = E2(Q+1)
-  110    XU = DMIN1(D(Q)-(X1+U),XU)
-         X0 = DMAX1(D(Q)+(X1+U),X0)
-         IF (V .EQ. 0.0D0) GO TO 140
-  120 CONTINUE
-!
-  140 X1 = DMAX1(ABS(XU),ABS(X0)) * MACHEP
-      IF (EPS1 .LE. 0.0D0) EPS1 = -X1
-      IF (P .NE. Q) GO TO 180
-!     ********** CHECK FOR ISOLATED ROOT WITHIN INTERVAL **********
-      IF (T1 .GT. D(P) .OR. D(P) .GE. T2) GO TO 940
-      M1 = P
-      M2 = P
-      RV5(P) = D(P)
-      GO TO 900
-  180 X1 = X1 * FLOAT(Q-P+1)
-      LB = DMAX1(T1,XU-X1)
-      UB = DMIN1(T2,X0+X1)
-      X1 = LB
-      ISTURM = 3
-      GO TO 320
-  200 M1 = S + 1
-      X1 = UB
-      ISTURM = 4
-      GO TO 320
-  220 M2 = S
-      IF (M1 .GT. M2) GO TO 940
-!     ********** FIND ROOTS BY BISECTION **********
-      X0 = UB
-      ISTURM = 5
-!
-      DO 240 I = M1, M2
-         RV5(I) = UB
-         RV4(I) = LB
-  240 CONTINUE
-!     ********** LOOP FOR K-TH EIGENVALUE
-!                FOR K=M2 STEP -1 UNTIL M1 DO --
-!                (-DO- NOT USED TO LEGALIZE -COMPUTED GO TO-) **********
-      K = M2
-  250    XU = LB
-!     ********** FOR I=K STEP -1 UNTIL M1 DO -- **********
-         DO 260 II = M1, K
-            I = M1 + K - II
-            IF (XU .GE. RV4(I)) GO TO 260
-            XU = RV4(I)
-            GO TO 280
-  260    CONTINUE
-!
-  280    IF (X0 .GT. RV5(K)) X0 = RV5(K)
-!     ********** NEXT BISECTION STEP **********
-  300    X1 = (XU + X0) * 0.5D0
-         IF ((X0 - XU) .LE. (2.0D0 * MACHEP * &
-     &      (ABS(XU) + ABS(X0)) + ABS(EPS1))) GO TO 420
-!     ********** IN-LINE PROCEDURE FOR STURM SEQUENCE **********
-  320    S = P - 1
-         U = 1.0D0
-!
-         DO 340 I = P, Q
-            IF (U .NE. 0.0D0) GO TO 325
-            V = ABS(E(I)) / MACHEP
-            IF (E2(I) .EQ. 0.0D0) V = 0.0D0
-            GO TO 330
-  325       V = E2(I) / U
-  330       U = D(I) - X1 - V
-            IF (U .LT. 0.0D0) S = S + 1
-  340    CONTINUE
-!
-         GO TO (60,80,200,220,360), ISTURM
-!     ********** REFINE INTERVALS **********
-  360    IF (S .GE. K) GO TO 400
-         XU = X1
-         IF (S .GE. M1) GO TO 380
-         RV4(M1) = X1
-         GO TO 300
-  380    RV4(S+1) = X1
-         IF (RV5(S) .GT. X1) RV5(S) = X1
-         GO TO 300
-  400    X0 = X1
-         GO TO 300
-!     ********** K-TH EIGENVALUE FOUND **********
-  420    RV5(K) = X1
-      K = K - 1
-      IF (K .GE. M1) GO TO 250
-!     ********** ORDER EIGENVALUES TAGGED WITH THEIR
-!                SUBMATRIX ASSOCIATIONS **********
-  900 S = R
-      R = R + M2 - M1 + 1
-      J = 1
-      K = M1
-!
-      DO 920 L = 1, R
-         IF (J .GT. S) GO TO 910
-         IF (K .GT. M2) GO TO 940
-         IF (RV5(K) .GE. W(L)) GO TO 915
-!
-         DO 905 II = J, S
-            I = L + S - II
-            W(I+1) = W(I)
-            IND(I+1) = IND(I)
-  905    CONTINUE
-!
-  910    W(L) = RV5(K)
-         IND(L) = TAG
-         K = K + 1
-         GO TO 920
-  915    J = J + 1
-  920 CONTINUE
-!
-  940 IF (Q .LT. N) GO TO 100
-      GO TO 1001
-!     ********** SET ERROR -- INTERVAL CANNOT BE FOUND CONTAINING
-!                EXACTLY THE DESIRED EIGENVALUES **********
-  980 IERR = 3 * N + ISTURM
- 1001 LB = T1
-      UB = T2
-      RETURN
-!     ********** LAST CARD OF TRIDIB **********
-      END SUBROUTINE
-      SUBROUTINE TINVIT(NM,N,D,E,E2,M,W,IND,Z, &
-     &                  IERR,RV1,RV2,RV3,RV4,RV6)
-!
-      DOUBLE PRECISION D,E,E2,W,Z,RV1,RV2,RV3,RV4,RV6, &
-     &       U,V,UK,XU,X0,X1,EPS2,EPS3,EPS4,NORM,ORDER,MACHEP
-      INTEGER I,J,M,N,P,Q,R,S,II,IP,JJ,NM,ITS,TAG,IERR,GROUP
-      DIMENSION D(N),E(N),E2(N),W(M),Z(NM,M), &
-     &       RV1(N),RV2(N),RV3(N),RV4(N),RV6(N)
-!     REAL U,V,UK,XU,X0,X1,EPS2,EPS3,EPS4,NORM,ORDER,MACHEP
-!     REAL SQRT,ABS,FLOAT
-      INTEGER IND(M)
-! 
-!     THIS SUBROUTINE IS A TRANSLATION OF THE INVERSE ITERATION TECH-
-!     NIQUE IN THE ALGOL PROCEDURE TRISTURM BY PETERS AND WILKINSON.
-!     HANDBOOK FOR AUTO. COMP., VOL.II-LINEAR ALGEBRA, 418-439(1971).
-!
-!     THIS SUBROUTINE FINDS THOSE EIGENVECTORS OF A TRIDIAGONAL
-!     SYMMETRIC MATRIX CORRESPONDING TO SPECIFIED EIGENVALUES,
-!     USING INVERSE ITERATION.
-!
-!     ON INPUT-
-!
-!        NM MUST BE SET TO THE ROW DIMENSION OF TWO-DIMENSIONAL
-!          ARRAY PARAMETERS AS DECLARED IN THE CALLING PROGRAM
-!          DIMENSION STATEMENT,
-!
-!        N IS THE ORDER OF THE MATRIX,
-!
-!        D CONTAINS THE DIAGONAL ELEMENTS OF THE INPUT MATRIX,
-!
-!        E CONTAINS THE SUBDIAGONAL ELEMENTS OF THE INPUT MATRIX
-!          IN ITS LAST N-1 POSITIONS.  E(1) IS ARBITRARY,
-!
-!        E2 CONTAINS THE SQUARES OF THE CORRESPONDING ELEMENTS OF E,
-!          WITH ZEROS CORRESPONDING TO NEGLIGIBLE ELEMENTS OF E.
-!          E(I) IS CONSIDERED NEGLIGIBLE IF IT IS NOT LARGER THAN
-!          THE PRODUCT OF THE RELATIVE MACHINE PRECISION AND THE SUM
-!          OF THE MAGNITUDES OF D(I) AND D(I-1).  E2(1) MUST CONTAIN
-!          0.0 IF THE EIGENVALUES ARE IN ASCENDING ORDER, OR 2.0
-!          IF THE EIGENVALUES ARE IN DESCENDING ORDER.  IF  BISECT,
-!          TRIDIB, OR  IMTQLV  HAS BEEN USED TO FIND THE EIGENVALUES,
-!          THEIR OUTPUT E2 ARRAY IS EXACTLY WHAT IS EXPECTED HERE,
-!
-!        M IS THE NUMBER OF SPECIFIED EIGENVALUES,
-!
-!        W CONTAINS THE M EIGENVALUES IN ASCENDING OR DESCENDING ORDER,
-!
-!        IND CONTAINS IN ITS FIRST M POSITIONS THE SUBMATRIX INDICES
-!          ASSOCIATED WITH THE CORRESPONDING EIGENVALUES IN W --
-!          1 FOR EIGENVALUES BELONGING TO THE FIRST SUBMATRIX FROM
-!          THE TOP, 2 FOR THOSE BELONGING TO THE SECOND SUBMATRIX, ETC.
-!
-!     ON OUTPUT-
-!
-!        ALL INPUT ARRAYS ARE UNALTERED,
-!
-!        Z CONTAINS THE ASSOCIATED SET OF ORTHONORMAL EIGENVECTORS.
-!          ANY VECTOR WHICH FAILS TO CONVERGE IS SET TO ZERO,
-!
-!        IERR IS SET TO
-!          ZERO       FOR NORMAL RETURN,
-!          -R         IF THE EIGENVECTOR CORRESPONDING TO THE R-TH
-!                     EIGENVALUE FAILS TO CONVERGE IN 5 ITERATIONS,
-!
-!        RV1, RV2, RV3, RV4, AND RV6 ARE TEMPORARY STORAGE ARRAYS.
-!
-!     QUESTIONS AND COMMENTS SHOULD BE DIRECTED TO B. S. GARBOW,
-!     APPLIED MATHEMATICS DIVISION, ARGONNE NATIONAL LABORATORY
-!
-!     ------------------------------------------------------------------
-!
-!     ********** MACHEP IS A MACHINE DEPENDENT PARAMETER SPECIFYING
-!                THE RELATIVE PRECISION OF FLOATING POINT ARITHMETIC.
-!
-!                **********
-      MACHEP = 2.0D0**(-47)
-!
-      IERR = 0
-      IF (M .EQ. 0) GO TO 1001
-      TAG = 0
-      ORDER = 1.0D0 - E2(1)
-      Q = 0
-!     ********** ESTABLISH AND PROCESS NEXT SUBMATRIX **********
-  100 P = Q + 1
-!
-      DO 120 Q = P, N
-         IF (Q .EQ. N) GO TO 140
-         IF (E2(Q+1) .EQ. 0.0D0) GO TO 140
-  120 CONTINUE
-!     ********** FIND VECTORS BY INVERSE ITERATION **********
-  140 TAG = TAG + 1
-      S = 0
-!
-      DO 920 R = 1, M
-         IF (IND(R) .NE. TAG) GO TO 920
-         ITS = 1
-         X1 = W(R)
-         IF (S .NE. 0) GO TO 510
-!     ********** CHECK FOR ISOLATED ROOT **********
-         XU = 1.0D0
-         IF (P .NE. Q) GO TO 490
-         RV6(P) = 1.0D0
-         GO TO 870
-  490    NORM = ABS(D(P))
-         IP = P + 1
-!
-         DO 500 I = IP, Q
-  500    NORM = NORM + ABS(D(I)) + ABS(E(I))
-!     ********** EPS2 IS THE CRITERION FOR GROUPING,
-!                EPS3 REPLACES ZERO PIVOTS AND EQUAL
-!                ROOTS ARE MODIFIED BY EPS3,
-!                EPS4 IS TAKEN VERY SMALL TO AVOID OVERFLOW **********
-         EPS2 = 1.0D-3 * NORM
-         EPS3 = MACHEP * NORM
-         UK = FLOAT(Q-P+1)
-         EPS4 = UK * EPS3
-         UK = EPS4 / SQRT(UK)
-         S = P
-  505    GROUP = 0
-         GO TO 520
-!     ********** LOOK FOR CLOSE OR COINCIDENT ROOTS **********
-  510    IF (ABS(X1-X0) .GE. EPS2) GO TO 505
-         GROUP = GROUP + 1
-         IF (ORDER * (X1 - X0) .LE. 0.0D0) X1 = X0 + ORDER * EPS3
-!     ********** ELIMINATION WITH INTERCHANGES AND
-!                INITIALIZATION OF VECTOR **********
-  520    V = 0.0D0
-!
-         DO 580 I = P, Q
-            RV6(I) = UK
-            IF (I .EQ. P) GO TO 560
-            IF (ABS(E(I)) .LT. ABS(U)) GO TO 540
-!     ********** WARNING -- A DIVIDE CHECK MAY OCCUR HERE IF
-!                E2 ARRAY HAS NOT BEEN SPECIFIED CORRECTLY **********
-            XU = U / E(I)
-            RV4(I) = XU
-            RV1(I-1) = E(I)
-            RV2(I-1) = D(I) - X1
-            RV3(I-1) = 0.0D0
-            IF (I .NE. Q) RV3(I-1) = E(I+1)
-            U = V - XU * RV2(I-1)
-            V = -XU * RV3(I-1)
-            GO TO 580
-  540       XU = E(I) / U
-            RV4(I) = XU
-            RV1(I-1) = U
-            RV2(I-1) = V
-            RV3(I-1) = 0.0D0
-  560       U = D(I) - X1 - XU * V
-            IF (I .NE. Q) V = E(I+1)
-  580    CONTINUE
-!
-         IF (U .EQ. 0.0D0) U = EPS3
-         RV1(Q) = U
-         RV2(Q) = 0.0D0
-         RV3(Q) = 0.0D0
-!     ********** BACK SUBSTITUTION
-!                FOR I=Q STEP -1 UNTIL P DO -- **********
-  600    DO 620 II = P, Q
-            I = P + Q - II
-            RV6(I) = (RV6(I) - U * RV2(I) - V * RV3(I)) / RV1(I)
-            V = U
-            U = RV6(I)
-  620    CONTINUE
-!     ********** ORTHOGONALIZE WITH RESPECT TO PREVIOUS
-!                MEMBERS OF GROUP **********
-         IF (GROUP .EQ. 0) GO TO 700
-         J = R
-!
-         DO 680 JJ = 1, GROUP
-  630       J = J - 1
-            IF (IND(J) .NE. TAG) GO TO 630
-            XU = 0.0D0
-!
-            DO 640 I = P, Q
-  640       XU = XU + RV6(I) * Z(I,J)
-!
-            DO 660 I = P, Q
-  660       RV6(I) = RV6(I) - XU * Z(I,J)
-!
-  680    CONTINUE
-!
-  700    NORM = 0.0D0
-!
-         DO 720 I = P, Q
-  720    NORM = NORM + ABS(RV6(I))
-!
-         IF (NORM .GE. 1.0D0) GO TO 840
-!     ********** FORWARD SUBSTITUTION **********
-         IF (ITS .EQ. 5) GO TO 830
-         IF (NORM .NE. 0.0D0) GO TO 740
-         RV6(S) = EPS4
-         S = S + 1
-         IF (S .GT. Q) S = P
-         GO TO 780
-  740    XU = EPS4 / NORM
-!
-         DO 760 I = P, Q
-  760    RV6(I) = RV6(I) * XU
-!     ********** ELIMINATION OPERATIONS ON NEXT VECTOR
-!                ITERATE **********
-  780    DO 820 I = IP, Q
-            U = RV6(I)
-!     ********** IF RV1(I-1) .EQ. E(I), A ROW INTERCHANGE
-!                WAS PERFORMED EARLIER IN THE
-!                TRIANGULARIZATION PROCESS **********
-            IF (RV1(I-1) .NE. E(I)) GO TO 800
-            U = RV6(I-1)
-            RV6(I-1) = RV6(I)
-  800       RV6(I) = U - RV4(I) * RV6(I-1)
-  820    CONTINUE
-!
-         ITS = ITS + 1
-         GO TO 600
-!     ********** SET ERROR -- NON-CONVERGED EIGENVECTOR **********
-  830    IERR = -R
-         XU = 0.0D0
-         GO TO 870
-!     ********** NORMALIZE SO THAT SUM OF SQUARES IS
-!                1 AND EXPAND TO FULL ORDER **********
-  840    U = 0.0D0
-!
-         DO 860 I = P, Q
-  860    U = U + RV6(I)**2
-!
-         XU = 1.0 / SQRT(U)
-!
-  870    DO 880 I = 1, N
-  880    Z(I,R) = 0.0D0
-!
-         DO 900 I = P, Q
-  900    Z(I,R) = RV6(I) * XU
-!
-         X0 = X1
-  920 CONTINUE
-!
-      IF (Q .LT. N) GO TO 100
- 1001 RETURN
-!     ********** LAST CARD OF TINVIT **********
-      END subroutine
+!      SUBROUTINE TRIDIB(N,EPS1,D,E,E2,LB,UB,M11,M,W,IND,IERR,RV4,RV5)
+!!
+!      DOUBLE PRECISION EPS1,D,E,E2,W,RV4,RV5,MACHEP,LB,UB, &
+!     & U,V,T1,T2,XU,X0,X1
+!      INTEGER I,J,K,L,M,N,P,Q,R,S,II,M1,M2,M11,M22,TAG,IERR,ISTURM
+!      DIMENSION D(N),E(N),E2(N),W(M),RV4(N),RV5(N)
+!!     REAL U,V,LB,T1,T2,UB,XU,X0,X1,EPS1,MACHEP
+!!     REAL ABS,AMAX1,AMIN1,FLOAT
+!      INTEGER IND(M)
+!!
+!!     THIS SUBROUTINE IS A TRANSLATION OF THE ALGOL PROCEDURE BISECT,
+!!     NUM. MATH. 9, 386-393(1967) BY BARTH, MARTIN, AND WILKINSON.
+!!     HANDBOOK FOR AUTO. COMP., VOL.II-LINEAR ALGEBRA, 249-256(1971).
+!!
+!!     THIS SUBROUTINE FINDS THOSE EIGENVALUES OF A TRIDIAGONAL
+!!     SYMMETRIC MATRIX BETWEEN SPECIFIED BOUNDARY INDICES,
+!!     USING BISECTION.
+!!
+!!     ON INPUT-
+!!
+!!        N IS THE ORDER OF THE MATRIX,
+!!
+!!        EPS1 IS AN ABSOLUTE ERROR TOLERANCE FOR THE COMPUTED
+!!          EIGENVALUES.  IF THE INPUT EPS1 IS NON-POSITIVE,
+!!          IT IS RESET FOR EACH SUBMATRIX TO A DEFAULT VALUE,
+!!          NAMELY, MINUS THE PRODUCT OF THE RELATIVE MACHINE
+!!          PRECISION AND THE 1-NORM OF THE SUBMATRIX,
+!!
+!!        D CONTAINS THE DIAGONAL ELEMENTS OF THE INPUT MATRIX,
+!!
+!!        E CONTAINS THE SUBDIAGONAL ELEMENTS OF THE INPUT MATRIX
+!!          IN ITS LAST N-1 POSITIONS.  E(1) IS ARBITRARY,
+!!
+!!        E2 CONTAINS THE SQUARES OF THE CORRESPONDING ELEMENTS OF E.
+!!          E2(1) IS ARBITRARY,
+!!
+!!        M11 SPECIFIES THE LOWER BOUNDARY INDEX FOR THE DESIRED
+!!          EIGENVALUES,
+!!
+!!        M SPECIFIES THE NUMBER OF EIGENVALUES DESIRED.  THE UPPER
+!!          BOUNDARY INDEX M22 IS THEN OBTAINED AS M22=M11+M-1.
+!!
+!!     ON OUTPUT-
+!!
+!!        EPS1 IS UNALTERED UNLESS IT HAS BEEN RESET TO ITS
+!!          (LAST) DEFAULT VALUE,
+!!
+!!        D AND E ARE UNALTERED,
+!!
+!!        ELEMENTS OF E2, CORRESPONDING TO ELEMENTS OF E REGARDED
+!!          AS NEGLIGIBLE, HAVE BEEN REPLACED BY ZERO CAUSING THE
+!!          MATRIX TO SPLIT INTO A DIRECT SUM OF SUBMATRICES.
+!!          E2(1) IS ALSO SET TO ZERO,
+!!
+!!        LB AND UB DEFINE AN INTERVAL CONTAINING EXACTLY THE DESIRED
+!!          EIGENVALUES,
+!!
+!!        W CONTAINS, IN ITS FIRST M POSITIONS, THE EIGENVALUES
+!!          BETWEEN INDICES M11 AND M22 IN ASCENDING ORDER,
+!!
+!!        IND CONTAINS IN ITS FIRST M POSITIONS THE SUBMATRIX INDICES
+!!          ASSOCIATED WITH THE CORRESPONDING EIGENVALUES IN W --
+!!          1 FOR EIGENVALUES BELONGING TO THE FIRST SUBMATRIX FROM
+!!          THE TOP, 2 FOR THOSE BELONGING TO THE SECOND SUBMATRIX, ETC.,
+!!
+!!        IERR IS SET TO
+!!          ZERO       FOR NORMAL RETURN,
+!!          3*N+1      IF MULTIPLE EIGENVALUES AT INDEX M11 MAKE
+!!                     UNIQUE SELECTION IMPOSSIBLE,
+!!          3*N+2      IF MULTIPLE EIGENVALUES AT INDEX M22 MAKE
+!!                     UNIQUE SELECTION IMPOSSIBLE,
+!!
+!!        RV4 AND RV5 ARE TEMPORARY STORAGE ARRAYS.
+!!
+!!     NOTE THAT SUBROUTINE TQL1, IMTQL1, OR TQLRAT IS GENERALLY FASTER
+!!     THAN TRIDIB, IF MORE THAN N/4 EIGENVALUES ARE TO BE FOUND.
+!!
+!!     QUESTIONS AND COMMENTS SHOULD BE DIRECTED TO B. S. GARBOW,
+!!     APPLIED MATHEMATICS DIVISION, ARGONNE NATIONAL LABORATORY
+!!
+!!     ------------------------------------------------------------------
+!!
+!!     ********** MACHEP IS A MACHINE DEPENDENT PARAMETER SPECIFYING
+!!                THE RELATIVE PRECISION OF FLOATING POINT ARITHMETIC.
+!!
+!!                **********
+!      MACHEP = 2.0D0**(-47)
+!!
+!      IERR = 0
+!      TAG = 0
+!      XU = D(1)
+!      X0 = D(1)
+!      U = 0.0D0
+!!     ********** LOOK FOR SMALL SUB-DIAGONAL ENTRIES AND DETERMINE AN
+!!                INTERVAL CONTAINING ALL THE EIGENVALUES **********
+!      DO 40 I = 1, N
+!         X1 = U
+!         U = 0.0D0
+!         IF (I .NE. N) U = ABS(E(I+1))
+!         XU = DMIN1(D(I)-(X1+U),XU)
+!         X0 = DMAX1(D(I)+(X1+U),X0)
+!         IF (I .EQ. 1) GO TO 20
+!         IF (ABS(E(I)) .GT. MACHEP * (ABS(D(I)) + ABS(D(I-1)))) &
+!     &      GO TO 40
+!   20    E2(I) = 0.0D0
+!   40 CONTINUE
+!!
+!      X1 = DMAX1(ABS(XU),ABS(X0)) * MACHEP * FLOAT(N)
+!      XU = XU - X1
+!      T1 = XU
+!      X0 = X0 + X1
+!      T2 = X0
+!!     ********** DETERMINE AN INTERVAL CONTAINING EXACTLY
+!!                THE DESIRED EIGENVALUES **********
+!      P = 1
+!      Q = N
+!      M1 = M11 - 1
+!      IF (M1 .EQ. 0) GO TO 75
+!      ISTURM = 1
+!   50 V = X1
+!      X1 = XU + (X0 - XU) * 0.5D0
+!      IF (X1 .EQ. V) GO TO 980
+!      GO TO 320
+!   60 IF (S - M1) 65, 73, 70
+!   65 XU = X1
+!      GO TO 50
+!   70 X0 = X1
+!      GO TO 50
+!   73 XU = X1
+!      T1 = X1
+!   75 M22 = M1 + M
+!      IF (M22 .EQ. N) GO TO 90
+!      X0 = T2
+!      ISTURM = 2
+!      GO TO 50
+!   80 IF (S - M22) 65, 85, 70
+!   85 T2 = X1
+!   90 Q = 0
+!      R = 0
+!!     ********** ESTABLISH AND PROCESS NEXT SUBMATRIX, REFINING
+!!                INTERVAL BY THE GERSCHGORIN BOUNDS **********
+!  100 IF (R .EQ. M) GO TO 1001
+!      TAG = TAG + 1
+!      P = Q + 1
+!      XU = D(P)
+!      X0 = D(P)
+!      U = 0.0D0
+!!
+!      DO 120 Q = P, N
+!         X1 = U
+!         U = 0.0D0
+!         V = 0.0D0
+!         IF (Q .EQ. N) GO TO 110
+!         U = ABS(E(Q+1))
+!         V = E2(Q+1)
+!  110    XU = DMIN1(D(Q)-(X1+U),XU)
+!         X0 = DMAX1(D(Q)+(X1+U),X0)
+!         IF (V .EQ. 0.0D0) GO TO 140
+!  120 CONTINUE
+!!
+!  140 X1 = DMAX1(ABS(XU),ABS(X0)) * MACHEP
+!      IF (EPS1 .LE. 0.0D0) EPS1 = -X1
+!      IF (P .NE. Q) GO TO 180
+!!     ********** CHECK FOR ISOLATED ROOT WITHIN INTERVAL **********
+!      IF (T1 .GT. D(P) .OR. D(P) .GE. T2) GO TO 940
+!      M1 = P
+!      M2 = P
+!      RV5(P) = D(P)
+!      GO TO 900
+!  180 X1 = X1 * FLOAT(Q-P+1)
+!      LB = DMAX1(T1,XU-X1)
+!      UB = DMIN1(T2,X0+X1)
+!      X1 = LB
+!      ISTURM = 3
+!      GO TO 320
+!  200 M1 = S + 1
+!      X1 = UB
+!      ISTURM = 4
+!      GO TO 320
+!  220 M2 = S
+!      IF (M1 .GT. M2) GO TO 940
+!!     ********** FIND ROOTS BY BISECTION **********
+!      X0 = UB
+!      ISTURM = 5
+!!
+!      DO 240 I = M1, M2
+!         RV5(I) = UB
+!         RV4(I) = LB
+!  240 CONTINUE
+!!     ********** LOOP FOR K-TH EIGENVALUE
+!!                FOR K=M2 STEP -1 UNTIL M1 DO --
+!!                (-DO- NOT USED TO LEGALIZE -COMPUTED GO TO-) **********
+!      K = M2
+!  250    XU = LB
+!!     ********** FOR I=K STEP -1 UNTIL M1 DO -- **********
+!         DO 260 II = M1, K
+!            I = M1 + K - II
+!            IF (XU .GE. RV4(I)) GO TO 260
+!            XU = RV4(I)
+!            GO TO 280
+!  260    CONTINUE
+!!
+!  280    IF (X0 .GT. RV5(K)) X0 = RV5(K)
+!!     ********** NEXT BISECTION STEP **********
+!  300    X1 = (XU + X0) * 0.5D0
+!         IF ((X0 - XU) .LE. (2.0D0 * MACHEP * &
+!     &      (ABS(XU) + ABS(X0)) + ABS(EPS1))) GO TO 420
+!!     ********** IN-LINE PROCEDURE FOR STURM SEQUENCE **********
+!  320    S = P - 1
+!         U = 1.0D0
+!!
+!         DO 340 I = P, Q
+!            IF (U .NE. 0.0D0) GO TO 325
+!            V = ABS(E(I)) / MACHEP
+!            IF (E2(I) .EQ. 0.0D0) V = 0.0D0
+!            GO TO 330
+!  325       V = E2(I) / U
+!  330       U = D(I) - X1 - V
+!            IF (U .LT. 0.0D0) S = S + 1
+!  340    CONTINUE
+!!
+!         GO TO (60,80,200,220,360), ISTURM
+!!     ********** REFINE INTERVALS **********
+!  360    IF (S .GE. K) GO TO 400
+!         XU = X1
+!         IF (S .GE. M1) GO TO 380
+!         RV4(M1) = X1
+!         GO TO 300
+!  380    RV4(S+1) = X1
+!         IF (RV5(S) .GT. X1) RV5(S) = X1
+!         GO TO 300
+!  400    X0 = X1
+!         GO TO 300
+!!     ********** K-TH EIGENVALUE FOUND **********
+!  420    RV5(K) = X1
+!      K = K - 1
+!      IF (K .GE. M1) GO TO 250
+!!     ********** ORDER EIGENVALUES TAGGED WITH THEIR
+!!                SUBMATRIX ASSOCIATIONS **********
+!  900 S = R
+!      R = R + M2 - M1 + 1
+!      J = 1
+!      K = M1
+!!
+!      DO 920 L = 1, R
+!         IF (J .GT. S) GO TO 910
+!         IF (K .GT. M2) GO TO 940
+!         IF (RV5(K) .GE. W(L)) GO TO 915
+!!
+!         DO 905 II = J, S
+!            I = L + S - II
+!            W(I+1) = W(I)
+!            IND(I+1) = IND(I)
+!  905    CONTINUE
+!!
+!  910    W(L) = RV5(K)
+!         IND(L) = TAG
+!         K = K + 1
+!         GO TO 920
+!  915    J = J + 1
+!  920 CONTINUE
+!!
+!  940 IF (Q .LT. N) GO TO 100
+!      GO TO 1001
+!!     ********** SET ERROR -- INTERVAL CANNOT BE FOUND CONTAINING
+!!                EXACTLY THE DESIRED EIGENVALUES **********
+!  980 IERR = 3 * N + ISTURM
+! 1001 LB = T1
+!      UB = T2
+!      RETURN
+!!     ********** LAST CARD OF TRIDIB **********
+!      END SUBROUTINE
+!      SUBROUTINE TINVIT(NM,N,D,E,E2,M,W,IND,Z, &
+!     &                  IERR,RV1,RV2,RV3,RV4,RV6)
+!!
+!      DOUBLE PRECISION D,E,E2,W,Z,RV1,RV2,RV3,RV4,RV6, &
+!     &       U,V,UK,XU,X0,X1,EPS2,EPS3,EPS4,NORM,ORDER,MACHEP
+!      INTEGER I,J,M,N,P,Q,R,S,II,IP,JJ,NM,ITS,TAG,IERR,GROUP
+!      DIMENSION D(N),E(N),E2(N),W(M),Z(NM,M), &
+!     &       RV1(N),RV2(N),RV3(N),RV4(N),RV6(N)
+!!     REAL U,V,UK,XU,X0,X1,EPS2,EPS3,EPS4,NORM,ORDER,MACHEP
+!!     REAL SQRT,ABS,FLOAT
+!      INTEGER IND(M)
+!! 
+!!     THIS SUBROUTINE IS A TRANSLATION OF THE INVERSE ITERATION TECH-
+!!     NIQUE IN THE ALGOL PROCEDURE TRISTURM BY PETERS AND WILKINSON.
+!!     HANDBOOK FOR AUTO. COMP., VOL.II-LINEAR ALGEBRA, 418-439(1971).
+!!
+!!     THIS SUBROUTINE FINDS THOSE EIGENVECTORS OF A TRIDIAGONAL
+!!     SYMMETRIC MATRIX CORRESPONDING TO SPECIFIED EIGENVALUES,
+!!     USING INVERSE ITERATION.
+!!
+!!     ON INPUT-
+!!
+!!        NM MUST BE SET TO THE ROW DIMENSION OF TWO-DIMENSIONAL
+!!          ARRAY PARAMETERS AS DECLARED IN THE CALLING PROGRAM
+!!          DIMENSION STATEMENT,
+!!
+!!        N IS THE ORDER OF THE MATRIX,
+!!
+!!        D CONTAINS THE DIAGONAL ELEMENTS OF THE INPUT MATRIX,
+!!
+!!        E CONTAINS THE SUBDIAGONAL ELEMENTS OF THE INPUT MATRIX
+!!          IN ITS LAST N-1 POSITIONS.  E(1) IS ARBITRARY,
+!!
+!!        E2 CONTAINS THE SQUARES OF THE CORRESPONDING ELEMENTS OF E,
+!!          WITH ZEROS CORRESPONDING TO NEGLIGIBLE ELEMENTS OF E.
+!!          E(I) IS CONSIDERED NEGLIGIBLE IF IT IS NOT LARGER THAN
+!!          THE PRODUCT OF THE RELATIVE MACHINE PRECISION AND THE SUM
+!!          OF THE MAGNITUDES OF D(I) AND D(I-1).  E2(1) MUST CONTAIN
+!!          0.0 IF THE EIGENVALUES ARE IN ASCENDING ORDER, OR 2.0
+!!          IF THE EIGENVALUES ARE IN DESCENDING ORDER.  IF  BISECT,
+!!          TRIDIB, OR  IMTQLV  HAS BEEN USED TO FIND THE EIGENVALUES,
+!!          THEIR OUTPUT E2 ARRAY IS EXACTLY WHAT IS EXPECTED HERE,
+!!
+!!        M IS THE NUMBER OF SPECIFIED EIGENVALUES,
+!!
+!!        W CONTAINS THE M EIGENVALUES IN ASCENDING OR DESCENDING ORDER,
+!!
+!!        IND CONTAINS IN ITS FIRST M POSITIONS THE SUBMATRIX INDICES
+!!          ASSOCIATED WITH THE CORRESPONDING EIGENVALUES IN W --
+!!          1 FOR EIGENVALUES BELONGING TO THE FIRST SUBMATRIX FROM
+!!          THE TOP, 2 FOR THOSE BELONGING TO THE SECOND SUBMATRIX, ETC.
+!!
+!!     ON OUTPUT-
+!!
+!!        ALL INPUT ARRAYS ARE UNALTERED,
+!!
+!!        Z CONTAINS THE ASSOCIATED SET OF ORTHONORMAL EIGENVECTORS.
+!!          ANY VECTOR WHICH FAILS TO CONVERGE IS SET TO ZERO,
+!!
+!!        IERR IS SET TO
+!!          ZERO       FOR NORMAL RETURN,
+!!          -R         IF THE EIGENVECTOR CORRESPONDING TO THE R-TH
+!!                     EIGENVALUE FAILS TO CONVERGE IN 5 ITERATIONS,
+!!
+!!        RV1, RV2, RV3, RV4, AND RV6 ARE TEMPORARY STORAGE ARRAYS.
+!!
+!!     QUESTIONS AND COMMENTS SHOULD BE DIRECTED TO B. S. GARBOW,
+!!     APPLIED MATHEMATICS DIVISION, ARGONNE NATIONAL LABORATORY
+!!
+!!     ------------------------------------------------------------------
+!!
+!!     ********** MACHEP IS A MACHINE DEPENDENT PARAMETER SPECIFYING
+!!                THE RELATIVE PRECISION OF FLOATING POINT ARITHMETIC.
+!!
+!!                **********
+!      MACHEP = 2.0D0**(-47)
+!!
+!      IERR = 0
+!      IF (M .EQ. 0) GO TO 1001
+!      TAG = 0
+!      ORDER = 1.0D0 - E2(1)
+!      Q = 0
+!!     ********** ESTABLISH AND PROCESS NEXT SUBMATRIX **********
+!  100 P = Q + 1
+!!
+!      DO 120 Q = P, N
+!         IF (Q .EQ. N) GO TO 140
+!         IF (E2(Q+1) .EQ. 0.0D0) GO TO 140
+!  120 CONTINUE
+!!     ********** FIND VECTORS BY INVERSE ITERATION **********
+!  140 TAG = TAG + 1
+!      S = 0
+!!
+!      DO 920 R = 1, M
+!         IF (IND(R) .NE. TAG) GO TO 920
+!         ITS = 1
+!         X1 = W(R)
+!         IF (S .NE. 0) GO TO 510
+!!     ********** CHECK FOR ISOLATED ROOT **********
+!         XU = 1.0D0
+!         IF (P .NE. Q) GO TO 490
+!         RV6(P) = 1.0D0
+!         GO TO 870
+!  490    NORM = ABS(D(P))
+!         IP = P + 1
+!!
+!         DO 500 I = IP, Q
+!  500    NORM = NORM + ABS(D(I)) + ABS(E(I))
+!!     ********** EPS2 IS THE CRITERION FOR GROUPING,
+!!                EPS3 REPLACES ZERO PIVOTS AND EQUAL
+!!                ROOTS ARE MODIFIED BY EPS3,
+!!                EPS4 IS TAKEN VERY SMALL TO AVOID OVERFLOW **********
+!         EPS2 = 1.0D-3 * NORM
+!         EPS3 = MACHEP * NORM
+!         UK = FLOAT(Q-P+1)
+!         EPS4 = UK * EPS3
+!         UK = EPS4 / SQRT(UK)
+!         S = P
+!  505    GROUP = 0
+!         GO TO 520
+!!     ********** LOOK FOR CLOSE OR COINCIDENT ROOTS **********
+!  510    IF (ABS(X1-X0) .GE. EPS2) GO TO 505
+!         GROUP = GROUP + 1
+!         IF (ORDER * (X1 - X0) .LE. 0.0D0) X1 = X0 + ORDER * EPS3
+!!     ********** ELIMINATION WITH INTERCHANGES AND
+!!                INITIALIZATION OF VECTOR **********
+!  520    V = 0.0D0
+!!
+!         DO 580 I = P, Q
+!            RV6(I) = UK
+!            IF (I .EQ. P) GO TO 560
+!            IF (ABS(E(I)) .LT. ABS(U)) GO TO 540
+!!     ********** WARNING -- A DIVIDE CHECK MAY OCCUR HERE IF
+!!                E2 ARRAY HAS NOT BEEN SPECIFIED CORRECTLY **********
+!            XU = U / E(I)
+!            RV4(I) = XU
+!            RV1(I-1) = E(I)
+!            RV2(I-1) = D(I) - X1
+!            RV3(I-1) = 0.0D0
+!            IF (I .NE. Q) RV3(I-1) = E(I+1)
+!            U = V - XU * RV2(I-1)
+!            V = -XU * RV3(I-1)
+!            GO TO 580
+!  540       XU = E(I) / U
+!            RV4(I) = XU
+!            RV1(I-1) = U
+!            RV2(I-1) = V
+!            RV3(I-1) = 0.0D0
+!  560       U = D(I) - X1 - XU * V
+!            IF (I .NE. Q) V = E(I+1)
+!  580    CONTINUE
+!!
+!         IF (U .EQ. 0.0D0) U = EPS3
+!         RV1(Q) = U
+!         RV2(Q) = 0.0D0
+!         RV3(Q) = 0.0D0
+!!     ********** BACK SUBSTITUTION
+!!                FOR I=Q STEP -1 UNTIL P DO -- **********
+!  600    DO 620 II = P, Q
+!            I = P + Q - II
+!            RV6(I) = (RV6(I) - U * RV2(I) - V * RV3(I)) / RV1(I)
+!            V = U
+!            U = RV6(I)
+!  620    CONTINUE
+!!     ********** ORTHOGONALIZE WITH RESPECT TO PREVIOUS
+!!                MEMBERS OF GROUP **********
+!         IF (GROUP .EQ. 0) GO TO 700
+!         J = R
+!!
+!         DO 680 JJ = 1, GROUP
+!  630       J = J - 1
+!            IF (IND(J) .NE. TAG) GO TO 630
+!            XU = 0.0D0
+!!
+!            DO 640 I = P, Q
+!  640       XU = XU + RV6(I) * Z(I,J)
+!!
+!            DO 660 I = P, Q
+!  660       RV6(I) = RV6(I) - XU * Z(I,J)
+!!
+!  680    CONTINUE
+!!
+!  700    NORM = 0.0D0
+!!
+!         DO 720 I = P, Q
+!  720    NORM = NORM + ABS(RV6(I))
+!!
+!         IF (NORM .GE. 1.0D0) GO TO 840
+!!     ********** FORWARD SUBSTITUTION **********
+!         IF (ITS .EQ. 5) GO TO 830
+!         IF (NORM .NE. 0.0D0) GO TO 740
+!         RV6(S) = EPS4
+!         S = S + 1
+!         IF (S .GT. Q) S = P
+!         GO TO 780
+!  740    XU = EPS4 / NORM
+!!
+!         DO 760 I = P, Q
+!  760    RV6(I) = RV6(I) * XU
+!!     ********** ELIMINATION OPERATIONS ON NEXT VECTOR
+!!                ITERATE **********
+!  780    DO 820 I = IP, Q
+!            U = RV6(I)
+!!     ********** IF RV1(I-1) .EQ. E(I), A ROW INTERCHANGE
+!!                WAS PERFORMED EARLIER IN THE
+!!                TRIANGULARIZATION PROCESS **********
+!            IF (RV1(I-1) .NE. E(I)) GO TO 800
+!            U = RV6(I-1)
+!            RV6(I-1) = RV6(I)
+!  800       RV6(I) = U - RV4(I) * RV6(I-1)
+!  820    CONTINUE
+!!
+!         ITS = ITS + 1
+!         GO TO 600
+!!     ********** SET ERROR -- NON-CONVERGED EIGENVECTOR **********
+!  830    IERR = -R
+!         XU = 0.0D0
+!         GO TO 870
+!!     ********** NORMALIZE SO THAT SUM OF SQUARES IS
+!!                1 AND EXPAND TO FULL ORDER **********
+!  840    U = 0.0D0
+!!
+!         DO 860 I = P, Q
+!  860    U = U + RV6(I)**2
+!!
+!         XU = 1.0 / SQRT(U)
+!!
+!  870    DO 880 I = 1, N
+!  880    Z(I,R) = 0.0D0
+!!
+!         DO 900 I = P, Q
+!  900    Z(I,R) = RV6(I) * XU
+!!
+!         X0 = X1
+!  920 CONTINUE
+!!
+!      IF (Q .LT. N) GO TO 100
+! 1001 RETURN
+!!     ********** LAST CARD OF TINVIT **********
+!      END subroutine
 
 
 

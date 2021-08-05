@@ -9,6 +9,7 @@ module O_SpaceGroupOperations
    ! Begin list of module data.
    character*1 :: spaceLattice
    integer :: spaceGroupNumber
+   integer :: spaceGroupSubNumber
    integer :: numSpaceOps
    integer :: numShifts ! This variable is essentially unused in this program
          ! because all space group operations are treated equally and the
@@ -41,8 +42,9 @@ module O_SpaceGroupOperations
       ! Read the character identifier of the space group lattice type.
       read (fileUnit,fmt="(a1)") spaceLattice
 
-      ! Read the root space group number for this space group.
-      read (fileUnit,*) spaceGroupNumber
+      ! Read the root space group number for this space group and the sub
+      !   number.
+      read (fileUnit,*) spaceGroupNumber, spaceGroupSubNumber
 
       ! Read the number of space group operations and number of shifted
       !   repetitions that exist in that list.
@@ -98,7 +100,14 @@ module O_CrystalSystem
    real (kind=double), allocatable, dimension (:,:) :: symmFractABC ! This is
          ! the final list of atoms after all symmtery operations have been
          ! applied and duplicate atomic positions ignored.
-   real (kind=double), dimension (3,3) :: realLattice    ! [x,y,z][a,b,c]
+   real (kind=double), dimension (3,3) :: realLattice  ! [x,y,z][a,b,c]
+   real (kind=double), dimension (3,3) :: recipLattice ! [x,y,z][k_a,k_b,k_c]
+   real (kind=double), dimension (3)   :: realMag  ! abc, real
+   real (kind=double), dimension (3)   :: recipMag ! k_a,k_b,k_c, recip
+   real (kind=double), dimension (3)   :: realAngle ! alpha,beta,gamma real
+   real (kind=double), dimension (3)   :: recipAngle ! k_alpha,k_beta,k_gamma
+   real (kind=double) :: realVolume
+   real (kind=double) :: recipVolume
 
    ! Begin list of subroutines in this module.
    contains
@@ -153,10 +162,103 @@ module O_CrystalSystem
       ! Read the flag that requests a full (non-primitive) cell.
       read (fileUnit,*) makeFull
 
-      ! Read the lattice vectors.
+      ! Read the lattice vectors. Note that the first ROW of data in the input
+      !   file will be read as the x,y,z coordinates of vector a; the second
+      !   ROW of data in the input file will be the x,y,z coordinates of
+      !   vector b, etc.
       read(fileUnit,*) realLattice(:,:) ! (x,y,z)(a,b,c)
 
    end subroutine readLattice
+
+
+   ! This is essentially the same subroutine as is found in makekpoints.f90.
+   !   In the future a library of common subroutines should be pulled and
+   !   assembled for common usage.
+   subroutine computeLatticeData
+
+      ! Import necessary parameter modules.
+      use O_Kinds
+      use O_Constants
+
+      ! Make sure no funny variables are defined.
+      implicit none
+
+      ! Define local variables
+      integer :: i,j
+      ! The following cycle variables are numbers from 1 to 3.  They are
+      !    greater than the loop variable (i or j) by the trailing number, and
+      !    they cycle back to 1 when they are greater than the the loop index
+      !    m3.  (e.g. i = 1; iCycle1 = 2)  (e.g. i = 3; iCycle1 = 1).
+      integer :: iCycle1, iCycle2
+      integer :: jCycle1, jCycle2
+
+      ! Compute the lattice vector magnitudes (a,b,c) and angles (alpha, beta
+      !   gamma).
+      do i = 1, 3
+         realMag(i) = sqrt(sum(realLattice(:,i)**2))
+      enddo
+      realAngle(1) = acos((realLattice(1,2) * realLattice(1,3) + &
+                         & realLattice(2,2) * realLattice(2,3) + &
+                         & realLattice(3,2) * realLattice(3,3)) / &
+                         & (realMag(2)*realMag(3)))
+      realAngle(2) = acos((realLattice(1,1) * realLattice(1,3) + &
+                         & realLattice(2,1) * realLattice(2,3) + &
+                         & realLattice(3,1) * realLattice(3,3)) / &
+                         & (realMag(1)*realMag(3)))
+      realAngle(3) = acos((realLattice(1,1) * realLattice(1,2) + &
+                         & realLattice(2,1) * realLattice(2,2) + &
+                         & realLattice(3,1) * realLattice(3,2)) / &
+                         & (realMag(1)*realMag(2)))
+
+
+      ! Given the real space primitive lattice vectors (a b c) each defined
+      !   in terms of the orthogonal coordinate vectors (x y z) (aka i k j) we
+      !   can find the reciprocal primitive lattice vectors (a' b' c') by:
+      !   a' = 2*Pi * (b x c)/(a . b x c)
+      !   b' = 2*Pi * (c x a)/(a . b x c)
+      !   c' = 2*Pi * (a x b)/(a . b x c)
+      !   where . = dot product, x = cross product
+
+      do i = 1, 3
+         realVolume = 0
+         iCycle1 = mod(i,3) + 1
+         iCycle2 = mod(i+1,3) + 1
+         do j = 1, 3
+            jCycle1 = mod(j,3) + 1
+            jCycle2 = mod(j+1,3) + 1
+            recipLattice(j,i) = &
+                  & (realLattice(jCycle1,iCycle1)  * &
+                  &  realLattice(jCycle2,iCycle2)) - &
+                  & (realLattice(jCycle2,iCycle1)  * &
+                  &  realLattice(jCycle1,iCycle2))
+            realVolume = realVolume + recipLattice(j,i) * realLattice(j,i)
+         enddo
+
+         recipLattice(:,i) = 2.0_double * Pi * recipLattice(:,i) / realVolume
+      enddo
+
+      realVolume = abs(realVolume) ! Volume is always positive.
+      recipVolume = ((2.0_double*Pi)**3)/realVolume
+
+      ! Compute the lattice vector magnitudes (a,b,c) and angles (alpha, beta
+      !   gamma) for the reciprocal lattice.
+      do i = 1, 3
+         recipMag(i) = sqrt(sum(recipLattice(:,i)**2))
+      enddo
+      recipAngle(1) = acos((recipLattice(1,2) * recipLattice(1,3) + &
+                          & recipLattice(2,2) * recipLattice(2,3) + &
+                          & recipLattice(3,2) * recipLattice(3,3)) / &
+                          & (recipMag(2)*recipMag(3)))
+      recipAngle(2) = acos((recipLattice(1,1) * recipLattice(1,3) + &
+                          & recipLattice(2,1) * recipLattice(2,3) + &
+                          & recipLattice(3,1) * recipLattice(3,3)) / &
+                          & (recipMag(1)*recipMag(3)))
+      recipAngle(3) = acos((recipLattice(1,1) * recipLattice(1,2) + &
+                          & recipLattice(2,1) * recipLattice(2,2) + &
+                          & recipLattice(3,1) * recipLattice(3,2)) / &
+                          & (recipMag(1)*recipMag(2)))
+
+   end subroutine computeLatticeData
 
 
    subroutine writeLattice(fileUnit)
@@ -203,8 +305,8 @@ module O_CrystalSystem
       !   determining which should remain.  The numSymmAtoms would also be
       !   be changed in the process if the reduction was done.
       do i = 1, numSymmAtoms
-         write (fileUnit,fmt="(2i5,3e20.8)") symmElementID(i),symmSpeciesID(i),&
-               & symmFractABC(:,i)
+         write (fileUnit,fmt="(2i5,3e20.8)") symmElementID(i), &
+               & symmSpeciesID(i), symmFractABC(:,i)
       enddo
    end subroutine writeAtomicData
 
@@ -362,7 +464,7 @@ module O_CrystalSystem
    end function findMatch
 
 
-   subroutine reduceCell (spaceLattice)
+   subroutine reduceCell (spaceLattice,spaceGroupNumber,spaceGroupSubNumber)
 
       ! Import necessary parameter modules.
       use O_Kinds
@@ -373,6 +475,8 @@ module O_CrystalSystem
 
       ! Define passed parameters.
       character*1 :: spaceLattice
+      integer :: spaceGroupNumber
+      integer :: spaceGroupSubNumber
 
       ! Some of the members of this set of local variables will be copied back
       !   to the "symm" set of module variables for easy printing.
@@ -387,12 +491,16 @@ module O_CrystalSystem
       real (kind=double), dimension (3,3) :: reduceLatticeInv
 
       ! In the case that a full (non-primitive) cell was requested or if the
-      !   cell is already a primitive cell (and therefor can not be reduced)
+      !   cell is already a primitive cell (and therefore cannot be reduced)
       !   we have nothing to do here.  I will have to figure out later how to
       !   reduce the H centered trigonal cells.  Until then, they will have to
-      !   be done as non-primitive cells only.
+      !   be done as non-primitive (hexagonal) cells only. Note also that the
+      !   R*_a (R* subgroup 1) defines a primitive rhombohedral lattice while
+      !   subgroup 2 defines a conventional hexagonal cell that can be
+      !   reduced to a primitive rhombohedral cell of 1/3 size.
       if ((makeFull == 1) .or. (spaceLattice == 'P') .or. &
-            & (spaceLattice == 'H')) then
+            & (spaceLattice == 'H') .or. ((spaceLattice == 'R') .and. &
+            & (spaceGroupSubNumber == 1))) then
          return
       endif
 
@@ -403,7 +511,8 @@ module O_CrystalSystem
       allocate (reduceSpeciesID(numSymmAtoms))
 
       ! First we will reduce the lattice vectors.
-      call reduceLatticeVectors(spaceLattice,reduceLattice,reduceLatticeInv)
+      call reduceLatticeVectors(spaceLattice,spaceGroupNumber,&
+            & spaceGroupSubNumber,reduceLattice,reduceLatticeInv)
 
       ! Initialize the number of reduced atoms.  Only the atoms that remain
       !   inside the new reduced cell will be kept.
@@ -501,7 +610,8 @@ module O_CrystalSystem
    end subroutine reduceCell
 
 
-   subroutine reduceLatticeVectors (spaceLattice,reduceLattice,reduceLatticeInv)
+   subroutine reduceLatticeVectors (spaceLattice,spaceGroupNumber,&
+            & spaceGroupSubNumber,reduceLattice,reduceLatticeInv)
 
       ! Import necessary parameter modules.
       use O_Kinds
@@ -512,6 +622,8 @@ module O_CrystalSystem
 
       ! Define passed parameters.
       character*1 :: spaceLattice
+      integer :: spaceGroupNumber
+      integer :: spaceGroupSubNumber
       real (kind=double), dimension (3,3) :: reduceLattice
       real (kind=double), dimension (3,3) :: reduceLatticeInv ! Inverse
 
@@ -566,26 +678,23 @@ module O_CrystalSystem
       lwork = 3*ilaenv(1,'dgetri','',3,3,-1,-1)
       allocate (work(lwork))
 
-      ! Compute the new lattice parameters based on the spaceLattice and the
-      !   old lattice parameters.  This information is from "Symmetry
-      !   Principles in Solid State and Molecular Physics" by Melvin Lax,
-      !   Dover, New York, 2001.
+      ! Compute the new lattice parameters based on the spaceGroupNumber, the
+      !   spaceLattice (A,B,C,I,F,P,R), and the old lattice parameters.  This
+      !   information is from "Symmetry Principles in Solid State and Molecular
+      !   Physics" by Melvin Lax, Dover, New York, 2001 and from W. Setyawan,
+      !   S. Curtarolo, Comp. Mat. Sci. v. 49, pp. 299-312, (2010).
       if (spaceLattice == 'A') then
          reduceLattice(:,1) = realLattice(:,1)
-         reduceLattice(:,2) = realLattice(:,2)
-         reduceLattice(:,3) = 0.5_double*(realLattice(:,2)+realLattice(:,3))
+         reduceLattice(:,2) = 0.5_double*(realLattice(:,2)+realLattice(:,3))
+         reduceLattice(:,3) = 0.5_double*(realLattice(:,3)-realLattice(:,2))
       elseif (spaceLattice == 'B') then
-         reduceLattice(:,1) = realLattice(:,1)
+         reduceLattice(:,1) = 0.5_double*(realLattice(:,1)+realLattice(:,3))
          reduceLattice(:,2) = realLattice(:,2)
-         reduceLattice(:,3) = 0.5_double*(realLattice(:,1)+realLattice(:,3))
+         reduceLattice(:,3) = 0.5_double*(realLattice(:,3)-realLattice(:,1))
       elseif (spaceLattice == 'C') then
-         reduceLattice(:,1) = realLattice(:,1)
-         reduceLattice(:,2) = 0.5_double*(realLattice(:,1)+realLattice(:,2))
+         reduceLattice(:,1) = 0.5_double*(realLattice(:,1)+realLattice(:,2))
+         reduceLattice(:,2) = 0.5_double*(realLattice(:,2)-realLattice(:,1))
          reduceLattice(:,3) = realLattice(:,3)
-      elseif (spaceLattice == 'F') then
-         reduceLattice(:,1) = 0.5_double*(realLattice(:,2)+realLattice(:,3))
-         reduceLattice(:,2) = 0.5_double*(realLattice(:,1)+realLattice(:,3))
-         reduceLattice(:,3) = 0.5_double*(realLattice(:,1)+realLattice(:,2))
       elseif (spaceLattice == 'I') then
          reduceLattice(:,1) =(-0.5_double)*realLattice(:,1) + &
                             &  0.5_double*realLattice(:,2) + &
@@ -596,7 +705,11 @@ module O_CrystalSystem
          reduceLattice(:,3) =  0.5_double*realLattice(:,1) + &
                             &  0.5_double*realLattice(:,2) + &
                             &(-0.5_double)*realLattice(:,3)
-      elseif (spaceLattice == 'R') then
+      elseif (spaceLattice == 'F') then
+         reduceLattice(:,1) = 0.5_double*(realLattice(:,2)+realLattice(:,3))
+         reduceLattice(:,2) = 0.5_double*(realLattice(:,1)+realLattice(:,3))
+         reduceLattice(:,3) = 0.5_double*(realLattice(:,1)+realLattice(:,2))
+      elseif (spaceLattice == 'R') then ! spaceGroupSubNum == 2
          reduceLattice(:,1) =  twoThrd*realLattice(:,1) + &
                             &  oneThrd*realLattice(:,2) + &
                             &  oneThrd*realLattice(:,3)
@@ -814,8 +927,12 @@ program applySpaceGroup
    !   hold and access that information.
    call readSpaceOps(5) ! Read from standard input.
 
-   ! Read lattice parameters, and request for full cell.
+   ! Read lattice parameters in xyz,abc form, and request for full cell.
    call readLattice(5) ! Read from standard input.
+
+   ! Compute lattice parameters in abc, alpha, beta, gamma form. Also
+   !   compute the reciprocal space versions.
+   call computeLatticeData
 
    ! Read the element data and atomic coordinates in fractional a,b,c units.
    call readAtomicData(5) ! Read from standard input.
@@ -828,8 +945,8 @@ program applySpaceGroup
    !   duplicates.
    call applySymmetry
 
-   ! Attempt to make a primitive cell.
-   call reduceCell(spaceLattice)
+   ! Attempt to make a primitive cell if requested.
+   call reduceCell(spaceLattice,spaceGroupNumber,spaceGroupSubNumber)
 
    ! Write the new lattice parameters.
    call writeLattice(6) ! Write to standard output.

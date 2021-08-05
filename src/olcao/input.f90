@@ -56,6 +56,24 @@ module O_Input
    real (kind=double) :: eminBOND   ! Given in eV, stored in a.u.
    real (kind=double) :: emaxBOND   ! Given in eV, stored in a.u.
 
+   ! Define control variables for the usual use of the optc program.
+   real (kind=double) :: deltaOPTC      ! Given in eV, stored in a.u.
+   real (kind=double) :: sigmaOPTC      ! Given in eV, stored in a.u.
+   real (kind=double) :: maxTransEnOPTC ! Given in eV, stored in a.u.
+   real (kind=double) :: cutoffEnOPTC   ! Given in eV, stored in a.u.
+
+   ! Define control variables that apply to the NLOP use of the optc program.
+   real (kind=double) :: deltaNLOP      ! Given in eV, stored in a.u.
+   real (kind=double) :: sigmaNLOP      ! Given in eV, stored in a.u.
+   real (kind=double) :: maxTransEnNLOP ! Given in eV, stored in a.u.
+   real (kind=double) :: cutoffEnNLOP   ! Given in eV, stored in a.u.
+
+   ! Define control variables that apply to the SIGE use of the optc program.
+   real (kind=double) :: deltaSIGE      ! Given in eV, stored in a.u.
+   real (kind=double) :: sigmaSIGE      ! Given in eV, stored in a.u.
+   real (kind=double) :: maxTransEnSIGE ! Given in eV, stored in a.u.
+   real (kind=double) :: cutoffEnSIGE   ! Given in eV, stored in a.u.
+
    ! Define control variables that apply to the PACS use of the optc program.
    integer :: excitedAtomPACS ! Atom number of the excited atom.
    integer :: firstInitStatePACS
@@ -65,18 +83,6 @@ module O_Input
    real (kind=double) :: onsetEnergySlackPACS ! Given in eV, stored in a.u.
    real (kind=double) :: energyWindowPACS     ! Given in eV, stored in a.u.
    real (kind=double) :: totalEnergyDiffPACS  ! Given in eV, stored in a.u.
-
-   ! Define control variables for the usual use of the optc program.
-   real (kind=double) :: deltaOPTC      ! Given in eV, stored in a.u.
-   real (kind=double) :: sigmaOPTC      ! Given in eV, stored in a.u.
-   real (kind=double) :: maxTransEnOPTC ! Given in eV, stored in a.u.
-   real (kind=double) :: cutoffEnOPTC   ! Given in eV, stored in a.u.
-
-   ! Define control variables that apply to the SIGE use of the optc program.
-   real (kind=double) :: deltaSIGE      ! Given in eV, stored in a.u.
-   real (kind=double) :: sigmaSIGE      ! Given in eV, stored in a.u.
-   real (kind=double) :: maxTransEnSIGE ! Given in eV, stored in a.u.
-   real (kind=double) :: cutoffEnSIGE   ! Given in eV, stored in a.u.
 
    ! Define control variables that apply only to the field program.
    integer :: doRho ! Flag indicating whether or not to include state
@@ -157,6 +163,9 @@ subroutine parseInput
 
    ! Read optc input control parameters.
    call readOptcControl(readUnit,writeUnit)
+
+   ! Read nlop input control parameters.
+   call readNlopControl(readUnit,writeUnit)
 
    ! Read sige input control parameters.
    call readSigeControl(readUnit,writeUnit)
@@ -244,7 +253,8 @@ subroutine readSharedControl(readUnit,writeUnit)
    use O_Kinds
    use O_Constants, only: hartree
    use O_CommandLine, only: basisCode
-   use O_Lattice, only: logBasisFnThresh, logElecThresh, setCutoffThresh
+   use O_Lattice, only: logBasisFnThresh, logElecThresh, setCutoffThresh, &
+                        spaceGroupNum, spaceGroupSubNum
    use O_ReadDataSubs
 
    ! Make sure no funny variables are defined.
@@ -266,6 +276,11 @@ subroutine readSharedControl(readUnit,writeUnit)
    ! Read the header for this input section.
    call readAndCheckLabel(readUnit,writeUnit,len('SHARED_INPUT_DATA'),&
          & 'SHARED_INPUT_DATA')
+
+
+   ! Read the space group number and subnumber.
+   call readData(readUnit,writeUnit,spaceGroupNum,spaceGroupSubNum,&
+         & len('SPACE_GROUP'),'SPACE_GROUP')
 
 
    ! Read the cutoff values for integrals.  (Used by setup and intg.)
@@ -300,7 +315,7 @@ subroutine readSharedControl(readUnit,writeUnit)
    ! Read the number of states to use for the command line given basis code.
    call readData(readUnit,writeUnit,3,tempArray(:),len('NUM_STATES_TO_USE'),&
          & 'NUM_STATES_TO_USE')
-   numStates = tempArray(basisCode)
+   numStates = int(tempArray(basisCode))
    write (20,*) "Using ",numStates," states."
    call flush (20)
 
@@ -655,6 +670,38 @@ subroutine readOptcControl(readUnit,writeUnit)
          & log(2.0_double)))
 
 end subroutine readOptcControl
+
+
+subroutine readNlopControl(readUnit,writeUnit)
+
+   ! Use necessary modules
+   use O_Constants, only: hartree
+   use O_ReadDataSubs
+
+   implicit none
+
+   ! passed parameters
+   integer, intent(in)    :: readUnit   ! The unit number of the file from which
+                                        ! we are reading.
+   integer, intent(in)    :: writeUnit  ! The unit number of the file to which
+                                        ! we are writing.
+
+   ! Read input OPTC control data.
+   call readAndCheckLabel(readUnit,writeUnit,len('NLOP_INPUT_DATA'),&
+         & 'NLOP_INPUT_DATA')
+   call readData(readUnit,writeUnit,cutoffEnNLOP,0,'')
+   call readData(readUnit,writeUnit,maxTransEnNLOP,0,'')
+   call readData(readUnit,writeUnit,deltaNLOP,0,'')
+   call readData(readUnit,writeUnit,sigmaNLOP,0,'')
+
+   ! Apply necessary conversions to a.u.
+   cutoffEnNLOP   = cutoffEnNLOP / hartree
+   maxTransEnNLOP = maxTransEnNLOP / hartree
+   deltaNLOP = deltaNLOP / hartree
+   sigmaNLOP = sigmaNLOP / hartree /(2.0_double*sqrt(2.0_double * &
+         & log(2.0_double)))
+
+end subroutine readNlopControl
 
 
 subroutine readSigeControl(readUnit,writeUnit)

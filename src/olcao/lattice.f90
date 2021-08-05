@@ -18,6 +18,10 @@ module O_Lattice  ! Lattice and superlattice object.
    ! Begin list of module data.!
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
+   ! Crystal information
+   integer :: spaceGroupNum, spaceGroupSubNum ! Space group number and cell
+         !   center sub-number.
+
    ! Real space cell information.
    real (kind=double), dimension (dim3,dim3) :: realVectors ! Cell vectors
          !   of the real space lattice for a, b, c, given in x, y, z

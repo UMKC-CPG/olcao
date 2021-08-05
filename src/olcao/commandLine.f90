@@ -40,7 +40,7 @@ module O_CommandLine
                          !   unoccupied (normal optical properties); 1=ground
                          !   state core level occupied to excited state
                          !   conduction band unoccupied (ELNES/XANES);
-                         !   2=sigma(E).
+                         !   2=sigma(E); 3=nonlinear optical properties
    integer :: serialXYZ  ! Perform the XYZ components in serial (1) or not (0).
 
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!

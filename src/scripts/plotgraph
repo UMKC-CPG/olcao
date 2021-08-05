@@ -584,8 +584,16 @@ if ($SYBD)
 {
    for (my $i=1;$i<=$numVertLines;$i++)
    {
-      print OUT "set arrow $i from $vertLine[$i], $ymin to $vertLine[$i],";
-      print OUT " $ymax nohead\n";
+      if ($sybdLabel[$i] =~ /,/)
+      {
+         print OUT "set arrow $i from $vertLine[$i], $ymin to $vertLine[$i],";
+         print OUT " $ymax nohead lw 2\n";
+      }
+      else
+      {
+         print OUT "set arrow $i from $vertLine[$i], $ymin to $vertLine[$i],";
+         print OUT " $ymax nohead\n";
+      }
       print OUT "set label \"$sybdLabel[$i]\" at $vertLine[$i],";
       print OUT " graph -0.04 center\n";
    }

@@ -57,7 +57,7 @@ subroutine initOperationLabels
    opLabels(20) = '*************  PSCF Integrals and MME  ************'
    opLabels(21) = '*****  Symmetric Band Structure Path KPoints  *****'
    opLabels(22) = '********  Bond Order and Effective Charge  ********'
-   opLabels(23) = '*************  Transition Calculation  ************'
+   opLabels(23) = '*********  Optical Transition Calculation  ********'
    opLabels(24) = '*************  Parse The Command Line  ************'
    opLabels(25) = '************  Evaluate WaveFn on Mesh  ************'
    opLabels(26) = '************  Three Center Bond Order  ************'

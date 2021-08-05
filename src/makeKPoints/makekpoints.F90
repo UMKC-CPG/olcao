@@ -54,6 +54,7 @@ module PointGroupOperations_O
    implicit none
 
    ! Begin list of module data.
+   integer :: spaceGroupNum
    integer :: numPointOps
    real (kind=double), allocatable, dimension (:,:)   :: translations
    real (kind=double), allocatable, dimension (:,:,:) :: pointOps
@@ -78,7 +79,6 @@ module PointGroupOperations_O
 
       ! Define local variables.
       integer :: i,j
-      integer :: spaceGroupNum
       integer :: numSpaceOps
       integer :: numShifts
 
@@ -218,6 +218,7 @@ module Lattice_O
 
    type edgeType
       type (vertexType), dimension (2) :: vertex
+      integer, dimension (2) :: indexToUniqueVertexList
    end type edgeType
    type (edgeType), dimension (1000) :: uniqueEdgeList
 
@@ -225,6 +226,7 @@ module Lattice_O
       integer :: pointID
       integer :: numVertices
       type (vertexType), dimension (20) :: vertex
+      integer, dimension (20) :: indexToUniqueVertexList
    end type facetType
    type (facetType), dimension (50) :: facetList
    
@@ -380,35 +382,88 @@ module Lattice_O
       call copyVertex(recipLattVertices(5),recipLattEdges(11)%vertex(2))
       call copyVertex(recipLattVertices(3),recipLattEdges(12)%vertex(1))
       call copyVertex(recipLattVertices(7),recipLattEdges(12)%vertex(2))
+      recipLattEdges(1)%indexToUniqueVertexList(1) = 0
+      recipLattEdges(1)%indexToUniqueVertexList(2) = 1
+      recipLattEdges(2)%indexToUniqueVertexList(1) = 0
+      recipLattEdges(2)%indexToUniqueVertexList(2) = 2
+      recipLattEdges(3)%indexToUniqueVertexList(1) = 1
+      recipLattEdges(3)%indexToUniqueVertexList(2) = 3
+      recipLattEdges(4)%indexToUniqueVertexList(1) = 2
+      recipLattEdges(4)%indexToUniqueVertexList(2) = 3
+      recipLattEdges(5)%indexToUniqueVertexList(1) = 4
+      recipLattEdges(5)%indexToUniqueVertexList(2) = 5
+      recipLattEdges(6)%indexToUniqueVertexList(1) = 4
+      recipLattEdges(6)%indexToUniqueVertexList(2) = 6
+      recipLattEdges(7)%indexToUniqueVertexList(1) = 5
+      recipLattEdges(7)%indexToUniqueVertexList(2) = 7
+      recipLattEdges(8)%indexToUniqueVertexList(1) = 6
+      recipLattEdges(8)%indexToUniqueVertexList(2) = 7
+      recipLattEdges(9)%indexToUniqueVertexList(1) = 1
+      recipLattEdges(9)%indexToUniqueVertexList(2) = 5
+      recipLattEdges(10)%indexToUniqueVertexList(1) = 3
+      recipLattEdges(10)%indexToUniqueVertexList(2) = 7
+      recipLattEdges(11)%indexToUniqueVertexList(1) = 0
+      recipLattEdges(11)%indexToUniqueVertexList(2) = 4
+      recipLattEdges(12)%indexToUniqueVertexList(1) = 2
+      recipLattEdges(12)%indexToUniqueVertexList(2) = 6
 
 
       ! Create the list of faces.
       recipLattFaces(1)%numVertices = 4
+      recipLattFaces(1)%indexToUniqueVertexList(1) = 0
+      recipLattFaces(1)%indexToUniqueVertexList(2) = 1
+      recipLattFaces(1)%indexToUniqueVertexList(3) = 2
+      recipLattFaces(1)%indexToUniqueVertexList(4) = 3
       call copyVertex(recipLattVertices(1),recipLattFaces(1)%vertex(1))
       call copyVertex(recipLattVertices(2),recipLattFaces(1)%vertex(2))
       call copyVertex(recipLattVertices(4),recipLattFaces(1)%vertex(3))
       call copyVertex(recipLattVertices(3),recipLattFaces(1)%vertex(4))
+
       recipLattFaces(2)%numVertices = 4
+      recipLattFaces(2)%indexToUniqueVertexList(1) = 0
+      recipLattFaces(2)%indexToUniqueVertexList(2) = 1
+      recipLattFaces(2)%indexToUniqueVertexList(3) = 5
+      recipLattFaces(2)%indexToUniqueVertexList(4) = 4
       call copyVertex(recipLattVertices(1),recipLattFaces(2)%vertex(1))
       call copyVertex(recipLattVertices(2),recipLattFaces(2)%vertex(2))
       call copyVertex(recipLattVertices(6),recipLattFaces(2)%vertex(3))
       call copyVertex(recipLattVertices(5),recipLattFaces(2)%vertex(4))
+
       recipLattFaces(3)%numVertices = 4
+      recipLattFaces(3)%indexToUniqueVertexList(1) = 0
+      recipLattFaces(3)%indexToUniqueVertexList(2) = 2
+      recipLattFaces(3)%indexToUniqueVertexList(3) = 6
+      recipLattFaces(3)%indexToUniqueVertexList(4) = 4
       call copyVertex(recipLattVertices(1),recipLattFaces(3)%vertex(1))
       call copyVertex(recipLattVertices(3),recipLattFaces(3)%vertex(2))
       call copyVertex(recipLattVertices(7),recipLattFaces(3)%vertex(3))
       call copyVertex(recipLattVertices(5),recipLattFaces(3)%vertex(4))
+
       recipLattFaces(4)%numVertices = 4
+      recipLattFaces(4)%indexToUniqueVertexList(1) = 1
+      recipLattFaces(4)%indexToUniqueVertexList(2) = 3
+      recipLattFaces(4)%indexToUniqueVertexList(3) = 7
+      recipLattFaces(4)%indexToUniqueVertexList(4) = 5
       call copyVertex(recipLattVertices(2),recipLattFaces(4)%vertex(1))
       call copyVertex(recipLattVertices(4),recipLattFaces(4)%vertex(2))
       call copyVertex(recipLattVertices(8),recipLattFaces(4)%vertex(3))
       call copyVertex(recipLattVertices(6),recipLattFaces(4)%vertex(4))
+
       recipLattFaces(5)%numVertices = 4
+      recipLattFaces(5)%indexToUniqueVertexList(1) = 2
+      recipLattFaces(5)%indexToUniqueVertexList(2) = 3
+      recipLattFaces(5)%indexToUniqueVertexList(3) = 7
+      recipLattFaces(5)%indexToUniqueVertexList(4) = 6
       call copyVertex(recipLattVertices(3),recipLattFaces(5)%vertex(1))
       call copyVertex(recipLattVertices(4),recipLattFaces(5)%vertex(2))
       call copyVertex(recipLattVertices(8),recipLattFaces(5)%vertex(3))
       call copyVertex(recipLattVertices(7),recipLattFaces(5)%vertex(4))
+
       recipLattFaces(6)%numVertices = 4
+      recipLattFaces(6)%indexToUniqueVertexList(1) = 4
+      recipLattFaces(6)%indexToUniqueVertexList(2) = 5
+      recipLattFaces(6)%indexToUniqueVertexList(3) = 7
+      recipLattFaces(6)%indexToUniqueVertexList(4) = 6
       call copyVertex(recipLattVertices(5),recipLattFaces(6)%vertex(1))
       call copyVertex(recipLattVertices(6),recipLattFaces(6)%vertex(2))
       call copyVertex(recipLattVertices(8),recipLattFaces(6)%vertex(3))
@@ -419,17 +474,18 @@ module Lattice_O
       do h = 1, maxBZ
          write (51+h,fmt="(a26)") "recip_lattice_vertices = ["
          do i = 1, 8
-            write (51+h,advance="NO",fmt="(a1)") "["
+            write (51+h,advance="NO",fmt="(a1)") "("
             write (51+h,advance="NO",fmt="(f16.12, a2)") &
                   & recipLattVertices(i)%coord(1), ", "
             write (51+h,advance="NO",fmt="(f16.12, a2)") &
                   & recipLattVertices(i)%coord(2), ", "
             write (51+h,advance="NO",fmt="(f16.12)") &
                   & recipLattVertices(i)%coord(3)
+
             if (i < 8) then
-               write (51+h,fmt="(a3)") "],"
+               write (51+h,fmt="(a3)") "),"
             else
-               write (51+h,fmt="(a2)") "]]"
+               write (51+h,fmt="(a2)") ")]"
             endif
          enddo
       enddo
@@ -438,25 +494,33 @@ module Lattice_O
       do h = 1, maxBZ
          write (51+h,fmt="(a23)") "recip_lattice_edges = ["
          do i = 1, 12
-            write (51+h,advance="NO",fmt="(a2)") "[["
-            write (51+h,advance="NO",fmt="(f16.12, a2)") &
-               & recipLattEdges(i)%vertex(1)%coord(1), ", "
-            write (51+h,advance="NO",fmt="(f16.12, a2)") &
-               & recipLattEdges(i)%vertex(1)%coord(2), ", "
-            write (51+h,advance="NO",fmt="(f16.12, a3)") &
-               & recipLattEdges(i)%vertex(1)%coord(3), "], "
-            write (51+h,advance="NO",fmt="(a1)") "["
-            write (51+h,advance="NO",fmt="(f16.12, a2)") &
-               & recipLattEdges(i)%vertex(2)%coord(1), ", "
-            write (51+h,advance="NO",fmt="(f16.12, a2)") &
-               & recipLattEdges(i)%vertex(2)%coord(2), ", "
-            write (51+h,advance="NO",fmt="(f16.12)") &
-               & recipLattEdges(i)%vertex(2)%coord(3)
+! POVRay
+!            write (51+h,advance="NO",fmt="(a2)") "[["
+!            write (51+h,advance="NO",fmt="(f16.12, a2)") &
+!               & recipLattEdges(i)%vertex(1)%coord(1), ", "
+!            write (51+h,advance="NO",fmt="(f16.12, a2)") &
+!               & recipLattEdges(i)%vertex(1)%coord(2), ", "
+!            write (51+h,advance="NO",fmt="(f16.12, a3)") &
+!               & recipLattEdges(i)%vertex(1)%coord(3), "], "
+!            write (51+h,advance="NO",fmt="(a1)") "["
+!            write (51+h,advance="NO",fmt="(f16.12, a2)") &
+!               & recipLattEdges(i)%vertex(2)%coord(1), ", "
+!            write (51+h,advance="NO",fmt="(f16.12, a2)") &
+!               & recipLattEdges(i)%vertex(2)%coord(2), ", "
+!            write (51+h,advance="NO",fmt="(f16.12)") &
+!               & recipLattEdges(i)%vertex(2)%coord(3)
+! Blender
+            ! Print mapping of vertices to unique vertex list.
+            write (51+h,advance="NO",fmt="(a2)") "("
+            write (51+h,advance="NO",fmt="(i3, a2)") &
+               & recipLattEdges(i)%indexToUniqueVertexList(1), ", "
+            write (51+h,advance="NO",fmt="(i3)") &
+               & recipLattEdges(i)%indexToUniqueVertexList(2)
 
             if (i < 12) then
-               write (51+h,fmt="(a4)") "]], "
+               write (51+h,fmt="(a4)") "), "
             else
-               write (51+h,fmt="(a3)") "]]]"
+               write (51+h,fmt="(a3)") ")]"
             endif
          enddo
       enddo
@@ -464,26 +528,39 @@ module Lattice_O
       ! Print the reciprocal lattice faces.
       do h = 1, maxBZ
          write (51+h,fmt="(a23)") "recip_lattice_faces = ["
+
          do i = 1, 6
-            write (51+h,advance="NO",fmt="(a1)") "["
-            do j = 1, recipLattFaces(i)%numVertices
-               write (51+h,advance="NO",fmt="(a1)") "["
-               write (51+h,advance="NO",fmt="(f16.12, a2)") &
-                     & recipLattFaces(i)%vertex(j)%coord(1), ", "
-               write (51+h,advance="NO",fmt="(f16.12, a2)") &
-                     & recipLattFaces(i)%vertex(j)%coord(2), ", "
-               write (51+h,advance="NO",fmt="(f16.12, a3)") &
-                     & recipLattFaces(i)%vertex(j)%coord(3), "], "
+! For POVRay
+!            write (51+h,advance="NO",fmt="(a1)") "["
+!            do j = 1, recipLattFaces(i)%numVertices
+!               write (51+h,advance="NO",fmt="(a1)") "["
+!               write (51+h,advance="NO",fmt="(f16.12, a2)") &
+!                     & recipLattFaces(i)%vertex(j)%coord(1), ", "
+!               write (51+h,advance="NO",fmt="(f16.12, a2)") &
+!                     & recipLattFaces(i)%vertex(j)%coord(2), ", "
+!               write (51+h,advance="NO",fmt="(f16.12, a3)") &
+!                     & recipLattFaces(i)%vertex(j)%coord(3), "], "
+!            enddo
+!
+!            ! Write the first vertex again to close the polygon.
+!            write (51+h,advance="NO",fmt="(a1)") "["
+!            write (51+h,advance="NO",fmt="(f16.12, a2)") &
+!                  & recipLattFaces(i)%vertex(1)%coord(1), ", "
+!            write (51+h,advance="NO",fmt="(f16.12, a2)") &
+!                  & recipLattFaces(i)%vertex(1)%coord(2), ", "
+!            write (51+h,advance="NO",fmt="(f16.12, a1)") &
+!                  & recipLattFaces(i)%vertex(1)%coord(3), "]"
+
+            ! For Blender
+            do j = 1, recipLattFaces(i)%numVertices - 1
+               write (51+h,advance="NO",fmt="(i3, a2)") &
+                     & recipLattFaces(i)%indexToUniqueVertexList(j), ", "
             enddo
 
-            ! Write the first vertex again to close the polygon.
-            write (51+h,advance="NO",fmt="(a1)") "["
-            write (51+h,advance="NO",fmt="(f16.12, a2)") &
-                  & recipLattFaces(i)%vertex(1)%coord(1), ", "
-            write (51+h,advance="NO",fmt="(f16.12, a2)") &
-                  & recipLattFaces(i)%vertex(1)%coord(2), ", "
-            write (51+h,advance="NO",fmt="(f16.12, a1)") &
-                  & recipLattFaces(i)%vertex(1)%coord(3), "]"
+            ! Write the last vertex.
+            write (51+h,advance="NO",fmt="(i3)") &
+                  & recipLattFaces(i)%indexToUniqueVertexList( &
+                  & recipLattFaces(i)%numVertices)
 
             if (i < 6) then
                write (51+h,fmt="(a2)") "],"
@@ -726,6 +803,10 @@ module BrillouinZones_O
       !   the order of a ring.
       call ringSortFacetVertices(maxBZ)
 
+      ! Assign an index number to each vertex in each facet that maps it to
+      !   the list of unique vertices.
+      call mapFacetVertices(maxBZ)
+
       ! Create a list of edges by traversing the list of facets and
       !   accumulating each unique sequential pair of vertices plus the final
       !   first-vertex + last-vertex pair.
@@ -750,6 +831,9 @@ module BrillouinZones_O
       character*8 :: formatString_i, formatString_j
 #endif
 
+      ! Initialize beyondOtherPlane.
+      beyondOtherPlane = 0
+
       ! The goal of the algorithm is to create a list of all the planes that
       !   contribute to the Brillouin zone (and, of course, exclude those
       !   planes that do not contribute). A plane is recognized as a
@@ -766,7 +850,11 @@ module BrillouinZones_O
 
       ! First, we need to create algebraic expressions for each of the planes
       !   available for us to intersect.
+#ifdef COMPVIS
       call makePlaneEquations (currBZ)
+#else
+      call makePlaneEquations
+#endif
 
       ! Now, consider each plane in turn.
       numBZFacets(currBZ) = 0
@@ -1383,6 +1471,8 @@ endif
             !   point defined by the centerVector, B is the point of the
             !   previously added vertex, and C is each of the other vertices
             !   in this facet.
+            ! Initialize the next vertex to zero.
+            nextVertex = 0
             kloop: do k = 2, facetList(i)%numVertices
                do l = 1, facetList(i)%numVertices
                   if (usedVertices(l) == k) then
@@ -1434,6 +1524,10 @@ endif
                endif
             enddo kloop
 
+            if (nextVertex == 0) then
+               stop "The nextVertex was not found."
+            endif
+
             ! After reviewing all other vertices we know the next vertex.
             call copyVertex(facetList(i)%vertex(nextVertex), &
                   & tempFacet%vertex(j))
@@ -1456,6 +1550,50 @@ endif
    end subroutine ringSortFacetVertices
 
 
+   subroutine mapFacetVertices(currBZ)
+
+      implicit none
+
+      ! Define passed dummy variables.
+      integer :: currBZ
+
+      ! Define local variables.
+      integer :: found
+      integer :: i, j, k
+
+      ! For each facet, compare each of its vertices to the vertices stored
+      !   in the unique vertex list. When a match is found, store the index
+      !   number in indexToUniqueVertexList for the current facet.
+      do i = 1, numBZFacets(currBZ)
+         do j = 1, facetList(i)%numVertices
+
+            ! Assume that we will not find a match between the current facet
+            !   vertex and any of the unque vertices.
+            found = 0
+
+            ! Look at each unique vertex for a match. If we find a match, then
+            !   hold that index number in "k".
+            do k = 1, numBZVertices(currBZ)
+               if (vertexPosEqual(facetList(i)%vertex(j), &
+                     & uniqueVertexList(k))) then
+                  found = k
+                  exit ! exit k loop
+               endif
+            enddo
+
+            ! If found, store the mapping index number. If not found we have a
+            !   problem because this implies that a facet vertex is not
+            !   present in the unique vertex list.
+            if (found > 0) then
+               facetList(i)%indexToUniqueVertexList(j) = found - 1 ! Start @ 0
+            else
+               stop "Facet has a vertex that the unique list does not have."
+            endif
+         enddo
+      enddo
+   end subroutine mapFacetVertices
+
+
    subroutine makeUniqueEdgeList (currBZ)
 
       implicit none
@@ -1472,27 +1610,34 @@ endif
 
          do j = 1, facetList(i)%numVertices - 1
             call addUniqueEdge(facetList(i)%vertex(j), &
-                  & facetList(i)%vertex(j+1), currBZ)
+                  & facetList(i)%vertex(j+1), &
+                  & facetList(i)%indexToUniqueVertexList(j), &
+                  & facetList(i)%indexToUniqueVertexList(j+1), currBZ)
          enddo
 
          ! Add the last edge from the final vertex back to the first one.
          call addUniqueEdge(facetList(i)%vertex(facetList(i)%numVertices), &
-               & facetList(i)%vertex(1), currBZ)
+               & facetList(i)%vertex(1), &
+               & facetList(i)%indexToUniqueVertexList( &
+               & facetList(i)%numVertices), &
+               & facetList(i)%indexToUniqueVertexList(1), currBZ)
       enddo
    end subroutine makeUniqueEdgeList
 
 
-   subroutine addUniqueEdge (vertex1, vertex2, currBZ)
+   subroutine addUniqueEdge (vertex1, vertex2, index1, index2, currBZ)
 
       implicit none
 
       ! Define passed dummy parameters.
       integer :: currBZ
+      integer :: index1
+      integer :: index2
       type (vertexType) :: vertex1
       type (vertexType) :: vertex2
 
       ! Define local variables.
-      integer :: i, j
+      integer :: i
       integer :: edgeAlreadyPresent
 
       ! Traverse the current list of unique edges to see if the proposed
@@ -1518,6 +1663,8 @@ endif
          numBZEdges(currBZ) = numBZEdges(currBZ) + 1
          call copyVertex(vertex1, uniqueEdgeList(numBZEdges(currBZ))%vertex(1))
          call copyVertex(vertex2, uniqueEdgeList(numBZEdges(currBZ))%vertex(2))
+         uniqueEdgeList(numBZEdges(currBZ))%indexToUniqueVertexList(1) = index1
+         uniqueEdgeList(numBZEdges(currBZ))%indexToUniqueVertexList(2) = index2
       else
          return
       endif
@@ -1533,6 +1680,7 @@ endif
    !   l*x + m*y + n*z = d with d = l^2 + m^2 + n^2. To "store" the equation
    !   for each plane we will simply hold the Cartesian <l, m, n> vector and
    !   the value of d.
+#ifdef COMPVIS
    subroutine makePlaneEquations (currBZ)
 
       implicit none
@@ -1542,7 +1690,14 @@ endif
 
       ! Define local variables.
       integer :: i, j, k, s, planeIndex
-#ifdef COMPVIS
+      character*8 :: formatString
+#else
+   subroutine makePlaneEquations
+
+      implicit none
+
+      ! Define local variables.
+      integer :: i, j, k, s, planeIndex
       character*8 :: formatString
 #endif
 
@@ -1679,7 +1834,7 @@ endif
       logical :: vertexPosEqual
  
       ! Define local variables.
-      integer :: i, j
+      integer :: i
       real (kind=double) :: threshold
  
       ! Assume that the two vertices are equal and define the threshold.
@@ -1709,7 +1864,7 @@ endif
       logical :: verticesEqual
  
       ! Define local variables.
-      integer :: i, j
+      integer :: i
       real (kind=double) :: threshold
  
       ! Assume that the two vertices are equal and define the threshold.
@@ -1743,9 +1898,7 @@ endif
       integer :: maxBZ ! Highest BZ we will print.
 
       ! Define local variables.
-      integer :: i, j, k, l, m ! Loop indices.
-      real (kind=double), dimension(3) :: fractABC
-      character*25 :: filename
+      integer :: i, j, k  ! Loop indices.
 
       ! Step through each of the Brillouin zones we will make.
       do i = 1, maxBZ
@@ -1753,62 +1906,95 @@ endif
          ! Print all of the facets.
          write (51+i,fmt="(a9)") "faces = ["
          do j = 1, numBZFacets(i)
-            write (51+i,advance="NO",fmt="(a1)") "["
-            do k = 1, facetList(j)%numVertices
-               facetList(j)%vertex(k)%coord(:) = &
-                     & facetList(j)%vertex(k)%coord(:) * scaleFactor
-               write (51+i,advance="NO",fmt="(a1)") "["
-               write (51+i,advance="NO",fmt="(d16.8, a2)") &
-                     & facetList(j)%vertex(k)%coord(1), ", "
-               write (51+i,advance="NO",fmt="(d16.8, a2)") &
-                     & facetList(j)%vertex(k)%coord(2), ", "
-               write (51+i,advance="NO",fmt="(d16.8, a3)") &
-                     & facetList(j)%vertex(k)%coord(3), "], "
+            write (51+i,advance="NO",fmt="(a1)") "("
+
+            ! For POVRAY
+!            do k = 1, facetList(j)%numVertices
+!               facetList(j)%vertex(k)%coord(:) = &
+!                     & facetList(j)%vertex(k)%coord(:) * scaleFactor
+!               write (51+i,advance="NO",fmt="(a1)") "["
+!               write (51+i,advance="NO",fmt="(d16.8, a2)") &
+!                     & facetList(j)%vertex(k)%coord(1), ", "
+!               write (51+i,advance="NO",fmt="(d16.8, a2)") &
+!                     & facetList(j)%vertex(k)%coord(2), ", "
+!               write (51+i,advance="NO",fmt="(d16.8, a3)") &
+!                     & facetList(j)%vertex(k)%coord(3), "], "
+!            enddo ! k
+!
+!            ! Write the first vertex again to close the polygon
+!            write (51+i,advance="NO",fmt="(a1)") "["
+!            write (51+i,advance="NO",fmt="(d16.8, a2)") &
+!                  & facetList(j)%vertex(1)%coord(1), ", "
+!            write (51+i,advance="NO",fmt="(d16.8, a2)") &
+!                  & facetList(j)%vertex(1)%coord(2), ", "
+!            write (51+i,advance="NO",fmt="(d16.8, a1)") &
+!                  & facetList(j)%vertex(1)%coord(3), "]"
+
+            ! For Blender
+            do k = facetList(j)%numVertices, 2, -1
+               write (51+i,advance="NO",fmt="(i3, a2)") &
+                     & facetList(j)%indexToUniqueVertexList(k), ", "
             enddo ! k
 
-            ! Write the first vertex again to close the polygon
-            write (51+i,advance="NO",fmt="(a1)") "["
-            write (51+i,advance="NO",fmt="(d16.8, a2)") &
-                  & facetList(j)%vertex(1)%coord(1), ", "
-            write (51+i,advance="NO",fmt="(d16.8, a2)") &
-                  & facetList(j)%vertex(1)%coord(2), ", "
-            write (51+i,advance="NO",fmt="(d16.8, a1)") &
-                  & facetList(j)%vertex(1)%coord(3), "]"
+            ! Write the first vertex.
+            write (51+i,advance="NO",fmt="(i3)") &
+                  & facetList(j)%indexToUniqueVertexList(1)
+
+
+!            ! For Blender
+!            do k = 1, facetList(j)%numVertices - 1
+!               write (51+i,advance="NO",fmt="(i3, a2)") &
+!                     & facetList(j)%indexToUniqueVertexList(k), ", "
+!            enddo ! k
+!
+!            ! Write the last vertex.
+!            write (51+i,advance="NO",fmt="(i3)") &
+!                  & facetList(j)%indexToUniqueVertexList( &
+!                  & facetList(j)%numVertices)
 
             if (j < numBZFacets(i)) then
-               write (51+i,fmt="(a2)") "],"
+               write (51+i,fmt="(a2)") "),"
             else
-               write (51+i,fmt="(a2)") "]]"
+               write (51+i,fmt="(a2)") ")]"
             endif
          enddo ! j numBZFacets(i)
 
          ! Print all of the edges.
          write (51+i,fmt="(a9)") "edges = ["
          do j = 1, numBZEdges(i)
+            ! Scale the coordinates if asked. (Not needed for blender.)
             uniqueEdgeList(j)%vertex(1)%coord(:) = &
                   & uniqueEdgeList(j)%vertex(1)%coord(:) * scaleFactor
             uniqueEdgeList(j)%vertex(2)%coord(:) = &
                   & uniqueEdgeList(j)%vertex(2)%coord(:) * scaleFactor
 
-            write (51+i,advance="NO",fmt="(a2)") "[["
-            write (51+i, advance="NO",fmt="(f16.12, a2)") &
-                  & uniqueEdgeList(j)%vertex(1)%coord(1), ", "
-            write (51+i, advance="NO",fmt="(f16.12, a2)") &
-                  & uniqueEdgeList(j)%vertex(1)%coord(2), ", "
-            write (51+i, advance="NO",fmt="(f16.12, a3)") &
-                  & uniqueEdgeList(j)%vertex(1)%coord(3), "], "
-            write (51+i,advance="NO",fmt="(a1)") "["
-            write (51+i, advance="NO",fmt="(f16.12, a2)") &
-                  & uniqueEdgeList(j)%vertex(2)%coord(1), ", "
-            write (51+i, advance="NO",fmt="(f16.12, a2)") &
-                  & uniqueEdgeList(j)%vertex(2)%coord(2), ", "
-            write (51+i, advance="NO",fmt="(f16.12)") &
-                  & uniqueEdgeList(j)%vertex(2)%coord(3)
+            ! Print actual coordinates (useful for POVRAY).
+!            write (51+i,advance="NO",fmt="(a2)") "[["
+!            write (51+i, advance="NO",fmt="(f16.12, a2)") &
+!                  & uniqueEdgeList(j)%vertex(1)%coord(1), ", "
+!            write (51+i, advance="NO",fmt="(f16.12, a2)") &
+!                  & uniqueEdgeList(j)%vertex(1)%coord(2), ", "
+!            write (51+i, advance="NO",fmt="(f16.12, a3)") &
+!                  & uniqueEdgeList(j)%vertex(1)%coord(3), "], "
+!            write (51+i,advance="NO",fmt="(a1)") "["
+!            write (51+i, advance="NO",fmt="(f16.12, a2)") &
+!                  & uniqueEdgeList(j)%vertex(2)%coord(1), ", "
+!            write (51+i, advance="NO",fmt="(f16.12, a2)") &
+!                  & uniqueEdgeList(j)%vertex(2)%coord(2), ", "
+!            write (51+i, advance="NO",fmt="(f16.12)") &
+!                  & uniqueEdgeList(j)%vertex(2)%coord(3)
+
+            ! Print mapping of vertices to unique vertex list.
+            write (51+i,advance="NO",fmt="(a2)") "("
+            write (51+i, advance="NO",fmt="(i3, a2)") &
+                  & uniqueEdgeList(j)%indexToUniqueVertexList(1), ", "
+            write (51+i, advance="NO",fmt="(i3)") &
+                  & uniqueEdgeList(j)%indexToUniqueVertexList(2)
 
             if (j < numBZEdges(i)) then
-               write (51+i,fmt="(a4)") "]], "
+               write (51+i,fmt="(a4)") "), "
             else
-               write (51+i,fmt="(a3)") "]]]"
+               write (51+i,fmt="(a3)") ")]"
             endif
          enddo ! j numBZEdges(i)
 
@@ -1817,7 +2003,7 @@ endif
          do j = 1, numBZVertices(i)
             uniqueVertexList(j)%coord(:) = &
                   & uniqueVertexList(j)%coord(:) * scaleFactor
-            write (51+i,advance="NO",fmt="(a1)") "["
+            write (51+i,advance="NO",fmt="(a1)") "("
             write (51+i,advance="NO",fmt="(f16.12, a2)") &
                   & uniqueVertexList(j)%coord(1), ", "
             write (51+i,advance="NO",fmt="(f16.12, a2)") &
@@ -1826,9 +2012,9 @@ endif
                   & uniqueVertexList(j)%coord(3)
 
             if (j < numBZVertices(i)) then
-               write (51+i,fmt="(a3)") "], "
+               write (51+i,fmt="(a3)") "), "
             else
-               write (51+i,fmt="(a2)") "]]"
+               write (51+i,fmt="(a2)") ")]"
             endif
          enddo ! j numBZEdges(i)
       enddo ! i maxBZ
@@ -1850,8 +2036,10 @@ module KPointMesh_O
    integer :: doGamma  ! 1=Make 1 gamma kpoint; 0=Make 1 general kpoint.
    integer :: numMeshKPoints
    integer :: numFoldedKPoints
+   integer :: numTetrahedra
    integer, dimension(3) :: numABCKPoints
    integer, allocatable, dimension(:) :: kPointTracker
+   integer, allocatable, dimension(:,:) :: tetrahedralKPointMap
    real (kind=double) :: kpThresh    ! Threshhold for which two kpoints are
          ! considered to be symmetricly the same via point group operations.
    real (kind=double) :: weightSum   ! Sum of initial weights of all kpoints.
@@ -1904,7 +2092,7 @@ module KPointMesh_O
 
       ! Initialize the weight to 2 always.  (There are 2 electrons per state
       !   by default.  If a spin-polarized calculation is done, then the 1 e-
-      !   per state is accounted for in the olcao fortran program.)
+      !   per state is accounted for in the olcao fortran program itself.)
       weightSum = 2.0_double
 
       ! Compute the number of uniform mesh points in order to allocate space to
@@ -1949,7 +2137,7 @@ module KPointMesh_O
 
 
       ! Initialize the kpoint tracker.  When a new irreducable kpoint is found
-      !   the value is set the negative of the number of irriducable kpoints
+      !   the value is set to the negative of the # of irriducable kpoints
       !   found so far.  Then, then kpoint tracker value for all other kpoints
       !   that reduce to this one will get the same value (-# of irriducable
       !   kpoints found so far).
@@ -2207,6 +2395,16 @@ module KPointMesh_O
    end subroutine saveKPoint
 
 
+   subroutine makeTetrahedra
+
+      implicit none
+
+      ! Define local parameters.
+
+
+   end subroutine makeTetrahedra
+
+
    ! This subroutine will print the folded abc kpoint information in a format
    !   suitable for reading by the olcao program.
    subroutine printKPoints (fileUnit, maxBZ, recipLattice)
@@ -2254,13 +2452,13 @@ module KPointMesh_O
                   enddo
                enddo
 
-               write (fileUnit+i,advance="no",fmt="(a1)") "["
+               write (fileUnit+i,advance="no",fmt="(a1)") "("
                write (fileUnit+i,advance="no",fmt="(f16.12, a2)") &
                      & xyzKPoint(1), ", "
                write (fileUnit+i,advance="no",fmt="(f16.12, a2)") &
                      & xyzKPoint(2), ", "
                write (fileUnit+i,advance="no",fmt="(f16.12, a1)") &
-                     & xyzKPoint(3), "]"
+                     & xyzKPoint(3), ")"
 
                if (j < numMeshKPoints) then
                   write (fileUnit+i,fmt="(a2)") ", "
@@ -2286,13 +2484,13 @@ module KPointMesh_O
                   enddo
                enddo
 
-               write (fileUnit+i,advance="no",fmt="(a1)") "["
+               write (fileUnit+i,advance="no",fmt="(a1)") "("
                write (fileUnit+i,advance="no",fmt="(f16.12, a2)") &
                      & xyzKPoint(1), ", "
                write (fileUnit+i,advance="no",fmt="(f16.12, a2)") &
                      & xyzKPoint(2), ", "
                write (fileUnit+i,advance="no",fmt="(f16.12, a1)") &
-                     & xyzKPoint(3), "]"
+                     & xyzKPoint(3), ")"
 
                if (j < numFoldedKPoints) then
                   write (fileUnit+i,fmt="(a2)") ", "
@@ -2304,11 +2502,11 @@ module KPointMesh_O
             ! Write the kpoint weights.
             write (fileUnit+i,fmt="(a18)") "kpoint_weights = ["
             do j = 1, numFoldedKPoints - 1
-               write (fileUnit+i,fmt="(a1, f16.12, a2)") "[", &
-                     & kPointWeight(j), "],"
+               write (fileUnit+i,fmt="(a1, f16.12, a2)") "(", &
+                     & kPointWeight(j), "),"
             enddo ! j
-            write (fileUnit+i,fmt="(a1, f16.12, a2)") "[", &
-                  & kPointWeight(j), "]]"
+            write (fileUnit+i,fmt="(a1, f16.12, a2)") "(", &
+                  & kPointWeight(j), ")]"
          enddo ! i
       endif
    end subroutine printKPoints
@@ -2437,14 +2635,19 @@ program makekpoints
    call readPointOps(50)
    call computeABCRecipPointOps(realLattice,recipLattice)
 
-   ! Read the kpoint mesh parameters, initialize the mesh, fold the mesh, and
-   !   print the results.  It should be generally understood that the
-   !   variables with abc in the name refer to the reciprocal lattice
-   !   abcvectors and not the real space lattice.  This is only given
-   !   explictly for the variable abcRecipPointOps though.
+   ! Read the kpoint mesh parameters, initialize the mesh, and fold the mesh.
+   ! It should be generally understood that the variables with abc in the name
+   !   refer to the reciprocal lattice abcvectors and not the real space
+   !   lattice.  This is only given explictly for the variable
+   !   abcRecipPointOps though.
    call readMeshParameters(50)
    call initMesh
    call foldMesh (numPointOps,abcRecipPointOps)
+
+   ! Define tetrahedral parameters for the folded mesh kpoints.
+   call makeTetrahedra
+
+   ! Print the folded kpoints and the tetrahedral parameters.
    call printKPoints(51,doBrillouinZone,recipLattice)
 
    ! In the case that the user wants information about a the Brillouin zone,

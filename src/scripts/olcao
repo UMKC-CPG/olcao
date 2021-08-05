@@ -14,7 +14,7 @@ sub printHelp
 #              [-dos  [\$edge]] [-scfdos  [\$edge]]
 #              [-field [\$edge]] [-scffield [\$edge]]
 #              [-sige [\$edge]] [-scfsige [\$edge]]
-#              [-optc [\$edge]]
+#              [-optc [\$edge]] [-nlop [\$edge]]
 #              [-sybd [\$edge]]] |
 #              -help
 #
@@ -77,6 +77,10 @@ sub printHelp
 #       requested edge.  The default basis is the extended basis and it must be
 #       done as a separate post scf calculation because of the need to compute
 #       momentum matrix elements.  (This may be modified in future versions.)
+#-nlop will do a nonlinear optical properties calculation using the potential
+#       for the requested edge.  The default basis is the extended basis and it
+#       must be done as a separate post scf calculation because of the need to
+#       compute momentum matrix elements. (This may be modified in the future.)
 #-sige is used to calculate the sigma(E) curve of optical transitions with
 #       energies of transition that are close to the Fermi energy.  It will use
 #       the alternate input parameters for the optical properties calculation.
@@ -136,6 +140,7 @@ my $pacsRun;
 my $sybdRun;
 my $bondRun;
 my $optcRun;
+my $nlopRun;
 my $sigeRun;
 my $fieldRun;
 my $dosRunSCF;
@@ -178,6 +183,7 @@ my $sybd;
 my $dos;
 my $bond;
 my $optc;
+my $nlop;
 my $pacs;
 my $sige;
 my $field;
@@ -192,6 +198,8 @@ my $eps1;
 my $eps1i;
 my $eps2;
 my $cond;
+my $chi1;
+my $chi2;
 my $refr;
 my $pot;
 my $rho;
@@ -288,6 +296,7 @@ sub setDefaultVars
    $dosRun=0;         #Should a dos task be done?
    $bondRun=0;        #Should a bond task be done?
    $optcRun=0;        #Should a optc task be done?
+   $nlopRun=0;        #Should a nlop task be done?
    $sigeRun=0;        #Should a sige task be done?
    $fieldRun=0;       #Should a field task be done?
    $dosRunSCF=0;      #Run PDOS in SCF?
@@ -393,6 +402,17 @@ sub parseCLP
       elsif ($ARGV[$number] eq "-optc")
       {
          $optcRun=1;
+         if (($#ARGV == $number) || ($ARGV[$number+1] =~ /\-/))
+            {$edge = "gs";}
+         else
+            {$edge=$ARGV[++$number];}
+         if ($pscfBasisSet == 0)
+            {$pscfBasis = "eb";}  #Extended Basis
+         $pscfBasisSet = 1;
+      }
+      elsif ($ARGV[$number] eq "-nlop")
+      {
+         $nlopRun=1;
          if (($#ARGV == $number) || ($ARGV[$number+1] =~ /\-/))
             {$edge = "gs";}
          else
@@ -587,8 +607,9 @@ sub initFileNames
    $sybd      = "sybd";
    $dos       = "dos";
    $bond      = "bond";
-   $optc      = "optc";
    $pacs      = "pacs";
+   $optc      = "optc";
+   $nlop      = "nlop";
    $sige      = "sige";
    $field     = "field";
 
@@ -601,6 +622,8 @@ sub initFileNames
    $eps1      = ".eps1";
    $eps1i     = ".eps1i";
    $eps2      = ".eps2";
+   $chi2      = ".chi2";
+   $chi1      = ".chi1";
    $cond      = ".cond";
    $refr      = ".refr";
    $pot       = ".pot";
@@ -897,6 +920,8 @@ sub runOLCAO
                {&runTask ($bond,$pscfBasis,$edge);}
             elsif ($optcRun==1)
                {&runTask ($optc,$pscfBasis,$edge);}
+            elsif ($nlopRun==1)
+               {&runTask ($nlop,$pscfBasis,$edge);}
             elsif ($sigeRun==1)
                {&runTask ($sige,$pscfBasis,$edge);}
             elsif ($fieldRun==1)
@@ -1072,7 +1097,8 @@ sub copyInput
       {&move("$taskEdge$intg$taskBasis$alt$hdf","$intg$tempBasis$hdf");}
    elsif (("$taskName" eq "$dos") || ("$taskName" eq "$bond"))
       {&move("$taskEdge$band$taskBasis$alt$hdf","$band$tempBasis$hdf");}
-   elsif (("$taskName" eq "$optc") || ("$taskName" eq "$sige"))
+   elsif (("$taskName" eq "$optc") || ("$taskName" eq "$sige") ||
+          ("$taskName" eq "$nlop"))
    {
       &move("$taskEdge$band$taskBasis$alt$hdf","$band$tempBasis$hdf");
       &move("$taskEdge$intg$taskBasis$alt$hdf","$intg$tempBasis$hdf");
@@ -1203,7 +1229,7 @@ sub determineCLP
 
       # This CLP indicates whether the momentum matrix should be computed.
       if ((($pacsRun == 1) && ($taskEdge =~ /gs/)) ||
-           ($optcRun == 1) || ($sigeRun == 1))
+           ($optcRun == 1) || ($sigeRun == 1) || ($nlopRun == 1))
          {$taskCLP = $taskCLP . "1";}
       else
          {$taskCLP = $taskCLP . "0";}
@@ -1255,6 +1281,23 @@ sub determineCLP
       # The final value indicates whether or not to compute the x,y,z
       #   components in serial or all together (the default).
       $taskCLP = "$taskCLP" . "$serialxyz ";
+   }
+   elsif ("$taskName" eq "$nlop")
+   {
+      # The first CLP indicates which basis to use.
+      $taskCLP = "$pscfBasisCode ";
+
+      # The second specifies that we are doing a nonlinear optical properties
+      #   calculation.
+      $taskCLP = "$taskCLP" . "3 ";
+
+      # The next CLPs signal the edge that should be computed for.
+      $taskCLP = "$taskCLP" . "$QN_n $QN_l ";
+
+      # Because it really isn't possible to do a nonlinear calculation without
+      #   having all xyz components at the same time we will always mark this
+      #   as a zero.
+      $taskCLP = "$taskCLP" . "0 ";
    }
    elsif ("$taskName" eq "$pacs")
    {
@@ -1351,17 +1394,19 @@ sub executeProgram
          {system("$OLCAO_BIN/makeSYBD -dat fort.5 -out fort.20 ".
                  "-raw fort.32 -plot fort.42");}
    }
-   elsif ("$taskName" eq "$optc")
+   elsif (("$taskName" eq "$optc") || ("$taskName" eq "$nlop"))
    {
       # Define local variables.
       my $lineCount;
       my $optcLines;
 
-      # Perform the kramers-kronig conversion of eps2 to eps1 and compute the
-      #   energy loss function (all done in OLCAOkkc).  We need to pass the
-      #   program the number of lines in the input file and which set of file
-      #   numbers to use.  A 1 means use the spin up or default file numbers,
-      #   and a 2 means use the spin down file numbers.
+      # Perform the kramers-kronig conversion of eps2 to eps1 for the linear
+      #   optical properties and of chi2 to chi1 for the nonlinear optical
+      #   properties. Also, compute the energy loss function (all done in
+      #   OLCAOkkc).  We need to pass the program the number of lines in the
+      #   input file and which set of file numbers to use.  A 1 means use the
+      #   spin up or default file numbers, and a 2 means use the spin down
+      #   file numbers.
       $lineCount = `(wc -l fort.50)`;
       @values = StructureControl::prepLine("",$lineCount,'\s+');
       $optcLines = $values[0];
@@ -1618,6 +1663,36 @@ sub manageOutput
          &move("fort.120","$proj_home/$taskEdge$optc$taskBasis$elf$alt$plot");
          &move("fort.130","$proj_home/$taskEdge$optc$taskBasis$refr$alt$plot");
          &move("fort.140","$proj_home/$taskEdge$optc$taskBasis$eps1i$alt$plot");
+      }
+   }
+   elsif ("$taskName" eq "$nlop")
+   {
+      if ($spinPol == 2)
+      {
+         &move("$intg$tempBasis$hdf","$taskEdge$intg$taskBasis$alt$hdf");
+         &move("$band$tempBasis$hdf","$taskEdge$band$taskBasis$alt$hdf");
+         &copy("fort.50","$taskEdge$optc$taskBasis$chi2$alt$up.50");
+         &move("fort.50",
+            "$proj_home/$taskEdge$optc$taskBasis$chi2$alt$up$plot");
+         &move("fort.100","$proj_home/$taskEdge$optc$taskBasis$alt$up$plot");
+         &move("fort.110",
+            "$proj_home/$taskEdge$optc$taskBasis$chi1$alt$up$plot");
+
+         &copy("fort.51","$taskEdge$optc$taskBasis$chi2$alt$dn.51");
+         &move("fort.51",
+            "$proj_home/$taskEdge$optc$taskBasis$chi2$alt$dn$plot");
+         &move("fort.101","$proj_home/$taskEdge$optc$taskBasis$alt$dn$plot");
+         &move("fort.111",
+            "$proj_home/$taskEdge$optc$taskBasis$chi1$alt$dn$plot");
+      }
+      else
+      {
+         &move("$intg$tempBasis$hdf","$taskEdge$intg$taskBasis$alt$hdf");
+         &move("$band$tempBasis$hdf","$taskEdge$band$taskBasis$alt$hdf");
+         &copy("fort.50","$taskEdge$optc$taskBasis$chi2$alt.50");
+         &move("fort.50","$proj_home/$taskEdge$optc$taskBasis$chi2$alt$plot");
+         &move("fort.100","$proj_home/$taskEdge$optc$taskBasis$alt$plot");
+         &move("fort.110","$proj_home/$taskEdge$optc$taskBasis$chi1$alt$plot");
       }
    }
    elsif ("$taskName" eq "$sige")

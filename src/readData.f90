@@ -5,9 +5,6 @@ module O_ReadDataSubs
    private
    public :: readLabel, readAndCheckLabel, readData
 
-   integer :: readUnit
-   integer :: writeUnit
-
    interface readData
       module procedure readDouble, read2Double, read3Double, readDoubleArray,&
             & readDoubleMatrix, readIntDouble, readInt2Double, readInt, &

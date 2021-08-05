@@ -15,22 +15,27 @@ module O_KPoints
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
    integer :: numKPoints ! The number of kpoints in the system.
-   integer :: numHighSymmKP ! Number of high symmetry kpoints that define the
-         !   vertices of the path to be taken for the band diagram.
-   integer :: numPathKP   ! Number of kpoints that will be used
-         !   to create the path between the high symmetry kpoints.
-   integer :: isCartesian    ! 1 = yes, 0 = no (Are the high symmetry kpoints
+   integer :: numPaths ! The number of discontinuous high-sym. KP paths.
+   integer :: numPathKP ! Number of kpoints that will be used to create the
+         !    path between the high symmetry kpoints.
+   integer :: isCartesian ! 1 = yes, 0 = no (Are the high symmetry kpoints
          !   given in cartesian coordinates?)
+   integer :: numTotalHighSymKP ! Total number of high symmetry kpoints over
+         !   all paths.
+   integer, allocatable, dimension (:) :: numHighSymKP ! Number of high
+         !   symmetry kpoints that define the vertices of each path to be taken
+         !   for the band diagram.
    real (kind=double), allocatable, dimension (:) :: kPointWeight ! The
          !   weight assigned to each kpoint.
    real (kind=double), allocatable, dimension (:,:) :: kPoints ! The acutal
          !   kpoints.  The first dimension holds the three cartesian xyz
          !   coordinates.  The second dimension is the index over the number
          !   of kpoints.
-   real (kind=double), allocatable, dimension (:,:) :: highSymmKP ! These
+   real (kind=double), allocatable, dimension (:,:,:) :: highSymKP ! These
          !   are the high symmetry kpoints of the requested path.  The first
          !   dimension holds the three space coordinates of the kpoints
-         !   to be indexed by the second dimension (numHighSymmKP).
+         !   to be indexed by the second dimension (numHighSymKP). The last
+         !   dimension indexes which discrete path these points define.
    real (kind=double), allocatable, dimension (:) :: pathKPointMag ! Distance
          !   magnitudes of kpoints on the path for band diagrams.
    complex (kind=double), allocatable, dimension (:,:) :: phaseFactor ! The
@@ -55,8 +60,8 @@ subroutine readKPoints(readUnit, writeUnit)
    implicit none
 
    ! passed parameters
-   integer, intent(in)    :: readUnit   ! The unit number of the file from which
-                                        ! we are reading.
+   integer, intent(in)    :: readUnit   ! The unit number of the file from
+                                        ! which we are reading.
    integer, intent(in)    :: writeUnit  ! The unit number of the file to which
                                         ! we are writing.
 
@@ -107,25 +112,51 @@ subroutine readSYBDKPoints(readUnit, writeUnit)
                                         ! we are writing.
 
    ! Define the local variables used in this subroutine.
-   integer :: i ! Loop index variable.
+   integer :: i, j ! Loop index variable.
 
-   ! Read the number of highly symmetric kpoints that define the vertices of
-   !   the reciprocal space path, the number of kpoints to use on that path,
-   !   and whether or not the points are given in cartesian coordinates or not.
-   call readData(readUnit,writeUnit,numHighSymmKP,numPathKP,isCartesian,&
+   ! A band structure is often plotted as a contiguous path of points in
+   !   k-space connecting specific high-symmetry k-points. However, it is not
+   !   a requirement. If one so chooses, the band structure can be plotted
+   !   using a series of paths that do not have to be contiguous with
+   !   each other. See Setyawan and Curtarolo, "High-throughput electronic
+   !   band structure calculations: Challenges and tools", Comp. Mat. Sci.,
+   !   vol. 49, pages 299-312, (2010).
+
+   ! Hence, we first read in the number of distcontinuous paths to plot, the
+   !   number of kpoints to use across all paths, and whether or not the set
+   !   of all kpoints are given in Cartesian coordinates or not.
+   call readData(readUnit,writeUnit,numPaths,numPathKP,isCartesian,&
                     len('SYBD_INPUT_DATA'),'SYBD_INPUT_DATA')
-
-   write (20,*) 'Number of high symmetry K-Points = ',numHighSymmKP
+   write (20,*) 'Number of discrete paths         = ',numPaths
    write (20,*) 'Number of path K-Points          = ',numPathKP
    write (20,*) '1 = cart, 0 = fract:             = ',isCartesian
    call flush (20)
 
-   ! Allocate space to hold the high symmetry kpoints.
-   allocate (highSymmKP(dim3,numHighSymmKP))
+   ! Allocate space to hold the number of high symmetry kpoints that will
+   !   exist for each path. E.g., there may be 6 kpoints that define the first
+   !   path and only 2 kpoints that define the second path.
+   allocate (numHighSymKP(numPaths))
 
-   ! Read the coordinates of the high symmetry kpoints.
-   do i = 1, numHighSymmKP
-      call readData(readUnit,writeUnit,3,highSymmKP(:,i),0,'')
+   ! Read the number of high symmetry kpoints that define the vertices for
+   !   each path.
+   call readData(readUnit,writeUnit,numPaths,numHighSymKP(:),0,'')
+
+   ! Compute the total number of high symmetry kpoints over all paths.
+   numTotalHighSymKP = sum(numHighSymKP)
+
+   write (20,*) 'Number of high symmetry K-Points = ',numTotalHighSymKP
+   call flush (20)
+   
+   ! Allocate space to hold the high symmetry kpoints.
+   allocate (highSymKP(dim3,maxval(numHighSymKP),numPaths))
+
+   ! Read the high symmetry kpoints for each path.
+   do i = 1, numPaths
+   
+      ! Read the coordinates of the high symmetry kpoints.
+      do j = 1, numHighSymKP(i)
+         call readData(readUnit,writeUnit,3,highSymKP(:,j,i),0,'')
+      enddo
    enddo
 end subroutine readSYBDKPoints
 
@@ -206,15 +237,14 @@ subroutine makePathKPoints
 
 
    ! Define local parameters used in this subroutine
-   integer :: i,j ! Loop index variables
+   integer :: i,j,k ! Loop index variables
    integer :: kPointCounter
    integer :: numSegmentKPoints
    real (kind=double) :: averageDelta
-   integer, allocatable, dimension (:) :: indexKP
    real (kind=double), dimension (3) :: tempKPoint
    real (kind=double), dimension (3) :: segmentDelta
-   real (kind=double), allocatable, dimension (:,:) :: symKPDistVect
-   real (kind=double), allocatable, dimension (:)   :: symKPDistMag
+   real (kind=double), allocatable, dimension (:,:,:) :: symKPDistVect
+   real (kind=double), allocatable, dimension (:,:)   :: symKPDistMag
 
    ! Begin the kpoint path creation.
    call timeStampStart(21)
@@ -239,112 +269,152 @@ subroutine makePathKPoints
    allocate (pathKPointMag (numPathKP))
 
    ! Allocate space for details of highly symmetric kpoints.
-   allocate (symKPDistVect (3,numHighSymmKP))
-   allocate (symKPDistMag  (numHighSymmKP))
-   allocate (indexKP       (numHighSymmKP))
+   allocate (symKPDistVect (3,maxval(numHighSymKP),numPaths))
+   allocate (symKPDistMag  (maxval(numHighSymKP),numPaths))
 
 
    ! Convert the kpoints from fractional coordinates to cartesian if needed.
+   !   Normally, the kpoints are given in fractional coordinates of the
+   !   reciprocal space cell. This will convert the coordinates to Cartesian
+   !   coordinates.
    if (isCartesian /= 1) then
 
-      do i = 1, numHighSymmKP
-         tempKPoint(:) = highSymmKP(1,i) * recipVectors(:,1) + &
-                       & highSymmKP(2,i) * recipVectors(:,2) + &
-                       & highSymmKP(3,i) * recipVectors(:,3)
-         highSymmKP(:,i) = tempKPoint(:)
+      do i = 1, numPaths
+         do j = 1, numHighSymKP(i)
+            tempKPoint(:) = highSymKP(1,j,i) * recipVectors(:,1) + &
+                          & highSymKP(2,j,i) * recipVectors(:,2) + &
+                          & highSymKP(3,j,i) * recipVectors(:,3)
+            highSymKP(:,j,i) = tempKPoint(:)
+!write (20,*) "j,i = ",j,i
+!write (20,fmt="(a,3f15.8)") "highSymKP(:,j,i)",highSymKP(:,j,i)
+         enddo
       enddo
    endif
 
    ! Identify distances between each consecutive symmetric kpoint on the path.
-   symKPDistVect(:,1) = 0.0_double
-   symKPDistMag(1)    = 0.0_double
-   do i = 2, numHighSymmKP
-      symKPDistVect(:,i) = highSymmKP(:,i) - highSymmKP(:,i-1)
-      symKPDistMag(i) = symKPDistMag(i-1) + sqrt(sum(symKPDistVect(:,i)**2))
+   !   Note that when transitioning from one path to the next, the distance
+   !   between those two kpoints should be zero.
+   do i = 1, numPaths
+      do j = 1, numHighSymKP(i)
+         if ((i == 1) .and. (j == 1)) then ! First point on first path
+            symKPDistVect(:,1,i) = 0.0_double
+            symKPDistMag(1,i)    = 0.0_double
+         elseif (j == 1) then ! First point on any path after the first path
+               ! needs to be equal in position and magnitude to the last point
+               ! on the previous path. This will signify to later programs and
+               ! subroutines that we have started a new path.
+            symKPDistVect(:,1,i) = symKPDistVect(:,numHighSymKP(i-1),i-1)
+            symKPDistMag(1,i)    = symKPDistMag(numHighSymKP(i-1),i-1)
+         else
+            symKPDistVect(:,j,i) = highSymKP(:,j,i) - highSymKP(:,j-1,i)
+            symKPDistMag(j,i) = symKPDistMag(j-1,i) &
+                  + sqrt(sum(symKPDistVect(:,j,i)**2))
+         endif
+!write (20,*) "j,i = ",j,i
+!write (20,fmt='(a,3f15.8)') "symKPDistVect(:,j,i)",symKPDistVect(:,j,i)
+!write (20,*) "symKPDistMag(j,i)",symKPDistMag(j,i)
+      enddo
    enddo
 
    ! Consider the special case where the number of requested path kpoints is
    !   equal to the number of highly symmetric kpoints provided.
-   if (numPathKP == numHighSymmKP) then
+   if (numPathKP == sum(numHighSymKP(:))) then
 
       ! Copy the highly symmetric kpoint coordinates to the path kpoints.
-      do i = 1, numHighSymmKP
-         kPoints(:,i)     = highSymmKP(:,i)
-         pathKPointMag(i) = symKPDistMag(i)
-         indexKP(i) = i
+      kPointCounter = 0
+      do i = 1, numPaths
+         do j = 1, numHighSymKP(i)
+            kPointCounter = kPointCounter + 1
+            kPoints(:,kPointCounter)     = highSymKP(:,j,i)
+            pathKPointMag(kPointCounter) = symKPDistMag(j,i)
 
-         ! Record the index number of the other high symmetry k points.
-         write (20,*) 'HIGH SYMMETRY K POINT INDEX NUMBER :',i
+            ! Record the index number of the other high symmetry k points.
+            write (20,*) 'HIGH SYMMETRY K POINT INDEX NUMBER :',i
+         enddo
       enddo
-
-      ! Record the value for the kPoint counter
-      kPointCounter = numHighSymmKP
 
    else
 
+      ! Determine the scaling factor for the distance between kpoints in a
+      !   given segment between highly symmetric kpoints. This is the most
+      !   most distant kpoint magnitude divided by the number of kpoints.
+      averageDelta = symKPDistMag(numHighSymKP(numPaths),numPaths) / &
+            & (numPathKP - 1)
+!write (20,*) "numPaths = ",numPaths
+!write (20,*) "numHighSymKP = ",numHighSymKP(:)
+!write (20,*) "averageDelta = ",averageDelta
+
       ! Initialize a kpoint counter
-      kPointCounter = 1
+      kPointCounter = 0
 
-      ! Initialize the first point.
-      kPoints(:,1)     = highSymmKP(:,1)
-      pathKPointMag(1) = 0.0_double
-      indexKP(1) = 1
+      do i = 1, numPaths
+         do j = 1, numHighSymKP(i)
+            if (j /= 1) then
 
-      ! Record the index number of the first high symmetry k point.
-      write (20,*) 'HIGH SYMMETRY K POINT INDEX NUMBER :',1
-
-      ! Determine the scaling factor for the distance between kpoints in a given
-      !   segment between highly symmetric kpoints.
-      averageDelta = symKPDistMag(numHighSymmKP) / (numPathKP - 1)
-
-      do i = 2, numHighSymmKP
-
-         ! Determine the number of k points to use for the current segment
-         !   between symmetric k points (i) and (i-1).
-         numSegmentKPoints = (symKPDistMag(i) - symKPDistMag(i-1))/averageDelta
-
-         ! If there are not going to be any segment kpoints for this segment
-         !   then cycle to the next symmetric kpoint.
-         if (numSegmentKPoints < 1) cycle
-
-         ! Get the size of the x,y,z deltas for this segment
-         segmentDelta(:) = symKPDistVect(:,i) / numSegmentKPoints
-
-         ! Loop to assign the k point positions for this segment
-         do j = 1, numSegmentKPoints - 1
-
-            ! Increment the K point counter
+               ! Determine the number of k points to use for the current
+               !   segment between highly symmetric k points (j) and (j-1) of
+               !   this path.
+               numSegmentKPoints = int((symKPDistMag(j,i) - &
+                     & symKPDistMag(j-1,i)) / averageDelta)
+!write (20,*) "j,i = ",j,i
+!write (20,*) "numSegmentKPoints = ",numSegmentKPoints
+!write (20,*) "symKPDistMag(j,i) = ",symKPDistMag(j,i)
+!write (20,*) "symKPDistMag(j-1,i) = ",symKPDistMag(j-1,i)
+!call flush(20)
+   
+               ! If there are not going to be any segment kpoints for this
+               !   segment then cycle to the next symmetric kpoint. This is
+               !   most commonly the case when we start a new path.
+               if (numSegmentKPoints >= 1) then
+   
+                  ! Get the size of the x,y,z deltas for this segment
+                  segmentDelta(:) = symKPDistVect(:,j,i) / numSegmentKPoints
+      
+                  ! Loop to assign the k point positions for this segment
+                  do k = 1, numSegmentKPoints - 1
+      
+                     ! Increment the K point counter
+                     kPointCounter = kPointCounter + 1
+      
+                     ! Store the position of the next kpoint on this segment by
+                     !   adding the above determined delta to the last known
+                     !   path kpoint.
+                     kPoints(:,kPointCounter) = &
+                           & kPoints(:,kPointCounter - 1) + segmentDelta(:)
+      
+                     ! Calculate the magnitude of the vector for the above path
+                     !   KPoint.
+                     pathKPointMag(kPointCounter) = &
+                           & pathKPointMag(kPointCounter - 1) + &
+                           & sqrt(sum(segmentDelta(:)**2))
+                  enddo
+               endif
+            endif
+   
+            ! Now, record the j-th high symmetry k point. For the first kpoint
+            !   (where i==1 and j==1) this will happen first, before the code
+            !   segment above.
+   
+            ! Increment the K point counter.
             kPointCounter = kPointCounter + 1
-
-            ! Store the position of the next kpoint on this segment by adding
-            !   the above determined delta to the last known path kpoint.
-            kPoints(:,kPointCounter) = &
-                  & kPoints(:,kPointCounter - 1) + segmentDelta(:)
-
-            ! Calculate the magnitude of the vector for the above path KPoint.
-            pathKPointMag(kPointCounter) = &
-                  & pathKPointMag(kPointCounter - 1) + &
-                  & sqrt(sum(segmentDelta(:)**2))
+   
+            ! Record the index number of the high symmetry k point.
+            write (20,*) 'HIGH SYMMETRY K POINT INDEX NUMBER :',kPointCounter
+   
+            ! Store the position of the high symmetry k point in the path array.
+            kPoints(:,kPointCounter) = highSymKP(:,j,i)
+   
+            ! Calculate the magnitude of the vector for this high symm KPoint.
+            if ((i==1) .and. (j==1)) then
+               pathKPointMag(kPointCounter) = 0.0_double
+            elseif (j==1) then
+               pathKPointMag(kPointCounter) = pathKPointMag(kPointCounter - 1)
+            else
+               pathKPointMag(kPointCounter) = &
+                     & pathKPointMag(kPointCounter - 1) + &
+                     & sqrt(sum(segmentDelta(:)**2))
+            endif
          enddo
-
-         ! Now, record the next high symmetry k point.
-
-         ! Increment the K point counter.
-         kPointCounter = kPointCounter + 1
-
-         ! Store the index number of the high symmetry k point.
-         indexKP(i) = kPointCounter
-
-         ! Record the index number of the first high symmetry k point.
-         write (20,*) 'HIGH SYMMETRY K POINT INDEX NUMBER :',kPointCounter
-
-         ! Store the position of the high symmetry k point in the path array.
-         kPoints(:,kPointCounter) = highSymmKP(:,i)
-
-         ! Calculate the magnitude of the vector for the above path KPoint.
-         pathKPointMag(kPointCounter) = &
-               & pathKPointMag(kPointCounter - 1) + &
-               & sqrt(sum(segmentDelta(:)**2))
       enddo
    endif
 
@@ -364,7 +434,6 @@ subroutine makePathKPoints
 
    deallocate (symKPDistVect)
    deallocate (symKPDistMag)
-   deallocate (indexKP)
 
    ! Finish the kpoint path creation.
    call timeStampEnd(21)
@@ -378,7 +447,7 @@ subroutine cleanUpKPoints
 
    deallocate (kPointWeight)
    deallocate (kPoints)
-   deallocate (highSymmKP)
+   deallocate (highSymKP)
 
    ! Only allocated in setup.
    if (allocated(phaseFactor)) then

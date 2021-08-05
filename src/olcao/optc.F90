@@ -73,7 +73,7 @@ subroutine getEnergyStatistics
    use O_Input, only: numStates, cutoffEnOPTC, maxTransEnOPTC, &
          & totalEnergyDiffPACS, energyWindowPACS, firstInitStatePACS, &
          & lastInitStatePACS, onsetEnergySlackPACS, cutoffEnSIGE, &
-         & maxTransEnSIGE
+         & maxTransEnSIGE, cutoffEnNLOP, maxTransEnNLOP
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
@@ -123,9 +123,16 @@ subroutine getEnergyStatistics
       energyMin = totalEnergyDiffPACS - &
             & mod(totalEnergyDiffPACS,onsetEnergySlackPACS)
       maxTransEnergy = energyMin + energyWindowPACS
-   else                         ! Sigma(E) type calculation
+   elseif (stateSet == 2) then ! Sigma(E) type calculation
       energyCutoff   = cutoffEnSIGE
       maxTransEnergy = maxTransEnSIGE
+   elseif (stateSet == 3) then ! Nonlinear optical properties calculation
+      ! Just as for the linear optical properties, the energy onset is the
+      !   band gap width in eV. The energy scale for evaluating the
+      !   accumulated (and broadened) transitions will begin as close to 0
+      !   eV as conveniently possible.
+      energyCutoff   = cutoffEnNLOP
+      maxTransEnergy = maxTransEnNLOP
    endif
 
 
@@ -677,7 +684,7 @@ subroutine computeTransitions
             ! Runcode:  3 = XMom, 4 = YMom, 5 = ZMom; (j+2)
             do j = 1, 3
                call getIntgResults (valeValeMom(:,:,:,j),coreValeOL,&
-                     & i,j+2,valeValeBand_did(i),valeValeBand,0,1)
+                     & i,j+2,valeValeBand_did(i),valeValeBand,1,1)
             enddo
             ! Deallocate matrices that are no longer needed in this iteration to
             !   make space for those that are needed.
@@ -688,7 +695,7 @@ subroutine computeTransitions
             ! Runcode:  3 = XMom, 4 = YMom, 5 = ZMom; (j+2)
             do j = 1, 3
                call getIntgResults (valeValeMomGamma(:,:,j),coreValeOLGamma,&
-                     & j+2,valeValeBand_did(i),valeValeBand,0,1)
+                     & j+2,valeValeBand_did(i),valeValeBand,1,1)
             enddo
             ! Deallocate matrices that are no longer needed in this iteration to
             !   make space for those that are needed.
@@ -707,12 +714,12 @@ subroutine computeTransitions
                allocate   (valeValeMom (valeDim,valeDim,1,1))
                ! Runcode:  3 = XMom, 4 = YMom, 5 = ZMom; (j+2)
                call getIntgResults (valeValeMom(:,:,:,1),coreValeOL,&
-                     & i,j+2,valeValeBand_did(i),valeValeBand,0,1)
+                     & i,j+2,valeValeBand_did(i),valeValeBand,1,1)
 #else
                allocate   (valeValeMomGamma (valeDim,valeDim,1))
                ! Runcode:  3 = XMom, 4 = YMom, 5 = ZMom; (j+2)
                call getIntgResults (valeValeMomGamma(:,:,1),coreValeOLGamma,&
-                     & j+2,valeValeBand_did(i),valeValeBand,0,1)
+                     & j+2,valeValeBand_did(i),valeValeBand,1,1)
 #endif
 
                if (stateSet /= 2) then  ! Not doing a Sigma(E) calc.
