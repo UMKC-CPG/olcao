@@ -124,6 +124,7 @@ my $usingDefaultControl;
 
 # Data descriptors
 my $numUnits;
+my $style;
 my $numEnergyPoints;
 my @energyPoint; # The value of the energy at each point on the energy scale.
 my $numColDefs;  # The number of different data columnes that will be made.
@@ -222,6 +223,10 @@ sub initCLP
 sub initPDOS
 {
    open (PDOS,"<$rawDataFile") || die "Cannot open $rawDataFile file.\n";
+
+   # Get the file style (1, 2, etc)
+   @values = StructureControl::prepLine(\*PDOS,$line,'\s+');
+   $style = $values[$#values];
 
    # Get the number of PDOS units in this data file.
    @values = StructureControl::prepLine(\*PDOS,$line,'\s+');
@@ -545,9 +550,22 @@ sub readData
                         else
                            {$tailID="_p";}
                      }
-                     $colDef[$j][1][1] = $unitHash{"ELEMENT_NAME"} . "_" .
-                                         $unitHash{"SPECIES_ID"} . "_" .
-                                         $unitHash{"TYPE_ID"} . $tailID;
+                     if ($style == 1)
+                     {
+                        $colDef[$j][1][1] = $unitHash{"ELEMENT_NAME"} . "_" .
+                                            $unitHash{"SPECIES_ID"} . "_" .
+                                            $unitHash{"TYPE_ID"} . $tailID;
+                     }
+                     elsif ($style == 2)
+                     {
+                        $colDef[$j][1][1] = $unitHash{"ELEMENT_1_NAME"} .
+                              "_" . $unitHash{"ELEMENT_2_NAME"} . $tailID;
+                     }
+                     else
+                     {
+                        print STDOUT "Unknown style $style. Stopping.\n";
+                        exit();
+                     }
                   }
                }
             }
@@ -571,22 +589,22 @@ sub printResults
    open (OUTPUT,">$outputFile") || die "Cannot open $outputFile file.\n";
 
    # Put on the header of column labels.
-   printf OUTPUT ("%10s","ENERGY");
+   printf OUTPUT ("%12s","ENERGY");
    for ($i=1;$i<=$numColDefs;$i++)
-      {printf OUTPUT ("%10s",$colDef[$i][1][1]);}
+      {printf OUTPUT ("%12s",$colDef[$i][1][1]);}
    print OUTPUT "\n";
 
    for ($i=1;$i<=$numEnergyPoints;$i++)
    {
       # Print the energy point for this iteration.
-      printf OUTPUT ("%10.4f",$energyPoint[$i]);
+      printf OUTPUT ("%12.4f",$energyPoint[$i]);
 
       for ($j=1;$j<=$numColDefs;$j++)
       {
          if (($negToZero == 1) && ($pdosColData[$j][$i] < 0))
-            {printf OUTPUT ("%10.4f",0.0);}
+            {printf OUTPUT ("%12.4f",0.0);}
          else
-            {printf OUTPUT ("%10.4f",$pdosColData[$j][$i]);}
+            {printf OUTPUT ("%12.4f",$pdosColData[$j][$i]);}
       }
       print OUTPUT "\n";
    }

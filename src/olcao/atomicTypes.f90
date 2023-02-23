@@ -52,7 +52,7 @@ module O_AtomicTypes
 
 
       ! Alpha information
-      integer, dimension(maxOrbitals) :: numOrbAlphas ! This holds the number
+      integer, dimension(lAngMomCount) :: numOrbAlphas ! This holds the number
             !   gaussian terms (alphas) that each type of orbital
             !   (s,p,d,f,...) will use.
       real (kind=double), pointer, dimension (:) :: alphas ! The alphas
@@ -77,10 +77,10 @@ module O_AtomicTypes
             !   QN for each core radial function.
       integer, pointer, dimension (:) :: valeQN_2jList ! A list of the 2*j
             !   QN for each valence radial function.
-      integer, dimension(maxOrbitals) :: numQN_lCoreRadialFns ! This holds the
+      integer, dimension(lAngMomCount) :: numQN_lCoreRadialFns ! This holds the
             !   number of s, p, d, and f radial functions in the core
             !   part of the wave function description.
-      integer, dimension(maxOrbitals) :: numQN_lValeRadialFns ! This holds the
+      integer, dimension(lAngMomCount) :: numQN_lValeRadialFns ! This holds the
             !   number of s, p, d, and f radial functions in the valence
             !   part of the basis description.
 
@@ -134,7 +134,7 @@ subroutine readAtomicTypes(readUnit,writeUnit)
 
    ! Bring in necessary modules.
    use O_Kinds
-   use O_Constants, only: maxOrbitals
+   use O_Constants, only: lAngMomCount
    use O_CommandLine, only: basisCode
 
    ! Import necessary subroutine modules.
@@ -192,12 +192,12 @@ subroutine readAtomicTypes(readUnit,writeUnit)
 
       ! Read the number of gaussian terms for the s,p,d,f radial basis
       !   functions.  They are indexed as 'alphas' from exp(-alpha*r^2).
-      call readData(readUnit,writeUnit,maxOrbitals,&
-            & atomTypes(i)%numOrbAlphas(1:maxOrbitals),&
+      call readData(readUnit,writeUnit,lAngMomCount,&
+            & atomTypes(i)%numOrbAlphas(1:lAngMomCount),&
             & len('NUM_ALPHA_S_P_D_F'),'NUM_ALPHA_S_P_D_F')
 
       ! Check that the number of alphas is monotonically decreasing.
-      do j=1,maxOrbitals-1
+      do j=1,lAngMomCount-1
          if (atomTypes(i)%numOrbAlphas(j) < &
                & atomTypes(i)%numOrbAlphas(j+1)) then
             write (20,*) 'Num of alphas not monotonically decreasing.'
@@ -271,7 +271,7 @@ subroutine readRadialFns(readUnit,writeUnit,numRadialFns,numOrbAlphas,&
 
    ! Import the necessary modules.
    use O_Kinds
-   use O_Constants, only: maxOrbitals
+   use O_Constants, only: lAngMomCount
    use O_CommandLine, only: basisCode
 
    ! Import necessary subroutine modules.
@@ -283,7 +283,7 @@ subroutine readRadialFns(readUnit,writeUnit,numRadialFns,numOrbAlphas,&
 
    ! Define dummy variables passed to this subroutine, in order.
    integer                             :: numRadialFns
-   integer, dimension(maxOrbitals)     :: numOrbAlphas
+   integer, dimension(lAngMomCount)    :: numOrbAlphas
    integer, dimension (:)              :: QN_nList
    integer, dimension (:)              :: QN_lList
    integer, dimension (:)              :: QN_2jList

@@ -366,26 +366,30 @@ subroutine populateStandard
       ! Abort if we reach the bounds of the calculation.
       if (maxStateIndex == numKPoints * numStates * spin) exit
    enddo
-   do while (abs(occupiedEnergy - sortedEnergyEigenValues(minStateIndex-1)) <= &
-         & smallThresh)
 
-      ! Decrement the index counter.
-      minStateIndex = minStateIndex - 1
+   ! If we are doing a single h atom, then minStateIndex will equal 1.
+   if (minStateIndex > 1) then
+      do while (abs(occupiedEnergy &
+            & - sortedEnergyEigenValues(minStateIndex-1)) <= smallThresh)
 
-      ! Accumulate the amount of charge that *could* be held in the degenerate
-      !   states.  (The possible charge.)
-      possibleDegenCharge = possibleDegenCharge + kPointWeight &
-            & (1+(indexEnergyEigenValues(minStateIndex)-1) / &
-            & (numStates*spin)) / real(spin,double)
-
-      ! Accumulate the amount of existing charge.
-      degenerateCharge = degenerateCharge + kPointWeight &
-            & (1+(indexEnergyEigenValues(minStateIndex)-1) / &
-            & (numStates*spin)) / real(spin,double)
-
-       ! Abort if we reach the bounds of the calculation.
-      if (minStateIndex == 1) exit
-   enddo
+         ! Decrement the index counter.
+         minStateIndex = minStateIndex - 1
+   
+         ! Accumulate the amount of charge that *could* be held in the degenerate
+         !   states.  (The possible charge.)
+         possibleDegenCharge = possibleDegenCharge + kPointWeight &
+               & (1+(indexEnergyEigenValues(minStateIndex)-1) / &
+               & (numStates*spin)) / real(spin,double)
+   
+         ! Accumulate the amount of existing charge.
+         degenerateCharge = degenerateCharge + kPointWeight &
+               & (1+(indexEnergyEigenValues(minStateIndex)-1) / &
+               & (numStates*spin)) / real(spin,double)
+   
+          ! Abort if we reach the bounds of the calculation.
+         if (minStateIndex == 1) exit
+      enddo
+   endif
 
    
    ! For each of the degenerate states redistribute the charge evenly.

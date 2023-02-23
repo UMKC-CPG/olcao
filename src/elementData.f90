@@ -43,7 +43,7 @@ subroutine initElementData
 
    ! Use any necessary modules.
    use O_Kinds
-   use O_Constants, only: maxOrbitals
+   use O_Constants, only: lAngMomCount
 
    ! Make sure no implicit variables are defined.
    implicit none
@@ -91,8 +91,8 @@ subroutine initElementData
    allocate (atomicMass(numUniqueElements))
    allocate (covalRadii(numUniqueElements))
    allocate (numUJElectrons(numUniqueElements))
-   allocate (coreCharge(maxOrbitals,numUniqueElements))
-   allocate (valeCharge(maxOrbitals,numUniqueElements))
+   allocate (coreCharge(lAngMomCount,numUniqueElements))
+   allocate (valeCharge(lAngMomCount,numUniqueElements))
    allocate (colorDX(numUniqueElements))
    allocate (greyDX(numUniqueElements))
 

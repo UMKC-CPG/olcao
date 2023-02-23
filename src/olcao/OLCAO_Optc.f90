@@ -14,11 +14,12 @@ subroutine computeOptc
    use O_KPoints,         only: numKPoints, computePhaseFactors
    use O_Populate,        only: occupiedEnergy, populateStates
    use O_Lattice,         only: initializeLattice, initializeFindVec
-   use O_Input,           only: numStates, lastInitStatePACS, parseInput
+   use O_Input,           only: numStates, lastInitStatePACS, parseInput,&
+         & detailCodePOPTC
    use O_PSCFBandHDF5,    only: accessPSCFBandHDF5, closeAccessPSCFBandHDF5
    use O_OptcTransitions, only: transCounter, energyDiff, transitionProb, &
-         & getEnergyStatistics, computeTransitions
-   use O_SecularEquation, only: energyEigenValues, readEnergyEigenValuesBand, &
+         & transitionProbPOPTC, getEnergyStatistics, computeTransitions
+   use O_SecularEquation, only: energyEigenValues, readEnergyEigenValuesBand,&
          & appendExcitedEValsBand, shiftEnergyEigenValues
 
 
@@ -113,7 +114,11 @@ subroutine computeOptc
    deallocate (transCounter)
    if (stateSet /= 2) then  ! Not doing a sigma(E) calculation.
       deallocate (energyDiff)
-      deallocate (transitionProb)
+      if (detailCodePOPTC == 0) then
+         deallocate (transitionProb)
+      else
+         deallocate (transitionProbPOPTC)
+      endif
    endif
 
    ! Close access to the band HDF5 data.

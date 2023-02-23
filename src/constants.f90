@@ -22,10 +22,12 @@ module O_Constants
    real (kind=double) :: bohrRad
    real (kind=double) :: auTime
    real (kind=double) :: lightFactor
+   real (kind=double) :: lightSpeed
    real (kind=double) :: fineStructure
    real (kind=double) :: smallThresh, bigThresh
    integer :: dim3
-   integer :: maxOrbitals
+   integer :: lAngMomCount
+   integer :: num_lAngMomTerms
 
    ! All values are from NIST unless otherwise noted.  The exponentials are not
    !   included here and must be accounted for in the particular calculation
@@ -39,12 +41,20 @@ module O_Constants
    parameter (bohrRad  = 0.5291772180_double)  ! Bohr Radius (m) (e-10)
    parameter (auTime   = 2.418884326505_double)! Atomic unit of time (s) (e-17)
    parameter (lightFactor = 8.9875517873681764_double) ! 1/(1e-16 * c^2)(s/m)^2
+   parameter (lightSpeed = 299792458.0_double) ! m/s
    parameter (fineStructure = 7.2973525376_double) ! Fine structure (e-3).
    parameter (smallThresh=1.0E-8_double) ! Threshold value to determine if some
          !   number is big enough or negligable.
    parameter (bigThresh=1.0E20_double) ! Threshold value to initialize a search
          !   for some number.  The answer must clearly be less than this value.
    parameter (dim3=3) ! The three real dimension.
-   parameter (maxOrbitals=4) ! Allow program to work for S, P, D, and F orbitals
+   parameter (lAngMomCount=4) ! Allow program to work for S, P, D, and F
+         !   orbitals. Note that this is a count of the *number* of different
+         !   l angular momentum kinds, not the actual value of angular
+         !   momentum. So, if lAngMomCount = 4 then the maximum l angular
+         !   momentum value is actually 3. s=0 -> lAngMomCount=1, etc.
+   parameter (num_lAngMomTerms=(2*(lAngMomCount-1)+2) &
+         & * ((lAngMomCount-1)+1) / 2) ! Total number of different angular
+         !   momentum terms 1s+3p+5d+7f+...
 
 end module O_Constants

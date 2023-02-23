@@ -5,7 +5,7 @@ message("At the real OLCAO application.")
 
 # Library for gaussIntegrals.f90
 add_library(gGaussIntegrals STATIC ../../kinds.f90 ../../constants.f90 
-   ../gaussIntegrals.f90)
+   ../gaussIntegrals.f90 ../gaussIntegrals.vec.f90)
 
 # Library containing common source files that all executables need
 add_library(gCommon OBJECT ../../kinds.f90 ../../constants.f90 

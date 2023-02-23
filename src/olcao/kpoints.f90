@@ -14,17 +14,53 @@ module O_KPoints
    ! Begin list of module data.!
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
+   integer :: kPointStyleCode ! In all cases the kpoint information is read
+         !   from a separate file than the olcao.dat file. This separates the
+         !   atomic description (basis and potential) in the olcao.dat file
+         !   and the kpoint mesh in a separate file. The code value in that
+         !   file will cause the kpoints to be set up in different ways.
+         !   If 0 then the kpoints will be read as an explicit list.
+         !   If 1 then the kpoints will be read as a mesh definition along
+         !      with a specific shift.
+         !   If 2 then the kpoints will be read as a minimum density that
+         !      will be applied along each axis. Additionally a specific
+         !      shift is also read in.
+   integer :: kPointIntgCode ! For each kpoint mesh it may be possible to use
+         !   a variety of different integration methods from simple histograms
+         !   to linear analytic tetrahedron (LAT) integration, etc. There are
+         !   some constraints to be aware of. If the kpoints are given in the
+         !   form of a regular grid (not necessarily square) then any LAT
+         !   method can be used. A regular grid will certainly be present for
+         !   kPointStyleCode values of 1 and 2, but for kPointStyleCode 0 it
+         !   is possible that the mesh will not be regular. It is the
+         !   responsibilty of the user to know whether or not a LAT method can
+         !   be used if they provide the kPoints as an explicit list with
+         !   kPointStyleCode 0.
+         !   If 0 then the histogram method will be used.
+         !   If 1 then LAT as described in will be used.
+         !   If 2 then LAT as described in will be used.
+         !   If 3 then LAT as described in will be used.
    integer :: numKPoints ! The number of kpoints in the system.
    integer :: numPaths ! The number of discontinuous high-sym. KP paths.
    integer :: numPathKP ! Number of kpoints that will be used to create the
-         !    path between the high symmetry kpoints.
+         !   path between the high symmetry kpoints.
    integer :: isCartesian ! 1 = yes, 0 = no (Are the high symmetry kpoints
          !   given in cartesian coordinates?)
    integer :: numTotalHighSymKP ! Total number of high symmetry kpoints over
          !   all paths.
+   integer, dimension (dim3) :: numAxialKPoints ! Number of kpoints along each
+         !   of the a, b, c axes defining the kpoint mesh. This is only used
+         !   if the kPointStyleCode equals 1 or 2.
    integer, allocatable, dimension (:) :: numHighSymKP ! Number of high
          !   symmetry kpoints that define the vertices of each path to be taken
          !   for the band diagram.
+   real (kind=double) :: minKPointDensity ! The number of kpoints along each
+         !   a,b,c axis divided by the magnitude of that axis must be greater
+         !   than or equal to the value of minKPointDensity. This is only used
+         !   if the kPointStyleCode equals 2.
+   real (kind=double), dimension (dim3) :: kPointShift ! Fractional amount to
+         !   shift the kpoint mesh by along each of the a,b,c axes. This is
+         !   only used if the kPointStyleCode equals 1 or 2.
    real (kind=double), allocatable, dimension (:) :: kPointWeight ! The
          !   weight assigned to each kpoint.
    real (kind=double), allocatable, dimension (:,:) :: kPoints ! The acutal
@@ -69,26 +105,75 @@ subroutine readKPoints(readUnit, writeUnit)
    integer :: i ! Loop index variable.
    integer :: counter ! Dummy variable to read the kpoint index number.
 
-   ! Read the number of kpoints.
-   call readData(readUnit,writeUnit,numKPoints,len('NUM_BLOCH_VECTORS'),&
-         & 'NUM_BLOCH_VECTORS')
+   ! Read the kpoint definition style code.
+   call readData(readUnit,writeUnit,kPointStyleCode,len('KPOINT_STYLE_CODE'),&
+         & 'KPOINT_STYLE_CODE')
 
-   ! Allocate space to hold the kpoints and their weighting factors.
-   allocate (kPoints(dim3,numKPoints))
-   allocate (kPointWeight(numKPoints))
+   ! Read the code that defines the type of integration method to be used.
+   call readData(readUnit,writeUnit,kPointIntgCode,len('KPOINT_INTG_CODE'),&
+         & 'KPOINT_INTG_CODE')
 
-   ! Read past the 'NUM_WEIGHT_KA_KB_KC' header.
-   call readAndCheckLabel(readUnit,writeUnit,len('NUM_WEIGHT_KA_KB_KC'),&
-         & 'NUM_WEIGHT_KA_KB_KC')
+   ! Depending on kPointStyleCode we will read the associated relevant data.
+   if (kPointStyleCode == 0) then ! Read an explicit list of kpoints.
 
-   ! Note that the values read in here are in terms of a,b,c fractional
-   !   coordinates.  Later, after the reciprocal lattice has been initialized
-   !   these values will be changed into x,y,z cartesian coordinates.
-   do i = 1, numKPoints
-      read (15,*)    counter, kPointWeight(i), kPoints(1:dim3,i)
-      write (20,100) counter, kPointWeight(i), kPoints(1:dim3,i)
-   enddo
-   call flush (20)
+      ! Read the number of kpoints.
+      call readData(readUnit,writeUnit,numKPoints,len('NUM_BLOCH_VECTORS'),&
+            & 'NUM_BLOCH_VECTORS')
+
+      ! Allocate space to hold the kpoints and their weighting factors.
+      allocate (kPoints(dim3,numKPoints))
+      allocate (kPointWeight(numKPoints))
+
+      ! Read past the 'NUM_WEIGHT_KA_KB_KC' header.
+      call readAndCheckLabel(readUnit,writeUnit,len('NUM_WEIGHT_KA_KB_KC'),&
+            & 'NUM_WEIGHT_KA_KB_KC')
+
+      ! Note that the values read in here are in terms of a,b,c fractional
+      !   coordinates.  Later, after the reciprocal lattice has been
+      !   initialized these values will be changed into x,y,z cartesian
+      !   coordinates.
+      do i = 1, numKPoints
+         read (15,*)    counter, kPointWeight(i), kPoints(1:dim3,i)
+         write (20,100) counter, kPointWeight(i), kPoints(1:dim3,i)
+      enddo
+      call flush (20)
+
+   elseif (KPointStyleCode == 1) then
+      ! Read axial numbers of kpoints and a shift.
+
+      ! Read the number of kpoints along each a,b,c axis.
+      call readData(readUnit,writeUnit,3,numAxialKPoints,len('NUM_KP_A_B_C'),&
+            & 'NUM_KP_A_B_C')
+
+      ! Read the fractional distance that the uniform mesh should be shifted
+      !   away from the origin along each a,b,c axis.
+      call readData(readUnit,writeUnit,3,kPointShift,len('KP_SHIFT_A_B_C'),&
+            & 'KP_SHIFT_A_B_C')
+
+      ! Expand the requested kpoints into explicit kpoints.
+      !call computeKPointMesh
+
+   elseif (KPointStyleCode == 2) then
+      ! Read fractional min. kp sep. and a shift.
+
+      ! Read the minimum line density required of kpoints along all axes.
+      call readData(readUnit,writeUnit,minKPointDensity,&
+            & len('MIN_KP_LINE_DENSITY'),'MIN_KP_LINE_DENSITY')
+
+      ! Read the fractional distance that the uniform mesh should be shifted
+      !   away from the origin along each a,b,c axis.
+      call readData(readUnit,writeUnit,3,kPointShift,len('KP_SHIFT_A_B_C'),&
+            & 'KP_SHIFT_A_B_C')
+   endif
+
+
+   ! If a LAT method is requested, then we need to make the tetrahedra. If
+   !   the KPointIntgCode == 0, then we don't have anything additional to do.
+   call generateTetrahedra
+!   if (KPointIntgCode == 1) then
+!      call generateTetWholeBZ
+!   elseif (KPointIntgCode == 2) then
+!   endif
 
    100 format (i5,1x,4f15.8)
 
@@ -105,7 +190,7 @@ subroutine readSYBDKPoints(readUnit, writeUnit)
    ! Make sure that there are not accidental variable declarations.
    implicit none
 
-   ! passed parameters
+   ! Passed parameters
    integer, intent(in)    :: readUnit   ! The unit number of the file from which
                                         ! we are reading.
    integer, intent(in)    :: writeUnit  ! The unit number of the file to which
@@ -194,6 +279,7 @@ subroutine convertKPointsToXYZ
 
    100 format (i5,3f15.8)
 end subroutine convertKPointsToXYZ
+
 
 ! This subroutine will compute the k dot r phase factors for each kpoint and
 !   real space cell in the superlattice.
@@ -439,6 +525,42 @@ subroutine makePathKPoints
    call timeStampEnd(21)
 
 end subroutine makePathKPoints
+
+
+subroutine generateTetrahedra
+
+   ! Include the modules we need
+   use O_Kinds
+
+   implicit none
+
+   ! Passed parameters
+
+   ! Define the local variables used in this subroutine.
+
+   ! The list of kpoints is structured as a regular mesh that matches the
+   !   reciprocal space lattice (angles and magnitudes). The distances between
+   !   kpoints along each a, b, c axis may be different, but, along any given
+   !   axis the distances are constant. One could envision the mesh as a set of
+   !   exactly equal parallelepipeds that are stacked to form the reciprocal
+   !   space cell. The corners (vertices) of the parallelepipeds are the set
+   !   of kpoints.
+
+   ! From that set of kpoints we must generate tetrahedra. The tricky thing is
+   !   that the kpoints are generated using three nested loops so that indexing
+   !   the vertices of a given parallelepiped requires careful counting of
+   !   the position in the one dimensional the kpoint array.
+
+   ! The 
+   
+   !vertices. it as a set of equal sized Each orthorhombic
+   !   parallelpiped consists of eight vertices that we will label M1 through
+   !   M8. The tricky thing of course is that the kpoints are created by
+   !   looping through a, b, c axis steps (in that order). In other words the
+
+   
+
+end subroutine generateTetrahedra
 
 
 subroutine cleanUpKPoints

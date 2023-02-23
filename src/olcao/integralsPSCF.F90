@@ -46,8 +46,8 @@ subroutine intgAndOrMom(doINTG,doMOME)
    use O_Basis,        only: initializeAtomSite
    use O_PotSites,     only: numPotSites, potSites
    use O_AtomicTypes,  only: maxNumAtomAlphas, maxNumStates
-   use O_GaussianIntegrals, only: overlapInteg, KEInteg, nucPotInteg, &
-         & threeCentInteg, MOMF
+   use O_GaussianIntegrals, only: overlap2CIntg, kinetic2CIntg, &
+         & nuclear3CIntg, electron3CIntg, momentum2CIntg
    use O_Lattice, only: logBasisFnThresh, numCellsReal, cellSizesReal, &
          & cellDimsReal, findLatticeVector
    use HDF5
@@ -599,7 +599,7 @@ subroutine intgAndOrMom(doINTG,doMOME)
                                        & latticeVector2(:) + cellDimsReal(:,p)
 
                                  if (n <= currentNumPotAlphas) then
-				                        ! Calculate the opcode to do the correct
+                                    ! Calculate the opcode to do the correct
                                     !   set of integrals for the current alpha
                                     !   pair.
                                     l1l2Switch = ishft(1,(powerOfTwo(&
@@ -608,7 +608,8 @@ subroutine intgAndOrMom(doINTG,doMOME)
                                          & (powerOfTwo(currentlmAlphaIndex(&
                                          & alphaIndex(2),2))))
 
-                                    call threeCentInteg (currentAlphas(alphaIndex(1),1),&
+                                    call electron3CIntg (&
+                                       & currentAlphas(alphaIndex(1),1),&
                                        & currentAlphas(alphaIndex(2),2),&
                                        & currentPotAlpha, currentPosition(:,1),&
                                        & shiftedAtomPos(:), shiftedPotPos(:),&
@@ -640,15 +641,18 @@ subroutine intgAndOrMom(doINTG,doMOME)
                                    ! Calculate the opcode to do the correct set
                                    ! of integrals for the current alpha pair
                                    l1l2Switch = ishft(1,&
-                                     &(powerOfTwo(currentlmAlphaIndex(alphaIndex(1),1))))&
+                                     &(powerOfTwo(currentlmAlphaIndex(&
+                                     &   alphaIndex(1),1)))) &
                                      &+ ishft(16,&
-                                     &(powerOfTwo(currentlmAlphaIndex(alphaIndex(2),2))))
+                                     &(powerOfTwo(currentlmAlphaIndex(&
+                                     &   alphaIndex(2),2))))
                                    
-                                   call nucPotInteg (currentAlphas(alphaIndex(1),1),&
-                                       & currentAlphas(alphaIndex(2),2),&
-                                       & currentPotAlpha,currentPosition(:,1),&
-                                       & shiftedAtomPos(:),shiftedPotPos(:),&
-                                       & l1l2Switch,oneAlphaSet)
+                                   call nuclear3CIntg (&
+                                      & currentAlphas(alphaIndex(1),1),&
+                                      & currentAlphas(alphaIndex(2),2),&
+                                      & currentPotAlpha,currentPosition(:,1),&
+                                      & shiftedAtomPos(:),shiftedPotPos(:),&
+                                      & l1l2Switch,oneAlphaSet)
 
 
 
@@ -682,15 +686,16 @@ subroutine intgAndOrMom(doINTG,doMOME)
                      enddo ! (m numPots (inequivalent))
 
 
-		     ! Calculate the opcode to do the correct set of integrals
+                     ! Calculate the opcode to do the correct set of integrals
                      ! for the current alpha pair
                      l1l2Switch = ishft(1,&
                        &(powerOfTwo(currentlmAlphaIndex(alphaIndex(1),1))))&
                        &+ ishft(16,&
                        &(powerOfTwo(currentlmAlphaIndex(alphaIndex(2),2))))
 
-                   ! Determine the kinetic energy contribution
-                     call KEInteg (currentAlphas(alphaIndex(1),1),&
+                     ! Determine the kinetic energy contribution.
+                     call kinetic2CIntg (&
+                           & currentAlphas(alphaIndex(1),1),&
                            & currentAlphas(alphaIndex(2),2),&
                            & currentPosition(:,1), shiftedAtomPos(:),&
                            & l1l2Switch, oneAlphaSet)
@@ -716,20 +721,21 @@ subroutine intgAndOrMom(doINTG,doMOME)
                               & (alphaIndex(2),2))
                      enddo
 
-               ! Calculate the opcode to do the correct set of integrals
-               ! for the current alpha pair
-                l1l2Switch = ishft(1,&
-                  &(powerOfTwo(currentlmAlphaIndex(alphaIndex(1),1))))&
-                  &+ ishft(16,&
-                  &(powerOfTwo(currentlmAlphaIndex(alphaIndex(2),2))))
+                     ! Calculate the opcode to do the correct set of integrals
+                     ! for the current alpha pair.
+                     l1l2Switch = ishft(1,&
+                        &(powerOfTwo(currentlmAlphaIndex(alphaIndex(1),1))))&
+                        &+ ishft(16,&
+                        &(powerOfTwo(currentlmAlphaIndex(alphaIndex(2),2))))
                 
-                !print*,l1l2Switch
-                ! We can proceed with the next step of the calculation.
-                ! This is the actual integral.
-                call overlapInteg (currentAlphas(alphaIndex(1),1),&
-                  & currentAlphas(alphaIndex(2),2), &
-                  & currentPosition(:,1), shiftedAtomPos(:),&
-                  & l1l2Switch, oneAlphaSet)
+                     !print*,l1l2Switch
+                     ! We can proceed with the next step of the calculation.
+                     ! This is the actual integral.
+                     call overlap2CIntg (&
+                           & currentAlphas(alphaIndex(1),1),&
+                           & currentAlphas(alphaIndex(2),2), &
+                           & currentPosition(:,1), shiftedAtomPos(:),&
+                           & l1l2Switch, oneAlphaSet)
 
 
                      ! Compute the atomic overlap for this atom pair.
@@ -751,7 +757,8 @@ subroutine intgAndOrMom(doINTG,doMOME)
                         & + ishft(16,&
                         & (powerOfTwo(currentlmAlphaIndex(alphaIndex(2),2))))
 
-                     call MOMF (currentAlphas(alphaIndex(1),1),&
+                     call momentum2CIntg (&
+                           & currentAlphas(alphaIndex(1),1),&
                            & currentAlphas(alphaIndex(2),2),&
                            & currentPosition(:,1), shiftedAtomPos(:),&
                            & l1l2Switch, oneAlphaSetMom)

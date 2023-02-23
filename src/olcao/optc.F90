@@ -46,7 +46,23 @@ module O_OptcTransitions
          !   directGap of each kpoint and spin.
 
    real (kind=double), allocatable, dimension (:,:,:,:) :: transitionProb
+   real (kind=double), allocatable, &
+         & dimension (:,:,:,:,:,:) :: transitionProbPOPTC
    real (kind=double), allocatable, dimension (:,:,:)   :: energyDiff
+
+   ! POPTC specific variables.
+   integer, allocatable, dimension (:) :: pOptcIndex ! Decomp. group index
+   integer, allocatable, dimension (:) :: cumulNumPartials ! For each type of
+         !   major division (e.g., types or atoms), record the number of sub-
+         !   groups that must be accumulated. (The "segments" in the output
+         !   file are either types or atoms as this is.) Record as an
+         !   accumulation.
+   integer, allocatable, dimension (:) :: numStatesAtom
+   integer :: sumNumPartials ! Total number of POPTC groups
+   integer :: initVDBI ! Index for initial state valeDim basis fns
+   integer :: finVDBI  ! Index for final state valeDim basis fns
+
+
 
 #ifndef GAMMA
    complex (kind=double), allocatable, dimension (:,:,:,:) :: valeValeMom
@@ -66,6 +82,7 @@ subroutine getEnergyStatistics
    use O_Kinds
    use O_Potential,       only: spin
    use O_CommandLine,     only: stateSet
+   use O_AtomicSites,     only: valeDim
    use O_SecularEquation, only: energyEigenValues
    use O_Populate,        only: electronPopulation, occupiedEnergy
    use O_KPoints,         only: numKPoints, kPointWeight
@@ -73,7 +90,7 @@ subroutine getEnergyStatistics
    use O_Input, only: numStates, cutoffEnOPTC, maxTransEnOPTC, &
          & totalEnergyDiffPACS, energyWindowPACS, firstInitStatePACS, &
          & lastInitStatePACS, onsetEnergySlackPACS, cutoffEnSIGE, &
-         & maxTransEnSIGE, cutoffEnNLOP, maxTransEnNLOP
+         & maxTransEnSIGE, detailCodePOPTC, cutoffEnNLOP, maxTransEnNLOP
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
@@ -222,7 +239,7 @@ subroutine getEnergyStatistics
             !   that this will deal with degenerate highest occupied states.
             ! Note: In the case that thermal smearing is turned on, then the
             !   zero of energy is the Fermi level (which may be in the gap for
-            !   insulators). There may be paritially occupied orbitals above
+            !   insulators). There may be partially occupied orbitals above
             !   the Fermi level and partially occupid orbitals below the Fermi
             !   level because of the smearing.
 
@@ -523,13 +540,21 @@ subroutine getEnergyStatistics
 
    ! Now that the number of transitions for each kpoint are known we can 
    !   allocate space to hold information based on the number transitions.
-   if (stateSet /= 2) then  ! Not doing a Sigma(E) calculation.
-      allocate (energyDiff (maxPairs,numKPoints,spin))
-      allocate (transitionProb  (dim3,maxPairs,numKPoints,spin))
+   if (stateSet /= 2) then  ! Not doing a Sigma(E)
+      if (detailCodePOPTC == 0) then ! Standerd OPTC (not doing POPTC)
+         allocate (energyDiff (maxPairs,numKPoints,spin))
+         allocate (transitionProb  (dim3,maxPairs,numKPoints,spin))
 
-      ! Initialize these arrays.
-      energyDiff(:maxPairs,:numKPoints,:) = 0.0_double
-      transitionProb(:dim3,:maxPairs,:numKPoints,:) = 0.0_double
+         ! Initialize these arrays.
+         energyDiff(:maxPairs,:numKPoints,:) = 0.0_double
+         transitionProb(:dim3,:maxPairs,:numKPoints,:) = 0.0_double
+
+      else ! Doing POPTC.
+         allocate (energyDiff (maxPairs,numKPoints,spin))
+
+         ! Initialize these arrays.
+         energyDiff(:maxPairs,:numKPoints,:) = 0.0_double
+      endif
    endif
 
 end subroutine getEnergyStatistics
@@ -548,7 +573,7 @@ subroutine computeTransitions
    use O_IntegralsPSCF, only: getIntgResults
    use O_AtomicSites,   only: coreDim, valeDim
    use O_CommandLine,   only: stateSet, serialXYZ
-   use O_Input,         only: numStates, totalEnergyDiffPACS
+   use O_Input,         only: numStates, totalEnergyDiffPACS, detailCodePOPTC
    use O_PSCFBandHDF5,  only: valeValeBand, coreValeBand, valeStatesBand, &
          & eigenVectorsBand_did, eigenVectorsBand2_did, coreValeBand_did, &
          & valeValeBand_did
@@ -703,7 +728,11 @@ subroutine computeTransitions
 #endif
 
             if (stateSet /= 2) then  ! Not doing a Sigma(E) calculation.
-               call computePairs (i,0,h)
+               if (detailCodePOPTC == 0) then ! Doing standard OPTC calc.
+                  call computePairs (i,0,h)
+               else ! Doing pOptc calculation
+                  call computePOPTCPairs (i,0,h)
+               endif
             else
                call computeSigmaE (i,0,h)
             endif
@@ -723,7 +752,11 @@ subroutine computeTransitions
 #endif
 
                if (stateSet /= 2) then  ! Not doing a Sigma(E) calc.
-                  call computePairs (i,j,h)
+                  if (detailCodePOPTC == 0) then ! Doing standard OPTC calc.
+                     call computePairs (i,j,h)
+                  else ! Doing pOptc calculation
+                     call computePOPTCPairs (i,j,h)
+                  endif
                else
                   call computeSigmaE (i,j,h)
                endif
@@ -797,7 +830,7 @@ subroutine computePairs (currentKPoint,xyzComponents,spinDirection)
    use O_CommandLine, only: stateSet
    use O_SortSubs,    only: mergeSort
    use O_Input,       only: numStates
-   use O_KPoints,     only: kPointWeight
+   use O_KPoints,     only: kPointWeight,numKPoints
    use O_Populate,    only: electronPopulation
 #ifndef GAMMA
    use O_SecularEquation, only: energyEigenValues, valeVale
@@ -1008,9 +1041,10 @@ subroutine computePairs (currentKPoint,xyzComponents,spinDirection)
             !   is imaginary is because of the negative sign included in the
             !   getIntgResults subroutine for the momentum matrix. (I.e. this
             !   is stored as a real number, but it represents the y in (x+iy).)
-            transitionProbTemp(k,transPairCount) = &
-                  & real(valeValeXMom(k),double)**2+aimag(valeValeXMom(k))**2 *&
-                  & initStateFactor*finStateFactor
+            transitionProbTemp(k,transPairCount) = ( &
+                  & real(valeValeXMom(k),double)**2 &
+                  & + aimag(valeValeXMom(k))**2) &
+                  & * initStateFactor*finStateFactor
          enddo
 #else
 
@@ -1050,6 +1084,13 @@ subroutine computePairs (currentKPoint,xyzComponents,spinDirection)
    call mergeSort (energyDiffTemp,energyDiff(:,currentKPoint,spinDirection),&
          & sortOrder,segmentBorders,transPairCount)
 
+   ! Allocate space to hold the transition probabilities.
+   if (.not. allocated (transitionProb)) then
+      write (6,*) "We should not be here because this was already allocated"
+      allocate (transitionProb (dim3,maxPairs,numKPoints,spin))
+      transitionProb(:dim3,:maxPairs,:numKPoints,:) = 0.0_double
+   endif
+
    ! Copy transitionProbTemp to the real transitionProb data structure using
    !   the sorting order determined in the mergeSort subroutine.
    if (xyzComponents == 0) then
@@ -1072,6 +1113,714 @@ subroutine computePairs (currentKPoint,xyzComponents,spinDirection)
 
 end subroutine computePairs
 
+
+subroutine computePOPTCPairs(currentKPoint,xyzComponents,spinDirection)
+
+   ! Import the necessary modules.
+   use O_Kinds
+   use O_TimeStamps
+   use O_Potential,   only: spin
+   use O_CommandLine, only: stateSet
+   use O_SortSubs,    only: mergeSort
+   use O_Populate,    only: electronPopulation
+   use O_KPoints,     only: numKPoints, kPointWeight
+   use O_Constants,   only: pi, hartree, lAngMomCount, dim3
+   use O_AtomicSites, only: valeDim, numAtomSites, atomSites
+   use O_AtomicTypes, only: numAtomTypes, atomTypes
+   use O_Input,       only: numStates, detailCodePOPTC
+
+#ifndef GAMMA
+   use O_SecularEquation, only: valeVale, energyEigenValues
+#else
+   use O_SecularEquation, only: valeValeGamma, energyEigenValues
+#endif
+
+
+   ! Make sure that no funny variables.
+   implicit none
+
+   ! Define the dummy variables passed to this subroutine.
+   integer :: currentKPoint
+   integer :: xyzComponents ! 0=all, 1=x, 2=y, 3=z
+   integer :: spinDirection
+
+   ! Define local variables specific to POPTC.
+   integer :: i,j,k,l,m,n,o ! Loop index variables
+   character*1, dimension (lAngMomCount) :: QN_lLetter
+   character*14, dimension (4,7) :: QN_mLetter
+   integer :: numSQN_l
+   integer :: numPQN_l
+   integer :: numDQN_l
+   integer :: numFQN_l
+   integer :: initSIndex
+   integer :: initPIndex
+   integer :: initDIndex
+   integer :: initFIndex
+   integer :: currentType
+   integer :: valeDimIndex ! FIX Name
+   integer :: indexValeDim ! FIX Name
+   integer :: pOptcKKCIndex
+   integer :: newPartial
+   real    (kind=double), allocatable, dimension (:)         :: partialsIndex
+   real    (kind=double), allocatable, dimension (:,:,:,:)   :: transitionProbTemp
+
+   ! Define local variables that are the same as computePairs.
+   integer :: initComponent
+   integer :: finComponent
+   integer :: transPairCount
+   integer :: firstInit
+   integer :: lastInit
+   integer :: firstFin
+   integer :: lastFin
+   integer :: finalStateIndex
+   integer :: orderedIndex
+   integer, allocatable, dimension (:) :: sortOrder
+   integer, allocatable, dimension (:) :: segmentBorders
+   real    (kind=double) :: initStateFactor
+   real    (kind=double) :: finStatefactor
+   real    (kind=double) :: currentEnergyDiff
+   real    (kind=double) :: valeValeXMomGammaSum
+   real    (kind=double) :: valeValeXMomSumReal
+   real    (kind=double) :: valeValeXMomSumImag
+   real    (kind=double), allocatable, dimension (:)       :: energyDiffTemp
+#ifndef GAMMA
+   complex (kind=double), allocatable, dimension (:,:,:,:) :: conjWaveMomSum
+   complex (kind=double), allocatable, dimension (:,:,:)   :: valeValeXMom
+#else
+   real    (kind=double), allocatable, dimension (:,:,:,:) :: conjWaveMomSumGamma
+   real    (kind=double), allocatable, dimension (:,:,:)   :: valeValeXMomGamma
+#endif
+
+
+   ! Indexing for partial optical properties (pOptc)
+
+   ! Allocate arrays and matrices for this computation.
+   allocate (numStatesAtom  (numAtomSites))
+   
+   ! Store pOptc for each type.
+   !   (A sum over all orbitals of all atoms of a given type.)
+   if (detailCodePOPTC == 1) then
+      allocate (cumulNumPartials (numAtomTypes + 1))
+
+   ! Store pOptc for each atom.
+   !   (A sum over all orbitals of a given atom.)
+   elseif (detailCodePOPTC == 2) then
+      allocate (cumulNumPartials (1)) ! Unused for this detailCodePOPTC.
+
+   ! Store pOptc for each QN_nl resolved atom.
+   !   (A sum over all m QN orbitals of a given nl orbital of a given atom.)
+   elseif (detailCodePOPTC == 3) then
+      allocate (cumulNumPartials (numAtomSites + 1))
+
+   ! Store pOptc for each QN_nlm resolved atom.
+   !   (Every distinct basis function.)
+   elseif (detailCodePOPTC == 4) then
+      allocate (cumulNumPartials (numAtomSites + 1))
+   endif
+
+
+   ! Define the QN_l letters.
+   QN_lLetter(1) = 's'
+   QN_lLetter(2) = 'p'
+   QN_lLetter(3) = 'd'
+   QN_lLetter(4) = 'f'
+
+   ! Define the QN_m resolved letters.
+   QN_mLetter(1,1) = 'r'
+   QN_mLetter(2,1) = 'x'
+   QN_mLetter(2,2) = 'y'
+   QN_mLetter(2,3) = 'z'
+   QN_mLetter(3,1) = 'xy'
+   QN_mLetter(3,2) = 'xz'
+   QN_mLetter(3,3) = 'yz'
+   QN_mLetter(3,4) = 'xx~yy'
+   QN_mLetter(3,5) = '2zz~xx~yy'
+   QN_mLetter(4,1) = 'xyz'
+   QN_mLetter(4,2) = 'xxz~yyz'
+   QN_mLetter(4,3) = 'xxx~3yyx'
+   QN_mLetter(4,4) = '3xxy~yyy'
+   QN_mLetter(4,5) = '2zzz~3xxz~3yyz'
+   QN_mLetter(4,6) = '4zzx~xxx~yyx'
+   QN_mLetter(4,7) = '4zzy~xxy~yyy'
+
+   ! Initialize other variables.
+   cumulNumPartials(:) = 0
+   sumNumPartials  = 0
+
+   ! For each detail code we need to compute the number of sub-groups that
+   !   this detail code will produce for each "segment". A "segment" can be
+   !   either types or atoms (at present).
+   if (detailCodePOPTC == 1) then
+      ! Store the total for each type.
+    
+      cumulNumPartials(1) = 0
+      
+      do i = 1,numAtomTypes
+         cumulNumPartials(i+1) = cumulNumPartials(i) + i
+      enddo
+         
+      ! Record number of Atom Types
+      sumNumPartials = numAtomTypes
+
+   elseif (detailCodePOPTC == 2) then
+      ! Store the total for each atom. (Managed easily without cumulNumPar.)
+
+      ! Total number of Atom Sites.
+      sumNumPartials = numAtomSites
+
+   elseif (detailCodePOPTC == 3) then
+      ! Store the nl orbital totals for each atom. (Sum over m.)
+
+      ! Initialize counter to index the cumulative sum of QN_l orbitals for all
+      !   atoms.  (This pOptc will give a O for each QN_nl pair of each atom.)
+      cumulNumPartials(1) = 0
+
+      ! Loop to record the number of orbitals that each atom contributes.
+      !   (An orbital is just a QN_nl pair.)
+      do i = 1, numAtomTypes
+         cumulNumPartials(i+1) = cumulNumPartials(i) + sum( &
+               & atomTypes(i)%numQN_lValeRadialFns(:))
+      enddo
+
+      ! Record the total number of orbitals summed over all atoms.
+      sumNumPartials = cumulNumPartials(numAtomTypes + 1)
+
+   elseif (detailCodePOPTC == 4) then
+      ! Store the nlm for each atom.
+
+      ! Initialize counter to index the cumulative sum of QN_l orbitals for
+      !   all atoms.  (This pOptc will give a Optc for each QN_nlm set for each
+      !   atom.)
+      cumulNumPartials(1) = 0
+
+      ! Loop to record the index number for each atom's orbitals.
+      do i = 1, numAtomSites
+         cumulNumPartials(i+1) = cumulNumPartials(i) + &
+            & atomTypes(atomSites(i)%atomTypeAssn)%numQN_lValeRadialFns(1)*1 +&
+            & atomTypes(atomSites(i)%atomTypeAssn)%numQN_lValeRadialFns(2)*3 +&
+            & atomTypes(atomSites(i)%atomTypeAssn)%numQN_lValeRadialFns(3)*5 +&
+            & atomTypes(atomSites(i)%atomTypeAssn)%numQN_lValeRadialFns(4)*7 
+      enddo
+
+      ! Record the total number of QN_m resolved orbitals summed over all atoms.
+      sumNumPartials = cumulNumPartials(numAtomSites+1)
+   endif
+
+   ! Allocate storage for pOptcIndex so that each basis function can be "sent"
+   !   (or indexed) to the correct accumulation group.
+   allocate (pOptcIndex (valeDim))
+
+   ! For each sub-group, we will need to record the number of basis functions
+   !   that contribute to it so that we can properly normalize the KKC.
+   allocate (partialsIndex(sumNumPartials))
+
+   pOptcKKCIndex = 0 ! Counts how many basis functions come from that partial
+   newPartial = 1 ! Counts the number of partials as we go along. (At least 1)
+   partialsIndex(:) = 0 ! Set counting array to zero.
+
+   ! Initialize valeDimIndex. This is used in the loop below to track the
+   !   which basis function is currently under consideration for the mapping
+   !   into pOptcIndex. The valeDim is "valence dimension", one for each
+   !   basis function (orbital).
+   valeDimIndex = 0
+
+   ! Loop over every atom in the system to index where the pOptc values for
+   !   each atom should be stored.
+   do i = 1, numAtomSites
+
+      ! Obtain the type of the current atom.
+      currentType = atomSites(i)%atomTypeAssn
+
+      ! Identify and store the number of valence states for this atom.
+      numStatesAtom(i) = atomTypes(currentType)%numValeStates
+
+      ! In the case where the pOptc should be collected by types(1) we loop
+      !   through each QN_nl pair for this atom and record the index where its
+      !   pOptc should be recorded according to its type. 
+      if (detailCodePOPTC == 1) then
+
+         numSQN_l = atomTypes(currentType)%numQN_lValeRadialFns(1)
+         numPQN_l = atomTypes(currentType)%numQN_lValeRadialFns(2)
+         numDQN_l = atomTypes(currentType)%numQN_lValeRadialFns(3)
+         numFQN_l = atomTypes(currentType)%numQN_lValeRadialFns(4)
+
+         do j = 1, numSQN_l
+            valeDimIndex = valeDimIndex + 1
+            pOptcIndex(valeDimIndex) = currentType
+         enddo
+         do j = 1, numPQN_l
+            do k = 1,3
+               valeDimIndex = valeDimIndex + 1
+               pOptcIndex(valeDimIndex) = currentType
+            enddo
+         enddo
+         do j = 1, numDQN_l
+            do k = 1,5
+               valeDimIndex = valeDimIndex + 1
+               pOptcIndex(valeDimIndex) = currentType
+            enddo
+         enddo
+         do j = 1, numFQN_l
+            do k = 1,7
+               valeDimIndex = valeDimIndex + 1
+               pOptcIndex(valeDimIndex) = currentType
+            enddo
+         enddo
+
+      ! In the case where the pOptc is collected by atoms (2) we link each QN_nl
+      !   pair of this atom with the index of this atom.
+      elseif (detailCodePOPTC == 2) then
+
+         pOptcKKCIndex = 0
+         do j = 1, numStatesAtom(i)
+            valeDimIndex = valeDimIndex + 1
+            pOptcIndex(valeDimIndex) = i  ! NOTE THAT THIS IS 'i', NOT 'j'.
+            
+            ! Count the total number of basis functions for this atom.
+            pOptcKKCIndex = pOptcKKCIndex + 1
+         enddo
+
+         ! Record how many basis functions contribute to this partial for KKC.
+         partialsIndex(i) = pOptcKKCIndex
+
+      ! In the case where the pOptc is collected by atom orbital (3).
+      elseif (detailCodePOPTC == 3) then ! Consider spdf for each atom too.
+
+         numSQN_l = atomTypes(currentType)%numQN_lValeRadialFns(1)
+         numPQN_l = atomTypes(currentType)%numQN_lValeRadialFns(2)
+         numDQN_l = atomTypes(currentType)%numQN_lValeRadialFns(3)
+         numFQN_l = atomTypes(currentType)%numQN_lValeRadialFns(4)
+
+         initSIndex = cumulNumPartials(currentType)
+         initPIndex = cumulNumPartials(currentType) + numSQN_l
+         initDIndex = cumulNumPartials(currentType) + numSQN_l + numPQN_l
+         initFIndex = cumulNumPartials(currentType) + numSQN_l + numPQN_l &
+               & + numDQN_l
+
+         do j = 1, numSQN_l
+            valeDimIndex = valeDimIndex + 1
+            pOptcIndex(valeDimIndex) = initSIndex + j
+            ! Record how many valeDim contribute to this partial for OLCAOkkc
+            partialsIndex(initSIndex + j) = partialsIndex(initSIndex + j) + 1
+         enddo
+         do j = 1, numPQN_l
+            do k = 1,3
+               valeDimIndex = valeDimIndex + 1
+               pOptcIndex(valeDimIndex) = initPIndex + j
+               ! Record how many valeDim contribute to this partial for OLCAOkkc
+               partialsIndex(initPIndex + j) = partialsIndex(initPIndex + j) + 1
+            enddo
+         enddo
+         do j = 1, numDQN_l
+            do k = 1,5
+               valeDimIndex = valeDimIndex + 1
+               pOptcIndex(valeDimIndex) = initDIndex + j
+               ! Record how many valeDim contribute to this partial for OLCAOkkc
+               partialsIndex(initDIndex + j) = partialsIndex(initDIndex + j) + 1
+            enddo
+         enddo
+         do j = 1, numFQN_l
+            do k = 1,7
+               valeDimIndex = valeDimIndex + 1
+               pOptcIndex(valeDimIndex) = initFIndex + j
+               ! Record how many valeDim contribute to this partial for OLCAOkkc
+               partialsIndex(initFIndex + j) = partialsIndex(initFIndex + j) + 1
+            enddo
+         enddo
+
+      ! In the case where pOptc is collected for each orbital (4).
+      elseif (detailCodePOPTC == 4) then
+         do j = 1, lAngMomCount
+            do k = 1, atomTypes(currentType)%numQN_lValeRadialFns(j)
+              do l = 1, (j-1)*2+1
+
+                valeDimIndex = valeDimIndex + 1
+                pOptcIndex(valeDimIndex) = valeDimIndex ! Each QN_nlm is saved.
+                ! Record how many valeDim contribute to this partial for OLCAOkkc
+                ! because this detailCode is decomposed by QN_nlm each valeDim will
+                ! have a value of one.
+                partialsIndex(valeDimIndex) = 1
+              enddo
+            enddo
+          enddo
+      endif
+   enddo ! i = 1, numAtomSites
+
+   ! FIX: Bad array access of pOptcIndex and kkc indices for 3 and 4 not done.
+
+   ! The kkc index information for detailCode 2, 3, and 4 is calc above
+   ! Record how many basis functions contribute to this partial for OLCAOkkc
+   ! this detail code is calculated seperately from the pOptc Index.
+   if (detailCodePOPTC == 1) then
+      do j = 1, valeDimIndex
+         if (pOptcKKCIndex == 0 .or. (pOptcIndex(j) == pOptcIndex(j - 1))) then
+            pOptcKKCIndex = pOptcKKCIndex + 1
+         else
+            partialsIndex(newPartial) = pOptcKKCIndex
+            pOptcKKCIndex = 1
+            newPartial = newPartial + 1
+         endif
+      enddo
+      partialsIndex(newPartial) = pOptcKKCIndex
+   endif
+
+   ! Write KKC factor to file for use in OCLAOkkc one time (use KP=1 as the
+   !   trigger to write).
+   if (currentKPoint == 1) then
+      write (209,fmt="(a17,a5)") 'POPTC_KKC_FACTOR ', '    1'
+      do j = 1, sumNumPartials
+         do  k = 1, sumNumPartials
+         write (209,fmt="(a17,1e15.7)") 'POPTC_KKC_FACTOR ', &
+               & (partialsIndex(j) * partialsIndex(k) / (valeDimIndex**2))
+         enddo
+      enddo
+   endif
+
+   deallocate (partialsIndex)
+
+   ! For the first time though this subroutine we will need to allocate space
+   !   to hold the transitionProb array and initilize the array.
+   if (.not. allocated(transitionProbPOPTC)) then
+      allocate(transitionProbPOPTC(sumNumPartials,sumNumPartials,dim3,&
+            & maxPairs,numKPoints,spin))
+      transitionProbPOPTC (:,:,:,:,:,:) = 0.0_double
+   endif
+
+   ! Make shorthand for the state indices.
+   firstInit = firstOccupiedState(currentKPoint,spinDirection)
+   lastInit  = lastOccupiedState(currentKPoint,spinDirection)
+   firstFin  = firstUnoccupiedState(currentKPoint,spinDirection)
+   lastFin   = lastUnoccupiedState(currentKPoint,spinDirection)
+
+   ! Initialize a counter for the current number of transition pairs
+   transPairCount = 0
+
+   ! Determine the range of components (xyz) that should be considered.
+   if (xyzComponents == 0) then
+      initComponent = 1
+      finComponent = 3
+   else
+      initComponent = 1
+      finComponent = 1
+   endif
+
+#ifndef GAMMA
+
+   ! Allocate space to hold the sum(conjg(valeVale(:,j)) * valeVale_Mom(:,k,1))
+   !   for each of the possible final states.  This is done since the values
+   !   are independent of the initial states.  The 1 for the valeVale is
+   !   for the 1 kpoint.  The finComponent is 3 for all three at once, and
+   !   1 for when X, Y, Z are done separately.
+   allocate (conjWaveMomSum (valeDim,sumNumPartials,lastFin-firstFin+1,&
+                             & finComponent))
+
+   conjWaveMomSum = cmplx(0.0_double,0.0_double)
+
+   ! Compute the sum over the final states.
+   do i = initComponent, finComponent
+      finalStateIndex = 0
+
+      do j = firstFin, lastFin
+         ! Define the final index for conjWaveMomSum
+         finalStateIndex = finalStateIndex + 1
+
+         do k = 1, valeDim
+            indexValeDim = 0 
+
+            do l = 1, numAtomSites
+               ! Obtain the type of the current atom.
+               currentType = atomSites(l)%atomTypeAssn
+
+               ! ID and store the number of valence states for this atom.
+               numStatesAtom(l) = atomTypes(currentType)%numValeStates  
+
+               do m = 1, numStatesAtom(l)
+                  indexValeDim = indexValeDim + 1
+
+                  conjWaveMomSum(k,pOptcIndex(indexValeDim),finalStateIndex,i)&
+                     & = conjWaveMomSum(k,pOptcIndex(indexValeDim), &
+                     & finalStateIndex,i) &
+                     & + (conjg(valeVale(indexValeDim,j,1,1)) &
+                     & * valeValeMom(indexValeDim,k,1,i))
+               enddo ! m numStatesAtom
+            enddo ! l numAtomSites
+         enddo ! k valeDim
+      enddo ! j firstFin to lastFin
+   enddo ! i xyz components
+
+   ! Deallocate the momentum matrix elements.
+   deallocate (valeValeMom)
+
+#else
+
+   ! Documentation similar to the above non-gamma case.
+   allocate (conjWaveMomSumGamma (valeDim,sumNumPartials,lastFin-firstFin+1,&
+                                  & finComponent))
+
+   conjWaveMomSumGamma = 0.0_double
+
+   ! Compute the sum over the final states.
+   do i = initComponent, finComponent
+
+
+      ! Make the upper triangle correct for Hermiticity.  Recall that for
+      !   the Gamma K Point all the matrices are real (except the momentum
+      !   matrix which was multiplied by a -i and is hence imaginary).
+      !   Since it must be Hermitian we need to apply that now.
+      do j = 1, valeDim
+         valeValeMomGamma(1:j,j,i) = -valeValeMomGamma(1:j,j,i)
+      enddo
+
+      finalStateIndex = 0
+      do j = firstFin, lastFin
+
+         ! Increment the finalStateIndex for conjWaveMomSum
+         finalStateIndex = finalStateIndex + 1
+
+         do k = 1, valeDim
+            indexValeDim = 0
+
+            do l = 1, numAtomSites
+
+               ! Obtain the type of the current atom.
+               currentType = atomSites(l)%atomTypeAssn
+
+               ! ID and store the number of valence states for this atom.
+               numStatesAtom(l) = atomTypes(currentType)%numValeStates
+
+               do m = 1, numStatesAtom(l)
+                  indexValeDim = indexValeDim + 1
+
+                  conjWaveMomSumGamma(k,pOptcIndex(indexValeDim),&
+                      & finalStateIndex,i) = conjWaveMomSumGamma(k,pOptcIndex(&
+                      & indexValeDim),finalStateIndex,i) + (valeValeGamma(&
+                      & indexValeDim,j,1) * valeValeMomGamma(indexValeDim,k,i))
+             enddo
+           enddo
+         enddo
+      enddo
+   enddo
+
+   ! Deallocate the momentum matrix elements.
+   deallocate (valeValeMomGamma)
+#endif
+
+
+   ! Allocate space for the energy difference.
+   allocate (energyDiffTemp (maxPairs))
+   allocate (transitionProbTemp (sumNumPartials,sumNumPartials,finComponent,&
+                                 & maxPairs))
+
+   ! Initialize the temporary energy transition array.
+   energyDiffTemp(:) = 0.0_double
+
+   ! Allocate space to hold the indices for each segment of the energyDiff
+   !   array.
+   allocate (segmentBorders (lastInit-firstInit+2))
+
+   ! Initialize the first index since it will always be 0.
+   segmentBorders(1) = 0
+
+#ifndef GAMMA
+     allocate (valeValeXMom (sumNumPartials, sumNumPartials, finComponent))
+#else
+     allocate (valeValeXMomGamma (sumNumPartials,sumNumPartials,finComponent))
+#endif
+
+
+   ! Begin the double loop to determine the transition energies.
+   do i = firstInit, lastInit
+      finalStateIndex = 0
+      do j = firstFin, lastFin
+
+         ! Recall that thermal smearing may allow some states to be both
+         !   initial and final. We do not consider transitions where the final
+         !   state has an energy less than the initial.
+         if (i >= j) cycle
+
+         ! If the energy of the final state is higher than the requested
+         !   cut-off we go to the next initial state.
+         if (energyEigenValues(j,currentKPoint,spinDirection) > &
+               & energyCutoff) exit
+   
+         ! Compute the energy of the transition from the current states.
+         currentEnergyDiff = energyEigenValues(j,currentKPoint,spinDirection)-&
+               & energyEigenValues(i,currentKPoint,spinDirection)
+
+         ! Check if the energy difference is less than the maximum
+         !   transition energy that the input file requested computation
+         !   for.  If it fails, then we go to the next initial state because
+         !   all the remaining final states for this energy will be greater.
+         if (currentEnergyDiff > maxTransEnergy) exit
+
+         ! Increment the number of transition pairs counted so far.
+         transPairCount = transPairCount + 1
+
+         ! Store the transition energy for the current pair.
+         energyDiffTemp(transPairCount) = currentEnergyDiff
+
+         ! Increment the final state index for the conjWaveMomSum
+         finalStateIndex = finalStateIndex + 1
+
+         ! In the event that thermal smearing is turned on. The state that the
+         !   e- comes from and goes into may be fully, partially, or not
+         !   occupied. We will scale the probability of a transition linearly
+         !   according to the percent occupation of both the initial and final
+         !   states.
+
+         ! Determine the array index value of the current initial (index i)
+         !   spin-kpoint-state as defined by the tempEnergyEigenValues loop
+         !   near the beginning of the population subroutine.
+         orderedIndex = i + numStates*(spinDirection-1) + &
+               & numStates*spin*(currentKPoint-1)
+
+         ! Use the normal state factor for non-PACS calculations. For PACS
+         !   calculations the initStateFactor is always 1 even though the
+         !   initial core state(s) will have an electron missing.
+         if (stateSet /= 1) then
+            initStateFactor = electronPopulation(orderedIndex) / &
+                  & (kPointWeight(currentKPoint)/real(spin,double))
+         else
+            initStateFactor = 1.0_double
+         endif
+
+         ! Determine the array index value of the current final (index j)
+         !   spin-kpoint-state as defined by the tempEnergyEigenValues loop
+         !   near the beginning of the population subroutine.
+         orderedIndex = j + numStates*(spinDirection-1) + &
+               & numStates*spin*(currentKPoint-1)
+
+         finStateFactor = 1.0_double - electronPopulation(orderedIndex) / &
+               & (kPointWeight(currentKPoint)/real(spin,double))
+
+
+#ifndef GAMMA
+        
+         ! Loop to obtain the wave function times the momentum integral.
+         do k = initComponent,finComponent
+
+            valeValeXMom (:,:,:) = cmplx(0.0_double,0.0_double)
+                   
+            initVDBI = 0
+
+            do l = 1, valeDim
+               initVDBI = initVDBI + 1
+
+               do n = 1,sumNumPartials
+                  valeValeXMom(pOptcIndex(initVDBI),n,k) = &
+                        & valeValeXMom(pOptcIndex(initVDBI),n,k) &
+                        & + valeVale(initVDBI,i,1,1) &
+                        & * conjWaveMomSum(initVDBI,n,finalStateIndex,k)
+               enddo
+            enddo
+
+            ! Initialize 
+            valeValeXMomSumReal = 0
+            valeValeXMomSumImag = 0
+
+            ! The sum of the real and imaginary parts of valeValeXMom. These
+            !   are for the transition probability to account for the change 
+            !   from sum squared to sum of squares
+            valeValeXMomSumReal = sum(real(valeValeXMom(:,:,k),double))
+            valeValeXMomSumImag = sum(aimag(valeValeXMom(:,:,k)))
+            do n = 1, sumNumPartials
+               do o = 1,sumNumPartials
+
+                  transitionProbTemp(o,n,k,transPairCount) = &
+                        & ((real(valeValeXMom(o,n,k))*valeValeXMomSumReal) &
+                        & + (aimag(valeValeXMom(o,n,k))*valeValeXMomSumImag)) &
+                        & * initStateFactor*finStateFactor
+               enddo
+            enddo
+         enddo
+
+#else
+         ! Loop to get the wave function times the momentum matrix element.
+
+         do k = initComponent,finComponent
+
+            valeValeXMomGamma (:,:,:) = 0.0_double
+            initVDBI = 0
+
+            do l = 1, valeDim
+               initVDBI = initVDBI + 1
+
+               do n = 1,sumNumPartials
+                  valeValeXMomGamma(pOptcIndex(initVDBI),n,k) &
+                        & = valeValeXMomGamma(pOptcIndex(initVDBI),n,k) &
+                        & + valeValeGamma(initVDBI,i,1) &
+                        & * conjWaveMomSumGamma(initVDBI,n,finalStateIndex,k)
+
+               enddo
+            enddo
+
+            ! Initialize
+            valeValeXMomGammaSum = 0
+           
+            ! The sum of all valeValeXMomGamma. Used in the transition 
+            !   probability to account from the change from sum squared 
+            !   to the sum of squares.
+            valeValeXMomGammaSum = sum(valeValeXMomGamma(:,:,k))
+            do n = 1, sumNumPartials
+               do o = 1,sumNumPartials
+
+                  transitionProbTemp(o,n,k,transPairCount) = &
+                        & valeValeXMomGamma(o,n,k)*valeValeXMomGammaSum &
+                        & * initStateFactor*finStateFactor
+               enddo
+            enddo
+         enddo
+#endif
+      enddo ! Fin loop j
+
+      ! Save the index for the end border of this segment.
+      segmentBorders(i - firstInit + 2) = transPairCount
+   enddo ! Init loop i
+
+   ! Deallocate unnecessary matrix
+#ifndef GAMMA
+   deallocate (conjWaveMomSum)
+#else
+   deallocate (conjWaveMomSumGamma)
+#endif
+
+   ! Determine if there was only one segment.  In this case we don't have to
+   !   sort anything.
+
+   ! Sort energyDiffTemp into energyDiff, and obtain the indices for the
+   !   correct sorted order of energyDiff so that we can copy the energy
+   !   momentum directly.
+
+   allocate (sortOrder (transPairCount))
+
+   call mergeSort (energyDiffTemp,energyDiff(:,currentKPoint,spinDirection),&
+         & sortOrder,segmentBorders,transPairCount)
+
+   ! Copy transitionProbTemp to the real transitionProb data structure using
+   !   the sorting order determined in the mergeSort subroutine.
+   if (xyzComponents == 0) then
+      do i = 1, transPairCount
+         transitionProbPOPTC(:,:,:,i,currentKPoint,spinDirection) =&
+         & transitionProbTemp(:,:,:,sortOrder(i))
+      enddo
+   else
+      do i = 1, transPairCount
+         transitionProbPOPTC(:,:,xyzComponents,i, &
+          & currentKPoint,spinDirection) = transitionProbTemp(: &
+          & ,:,1,sortOrder(i))
+      enddo
+   endif
+
+   ! Deallocate unnecessary arrays and matrices
+   deallocate (energyDiffTemp)
+   deallocate (transitionProbTemp)
+   deallocate (segmentBorders)
+   deallocate (sortOrder)
+   deallocate (numStatesAtom)
+   deallocate (cumulNumPartials)
+   deallocate (pOptcIndex)
+
+end subroutine computePOPTCPairs
 
 
 subroutine computeSigmaE (currentKPoint,xyzComponents,spinDirection)
@@ -1116,6 +1865,7 @@ subroutine computeSigmaE (currentKPoint,xyzComponents,spinDirection)
    integer :: finalStateIndex
    integer :: initialStateIndex
    integer :: numEnergyPoints
+   integer :: orderedIndex
    real (kind=double) :: alphaFactor
    real (kind=double) :: initStateFactor
    real (kind=double) :: finStateFactor
@@ -1262,6 +2012,36 @@ subroutine computeSigmaE (currentKPoint,xyzComponents,spinDirection)
          !   i>=j cases.
          if (i >= j) cycle
 
+         ! In the event that thermal smearing is turned on. The state that the
+         !   e- comes from and goes into may be fully, partially, or not
+         !   occupied. We will scale the probability of a transition linearly
+         !   according to the percent occupation of both the initial and final
+         !   states.
+
+         ! Determine the array index value of the current initial (index i)
+         !   spin-kpoint-state as defined by the tempEnergyEigenValues loop
+         !   near the beginning of the population subroutine.
+         orderedIndex = i + numStates*(spinDirection-1) + &
+               & numStates*spin*(currentKPoint-1)
+
+         ! The initial state factor is the population of this state divided by
+         !   the kpoint weight times the spin parameter. (I.e., the k and spin
+         !   weighted electron population.)
+         initStateFactor = electronPopulation(orderedIndex) / &
+               & (kPointWeight(currentKPoint)/real(spin,double))
+
+         ! Determine the array index value of the current final (index j)
+         !   spin-kpoint-state as defined by the tempEnergyEigenValues loop
+         !   near the beginning of the population subroutine.
+         orderedIndex = j + numStates*(spinDirection-1) + &
+               & numStates*spin*(currentKPoint-1)
+
+         ! The final state factor is just like the initial state factor
+         !   except that here we care about the size of the "hole". Hence,
+         !   we compute 1 - the k and spin weighted electron population.
+         finStateFactor = 1.0_double - electronPopulation(orderedIndex) / &
+               & (kPointWeight(currentKPoint)/real(spin,double))
+
 #ifndef GAMMA
          ! Loop to obtain the wave function times the momentum integral.
          do k = initComponent,finComponent
@@ -1287,7 +2067,7 @@ subroutine computeSigmaE (currentKPoint,xyzComponents,spinDirection)
             ! Compute the real component of the square of the valeValeXMom to
             !   obtain the transition probability.
             transitionProb(k,initialStateIndex,finalStateIndex) = &
-                  & valeValeXMomGamma**2
+                  & valeValeXMomGamma**2 * initStateFactor*finStateFactor
          enddo
 #endif
       enddo

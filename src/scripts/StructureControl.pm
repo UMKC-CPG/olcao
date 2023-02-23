@@ -15,8 +15,8 @@ use Math::MatrixReal;
 #use Inline (C => Config => cc => 'gcc',
 #            ld => 'gcc',
 #            inc => '-I/usr/include');
-#use Inline C => 'DATA',
-#           NAME => 'StructureControl';
+use Inline C => 'DATA',
+           NAME => 'StructureControl';
 
 require Exporter;
 
@@ -4009,7 +4009,7 @@ sub getABCVectors
       {$realLattice[$abcAxis][0] = "";}
 
    # Initially assume that the lattice will use the conventional cell.
-   if ($spaceGroupNum <= 2) # Triclinic: alpha<beta<gamma; then a<b<c if possible
+   if ($spaceGroupNum <= 2) # Triclinic: alpha<beta<gamma then a<b<c if possible
    {
 
       # We first assume that a and x are co-axial.
@@ -4182,15 +4182,15 @@ sub getABCVectors
          $realLattice[1][3] =  0.0;
 
          # Define the b axis as (a*cos(alpha/2), a*sin(alpha/2), 0)
-         $realLattice[1][1] = $mag[1]*cos($angle[1]/2.0);
-         $realLattice[1][2] = $mag[1]*sin($angle[1]/2.0);
-         $realLattice[1][3] = 0.0;
+         $realLattice[2][1] = $mag[1]*cos($angle[1]/2.0);
+         $realLattice[2][2] = $mag[1]*sin($angle[1]/2.0);
+         $realLattice[2][3] = 0.0;
 
          # Define the c axis as: (a*cos(alpha)/cos(alpha/2), 0,
          #   a*sqrt(1 - cos(alpha)**2 / cos(alpha/2)**2))
-         $realLattice[1][1] = $mag[1]*cos($angle[1])/cos($angle[1]/2.0);
-         $realLattice[1][2] = 0.0;
-         $realLattice[1][3] = $mag[1]*sqrt(1.0 - cos($angle[1])**2 / 
+         $realLattice[3][1] = $mag[1]*cos($angle[1])/cos($angle[1]/2.0);
+         $realLattice[3][2] = 0.0;
+         $realLattice[3][3] = $mag[1]*sqrt(1.0 - cos($angle[1])**2 / 
                cos($angle[1]/2.0)**2);
       }
    }

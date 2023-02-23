@@ -448,22 +448,22 @@ subroutine makeECMeshAndOverlap
 
    ! Allocate space for matrices that will be pointed to by global data
    !   structures later.
-   allocate (radialWeight    (maxNumRayPoints))
+   allocate (radialWeight(maxNumRayPoints))
    ! When GGA=0 only space for the rho operator is allocated. When GGA=1 space
    !   is also allocated for first and second derivatives of the rho operator.
    if (GGA == 0) then ! Doing LDA
       numOpValues = 1
-   allocate (exchRhoOp       (potDim,maxNumRayPoints,1))
+   allocate (exchRhoOp(potDim,maxNumRayPoints,1))
    else ! Doing GGA
       numOpValues = 10
-   allocate (exchRhoOp       (potDim,maxNumRayPoints,10))
+   allocate (exchRhoOp(potDim,maxNumRayPoints,10))
    endif
-   allocate (exchCorrOverlap (potDim,potDim))
+   allocate (exchCorrOverlap(potDim,potDim))
 
 
    ! Allocate space for matrices and arrays that are used only locally
-   allocate (currentPotAlphas    (maxNumPotAlphas))
-   allocate (exchangePointRadius (dim3,maxNumRayPoints))
+   allocate (currentPotAlphas (maxNumPotAlphas))
+   allocate (exchangePointRadius(dim3,maxNumRayPoints))
 
    ! Initialize the exchCorrOverlap matrix to zero since it will later be
    !   created through cumulative summation.
@@ -673,6 +673,8 @@ subroutine makeECMeshAndOverlap
 
                   ! Determine the magnitude of the radial component.
                   radialMagnitude = sum((latticeOffset(:)-cellDimsReal(:,m))**2)
+!write(20,*) "rM=", radialMagnitude, latticeOffset(:), cellDimsReal(:,m)
+!write(20,*) "lkmn=", l, k, m
 
                   ! If this particular potential site is beyond the required
                   !   range then we cycle on this loop.

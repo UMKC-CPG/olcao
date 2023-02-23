@@ -256,7 +256,8 @@ end subroutine cleanUpBasis
 
 subroutine initializeAtomSite (atomNumber,atomIndex,atomType,currentElements,&
       & numTotalStates,numCoreStates,numValeStates,numAlphas,lmIndexCurrent,&
-      & lmAlphaIndexCurrent,cartPos,alphas,currentBasisFns)
+      & lmAlphaIndexCurrent,cartPos,alphas,&
+      & currentBasisFns)
 
    ! Include the modules we need
    use O_Kinds
@@ -267,23 +268,25 @@ subroutine initializeAtomSite (atomNumber,atomIndex,atomType,currentElements,&
 
    ! Input variables that request which atom to extract info from, and where
    !   to put it.
-   integer :: atomNumber ! Atom number
-   integer :: atomIndex  ! Array index to store.
+   integer, intent(in) :: atomNumber ! Atom number
+   integer, intent(in) :: atomIndex  ! Array index to store.
 
    ! Output varibales the will be filled in atomIndex array slot with data
    !   from atom number atomNumber.
-   integer, dimension (2)    :: atomType
-   integer, dimension (2)    :: currentElements
-   integer, dimension (2)    :: numTotalStates
-   integer, dimension (2)    :: numCoreStates
-   integer, dimension (2)    :: numValeStates
-   integer, dimension (2)    :: numAlphas
-   integer, dimension (:,:)  :: lmIndexCurrent
-   integer, dimension (:,:)  :: lmAlphaIndexCurrent
-   real (kind=double), dimension (dim3,2) :: cartPos
-   real (kind=double), dimension (:,:)    :: alphas
-   real (kind=double), dimension (:,:,:)  :: currentBasisFns
+   integer, dimension (2), intent(out)    :: atomType
+   integer, dimension (2), intent(out)    :: currentElements
+   integer, dimension (2), intent(out)    :: numTotalStates
+   integer, dimension (2), intent(out)    :: numCoreStates
+   integer, dimension (2), intent(out)    :: numValeStates
+   integer, dimension (2), intent(out)    :: numAlphas
+   integer, dimension (:,:), intent(out)  :: lmIndexCurrent
+   integer, dimension (:,:), intent(out)  :: lmAlphaIndexCurrent
+   real (kind=double), dimension (dim3,2), intent(out) :: cartPos
+   real (kind=double), dimension (:,:), intent(out)    :: alphas
+   real (kind=double), dimension (:,:,:), intent(out)  :: currentBasisFns
 
+   ! Other local variables.
+   integer :: i
 
    ! Fill the requested information for the atomNumber provided into the
    !   array index requested by atomIndex.
@@ -319,17 +322,17 @@ subroutine initializeAtomSite (atomNumber,atomIndex,atomType,currentElements,&
          & atomType(atomIndex))
 
    ! Get the number of possible l,m combinations that a given
-   !   atomic alpha will be used for.  (If an alpha for an atomic type i
+   !   atomic alpha will be used for. (If an alpha for an atomic type i
    !   is used for s, p, and d orbital types, then the value at that matrix
-   !   index is 9.  (Sum # states l=0,m=0; l=1,m=-1,0,1; l=2,m=-2,-1,0,1,2).)
+   !   index is 9. (Sum # states l=0,m=0; l=1,m=-1,0,1; l=2,m=-2,-1,0,1,2).)
    lmAlphaIndexCurrent(:numAlphas(atomIndex),atomIndex) = &
          & lmAlphaIndex(:numAlphas(atomIndex),atomType(atomIndex))
 
    ! Get the integer number uniquely identifying the kind of l,m
-   !   combination that each state in the requested atom is in.  (If the
-   !   state is l=0,m=0, then the value is 1.  If the state is l=2,m=2, then
-   !   the value is 9.  If the state is l=1,m=0 then the value is 3.  If the
-   !   state is l=1,m=1 then the value is 4.  etc.)
+   !   combination that each state in the requested atom is in. (If the
+   !   state is l=0,m=0, then the value is 1. If the state is l=2,m=2, then
+   !   the value is 9. If the state is l=1,m=0 then the value is 3.  If the
+   !   state is l=1,m=1 then the value is 4. Etc.)
    lmIndexCurrent(:numTotalStates(atomIndex),atomIndex) = &
          & lmIndex(:numTotalStates(atomIndex),atomType(atomIndex))
 

@@ -209,7 +209,7 @@ subroutine computeDOS
    use O_CommandLine, only: doDOS
    use O_Populate,    only: electronPopulation
    use O_KPoints,     only: numKPoints, kPointWeight
-   use O_Constants,   only: pi, hartree, maxOrbitals
+   use O_Constants,   only: pi, hartree, lAngMomCount
    use O_AtomicSites, only: valeDim, numAtomSites, atomSites
    use O_AtomicTypes, only: numAtomTypes, atomTypes, maxNumValeStates
    use O_Input,       only: numStates, sigmaDOS, eminDOS, emaxDOS, deltaDOS, &
@@ -229,7 +229,7 @@ subroutine computeDOS
    ! Define local variables.
    integer :: h,i,j,k,l ! Loop index variables
    character*17 :: formatString
-   character*1, dimension (maxOrbitals) :: QN_lLetter
+   character*1, dimension (lAngMomCount) :: QN_lLetter
    character*14, dimension (4,7) :: QN_mLetter
    integer, allocatable, dimension (:) :: cumulNumDOS
    integer, allocatable, dimension (:) :: pdosIndex ! Given a valence state,
@@ -684,8 +684,9 @@ subroutine computeDOS
                         & kpointWeight(i)
 
                   ! Broaden and store the complete pdos
-                  pdosComplete(:,k) = pdosComplete(:,k) + pdosAccum(:) * &
-                        & expFactor
+                  pdosComplete(1:cumulDOSTotal,k) = &
+                        & pdosComplete(1:cumulDOSTotal,k) &
+                        & + pdosAccum(1:cumulDOSTotal) * expFactor
                endif
             enddo
          enddo ! (j numStates)
@@ -821,7 +822,7 @@ subroutine computeDOS
             write (69+h,fmt="(a10,1x,i2)") 'COL_LABELS',finIndex-initIndex+2
             write (69+h,ADVANCE='NO',fmt="(a6)") 'TOTAL '
             numCols = 1
-            do j = 1, maxOrbitals  ! 1=s; 2=p; 3=d; 4=f
+            do j = 1, lAngMomCount  ! 1=s; 2=p; 3=d; 4=f
                do k = 1, atomTypes(i)%numQN_lValeRadialFns(j)
 
                   numCols = numCols + 1
@@ -939,7 +940,7 @@ subroutine computeDOS
             write (69+h,fmt="(a10,1x,i2)") 'COL_LABELS',finIndex-initIndex+2
             write (69+h,ADVANCE='NO',fmt="(a6)") 'TOTAL '
             numCols = 1
-            do j = 1, maxOrbitals
+            do j = 1, lAngMomCount
                do k = 1, atomTypes(currentType)%numQN_lValeRadialFns(j)
 
                   numCols = numCols + 1
@@ -1024,7 +1025,7 @@ subroutine computeDOS
             write (69+h,fmt="(a10,1x,i2)") 'COL_LABELS',finIndex-initIndex+2
             write (69+h,ADVANCE='NO',fmt="(a6)") 'TOTAL '
             numCols = 1
-            do j = 1, maxOrbitals
+            do j = 1, lAngMomCount
                do k = 1, atomTypes(currentType)%numQN_lValeRadialFns(j)
                   do l = 1, (j-1)*2+1
 

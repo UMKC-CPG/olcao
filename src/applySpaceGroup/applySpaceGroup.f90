@@ -414,9 +414,11 @@ module O_CrystalSystem
       !   border line.  Further, we will make any atom resting on a border line
       !   rest on the 0 value border as opposed to the 1.0 valued border.
       do i = 1,3
-         if (abs(newPosition(i)) < smallThresh) then
+         if (abs(newPosition(i)) < smallThresh*100) then
             newPosition(i) = 0.0_double
-         elseif (abs(newPosition(i) - 1.0_double) < smallThresh) then
+         elseif (abs(newPosition(i) - 1.0_double) < smallThresh*100) then
+            newPosition(i) = 0.0_double
+         elseif (abs(newPosition(i) + 1.0_double) < smallThresh*100) then
             newPosition(i) = 0.0_double
          endif
       enddo
@@ -588,7 +590,6 @@ module O_CrystalSystem
          enddo
          enddo
          enddo
-         
       enddo
 
       ! Once the conversion is complete we will copy the results back over the
@@ -789,11 +790,7 @@ module O_CrystalSystem
       ! Demand that the coordinates are strictly less than 1.0 to help ensure
       !   that we don't include the same atom twice (e.g. 0.000 0.000 0.000 and
       !   1.000 1.000 1.000).
-      do i = 1, 3
-         if (abs(reduceFractABC(i) - 1.0_double) < smallThresh) then
-            reduceFractABC(i) = reduceFractABC(i) - 1.0_double
-         endif
-      enddo
+      call shiftToCell(reduceFractABC(:))
 
    end subroutine getFractABCPrime
 

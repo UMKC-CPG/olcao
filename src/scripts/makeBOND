@@ -716,10 +716,18 @@ sub readData
       {
          @values = StructureControl::prepLine(\*DATA,$line,'\s+');
 
-         # Store the bond information associated with this atom.
-         $bondAtomByAtom[$i][$j]   = $values[0];
-         $bondLengthByAtom[$i][$j] = $values[1];
-         $bondOrderByAtom[$i][$j]  = $values[2];
+         # Store the bond information associated with this atom. Note that
+         #   the second index which is for the bond number of the current
+         #   atom must be expressed carefully. It is possible for earlier
+         #   atoms to have had bonds to this ($i) atom so that the number
+         #   of bonds by atom to the current ($i) atom is non-zero. So,
+         #   we must start indexing after those already recorded bonds.
+         $bondAtomByAtom[$i][$j+$numBondsByAtom[$i]-$numBondsTemp]
+               = $values[0];
+         $bondLengthByAtom[$i][$j+$numBondsByAtom[$i]-$numBondsTemp]
+               = $values[1];
+         $bondOrderByAtom[$i][$j+$numBondsByAtom[$i]-$numBondsTemp]
+               = $values[2];
 
          # Store the bond information for the atom at the other end of the bond.
          $bondedAtom = $values[0];
@@ -752,6 +760,9 @@ sub readData
       }
 
       # Obtain the number of bond angles for this atom.
+      @values = StructureControl::prepLine(\*DATA,$line,'\s+');
+      foreach my $bondAngle (1..$values[1])
+         {<DATA>;}
    }
 
    # Close the data file

@@ -591,6 +591,187 @@ end module Lattice_O
 
 
 #ifdef COMPVIS
+module v3do_O
+
+   ! Use necessary modules.
+   use Lattice_O
+
+   ! Make sure that no unwanted variables are created accidentally.
+   implicit none
+
+   ! Define module data.
+   real (kind=double) :: sphereRadius_v3do
+   real (kind=double) :: cameraRadius_v3do
+   real (kind=double) :: planeThickness_v3do
+   real (kind=double) :: planeExtent_v3do
+
+   contains
+
+   subroutine makeV3doHeader(maxBZ)
+
+      implicit none
+
+      ! Define passed parameters
+      integer :: maxBZ
+
+      ! Define local variables
+      integer :: i
+
+      ! Compute or define the sizes of things.
+      sphereRadius_v3do = minval(recipMag(:)) / 10.0_double
+      cameraRadius_v3do = maxval(recipMag(:)) * 4.0_double
+      planeThickness_v3do = 0.03
+      planeExtent_v3do = maxval(recipMag(:)) * 2.0_double
+
+      do i = 1, maxBZ
+
+         write (71+i,fmt="(a)") "#!/usr/bin/env python3"
+         write (71+i,fmt="(a)")
+         write (71+i,fmt="(a)") "import vedo as v"
+         write (71+i,fmt="(a)")
+         write (71+i,fmt="(a)") "# Define global variables"
+         write (71+i,fmt="(a)") "# Time controls"
+         write (71+i,fmt="(a)") "delta_t = 0.5"
+         write (71+i,fmt="(a)") "frame_rate = 30"
+         write (71+i,fmt="(a)")
+         write (71+i,fmt="(a)") "# Canvas parameters"
+         write (71+i,fmt="(a)") "w = 1200"
+         write (71+i,fmt="(a)") "h = 675"
+         write (71+i,fmt="(a)")
+         write (71+i,fmt="(a)") "# Camera parameters"
+         write (71+i,fmt="(a,sp,e12.5)") "camera_radius = ", cameraRadius_v3do
+         write (71+i,fmt="(a)")
+         write (71+i,fmt="(a)") "# Object nature"
+         write (71+i,fmt="(a,sp,e12.5)") "plane_thickness = ", &
+               & planeThickness_v3do
+         write (71+i,fmt="(a,sp,e12.5)") "sphere_radius = ", sphereRadius_v3do
+         write (71+i,fmt="(a)")
+         write (71+i,fmt="(a)") "# Object lists"
+         write (71+i,fmt="(a)") "recip_point = []"
+         write (71+i,fmt="(a)") "recip_plane = []"
+         write (71+i,fmt="(a)") "bz_point = []"
+         write (71+i,fmt="(a)") "bz_plane = []"
+         write (71+i,fmt="(a)") "facet_vertex = []"
+         write (71+i,fmt="(a)")
+         write (71+i,fmt="(a)") "# Create the initial scene"
+         write (71+i,fmt="(a)")
+         write (71+i,fmt="(a)") "# Create the canvas"
+         write (71+i,fmt="(a,i1,a)") &
+"plt = v.Plotter(title='Making BZ ", i, &
+"', bg='black', axes=4, interactive=False)"
+         write (71+i,fmt="(a)")
+         write (71+i,fmt="(a)") "# Show the plot."
+         write (71+i,fmt="(a)") "plt.show()"
+         write (71+i,fmt="(a)")
+         write (71+i,fmt="(a)")
+      enddo
+
+   end subroutine makeV3doHeader
+
+
+   subroutine makeV3doRecipLattice(maxBZ)
+
+      ! Make things safe
+      implicit none
+
+      ! Define passed parameters
+      integer :: maxBZ
+
+      ! Define local variables
+      integer :: h, i, j, k, s, pointCount
+      character*8 :: formatString
+
+      ! Create a sphere at each reciprocal lattice point. Make 0,0,0 separate.
+      do h = 1, maxBZ
+         pointCount = 0
+         do i = -1, 1
+            do j = -1, 1
+               do k = -1, 1
+
+                  ! Cycle at the origin to make it separately at the end.
+                  if ((i==0) .and. (j==0) .and. (k==0)) then
+                     cycle
+                  endif
+
+                  ! Increment the count of lattice points.
+                  pointCount = pointCount + 1
+                  if (pointCount <= 10) then
+                     write (formatString,fmt="(a)") "(i0.1,a)"
+                  else
+                     write (formatString,fmt="(a)") "(i0.2,a)"
+                  endif
+
+                  ! Print the sphere at this lattice site.
+                  write (71+h,fmt="(a)") "recip_point.append("
+                  write (71+h,advance="no",fmt="(a)") &
+"        v.Sphere(pos=("
+                  do s = 1, 3
+                     write(71+h,advance="no",fmt="(sp,e10.3)") & ! sp causes +
+                           (i*recipLattice(s,1) &
+                           + j*recipLattice(s,2) &
+                           + k*recipLattice(s,3))
+                     if (s < 3) then
+                        write(71+h,advance="no",fmt="(a)") ", "
+                     endif
+                  enddo
+                  write(71+h,fmt="(a)") "),"
+                  write(71+h,advance="no",fmt="(a)") &
+"                  r="
+                  write(71+h,advance="no",fmt="(sp,e10.3)") sphereRadius_v3do
+                  write(71+h,fmt="(a)") "))"
+
+                  ! Print a smaller sphere at the associated BZ point site.
+                  write (71+h,fmt="(a)") "bz_point.append("
+                  write (71+h,advance="no",fmt="(a)") &
+"        v.Sphere(pos=("
+                  do s = 1, 3
+                     write(71+h,advance="no",fmt="(sp,e10.3)") & ! sp causes +
+                           (i*recipLattice(s,1) &
+                           + j*recipLattice(s,2) &
+                           + k*recipLattice(s,3)) / 2.0_double
+                     if (s < 3) then
+                        write(71+h,advance="no",fmt="(a)") ", "
+                     endif
+                  enddo
+                  write(71+h,fmt="(a)") "),"
+                  write(71+h,advance="no",fmt="(a)") "                  r="
+                  write(71+h,advance="no",fmt="(sp,e10.3)") &
+                        & sphereRadius_v3do / 3.0
+                  write(71+h,fmt="(a)") "))"
+
+               enddo ! k
+            enddo ! j
+         enddo ! i
+
+         ! Add the 0, 0, 0 reciprocal lattice point.
+         write (71+h,fmt="(a)")
+         write (71+h,advance="no",fmt="(a)") &
+"recip_point.append(v.Sphere(pos=(0, 0, 0), r="
+         write (71+h,advance="no",fmt="(sp,e10.3)") sphereRadius_v3do
+         write (71+h,fmt="(a)") "))"
+
+         ! Add the bz_points and recip_points to the plot.
+         write (71+h,fmt="(a)")
+         write (71+h,fmt="(a)") &
+"for i in range(len(bz_point)):"
+         write (71+h,fmt="(a)") &
+"    plt.add(bz_point[i], render=True)"
+
+         write (71+h,fmt="(a)")
+         write (71+h,fmt="(a)") &
+"for i in range(len(recip_point)):"
+         write (71+h,fmt="(a)") &
+"    plt.add(recip_point[i], render=True)"
+
+         write (71+h,fmt="(a)")
+         write (71+h,fmt="(a)") "# Update the plot"
+         write (71+h,fmt="(a)") "plt.show(interactive=False)"
+      enddo ! h
+      
+
+   end subroutine makeV3doRecipLattice
+
+end module V3do_O
 module VPython_O
 
    ! Use necessary modules.
@@ -769,6 +950,7 @@ module BrillouinZones_O
    use Lattice_O
 #ifdef COMPVIS
    use VPython_O
+   use V3do_O
 #endif
 
    ! Make sure that no variables are implicitly declared
@@ -869,6 +1051,8 @@ module BrillouinZones_O
          endif
          write (61+currBZ,advance="no",fmt="(a)") "bz_point["
          write (61+currBZ,fmt=formatString_i) i-1, "].color = vp.color.blue"
+         write (71+currBZ,advance="no",fmt="(a)") "bz_point["
+         write (71+currBZ,fmt=formatString_i) i-1, "].c('blue')"
 #endif
          ! Determine if the current lattice point, i, (that defines some plane)
          !   also happens to lie *on* a plane defined by some other lattice
@@ -954,6 +1138,9 @@ module BrillouinZones_O
 !#endif
          endif
       enddo ! i loop
+      write (71+currBZ,fmt="(a)")
+      write (71+currBZ,fmt="(a)") "# Update the plot"
+      write (71+currBZ,fmt="(a)") "plt.show(interactive=True)"
 
 write (6,*) "numBZFacets = ", numBZFacets(currBZ)
    end subroutine makeFacetList
@@ -1753,46 +1940,79 @@ endif
                write (61+currBZ,fmt="(a)") "recip_plane.append("
                write (61+currBZ,advance="no",fmt="(a)") &
 "        vp.cylinder(pos=vp.vector("
+               write (71+currBZ,fmt="(a)") "recip_plane.append("
+               write (71+currBZ,advance="no",fmt="(a)") &
+"        v.Cylinder(pos=("
                do s = 1, 3
                   write (61+currBZ,advance="no",fmt="(sp,e10.3)") &
                         latticePointXYZ(s,planeIndex)
+                  write (71+currBZ,advance="no",fmt="(sp,e10.3)") &
+                        latticePointXYZ(s,planeIndex)
                   if (s < 3) then
                      write (61+currBZ,advance="no",fmt="(a)") ", "
+                     write (71+currBZ,advance="no",fmt="(a)") ", "
                   endif
                enddo
                write (61+currBZ,fmt="(a)") "),"
                write (61+currBZ,advance="no",fmt="(a)") &
 "                    axis=vp.vector("
+               write (71+currBZ,fmt="(a)") "),"
+               write (71+currBZ,advance="no",fmt="(a)") &
+"                    axis=("
                do s = 1, 3
                   write (61+currBZ,advance="no",fmt="(sp,e10.3)") &
                         latticePointXYZ(s,planeIndex) + planeThickness
+                  write (71+currBZ,advance="no",fmt="(sp,e10.3)") &
+                        latticePointXYZ(s,planeIndex) + planeThickness
                   if (s < 3) then
                      write (61+currBZ,advance="no",fmt="(a)") ", "
+                     write (71+currBZ,advance="no",fmt="(a)") ", "
                   endif
                enddo
                write (61+currBZ,fmt="(a)") "),"
+               write (71+currBZ,fmt="(a)") "),"
+
                write (61+currBZ,advance="no",fmt="(a)") &
 "                    radius="
                write (61+currBZ,advance="no",fmt="(sp,e10.3)") planeExtent
                write (61+currBZ,fmt="(a)") ", length=0.003))"
+               write (71+currBZ,advance="no",fmt="(a)") &
+"                    r="
+               write (71+currBZ,advance="no",fmt="(sp,e10.3)") planeExtent
+               write (71+currBZ,fmt="(a)") ", height=0.003))"
+
+               ! Now add the bz planes.
+
                write (61+currBZ,fmt="(a)") "bz_plane.append("
                write (61+currBZ,advance="no",fmt="(a)") &
 "        vp.cylinder(pos=vp.vector("
+               write (71+currBZ,fmt="(a)") "bz_plane.append("
+               write (71+currBZ,advance="no",fmt="(a)") &
+"        v.Cylinder(pos=("
                do s = 1, 3
                   write (61+currBZ,advance="no",fmt="(sp,e10.3)") &
                         planeEquation(s,planeIndex)
+                  write (71+currBZ,advance="no",fmt="(sp,e10.3)") &
+                        planeEquation(s,planeIndex)
                   if (s < 3) then
                      write (61+currBZ,advance="no",fmt="(a)") ", "
+                     write (71+currBZ,advance="no",fmt="(a)") ", "
                   endif
                enddo
                write (61+currBZ,fmt="(a)") "),"
                write (61+currBZ,advance="no",fmt="(a)") &
 "                    axis=vp.vector("
+               write (71+currBZ,fmt="(a)") "),"
+               write (71+currBZ,advance="no",fmt="(a)") &
+"                    axis=("
                do s = 1, 3
                   write (61+currBZ,advance="no",fmt="(sp,e10.3)") &
                         planeEquation(s,planeIndex) + planeThickness
+                  write (71+currBZ,advance="no",fmt="(sp,e10.3)") &
+                        planeEquation(s,planeIndex) + planeThickness
                   if (s < 3) then
                      write (61+currBZ,advance="no",fmt="(a)") ", "
+                     write (71+currBZ,advance="no",fmt="(a)") ", "
                   endif
                enddo
                write (61+currBZ,fmt="(a)") "),"
@@ -1800,6 +2020,12 @@ endif
 "                    radius="
                write (61+currBZ,advance="no",fmt="(sp,e10.3)") planeExtent
                write (61+currBZ,fmt="(a)") ", length=0.003))"
+               write (71+currBZ,fmt="(a)") "),"
+               write (71+currBZ,advance="no",fmt="(a)") &
+"                    r="
+               write (71+currBZ,advance="no",fmt="(sp,e10.3)") planeExtent
+               write (71+currBZ,fmt="(a)") ", height=0.003))"
+
                write (61+currBZ,advance="no",fmt="(a)") "recip_point["
                write (61+currBZ,fmt=formatString) planeIndex-1, &
 "].color = vp.color.red"
@@ -1812,6 +2038,20 @@ endif
 "].visible = False"
                write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
                write (61+currBZ,fmt=formatString) planeIndex-1, &
+"].visible = False"
+
+               write (71+currBZ,advance="no",fmt="(a)") "recip_point["
+               write (71+currBZ,fmt=formatString) planeIndex-1, &
+"].c('red')"
+               !write (71+currBZ,fmt="(a)") "vp.sleep(3)"
+               write (71+currBZ,advance="no",fmt="(a)") "bz_point["
+               write (71+currBZ,fmt=formatString) planeIndex-1, &
+"].c('white')"
+               write (71+currBZ,advance="no",fmt="(a)") "recip_plane["
+               write (71+currBZ,fmt=formatString) planeIndex-1, &
+"].visible = False"
+               write (71+currBZ,advance="no",fmt="(a)") "bz_plane["
+               write (71+currBZ,fmt=formatString) planeIndex-1, &
 "].visible = False"
 #endif
             enddo
@@ -2395,15 +2635,6 @@ module KPointMesh_O
    end subroutine saveKPoint
 
 
-   subroutine makeTetrahedra
-
-      implicit none
-
-      ! Define local parameters.
-
-
-   end subroutine makeTetrahedra
-
 
    ! This subroutine will print the folded abc kpoint information in a format
    !   suitable for reading by the olcao program.
@@ -2421,6 +2652,15 @@ module KPointMesh_O
       ! Define local variables.
       integer :: i, j, k, l
       real (kind=double), dimension(3) :: xyzKPoint
+
+      ! Indicate that the kpoints will be provided as an explicit list.
+      write (fileUnit,fmt="(a17)") "KPOINT_STYLE_CODE"
+      write (fileUnit,fmt="(i1)") 0
+
+      ! Indicate that the default integration method will be a simple
+      !   histogram style of numerical integration.
+      write (fileUnit,fmt="(a16)") "KPOINT_INTG_CODE"
+      write (fileUnit,fmt="(i1)") 0
 
       write (fileUnit,fmt="(a17)") "NUM_BLOCH_VECTORS"
       write (fileUnit,fmt="(i9.9)") numFoldedKPoints
@@ -2595,8 +2835,17 @@ program makekpoints
 #ifdef COMPVIS
    ioerr = 0
    do i = 1, doBrillouinZone
-      write (filename,fmt="(a3,i1,a3)") "BZ.", i, ".py"
+      ! Create VPython output files.
+      write (filename,fmt="(a7,i1,a3)") "BZ.vpy.", i, ".py"
       open (unit=61+i, file=filename, form='formatted', status='new', &
+            iostat=ioerr)
+      if (ioerr /= 0) then
+         exit
+      endif
+
+      ! Create v3do output files.
+      write (filename,fmt="(a8,i1,a3)") "BZ.v3do.", i, ".py"
+      open (unit=71+i, file=filename, form='formatted', status='new', &
             iostat=ioerr)
       if (ioerr /= 0) then
          exit
@@ -2624,9 +2873,11 @@ program makekpoints
 #ifdef COMPVIS
    ! Create the header for computational visualization if requested.
    call makeVPythonHeader(doBrillouinZone)
+   call makeV3doHeader(doBrillouinZone)
 
    ! Create reciprocal lattice for computational visualization if requested.
    call makeVPythonRecipLattice(doBrillouinZone)
+   call makeV3doRecipLattice(doBrillouinZone)
 #endif
 
 
@@ -2644,13 +2895,10 @@ program makekpoints
    call initMesh
    call foldMesh (numPointOps,abcRecipPointOps)
 
-   ! Define tetrahedral parameters for the folded mesh kpoints.
-   call makeTetrahedra
-
    ! Print the folded kpoints and the tetrahedral parameters.
    call printKPoints(51,doBrillouinZone,recipLattice)
 
-   ! In the case that the user wants information about a the Brillouin zone,
+   ! In the case that the user wants information about the Brillouin zone,
    !   then we compute and print it.
    if (doBrillouinZone > 0) then
       call computeBrillouinZones(doBrillouinZone)
@@ -2666,6 +2914,7 @@ program makekpoints
       close (51+i)
 #ifdef COMPVIS
       close (61+i)
+      close (71+i)
 #endif
    enddo
 

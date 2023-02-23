@@ -87,7 +87,7 @@ subroutine gaussOverlapOL
    use O_AtomicTypes, only: maxNumAtomAlphas, maxNumStates, atomTypes
    use O_Lattice, only: numCellsReal, cellSizesReal, cellDimsReal, &
          & findLatticeVector
-   use O_GaussianIntegrals, only: overlapInteg
+   use O_GaussianIntegrals, only: overlap2CIntg
    use O_Basis, only: initializeAtomSite
    use O_IntgSaving
    use O_TimeStamps
@@ -348,7 +348,7 @@ subroutine gaussOverlapOL
                   endif
 
                   ! Check if this atom alpha pair has any non negligable
-                  !   overlap.
+                  !   overlap. If it does not, then cycle or exit as needed.
                   if (alphaDist(alphaIndex(1),alphaIndex(2),currentElements(1),&
                         & currentElements(2)) < shiftedAtomSiteSep) then
 
@@ -363,8 +363,18 @@ subroutine gaussOverlapOL
                      endif
                   endif
 
+                  ! If we are in the initial state of "no searching" then
+                  !   switch the mode from that state to the state of
+                  !   searching along alphas from atom 1 while keeping the
+                  !   atom 2 alpha fixed.
+                  if (currentMode == 0) then
+                     currentMode = 1
+                  endif
+
                   ! At this point a sufficient overlap between atomic Gaussians
-                  !   has been shown to exist.
+                  !   has been shown to exist. FIX: This appears to be a
+                  !   useless term. Similarly, the .eqv. test below becomes
+                  !   useless.
                   contrib = .true.
 
                   ! Calculate the opcode to do the correct set of integrals
@@ -376,7 +386,7 @@ subroutine gaussOverlapOL
 
                   ! We can proceed with the next step of the calculation.
                   !   This is the actual integral.             
-                  call overlapInteg (currentAlphas(alphaIndex(1),1),&
+                  call overlap2CIntg (currentAlphas(alphaIndex(1),1),&
                         & currentAlphas(alphaIndex(2),2), &
                         & currentPosition(:,1), shiftedAtomPos(:),&
                         & l1l2Switch, oneAlphaPair)
@@ -406,35 +416,34 @@ subroutine gaussOverlapOL
                      ! Update the maximum alpha used from atom 1.
                      maxAlpha1Used = max(alphaIndex(1),maxAlpha1Used)
                   endif
-
-                  ! Switch mode from the initial state of no searching to the
-                  !   state of searching along alphas from atom 1.
-                  if (currentMode == 0) then
-                     currentMode = 1
-                  endif
                enddo
             enddo  ! min number of alphas between the two atoms l
 
-            ! At this point all the alpha loops are complete and we can form a
-            !   product with the atom 1 basis function to give the overlap
-            !   integral in a complete basis representation.
-            call multWithBasisFn1 (currentBasisFns,pairXBasisFn2, &
-                  & pairXBasisFn12,currentlmIndex,currentNumTotalStates, &
-                  & maxAlpha1Used)
+            ! As long as at least *some* alpha from atom 1 was used then the
+            !   pairXBasisFn2 will be non-zero and we should process it.
+            if (maxAlpha1Used > 0) then
 
-            ! Collect this atom 1, atom 2 basis function overlap matrix for all
-            !   bloch vectors (kpoints) with phase factors appropriate to the
-            !   current atom 2 lattice vector.  NOTE that the k index is over
-            !   the number of cells in the superlattice.
+               ! At this point all the alpha loops are complete and we can form
+               !   a product with the atom 1 basis function to give the overlap
+               !   integral in a complete basis representation.
+               call multWithBasisFn1 (currentBasisFns,pairXBasisFn2, &
+                     & pairXBasisFn12,currentlmIndex,currentNumTotalStates, &
+                     & maxAlpha1Used)
+
+               ! Collect this atom 1, atom 2 basis function overlap matrix for
+               !   all bloch vectors (kpoints) with phase factors appropriate
+               !   to the current atom 2 lattice vector.  NOTE that the k
+               !   index is over the number of cells in the superlattice.
 #ifndef GAMMA
-            call applyPhaseFactors (currentPair,pairXBasisFn12(1:&
-                  & currentNumTotalStates(1),1:currentNumTotalStates(2)),&
-                  & currentNumTotalStates(1),currentNumTotalStates(2),k,0,0)
+               call applyPhaseFactors (currentPair,pairXBasisFn12(1:&
+                     & currentNumTotalStates(1),1:currentNumTotalStates(2)),&
+                     & currentNumTotalStates(1),currentNumTotalStates(2),k,0,0)
 #else
-            call applyPhaseFactorsGamma (currentPairGamma,pairXBasisFn12(1:&
-                  & currentNumTotalStates(1),1:currentNumTotalStates(2)),&
-                  & currentNumTotalStates(1),currentNumTotalStates(2),0)
+               call applyPhaseFactorsGamma (currentPairGamma,pairXBasisFn12(1:&
+                     & currentNumTotalStates(1),1:currentNumTotalStates(2)),&
+                     & currentNumTotalStates(1),currentNumTotalStates(2),0)
 #endif
+            endif
          enddo !(k superlattice)
 
          ! At this point all the lattice sums for the current atom pair are
@@ -493,7 +502,7 @@ subroutine gaussOverlapKE
    use O_AtomicTypes, only: maxNumAtomAlphas, maxNumStates, atomTypes
    use O_Lattice, only: numCellsReal, cellSizesReal, cellDimsReal, &
          & findLatticeVector
-   use O_GaussianIntegrals, only: KEInteg
+   use O_GaussianIntegrals, only: kinetic2CIntg
    use O_Basis, only: initializeAtomSite
    use O_IntgSaving
 
@@ -769,22 +778,24 @@ subroutine gaussOverlapKE
                   endif
 
                   ! At this point a sufficient overlap between atomic Gaussians
-                  !   has been shown to exist.
+                  !   has been shown to exist. FIX: This appears to be a
+                  !   useless term. Similarly, the .eqv. test below becomes
+                  !   useless.
                   contrib = .true.
 
-               ! Calculate the opcode to do the correct set of integrals
-               ! for the current alpha pair
-               l1l2Switch = ishft(1,&
-                 &(powerOfTwo(currentlmAlphaIndex(alphaIndex(1),1))))&
-                 &+ ishft(16,&
-                 &(powerOfTwo(currentlmAlphaIndex(alphaIndex(2),2))))
+                  ! Calculate the opcode to do the correct set of integrals
+                  ! for the current alpha pair
+                  l1l2Switch = ishft(1,&
+                        &(powerOfTwo(currentlmAlphaIndex(alphaIndex(1),1))))&
+                        &+ ishft(16,&
+                        &(powerOfTwo(currentlmAlphaIndex(alphaIndex(2),2))))
 
-               ! We can proceed with the next step of the calculation. This
-               ! is the actual integral.
-               call KEInteg (currentAlphas(alphaIndex(1),1),&
-                 & currentAlphas(alphaIndex(2),2), &
-                 & currentPosition(:,1), shiftedAtomPos(:),&
-                 & l1l2Switch, oneAlphaPair)
+                  ! We can proceed with the next step of the calculation. This
+                  ! is the actual integral.
+                  call kinetic2CIntg (currentAlphas(alphaIndex(1),1),&
+                        & currentAlphas(alphaIndex(2),2), &
+                        & currentPosition(:,1), shiftedAtomPos(:),&
+                        & l1l2Switch, oneAlphaPair)
 
                   ! We can proceed with the next step of the calculation. This
                   !   is the actual integral.
@@ -1174,7 +1185,10 @@ subroutine gaussOverlapNP
                   endif
 
                   ! At this point a sufficient overlap between atomic Gaussians
-                  !   has been shown to exist.
+                  !   has been shown to exist. FIX: Setting to .true. here is
+                  !   useless because it is reset to .false. in nuclearPE.
+                  !   Unlike in earlier subroutines, the .eqv. test below is
+                  !   not useless.
                   contrib = .true.
 
                   ! We can proceed with the next step of the calculation. In
@@ -1572,7 +1586,10 @@ subroutine gaussOverlapEP
                   endif
 
                   ! At this point a sufficient overlap between atomic Gaussians
-                  !   has been shown to exist.
+                  !   has been shown to exist. FIX: Setting to .true. here is
+                  !   useless because it is reset to .false. in electronicPE.
+                  !   Unlike in earlier subroutines, the .eqv. test below is
+                  !   not useless.
                   contrib = .true.
 
                   ! We can proceed with the next step of the calculation. In
@@ -1842,7 +1859,7 @@ subroutine nuclearPE(contrib,alphaIndex,currentElements,currentlmAlphaIndex,&
    use O_Lattice, only: numCellsReal, cellSizesReal, cellDimsReal, &
          & findLatticeVector
    use O_Basis, only: initializePotSite
-   use O_GaussianIntegrals, only: nucPotInteg
+   use O_GaussianIntegrals, only: nuclear3CIntg
 
    ! Make sure no funny variables are used.
    implicit none
@@ -1973,9 +1990,9 @@ subroutine nuclearPE(contrib,alphaIndex,currentElements,currentlmAlphaIndex,&
            &+ ishft(16,&
            &(powerOfTwo(currentlmAlphaIndex(alphaIndex(2),2))))
 
-         call nucPotInteg (currentAlphas(alphaIndex(1),1),&
+         call nuclear3CIntg (currentAlphas(alphaIndex(1),1),&
                & currentAlphas(alphaIndex(2),2),&
-               & nucAlpha, currentPosition(:,1),&
+               & nucAlpha,currentPosition(:,1),&
                & shiftedAtomPos(:), shiftedPotPos(:),&
                & l1l2Switch, oneAlphaPair)
 
@@ -2016,7 +2033,7 @@ subroutine electronicPE(contrib,alphaIndex,currentElements,currentlmAlphaIndex,&
    use O_GaussianRelations, only: alphaDist, alphaCenter, alphaPotDist
    use O_Lattice, only: numCellsReal, cellSizesReal, cellDimsReal, &
          & findLatticeVector
-   use O_GaussianIntegrals, only: threeCentInteg
+   use O_GaussianIntegrals, only: electron3CIntg
 
    ! Make sure no funny variables are used.
    implicit none
@@ -2146,7 +2163,7 @@ subroutine electronicPE(contrib,alphaIndex,currentElements,currentlmAlphaIndex,&
                &+ ishft(16,&                     
                &(powerOfTwo(currentlmAlphaIndex(alphaIndex(2),2))))
 
-         call threeCentInteg (currentAlphas(alphaIndex(1),1),&
+         call electron3CIntg (currentAlphas(alphaIndex(1),1),&
                & currentAlphas(alphaIndex(2),2),currPotAlpha,&
                & currentPosition(:,1), shiftedAtomPos(:), &
                & shiftedPotPos(:), l1l2Switch, oneAlphaPair)

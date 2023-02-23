@@ -15,6 +15,44 @@ module O_IntgSaving
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    contains
 
+
+subroutine multWithBasisFn1Vec (currentBasisFns,pairXBasisFn2,pairXBasisFn12,&
+      & currentlmIndex,currentNumTotalStates,maxAlpha1Used)
+
+   ! Import the necessary modules
+   use O_Kinds
+   use O_Constants, only: num_lAngMomTerms
+
+   ! Import the necessary data modules
+   use O_AtomicTypes
+
+   ! Make sure that there are not accidental variable declarations.
+   implicit none
+
+   ! Define variables passed to this subroutine
+   real (kind=double), dimension (maxNumAtomAlphas,&
+         & maxNumStates,2) :: currentBasisFns
+   real (kind=double), dimension (maxNumAtomAlphas,num_lAngMomTerms,&
+         & maxNumStates) :: pairXBasisFn2
+   real (kind=double), dimension (maxNumStates,maxNumStates) :: pairXBasisFn12
+   integer, dimension (maxNumStates,2)  :: currentlmIndex
+   integer, dimension(2) :: currentNumTotalStates
+   integer :: maxAlpha1Used
+
+   ! Define local variables
+   integer :: l,m
+
+   do l = 1, currentNumTotalStates(2)
+      do m = 1, currentNumTotalStates(1)
+         pairXBasisFn12(m,l) = &
+               & sum(currentBasisFns(:maxAlpha1Used,m,1) * &
+               & pairXBasisFn2(:maxAlpha1Used,currentlmIndex(m,1),l))
+      enddo
+   enddo
+
+end subroutine multWithBasisFn1Vec
+
+
 subroutine multWithBasisFn1 (currentBasisFns,pairXBasisFn2,pairXBasisFn12,&
       & currentlmIndex,currentNumTotalStates,maxAlpha1Used)
 

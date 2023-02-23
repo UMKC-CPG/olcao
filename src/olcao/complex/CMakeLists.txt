@@ -5,7 +5,7 @@ message("At the complex OLCAO application.")
 
 # Library for gaussIntegrals.f90
 add_library(GaussIntegrals STATIC ../../kinds.f90 ../../constants.f90
-   ../gaussIntegrals.f90)
+   ../gaussIntegrals.f90 ../gaussIntegrals.vec.f90)
 
 # Library containing common source files that all executables need
 add_library(Common OBJECT ../../kinds.f90 ../../constants.f90

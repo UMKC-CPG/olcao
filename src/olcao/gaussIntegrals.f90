@@ -45,7 +45,7 @@ module O_GaussianIntegrals
 ! variables used and style of the formulas are the same.
 !
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-      subroutine nucPotInteg(a1,a2,a3,A,B,C,l1l2Switch,g)
+      subroutine nuclear3CIntg(a1,a2,a3,A,B,C,l1l2Switch,g)
 
       use O_Kinds
       use O_Constants, only: pi
@@ -23448,7 +23448,7 @@ g(16,16) = +16*wo(17,17) - 4*wo(17,12) - 4*wo(17,19)&
 
 end if
 
-      end subroutine nucPotInteg
+      end subroutine nuclear3CIntg
 
 
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -23781,7 +23781,7 @@ end subroutine Boys
 ! This subroutine computes the 3-center overlap integrals.
 ! Atomic positions A and B have s-, p-, d-, or f-type Gaussian
 ! orbitals, and atomic site C is an s-type Gaussian function.
-      subroutine threeCentInteg(a1,a2,a3,A,B,C,l1l2switch,g)
+      subroutine electron3CIntg(a1,a2,a3,A,B,C,l1l2switch,g)
 
       use O_Kinds
       use O_Constants, only: pi
@@ -27864,7 +27864,7 @@ g(16,16) = +16*wo(17,17) - 4*wo(17,12) - 4*wo(17,19)&
 
 end if
 
-      end subroutine threeCentInteg
+      end subroutine electron3CIntg
 
       ! This subroutine computes the 2-center Kinetic Energy integrals
       ! according to the following form:
@@ -27912,7 +27912,7 @@ end if
       ! Justin T. Fermann and Edward F. Valeev
       !
       !**************************************************************
-      subroutine KEInteg(a1,a2,A,B,l1l2switch,g)
+      subroutine kinetic2CIntg(a1,a2,A,B,l1l2switch,g)
 
       use O_Kinds
       use O_Constants, only: pi
@@ -37614,11 +37614,11 @@ g(16,16) = +16*wo(17,17) - 4*wo(17,12) - 4*wo(17,19)&
 end if
 
 
-      end subroutine KEInteg
+      end subroutine kinetic2CIntg
 
 ! This subroutine computes the 2-center overlap integrals for
 ! s-, p-, d-, or f-type Gaussian orbitals.
-      subroutine overlapInteg(a1,a2,A,B,l1l2switch,g)
+      subroutine overlap2CIntg(a1,a2,A,B,l1l2switch,g)
 
       use O_Kinds
       use O_Constants, only: pi
@@ -41699,7 +41699,7 @@ g(16,16) = +16*wo(17,17) - 4*wo(17,12) - 4*wo(17,19)&
 end if
 
 
-      end subroutine overlapInteg
+      end subroutine overlap2CIntg
 
     ! The momentum matrix integrals are a linear combination of
     ! 2-center overlap integrals, in the same fashion as KE.  The
@@ -41719,7 +41719,7 @@ end if
     ! 
     ! **************************************************************
 
-      subroutine momf(a1,a2,A,B,l1l2switch,g)
+      subroutine momentum2CIntg(a1,a2,A,B,l1l2switch,g)
 
       use O_Kinds
       use O_Constants, only: pi
@@ -55749,6 +55749,6 @@ end if
       
       end if
 
-      end subroutine momf
+      end subroutine momentum2CIntg
 
 end module O_GaussianIntegrals

@@ -28,7 +28,7 @@ subroutine makeCoreRho
 
    ! Include the modules we need
    use O_Kinds
-   use O_Constants, only: pi, maxOrbitals
+   use O_Constants, only: pi, lAngMomCount
    use O_AtomicTypes, only: atomTypes, maxNumAtomAlphas, maxNumCoreRadialFns
    use O_AtomicSites, only: coreDim
    use O_PotTypes, only: potTypes, maxNumPotAlphas
@@ -198,9 +198,9 @@ subroutine makeCoreRho
    allocate (gaussSelfOverlap       (maxNumPotAlphas,maxNumPotAlphas))
    allocate (currPotAlphas          (maxNumPotAlphas))
    allocate (currAtomAlphas         (maxNumAtomAlphas))
-   allocate (currNumOrbAlphas       (maxOrbitals))
+   allocate (currNumOrbAlphas       (lAngMomCount))
    allocate (currCoreQN_lList       (maxNumCoreRadialFns))
-   allocate (alphaFactor (maxNumAtomAlphas,maxNumAtomAlphas,maxOrbitals))
+   allocate (alphaFactor (maxNumAtomAlphas,maxNumAtomAlphas,lAngMomCount))
 
    ! Start making the intermediate Core Charge Density
    call timeStampStart(13)

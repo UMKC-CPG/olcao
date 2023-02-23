@@ -39,7 +39,7 @@ module O_Input
    !   exp(-r^2 / 2 sigma^2).
 
    ! Define control variables that apply only to the DOS program.
-   integer :: detailCodePDOS
+   integer :: detailCodePDOS       ! 0=type;1=a total;2=a nl; 3=a nlm.
    real (kind=double) :: deltaDOS  ! Given in eV, stored in a.u.
    real (kind=double) :: sigmaDOS  ! Given in eV, stored in a.u.
    real (kind=double) :: eminDOS   ! Given in eV, stored in a.u.
@@ -61,6 +61,7 @@ module O_Input
    real (kind=double) :: sigmaOPTC      ! Given in eV, stored in a.u.
    real (kind=double) :: maxTransEnOPTC ! Given in eV, stored in a.u.
    real (kind=double) :: cutoffEnOPTC   ! Given in eV, stored in a.u.
+   integer :: detailCodePOPTC           ! 0=NONE;1=elem;2=a tot;3=e nl;4=e nlm
 
    ! Define control variables that apply to the NLOP use of the optc program.
    real (kind=double) :: deltaNLOP      ! Given in eV, stored in a.u.
@@ -222,8 +223,8 @@ subroutine readTitle(readUnit,writeUnit)
    implicit none
 
    ! passed parameters
-   integer, intent(in)    :: readUnit   ! The unit number of the file from which
-                                        ! we are reading.
+   integer, intent(in)    :: readUnit   ! The unit number of the file from
+                                        ! which we are reading.
    integer, intent(in)    :: writeUnit  ! The unit number of the file to which
                                         ! we are writing.
 
@@ -661,6 +662,7 @@ subroutine readOptcControl(readUnit,writeUnit)
    call readData(readUnit,writeUnit,maxTransEnOPTC,0,'')
    call readData(readUnit,writeUnit,deltaOPTC,0,'')
    call readData(readUnit,writeUnit,sigmaOPTC,0,'')
+   call readData(readUnit,writeUnit,detailCodePOPTC,0,'')
 
    ! Apply necessary conversions to a.u.
    cutoffEnOPTC   = cutoffEnOPTC / hartree

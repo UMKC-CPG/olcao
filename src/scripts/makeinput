@@ -244,6 +244,14 @@ sub printHelp
 #  the basis functions, and a set of POVRay scene files (one for each type of
 #  atomic orbital in the system).
 
+#The -nocore option will cause the basis functions that are normally
+#  orthogonalized out of the problem to instead be included as part of the
+#  list of valence basis functions so that they are also part of the
+#  SCF process. This allows one to compute the core energy eigen values.
+#  If this option is not given, then basis functions that are default
+#  designated as "core" will be orthogonalized out of the eigen value
+#  problem.
+
 #The -help option will print all this great useful information.
 
 ##############
@@ -281,7 +289,7 @@ sub printHelp
 #   -pdb:          No pdb crystal structure diagram file will be made.
 #   -cif:          No cif crystal structure diagram file will be made.
 #   -basisVis:     No files will be made to help visualize the basis.
-#   -nocore:       All "core" orbitals will be orthogonalized vs. the valence.
+#   -nocore:       All "core" orbitals will be treated as part of the valence.
 #   -help:         No help will be printed.
 ENDHELP
    exit(0);
@@ -382,6 +390,7 @@ my $sigmaDOS;    # Gaussian broadening for DOS curves.
 my $eminDOS;     # Minimum energy to evaluate DOS at.
 my $emaxDOS;     # Maximum energy to evaluate DOS at.
 my $detailCodePDOS; # PDOS output style: 0=type;1=a total;2=a nl; 3=a nlm.
+my $detailCodePOPTC; # POPTC style: 0=NONE;1=elem;2=a tot;3=e nl;4=e nlm
 my $iterTDOS;    # Flag to compute TDOS for each SCF iteration.
 my $maxLenBOND;  # Length beyond which atoms are not considered to "bond".
 my $eDeltaBOND;  # Energy delta for BOND evaluation.
@@ -896,6 +905,7 @@ sub initDefaults
    $eCutOffOPTC=45;
    $eCutOffNLOP=45;
    $eCutOffSIGE=5;
+   $detailCodePOPTC=0;
    
    # Default MAIN options
    $numIterMAIN=50;
@@ -1538,8 +1548,26 @@ sub initializeCell
             {$sybdPath = "hex";} # Hexagonal cell (made of 3 rhomb cells.)
          else
          {
-            # We have a rhombohedral cell.
-            if ($fullCellAngle_ref->[1] < $pi/2.0)
+            # We have a rhombohedral cell. In the Setyawan and Curtarolo 2010
+            #   paper they propose two variations for the rhombohedral
+            #   symmetric band structure path. The selection of which path to
+            #   use is said to depend on the value of the cell angle alpha. In
+            #   the paper, the angle alpha is defined as the interaxial angle
+            #   between the b and c axes of the conventional cell. For
+            #   trigonal systems the conventional cell is nominally hexagonal
+            #   and so the angle alpha is defined to always be 90 degrees.
+            #   But, in the paper the alpha dependence states that one path
+            #   should be taken when alpha > 90 and another path take when the
+            #   angle alpha < 90 degrees. There is no "equal to 90 degrees"
+            #   option specified. The combination of those facts indicates
+            #   that the angle alpha for the rhombohedral cell should be the
+            #   angle alpha of the primitive cell which follows alpha = beta =
+            #   gamma for the rhombohedral primitive cell. (Also, for that
+            #   cell a=b=c.) Therefor, even though the paper says that alpha
+            #   should be understood as the angle from the conventional cell
+            #   we should take it in this case as the angle from the primitive
+            #   cell. Specifically, that is $angle_ref[1].
+            if ($angle_ref->[1] < $pi/2.0)
                {$sybdPath = "rhomb1";} # Includes prim cells of R*_b groups
             else
                {$sybdPath = "rhomb2";}
@@ -2849,7 +2877,7 @@ sub makeKP
       system("$makekpoints_exec $printBZ");
       $kpNum[$kpGroup] = `wc -l $kpOutFile`;  # Count the lines.
       @values=StructureControl::prepLine("",$kpNum[$kpGroup],'\s+');
-      $kpNum[$kpGroup] = $values[0] - 3; # Subtract the three line header.
+      $kpNum[$kpGroup] = $values[0] - 7; # Subtract the seven line header.
       &move("$kpOutFile","$inputTemp/$kpGroupFile[$kpGroup]");
    }
    &move("$kpInFile","$inputTemp/$kpInFile");
@@ -3474,6 +3502,7 @@ sub printOLCAOInput
    print OLCAO "$eTransOPTC                     ! OPTC energy trans\n";
    print OLCAO "$eDeltaOPTC                     ! OPTC delta energy\n";
    print OLCAO "$sigmaOPTC                      ! OPTC broadening\n";
+   print OLCAO "$detailCodePOPTC                ! POPTC 0N;1e;2a;3enl;4enlm\n";
 
    # Print nonlinear optical properties input data
    print OLCAO "NLOP_INPUT_DATA\n";
@@ -3564,20 +3593,26 @@ sub processSYBDPath
                $variableName[$previousVariable]) >= 0)
          {
             substr($variableEqn[$variable],
-                  index($variableEqn[$variable],$angleName[$angle]),
+                  index($variableEqn[$variable],
+                  $variableName[$previousVariable]),
                   length($variableName[$previousVariable]),
                   $variableEqn[$previousVariable])
          }
       }
 
-      # Now we reduce lattice magnitudes.
+      # Now we reduce lattice magnitudes. The tricky thing here is that the
+      #   lattice magnitudes such as a, b, c might be part of other quantities
+      #   such as cos, csc, sec, tan, cot, etc. Therefore, we need to make
+      #   sure that if we find any letter (a,b,c) that there are no other a-z
+      #   letters either before or after it. The requirement is that lattice
+      #   magniude must be written as either " a ", " b ", or " c ".
       foreach $axis (1..3)
       {
-         $axisLetter = chr(ord("a") - 1 + $axis);
+         $axisLetter = " " . chr(ord("a") - 1 + $axis) . " ";
          while (index($variableEqn[$variable],$axisLetter) >= 0)
          {
             substr($variableEqn[$variable],
-                   index($variableEqn[$variable],$axisLetter),1,
+                   index($variableEqn[$variable],$axisLetter),3,
                          $fullCellMag_ref->[$axis]);
          }
       }
@@ -4884,30 +4919,30 @@ sub makeSubFile
    # Print the default commands (these are not system dependent).
    if ($xanes == 0)
    {
-      print SUBFILE "source $OLCAO_DIR/.olcao\n";
+      print SUBFILE "source $OLCAO_DIR/.olcao/olcaorc\n";
       print SUBFILE "export OMP_NUM_THREADS=1\n";
       print SUBFILE "cd $proj_dir\n";
-      print SUBFILE "\$OLCAO_BIN/olcao -dos\n";
-      print SUBFILE "\$OLCAO_BIN/olcao -bond\n";
-      print SUBFILE "\$OLCAO_BIN/olcao -sybd\n";
-      print SUBFILE "\$OLCAO_BIN/olcao -optc\n";
+      print SUBFILE "\"\$OLCAO_BIN/olcao\" -dos\n";
+      print SUBFILE "\"\$OLCAO_BIN/olcao\" -bond\n";
+      print SUBFILE "\"\$OLCAO_BIN/olcao\" -sybd\n";
+      print SUBFILE "\"\$OLCAO_BIN/olcao\" -optc\n";
    }
    elsif ($h == 0)
    {
-      print SUBFILE "source $OLCAO_DIR/.olcao\n";
+      print SUBFILE "source $OLCAO_DIR/.olcao/olcaorc\n";
       @values = StructureControl::prepLine("","$proj_dir",'\/');
       $basename = "/" . $values[$#values];
       print SUBFILE "export OMP_NUM_THREADS=1\n";
       print SUBFILE "cd $proj_dir$basename\n";
-      print SUBFILE "\$OLCAO_BIN/olcao -dos\n";
-      print SUBFILE "\$OLCAO_BIN/olcao -bond\n";
-      print SUBFILE "\$OLCAO_BIN/olcao -sybd\n";
-      print SUBFILE "\$OLCAO_BIN/olcao -optc\n";
+      print SUBFILE "\"\$OLCAO_BIN/olcao\" -dos\n";
+      print SUBFILE "\"\$OLCAO_BIN/olcao\" -bond\n";
+      print SUBFILE "\"\$OLCAO_BIN/olcao\" -sybd\n";
+      print SUBFILE "\"\$OLCAO_BIN/olcao\" -optc\n";
    }
    else
    {
       $proj_dir = "$proj_dir" . "/" . lc($currentName);
-      print SUBFILE "source $OLCAO_DIR/.olcao\n";
+      print SUBFILE "source $OLCAO_DIR/.olcao/olcaorc\n";
       print SUBFILE "export OMP_NUM_THREADS=1\n";
       print SUBFILE "cd $proj_dir\n";
       foreach $orbital (1..$numCoreXanes)
