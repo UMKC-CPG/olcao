@@ -221,8 +221,8 @@ sub printHelp
 #  be used in the symmetric band calculation (SYBD).  You should be consistant
 #  with the actual cell type or you will get a warning (even though it will
 #  still allow you to create the input files).  The valid options are present
-#  in the \$OLCAO_DATA/data/sybdDB directory.  Simply specify one of those names
-#  as the \$sybdPath.
+#  in the \$OLCAO_DATA/share/sybdDB directory.  Simply specify one of those
+#  names as the \$sybdPath.
 
 #The -rel option will prepare the OLCAO input files for a relativistic
 #  calculation.  (Whenever this gets implemented in the future.)
@@ -1467,7 +1467,8 @@ sub initializeCell
             print STDOUT "No SYBD path identifiable.\n";
             print STDOUT "Expecting form as in Setyawan and Curtarolo\n";
             print STDOUT "Comp. Mat. Sci., v49, pp299-312, (2010)\n";
-            exit;
+            print STDOUT "Defaulting to use 'tric1a' as the path.\n"
+            $sybdPath="tric1a";
          }
       }
       elsif ($spaceGroupNum <= 15)
