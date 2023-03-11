@@ -228,6 +228,7 @@ subroutine computeDOS
 
    ! Define local variables.
    integer :: h,i,j,k,l ! Loop index variables
+integer :: m
    character*17 :: formatString
    character*1, dimension (lAngMomCount) :: QN_lLetter
    character*14, dimension (4,7) :: QN_mLetter
@@ -618,6 +619,14 @@ subroutine computeDOS
                        & real(valeValeOL(:valeDim,valeDimIndex,1,1),double) + &
                        & aimag(waveFnSqrd(:valeDim)) * &
                        & aimag(valeValeOL(:valeDim,valeDimIndex,1,1)))
+!write (22, *) "h, i, j, k, l"
+!write (22, *) h, i, j, k, l
+!write (22, *) "oneValeRealAccum"
+!write (22, *) oneValeRealAccum
+!!write (22, *) "waveFnSqrd, valeValeOL"
+!!do m = 1, valeDim
+!!write (22, *) waveFnSqrd(m), valeValeOL
+!!enddo
 #else
                   ! Compute the square of the wave function for each element.
                   waveFnSqrdGamma(:valeDim) = &
@@ -797,6 +806,7 @@ subroutine computeDOS
       if (detailCodePDOS == 0) then
 
          ! Print the key bits of information for the PDOS output.
+         write (69+h,fmt="(a7)") 'STYLE 1'
          write (69+h,fmt="(a10,i6)") 'NUM_UNITS ',numAtomTypes
          write (69+h,fmt="(a11,i9)") 'NUM_POINTS ',numEnergyPoints
 
@@ -873,6 +883,7 @@ subroutine computeDOS
       elseif (detailCodePDOS == 1) then
 
          ! Print the key bits of information for the PDOS output.
+         write (69+h,fmt="(a7)") 'STYLE 1'
          write (69+h,fmt="(a10,i6)") 'NUM_UNITS ', numAtomSites
          write (69+h,fmt="(a11,i9)") 'NUM_POINTS ', numEnergyPoints
 
@@ -906,6 +917,7 @@ subroutine computeDOS
       elseif (detailCodePDOS == 2) then
 
          ! Print the key bits of information for the PDOS output.
+         write (69+h,fmt="(a7)") 'STYLE 1'
          write (69+h,fmt="(a10,i6)") 'NUM_UNITS ',numAtomSites
          write (69+h,fmt="(a11,i9)") 'NUM_POINTS ', numEnergyPoints
 
@@ -991,6 +1003,7 @@ subroutine computeDOS
       elseif (detailCodePDOS == 3) then
 
          ! Print the key bits of information for the PDOS output.
+         write (69+h,fmt="(a7)") 'STYLE 1'
          write (69+h,fmt="(a10,i6)") 'NUM_UNITS ',numAtomSites
          write (69+h,fmt="(a11,i9)") 'NUM_POINTS ', numEnergyPoints
 

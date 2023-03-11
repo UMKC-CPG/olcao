@@ -189,7 +189,7 @@ def print_test_kinetic_num(conversion, triads, f):
    !   (or **(ly2-2) or **(lz2-2)), some special care must be taken. This
    !   term represents an angular momentum and the integral will have the
    !   form of an overlap integral. Because we cannot have a negative angular
-   !   momentum or we must discard this term when lx2-2 > 0.
+   !   momentum we must discard this term when lx2-2 < 0.
 
    ! Initialize local variables.
 """
@@ -650,7 +650,7 @@ def print_test_momentum_num(conversion, triads, f):
    !   (or **(ly2-1) or **(lz2-1)), some special care must be taken. This
    !   term represents an angular momentum and the integral will have the
    !   form of an overlap integral. Because we cannot have a negative angular
-   !   momentum or we must discard this term when lx2-1 > 0.
+   !   momentum we must discard this term when lx2-1 < 0.
 
    ! Initialize local variables.
 """
@@ -761,12 +761,11 @@ def print_test_momentum_num(conversion, triads, f):
       ! Compute each "internal" term of the prime integral. Compare each of
       !   these lines with the 1D momentum matrix equation produce by the
       !   osrecurintg_makenum.py script (appropriately separated into terms).
-      !   and the expression in the last equals of equation 69 in Ben Walker's
-      !   dissertation.
+      !   and the expression in equation 69 in Ben Walker's dissertation.
 
       ! Second line of equation 69. Also visible as second term in the
       !   script-produced equation.
-      primeMM = primeMM - 2.0d0*a2 * (curr_pos - B)**(l2+1)
+      primeMM = - 2.0d0*a2 * (curr_pos - B)**(l2+1)
 
       ! First line in the equation produced by sympy and first line in
       !   equation 69 in Ben Walker's dissertation. As mentioned above,

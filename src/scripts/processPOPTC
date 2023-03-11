@@ -315,8 +315,8 @@ sub copyData
       {
          chomp ($line);
          @values = split (/\s+/,"$line");
-	 shift(@values);
-	 shift @values;
+         shift (@values);
+         shift (@values);
          printf E1E2ELF ("@values\n");
       }
 
@@ -336,8 +336,8 @@ sub copyData
       {
          chomp ($line);
          @values = split (/\s+/,"$line");
-	 shift(@values);
-	 shift @values;
+         shift (@values);
+         shift (@values);
          printf EPS1 ("@values\n");
       }
 
@@ -357,8 +357,8 @@ sub copyData
       {
          chomp ($line);
          @values = split (/\s+/,"$line");
-	 shift(@values);
-	 shift @values;
+         shift (@values);
+         shift (@values);
          printf ELF ("@values\n");
       }
 
@@ -378,8 +378,8 @@ sub copyData
       {
          chomp ($line);
          @values = split (/\s+/,"$line");
-	 shift(@values);
-	 shift @values;
+         shift (@values);
+         shift (@values);
          printf REF ("@values\n");
       }
 
@@ -399,8 +399,8 @@ sub copyData
       {
          chomp ($line);
          @values = split (/\s+/,"$line");
-	 shift(@values);
-	 shift @values;
+         shift (@values);
+         shift (@values);
          printf EPS1I ("@values\n");
       }
 

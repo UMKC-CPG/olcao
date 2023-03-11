@@ -759,8 +759,8 @@ subroutine findLatticeVector (arbitraryVector, latticeVector)
    implicit none
 
    ! Define the dummy variables passed to this subroutine.
-   real (kind=double), dimension (:), intent(in)  :: arbitraryVector
-   real (kind=double), dimension (:), intent(out) :: latticeVector
+   real (kind=double), dimension (dim3), intent(in)  :: arbitraryVector
+   real (kind=double), dimension (dim3), intent(out) :: latticeVector
 
    ! Define the local variables used in this subroutine.
    integer :: i ! Loop variable.

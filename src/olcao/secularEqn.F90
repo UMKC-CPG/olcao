@@ -61,10 +61,12 @@ subroutine secularEqnAllKP(spinDirection, numStates)
 
    ! Define the local variables used in this subroutine.
    integer :: i,j ! Loop index variables
+integer :: k, l, m, n, o, p
    integer :: hdferr
    integer :: dim1
    real    (kind=double), allocatable, dimension (:,:)   :: packedValeVale
    real    (kind=double), allocatable, dimension (:,:)   :: tempPackedValeVale
+complex(kind=double), allocatable, dimension(:,:) :: identity
 
    ! Record the date and time that we start.
    call timeStampStart (15)
@@ -189,6 +191,30 @@ subroutine secularEqnAllKP(spinDirection, numStates)
       call solveDSYGV(valeDim,numStates,valeValeGamma(:,:,spinDirection),&
             & valeValeOLGamma(:,:,1),energyEigenValues(:,i,spinDirection))
 #endif
+
+!! Test normalization.
+!allocate (identity(numStates,numStates))
+!! Read the atomic overlap matrix. 
+!call readPackedMatrix(atomOverlap_did(i),packedValeVale,&
+!      & atomDims,dim1,valeDim)
+!
+!      ! Unpack the overlap matrix.
+!#ifndef GAMMA
+!call unpackMatrix(valeValeOL(:,:,1,1),packedValeVale,valeDim,0)
+!#else
+!call unpackMatrixGamma(valeValeOLGamma(:,:,1),packedValeVale,valeDim,0)
+!#endif
+!
+!identity(:numStates,:numStates) = &
+!      & matmul(&
+!      & matmul(transpose(conjg(valeVale(:valeDim,:numStates,1,spinDirection))),&
+!             & valeValeOL(:,:,1,1)),valeVale(:,:numStates,1,spinDirection))
+!write(24,*) "Normalization i = ",i
+!do k = 1, num_states
+!write(24,*) "k,I(k,k) = ",k,identity(k,k)
+!enddo
+!
+!deallocate (identity)
 
       ! Write the energy eigenValues onto disk in HDF5 format in a.u.
       call h5dwrite_f (eigenValues_did(i,spinDirection),H5T_NATIVE_DOUBLE,&

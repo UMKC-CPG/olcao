@@ -1467,7 +1467,7 @@ sub initializeCell
             print STDOUT "No SYBD path identifiable.\n";
             print STDOUT "Expecting form as in Setyawan and Curtarolo\n";
             print STDOUT "Comp. Mat. Sci., v49, pp299-312, (2010)\n";
-            print STDOUT "Defaulting to use 'tric1a' as the path.\n"
+            print STDOUT "Defaulting to use 'tric1a' as the path.\n";
             $sybdPath="tric1a";
          }
       }
