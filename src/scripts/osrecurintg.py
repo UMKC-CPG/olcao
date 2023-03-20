@@ -253,18 +253,20 @@ def create_data_aids(max_lam):
                 num_pc_intg
 
     # Add the sh conversions, sh triads, and l angular momentum totals.
-    triads.append([0, 1, 3]) # yzzz
-    triads.append([0, 3, 1]) # yyyz
-    triads.append([1, 0, 3]) # xzzz
-    triads.append([1, 3, 0]) # xyyy
-    triads.append([3, 0, 1]) # xxxz
-    triads.append([3, 1, 0]) # xxxy
-    triads.append([4, 0, 0]) # xxxx
-    triads.append([0, 4, 0]) # yyyy
-    triads.append([0, 0, 4]) # zzzz
-    triads.append([1, 1, 2]) # xyzz
-    triads.append([1, 2, 1]) # xyyz
-    triads.append([2, 1, 1]) # xxyz
+    print ("Need to add conversions. FIX!")
+    exit()
+    triads.append([0, 1, 3]) # yzzz 20
+    triads.append([0, 3, 1]) # yyyz 21
+    triads.append([1, 0, 3]) # xzzz 22
+    triads.append([1, 3, 0]) # xyyy 23
+    triads.append([3, 0, 1]) # xxxz 24
+    triads.append([3, 1, 0]) # xxxy 25
+    triads.append([4, 0, 0]) # xxxx 26
+    triads.append([0, 4, 0]) # yyyy 27
+    triads.append([0, 0, 4]) # zzzz 28
+    triads.append([1, 1, 2]) # xyzz 29
+    triads.append([1, 2, 1]) # xyyz 30
+    triads.append([2, 1, 1]) # xxyz 31
     for i in range(9): # CHECK
         lam_sh_list.append(4)
     for i in range(12): # CHECK

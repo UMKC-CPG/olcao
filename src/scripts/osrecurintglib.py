@@ -591,7 +591,7 @@ def map_pc_to_sh(pc_max_idx):
         sh_max_idx = 9
     elif (pc_max_idx == 20):
         sh_max_idx = 16
-    elif (pc_max_idx == 35):
+    elif (pc_max_idx == 32):
         sh_max_idx = 25
 
     return sh_max_idx
