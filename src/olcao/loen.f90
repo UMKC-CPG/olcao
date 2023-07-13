@@ -696,15 +696,15 @@ integer :: termCount
 
    ! Print out the results in a human readable format to the std. output file.
    do i = 1, numPotSites
-      write (20,fmt="(a,i)") "Potential Site: ", i
+      write (20,fmt="(a,i10)") "Potential Site: ", i
       bsCompSum = cmplx(0.0_double,0.0_double,double)
       do j = 1, twoj2+1
          bsCompSum = bsCompSum + bsComp(j,i)
-         write(20,fmt="(a,i4,a,e)") "Bispectrum Component for 2j = ", &
+         write(20,fmt="(a,i4,a,e25.16)") "Bispectrum Component for 2j = ", &
             & (twoj1+twoj2) - (j-1)*2, " is: ", real(bsComp(j,i),double)
       enddo
 
-      write (20,fmt="(a,e)") "Accumulated Bispectrum Component is: ", &
+      write (20,fmt="(a,e25.16)") "Accumulated Bispectrum Component is: ", &
             & real(bsCompSum(i),double)
    enddo
 
