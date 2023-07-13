@@ -1,7 +1,7 @@
 module O_LOEN
 
    ! Import necessary modules.
-   use O_KINDS
+   use O_Kinds
 
    ! Make sure that no variables are accidentally declared.
    implicit none

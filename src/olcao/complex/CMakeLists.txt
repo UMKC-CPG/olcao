@@ -63,7 +63,7 @@ add_executable(OLCAOfield $<TARGET_OBJECTS:Common> ../basis.f90
    ../secularEqn.F90 ../populate.F90 ../openDX.f90 ../xdmf_vtk.f90 ../field.F90
    ../OLCAO_Field.f90 )
 
-add_executable(OLCAOloen $<TARGET_OBJECTS:gCommon> ../basis.f90
+add_executable(OLCAOloen $<TARGET_OBJECTS:Common> ../basis.f90
    ../matrixSubs.F90 ../loen.f90 ../OLCAO_LocalEnv.f90
    ../OLCAO_LocalEnvWrap.f90)
 
