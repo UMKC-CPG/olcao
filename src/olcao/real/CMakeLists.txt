@@ -63,11 +63,15 @@ add_executable(gOLCAOfield $<TARGET_OBJECTS:gCommon> ../basis.f90
    ../secularEqn.F90 ../populate.F90 ../openDX.f90 ../xdmf_vtk.f90 ../field.F90
    ../OLCAO_Field.f90 )
 
+add_executable(gOLCAOloen $<TARGET_OBJECTS:gCommon> ../basis.f90
+   ../matrixSubs.F90 ../loen.f90 ../OLCAO_LocalEnv.f90
+   ../OLCAO_LocalEnvWrap.f90)
+
 # At this point we need to add the -DGAMMA preprocessor definition to the
 #   compile command for these gamma k-point executables. This addition applies
 #   only to the current directory.
 add_definitions(-DGAMMA)
 
 install(TARGETS gOLCAOsetup gOLCAOmain gOLCAOintg gOLCAOband gOLCAOdos
-   gOLCAObond gOLCAOoptc gOLCAOfield DESTINATION bin)
+   gOLCAObond gOLCAOoptc gOLCAOfield gOLCAOloen DESTINATION bin)
 

@@ -42,7 +42,7 @@ module O_Populate
          ! of various states is not considered here (but it should be in the
          ! future especially since some basis set atoms may not fill in the
          ! ideal way.
-   integer, dimension(13) :: numOrbitalStates ! For each of the above
+   integer, dimension(14) :: numOrbitalStates ! For each of the above
          ! QN_nlOrderIndex values this records how many states there are for
          ! that orbital (including spin).
    integer :: excitedCoreStateIndex ! The band index number of the core state
@@ -596,7 +596,8 @@ subroutine correctCorePopulation
    integer :: finalState
 
    ! Core occupation should proceed in the following order:
-   !   1s, 2s, 2p, 3s, 3p, 4s, 3d, 4p, 5s, 4d, 5p, 6s, 4f
+!   !   1s, 2s, 2p, 3s, 3p, 4s, 3d, 4p, 5s, 4d, 5p, 6s, 4f
+   !   1s, 2s, 2p, 3s, 3p, 3d, 4s, 4p, 4d, 4f, 5s, 5p, 5d, 6s
    ! This was assumed when assigning the excitedCoreStateIndex and the values
    !   in the numOrbitalStates(:,:) array.
 
@@ -649,40 +650,69 @@ subroutine initCoreStateStructures
    integer :: i
 
    ! Core occupation should proceed in the following order:
-   !   1s, 2s, 2p, 3s, 3p, 4s, 3d, 4p, 5s, 4d, 5p, 6s, 4f
+!   !   1s, 2s, 2p, 3s, 3p, 4s, 3d, 4p, 5s, 4d, 5p, 6s, 4f
+   !   1s, 2s, 2p, 3s, 3p, 3d, 4s, 4p, 4d, 4f, 5s, 5p, 5d, 6s
 
    ! Associate each possible QN_n,QN_l combination with an index number that
    !   represents the order that this pair is supposed to appear from lowest
    !   energy to highest.  (Applies only to states up to 4f as this is the
    !   highest "core" state considered.)
+!   QN_nlOrderIndex(1,1) = 1
+!   QN_nlOrderIndex(2,1) = 2
+!   QN_nlOrderIndex(2,2) = 3
+!   QN_nlOrderIndex(3,1) = 4
+!   QN_nlOrderIndex(3,2) = 5
+!   QN_nlOrderIndex(4,1) = 6
+!   QN_nlOrderIndex(3,3) = 7
+!   QN_nlOrderIndex(4,2) = 8
+!   QN_nlOrderIndex(5,1) = 9
+!   QN_nlOrderIndex(4,3) = 10
+!   QN_nlOrderIndex(5,2) = 11
+!   QN_nlOrderIndex(6,1) = 12
+!   QN_nlOrderIndex(4,4) = 13
    QN_nlOrderIndex(1,1) = 1
    QN_nlOrderIndex(2,1) = 2
    QN_nlOrderIndex(2,2) = 3
    QN_nlOrderIndex(3,1) = 4
    QN_nlOrderIndex(3,2) = 5
-   QN_nlOrderIndex(4,1) = 6
-   QN_nlOrderIndex(3,3) = 7
+   QN_nlOrderIndex(3,3) = 6
+   QN_nlOrderIndex(4,1) = 7
    QN_nlOrderIndex(4,2) = 8
-   QN_nlOrderIndex(5,1) = 9
-   QN_nlOrderIndex(4,3) = 10
-   QN_nlOrderIndex(5,2) = 11
-   QN_nlOrderIndex(6,1) = 12
-   QN_nlOrderIndex(4,4) = 13
+   QN_nlOrderIndex(4,3) = 9
+   QN_nlOrderIndex(4,4) = 10
+   QN_nlOrderIndex(5,1) = 11
+   QN_nlOrderIndex(5,2) = 12
+   QN_nlOrderIndex(5,3) = 13
+   QN_nlOrderIndex(6,1) = 14
 
    ! Record the number of states associated with each QN_n,QN_l by index number.
+!   numOrbitalStates(1)  = 1
+!   numOrbitalStates(2)  = 1
+!   numOrbitalStates(3)  = 3
+!   numOrbitalStates(4)  = 1
+!   numOrbitalStates(5)  = 3
+!   numOrbitalStates(6)  = 1
+!   numOrbitalStates(7)  = 5
+!   numOrbitalStates(8)  = 3
+!   numOrbitalStates(9)  = 1
+!   numOrbitalStates(10) = 5
+!   numOrbitalStates(11) = 3
+!   numOrbitalStates(12) = 1
+!   numOrbitalStates(13) = 7
    numOrbitalStates(1)  = 1
    numOrbitalStates(2)  = 1
    numOrbitalStates(3)  = 3
    numOrbitalStates(4)  = 1
    numOrbitalStates(5)  = 3
-   numOrbitalStates(6)  = 1
-   numOrbitalStates(7)  = 5
+   numOrbitalStates(6)  = 5
+   numOrbitalStates(7)  = 1
    numOrbitalStates(8)  = 3
-   numOrbitalStates(9)  = 1
-   numOrbitalStates(10) = 5
-   numOrbitalStates(11) = 3
-   numOrbitalStates(12) = 1
-   numOrbitalStates(13) = 7
+   numOrbitalStates(9)  = 5
+   numOrbitalStates(10) = 7
+   numOrbitalStates(11) = 1
+   numOrbitalStates(12) = 3
+   numOrbitalStates(13) = 5
+   numOrbitalStates(14) = 1
    numOrbitalStates(:) = numOrbitalStates(:) * spin
 
    ! Determine the band index number of the requested core excitation

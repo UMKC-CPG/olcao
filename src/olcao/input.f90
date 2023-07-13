@@ -94,6 +94,13 @@ module O_Input
    real (kind=double) :: eminFIELD ! Given in eV, stored in a.u.
    real (kind=double) :: emaxFIELD ! Given in eV, stored in a.u.
 
+   ! Define control variables that apply only to the local environment program.
+   integer :: loenCode
+   integer :: twoj1, twoj2
+   integer :: maxNumNeigh
+   real (kind=double) :: cutoffLoEn
+   real (kind=double) :: angleSqueeze ! See notes in loen.f90.
+
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    ! Begin list of module subroutines.!
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -173,6 +180,9 @@ subroutine parseInput
 
    ! Read field input control parameters.
    call readFieldControl(readUnit,writeUnit)
+
+   ! Read local environment (loen) parameters.
+   call readLoEnControl(readUnit,writeUnit)
 
    ! Close the primary input file.
    close(5)
@@ -769,6 +779,43 @@ subroutine readFieldControl(readUnit,writeUnit)
    emaxFIELD = emaxFIELD / hartree
 
 end subroutine readFieldControl
+
+
+subroutine readLoEnControl(readUnit,writeUnit)
+
+   ! Use necessary modules
+   use O_ReadDataSubs
+
+   implicit none
+
+   ! Passed parameters
+   integer, intent(in)    :: readUnit   ! The unit number of the file from which
+                                        ! we are reading.
+   integer, intent(in)    :: writeUnit  ! The unit number of the file to which
+                                        ! we are writing.
+
+   ! Local variables.
+   integer :: temp
+
+   ! Read the input wave function / charge density / potential function
+   !   plotting control variables.
+   call readAndCheckLabel(readUnit,writeUnit,len('LOEN_INPUT_DATA'),&
+         & 'LOEN_INPUT_DATA')
+   call readData(readUnit,writeUnit,loenCode,0,'')
+   call readData(readUnit,writeUnit,twoj1,twoj2,0,'')
+   call readData(readUnit,writeUnit,maxNumNeigh,cutoffLoEn,angleSqueeze,0,'')
+
+   ! Ensure that twoj1 >= twoj2 for convenience when computing the addition of
+   !   the j1, j2 angular momenta later.
+   if (twoj1 < twoj2) then
+      temp = twoj1
+      twoj1 = twoj2
+      twoj2 = temp
+
+      write (6,*) "Swapped twoj1 and twoj2 to ensure twoj1 >= twoj2."
+   endif
+
+end subroutine readLoEnControl
 
 
 end module O_Input

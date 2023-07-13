@@ -9,7 +9,7 @@ sub printHelp
 #                    [-script \$scriptFile] [-body \$bodyFile] | -help
 #
 # The -dates option takes a single string as a parameter which is a file name.
-#   If this option is not given, then the default file name of "dates" is
+#   If this option is not given, then the default file name of "dateList" is
 #   assumed. The file contains a set of lines. Each line consists of a single
 #   integer number followed by a string that lists a date range. The integer
 #   and date range are separated by a ":". The integers correspond to sorting
@@ -24,9 +24,8 @@ sub printHelp
 #   (8)  Sort by number of letters in first name.
 #   (9)  Sort by number of letters in last name.
 #   (10) Sort by number of letters in combined first and last name.
-#   (11) Sort by bits per character needed for full name (Shannon entropy).
-#   (12) Sort by bits per character needed for full name (metric entropy).
-#   (13) Sort by a random number generator.
+#   (11) Sort by bits per character needed for full name (metric entropy).
+#   (12) Sort by a random number generator.
 # The -roster option takes a single string as a parameter. The string is just
 #   the name of the file that holds the roster copied from Pathway. If this
 #   option is not given, then by default it will be set as "roster".
@@ -63,6 +62,7 @@ my $numMethods;
 my @methodList;
 my $numDates;
 my @dateList;
+my @dateListNoSpaces;
 my @studentIDs;
 my @lastNames;
 my @firstNames;
@@ -119,6 +119,7 @@ sub setDefaultVars
 {
    @methodList = "";
    @dateList = "";
+   @dateListNoSpaces = "";
    $datesFile = "dateList";
    $rosterFile = "roster";
    $scriptFile = "emailScript";
@@ -193,8 +194,7 @@ sub readDates
       @values2 = StructureControl::prepLine("",$values[0],'\s+');
       $methodList[$numMethods] = $values2[0];
 
-      # Extract the date range string from after the ":" and save it.
-      @values2 = StructureControl::prepLine("",$values[1],'\s+');
+      # Preserve the date range string from after the ":".
       $dateList[$numDates] = $values[1];
    }
 
@@ -491,7 +491,7 @@ sub createDates
       # Extract a string for the date without spaces.
       @values = StructureControl::prepLine("",$dateList[$date],'\s+');
       $dateString = join("",@values);
-      $dateList[$date] = $dateString;
+      $dateListNoSpaces[$date] = $dateString;
 
       # Make the directory.
       mkdir ("$dateString");
@@ -630,7 +630,7 @@ sub appendNewAssignment
    chdir ("dates");
 
    # Enter the directory of the specific date we are working on.
-   chdir ("$dateList[$currDate]");
+   chdir ("$dateListNoSpaces[$currDate]");
 
    # Create a sorted list of the students for this date range.
    open (SORTORDER,">sortedOrder")
@@ -676,7 +676,7 @@ sub printEmailScript
    foreach $student (1..$numStudents)
    {
       $seatNumber = ($student-1);
-      print SCRIPT "mailx -s \"Physics 250 assigned seats\" " .
+      print SCRIPT "mailx -s \"Physics 240 assigned seats\" " .
          "-r rulisp\@umkc.edu $emailAddresses[$sortedIndices[$student]] < " .
          "emails/$studentIDs[$sortedIndices[$student]]/emailBody\n"; 
    }

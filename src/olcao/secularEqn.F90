@@ -37,12 +37,14 @@ subroutine secularEqnAllKP(spinDirection, numStates)
    use O_Kinds
    use O_TimeStamps
    use O_KPoints, only: numKPoints
-   use O_Potential, only: spin, potDim, potCoeffs, numPlusUJAtoms, currIteration
+   use O_Potential, only: rel, spin, potDim, potCoeffs, numPlusUJAtoms, &
+         & currIteration
    use O_AtomicSites, only: valeDim
    use O_MainEValHDF5, only: eigenValues_did, states
    use O_MainEVecHDF5, only: eigenVectors_did, valeStates
    use O_SetupIntegralsHDF5, only: atomDims, atomOverlap_did, &
-         & atomKEOverlap_did, atomNucOverlap_did, atomPotOverlap_did
+         & atomKEOverlap_did, atomMVOverlap_did, atomNucOverlap_did, &
+         & atomPotOverlap_did
 #ifndef GAMMA
    use O_LAPACKZHEGV
    use O_MatrixSubs, only: readPackedMatrix, readPackedMatrixAccum, unpackMatrix
@@ -61,12 +63,12 @@ subroutine secularEqnAllKP(spinDirection, numStates)
 
    ! Define the local variables used in this subroutine.
    integer :: i,j ! Loop index variables
-integer :: k, l, m, n, o, p
+!integer :: k, l, m, n, o, p
    integer :: hdferr
    integer :: dim1
    real    (kind=double), allocatable, dimension (:,:)   :: packedValeVale
    real    (kind=double), allocatable, dimension (:,:)   :: tempPackedValeVale
-complex(kind=double), allocatable, dimension(:,:) :: identity
+!complex(kind=double), allocatable, dimension(:,:) :: identity
 
    ! Record the date and time that we start.
    call timeStampStart (15)
@@ -129,6 +131,16 @@ complex(kind=double), allocatable, dimension(:,:) :: identity
       ! Read the kinetic energy term into the still packed hamiltonian.
       call readPackedMatrixAccum(atomKEOverlap_did(i),packedValeVale,&
             & tempPackedValeVale,atomDims,0.0_double,dim1,valeDim)
+
+      ! Read the mass velocity term into the still packed hamiltonian if
+      !   we are doing a scalar relativistic calculation.
+      if (rel == 1) then
+         ! Note that the -1.0 introduce a negative sign to the term. In the
+         !   future, the sign should be incorporated into the matrix
+         !   calculation itself to avoid the extra work here.
+         call readPackedMatrixAccum(atomMVOverlap_did(i),packedValeVale,&
+               & tempPackedValeVale,atomDims,-1.0_double,dim1,valeDim)
+      endif
 
       ! Read the atomic potential terms into the still packed hamiltonian.
       do j = 1, potDim

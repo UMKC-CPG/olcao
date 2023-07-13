@@ -71,7 +71,7 @@ subroutine makeSCFPot (totalEnergy)
          & nonLocalNucQPot, nonLocalResidualQ, potAlphaOverlap
    use O_SetupExchCorrHDF5, only: numPoints_did, radialWeight_did, &
          & exchRhoOp_did, exchCorrOverlap_did, numPoints, points, potPoints
-   use O_Potential, only: spin, potDim, intgConsts, spinSplitFactor, &
+   use O_Potential, only: rel, spin, potDim, intgConsts, spinSplitFactor, &
          & potAlphas, potCoeffs, currIteration, lastIteration, feedbackLevel, &
          & relaxFactor, xcCode, converged, convgTest, GGA, numPlusUJAtoms, &
          & plusUJAtomID, plusUJ
@@ -79,7 +79,7 @@ subroutine makeSCFPot (totalEnergy)
          & nonLocalNeutQPot_did, localNeutQPot_did, localNucQPot_did, &
          & nonLocalNucQPot_did, nonLocalResidualQ_did, pot, potPot, potTypesPot
    use O_ValeCharge, only: potRho, chargeDensityTrace, nucPotTrace, &
-         & kineticEnergyTrace
+         & kineticEnergyTrace, massVelocityTrace
    use O_MainPotRhoHDF5, only: potCoeffs_did, totalRhoCoeffs_did, &
          & valeRhoCoeffs_did, spinDiffRhoCoeffs_did, alphas_did, terms
 
@@ -112,6 +112,7 @@ subroutine makeSCFPot (totalEnergy)
    real (kind=double) :: currentNucCharge
    real (kind=double) :: sumIntegratedCharge
    real (kind=double) :: kineticEnergy
+   real (kind=double) :: massVelEnergy
    real (kind=double) :: exchCorrEnergy
    real (kind=double) :: exchCorrEnergyDiff
    real (kind=double) :: elecStatEnergy
@@ -149,6 +150,7 @@ subroutine makeSCFPot (totalEnergy)
    real (kind=double), dimension (4) :: currentExchCorrPot
    real (kind=double), dimension (2) :: totalEnergySpin
    real (kind=double), dimension (2) :: kineticEnergySpin
+   real (kind=double), dimension (2) :: massVelEnergySpin
    real (kind=double), dimension (2) :: exchCorrEnergySpin
    real (kind=double), allocatable, dimension (:,:) :: generalRho
    real (kind=double), allocatable, dimension (:,:) :: tempOverlap
@@ -987,6 +989,10 @@ subroutine makeSCFPot (totalEnergy)
       ! 152 = unknown
       ! 200 = PBE96 (Perdew, Burke, and Enzerhof)
 
+      if (xcCode == 300) then
+         xcCode = 150
+      endif
+
       if (xcCode == 100) then
             do j = 1, numRayPoints
                ! These functions have been converted to subroutines because the
@@ -1182,18 +1188,52 @@ subroutine makeSCFPot (totalEnergy)
             & (kineticEnergyTrace(1) - kineticEnergyTrace(2)) / 2.0_double
    endif
 
+   ! If a scalar relativistic calculation is being performed, then compute
+   !   (copy) the mass velocity energy and the spin polarized contributions
+   !   to the mass velocity energy.
+   if (rel == 1) then
+      massVelEnergy = massVelocityTrace(1) ! UP + DOWN or TOTAL
+      if (spin == 2) then
+         ! Total + Difference = Spin Up
+         massVelEnergySpin(1) = &
+               & (massVelocityTrace(1) + massVelocityTrace(2)) / 2.0_double
+         ! Total - Difference = Spin Down
+         massVelEnergySpin(2) = &
+               & (massVelocityTrace(1) - massVelocityTrace(2)) / 2.0_double
+      endif
+   endif
+
+
    ! Calculate the total energy and the spin polarized contributions to the
-   !   total energy.
-   totalEnergy = kineticEnergy + elecStatEnergy + exchCorrEnergy
-   if (spin == 2) then
-      totalEnergySpin(1) = kineticEnergySpin(1) + elecStatEnergy &
-            & + exchCorrEnergySpin(1)
-      totalEnergySpin(2) = kineticEnergySpin(2) + elecStatEnergy &
-            & + exchCorrEnergySpin(2)
+   !   total energy for the non-relativistic and scalar relativistic cases.
+   if (rel == 0) then
+      totalEnergy = kineticEnergy + elecStatEnergy + exchCorrEnergy
+      if (spin == 2) then
+         ! Total + Difference = Spin Up
+         totalEnergySpin(1) = kineticEnergySpin(1) + elecStatEnergy &
+               & + exchCorrEnergySpin(1)
+         ! Total - Difference = Spin Down
+         totalEnergySpin(2) = kineticEnergySpin(2) + elecStatEnergy &
+               & + exchCorrEnergySpin(2)
+      endif
+   else
+      totalEnergy = kineticEnergy + massVelEnergy + elecStatEnergy + &
+            & exchCorrEnergy
+      if (spin == 2) then
+         ! Total + Difference = Spin Up
+         totalEnergySpin(1) = kineticEnergySpin(1) + massVelEnergySpin(1) + &
+               & elecStatEnergy + exchCorrEnergySpin(1)
+         ! Total - Difference = Spin Down
+         totalEnergySpin(2) = kineticEnergySpin(2) + massVelEnergySpin(2) + &
+               & elecStatEnergy + exchCorrEnergySpin(2)
+      endif
    endif
 
    if (totalEnergy > 0.0_double) then
       write (20,*) "Kinetic energy = ", kineticEnergy
+      if (rel == 1) then
+         write (20,*) "Mass velocity energy = ", massVelEnergy
+      endif
       write (20,*) "Electrostatic energy = ", elecStatEnergy
       write (20,*) "Exchange correlation energy = ", exchCorrEnergy
       write (20,*) "Total energy = ", totalEnergy
@@ -1309,6 +1349,11 @@ subroutine makeSCFPot (totalEnergy)
    do i = 1, spin
       xl0(:,i) = potCoeffs(:,i)
       yl0(:,i) = elecStatPot(:,1) + elecStatPot(:,2) + exchCorrPot(:,i)
+      ! If we are doing a scalar relativistic calculation, then we include the
+      !   darwin correction by modifying the next potential function guess.
+      if (rel == 1) then
+         call darwinCorrection(yl0(:,i))
+      endif
 
       ! Form the difference between last iteration and the current new
       !   calculation of the potential.  (Note that this calculation will be
@@ -1734,12 +1779,20 @@ subroutine makeSCFPot (totalEnergy)
    ! Record the key iteration information to the main output file and a
    !   separate file for easier plotting.
    write (20,*) 'KINETIC ENERGY:        ',kineticEnergy
+   if (rel == 1) then
+      write (20,*) 'MASS VELOCITY ENERGY:  ', massVelEnergy
+   endif
    write (20,*) 'ELECTROSTATIC ENERGY:  ',elecStatEnergy
    write (20,*) 'EXCH-CORR ENERGY:      ',exchCorrEnergy
    write (20,*) 'TOTAL ENERGY:          ',totalEnergy
 
-   write (14,fmt="(i5,4e18.10)") currIteration, kineticEnergy, elecStatEnergy, &
-         & exchCorrEnergy, totalEnergy
+   if (rel == 0) then
+      write (14,fmt="(i5,4e18.10)") currIteration, kineticEnergy, &
+            & elecStatEnergy, exchCorrEnergy, totalEnergy
+   else
+      write (14,fmt="(i5,5e18.10)") currIteration, kineticEnergy, &
+            & massVelEnergy, elecStatEnergy, exchCorrEnergy, totalEnergy
+   endif
 
 
    ! At this point we can check for the convergence of the system.  If it has
@@ -1758,6 +1811,9 @@ subroutine makeSCFPot (totalEnergy)
    deallocate (chargeDensityTrace)
    deallocate (nucPotTrace)
    deallocate (kineticEnergyTrace)
+   if (rel == 1) then
+      deallocate (massVelocityTrace)
+   endif
    deallocate (tempOverlap)
    deallocate (potAlphaOverlap)
    deallocate (rl0)
@@ -3905,5 +3961,453 @@ subroutine cleanUpPotentialUpdate
 
 end subroutine cleanUpPotentialUpdate
 
+
+subroutine darwinCorrection(inputPotCoeffs)
+
+   ! Use necessary modules.
+   use O_PotTypes, only: numPotTypes, potTypes
+   use O_Potential, only: numAlphas, potAlphas
+
+   ! Make sure that no funny variables are defined.
+   implicit none
+
+   ! Define passed parameters.
+   real (kind=double), dimension(numAlphas) :: inputPotCoeffs
+
+   ! Define the local variables.
+   integer :: i
+   integer :: startTerm
+   integer :: finalTerm
+
+   ! Initialize the boundary for the terms of a given type.
+   startTerm = 0
+   finalTerm = 0
+  
+   ! Consider each potential type. The Darwin correction for each potential
+   !   type will be the different. The Darwin correction for each potential
+   !   site of a given type will be the same. Hence, we selectively pass
+   !   only the potential coefficients and alphas for the current (i-th)
+   !   type.
+   do i = 1, numPotTypes
+      ! Determine the boundary for terms of the current type.
+      startTerm = finalTerm + 1
+      finalTerm = startTerm + potTypes(i)%numAlphas - 1
+
+      call darwinCorrectionOnePotType(i,potTypes(i)%numAlphas, &
+            & inputPotCoeffs(startTerm:finalTerm), &
+            & potAlphas(startTerm:finalTerm))
+   enddo
+end subroutine darwinCorrection
+
+
+! Apply the Darwin correction to the current potential type. We are following
+!   the strategy laid out in the paper: Zhong XF, Xu YN, Ching WY,
+!   "Orthogonalized linear combinations of atomic orbitals. IV. Inclusion of
+!   relativistic corrections", Phys. Rev. B., Vol. 41(15), p. 1054552, (1990),
+!   Available from: http://link.aps.org/doi/10.1103/PhysRevB.41.10545.
+! The strategy is to produce a numerical representation of the potential
+!   function
+subroutine darwinCorrectionOnePotType(currentType, currentNumTerms, &
+            &  currentPotCoeffs,currentPotAlphas)
+
+   ! Use necessary modules.
+   use O_Kinds
+   use O_Constants, only: fineStructure
+   use O_PotTypes, only: numPotTypes, potTypes
+   use O_Potential, only: numAlphas, potAlphas
+
+   ! Make sure that no funny variables are defined.
+   implicit none
+
+   ! Define passed parameters.
+   integer :: currentType                      
+   integer :: currentNumTerms
+   real (kind=double), dimension(currentNumTerms) :: currentPotCoeffs
+   real (kind=double), dimension(currentNumTerms) :: currentPotAlphas
+
+   ! Define local variables
+   real, parameter :: pp = 1.0360D0 
+   real, parameter :: RC= 1.D0
+   real :: EE, preFactor
+   integer, parameter :: IGRID = 0 ! or 0, or any other desired value
+   real (kind=double) :: nucVDarwin ! Nuclear contribution to the Darwin pot.
+   real (kind=double) :: elecVDarwin ! Electronic contribution to Darwin pot.
+   real (kind=double) :: CC
+   real (kind=double) :: expExponent, expTerm ! Relationship is:
+         ! expTerm = exp(-expExponent)
+   real (kind=double), allocatable, dimension (:) :: rGrid ! Radial grid values
+   real (kind=double), allocatable, dimension (:) :: rGridSqrd ! Squared
+   real (kind=double), allocatable, dimension (:) :: darwinPot ! Data to fit
+   integer :: i, j, numPoints
+
+   ! Initialize the darwin term prefactor: e hBar / (8 m^2 c^2) where
+   !   m = electron mass and e = hBar = m = 1 in atomic units, and where
+   !   c = 1/fineStructure in atomic units. Therefore, we use the
+   !   fineStructure given in the constants.f90 file and immediately multiply
+   !   by the appropriate order of magnitude.
+   preFactor = (fineStructure * 0.001d0)**2 / 8.0d0
+
+   ! Define the number of grid points.
+   numPoints = 300
+
+   ! Allocate space
+   allocate(rGrid(numPoints))
+   allocate(rGridSqrd(numPoints))
+   allocate(darwinPot(numPoints))
+
+   ! Set up the grid for the fitting process. If IGRID is /= 0 then
+   !we use  use  logarithmic grid up to 3. Otherwise, use a custom grid.
+
+   !two types of grids (logarithmic and custom). If the variable "IGRID" is not
+   !equal to 0, the logarithmic grid is used for the fitting process. If it is
+   !equal to 0, the custom grid is used. The custom grid is defined by a series
+   !of if-statements. The grid is used to evaluate the potential with a sum
+   !of Gaussians on a set of 300 points. The resulting data is stored in the
+   !array darwinPot.
+   
+   if (IGRID /= 0) then
+      do I=1,numPoints !I is evaluating the potential on a grid 
+         EE=DFLOAT(I)*0.035D0
+         rGrid(I)=0.0001D0*EXP(EE)
+      enddo
+   else
+      rGrid(1)=0.0001*PP
+      rGrid(2)=0.0002*PP
+      rGrid(3)=0.0004*PP
+      rGrid(4)=0.0006*PP
+      rGrid(5)=0.0008*PP
+      do  I=6,numPoints
+         if (I <= 10) rGrid(I)=DFLOAT(I-5)*PP*0.001D0
+         if(I > 10.and.I <= 15) rGrid(I)=DFLOAT(I-10)*PP*0.005D0+rGrid(10)
+         if(I > 15.and.I <= 20) rGrid(I)=DFLOAT(I-15)*PP*0.010D0+rGrid(15)
+         if(I > 20.and.I <= 30) rGrid(I)=DFLOAT(I-20)*PP*0.015D0+rGrid(20)
+         if(I > 30.and.I <= 40) rGrid(I)=DFLOAT(I-30)*PP*0.02D0+rGrid(30)
+         if(I > 40.and.I <= 50) rGrid(I)=DFLOAT(I-40)*PP*0.025D0+rGrid(40)
+         if(I > 50.and.I <= 60) rGrid(I)=DFLOAT(I-50)*PP*0.03D0+rGrid(50)
+         if(I > 60.and.I <= 70) rGrid(I)=DFLOAT(I-60)*PP*0.035D0+rGrid(60)
+         if(I > 70.and.I <= 80) rGrid(I)=DFLOAT(I-70)*PP*0.04D0+rGrid(70)
+         if(I > 80.and.I <= 90) rGrid(I)=DFLOAT(I-80)*PP*0.045D0+rGrid(80)
+         if(I > 90.and.I <= 100) rGrid(I)=DFLOAT(I-90)*PP*0.05D0+rGrid(90)
+         if(I > 100.and.I <= 110) rGrid(I)=DFLOAT(I-100)*PP*0.06D0+rGrid(100)
+         if(I > 110.and.I <= 120) rGrid(I)=DFLOAT(I-110)*PP*0.07D0+rGrid(110)
+         if(I > 120.and.I <= 130) rGrid(I)=DFLOAT(I-120)*PP*0.08D0+rGrid(120)
+         if(I > 130.and.I <= 140) rGrid(I)=DFLOAT(I-130)*PP*0.09D0+rGrid(130)
+         if(I > 140.and.I <= 150) rGrid(I)=DFLOAT(I-140)*PP*0.10D0+rGrid(140)
+         if(I > 150.and.I <= 160) rGrid(I)=DFLOAT(I-150)*PP*0.11D0+rGrid(150)
+         if(I > 160.and.I <= 170) rGrid(I)=DFLOAT(I-160)*PP*0.12D0+rGrid(160)
+         if(I > 170.and.I <= 180) rGrid(I)=DFLOAT(I-170)*PP*0.13D0+rGrid(170)
+         if(I > 180.and.I <= 190) rGrid(I)=DFLOAT(I-180)*PP*0.14D0+rGrid(180)
+         if(I > 190.and.I <= 200) rGrid(I)=DFLOAT(I-190)*PP*0.15D0+rGrid(190)
+         if(I > 200.and.I <= 210) rGrid(I)=DFLOAT(I-200)*PP*0.16D0+rGrid(200)
+         if(I > 210.and.I <= 220) rGrid(I)=DFLOAT(I-210)*PP*0.17D0+rGrid(210)
+         if(I > 220.and.I <= 230) rGrid(I)=DFLOAT(I-220)*PP*0.18D0+rGrid(220)
+         if(I > 230) rGrid(I)=DFLOAT(I-230)*PP*0.19D0+rGrid(230)
+      enddo
+   endif
+
+   do i = 1, numPoints
+     write (22,*) rGrid(i), i
+   enddo
+
+   ! The square of the grid values is used repeatedly. Therefore, we
+   !   precompute the square of all the radial grid values for computational
+   !   efficiency.
+   rGridSqrd(:) = rGrid(:)**2
+
+   ! For the Darwin term, one approach is numerical. That is, we take the
+   !   analytic expression for the total potential (nuclear + electronic) and
+   !   compute an analytic expression for its second derivative with respect
+   !   to position (r). Then, we evaluate that function on a numerical grid.
+   !   Finally, we fit that numerical representation with a set of Gaussian
+   !   functions with the same coefficients as for the electronic part so that
+   !   we can simply _modify_ the electronic potential to introduce the 
+   !   Darwin term effect.
+   ! The analytic form of the total potential (at one potential site) is:
+   !   V = V_nuclear + V_electronic.
+   ! The analytic form of V_nuclear (with nuc_alpha = a) is:
+   !   V_nuclear = -Z/r * exp(-a * r^2)
+   ! The analytic form of V_electronic (with elec_alpha_i = a_i) is:
+   !   V_electronic = SUM_i (C_i * exp(-a_i * r^2))
+   ! The analytic form of the second derivative of V_nuclear is:
+   !   d^2/dr^2 V_nuclear = - 2 Z (2 a^2 r^4 + a r^2 + 1) exp(-a r^2) / r^3
+   !   Convenient as: - 2 Z exp(-a r^2) (2 a^2 r + a/r + 1/(r r^2))
+   ! The analytic form of the second derivative of V_electronic is:
+   !   d^2/dr^2 V_electronic = SUM_i (2 C_i a_i (2 a_i r^2 - 1) exp(-a_i r^2))
+
+   ! For each point on the r grid, compute the sum of the potential
+   !   contributions.
+   do i = 1, numPoints
+
+      ! For the nuclear contribution, we first determine if we even need to
+      !   bother computing the exponential (which is typically a costly
+      !   computation). We do that by checking if the exponent is of large
+      !   enough magnitude to render the exponential term equivalent to zero.
+
+      ! Compute the exponential exponent: alpha * r^2.
+      expExponent = potTypes(currentType)%nucAlpha * rGridSqrd(i)
+
+      ! Consider the case where rGrid(i) == 0. Then exp(0) = 1. When
+      !   exp(nuc_alpha * r^2) < (say) 1e-16 then we can expect that any
+      !   contribution to the total (nuclear + electronic) potential from the
+      !   nuclear part will be swamped by the electronic part. This is because
+      !   the nuclear potential decays to zero fairly quickly while the
+      !   electronic part does not and the limitations on real number
+      !   representations in a computer make adding.
+      ! Therefore, using 1e-16 = exp(-nuc_alpha * r^2) and solving for the
+      !   positive part of the exponential term when nuc_alpha = 20.0 (which
+      !   it usually does) we find: expExponent = -ln(1e-16) =~ 37.
+      ! Out of an abundance of caution, we use 50.
+
+      ! Only include points that have not decayed to almost zero. If the
+      !   point is sufficiently close to the origin, then we include it.
+      !   Otherwise, we set the whole term to zero.
+      if (expExponent <= 50.0d0) then
+
+         ! Compute the exponential and the rest of the nuclear contribution to
+         !   the darwin term.
+         expTerm = exp(-expExponent)
+
+         ! Using nuclear alpha = a:
+         ! nucVDarwin =
+         !      - prefactor 2 Z exp(-a r^2) (2 a^2 r^4 + a r^2 + 1) / r^3
+         ! Convenient as:
+         !      - preFactor 2 Z a exp(-a r^2) (2 a r + 1/r * (1 + 1/(a r^2))
+         nucVDarwin = -preFactor &
+               & * 2.0d0 * potTypes(currentType)%nucCharge &
+               & * potTypes(currentType)%nucAlpha * expTerm &
+               & * (2.0d0 * potTypes(currentType)%nucAlpha * rGrid(i) &
+               & + 1.0d0 / rGrid(i) * (1.0d0 + 1.0d0 / &
+               & (potTypes(currentType)%nucAlpha * rGridSqrd(i))))
+      else
+         ! Set the nuclear contribution to the darwin term for this point to
+         !   zero because it is negligible.
+         nucVDarwin = 0.0d0
+      endif
+
+      ! Now, we deal with the electronic contribution. The difference here is
+      !   that the electronic contribution is a summation of many similar
+      !   terms. Thus, we must first initialize the summation term.
+      elecVDarwin = 0.0d0
+      do j = 1, currentNumTerms
+         ! Because there is another exponential term, we do the same kind of
+         !   test regarding the magnitude of the exponent to see if we should
+         !   bother to compute this term or not.
+         expExponent = currentPotAlphas(j) * rGridSqrd(i)
+
+         ! Only include points that have not decayed to almost zero. If the
+         !   point is sufficiently close to the origin, then we include it.
+         !   Otherwise, we set the whole term to zero.
+         if (expExponent <= 50.0d0) then
+            
+            ! Compute the exponential and the rest of the electronic
+            !   contribution to the darwin term.
+            expTerm = exp(-expExponent)
+
+            ! Using electronic alpha for term j = a_j:
+            ! elecVDarwin_j = -preFactor 2 C_j a_j exp(-a_j r^2)(2 a_j r^2 - 1)
+            !   OR, for the current _j:
+            ! elecVDarwin = -preFactor 2 C a exp(-a r^2) (2 a r^2 - 1)
+            elecVDarwin = elecVDarwin &
+                  & - preFactor * 2.0d0 * currentPotCoeffs(j) &
+                  & * currentPotAlphas(j) * expTerm * (2.0d0 &
+                  & * currentPotAlphas(j) * rGridSqrd(i) - 1.0d0)
+         endif
+      enddo
+
+      ! Now, we combine the numerical values of the second derivatives of
+      !   the nuclear and electronic potential to get the numerical form
+      !   of the Darwin correction for this radial grid point.
+      darwinPot(i) = nucVDarwin + elecVDarwin
+   enddo ! i (numPoints)
+
+   ! Fit the numerical form of the darwin correction with the same set of
+   !   Gaussian functions as were used for the original electronic
+   !   potential.
+   call gaussfit(darwinPot,rGrid,rGridSqrd,currentNumTerms,&
+         & currentPotCoeffs,currentType,numPoints)
+
+   ! Deallocate arrays.
+   deallocate(rGrid)
+   deallocate(rGridSqrd)
+   deallocate(darwinPot)
+
+end subroutine darwinCorrectionOnePotType
+
+
+! The purpose of this subroutine is to take a given numerically expressed
+!   function and fit it with a series of gaussian functions with specified
+!   exponential factors. Then the program will vary the coefficients to
+!   achieve the best possible fit.
+subroutine gaussfit(darwinPot,rGrid,rGridSqrd,currentNumTerms,&
+      & currentPotCoeffs,currentType,numPoints)
+
+   ! Import necessary definitions.
+   use O_Kinds
+   use O_Potential,only:  potAlphas, numAlphas
+   use O_PotTypes, only: numPotTypes, potTypes
+
+   !  Make sure that no funny variables are defined
+   implicit none 
+
+   ! Define passed parameters(numerical data).
+   real (kind=double), allocatable, dimension (:) :: darwinPot ! Data values
+         ! to be fit with sum of gaussians.
+   real (kind=double), allocatable, dimension (:) :: rGrid ! Radial
+         ! values at which the potential function was numerically evaluated.
+   real (kind=double), allocatable, dimension (:) :: rGridSqrd
+   integer :: currentNumTerms ! Number of gaussian fns to use in the fitting
+   real (kind=double), dimension(currentNumTerms) :: currentPotCoeffs
+   integer :: currentType
+   integer :: numPoints
+
+   ! Define local variables.
+   integer :: i
+   real (kind=double), allocatable, dimension (:) :: weight ! Weight factors
+        ! for integration.  Dim=numPoints
+   real (kind=double), allocatable, dimension (:) :: weightSqrd ! Weighting
+        ! factors from above squard for faster computation.
+   real (kind=double), allocatable, dimension (:) :: Ds ! List of the
+        ! coefficients to the gaussian functions.  Dim=numTerms
+
+   ! Allocate space to hold data.
+   allocate(weight(numPoints))
+   allocate(weightSqrd(numPoints))
+   allocate(Ds(currentNumTerms))
+
+   ! The fitting is performed by choosing the gaussian coefficients (D) that
+   !   minimize the difference between the numerical darwinPot function and
+   !   the sum of Gaussian functions for each radial grid point.
+
+   ! The method to compute the coefficients is to solve the linear coefficient
+   !   problem Ax=b with:
+   !   A(ij) = integral(g(r,alpha_i)*g(r,alpha_j)*weight(r))dr; (g=gaussian)
+   !   x(i)  = coefficients to be determined.
+   !   b(i)  = integral(g(r,alpha_i)*f(r)*weight(r))dr; (f=numerical data)
+
+   ! Compute the weighting factors for trapizoidal integration.
+   do i = 1, numPoints - 1
+      weight(i) = (rGrid(i+1) - rGrid(i))/2.0_double
+   enddo
+   weight(numPoints) = 0.0_double
+
+   ! Compute the weights squard.
+   weightSqrd(:) = weight(:)**2
+
+   ! Begin computing the coefficients. The gaussCalc subroutine will return
+   !   x from Ax=b labeled as the "Ds". The "Ds" are coefficients in:
+   !   darwinV = SUM_j (D_j * exp(-alpha_j r^2))
+   call gaussCalc(currentType,currentPotCoeffs,currentNumTerms,rGridSqrd,&
+         & weightSqrd,darwinPot,numPoints,Ds,weight)
+
+   ! Update the coefficients (C_i 's from equation 12 in the above referenced
+   !   paper by Zhong, Xu, and Ching). This is what actually applied the
+   !   Darwin correction to the potential.
+   currentPotCoeffs(:) = currentPotCoeffs(:) + Ds(:)
+
+   ! Deallocate unnecessary arrays.
+   deallocate(weight)
+   deallocate(weightSqrd)
+   deallocate(Ds)  
+
+end subroutine gaussfit
+
+
+subroutine gaussCalc(currentType,currentPotCoeffs,currentNumTerms,rGridSqrd,&
+      & weightSqrd,darwinPot,numPoints,Ds,weight)
+
+   ! Import necessary definitions.
+   use O_Kinds
+   use O_Potential, only:  potAlphas, numAlphas
+   use O_PotTypes, only: numPotTypes, potTypes 
+   
+   ! Make sure that no funny variables are defined.
+   implicit none
+
+   ! Define passed parameters.
+   integer :: currentType
+   integer :: currentNumTerms ! Number of gaussian fns to use in the fitting
+   real (kind=double), dimension(currentNumTerms) :: currentPotCoeffs
+   real (kind=double), allocatable, dimension (:) :: rGridSqrd ! Radial
+         ! values from above, squard for faster computation.
+   real (kind=double), allocatable, dimension (:) :: weightSqrd ! Weighting
+        ! factors from above squard for faster computation
+   real (kind=double), allocatable, dimension (:) :: darwinPot ! Data values
+         ! to be fit with sum of gaussians
+   integer :: numPoints
+   real (kind=double), allocatable, dimension (:) :: Ds ! List of the
+        ! coefficients to the gaussian functions.  Dim=numTerms
+   real (kind=double), allocatable, dimension (:) :: weight ! Weighting
+        ! factors for integration.  Dim=numPoints
+
+  ! Define local variables 
+   real (kind=double), allocatable, dimension (:,:) :: gaussFn ! Numerical
+        ! evaluation of each gaussian function's exponential component only.
+        ! Dim=numPoints,numTerms
+   integer :: i,j,k ! Loop index variables.
+   integer :: info  ! Used for LAPACK dspov
+   real (kind=double) :: expTerm
+   real (kind=double), allocatable, dimension (:,:) :: gaussME ! Matrix Element
+   real (kind=double), allocatable, dimension (:,:) :: b ! For Ax=b
+
+   interface
+      subroutine dposv ( UPLO, N, NRHS, A, LDA, B, LDB, INFO )
+         use O_Kinds
+         implicit none
+         character :: uplo
+         integer   :: info, lda, ldb, n, nrhs
+         real (kind=double), dimension(lda,n) :: a
+         real (kind=double), dimension(ldb,nrhs) :: b
+      end subroutine dposv
+   end interface
+ 
+   ! Allocate space to hold temp data.
+   allocate(gaussME(currentNumTerms,currentNumTerms))
+   allocate(b(currentNumTerms,1))
+   allocate(gaussFn(numPoints,currentNumTerms))
+
+   ! Compute the numerical value of each gaussian, and the initial total
+   ! function from the sum of gaussians.
+   do i = 1, currentNumTerms ! # of terms for the current potential type.
+      do j = 1, numPoints
+         expTerm = exp(-potTypes(currentType)%alphas(i) * rGridSqrd(j))
+         gaussFn(j,i) = expTerm
+      enddo
+   enddo
+
+   ! Compute the matrix element between two gaussian functions.  (A from Ax=b)
+   gaussME(:,:) = 0.0_double
+   do i = 1, currentNumTerms
+      do j = 1, i
+         do k = 1, numPoints-1
+            gaussME(j,i) = gaussME(j,i) + &
+                  & (gaussFn(k,i)+gaussFn(k+1,i)) * &
+                  & (gaussFn(k,j)+gaussFn(k+1,j)) * weightSqrd(k)
+         enddo
+      enddo
+   enddo
+
+   ! Compute the right-hand-side of the linear problem (b from Ax=b).
+   b(:,1) = 0.0_double
+   do i = 1, currentNumTerms
+      do j = 1, numPoints-1
+         b(i,1) = b(i,1) + &
+               & (gaussFn(j,i)+gaussFn(j+1,i)) * &
+               & (darwinPot(j)+darwinPot(j+1)) * weightSqrd(j)
+      enddo
+   enddo
+
+   ! Solve for the coefficients (x) from Ax=b.  (Solution saved in b.)
+   call dposv('U',currentNumTerms,1,gaussME,currentNumTerms,b,&
+         & currentNumTerms,info)
+
+   ! Save (copy) the results of the calculation (the D coefficients).
+   Ds(:) = b(:,1)
+
+   ! Deallocate unnecessary arrays.
+   deallocate(gaussME)
+   deallocate(b)
+   deallocate(gaussFn)
+
+end subroutine gaussCalc
 
 end module O_PotentialUpdate

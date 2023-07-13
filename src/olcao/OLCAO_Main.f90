@@ -11,7 +11,7 @@ subroutine mainSCF (totalEnergy, fromExternal)
    use O_CommandLine,     only: doDOS, doBond, parseMainCommandLine
    use O_Input,           only: numStates, iterFlagTDOS, parseInput
    use O_Potential,       only: converged, currIteration, lastIteration, spin, &
-                              & initPotCoeffs, cleanUpPotential
+                              & rel, initPotCoeffs, cleanUpPotential
    use O_PotentialUpdate, only: makeSCFPot
    use O_AtomicSites,     only: valeDim, cleanUpAtomSites
    use O_AtomicTypes,     only: cleanUpAtomTypes
@@ -94,7 +94,11 @@ subroutine mainSCF (totalEnergy, fromExternal)
    call flush (7)
 
    ! Note the columns that record energy statistics for each iteration.
-   write (14,*) "Iter.       Kinetic         ElecStat          ExchCorr           Total"
+   if (rel == 0) then
+      write (14,*) "Iter.       Kinetic         ElecStat          ExchCorr           Total"
+   else
+      write (14,*) "Iter.       Kinetic         MassVel           ElecStat          ExchCorr           Total"
+   endif
    call flush (14)
 
 

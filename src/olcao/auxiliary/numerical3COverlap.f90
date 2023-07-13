@@ -14,6 +14,7 @@ real (kind=double) :: x_sum, y_sum, z_sum
 real (kind=double) :: x_solution, y_solution, z_solution, x, y, z
 real (kind=double) :: a1, a2, a3
 real (kind=double), dimension(3) :: A, B, C
+real (kind=double) :: step, num_steps, max_size
 integer :: i, p, q
 integer, dimension(3) :: l1, l2
 integer, dimension(20,3) :: array 
@@ -42,43 +43,48 @@ array(20,:) = (/0,0,3/)
 
 ! Define the constants
 a1 = 0.50d0
-a2 = 0.60d0
-a3 = 0.20d0
+a2 = 0.95d0
+a3 = 0.30d0
 A(1) = 1.0d0
 A(2) = 2.0d0
 A(3) = 3.0d0
-B(1) = 4.0d0
+B(1) = 6.0d0
 B(2) = 5.0d0
-B(3) = 6.0d0
-C(1) = 7.0d0
-C(2) = 8.0d0
-C(3) = 9.0d0
+B(3) = 4.0d0
+C(1) = 1.5d0
+C(2) = 1.5d0
+C(3) = 1.5d0
+
 ! Open output file
 open(2,file='testOutput',status='new')
 
+max_size = 30.0d0
+step = 0.0001
+num_steps = (2*max_size) / step + 1
+
 ! Loop over the x, y, and z triad values
-do p = 1, 20
-  do q = 1, 20
+do p = 1, 4
+  do q = 1, 4
     ! Properly assign l1, l2, and l3 values for each dimension
-    l1 = array(p,:)
-    l2 = array(q,:)
+    l1 = array(q,:)
+    l2 = array(p,:)
 
     ! Initialize sum variables
     x_sum = 0
     y_sum = 0
     z_sum = 0
    
-    do i = 0, 400000
-      x = (-40.0d0 + (i*0.0002d0))
-      y = (-40.0d0 + (i*0.0002d0))
-      z = (-40.0d0 + (i*0.0002d0))
-      x_solution = 0.0002d0*((x - A(1))**l1(1))*((x - B(1))**l2(1))*&
+    do i = 0, num_steps
+      x = (-max_size + (i*step))
+      y = (-max_size + (i*step))
+      z = (-max_size + (i*step))
+      x_solution = step*((x - A(1))**l1(1))*((x - B(1))**l2(1))*&
         &exp(-a1*(x - A(1))**2)*exp(-a2*(x - B(1))**2)*exp(-a3*(x - C(1))**2)
       x_sum = x_sum + x_solution
-      y_solution = 0.0002d0*((y - A(2))**l1(2))*((y - B(2))**l2(2))*&
+      y_solution = step*((y - A(2))**l1(2))*((y - B(2))**l2(2))*&
         &exp(-a1*(y - A(2))**2)*exp(-a2*(y - B(2))**2)*exp(-a3*(y - C(2))**2)
       y_sum = y_sum + y_solution
-      z_solution = 0.0002d0*((z - A(3))**l1(3))*((z - B(3))**l2(3))*&
+      z_solution = step*((z - A(3))**l1(3))*((z - B(3))**l2(3))*&
         &exp(-a1*(z - A(3))**2)*exp(-a2*(z - B(3))**2)*exp(-a3*(z - C(3))**2)
       z_sum = z_sum + z_solution
     end do !i

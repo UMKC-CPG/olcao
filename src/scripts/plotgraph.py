@@ -95,120 +95,264 @@ def print_help():
 
 # Define the main class that holds plot structure and information settings.
 class ScriptSettings():
-    def __init__(self, temp_params):
+    """The instance variables of this object are the user settings that
+       control the program. The variable values are pulled from a list
+       that is created within a resource control file and that are then
+       reconciled with command line parameters."""
+
+    def __init__(self):
+        """Define default values for the graph parameters by pulling them
+        from the resource control file $OLCAO_DIR/.olcao/plotgraphrc.py"""
+
+        # Read default variables from the plotgraph resource control file.
+        sys.path.insert(1, os.getenv('OLCAO_DIR') + "/.olcao")
+        from plotgraphrc import parameters_and_defaults
+        default_rc = parameters_and_defaults()
+
+        # Assign values to the settings from the rc defaults file.
+        self.assign_rc_defaults(default_rc)
+
+        # Parse the command line.
+        args = self.parse_command_line(default_rc)
+
+        # Reconcile default settings in the resource control file with
+        #   any command line arguments that were given.
+        self.reconcile(args, default_rc)
+
+    def assign_rc_defaults(self, default_rc):
 
         # Supporting display information
-        self.title = temp_params[0]
-        self.print_command = temp_params[1]
+        self.title = default_rc[0]
+        self.print_command = default_rc[1]
 
         # Plot formats
-        self.page_height = temp_params[2]
-        self.page_width = temp_params[3]
-        self.linked_plots = temp_params[4]
-        self.plot_type = temp_params[5]
+        self.page_height = default_rc[2]
+        self.page_width = default_rc[3]
+        self.link_plots = default_rc[4]
+        self.plot_type = default_rc[5]
 
         # Data columns
-        self.multi_x_cols = temp_params[6]
-        self.x_col = temp_params[7]
-        self.y_col = temp_params[8]
+        self.multi_x_cols = default_rc[6]
+        self.x_col = default_rc[7]
+        self.y_col = default_rc[8]
 
         # Ranges and ticks
-        self.x_min = temp_params[9]
-        self.x_max = temp_params[10]
-        self.y_min = temp_params[11]
-        self.y_max = temp_params[12]
-        self.x_axis_inc = temp_params[13]
-        self.x_axis_minor_ticks = temp_params[14]
-        self.y_axis_major_ticks = temp_params[15]
-        self.y_axis_minor_ticks = temp_params[16]
+        self.x_min = default_rc[9]
+        self.x_max = default_rc[10]
+        self.y_min = default_rc[11]
+        self.y_max = default_rc[12]
+        self.x_axis_inc = default_rc[13]
+        self.x_axis_minor_ticks = default_rc[14]
+        self.y_axis_major_ticks = default_rc[15]
+        self.y_axis_minor_ticks = default_rc[16]
 
         # Subplots and lines variables
-        self.plots_per_page = temp_params[17]
-        self.plot_separation = temp_params[18]
-        self.lines_per_plot = temp_params[19]
-        self.line_thickness = temp_params[20]
-        self.line_style = temp_params[21]
-        self.line_color = temp_params[22]
-        self.line_separation = temp_params[23]
+        self.plots_per_page = default_rc[17]
+        self.plot_separation = default_rc[18]
+        self.lines_per_plot = default_rc[19]
+        self.line_thickness = default_rc[20]
+        self.line_style = default_rc[21]
+        self.line_color = default_rc[22]
+        self.line_separation = default_rc[23]
 
-        #    global dos = temp_params[24]
-        #    global points = temp_params[25]
-
-def init_environment():
-    """Define default values for the graph parameters by pulling them from
-    the resource control file $OLCAO_DIR/.olcao/plotgraphrc.py"""
-
-    # Read default variables from the plotgraph resource control file.
-    sys.path.insert(1, os.getenv('OLCAO_DIR') + "/.olcao")
-    from plotgraphrc import parameters_and_defaults
-
-    # Create and return an object containing the script settings.
-    return ScriptSettings(parameters_and_defaults())
+        #    global dos = default_rc[24]
+        #    global points = default_rc[25]
 
 
-def parse_command_line():
-
-    # Create the parser tool.
-    parser = ap.ArgumentParser(description='Control parameters')
-
-    # Add arguments to the parser.
-
-    # Define the title argument.
-    parser.add_argument('-t', '--title', dest='title', type=ascii,
-                        help='Title for the plot.')
-
-    # Define the flag to print the command used to create the figure.
-    parser.add_argument('-pc', '--printcmd', dest=print_command, type=int,
-                        choices=[0,1], default=print_command,
-                        help='Flag to print the command line.')
-
-    # Define the page height.
-    parser.add_argument('-ph', '--pageh', dest=page_height, type=float,
-                        default=page_height, help='Page height.')
-
-    # Define the page width.
-    parser.add_argument('-pw', '--pagew', dest=page_width, type=float,
-                        default=page_width, help='Page width.')
-
-    # Define the flag to request linked plots.
-    parser.add_argument('-l', '--link', dest=link_plots, type=int,
-                        choices=[0,1], default=link_plots,
-                        help='Flag to request linked plots.')
-
-    # Define the plot type.
-    parser.add_argument('-pt', '--plott', dest=plot_type, type=int,
-                        choices=[0,1,2], default=plot_type,
-                        help='Flag to request a specific plot type. ' +
-                        '0=generic; 1=pdos; 2=optc')
-
-    # Define the flag to indicate that the input has multiple x columns.
-    parser.add_argument('-mx', '--multix', dest=multi_x_cols, type=int,
-                        choices=[0,1], default=multi_x_cols,
-                        help='Flag to indicate that the input has multiple ' +
-                        'x columns.')
-
-    # Select the x_column.
-    parser.add_argument('-xc', '--xcol', dest=x_col, type=int,
-                        default=x_col, help='X column')
-
-    # Select the y_column(s).
-    parser.add_argument('-yc', '--ycol', dest=y_col_string, type=ascii,
-                        default=y_col, help='Y column(s)')
-
-    # Set the x_min
-
-    # Execute the argument parsing.
-    args = parser.parse_args()
-
-    # Return the results.
-    return(args)
-
-def reconcile(args, settings):
-
+    def parse_command_line(self, default_rc):
     
+        # Create the parser tool.
+        parser = ap.ArgumentParser(description='Control parameters')
+    
+        # Add arguments to the parser.
+        self.add_parser_arguments(parser, default_rc)
 
-    # Return the settings that incorporate the command line arguments.
-    return settings
+        # Parse the arguments and return the results.
+        return parser.parse_args()
+
+    def add_parser_arguments(self, parser, default_rc):
+    
+        # Define the title argument.
+        parser.add_argument('-t', '--title', dest='title', type=ascii,
+                            default=self.title,
+                            help='Title for the plot. Default: ' +
+                            f'{self.title}')
+    
+        # Define the flag to print the command used to create the figure.
+        if (self.print_command == True):
+            store_action = "store_true"
+        else:
+            store_action = "store_false"
+        parser.add_argument('-pc', '--printcmd', action=store_action,
+                            dest='print_command', default=self.print_command,
+                            help='Flag to print the command line. Default: ' +
+                            f'{self.print_command}')
+    
+        # Define the page height.
+        parser.add_argument('-ph', '--pageh', dest='page_height', type=float,
+                            default=self.page_height, help='Page height. ' +
+                            f'Default: {self.page_height}')
+    
+        # Define the page width.
+        parser.add_argument('-pw', '--pagew', dest='page_width', type=float,
+                            default=self.page_width, help='Page width. ' +
+                            f'Default: {self.page_width}')
+    
+        # Define the flag to request linked plots.
+        if (self.link_plots == True):
+            store_action = "store_true"
+        else:
+            store_action = "store_false"
+        parser.add_argument('-l', '--link', action=store_action,
+                            dest='link_plots', default=self.link_plots,
+                            help='Flag to request linked plots. Default: ' +
+                            f'{self.link_plots}')
+    
+        # Define the plot type.
+        parser.add_argument('-pt', '--plott', dest='plot_type', type=int,
+                            choices=[0,1,2], default=self.plot_type,
+                            help='Flag to request a specific plot type. ' +
+                            'Options: 0=generic; 1=pdos; 2=optc. Default: ' +
+                            f'{self.plot_type}')
+    
+        # Define the flag to indicate that the input has multiple x columns.
+        if (self.multi_x_cols == True):
+            store_action = "store_true"
+        else:
+            store_action = "store_false"
+        parser.add_argument('-mx', '--multix', action=store_action,
+                            dest='multi_x_cols', default=self.multi_x_cols,
+                            help='Flag to indicate that input has multiple ' +
+                            f'x columns. Default: {self.multi_x_cols}')
+    
+        # Select the x_column.
+        parser.add_argument('-xc', '--xcol', dest='x_col', type=int,
+                            default=self.x_col, help='X column. Default: ' +
+                            f'{self.x_col}')
+    
+        # Select the y_column(s).
+        parser.add_argument('-yc', '--ycol', dest='y_col_string', type=ascii,
+                            default=self.y_col, help='Y column(s) in array ' +
+                            f'form with .. options. Default: {self.y_col}')
+    
+        # Set the x_min
+        if (self.x_min == ""):
+            x_min_default = "Data min"
+        else:
+            x_min_default = self.x_min
+        parser.add_argument('-xi', '--xmin', dest='x_min', type=float,
+                            default=self.x_min, help='X min value. ' +
+                            f'Default: {x_min_default}')
+
+        # Set the x_max
+        if (self.x_max == ""):
+            x_max_default = "Data max"
+        else:
+            x_max_default = self.x_max
+        parser.add_argument('-xa', '--xmax', dest='x_max', type=float,
+                            default=self.x_max, help='X max value. ' +
+                            f'Default: {x_max_default}')
+
+        # Set the y_min
+        if (self.y_min == ""):
+            y_min_default = "Data min"
+        else:
+            y_min_default = self.y_min
+        parser.add_argument('-yi', '--ymin', dest='y_min', type=float,
+                            default=self.y_min, help='Y min value. ' +
+                            f'Default: {y_min_default}')
+
+        # Set the y_max
+        if (self.y_max == ""):
+            y_max_default = "Data max"
+        else:
+            y_max_default = self.y_max
+        parser.add_argument('-ya', '--ymax', dest='y_max', type=float,
+                            default=self.y_max, help='Y max value. ' +
+                            f'Default: {y_max_default}')
+
+        # Set the default x axis increment.
+        parser.add_argument('-xai', '--xaxisinc', dest='x_axis_inc',
+                            type=int, default=self.x_axis_inc, help='X ' +
+                            f'axis increment. Default: {self.x_axis_inc}')
+
+        # Set the default x axis minor ticks.
+        parser.add_argument('-xm', '--xminor', dest='x_axis_minor_ticks',
+                            type=int, default=self.x_axis_minor_ticks,
+                            help='X axis increment. Default: ' +
+                            f'{self.x_axis_minor_ticks}')
+
+        # Set the default y axis major ticks.
+        parser.add_argument('-yma', '--ymajor', dest='y_axis_major_ticks',
+                            type=int, default=self.y_axis_major_ticks,
+                            help='Y axis major ticks. Default: ' +
+                            f'{self.y_axis_major_ticks}')
+
+        # Set the default y axis minor ticks.
+        parser.add_argument('-ymi', '--yminor', dest='y_axis_minor_ticks',
+                            type=int, default=self.y_axis_minor_ticks,
+                            help='Y axis minor ticks. Default: ' +
+                            f'{self.y_axis_minor_ticks}')
+
+        # Set the number of plots per page.
+        parser.add_argument('-pp', '--plotsperpage', dest='plots_per_page',
+                            type=ascii, default=self.plots_per_page,
+                            help='Plots per page. ' +
+                            f'Default: {self.plots_per_page}')
+
+        # Define the plot separation.
+        parser.add_argument('-ps', '--plotsep', dest='plot_separation',
+                            type=ascii, default=self.plot_separation,
+                            help='Plot separation. ' +
+                            f'Default: {self.plot_separation}')
+
+        # Define the number of lines per plot.
+        parser.add_argument('-lpp', '--lines', dest='lines_per_plot',
+                            type=ascii, default=self.lines_per_plot,
+                            help='Lines per plot. ' +
+                            f'Default: {self.lines_per_plot}')
+
+        # Define the line thickness.
+        parser.add_argument('-lt', '--linethick', dest='line_thickness',
+                            type=ascii, default=self.line_thickness,
+                            help='Line thickness. ' +
+                            f'Default: {self.line_thickness}')
+
+        # Define the line style.
+        parser.add_argument('-ls', '--linestyle', dest='line_style',
+                            type=ascii, default=self.line_style,
+                            help='Line style. ' +
+                            f'Default: {self.line_style}')
+
+        # Define the line color.
+        parser.add_argument('-lc', '--linecolor', dest='line_color',
+                            type=ascii, default=self.line_color,
+                            help='Line color. ' +
+                            f'Default: {self.line_color}')
+
+        # Define the line separation.
+        parser.add_argument('-lp', '--linesep', dest='line_separation',
+                            type=ascii, default=self.line_separation,
+                            help='Line separation. ' +
+                            f'Default: {self.line_separation}')
+
+        # Define the positional arguments.
+        parser.add_argument('filename', required=True, 
+                            help='Name of the file to plot.')
+
+        # Execute the argument parsing.
+        args = parser.parse_args()
+    
+        # Return the results.
+        return(args)
+
+#    def reconcile(self, args, default_rc):
+#        # If the argument *was* given on the command line, then we use it.
+#        #   We determine if it was given on the command line by the fact that
+#        #   the *args* 
+#    
+#        # Return the settings that incorporate the command line arguments.
+#        return settings
 
 
 def read_data():
@@ -246,6 +390,7 @@ def compute_num_lines_and_plots():
 
         # Add a new line to the counter for this plot and the total counter.
         curr_line += 1
+        num_lines += 1
 
         # Count that we are at the next column.
         num_cols += 1
@@ -310,18 +455,12 @@ def compute_num_lines_and_plots():
 def main():
 
     # Set default values from the user resource control file.
-    settings = init_environment()
-
-    # Parse the command line.
-    args = parse_command_line()
+    settings = ScriptSettings()
 
     # If the user asked for help then print it and exit.
     if (args.help_flag):
         print_help()
         exit()
-
-    # Reconcile the default settings and the given arguments.
-    settings = reconcile(args, settings)
 
     # Read the data into memory. (Presently, the script reads everything into
     #   memory all at once. In the future it may read only the necessary

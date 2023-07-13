@@ -1277,7 +1277,18 @@ ENDHELP
          # Save the number of atoms in the system
          $numAtoms = $values[1];
 
-         # Read the information for each atom.
+         # Read the information for each atom. Note that we have applied here
+         #   Thoreau's fourth theory of adaptation which states: That's not a
+         #   "bug", that's a feature! If the user specifies a number atoms on
+         #   the "frac" or "cart" line (say x) that is less than the number
+         #   of atoms actually listed in the skeleton file (say q), then only
+         #   the first x atoms will be read in and the q-x atoms at the end
+         #   of the list will be ignored.
+         # To help the poor user that misses this "feature" we print a notice
+         #   here indicating the number of atoms being read in. Hopefully, the
+         #   user will notice the discrepancy (if there is one) and will make
+         #   a correction.
+         print STDOUT "Reading in $numAtoms atoms.\n";
          foreach $atom (1..$numAtoms)
          {
             @values = &prepLine("",$skeleton[$lineNum++],'\s+');

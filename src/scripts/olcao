@@ -15,7 +15,7 @@ sub printHelp
 #              [-field [\$edge]] [-scffield [\$edge]]
 #              [-sige [\$edge]] [-scfsige [\$edge]]
 #              [-optc [\$edge]] [-nlop [\$edge]]
-#              [-sybd [\$edge]]] |
+#              [-sybd [\$edge]] [-loen]] |
 #              -help
 #
 #
@@ -98,6 +98,9 @@ sub printHelp
 #       spin dependency). The control parameters are in the input file.
 #       By default it will use a full basis. (As a note, all of this data is
 #       "field" data and hence the name of the option.)
+#-loen will quantify the local environment around each atom defined by a
+#       cutoff factor and some selected algorithm. Presently, the available
+#       algorithm is the bispectrum component.
 ######################################################################
 ENDHELP
    exit(0);
@@ -143,6 +146,7 @@ my $optcRun;
 my $nlopRun;
 my $sigeRun;
 my $fieldRun;
+my $loenRun;
 my $dosRunSCF;
 my $bondRunSCF;
 my $fieldRunSCF;
@@ -187,6 +191,7 @@ my $nlop;
 my $pacs;
 my $sige;
 my $field;
+my $loen;
 
 # Auxiliary suffix components.
 my $loci;
@@ -213,6 +218,7 @@ my $upPdn; # Up + Down
 my $upMdn; # Up - Down
 my $minusNeut; # minus the neutral atom.  "-N"
 my $profile;
+my $bsComp;
 
 # File name extensions.
 my $plot;
@@ -302,6 +308,7 @@ sub setDefaultVars
    $nlopRun=0;        #Should a nlop task be done?
    $sigeRun=0;        #Should a sige task be done?
    $fieldRun=0;       #Should a field task be done?
+   $loenRun=0;        #Should a local environment task be done?
    $dosRunSCF=0;      #Run PDOS in SCF?
    $bondRunSCF=0;     #Run bond in SCF?
    $fieldRunSCF=0;    #Run field in SCF?
@@ -453,6 +460,11 @@ sub parseCLP
             {$edge = "gs";}
          else
             {$edge=$ARGV[++$number];}
+      }
+      elsif ($ARGV[$number] eq "-loen")
+      {
+         $loenRun = 1;
+         $edge = "gs";
       }
       elsif ($ARGV[$number] eq "-help")
          {&printHelp;}
@@ -615,6 +627,7 @@ sub initFileNames
    $nlop      = "nlop";
    $sige      = "sige";
    $field     = "field";
+   $loen      = "loen";
 
    #DEFINE AUXILIARY SUFFIX COMPONENTS
    $loci      = ".loci";
@@ -641,6 +654,7 @@ sub initFileNames
    $upMdn     = ".up-dn";
    $minusNeut = "-N"; #A suffix of a suffix.  ARG!
    $profile   = ".prof";
+   $bsComp     = ".bc";
 
    #DEFINE FILENAME EXTENSIONS
    $plot  = ".plot";
@@ -754,6 +768,7 @@ sub initExes
    $executables[6] = "OLCAObond";
    $executables[7] = "OLCAOoptc";
    $executables[8] = "OLCAOfield";
+   $executables[9] = "OLCAOloen";
 
    # Open the each kpoint file and check to see if it requests a gamma kpoint.
    $scfGamma  = &checkGammaKP("$kp_scf$dat");
@@ -879,23 +894,24 @@ sub setEdgeCode
 
 sub runOLCAO
 {
-   # Define local variables.
-   
-
-   # Calculate the setup portion of the program.  This is independent of edge.
-   if ("$scfBasis" ne "no")
-      {&runTask ($setup,$scfBasis,"");}
-
-   if ($pacsRun==1)
+   if ($pacsRun == 1) # We are running a pacs calculation.
    {
-      # We are running a pacs calculation.
-      &runTask ($main,$scfBasis,"gs");
+      # Do setup and main as long as asked.
+      if ("$scfBasis" ne "no")
+      {
+         &runTask ($setup,$scfBasis,"");
+         &runTask ($main,$scfBasis,"gs");
+      }
+      
+      # Run the post SCF steps of the ground state.
       &runTask ($intg,$pscfBasis,"gs");
       &runTask ($band,$pscfBasis,"gs");
 
+      # Run the excited state.
       if ("$edge" ne "gs")
       {
-         &runTask ($main,$scfBasis,$edge);
+         if ("$scfBasis" ne "no")
+            {&runTask ($main,$scfBasis,$edge);}
 
          # Now that both main calculations are done for the PACS calculation,
          #   we can update the pacs input file with the total energy difference 
@@ -907,11 +923,18 @@ sub runOLCAO
          &runTask ($pacs,$pscfBasis,$edge);
       }
    }
+   elsif ($loenRun == 1) # We are running a local environment calc.
+   {
+      &runTask ($loen,$scfBasis,$edge);
+   }
    else
    {
-      # We are doing some other calculation (PDOS,SYBD,BOND,OPTC,SIGE,WAVE,etc.)
+      # Doing another calculation (PDOS,SYBD,BOND,OPTC,SIGE,FIELD,LOEN,etc.)
       if ("$scfBasis" ne "no")
-         {&runTask ($main,$scfBasis,$edge);}
+      {
+         &runTask ($setup,$scfBasis,"");
+         &runTask ($main,$scfBasis,$edge);
+      }
       if ("$pscfBasis" ne "no")
       {
          &runTask ($intg,$pscfBasis,$edge);
@@ -1137,8 +1160,8 @@ sub getPotCoeffs
    #   potential coefficients.
    @altBasisList=("-eb","-fb","-mb");
 
-   # Setup does not need any set of potential coefficients.
-   if ("$taskName" eq "$setup")
+   # Setup and loen do not need any set of potential coefficients.
+   if (("$taskName" eq "$setup") or ("$taskName" eq "$loen"))
       {return;}
 
    # Check for the potential from the same edge and basis of the current task.
@@ -1343,6 +1366,8 @@ sub determineCLP
       # The next CLPs signal the edge that should be computed for.
       $taskCLP = "$taskCLP" . "$QN_n $QN_l ";
    }
+   elsif ("$taskName" eq "$loen")
+      {$taskCLP = "$scfBasisCode";}
 
    return $taskCLP;
 }
@@ -1384,6 +1409,8 @@ sub executeProgram
       {$executable = $executables[7];}
    elsif ("$taskName" eq "$field")
       {$executable = $executables[8];}
+   elsif ("$taskName" eq "$loen")
+      {$executable = $executables[9];}
 
 
    # Call the executable
@@ -1892,6 +1919,15 @@ sub manageOutput
       {
          &move("fort.78","$proj_home/$taskEdge$field$taskBasis$alt$xdmf3");
          &move("$field$tempBasis$hdf","$taskEdge$field$taskBasis$alt$hdf");
+      }
+   }
+   elsif ("$taskName" eq "$loen")   
+   {
+      # Move the local environment structural analysis files if created.
+      if (-e "fort.21")
+      {
+         &copy("fort.21","$taskEdge$loen$taskBasis$alt$raw.21");
+         &move("fort.21","$proj_home/$taskEdge$loen$taskBasis$alt$raw");
       }
    }
 

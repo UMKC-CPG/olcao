@@ -15,7 +15,8 @@ module O_Constants
    !Start defining the constants
    real (kind=double) :: pi
    real (kind=double) :: hartree
-   real (kind=double) :: hPlank
+   real (kind=double) :: hPlanck
+   real (kind=double) :: hBarPlanck
    real (kind=double) :: boltzConst
    real (kind=double) :: eCharge
    real (kind=double) :: eMass
@@ -33,16 +34,18 @@ module O_Constants
    !   included here and must be accounted for in the particular calculation
    !   that is being done in the program.
    parameter (pi       = 3.141592653589793_double) ! Pi not from NIST.
-   parameter (hartree  = 27.21138386_double)   ! Hartree from NIST.
-   parameter (hPlank   = 6.6260693_double)     ! Plank's constant (Js) (e-34)
-   parameter (boltzConst = 8.617343_double)    ! Boltzmann's const (eV/K) (e-5)
-   parameter (eCharge  = 1.60217653_double)    ! Elementary Charge (C) (e-19)
-   parameter (eMass    = 9.1093826_double)     ! Electron mass (kg) (e-31)
-   parameter (bohrRad  = 0.5291772180_double)  ! Bohr Radius (m) (e-10)
-   parameter (auTime   = 2.418884326505_double)! Atomic unit of time (s) (e-17)
-   parameter (lightFactor = 8.9875517873681764_double) ! 1/(1e-16 * c^2)(s/m)^2
+   parameter (hartree  = 27.211386245988_double)   ! Hartree from NIST. (eV)
+   parameter (hPlanck  = 6.62607015_double)    ! Planck's constant (Js) (e-34)
+   parameter (hBarPlanck = 1.054571817_double) ! Reduced (Js) (e-34)
+   parameter (boltzConst = 8.617333262_double) ! Boltzmann's const (eV/K) (e-5)
+   parameter (eCharge  = 1.602176634_double)   ! Elementary Charge (C) (e-19)
+   parameter (eMass    = 9.1093837015_double)  ! Electron mass (kg) (e-31)
+   parameter (bohrRad  = 0.529177210903_double)! Bohr Radius (m) (e-10)
+   parameter (auTime   = 2.4188843265857_double)! Atomic unit time (s) (e-17)
+   parameter (lightFactor = 8.9875517873681764_double) ! (1e-16 * c^2) (m/s)^2
    parameter (lightSpeed = 299792458.0_double) ! m/s
-   parameter (fineStructure = 7.2973525376_double) ! Fine structure (e-3).
+   parameter (fineStructure = 7.2973525693_double) ! Fine structure (e-3).
+         !   NOTE: This is also equal to (1/lightSpeed = 1/c) in atomic units.
    parameter (smallThresh=1.0E-8_double) ! Threshold value to determine if some
          !   number is big enough or negligable.
    parameter (bigThresh=1.0E20_double) ! Threshold value to initialize a search

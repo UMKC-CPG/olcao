@@ -7,11 +7,13 @@
 #Define the current branch.
 export OLCAO_BRANCH="CPG/cpg-repo/v34"
 
-#Root directory of the OLCAO program suite.
+#Root directories of the OLCAO program suite and any additional codes.
 export OLCAO_DIR="$HOME/$OLCAO_BRANCH"
+export GRASP2K_DIR="$OLCAO_DIR/src/grasp2k/grasp2Kdev"
 
 #Location of binary executables.
 export OLCAO_BIN="$OLCAO_DIR/bin"
+export GRASP2K_BIN="$GRASP2K_DIR/bin"
 
 #Location of data files.
 export OLCAO_DATA="$OLCAO_DIR/share"

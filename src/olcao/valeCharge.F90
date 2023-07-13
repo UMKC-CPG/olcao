@@ -20,7 +20,7 @@ module O_ValeCharge
    real (kind=double), allocatable, dimension (:)   :: chargeDensityTrace
    real (kind=double), allocatable, dimension (:)   :: nucPotTrace
    real (kind=double), allocatable, dimension (:)   :: kineticEnergyTrace
-
+   real (kind=double), allocatable, dimension (:)   :: massVelocityTrace
 
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    ! Begin list of module subroutines.!
@@ -36,11 +36,11 @@ subroutine makeValenceRho
    use O_Input,           only: numStates
    use O_KPoints,         only: numKPoints
    use O_Constants,       only: smallThresh
-   use O_Potential,       only: spin, potDim, potCoeffs, numPlusUJAtoms
+   use O_Potential,       only: rel, spin, potDim, potCoeffs, numPlusUJAtoms
    use O_MainEVecHDF5,    only: valeStates, eigenVectors_did
    use O_Populate,        only: electronPopulation, cleanUpPopulation
    use O_SetupIntegralsHDF5, only: atomOverlap_did, atomKEOverlap_did, &
-         & atomNucOverlap_did, atomPotOverlap_did, atomDims
+         & atomMVOverlap_did, atomNucOverlap_did, atomPotOverlap_did, atomDims
 #ifndef GAMMA
    use O_BLASZHER
    use O_SecularEquation, only: valeVale, cleanUpSecularEqn, energyEigenValues,&
@@ -117,6 +117,9 @@ subroutine makeValenceRho
    allocate (chargeDensityTrace(spin))
    allocate (nucPotTrace(spin))
    allocate (kineticEnergyTrace(spin))
+   if (rel == 1) then
+      allocate (massVelocityTrace(spin))
+   endif
 
    ! Allocate space to hold the currentPopulation based on spin
    allocate (currentPopulation (spin))
@@ -127,6 +130,9 @@ subroutine makeValenceRho
    potRho(:,:)           = 0.0_double
    nucPotTrace(:)        = 0.0_double
    kineticEnergyTrace(:) = 0.0_double
+   if (rel == 1) then
+      massVelocityTrace(:)  = 0.0_double
+   endif
    chargeDensityTrace(:) = 0.0_double
 
    ! Initialize local variables
@@ -284,8 +290,8 @@ subroutine makeValenceRho
 
 
       ! Allocate space to hold the overlap matrix. Later, this will also be used
-      !   to read in the Hamiltonian matrix terms (KE, nuclear, and electronic
-      !   potential).
+      !   to read in the Hamiltonian matrix terms (KE, nuclear, electronic
+      !   potential, and (if needed) the mass velocity).
       allocate (packedValeVale(dim1,valeDim*(valeDim+1)/2))
 
       ! Read the overlap matrix into the packedValeVale representation.
@@ -313,7 +319,7 @@ subroutine makeValenceRho
       !   spin polarized case the first index will refer to the total number of
       !   electrons and the second index will refer to the spin difference.
 
-      do j = 1, spin
+      do j = 1, spin ! j=1 -> Total; j=2 -> Difference
 #ifndef GAMMA
          call matrixElementMult (chargeDensityTrace(j),packedValeVale,&
                & packedValeValeSpin(:,:,j),dim1,valeDim)
@@ -327,7 +333,7 @@ subroutine makeValenceRho
       ! Compute the nuclear contribution to the fitted potential first.
       call readPackedMatrix (atomNucOverlap_did(i),packedValeVale,&
             & atomDims,dim1,valeDim)
-      do j = 1, spin
+      do j = 1, spin ! j=1 -> Total; j=2 -> Difference
 #ifndef GAMMA
          call matrixElementMult (nucPotTrace(j),packedValeVale,&
                & packedValeValeSpin(:,:,j),dim1,valeDim)
@@ -340,7 +346,7 @@ subroutine makeValenceRho
       ! Now compute the kinetic energy.
       call readPackedMatrix (atomKEOverlap_did(i),packedValeVale,&
             & atomDims,dim1,valeDim)
-      do j = 1, spin
+      do j = 1, spin ! j=1 -> Total; j=2 -> Difference
 #ifndef GAMMA
          call matrixElementMult (kineticEnergyTrace(j),packedValeVale,&
                & packedValeValeSpin(:,:,j),dim1,valeDim)
@@ -350,11 +356,26 @@ subroutine makeValenceRho
 #endif
       enddo
 
+      ! If needed, compute the mass velocity.
+      if (rel == 1) then
+         call readPackedMatrix (atomMVOverlap_did(i),packedValeVale,&
+               & atomDims,dim1,valeDim)
+         do j = 1, spin ! j=1 -> Total; j=2 -> Difference
+#ifndef GAMMA
+            call matrixElementMult (massVelocityTrace(j),packedValeVale,&
+                  & packedValeValeSpin(:,:,j),dim1,valeDim)
+#else
+            call matrixElementMultGamma (massVelocityTrace(j),packedValeVale,&
+                  & packedValeValeSpin(:,:,j),dim1,valeDim)
+#endif
+         enddo
+      endif
+
       ! Loop over atomic potential terms next.
       do j = 1, potDim
          call readPackedMatrix (atomPotOverlap_did(i,j),packedValeVale,&
                & atomDims,dim1,valeDim)
-         do k = 1, spin
+         do k = 1, spin ! j=1 -> Total; j=2 -> Difference
 #ifndef GAMMA
             call matrixElementMult (potRho(j,k),packedValeVale,&
                   & packedValeValeSpin(:,:,k),dim1,valeDim)
@@ -381,9 +402,14 @@ subroutine makeValenceRho
 
    if (spin == 1) then
 
-      ! Obtain a summation of the electrons
-      sumElecEnergy = sum(potCoeffs(:,1) * potRho(:,1)) + &
-            & kineticEnergyTrace(1) + nucPotTrace(1)
+      ! Obtain a summation of the electrons.
+      if (rel == 0) then
+         sumElecEnergy = sum(potCoeffs(:,1) * potRho(:,1)) + &
+               & kineticEnergyTrace(1) + nucPotTrace(1)
+      else
+         sumElecEnergy = sum(potCoeffs(:,1) * potRho(:,1)) + &
+               & kineticEnergyTrace(1) + massVelocityTrace(1) + nucPotTrace(1)
+      endif
 
 
       ! Write the two electron numbers (both are energy values, but they
@@ -395,9 +421,16 @@ subroutine makeValenceRho
       ! Obtain a summation of the electrons for each spin.
 
       ! Do total plus the spin difference to obtain the spin up.
-      sumElecEnergy = 0.5_double * (sum(potCoeffs(:,1) * &
-            & (potRho(:,1) + potRho(:,2))) + kineticEnergyTrace(1) + &
-            & kineticEnergyTrace(2) + nucPotTrace(1) + nucPotTrace(2))
+      if (rel == 0) then
+         sumElecEnergy = 0.5_double * (sum(potCoeffs(:,1) * &
+               & (potRho(:,1) + potRho(:,2))) + kineticEnergyTrace(1) + &
+               & kineticEnergyTrace(2) + nucPotTrace(1) + nucPotTrace(2))
+      else
+         sumElecEnergy = 0.5_double * (sum(potCoeffs(:,1) * &
+               & (potRho(:,1) + potRho(:,2))) + kineticEnergyTrace(1) + &
+               & kineticEnergyTrace(2) + massVelocityTrace(1) + &
+               & massVelocityTrace(2) + nucPotTrace(1) + nucPotTrace(2))
+      endif
       ! Write the two electron numbers. (Both are energy values, but they are
       !   computed thorugh different means.
       write (20,fmt='(a24,f18.8)') '(UP)   Electron Energy = ',electronEnergy(1)
@@ -405,9 +438,17 @@ subroutine makeValenceRho
 
 
       ! Do total minus the spin difference to obtain the spin down.
-      sumElecEnergy = 0.5_double * (sum(potCoeffs(:,2) * &
-            & (potRho(:,1) - potRho(:,2))) + kineticEnergyTrace(1) - &
-            & kineticEnergyTrace(2) + nucPotTrace(1) - nucPotTrace(2))
+      if (rel == 0) then
+         sumElecEnergy = 0.5_double * (sum(potCoeffs(:,2) * &
+               & (potRho(:,1) - potRho(:,2))) + kineticEnergyTrace(1) - &
+               & kineticEnergyTrace(2) + nucPotTrace(1) - nucPotTrace(2))
+      else
+         sumElecEnergy = 0.5_double * (sum(potCoeffs(:,2) * &
+               & (potRho(:,1) - potRho(:,2))) + kineticEnergyTrace(1) - &
+               & kineticEnergyTrace(2) + massVelocityTrace(1) - &
+               & massVelocityTrace(2) + nucPotTrace(1) - nucPotTrace(2))
+      endif
+
       ! Write the spin down electronEnergy???
       write (20,fmt='(a24,f18.8)') '(DOWN) Electron Energy = ',electronEnergy(2)
       write (20,fmt='(a24,f18.8)') '(DOWN) Electron Sum    = ',sumElecEnergy

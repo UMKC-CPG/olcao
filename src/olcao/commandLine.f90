@@ -335,6 +335,37 @@ subroutine parseWaveCommandLine
 end subroutine parseWaveCommandLine
 
 
+subroutine parseLoEnCommandLine
+
+   ! Use necessary modules.
+   use O_TimeStamps
+
+   ! Make sure that there are not accidental variable declarations.
+   implicit none
+
+   ! Define the local variables that will be used to parse the command line.
+   character*25 :: commandBuffer
+
+   ! Open the file that will be written to as output for this program.
+   open(20,file='fort.20',status='unknown',form='formatted')
+
+   ! Record the date and time that we start.
+   call timeStampStart (24)
+
+   ! Initialize all the command line parameters.
+   call initCLP
+
+   ! Begin Parsing the command line.
+
+   call readBasisCode
+
+   ! Record the date and time that we end.
+   call timeStampEnd (24)
+
+end subroutine parseLoEnCommandLine
+
+
+
 subroutine readBasisCode
 
    ! Make sure that there are no accidental variable declarations.

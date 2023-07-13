@@ -1641,6 +1641,7 @@ sh(16,16) = 16*pc(17,17) - 4*pc(17,12) - 4*pc(17,19) - 4*pc(12,17) + pc(12,12)&
    integer :: p, q, i
    integer :: num_steps
    integer, dimension (20,3) :: triads
+   integer, dimension (16,2,3) :: conversion
    integer, dimension (3) :: l1, l2
    real (kind=double) :: start_pos
    real (kind=double), dimension (3) :: xyz, xyz_sum, xyz_soln
@@ -1666,6 +1667,38 @@ sh(16,16) = 16*pc(17,17) - 4*pc(17,12) - 4*pc(17,19) - 4*pc(12,17) + pc(12,12)&
    triads(18,:) = (/3,0,0/)
    triads(19,:) = (/0,3,0/)
    triads(20,:) = (/0,0,3/)
+   conversion(1,1,:) = (/1,0,0/)
+   conversion(1,2,:) = (/1,1,1/)
+   conversion(2,1,:) = (/1,0,0/)
+   conversion(2,2,:) = (/2,1,1/)
+   conversion(3,1,:) = (/1,0,0/)
+   conversion(3,2,:) = (/3,1,1/)
+   conversion(4,1,:) = (/1,0,0/)
+   conversion(4,2,:) = (/4,1,1/)
+   conversion(5,1,:) = (/1,0,0/)
+   conversion(5,2,:) = (/8,1,1/)
+   conversion(6,1,:) = (/1,0,0/)
+   conversion(6,2,:) = (/9,1,1/)
+   conversion(7,1,:) = (/1,0,0/)
+   conversion(7,2,:) = (/10,1,1/)
+   conversion(8,1,:) = (/1,-1,0/)
+   conversion(8,2,:) = (/5,6,1/)
+   conversion(9,1,:) = (/2,-1,-1/)
+   conversion(9,2,:) = (/7,5,6/)
+   conversion(10,1,:) = (/1,0,0/)
+   conversion(10,2,:) = (/11,1,1/)
+   conversion(11,1,:) = (/1,-1,0/)
+   conversion(11,2,:) = (/13,15,1/)
+   conversion(12,1,:) = (/1,-3,0/)
+   conversion(12,2,:) = (/18,14,1/)
+   conversion(13,1,:) = (/3,-1,0/)
+   conversion(13,2,:) = (/12,19,1/)
+   conversion(14,1,:) = (/2,-3,-3/)
+   conversion(14,2,:) = (/20,13,15/)
+   conversion(15,1,:) = (/4,-1,-1/)
+   conversion(15,2,:) = (/16,18,14/)
+   conversion(16,1,:) = (/4,-1,-1/)
+   conversion(16,2,:) = (/17,12,19/)
 
    start_pos = -cell_size
    num_steps = cell_size * 2.0d0 / step_size + 1  ! +1 accounts for xyz=zero.
@@ -4594,6 +4627,7 @@ sh(16,16) = 16*pc(17,17) - 4*pc(17,12) - 4*pc(17,19) - 4*pc(12,17) + pc(12,12)&
    integer :: p, q, i, j, k
    integer :: num_steps
    integer, dimension (20,3) :: triads
+   integer, dimension (16,2,3) :: conversion
    integer, dimension (3) :: l1, l2
    real (kind=double) :: start_pos, curr_pos
    real (kind=double), dimension (3) :: xyz, xyz_soln
@@ -4650,7 +4684,7 @@ sh(16,16) = 16*pc(17,17) - 4*pc(17,12) - 4*pc(17,19) - 4*pc(12,17) + pc(12,12)&
    !   (or **(ly2-2) or **(lz2-2)), some special care must be taken. This
    !   term represents an angular momentum and the integral will have the
    !   form of an overlap integral. Because we cannot have a negative angular
-   !   momentum or we must discard this term when lx2-2 > 0.
+   !   momentum we must discard this term when lx2-2 < 0.
 
    ! Initialize local variables.
    triads(1,:) = (/0,0,0/)
@@ -4673,6 +4707,38 @@ sh(16,16) = 16*pc(17,17) - 4*pc(17,12) - 4*pc(17,19) - 4*pc(12,17) + pc(12,12)&
    triads(18,:) = (/3,0,0/)
    triads(19,:) = (/0,3,0/)
    triads(20,:) = (/0,0,3/)
+   conversion(1,1,:) = (/1,0,0/)
+   conversion(1,2,:) = (/1,1,1/)
+   conversion(2,1,:) = (/1,0,0/)
+   conversion(2,2,:) = (/2,1,1/)
+   conversion(3,1,:) = (/1,0,0/)
+   conversion(3,2,:) = (/3,1,1/)
+   conversion(4,1,:) = (/1,0,0/)
+   conversion(4,2,:) = (/4,1,1/)
+   conversion(5,1,:) = (/1,0,0/)
+   conversion(5,2,:) = (/8,1,1/)
+   conversion(6,1,:) = (/1,0,0/)
+   conversion(6,2,:) = (/9,1,1/)
+   conversion(7,1,:) = (/1,0,0/)
+   conversion(7,2,:) = (/10,1,1/)
+   conversion(8,1,:) = (/1,-1,0/)
+   conversion(8,2,:) = (/5,6,1/)
+   conversion(9,1,:) = (/2,-1,-1/)
+   conversion(9,2,:) = (/7,5,6/)
+   conversion(10,1,:) = (/1,0,0/)
+   conversion(10,2,:) = (/11,1,1/)
+   conversion(11,1,:) = (/1,-1,0/)
+   conversion(11,2,:) = (/13,15,1/)
+   conversion(12,1,:) = (/1,-3,0/)
+   conversion(12,2,:) = (/18,14,1/)
+   conversion(13,1,:) = (/3,-1,0/)
+   conversion(13,2,:) = (/12,19,1/)
+   conversion(14,1,:) = (/2,-3,-3/)
+   conversion(14,2,:) = (/20,13,15/)
+   conversion(15,1,:) = (/4,-1,-1/)
+   conversion(15,2,:) = (/16,18,14/)
+   conversion(16,1,:) = (/4,-1,-1/)
+   conversion(16,2,:) = (/17,12,19/)
 
    start_pos = -cell_size
    num_steps = cell_size * 2.0d0 / step_size + 1  ! +1 accounts for xyz=zero.
@@ -6767,6 +6833,7 @@ sh(16,16) = 16*pc(17,17) - 4*pc(17,12) - 4*pc(17,19) - 4*pc(12,17) + pc(12,12)&
    integer :: p, q, i
    integer :: num_steps
    integer, dimension (20,3) :: triads
+   integer, dimension (16,2,3) :: conversion
    integer, dimension (3) :: l1, l2
    real (kind=double) :: start_pos
    real (kind=double), dimension (3) :: xyz, xyz_sum, xyz_soln
@@ -6792,6 +6859,38 @@ sh(16,16) = 16*pc(17,17) - 4*pc(17,12) - 4*pc(17,19) - 4*pc(12,17) + pc(12,12)&
    triads(18,:) = (/3,0,0/)
    triads(19,:) = (/0,3,0/)
    triads(20,:) = (/0,0,3/)
+   conversion(1,1,:) = (/1,0,0/)
+   conversion(1,2,:) = (/1,1,1/)
+   conversion(2,1,:) = (/1,0,0/)
+   conversion(2,2,:) = (/2,1,1/)
+   conversion(3,1,:) = (/1,0,0/)
+   conversion(3,2,:) = (/3,1,1/)
+   conversion(4,1,:) = (/1,0,0/)
+   conversion(4,2,:) = (/4,1,1/)
+   conversion(5,1,:) = (/1,0,0/)
+   conversion(5,2,:) = (/8,1,1/)
+   conversion(6,1,:) = (/1,0,0/)
+   conversion(6,2,:) = (/9,1,1/)
+   conversion(7,1,:) = (/1,0,0/)
+   conversion(7,2,:) = (/10,1,1/)
+   conversion(8,1,:) = (/1,-1,0/)
+   conversion(8,2,:) = (/5,6,1/)
+   conversion(9,1,:) = (/2,-1,-1/)
+   conversion(9,2,:) = (/7,5,6/)
+   conversion(10,1,:) = (/1,0,0/)
+   conversion(10,2,:) = (/11,1,1/)
+   conversion(11,1,:) = (/1,-1,0/)
+   conversion(11,2,:) = (/13,15,1/)
+   conversion(12,1,:) = (/1,-3,0/)
+   conversion(12,2,:) = (/18,14,1/)
+   conversion(13,1,:) = (/3,-1,0/)
+   conversion(13,2,:) = (/12,19,1/)
+   conversion(14,1,:) = (/2,-3,-3/)
+   conversion(14,2,:) = (/20,13,15/)
+   conversion(15,1,:) = (/4,-1,-1/)
+   conversion(15,2,:) = (/16,18,14/)
+   conversion(16,1,:) = (/4,-1,-1/)
+   conversion(16,2,:) = (/17,12,19/)
 
    start_pos = -cell_size
    num_steps = cell_size * 2.0d0 / step_size + 1  ! +1 accounts for xyz=zero.
@@ -9950,6 +10049,7 @@ end subroutine boys
    integer :: p, q, i, j, k
    integer :: num_steps
    integer, dimension (20,3) :: triads
+   integer, dimension (16,2,3) :: conversion
    integer, dimension (3) :: l1, l2
    real (kind=double) :: start_pos, r, soln
    real (kind=double) :: xC_dist_sqrd, yC_dist_sqrd, zC_dist_sqrd
@@ -9976,6 +10076,38 @@ end subroutine boys
    triads(18,:) = (/3,0,0/)
    triads(19,:) = (/0,3,0/)
    triads(20,:) = (/0,0,3/)
+   conversion(1,1,:) = (/1,0,0/)
+   conversion(1,2,:) = (/1,1,1/)
+   conversion(2,1,:) = (/1,0,0/)
+   conversion(2,2,:) = (/2,1,1/)
+   conversion(3,1,:) = (/1,0,0/)
+   conversion(3,2,:) = (/3,1,1/)
+   conversion(4,1,:) = (/1,0,0/)
+   conversion(4,2,:) = (/4,1,1/)
+   conversion(5,1,:) = (/1,0,0/)
+   conversion(5,2,:) = (/8,1,1/)
+   conversion(6,1,:) = (/1,0,0/)
+   conversion(6,2,:) = (/9,1,1/)
+   conversion(7,1,:) = (/1,0,0/)
+   conversion(7,2,:) = (/10,1,1/)
+   conversion(8,1,:) = (/1,-1,0/)
+   conversion(8,2,:) = (/5,6,1/)
+   conversion(9,1,:) = (/2,-1,-1/)
+   conversion(9,2,:) = (/7,5,6/)
+   conversion(10,1,:) = (/1,0,0/)
+   conversion(10,2,:) = (/11,1,1/)
+   conversion(11,1,:) = (/1,-1,0/)
+   conversion(11,2,:) = (/13,15,1/)
+   conversion(12,1,:) = (/1,-3,0/)
+   conversion(12,2,:) = (/18,14,1/)
+   conversion(13,1,:) = (/3,-1,0/)
+   conversion(13,2,:) = (/12,19,1/)
+   conversion(14,1,:) = (/2,-3,-3/)
+   conversion(14,2,:) = (/20,13,15/)
+   conversion(15,1,:) = (/4,-1,-1/)
+   conversion(15,2,:) = (/16,18,14/)
+   conversion(16,1,:) = (/4,-1,-1/)
+   conversion(16,2,:) = (/17,12,19/)
 
    start_pos = -cell_size
    num_steps = cell_size * 2.0d0 / step_size + 1  ! +1 accounts for xyz=zero.
@@ -15779,6 +15911,7 @@ sh(16,16,3) = 16*pc(17,17,3) - 4*pc(17,12,3) - 4*pc(17,19,3) - 4*pc(12,17,3) +&
    integer :: p, q, i, j
    integer :: num_steps
    integer, dimension (20,3) :: triads
+   integer, dimension (16,2,3) :: conversion
    integer, dimension (3) :: l1, l2
    real (kind=double) :: start_pos, curr_pos
    real (kind=double), dimension (3) :: xyz
@@ -15828,7 +15961,7 @@ sh(16,16,3) = 16*pc(17,17,3) - 4*pc(17,12,3) - 4*pc(17,19,3) - 4*pc(12,17,3) +&
    !   (or **(ly2-1) or **(lz2-1)), some special care must be taken. This
    !   term represents an angular momentum and the integral will have the
    !   form of an overlap integral. Because we cannot have a negative angular
-   !   momentum or we must discard this term when lx2-1 > 0.
+   !   momentum we must discard this term when lx2-1 < 0.
 
    ! Initialize local variables.
    triads(1,:) = (/0,0,0/)
@@ -15851,6 +15984,38 @@ sh(16,16,3) = 16*pc(17,17,3) - 4*pc(17,12,3) - 4*pc(17,19,3) - 4*pc(12,17,3) +&
    triads(18,:) = (/3,0,0/)
    triads(19,:) = (/0,3,0/)
    triads(20,:) = (/0,0,3/)
+   conversion(1,1,:) = (/1,0,0/)
+   conversion(1,2,:) = (/1,1,1/)
+   conversion(2,1,:) = (/1,0,0/)
+   conversion(2,2,:) = (/2,1,1/)
+   conversion(3,1,:) = (/1,0,0/)
+   conversion(3,2,:) = (/3,1,1/)
+   conversion(4,1,:) = (/1,0,0/)
+   conversion(4,2,:) = (/4,1,1/)
+   conversion(5,1,:) = (/1,0,0/)
+   conversion(5,2,:) = (/8,1,1/)
+   conversion(6,1,:) = (/1,0,0/)
+   conversion(6,2,:) = (/9,1,1/)
+   conversion(7,1,:) = (/1,0,0/)
+   conversion(7,2,:) = (/10,1,1/)
+   conversion(8,1,:) = (/1,-1,0/)
+   conversion(8,2,:) = (/5,6,1/)
+   conversion(9,1,:) = (/2,-1,-1/)
+   conversion(9,2,:) = (/7,5,6/)
+   conversion(10,1,:) = (/1,0,0/)
+   conversion(10,2,:) = (/11,1,1/)
+   conversion(11,1,:) = (/1,-1,0/)
+   conversion(11,2,:) = (/13,15,1/)
+   conversion(12,1,:) = (/1,-3,0/)
+   conversion(12,2,:) = (/18,14,1/)
+   conversion(13,1,:) = (/3,-1,0/)
+   conversion(13,2,:) = (/12,19,1/)
+   conversion(14,1,:) = (/2,-3,-3/)
+   conversion(14,2,:) = (/20,13,15/)
+   conversion(15,1,:) = (/4,-1,-1/)
+   conversion(15,2,:) = (/16,18,14/)
+   conversion(16,1,:) = (/4,-1,-1/)
+   conversion(16,2,:) = (/17,12,19/)
 
    start_pos = -cell_size
    num_steps = cell_size * 2.0d0 / step_size + 1  ! +1 accounts for xyz=zero.
@@ -17628,12 +17793,11 @@ sh(16,16,3) = 16*pc(17,17,3) - 4*pc(17,12,3) - 4*pc(17,19,3) - 4*pc(12,17,3) +&
       ! Compute each "internal" term of the prime integral. Compare each of
       !   these lines with the 1D momentum matrix equation produce by the
       !   osrecurintg_makenum.py script (appropriately separated into terms).
-      !   and the expression in the last equals of equation 69 in Ben Walker's
-      !   dissertation.
+      !   and the expression in equation 69 in Ben Walker's dissertation.
 
       ! Second line of equation 69. Also visible as second term in the
       !   script-produced equation.
-      primeMM = primeMM - 2.0d0*a2 * (curr_pos - B)**(l2+1)
+      primeMM = - 2.0d0*a2 * (curr_pos - B)**(l2+1)
 
       ! First line in the equation produced by sympy and first line in
       !   equation 69 in Ben Walker's dissertation. As mentioned above,

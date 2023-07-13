@@ -10,6 +10,9 @@ module O_MathSubs
    ! Define access
    public
 
+   ! Define module variables.
+   integer, allocatable, dimension(:) :: preCompFactorial
+
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    ! Begin list of module subroutines.!
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -203,5 +206,306 @@ subroutine crossProduct (answer, vector1, vector2)
 
 end subroutine crossProduct
 
+
+subroutine computeFactorials(maxFact)
+
+   implicit none
+
+   ! Define the passed parameters.
+   integer :: maxFact ! Highest factorial parameter.
+
+   ! Define local variables.
+   integer :: i
+
+   allocate (preCompFactorial(0:maxFact))
+
+   preCompFactorial(0) = 1 ! This is 0!
+   preCompFactorial(1) = 1 ! This is 1!
+   do i = 2, maxFact
+      preCompFactorial(i) = preCompFactorial(i-1) * i
+   enddo
+
+
+end subroutine computeFactorials
+
+
+function wignerD(twoj, twom, twomp, eulerCoords)
+
+   ! Use necessary modules.
+   use O_Kinds
+   use O_Constants, only: pi
+
+   implicit none
+
+   ! Define function definition variable.
+   complex (kind=double) :: wignerD
+
+   ! Define passed parameters.
+   integer :: twoj, twom, twomp
+   real(kind=double), dimension(3) :: eulerCoords ! alpha, beta, gamma
+         ! Pulled from theta and phi of the ttpCoords.
+
+   ! Define local variables.
+   real (kind=double) :: term1Exp, term3Exp
+   complex (kind=double) :: term1, term3
+   real (kind=double) :: term2
+
+
+   ! Condition 1
+!   if ((j < 0) .or. (.not. (modulo(j,1.0) == 0)) .or. &
+!         & (modulo(j,1.0) == 0.5 .and. ((modulo(m,1.0) /= 0) &
+!         & .or. (modulo(mp,1.0) /= 0)))) then
+!      write (20,*) "Invalid input parameters:"
+!      write (20,fmt="(a,3e10.3)") "j, m, mp: ", j, m, mp
+!      write (20,*) "Parameter j must be non-negative integer or half-integer."
+!      write (20,*) "Parameters m and mp must be between -j and j."
+!      stop
+!   endif
+
+!   ! Condition 2
+!   if ((eulerCoords(1) < 0) .or. (eulerCoords(1) > 2.0 * pi) &
+!         & .or. (eulerCoords(2) < 0) .or. (eulerCoords(2) > pi) &
+!         & .or. (eulerCoords(3) < 0) .or. (eulerCoords(3) > 2.0 * pi)) then
+!      write (20,*) "Invalid input parameters:"
+!      write (20,fmt="(a,3e12.3)") "phi theta phi: ", eulerCoords(1), &
+!            & eulerCoords(2), eulerCoords(3)
+!      write (20,fmt="(a,3e12.3)") "phi theta phi: ",2.0*pi,2.0*pi,2.0*pi
+!   endif
+!   if ((theta_0 < 0) .or. (theta_0 > 2.0 * pi) .or. (theta < 0) &
+!         & .or. (theta > 2.0 * pi) .or. (phi < 0) .or. (phi > 2.0 * pi)) then
+!      write (20,*) "Invalid input parameters:"
+!      write (20,fmt="(a,3e10.3)") "j, m, mp: ", j, m, mp
+!      write (20,*) "Parameter j must be non-negative integer or half-integer."
+!   endif
+!write (6,fmt="(a,3i3,3e14.5)") "twoj twom twomp EulerCoords",twoj,&
+!   & twom,twomp,eulerCoords(:)
+
+   term1Exp = real(twom) / 2.0_double * eulerCoords(1)
+   term1 = cmplx(cos(term1Exp), -sin(term1Exp), double)
+
+   term2 = smalld(twoj, twom, twomp, eulerCoords(2))
+
+   term3Exp = real(twomp) / 2.0_double * eulerCoords(3)
+   term3 = cmplx(cos(term3Exp), -sin(term3Exp), double)
+
+!write (6,fmt="(a,2e15.4)") "WignerD term1", term1
+!write (6,fmt="(a,2e15.4)") "WignerD term2", term2
+!write (6,fmt="(a,2e15.4)") "WignerD term3", term3
+
+   wignerD = term1 * term2 * term3
+
+end function wignerD
+
+
+function smalld (twoj, twom, twomp, theta)
+
+   ! Use necessary modules
+   use O_Kinds
+
+   implicit none
+
+   ! Define function return variable.
+   real(kind=double) :: smalld
+
+   ! Define passed parameters.
+   integer :: twoj, twom, twomp
+   real(kind=double) :: theta
+
+   ! Define local variables.
+   integer :: twok, twokStart, twokEnd, halfk
+   real(kind=double) :: dsum
+!   real(kind=double) :: coeff
+   real(kind=double) :: cos_theta_2
+   real(kind=double) :: sin_theta_2
+   real(kind=double) :: numerator
+   real(kind=double) :: denominator
+
+
+   ! Following equation (4) in section 4.3.1 of "Quantum Theory of Angular
+   !   Momentum: Irreducible Tensors, Spherical Harmonics, Vector Coupling
+   !   Coefficients, 3nj Symbols" by Varshalovich DA, Moskalev AN, and
+   !   Khersonski VK.; Singapore; Teaneck, NJ, USA: World Scientific Pub;
+   !   1988. 514 p.; Equation found at the bottom of page 76.
+   
+
+   cos_theta_2 = cos(0.5_double * theta)
+   sin_theta_2 = sin(0.5_double * theta)
+!write (6,*) "cos sin",cos_theta_2,sin_theta_2
+
+   twokStart = max(0, twom - twomp)
+   twokEnd = min(twoj + twom, twoj - twomp)
+
+!write (6,*) "twoj, twom, twomp = ", twoj, twom, twomp
+!write (6,*) "twokStart twokEnd", twokStart, twokEnd
+   smalld = sqrt(real(preCompFactorial((twoj+twom)/2) &
+         & * preCompFactorial((twoj-twom)/2) &
+         & * preCompFactorial((twoj+twomp)/2) &
+         & * preCompFactorial((twoj-twomp)/2),double))
+
+   dsum = 0.0_double
+   do twok = twokStart, twokEnd, 2
+      halfk = real(twok) / 2.0_double
+      numerator = (-1.0d0)**halfk &
+            & * cos_theta_2**(twoj - twok + (twom - twomp)/2) &
+            & * sin_theta_2**(twok + (twomp - twom)/2)
+!write (6,*) "(twom - twomp)/2",(twom - twomp)/2
+!write (6,*) "(twomp - twom)/2",(twomp - twom)/2
+!write (6,fmt="(a,i3,3e14.5)") "twok 1 2 3", twok, (-1.0d0)**halfk, &
+!      & cos_theta_2**(twoj - twok + (twom - twomp)/2), &
+!      & sin_theta_2**(twok + (twomp - twom)/2)
+
+      denominator = preCompFactorial(halfk) &
+            & * preCompFactorial((twoj + twom - twok)/2) &
+            & * preCompFactorial((twoj - twomp - twok)/2) &
+            & * preCompFactorial((twomp - twom + twok)/2)
+
+      dsum = dsum + numerator / denominator
+   enddo
+
+   smalld = smalld * dsum
+
+end function smalld
+
+
+function hypersphericalHarmonic4D(twoj,twom,twomp,ttpCoords)
+
+   ! Use necessary modules
+   use O_Kinds
+
+   implicit none
+
+   ! Define function return variable.
+   complex(kind=double) :: hypersphericalHarmonic4D
+
+   ! Define passed parameters.
+   integer :: twoj, twom, twomp
+   real(kind=double), dimension(3) :: ttpCoords ! theta_0, theta, phi
+
+   ! Define local variables.
+   integer :: i
+   real(kind=double) :: term2Param
+   real(kind=double), dimension(3) :: ttpTempCoords
+   complex(kind=double) :: term1, term2, term3
+
+   ! Initialize the accumulation variable.
+   hypersphericalHarmonic4D = cmplx(0.0, 0.0, double)
+   do i = -twoj, twoj, 2
+      ttpTempCoords(1) = ttpCoords(3)  !  Phi
+      ttpTempCoords(2) = ttpCoords(2)  !  Theta
+      ttpTempCoords(3) = -ttpCoords(3) ! -Phi
+      term1 = wignerD(twoj, twom, i, ttpTempCoords)
+
+      term2Param = real(i)/2.0_double * ttpCoords(1)
+      term2 = cmplx(cos(term2Param), -sin(term2Param), double)
+
+      ttpTempCoords(2) = -ttpCoords(2) ! -Theta
+      term3 = wignerD(twoj, i, twomp, ttpTempCoords)
+
+      hypersphericalHarmonic4D = hypersphericalHarmonic4D &
+            & + term1 * term2 * term3
+
+!write (6,*) "i HSH = ", i, hypersphericalHarmonic4D
+!write (6,*) "term1 = ", term1
+!write (6,*) "term2 = ", term2
+!write (6,*) "term3 = ", term3
+   enddo
+   
+end function hypersphericalHarmonic4D
+
+
+function clebschGordan(twoj1, twoj2, twoj, twom1, twom2, twom)
+
+   ! Use necessary modules
+   use O_Kinds
+
+   implicit none
+
+   ! Define function return variable.
+   real (kind=double) :: clebschGordan
+
+   ! Define passed paramters.
+   integer :: twoj1, twoj2, twoj, twom1, twom2, twom
+
+   ! Define local variables.
+   integer :: twoz ! Index in the summation for computing CGC values.
+   integer :: twocgcMin ! Min value of twoz.
+   integer :: twocgcMax ! Max value of twoz.
+   real(kind=double) :: preFactor
+   real(kind=double) :: coefficient
+   real(kind=double) :: numerator
+   real(kind=double) :: denominator
+!write (6,fmt="(a,i)") "(twoj1 + twoj2 - twoj)/2", (twoj1 + twoj2 - twoj)/2
+!write (6,fmt="(a,i)") "(twoj1 - twoj2 + twoj)/2", (twoj1 - twoj2 + twoj)/2
+!write (6,fmt="(a,i)") "(-twoj1 + twoj2 + twoj)/2", (-twoj1 + twoj2 + twoj)/2
+!write (6,fmt="(a,i)") "(twoj + twoj1 + twoj2 + 2)/2", (twoj + twoj1 + twoj2 + 2)/2
+
+   ! Following QTAM chapter 8, we see in sub-section 8.1.1 the constraints on
+   !   parameters (j, j1, j2, m, m1, m2) to the CGCs, and in section 8.2 we
+   !   see the explicit definition of the CGC values. Specifically, we use
+   !   equations (1) from section 8.2 of QTAM (page 237) to define the
+   !   preFactor (Delta(abc) with a = j, b = j1, c = j2).
+   preFactor = sqrt(real( &
+         &   preCompFactorial((twoj1 + twoj2 - twoj)/2) &
+         & * preCompFactorial((twoj1 - twoj2 + twoj)/2) &
+         & * preCompFactorial((-twoj1 + twoj2 + twoj)/2)) &
+         & / real(preCompFactorial((twoj + twoj1 + twoj2 + 2)/2)))
+!write (6,fmt="(a,e15.4)") "preFactor", preFactor
+!
+!write (6,fmt="(a,i)") "(twoj + twom)/2", (twoj + twom)/2
+!write (6,fmt="(a,i)") "(twoj - twom)/2", (twoj - twom)/2
+!write (6,fmt="(a,i)") "(twoj + 1)", twoj + 1
+!write (6,fmt="(a,i)") "(twoj1 + twom1)/2", (twoj1 + twom1)/2
+!write (6,fmt="(a,i)") "(twoj1 - twom1)/2", (twoj1 - twom1)/2
+!write (6,fmt="(a,i)") "(twoj2 + twom2)/2", (twoj2 + twom2)/2
+!write (6,fmt="(a,i)") "(twoj2 - twom2)/2", (twoj2 - twom2)/2
+
+   ! Then, we use equation (5) in section 8.2 of QTAM (page 238) to compute
+   !   explicit values for the CGCs.
+   coefficient = sqrt(real(preCompFactorial((twoj + twom)/2) &
+      & * preCompFactorial((twoj - twom)/2) * (twoj + 1)) &
+         & / real(preCompFactorial((twoj1 + twom1)/2) &
+         & * preCompFactorial((twoj1 - twom1)/2) &
+         & * preCompFactorial((twoj2 + twom2)/2) &
+         & * preCompFactorial((twoj2 - twom2)/2)))
+!write (6,fmt="(a,e15.4)") "coefficient", coefficient
+
+   clebschGordan = 0.0_double
+   twocgcMin = max(0, twom1 - twoj1, twoj2 - twoj1 + twom)
+   twocgcMax = min(twoj2 + twoj + twom1, twoj - twoj1 + twoj2,&
+         & twoj + twom)
+!write (6,fmt="(a,2i)") "cgc Min,Max", twocgcMin, twocgcMax
+!   cgcMin = (max(0, twom1 - twoj1, twoj2 - twoj1 + twom))/2
+!   cgcMax = (min(twoj2 + twoj + twom1, twoj - twoj1 + twoj2,&
+!         & twoj + twom))/2
+!!   clebschGordan = 0.0_double
+!!   cgcMin = max(0, int(m1 - j1), int(j2 - j1 + m))
+!!   cgcMax = min(int(j2 + j + m1), int(j - j1 + j2), int(j + m))
+
+   do twoz = twocgcMin, twocgcMax, 2
+!write (6,*) "twoz = ", twoz
+!write (6,fmt="(a,i)") "(twoj2 + twom2 + i)/2", (twoj2 + twom2 + twoz)
+
+      numerator = real(((-1)**((twoj2 + twom2 + twoz)/2)) &
+            & * preCompFactorial((twoj + twoj2 + twom1 - twoz)/2) &
+            & * preCompFactorial((twoj1 - twom1 + twoz)/2),double)
+!      numerator = real(((-1)**(j2 + m2 + i)) &
+!            & * preCompFactorial(int(j2 + j + m1 - i)) &
+!            & * preCompFactorial(int(j1 - m1 + i)),double)
+
+      denominator = real(preCompFactorial(twoz/2) &
+            & * preCompFactorial((twoj - twoj1 + twoj2 - twoz)/2) &
+            & * preCompFactorial((twoj + twom - twoz)/2) &
+            & * preCompFactorial((twoj1 - twoj2 - twom + twoz)/2),double)
+!      denominator = real(preCompFactorial(i) &
+!            & * preCompFactorial(int(j - j1 + j2 - i)) &
+!            & * preCompFactorial(int(j + m - i)) &
+!            & * preCompFactorial(int(j1 - j2 - m + i)),double)
+
+      clebschGordan = clebschGordan + numerator / denominator
+   enddo
+
+   clebschGordan = preFactor * coefficient * clebschGordan
+
+end function clebschGordan
 
 end module O_MathSubs

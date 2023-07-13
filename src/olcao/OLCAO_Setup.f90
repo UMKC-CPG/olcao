@@ -20,13 +20,14 @@ subroutine setupSCF
    use O_GaussianRelations,   only: makeAlphaDist, makeAlphaNucDist, &
                                   & makeAlphaPotDist, cleanUpGaussRelations
    use O_IntegralsSCF,        only: allocateIntegralsSCF, gaussOverlapOL, &
-                                  & gaussOverlapKE, gaussOverlapNP, &
-                                  & elecPotGaussOverlap, cleanUpIntegralsSCF
+                                  & gaussOverlapKE, gaussOverlapMV, &
+                                  & gaussOverlapNP, elecPotGaussOverlap, &
+                                  & cleanUpIntegralsSCF
    use O_AtomicSites, only: coreDim, valeDim, cleanUpAtomSites
    use O_AtomicTypes, only: cleanUpRadialFns, cleanUpAtomTypes
    use O_PotSites,    only: cleanUpPotSites
    use O_PotTypes,    only: cleanUpPotTypes
-   use O_Potential,   only: cleanUpPotential
+   use O_Potential,   only: rel, cleanUpPotential
    use O_CoreCharge,  only: makeCoreRho
    use O_TimeStamps,  only: initOperationLabels
 
@@ -131,8 +132,14 @@ subroutine setupSCF
 
 
    ! Calculate the matrix elements of the kinetic energy between all LCAO Bloch
-   !   wave functions.
+   !   basis functions.
    call gaussOverlapKE
+
+   ! Calculate the matrix elements of the mass velocity between all LCAO Bloch
+   !   basis functions if needed for the scalar relativistic calculation.
+   if (rel == 1) then
+      call gaussOverlapMV
+   endif
 
 
 

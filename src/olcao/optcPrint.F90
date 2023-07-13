@@ -14,7 +14,7 @@ subroutine printOptcResults
                                 & sumNumPartials
    use O_Input,           only: sigmaOPTC, deltaOPTC, sigmaPACS, deltaPACS,&
                                 & detailCodePOPTC
-   use O_Constants,       only: dim3, pi, auTime, eCharge, hPlank, hartree
+   use O_Constants,       only: dim3, pi, auTime, eCharge, hPlanck, hartree
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
@@ -108,11 +108,11 @@ subroutine printOptcResults
    !   have the proper units since we are giving the value in eV and it
    !   needs to be a frequency in 1/s.  The 2pi from the hbar will cancel
    !   with the 4pi to leave just 2.  We also divide by eCharge to put the
-   !   value of hPlank in eV s instead of Js.
-   conversionFactorEps2 = 2.0_double * hPlank / eCharge
+   !   value of hPlanck in eV s instead of Js.
+   conversionFactorEps2 = 2.0_double * hPlanck / eCharge
 
    ! Again we must adjust for the units so we will multiply the result by
-   !   1x10^-15 because of the difference between 1d-34 and 1d-19 for hPlank
+   !   1x10^-15 because of the difference between 1d-34 and 1d-19 for hPlanck
    !   and eCharge.  I'm not yet sure why we don't apply this factor.  CHECK!
 !   conversionFactorEps2 = conversionFactorEps2 * 1.0d-15
    conversionFactorEps2 = conversionFactorEps2

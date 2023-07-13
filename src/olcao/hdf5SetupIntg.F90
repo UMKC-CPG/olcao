@@ -2,6 +2,7 @@ module O_SetupIntegralsHDF5
 
    ! Import any necessary definition modules.
    use HDF5
+   use O_Potential, only: rel
 
    ! Make sure that no funny variables are defined.
    implicit none
@@ -22,6 +23,7 @@ module O_SetupIntegralsHDF5
    ! Define the group IDs under atomIntgGroup_gid
    integer(hid_t) :: atomOverlap_gid
    integer(hid_t) :: atomKEOverlap_gid
+   integer(hid_t) :: atomMVOverlap_gid
    integer(hid_t) :: atomNucOverlap_gid
    integer(hid_t) :: atomPotOverlap_gid
 
@@ -49,6 +51,7 @@ module O_SetupIntegralsHDF5
    !   Those datasets will be given IDs dynamically.
    integer(hid_t), allocatable, dimension (:)   :: atomOverlap_did
    integer(hid_t), allocatable, dimension (:)   :: atomKEOverlap_did
+   integer(hid_t), allocatable, dimension (:)   :: atomMVOverlap_did
    integer(hid_t), allocatable, dimension (:)   :: atomNucOverlap_did
    integer(hid_t), allocatable, dimension (:,:) :: atomPotOverlap_did
 
@@ -105,6 +108,11 @@ subroutine initSetupIntegralHDF5 (setup_fid)
    if (hdferr /= 0) stop 'Failed to create atom overlap group'
    call h5gcreate_f (atomIntgGroup_gid,"atomKEOverlap",atomKEOverlap_gid,hdferr)
    if (hdferr /= 0) stop 'Failed to create kinetic energy overlap group'
+   if (rel == 1) then
+      call h5gcreate_f (atomIntgGroup_gid,"atomMVOverlap",atomMVOverlap_gid,&
+            & hdferr)
+      if (hdferr /= 0) stop 'Failed to create mass velocity overlap group'
+   endif
    call h5gcreate_f (atomIntgGroup_gid,"atomNucOverlap",atomNucOverlap_gid,&
          & hdferr)
    if (hdferr /= 0) stop 'Failed to create atom nuclear overlap group'
@@ -123,6 +131,9 @@ subroutine initSetupIntegralHDF5 (setup_fid)
    allocate (atomPotKPointOL_gid (numKPoints))
    allocate (atomOverlap_did     (numKPoints))
    allocate (atomKEOverlap_did   (numKPoints))
+   if (rel == 1) then
+      allocate (atomMVOverlap_did   (numKPoints))
+   endif
    allocate (atomNucOverlap_did  (numKPoints))
    allocate (atomPotOverlap_did  (numKPoints,potDim))
 
@@ -165,6 +176,11 @@ subroutine initSetupIntegralHDF5 (setup_fid)
       call h5dcreate_f (atomKEOverlap_gid,currentName,H5T_NATIVE_DOUBLE,&
             & valeVale_dsid,atomKEOverlap_did(i),hdferr,valeVale_plid)
       if (hdferr /= 0) stop 'Failed to create KE overlap did'
+      if (rel == 1) then
+         call h5dcreate_f (atomMVOverlap_gid,currentName,H5T_NATIVE_DOUBLE,&
+            & valeVale_dsid,atomMVOverlap_did(i),hdferr,valeVale_plid)
+         if (hdferr /= 0) stop 'Failed to create MV overlap did'
+      endif
       call h5dcreate_f (atomNucOverlap_gid,currentName,H5T_NATIVE_DOUBLE,&
             & valeVale_dsid,atomNucOverlap_did(i),hdferr,valeVale_plid)
       if (hdferr /= 0) stop 'Failed to create nuclear overlap did'
@@ -186,7 +202,7 @@ subroutine accessSetupIntegralHDF5 (setup_fid)
 
    ! Import necessary object modules.
    use O_KPoints,     only: numKPoints
-   use O_Potential,   only: potDim
+   use O_Potential,   only: rel, potDim
    use O_AtomicSites, only: valeDim
 
    ! Define the passed parameters.
@@ -214,6 +230,11 @@ subroutine accessSetupIntegralHDF5 (setup_fid)
    if (hdferr /= 0) stop 'Failed to open atom overlap group'
    call h5gopen_f (atomIntgGroup_gid,"atomKEOverlap",atomKEOverlap_gid,hdferr)
    if (hdferr /= 0) stop 'Failed to open kinetic energy overlap group'
+   if (rel == 1) then
+      call h5gopen_f (atomIntgGroup_gid,"atomMVOverlap",atomMVOverlap_gid,&
+            & hdferr)
+      if (hdferr /= 0) stop 'Failed to open mass velocity overlap group'
+   endif
    call h5gopen_f (atomIntgGroup_gid,"atomNucOverlap",atomNucOverlap_gid,&
          & hdferr)
    if (hdferr /= 0) stop 'Failed to open atom nuclear overlap group'
@@ -232,6 +253,9 @@ subroutine accessSetupIntegralHDF5 (setup_fid)
    allocate (atomPotKPointOL_gid (numKPoints))
    allocate (atomOverlap_did     (numKPoints))
    allocate (atomKEOverlap_did   (numKPoints))
+   if (rel == 1) then
+      allocate (atomMVOverlap_did   (numKPoints))
+   endif
    allocate (atomNucOverlap_did  (numKPoints))
    allocate (atomPotOverlap_did  (numKPoints,potDim))
 
@@ -253,6 +277,11 @@ subroutine accessSetupIntegralHDF5 (setup_fid)
       if (hdferr /= 0) stop 'Failed to open atom overlap did'
       call h5dopen_f (atomKEOverlap_gid,currentName,atomKEOverlap_did(i),hdferr)
       if (hdferr /= 0) stop 'Failed to open KE overlap did'
+      if (rel == 1) then
+         call h5dopen_f (atomMVOverlap_gid,currentName,atomMVOverlap_did(i),&
+               & hdferr)
+        if (hdferr /= 0) stop 'Failed to open MV overlap did'
+      endif
       call h5dopen_f (atomNucOverlap_gid,currentName,atomNucOverlap_did(i),&
             & hdferr)
       if (hdferr /= 0) stop 'Failed to open nuclear overlap did'
@@ -288,7 +317,7 @@ subroutine closeSetupIntegralHDF5
 
    ! Import necessary object modules.
    use O_KPoints,   only: numKPoints
-   use O_Potential, only: potDim
+   use O_Potential, only: rel, potDim
 
    ! Make sure that no variables are implicitly declared.
    implicit none
@@ -307,6 +336,10 @@ subroutine closeSetupIntegralHDF5
       if (hdferr /= 0) stop 'Failed to close atomOverlap_did.'
       call h5dclose_f (atomKEOverlap_did(i),hdferr)
       if (hdferr /= 0) stop 'Failed to close atomKEOverlap_did.'
+      if (rel == 1) then
+         call h5dclose_f (atomMVOverlap_did(i),hdferr)
+        if (hdferr /= 0) stop 'Failed to close atomMVOverlap_did.'
+      endif
       call h5dclose_f (atomNucOverlap_did(i),hdferr)
       if (hdferr /= 0) stop 'Failed to close atomNucOverlap_did.'
       do j = 1, potDim
@@ -328,6 +361,10 @@ subroutine closeSetupIntegralHDF5
    if (hdferr /= 0) stop 'Failed to close atomOverlap_gid.'
    call h5gclose_f (atomKEOverlap_gid,hdferr)
    if (hdferr /= 0) stop 'Failed to close atomKEOverlap_gid.'
+   if (rel == 1) then
+      call h5gclose_f (atomMVOverlap_gid,hdferr)
+      if (hdferr /= 0) stop 'Failed to close atomMVOverlap_gid.'
+   endif
    call h5gclose_f (atomNucOverlap_gid,hdferr)
    if (hdferr /= 0) stop 'Failed to close atomNucOverlap_gid.'
    call h5gclose_f (atomPotOverlap_gid,hdferr)
@@ -339,6 +376,9 @@ subroutine closeSetupIntegralHDF5
    deallocate (atomPotKPointOL_gid)
    deallocate (atomOverlap_did)
    deallocate (atomKEOverlap_did)
+   if (rel == 1) then
+      deallocate (atomMVOverlap_did)
+   endif
    deallocate (atomNucOverlap_did)
    deallocate (atomPotOverlap_did)
    

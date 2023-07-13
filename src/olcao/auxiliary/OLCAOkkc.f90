@@ -520,7 +520,7 @@ subroutine get_n_k_R_a(length,energy,eps1,eps2,refractIndex,extnctCoeff,&
          ! k = sqrt[(sqrt(eps1^2 + eps2^2)-eps1)/2] ; kappa
          ! R = ((n-1)^2 + k) / ((n+1)^2 + k) ! Reflectivity
          ! alpha = 4 * pi * kappa / lambda = 2 * kappa * omega / c
-         ! omega = (energy in eV) / hPlank -> angular frequency
+         ! omega = (energy in eV) / hPlanck -> angular frequency
          refractIndex(j,i) = sqrt((sqrt(eps1(j,i)*eps1(j,i) + &
                & eps2(j,i)*eps2(j,i))+eps1(j,i))/2.0_double)
 
@@ -531,7 +531,7 @@ subroutine get_n_k_R_a(length,energy,eps1,eps2,refractIndex,extnctCoeff,&
                          & + ((refractIndex(j,i)+1)**2 + extnctCoeff(j,i))
 
          absorpCoeff(j,i) = 2.0_double * extnctCoeff(j,i) * energy(i) / &
-                         & hPlank / lightSpeed
+                         & hPlanck / lightSpeed
       enddo
    enddo
 end subroutine get_n_k_R_a

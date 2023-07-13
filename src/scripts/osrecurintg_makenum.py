@@ -42,6 +42,7 @@ class ScriptSettings():
         self.nuclear = temp_params[2]
         self.electron = temp_params[3]
         self.momentum = temp_params[4]
+        self.massvel = temp_params[5]
         # self.e_field = temp_params[5]
         # self.e_grad = temp_params[6]
         # self.ang_mom = temp_params[7]
@@ -87,6 +88,10 @@ def parse_command_line():
                         default='store_false', help = 'Include two-center '+
                         'momentum integral.')
 
+    parser.add_argument('-mv', '--massvel', action='store_true',
+                        default='store_false', help = 'Include mass '+
+                        'velocity integral.')
+
     return parser.parse_args()
 
 
@@ -109,6 +114,9 @@ def reconcile(args, settings):
 
     if (args.momentum == True):
         settings.momentum = True
+
+    if (args.massvel == True):
+        settings.massvel = True
 
     # Return settings that incorporate the command line arguments.
     return settings
@@ -166,6 +174,7 @@ def kinetic_energy():
     #         + orbital_1 * sp.diff(sp.diff(orbital_2, Py), Py)
     #         + orbital_1 * sp.diff(sp.diff(orbital_2, Pz), Pz))
 
+
 # This integral is /not/ seperable and so we must produce the full 3D
 #   solution.
 def nuclear():
@@ -216,6 +225,44 @@ def momentum():
     orbital_2 = (Px-Rx2)**lx2 * sp.exp(-zeta2*(Px-Rx2)**2)
 
     return sp.printing.fcode(orbital_1 * sp.diff(orbital_2, Px), Px)
+
+
+def massvel():
+    
+
+    return sp.printing.fcode()
+
+    # The commented code below will produce the full expression. However,
+    #   the uncommented code above will produce the expression for one
+    #   dimension. That 1D expression is what we later manipulate by hand
+    #   to create the separable solution.
+
+    # Px, Py, Pz = sp.symbols('Px Py Pz')
+    # lx1, ly1, lz1 = sp.symbols('lx1 ly1 lz1')
+    # lx2, ly2, lz2 = sp.symbols('lx2 ly2 lz2')
+    # zeta1, zeta2, zeta3 = sp.symbols('zeta1 zeta2 zeta3')
+    # Rx1, Ry1, Rz1 = sp.symbols('Rx1 Ry1 Rz1')
+    # Rx2, Ry2, Rz2 = sp.symbols('Rx2 Ry2 Rz2')
+    # Rx3, Ry3, Rz3 = sp.symbols('Rx3 Ry3 Rz3')
+
+    # orbital_1 = (Px-Rx1)**lx1 * (Py-Ry1)**ly1 * (Pz-Rz1)**lz1 * \
+    #         sp.exp(-zeta1*( (Px-Rx1)**2 + (Py-Ry1)**2 + (Pz-Rz1)**2 ))
+    # orbital_2 = (Px-Rx2)**lx2 * (Py-Ry2)**ly2 * (Pz-Rz2)**lz2 * \
+    #         sp.exp(-zeta2*( (Px-Rx2)**2 + (Py-Ry2)**2 + (Pz-Rz2)**2 ))
+
+    # return sp.printing.fcode(
+    #         orbital_1 * sp.diff(sp.diff(sp.diff(
+    #                             sp.diff(orbital_2, Px), Px), Px), Px)
+    #         + orbital_1 * sp.diff(sp.diff(sp.diff(
+    #                               sp.diff(orbital_2, Py), Py), Py), Py)
+    #         + orbital_1 * sp.diff(sp.diff(sp.diff(
+    #                               sp.diff(orbital_2, Pz), Pz), Pz), Pz)
+    #         + 2 * orbital_1 * sp.diff(sp.diff(sp.diff(
+    #                                  sp.diff(orbital_2, Py), Py), Px), Px)
+    #         + 2 * orbital_1 * sp.diff(sp.diff(sp.diff(
+    #                                  sp.diff(orbital_2, Pz), Pz), Px), Px)
+    #         + 2 * orbital_1 * sp.diff(sp.diff(sp.diff(
+    #                                  sp.diff(orbital_2, Pz), Pz), Py), Py)
 
 
 def apply_seperable_substitutions(string):
@@ -376,6 +423,11 @@ def main():
 
     if (settings.momentum):
         string = momentum()
+        string = apply_seperable_substitutions(string)
+        lib.print_cont_string(string, 80, 3, f, True)
+
+    if (settings.massvel):
+        string = massvel()
         string = apply_seperable_substitutions(string)
         lib.print_cont_string(string, 80, 3, f, True)
 

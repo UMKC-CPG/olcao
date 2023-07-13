@@ -4,12 +4,12 @@
 message("At the set of databases.")
 
 set (DATABASES
-atomicBDB.tgz atomicPDB.tgz
-precursorDB.tgz
-spaceDB.tgz sybdDB.tgz
-angles.dat
+angles.dat atomicBDB.tgz atomicPDB.tgz
 bonds.dat
 elements.dat
+isotopes.dat
+precursorDB.tgz
+spaceDB.tgz sybdDB.tgz
 xc_code.dat)
 
 install (PROGRAMS ${DATABASES} DESTINATION share)

@@ -22,6 +22,7 @@ real (kind=double) :: z_solution1,z_solution2,z_solution3,z_solution4
 real (kind=double) :: z_solution5,z_solution6,z_solution7
 real (kind=double) :: a1, a2
 real (kind=double), dimension(3) :: A, B
+real (kind=double) :: step, num_steps, max_size
 integer :: i, p, q
 integer, dimension(3) :: l1, l2
 integer, dimension(20,3) :: array 
@@ -51,18 +52,26 @@ array(20,:) = (/0,0,3/)
 ! Define the constants
 a1 = 0.50d0
 a2 = 0.95d0
-A = 1.0d0
-B = 3.0d0
+A(1) = 1.0d0
+A(2) = 2.0d0
+A(3) = 3.0d0
+B(1) = 6.0d0
+B(2) = 5.0d0
+B(3) = 4.0d0
 
 ! Open output file
 open(2,file='testOutput',status='new')
 
+max_size = 30.0d0
+step = 0.0001
+num_steps = (2*max_size) / step + 1
+
 ! Loop over the x, y, and z triad values
-do p = 1, 20
-  do q = 1, 20
+do p = 1, 4
+  do q = 1, 4
     ! Properly assign l1 and l2 values for each dimension
-    l1 = array(p,:)
-    l2 = array(q,:)
+    l1 = array(q,:)
+    l2 = array(p,:)
 
     ! Initialize sum variables
     x_sum1 = 0
@@ -87,10 +96,11 @@ do p = 1, 20
     z_sum6 = 0
     z_sum7 = 0
 
-    do i = 0, 100
-      x = (-10.0d0 + (i*0.2d0))
-      y = (-10.0d0 + (i*0.2d0))
-      z = (-10.0d0 + (i*0.2d0))
+    do i = 0, num_steps
+
+      x = (-max_size + (i*step))
+      y = (-max_size + (i*step))
+      z = (-max_size + (i*step))
 
       ! Since the KE integral is really made up of a linear combination
       ! of 7 2-center overlap integrals, some addional customization is
@@ -98,84 +108,88 @@ do p = 1, 20
       ! will be the linear combination.
 
       ! ** SEGMENT 1 **
-      x_solution1 = 0.2d0*a2*(2*(l2(1)+l2(2)+l2(3))+3)*((x-A(1))**l1(1))*((x-B(1))**l2(1))*&
+      x_solution1 = a2*(2*(l2(1)+l2(2)+l2(3))+3)*&
+        &step*((x-A(1))**l1(1))*((x-B(1))**l2(1))*&
         &exp(-0.5d0*(x-A(1))**2)*exp(-0.95d0*(x-B(1))**2)
       x_sum1 = x_sum1 + x_solution1
-      y_solution1 = 0.2d0*((y-A(2))**l1(2))*((y-B(2))**l2(2))*&
+      y_solution1 = step*((y-A(2))**l1(2))*((y-B(2))**l2(2))*&
         &exp(-0.5d0*(y-A(2))**2)*exp(-0.95d0*(y-B(2))**2)
       y_sum1 = y_sum1 + y_solution1
-      z_solution1 = 0.2d0*((z-A(3))**l1(3))*((z-B(3))**l2(3))*&
+      z_solution1 = step*((z-A(3))**l1(3))*((z-B(3))**l2(3))*&
         &exp(-0.5d0*(z-A(3))**2)*exp(-0.95d0*(z-B(3))**2)
       z_sum1 = z_sum1 + z_solution1
 
       ! ** SEGMENT 2 **
-      x_solution2 = 0.2d0*2*(a2**2)*((x-A(1))**l1(1))*((x-B(1))**(l2(1)+2))*&
+      x_solution2 = 2*(a2**2)*&
+        &step*((x-A(1))**l1(1))*((x-B(1))**(l2(1)+2))*&
         &exp(-0.5d0*(x-A(1))**2)*exp(-0.95d0*(x-B(1))**2)
       x_sum2 = x_sum2 + x_solution2
-      y_solution2 = 0.2d0*((y-A(2))**l1(2))*((y-B(2))**l2(2))*&
+      y_solution2 = step*((y-A(2))**l1(2))*((y-B(2))**l2(2))*&
         &exp(-0.5d0*(y-A(2))**2)*exp(-0.95d0*(y-B(2))**2)
       y_sum2 = y_sum2 + y_solution2
-      z_solution2 = 0.2d0*((z-A(3))**l1(3))*((z-B(3))**l2(3))*&
+      z_solution2 = step*((z-A(3))**l1(3))*((z-B(3))**l2(3))*&
         &exp(-0.5d0*(z-A(3))**2)*exp(-0.95d0*(z-B(3))**2)
       z_sum2 = z_sum2 + z_solution2
 
       ! ** SEGMENT 3 **
-      x_solution3 = 0.2d0*2*(a2**2)*((x-A(1))**l1(1))*((x-B(1))**l2(1))*&
+      x_solution3 = step*2*(a2**2)*((x-A(1))**l1(1))*((x-B(1))**l2(1))*&
         &exp(-0.5d0*(x-A(1))**2)*exp(-0.95d0*(x-B(1))**2)
       x_sum3 = x_sum3 + x_solution3
-      y_solution3 = 0.2d0*((y-A(2))**l1(2))*((y-B(2))**(l2(2)+2))*&
+      y_solution3 = step*((y-A(2))**l1(2))*((y-B(2))**(l2(2)+2))*&
         &exp(-0.5d0*(y-A(2))**2)*exp(-0.95d0*(y-B(2))**2)
       y_sum3 = y_sum3 + y_solution3
-      z_solution3 = 0.2d0*((z-A(3))**l1(3))*((z-B(3))**l2(3))*&
+      z_solution3 = step*((z-A(3))**l1(3))*((z-B(3))**l2(3))*&
         &exp(-0.5d0*(z-A(3))**2)*exp(-0.95d0*(z-B(3))**2)
       z_sum3 = z_sum3 + z_solution3
 
       ! ** SEGMENT 4 **
-      x_solution4 = 0.2d0*2*(a2**2)*((x-A(1))**l1(1))*((x-B(1))**l2(1))*&
+      x_solution4 = step*2*(a2**2)*((x-A(1))**l1(1))*((x-B(1))**l2(1))*&
         &exp(-0.5d0*(x-A(1))**2)*exp(-0.95d0*(x-B(1))**2)
       x_sum4 = x_sum4 + x_solution4
-      y_solution4 = 0.2d0*((y-A(2))**l1(2))*((y-B(2))**l2(2))*&
+      y_solution4 = step*((y-A(2))**l1(2))*((y-B(2))**l2(2))*&
         &exp(-0.5d0*(y-A(2))**2)*exp(-0.95d0*(y-B(2))**2)
       y_sum4 = y_sum4 + y_solution4
-      z_solution4 = 0.2d0*((z-A(3))**l1(3))*((z-B(3))**(l2(3)+2))*&
+      z_solution4 = step*((z-A(3))**l1(3))*((z-B(3))**(l2(3)+2))*&
         &exp(-0.5d0*(z-A(3))**2)*exp(-0.95d0*(z-B(3))**2)
       z_sum4 = z_sum4 + z_solution4
 
       ! ** SEGMENT 5 **
       if ((l2(1) - 2) >= 0) then
-        x_solution5 = 0.2d0*((l2(1)**2-l2(1))/2.0d0)*((x-A(1))**l1(1))*((x-B(1))**(l2(1)-2))*&
+        x_solution5 = step*((l2(1)**2-l2(1))/2.0d0)*&
+          &((x-A(1))**l1(1))*((x-B(1))**(l2(1)-2))*&
           &exp(-0.5d0*(x-A(1))**2)*exp(-0.95d0*(x-B(1))**2)
         x_sum5 = x_sum5 + x_solution5
-        y_solution5 = 0.2d0*((y-A(2))**l1(2))*((y-B(2))**l2(2))*&
+        y_solution5 = step*((y-A(2))**l1(2))*((y-B(2))**l2(2))*&
           &exp(-0.5d0*(y-A(2))**2)*exp(-0.95d0*(y-B(2))**2)
         y_sum5 = y_sum5 + y_solution5
-        z_solution5 = 0.2d0*((z-A(3))**l1(3))*((z-B(3))**l2(3))*&
+        z_solution5 = step*((z-A(3))**l1(3))*((z-B(3))**l2(3))*&
           &exp(-0.5d0*(z-A(3))**2)*exp(-0.95d0*(z-B(3))**2)
         z_sum5 = z_sum5 + z_solution5
       end if
 
       ! ** SEGMENT 6 **
       if ((l2(2) - 2) >= 0) then
-        x_solution6 = 0.2d0*((l2(2)**2-l2(2))/2.0d0)*((x-A(1))**l1(1))*((x-B(1))**l2(1))*&
+        x_solution6 = step*((l2(2)**2-l2(2))/2.0d0)&
+          &*((x-A(1))**l1(1))*((x-B(1))**l2(1))*&
           &exp(-0.5d0*(x-A(1))**2)*exp(-0.95d0*(x-B(1))**2)
         x_sum6 = x_sum6 + x_solution6
-        y_solution6 = 0.2d0*((y-A(2))**l1(2))*((y-B(2))**(l2(2)-2))*&
+        y_solution6 = step*((y-A(2))**l1(2))*((y-B(2))**(l2(2)-2))*&
           &exp(-0.5d0*(y-A(2))**2)*exp(-0.95d0*(y-B(2))**2)
         y_sum6 = y_sum6 + y_solution6
-        z_solution6 = 0.2d0*((z-A(3))**l1(3))*((z-B(3))**l2(3))*&
+        z_solution6 = step*((z-A(3))**l1(3))*((z-B(3))**l2(3))*&
           &exp(-0.5d0*(z-A(3))**2)*exp(-0.95d0*(z-B(3))**2)
         z_sum6 = z_sum6 + z_solution6
       end if
 
       ! ** SEGMENT 7 **
       if ((l2(3) - 2) >= 0) then
-        x_solution7 = 0.2d0*((l2(3)**2-l2(3))/2.0d0)*((x-A(1))**l1(1))*((x-B(1))**l2(1))*&
+        x_solution7 = step*((l2(3)**2-l2(3))/2.0d0)*((x-A(1))**l1(1))*((x-B(1))**l2(1))*&
           &exp(-0.5d0*(x-A(1))**2)*exp(-0.95d0*(x-B(1))**2)
         x_sum7 = x_sum7 + x_solution7
-        y_solution7 = 0.2d0*((y-A(2))**l1(2))*((y-B(2))**l2(2))*&
+        y_solution7 = step*((y-A(2))**l1(2))*((y-B(2))**l2(2))*&
           &exp(-0.5d0*(y-A(2))**2)*exp(-0.95d0*(y-B(2))**2)
         y_sum7 = y_sum7 + y_solution7
-        z_solution7 = 0.2d0*((z-A(3))**l1(3))*((z-B(3))**(l2(3)-2))*&
+        z_solution7 = step*((z-A(3))**l1(3))*((z-B(3))**(l2(3)-2))*&
           &exp(-0.5d0*(z-A(3))**2)*exp(-0.95d0*(z-B(3))**2)
         z_sum7 = z_sum7 + z_solution7
       end if

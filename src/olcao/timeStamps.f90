@@ -62,6 +62,7 @@ subroutine initOperationLabels
    opLabels(25) = '************  Evaluate WaveFn on Mesh  ************'
    opLabels(26) = '************  Three Center Bond Order  ************'
    opLabels(27) = '***********  Initialize Field HDF5 File  **********'
+   opLabels(28) = '**********  Compute Bispectrum Component  *********'
 
 end subroutine initOperationLabels
 

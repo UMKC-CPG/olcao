@@ -37616,6 +37616,43 @@ end if
 
       end subroutine kinetic2CIntg
 
+      subroutine massVel2CIntg(a1,a2,A,B,l1l2switch,g)
+
+         use O_Kinds
+       use O_Constants, only: pi
+
+       implicit none
+
+! c     g(16,16): 1,s; 2,x; 3,y; 4,z; 5,xy; 6,xz; 7,yz; 8,xx-yy;
+! c     9,2zz-xx-yy; 10,xyz; 11,xxz-yyz; 12,xxx-3yyx; 13,3xxy-yyy;
+! c     14,2zzz-3xxz-3yyz; 15,4zzx-xxx-yyx; 16,4zzy-xxy-yyy
+! c
+! c     wo(20,20): 1,s; 2,x; 3,y; 4,z; 5,xx; 6,yy; 7,zz; 8,xy; 9,xz;
+! c     10,yz; 11,xyz; 12,xxy; 13,xxz; 14,yyx; 15,yyz; 16,zzx; 17,zzy
+! c     18,xxx; 19,yyy; 20,zzz
+! c
+     ! define the dummy variables passed to this subroutine.
+       real (kind=double), dimension (16,16), intent (out) :: g
+       real (kind=double), intent (in) :: a1, a2
+       real (kind=double), dimension (3), intent (in) :: A, B
+       integer, intent (in) :: l1l2switch
+    
+     ! define local variables
+       real (kind=double), dimension (20,20) :: wo
+       real (kind=double), dimension (3) :: P, PA, PB, d
+       real (kind=double) :: Y, coef, expFactor , s
+       P = (a1*A + a2*B)/(a1 + a2)
+       PA = P - A
+       PB = P - B
+       Y = a1 + a2
+       d = A - B
+       s = 6.65649D-6
+
+       expFactor = sum(a1*a2*(d**2))/Y
+       coef = -1*(((pi/Y)**1.5)*exp(-(expFactor)))
+
+       end subroutine massVel2CIntg
+
 ! This subroutine computes the 2-center overlap integrals for
 ! s-, p-, d-, or f-type Gaussian orbitals.
       subroutine overlap2CIntg(a1,a2,A,B,l1l2switch,g)

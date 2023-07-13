@@ -41,13 +41,13 @@ subroutine intgAndOrMom(doINTG,doMOME)
    use O_Constants,    only: dim3
    use O_PotTypes,     only: potTypes
    use O_AtomicSites,  only: numAtomSites
-   use O_Potential,    only: spin, potCoeffs
+   use O_Potential,    only: rel, spin, potCoeffs
    use O_PSCFIntgHDF5, only: targetChunkSize
    use O_Basis,        only: initializeAtomSite
    use O_PotSites,     only: numPotSites, potSites
    use O_AtomicTypes,  only: maxNumAtomAlphas, maxNumStates
    use O_GaussianIntegrals, only: overlap2CIntg, kinetic2CIntg, &
-         & nuclear3CIntg, electron3CIntg, momentum2CIntg
+         & massVel2CIntg, nuclear3CIntg, electron3CIntg, momentum2CIntg
    use O_Lattice, only: logBasisFnThresh, numCellsReal, cellSizesReal, &
          & cellDimsReal, findLatticeVector
    use HDF5
@@ -721,6 +721,26 @@ subroutine intgAndOrMom(doINTG,doMOME)
                               & (alphaIndex(2),2))
                      enddo
 
+                     ! Compute the mass velocity integral if needed for the
+                     !   scalar relativistic calculation.
+                     if (rel == 1) then
+                        ! Calculate the opcode to do the correct set of
+                        !   integrals for the current alpha pair.
+                        l1l2Switch = ishft(1,&
+                        &(powerOfTwo(currentlmAlphaIndex(alphaIndex(1),1))))&
+                        &+ ishft(16,&
+                        &(powerOfTwo(currentlmAlphaIndex(alphaIndex(2),2))))
+
+                        ! Compute the integral.
+                        call massVel2CIntg (currentAlphas(alphaIndex(1),1),&
+                              & currentAlphas(alphaIndex(2),2),&
+                              & currentPosition(:,1), shiftedAtomPos(:),&
+                              & l1l2Switch, oneAlphaSet)
+                     endif
+
+                     ! FIX: It seems unnecessary to recompute the l1l2Switch
+                     !   for OL and MV matrices after it is computed
+                     !   once for the KE.
                      ! Calculate the opcode to do the correct set of integrals
                      ! for the current alpha pair.
                      l1l2Switch = ishft(1,&
