@@ -7,7 +7,7 @@ module O_ReadDataSubs
 
    interface readData
       module procedure readDouble, read2Double, read3Double, readDoubleArray,&
-            & readDoubleMatrix, readIntDouble, readDoubleInt, readInt2Double,&
+            & readDoubleMatrix, readIntDouble, readInt2Double,&
             & readInt, read2Int, read3Int, readIntArray, readChar
    end interface readData
 
@@ -288,33 +288,33 @@ subroutine readIntDouble (readUnit,writeUnit,intVar,doubleVar,length,lookLabel)
 
 end subroutine readIntDouble
 
-subroutine readDoubleInt (readUnit,writeUnit,doubleVar,intVar,length,lookLabel)
-
-   use O_Kinds
-
-   implicit none
-
-   ! Passed parameters
-   real (kind=double)     :: doubleVar  ! The double that we wish to read.
-   integer                :: intVar     ! The integer that we wish to read.
-   integer                :: length     ! Label length.
-   character (LEN=length) :: lookLabel  ! Label that we are looking for.
-   integer, intent(in)    :: readUnit  ! The unit number of the file from which
-                                       ! we are reading.
-   integer, intent(in)    :: writeUnit  ! The unit number of the file to which
-                                        ! we are writing.
-
-   ! Check that the label is present and correct.
-   if (length /= 0) then
-      call readAndCheckLabel(readUnit,writeUnit,length,lookLabel)
-   endif
-
-   ! Read and regurgitate the input parameters.
-   read (readUnit,*) doubleVar, intVar
-   write (writeUnit,fmt="(e28.8,i5)") doubleVar, intVar
-   call flush (writeUnit)
-
-end subroutine readDoubleInt
+!subroutine readDoubleInt (readUnit,writeUnit,doubleVar,intVar,length,lookLabel)
+!
+!   use O_Kinds
+!
+!   implicit none
+!
+!   ! Passed parameters
+!   real (kind=double)     :: doubleVar  ! The double that we wish to read.
+!   integer                :: intVar     ! The integer that we wish to read.
+!   integer                :: length     ! Label length.
+!   character (LEN=length) :: lookLabel  ! Label that we are looking for.
+!   integer, intent(in)    :: readUnit  ! The unit number of the file from which
+!                                       ! we are reading.
+!   integer, intent(in)    :: writeUnit  ! The unit number of the file to which
+!                                        ! we are writing.
+!
+!   ! Check that the label is present and correct.
+!   if (length /= 0) then
+!      call readAndCheckLabel(readUnit,writeUnit,length,lookLabel)
+!   endif
+!
+!   ! Read and regurgitate the input parameters.
+!   read (readUnit,*) doubleVar, intVar
+!   write (writeUnit,fmt="(e28.8,i5)") doubleVar, intVar
+!   call flush (writeUnit)
+!
+!end subroutine readDoubleInt
 
 subroutine readInt (readUnit,writeUnit,integerVar,length,lookLabel)
 

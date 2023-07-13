@@ -90,7 +90,7 @@ def print_help():
 #	in a subdirectory such as DOS for pdos plots.
 #
 """
-    print (output);
+    print (output)
 
 
 # Define the main class that holds plot structure and information settings.
