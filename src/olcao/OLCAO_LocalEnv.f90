@@ -85,11 +85,11 @@ subroutine bispec
    !   6,227,020,800 which is greater than the maximum default signed
    !   integer of 2,147,483,647.
    if (twoj1 + twoj2 + 1 > 12) then
-      write (20,fmt="(a,a,i,a)") &
+      write (20,fmt="(a,a,i5,a)") &
             & "Maximum default factorial argument is 12. ", &
             & "You requested: ",twoj1 + twoj2 + 1,"from twoj1 + twoj2 + 1:"
-      write (20,fmt="(a,i)") "twoj1 = ", twoj1
-      write (20,fmt="(a,i)") "twoj2 = ", twoj2
+      write (20,fmt="(a,i5)") "twoj1 = ", twoj1
+      write (20,fmt="(a,i5)") "twoj2 = ", twoj2
       write (20,fmt="(a)") &
             & "Program needs modification to accomodate larger arguments."
       write (20,fmt="(a)") "Stopping"
