@@ -720,7 +720,7 @@ integer :: termCount
    ! Print out the results in a machine readable format.
    do i = 1, numPotSites
       do j = 1, twoj2+1
-         write (21,fmt="(2i,2e)") i, (twoj1+twoj2) - (j-1)*2, &
+         write (21,fmt="(2i12,2e25.16)") i, (twoj1+twoj2) - (j-1)*2, &
                & real(bsComp(j,i),double), real(bsCompSum(i),double)
       enddo
    enddo
