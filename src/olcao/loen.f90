@@ -695,11 +695,11 @@ integer :: termCount
    enddo ! i, potential site index
 
    ! Print out the results in a human readable format to the std. output file.
+   bsCompSum(:) = cmplx(0.0_double,0.0_double,double)
    do i = 1, numPotSites
       write (20,fmt="(a,i10)") "Potential Site: ", i
-      bsCompSum = cmplx(0.0_double,0.0_double,double)
       do j = 1, twoj2+1
-         bsCompSum = bsCompSum + bsComp(j,i)
+         bsCompSum(i) = bsCompSum(i) + bsComp(j,i)
          write(20,fmt="(a,i4,a,e25.16)") "Bispectrum Component for 2j = ", &
             & (twoj1+twoj2) - (j-1)*2, " is: ", real(bsComp(j,i),double)
       enddo
