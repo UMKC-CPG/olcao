@@ -225,7 +225,6 @@ subroutine computeFactorials(maxFact)
       preCompFactorial(i) = preCompFactorial(i-1) * i
    enddo
 
-
 end subroutine computeFactorials
 
 
@@ -280,11 +279,14 @@ function wignerD(twoj, twom, twomp, eulerCoords)
 !write (6,fmt="(a,3i3,3e14.5)") "twoj twom twomp EulerCoords",twoj,&
 !   & twom,twomp,eulerCoords(:)
 
+   ! Compute term1.
    term1Exp = real(twom) / 2.0_double * eulerCoords(1)
    term1 = cmplx(cos(term1Exp), -sin(term1Exp), double)
 
+   ! Compute term2.
    term2 = smalld(twoj, twom, twomp, eulerCoords(2))
 
+   ! Compute term3.
    term3Exp = real(twomp) / 2.0_double * eulerCoords(3)
    term3 = cmplx(cos(term3Exp), -sin(term3Exp), double)
 
@@ -337,10 +339,12 @@ function smalld (twoj, twom, twomp, theta)
 
 !write (6,*) "twoj, twom, twomp = ", twoj, twom, twomp
 !write (6,*) "twokStart twokEnd", twokStart, twokEnd
-   smalld = sqrt(real(preCompFactorial((twoj+twom)/2) &
-         & * preCompFactorial((twoj-twom)/2) &
-         & * preCompFactorial((twoj+twomp)/2) &
-         & * preCompFactorial((twoj-twomp)/2),double))
+   smalld = sqrt( &
+         &   real(preCompFactorial((twoj+twom)/2),double) &
+         & * real(preCompFactorial((twoj-twom)/2),double) &
+         & * real(preCompFactorial((twoj+twomp)/2),double) &
+         & * real(preCompFactorial((twoj-twomp)/2),double))
+!write (6,*) "smalld", smalld
 
    dsum = 0.0_double
    do twok = twokStart, twokEnd, 2
@@ -354,11 +358,12 @@ function smalld (twoj, twom, twomp, theta)
 !      & cos_theta_2**(twoj - twok + (twom - twomp)/2), &
 !      & sin_theta_2**(twok + (twomp - twom)/2)
 
-      denominator = preCompFactorial(halfk) &
-            & * preCompFactorial((twoj + twom - twok)/2) &
-            & * preCompFactorial((twoj - twomp - twok)/2) &
-            & * preCompFactorial((twomp - twom + twok)/2)
+      denominator = real(preCompFactorial(halfk),double) &
+            & * real(preCompFactorial((twoj + twom - twok)/2),double) &
+            & * real(preCompFactorial((twoj - twomp - twok)/2),double) &
+            & * real(preCompFactorial((twomp - twom + twok)/2),double)
 
+!write (6,*) "numerator denom ", numerator, denominator
       dsum = dsum + numerator / denominator
    enddo
 
@@ -393,14 +398,19 @@ function hypersphericalHarmonic4D(twoj,twom,twomp,ttpCoords)
       ttpTempCoords(1) = ttpCoords(3)  !  Phi
       ttpTempCoords(2) = ttpCoords(2)  !  Theta
       ttpTempCoords(3) = -ttpCoords(3) ! -Phi
+
+      ! Compute term 1.
       term1 = wignerD(twoj, twom, i, ttpTempCoords)
 
+      ! Compute term 2.
       term2Param = real(i)/2.0_double * ttpCoords(1)
       term2 = cmplx(cos(term2Param), -sin(term2Param), double)
 
+      ! Compute term 3.
       ttpTempCoords(2) = -ttpCoords(2) ! -Theta
       term3 = wignerD(twoj, i, twomp, ttpTempCoords)
 
+      ! HSH = product(term1,term2,term3).
       hypersphericalHarmonic4D = hypersphericalHarmonic4D &
             & + term1 * term2 * term3
 
@@ -444,11 +454,11 @@ function clebschGordan(twoj1, twoj2, twoj, twom1, twom2, twom)
    !   see the explicit definition of the CGC values. Specifically, we use
    !   equations (1) from section 8.2 of QTAM (page 237) to define the
    !   preFactor (Delta(abc) with a = j, b = j1, c = j2).
-   preFactor = sqrt(real( &
-         &   preCompFactorial((twoj1 + twoj2 - twoj)/2) &
-         & * preCompFactorial((twoj1 - twoj2 + twoj)/2) &
-         & * preCompFactorial((-twoj1 + twoj2 + twoj)/2)) &
-         & / real(preCompFactorial((twoj + twoj1 + twoj2 + 2)/2)))
+   preFactor = sqrt( &
+         & real(preCompFactorial((twoj1 + twoj2 - twoj)/2),double) &
+         & * real(preCompFactorial((twoj1 - twoj2 + twoj)/2),double) &
+         & * real(preCompFactorial((-twoj1 + twoj2 + twoj)/2),double) &
+         & / real(preCompFactorial((twoj + twoj1 + twoj2 + 2)/2),double))
 !write (6,fmt="(a,e15.4)") "preFactor", preFactor
 !
 !write (6,fmt="(a,i)") "(twoj + twom)/2", (twoj + twom)/2
@@ -461,12 +471,13 @@ function clebschGordan(twoj1, twoj2, twoj, twom1, twom2, twom)
 
    ! Then, we use equation (5) in section 8.2 of QTAM (page 238) to compute
    !   explicit values for the CGCs.
-   coefficient = sqrt(real(preCompFactorial((twoj + twom)/2) &
-      & * preCompFactorial((twoj - twom)/2) * (twoj + 1)) &
-         & / real(preCompFactorial((twoj1 + twom1)/2) &
-         & * preCompFactorial((twoj1 - twom1)/2) &
-         & * preCompFactorial((twoj2 + twom2)/2) &
-         & * preCompFactorial((twoj2 - twom2)/2)))
+   coefficient = sqrt( &
+      & real(preCompFactorial((twoj + twom)/2),double) &
+      & * real(preCompFactorial((twoj - twom)/2) * (twoj + 1),double) &
+      & / real(preCompFactorial((twoj1 + twom1)/2),double) &
+      & * real(preCompFactorial((twoj1 - twom1)/2),double) &
+      & * real(preCompFactorial((twoj2 + twom2)/2),double) &
+      & * real(preCompFactorial((twoj2 - twom2)/2),double))
 !write (6,fmt="(a,e15.4)") "coefficient", coefficient
 
    clebschGordan = 0.0_double
@@ -485,17 +496,17 @@ function clebschGordan(twoj1, twoj2, twoj, twom1, twom2, twom)
 !write (6,*) "twoz = ", twoz
 !write (6,fmt="(a,i)") "(twoj2 + twom2 + i)/2", (twoj2 + twom2 + twoz)
 
-      numerator = real(((-1)**((twoj2 + twom2 + twoz)/2)) &
-            & * preCompFactorial((twoj + twoj2 + twom1 - twoz)/2) &
-            & * preCompFactorial((twoj1 - twom1 + twoz)/2),double)
+      numerator = real(((-1)**((twoj2 + twom2 + twoz)/2)),double) &
+         & * real(preCompFactorial((twoj + twoj2 + twom1 - twoz)/2),double) &
+         & * real(preCompFactorial((twoj1 - twom1 + twoz)/2),double)
 !      numerator = real(((-1)**(j2 + m2 + i)) &
 !            & * preCompFactorial(int(j2 + j + m1 - i)) &
 !            & * preCompFactorial(int(j1 - m1 + i)),double)
 
-      denominator = real(preCompFactorial(twoz/2) &
-            & * preCompFactorial((twoj - twoj1 + twoj2 - twoz)/2) &
-            & * preCompFactorial((twoj + twom - twoz)/2) &
-            & * preCompFactorial((twoj1 - twoj2 - twom + twoz)/2),double)
+      denominator = real(preCompFactorial(twoz/2),double) &
+         & * real(preCompFactorial((twoj - twoj1 + twoj2 - twoz)/2),double) &
+         & * real(preCompFactorial((twoj + twom - twoz)/2),double) &
+         & * real(preCompFactorial((twoj1 - twoj2 - twom + twoz)/2),double)
 !      denominator = real(preCompFactorial(i) &
 !            & * preCompFactorial(int(j - j1 + j2 - i)) &
 !            & * preCompFactorial(int(j + m - i)) &

@@ -413,17 +413,17 @@ function u_densityCoeff (twoj, twom, twomp, siteIndex)
 !         & (/0.0d0,0.0d0,0.0d0/))
    u_densityCoeff = cmplx(0.0_double, 0.0_double, double)
 !write (6,fmt="(a,2e12.3)") "u = ", u_densityCoeff
-!write (6,fmt="(5i)"), neighCount(siteIndex),twoj,twom,twomp,siteIndex
+!write (6,fmt="(a,5i)"), "neigh 2j 2m 2mp idx", &
+!      & neighCount(siteIndex),twoj,twom,twomp,siteIndex
 
    do i = 1, neighCount(siteIndex)
-!write (6,fmt="(a,i3,e14.5)") "neighSwitchFn = ", i, neighSwitchFn(i,siteIndex)
       u_densityCoeff = u_densityCoeff &
             & + neighSwitchFn(i,siteIndex) &
             & * hypersphericalHarmonic4D(twoj,twom,twomp,&
             & neighttpCoords(:,i,siteIndex))
 !write (6,fmt="(i2,4e15.5)") i, neighSwitchFn(i,siteIndex), &
 !      & neighttpCoords(:,i,siteIndex)
-!write (6,fmt="(a,2e15.5)") "  ",u_densityCoeff
+!write (6,fmt="(a,2e15.5)") " u_accum ",u_densityCoeff
    enddo
 !write (6,fmt="(a,2e15.5)") "u = ", u_densityCoeff
 
@@ -604,7 +604,7 @@ integer :: termCount
 
 
       ! Accumulate the bispectrum component.
-!!termCount = 0
+termCount = 0
 !      twom2Index = 0
 !      do a = -twoj2, twoj2, 2 ! m2
 !         twom2Index = twom2Index + 1
@@ -640,8 +640,8 @@ integer :: termCount
 !!                           & * uPreComp(twoj2,c,d)
 !!if (twojIndex == 1) then
 !   !write (6,*) "twojIndex=",twojIndex
-!   !write(6,fmt="(a,7i3)") "abcd twoj twom twomp",a,b,c,d,twoj,twom,twomp
-!   !write(6,fmt="(a,9i3)") "count m1 m2 m m1p m2p mp twoj twojIdx ", termCount, b, a, a+b, c, d, c+d, twoj, twojIndex
+!   !write(6,fmt="(a,7i4)") "abcd twoj twom twomp",a,b,c,d,twoj,twom,twomp
+!   !write(6,fmt="(a,9i4)") "count m1 m2 m m1p m2p mp twoj twojIdx ", termCount, b, a, a+b, c, d, c+d, twoj, twojIndex
 !   !write(6,fmt="(a,2e15.6)") "b_temp = ", b_temp
 !   !write(6,fmt="(a,2e15.6)") "b_Accum(twojIndex,i)", bsComp(twojIndex,i)
 !   !write(6,fmt="(a,2e15.6)") "conjg(uPreComp(twoj,twom,twomp))",&
@@ -686,16 +686,42 @@ integer :: termCount
                            & * cgc(twojIndex,twom1pIndex,twom2pIndex) &
                            & * uPreComp(twoj1,a,b) &
                            & * uPreComp(twoj2,c,d)
+!   write (6,*) "twojIndex=",twojIndex
+!   write(6,fmt="(a,7i4)") "abcd twoj twom twomp",a,b,c,d,twoj,twom,twomp
+!   write(6,fmt="(a,9i4)") "count m1 m2 m m1p m2p mp twoj twojIdx ", termCount, a, c, a+c, b, d, b+d, twoj, twojIndex
+!   !write(6,fmt="(a,2e15.6)") "b_temp = ", b_temp
+!   write(6,fmt="(a,2e15.6)") "b_Accum(twojIndex,i)", bsComp(twojIndex,i)
+!   write(6,fmt="(a,2e15.6)") "conjg(uPreComp(twoj,twom,twomp))",&
+!      & conjg(uPreComp(twoj,twom,twomp))
+!   write(6,fmt="(a,2e15.6)") "cgc(twojIndex,twom1Index,twom2Index)",&
+!      & cgc(twojIndex,twom1Index,twom2Index)
+!   write(6,fmt="(a,2e15.6)") "cgc(twojIndex,twom1pIndex,twom2pIndex)",&
+!      & cgc(twojIndex,twom1pIndex,twom2pIndex)
+!   write(6,fmt="(a,2e15.6)") "uPreComp(twoj1,a,b)",uPreComp(twoj1,a,b)
+!   write(6,fmt="(a,2e15.6)") "uPreComp(twoj2,c,d)",uPreComp(twoj2,c,d)
                      twoj = twoj - 2
                   enddo ! while, j
                enddo ! d, m2 prime
             enddo ! c, m2
          enddo ! b, m1 prime
       enddo ! a, m1
+
+      ! Record that this potential site has been completed.
+      if (mod(i,10) .eq. 0) then
+         write (20,ADVANCE="NO",FMT="(a1)") "|"
+      else
+         write (20,ADVANCE="NO",FMT="(a1)") "."
+      endif
+      if (mod(i,50) .eq. 0) then
+         write (20,*) " ",i
+      endif
+      call flush (20)
+
    enddo ! i, potential site index
 
    ! Print out the results in a human readable format to the std. output file.
    bsCompSum(:) = cmplx(0.0_double,0.0_double,double)
+   write (20,*)
    do i = 1, numPotSites
       write (20,fmt="(a,i10)") "Potential Site: ", i
       do j = 1, twoj2+1
