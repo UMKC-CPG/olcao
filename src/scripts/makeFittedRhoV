@@ -103,10 +103,10 @@ my $doOpenDX;
 # Compute difference between SCF data and non-interacting data.
 &computeDiff;
 
-# Print an input file for the makeRho.exe fortran program.
+# Print an input file for the OLCAOrhoV.exe fortran program.
 &printTempData;
 
-# Run the makeRho.exe program
+# Run the OLCAOrhoV.exe program
 &runOLCAOrhoVF90;
 
 ###############################################

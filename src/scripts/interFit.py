@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 
 """
 Author:  Patrick Ryan Thomas
@@ -88,7 +88,7 @@ def printStats(MaxA,numberTerms,Weight):
   print(str("%.8E"%MaxA)+"\t"+str(numberTerms[0])+"\t"+str(numberTerms[1])+"\t"+str(numberTerms[2])+"\t"+str(numberTerms[3])+"\t"+str(numberTerms[4])+"\t"+str(Weight)+"\n")
 
 def printProgress(minAlpha,maxAlpha,currentA,step):
-  perc=((np.float(currentA)-np.float(minAlpha))/(np.float(maxAlpha)-np.float(minAlpha)))*100.0
+  perc=((float(currentA)-float(minAlpha))/(float(maxAlpha)-float(minAlpha)))*100.0
   if perc%10==0:
     print(str("%.2f"%perc)+"%\t("+str(minAlpha)+"\t- "+str(currentA)+" -\t"+str(maxAlpha)+")")
   
@@ -182,7 +182,7 @@ def intNewCalc(x1,x2,y1,y2,xn):
   yn=--------- (xn - x1) + y1    
      (x2 - x1)
   """
-  return np.float(((y2-y1)/(x2-x1))*(xn-x1)+y1)  
+  return float(((y2-y1)/(x2-x1))*(xn-x1)+y1)  
 
 
 def getPoints(rval,Rvals):
@@ -318,7 +318,7 @@ def getAlphaList(amin,amax,n,mode):
       a.append(r)
     return a
   elif mode==2:
-    diff=np.float((amax-amin)/(n-1))
+    diff=float((amax-amin)/(n-1))
     for i in range(0,n):
       r=amin+(diff*i)
       a.append(r)
@@ -505,8 +505,8 @@ This function performs a sweep over the number of terms in
 def doSweep(R,B,orbs,lvals,numls):
   sweeptime=time.time()  # Start the sweeping clock
   minAlpha=0.12          # This comes from OLCAO standard (numerical stability)
-  maxAlpha=np.float(get_max_alpha(Z)) #Get the OLCAO stand. maximum alpha
-  stepSize=np.int(maxAlpha*0.01)    #Calculate the stepsize
+  maxAlpha=float(get_max_alpha(Z)) #Get the OLCAO stand. maximum alpha
+  stepSize=int(maxAlpha*0.01)    #Calculate the stepsize
   cA=[]              # Current list of coefficients
   fA=[]              # Best list of coefficients
   cAlpha=[]          # Current list of exponential alphas
@@ -520,9 +520,9 @@ def doSweep(R,B,orbs,lvals,numls):
   minNT=8            # Minimum number of terms in every orbital
   uM=10              # Upper multiplier
   lM=0.3            # Lower multiplier
-  uB=np.int(uM*maxAlpha) # Upper bound for maxa loop
-  lB=np.int(lM*maxAlpha) # Lower bound for maxa loop
-  maxl=np.int(lvals[0]) # Get the maximum l in the set of orbitals
+  uB=int(uM*maxAlpha) # Upper bound for maxa loop
+  lB=int(lM*maxAlpha) # Lower bound for maxa loop
+  maxl=int(lvals[0]) # Get the maximum l in the set of orbitals
   itNum=0               # Variable to track number of iterations
   bMat=np.transpose(np.matrix(B)) #Make a copy of the functions values list.
   noImprove=0        # Variable to see if the reduction of terms is working.
@@ -532,7 +532,7 @@ def doSweep(R,B,orbs,lvals,numls):
   print ("\t\tC  A  L  C  U  L  A  T  I  O  N  S")
   print_line(1)
   print("BEGINNING SWEEPING:")
-  print("Maximum Alpha Range: "+str(np.int(lM*maxAlpha))+" to "+str(np.int(uM*maxAlpha))+" (Step size: "+str(stepSize)+")")
+  print("Maximum Alpha Range: "+str(int(lM*maxAlpha))+" to "+str(int(uM*maxAlpha))+" (Step size: "+str(stepSize)+")")
 
   # If the maximum is g-type
   if maxl==4:
@@ -820,8 +820,8 @@ class orbital_fitting:
     self.number_terms=[0,0,0,0,0]
     self.fitted_max_alpha=0
 
-    self.orb_fit_tolerance=10**-4
-    self.alpha_step_size=np.int(self.max_alpha*0.001)
+    self.orb_fit_tolerance=10**-3
+    self.alpha_step_size=int(self.max_alpha*0.001)
 
     self.loop_max_alpha=np.arange(0.3*self.max_alpha,20*self.max_alpha+self.alpha_step_size,self.alpha_step_size)
     self.max_num_terms=25
@@ -845,12 +845,12 @@ class orbital_fitting:
           sys.exit()
       #Check for -comp 1/2/4
       if '-comp' in sys.argv:
-        self.number_components=np.int(sys.argv[int(sys.argv.index('-comp'))+1])
+        self.number_components=int(sys.argv[int(sys.argv.index('-comp'))+1])
 
       #Check for -shrink rc sig
       if '-shrink' in sys.argv:
-        self.shrink_critical_radius=np.float(sys.argv[int(sys.argv.index('-shrink'))+1])
-        self.shrink_sigma=np.float(sys.argv[int(sys.argv.index('-shrink'))+2])
+        self.shrink_critical_radius=float(sys.argv[int(sys.argv.index('-shrink'))+1])
+        self.shrink_sigma=float(sys.argv[int(sys.argv.index('-shrink'))+2])
         self.apply_shrink=True
 
     print("  Parsing Input Complete:\t"+str('%.8E'%(time.time()-parse_time))+"s. / "+str('%.8E'%(time.time()-start))+"s.")
@@ -873,7 +873,7 @@ class orbital_fitting:
     else:
       for i in range(len(self.grasp_description.orbital_info.fitting_l_list)):
         for j in range(len(self.grasp_description.orbital_info.interpolated_radial_grid)):
-          self.grasp_description.orbital_info.fitting_functions[i][j]=self.grasp_description.orbital_info.fitting_functions[i][j]/(self.grasp_description.orbital_info.interpolated_radial_grid[j]**np.float(self.grasp_description.orbital_info.fitting_l_list[i]))
+          self.grasp_description.orbital_info.fitting_functions[i][j]=self.grasp_description.orbital_info.fitting_functions[i][j]/(self.grasp_description.orbital_info.interpolated_radial_grid[j]**float(self.grasp_description.orbital_info.fitting_l_list[i]))
 
     print("  Organizing Orbitals Complete:\t"+str('%.8E'%(time.time()-organize_time))+"s. / "+str('%.8E'%(time.time()-start))+"s.")
 
@@ -991,7 +991,11 @@ class orbital_fitting:
 
     elif self.grasp_description.orbital_info.fitting_max_l==3:
       print('Fitted Orbitals: s,p,d,f')
-      print('Number of Orbitals: s:'+str(self.grasp_description.orbital_info.fitting_lvals[0])+" p:"+str(self.grasp_description.orbital_info.fitting_lvals[1])+" d:"+str(self.grasp_description.orbital_info.fitting_lvals[2])+" f:"+str(self.grasp_description.orbital_info.fitting_lvals[3]))
+      print('Number of Orbitals:'
+            + " s:" + str(self.grasp_description.orbital_info.fitting_lvals[0])
+            + " p:" + str(self.grasp_description.orbital_info.fitting_lvals[1])
+            + " d:" + str(self.grasp_description.orbital_info.fitting_lvals[2])
+            + " f:" + str(self.grasp_description.orbital_info.fitting_lvals[3]))
 
       while(not convergence_reached):
         for maximum_alpha in self.loop_max_alpha:
@@ -1067,6 +1071,81 @@ class orbital_fitting:
         convergence_reached=True
     elif self.grasp_description.orbital_info.fitting_max_l==2:
       print('Fitted Orbitals: s,p,d')
+      print('Number of Orbitals:'
+            + " s:" + str(self.grasp_description.orbital_info.fitting_lvals[0])
+            + " p:" + str(self.grasp_description.orbital_info.fitting_lvals[1])
+            + " d:" + str(self.grasp_description.orbital_info.fitting_lvals[2])
+            + " f:" + str(self.grasp_description.orbital_info.fitting_lvals[3]))
+
+      while(not convergence_reached):
+        for maximum_alpha in self.loop_max_alpha:
+
+          itct=0
+          for sp in range(self.max_num_terms,self.min_num_terms,-1):
+
+
+            fit_loop_time=time.time()
+
+            if itct>=5:
+              continue
+
+            alphas=get_alpha_list(self.min_alpha,maximum_alpha,sp,'geometric')
+            A=get_A(sp, self.grasp_description.orbital_info.interpolated_radial_grid,alphas)
+            AT=np.transpose(A)
+            ATA=np.dot(AT,A)
+            LU=pivotless_lu_decomp(ATA)
+            B=np.transpose(np.matrix(copy.deepcopy(self.grasp_description.orbital_info.fitting_functions)))
+
+            for d in range(sp,self.min_num_terms,-1):
+              if itct>=5:
+                break
+
+              current_weight = 5*d + 4*sp
+
+              if current_weight > best_weight:
+                continue
+
+              current_num_terms=[sp,sp,d,0,0]
+
+              coefficients,total_RMSE,current_RMSE,fit_loop_time=self.get_prefactor_coefficients(LU,A,AT,B,current_num_terms,alphas)
+
+
+              orbital_RMSEs.append(current_RMSE)
+
+              
+              if total_RMSE < best_RMSE or abs(total_RMSE - best_RMSE) <= self.orb_fit_tolerance:
+                if round((maximum_alpha/max(self.loop_max_alpha))*100,2)%20==0:
+                  print(str('%.2f'%((maximum_alpha/max(self.loop_max_alpha))*100))+'%',maximum_alpha,max(self.loop_max_alpha),sp,d,'%.5E'%total_RMSE)
+                best_weight=current_weight
+                best_RMSE=total_RMSE
+                self.fitted_max_alpha=maximum_alpha
+                self.number_terms=current_num_terms
+                itct=0
+              else:
+                itct+=1
+
+              
+              #'min_alpha','max_alpha','num_terms','num_s','num_p','num_d','num_f','num_g','weight','RMSE','time'
+
+
+
+              self.fits.append([0.12,maximum_alpha,sp,sp,sp,d,0,0,current_weight,total_RMSE,current_RMSE,time.time()-fit_loop_time])
+
+
+        orb_frame_RMSE=pd.DataFrame(data=orbital_RMSEs,columns=self.grasp_description.orbital_info.fitting_orbital_names)
+        orb_frame_RMSE.to_csv('RMSE.csv',index=False)
+        self.fitting_results=pd.DataFrame(data=self.fits,columns=self.fitting_columns)
+
+        print ("coefficients")
+        print (coefficients)
+        print ("alphas")
+        print (alphas)
+        #fig=px.box(self.fitting_results, x="max_alpha", y="total_RMSE", color="weight",points="all")
+        #fig.show()
+
+
+        print(self.fitting_results)
+        convergence_reached=True
     elif self.grasp_description.orbital_info.fitting_max_l==1 or self.grasp_description.orbital_info.fitting_max_l==0:
       print('Fitted Orbitals: s,p')
 

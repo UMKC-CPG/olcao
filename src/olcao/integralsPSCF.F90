@@ -736,6 +736,22 @@ subroutine intgAndOrMom(doINTG,doMOME)
                               & currentAlphas(alphaIndex(2),2),&
                               & currentPosition(:,1), shiftedAtomPos(:),&
                               & l1l2Switch, oneAlphaSet)
+                           
+                        ! Accumulate the contribution from this alpha pair.
+                        !   Note: a minus sign is used in the accumulation
+                        !   for the mass velocity integral because it has an
+                        !   overall negative contribution to the Hamiltonian.
+                        do m = 1, spin
+                           potAtomOverlap(:currentlmAlphaIndex &
+                                 & (alphaIndex(1),1),:currentlmAlphaIndex &
+                                 & (alphaIndex(2),2),m) = &
+                                 & potAtomOverlap(:currentlmAlphaIndex &
+                                 & (alphaIndex(1),1),:currentlmAlphaIndex &
+                                 & (alphaIndex(2),2),m) - &
+                                 & oneAlphaSet(:currentlmAlphaIndex &
+                                 & (alphaIndex(1),1),:currentlmAlphaIndex &
+                                 & (alphaIndex(2),2))
+                        enddo
                      endif
 
                      ! FIX: It seems unnecessary to recompute the l1l2Switch

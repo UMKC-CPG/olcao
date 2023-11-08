@@ -1,10 +1,54 @@
 #!/usr/bin/env python3
 
-def print_production_pc_sh(conversion, triads, f, matrix1, matrix2,
-                           lam_sh_list, lam_pc_list, spec_idx, vectorize):
+# Matrices are printed in the order in which they are provided in the
+#   matrix_list array. Each matrix is handled according to whatever special
+#   requirements that the matrix may have associated with its icode value.
+#   The icode value is the first element in the meta data associated with
+#   each matrix. As a note, the second meta data element is the number of
+#   terms that the matrix has (i.e., one or three (xyz) usually). The third
+#   meta data element is the tag that should be appended to variable names.
+# The matrix_meta contains:
+#   [0] = icode
+#   [1] = num terms (usually 1 or 3 (for xyz))
+#   [2] = tag string (usually "_ol" or "_ke")
+# icode = 1: Overlap matrix
+# icode = 2: Kinetic energy matrix
+# icode = 3: Three-center overlap matrix
+# icode = 4: Nuclear potential
+# icode = 5: Momentum matrix
+# icode = 6: Mass velocity
+# icode = 7: Dipole moment
+def print_production_pc_sh(conversion, triads, f, matrix_list, matrix_meta,
+                           lam_sh_list, lam_pc_list, vectorize):
 
     if (vectorize):
 
+        for n in range(len(matrix_list)):
+
+            # The nuclear potential matrix is dealt with distinctly.
+            if (matrix_meta[n][0] == 4):
+                print_nuclear_pc_vec(f, matrix_list[n], lam_pc_list,
+                                     len(triads))
+            else:
+
+                # If the matrix is identified as any of the kind that requires
+                #   multiple indices (i.e., one for each xyz axis)
+                for xyz in range(matrix_meta[n][1]):
+                    for i in range(len(triads)):
+                        for j in range(len(triads)):
+                            print_one_pc(f, matrix_list[n], matrix_meta[n],
+                                         xyz, lam_pc_list, j, i)
+
+        # Assemble the sh terms for the last element in the matrix list. This
+        #   is the only one that matters as a total result when the matrix
+        #   list has a length > one. In that case, the previous matrices are
+        #   used to assemble the final matrix solution.
+        for xyz in range(matrix_meta[n][1]):
+            for i in range(len(triads)):
+               for j in range(len(triads)):
+                   print_one_sh(conversion, f, lam_sh_list, matrix_meta[n],
+                                xyz, j, i)
+        '''
         # Print the leading overlap matrix pc terms if necessary.
         if (matrix2 != ""):
             for i in range(len(triads)):
@@ -40,106 +84,98 @@ def print_production_pc_sh(conversion, triads, f, matrix1, matrix2,
                 for i in range(len(conversion)):
                     for j in range(len(conversion)):
                         print_one_sh(conversion, f, lam_sh_list, xyz+1, j, i)
+        '''
 
     else:
 
         f.write("! 0000 0000 = 128,64,32,16  8,4,2,1 for b, a\n\n")
 
         f.write("\nif (l1l2switch .eq. 34) then ! 0010 0010\n\n")
-        print_pc(conversion, f, matrix1, matrix2, spec_idx, 4, 4)
+        print_pc(conversion, f, matrix_list, matrix_meta, 4, 4)
 
         f.write("\nelse if (l1l2switch .eq. 17) then ! 0001 0001\n\n")
-        print_pc(conversion, f, matrix1, matrix2, spec_idx, 1, 1)
+        print_pc(conversion, f, matrix_list, matrix_meta, 1, 1)
 
         f.write("\nelse if (l1l2switch .eq. 33) then ! 0010 0001\n\n")
-        print_pc(conversion, f, matrix1, matrix2, spec_idx, 1, 4)
+        print_pc(conversion, f, matrix_list, matrix_meta, 1, 4)
 
         f.write("\nelse if (l1l2switch .eq. 65) then ! 0100 0001\n\n")
-        print_pc(conversion, f, matrix1, matrix2, spec_idx, 1, 10)
+        print_pc(conversion, f, matrix_list, matrix_meta, 1, 10)
 
         f.write("\nelse if (l1l2switch .eq. 129) then ! 1000 0001\n\n")
-        print_pc(conversion, f, matrix1, matrix2, spec_idx, 1, 20)
+        print_pc(conversion, f, matrix_list, matrix_meta, 1, 20)
 
         f.write("\nelse if (l1l2switch .eq. 18) then ! 0001 0010\n\n")
-        print_pc(conversion, f, matrix1, matrix2, spec_idx, 4, 1)
+        print_pc(conversion, f, matrix_list, matrix_meta, 4, 1)
 
         f.write("\nelse if (l1l2switch .eq. 66) then ! 0100 0010\n\n")
-        print_pc(conversion, f, matrix1, matrix2, spec_idx, 4, 10)
+        print_pc(conversion, f, matrix_list, matrix_meta, 4, 10)
 
         f.write("\nelse if (l1l2switch .eq. 130) then ! 1000 0010\n\n")
-        print_pc(conversion, f, matrix1, matrix2, spec_idx, 4, 20)
+        print_pc(conversion, f, matrix_list, matrix_meta, 4, 20)
 
         f.write("\nelse if (l1l2switch .eq. 20) then ! 0001 0100\n\n")
-        print_pc(conversion, f, matrix1, matrix2, spec_idx, 10, 1)
+        print_pc(conversion, f, matrix_list, matrix_meta, 10, 1)
 
         f.write("\nelse if (l1l2switch .eq. 36) then ! 0010 0100\n\n")
-        print_pc(conversion, f, matrix1, matrix2, spec_idx, 10, 4)
+        print_pc(conversion, f, matrix_list, matrix_meta, 10, 4)
 
         f.write("\nelse if (l1l2switch .eq. 68) then ! 0100 0100\n\n")
-        print_pc(conversion, f, matrix1, matrix2, spec_idx, 10, 10)
+        print_pc(conversion, f, matrix_list, matrix_meta, 10, 10)
 
         f.write("\nelse if (l1l2switch .eq. 132) then ! 1000 0100\n\n")
-        print_pc(conversion, f, matrix1, matrix2, spec_idx, 10, 20)
+        print_pc(conversion, f, matrix_list, matrix_meta, 10, 20)
 
         f.write("\nelse if (l1l2switch .eq. 24) then ! 0001 1000\n\n")
-        print_pc(conversion, f, matrix1, matrix2, spec_idx, 20, 1)
+        print_pc(conversion, f, matrix_list, matrix_meta, 20, 1)
 
         f.write("\nelse if (l1l2switch .eq. 40) then ! 0010 1000\n\n")
-        print_pc(conversion, f, matrix1, matrix2, spec_idx, 20, 4)
+        print_pc(conversion, f, matrix_list, matrix_meta, 20, 4)
 
         f.write("\nelse if (l1l2switch .eq. 72) then ! 0100 1000\n\n")
-        print_pc(conversion, f, matrix1, matrix2, spec_idx, 20, 10)
+        print_pc(conversion, f, matrix_list, matrix_meta, 20, 10)
 
         f.write("\nelse ! switch 136; 1000 1000\n\n")
-        print_pc(conversion, f, matrix1, matrix2, spec_idx, 20, 20)
+        print_pc(conversion, f, matrix_list, matrix_meta, 20, 20)
 
         f.write("end if\n\n")
 
 
-def print_one_pc(f, matrix, lam_pc_list, spec_idx, pc_idx_a, pc_idx_b,
-                 matrix_tag):
+def print_one_pc(f, matrix, matrix_meta, xyz, lam_pc_list, pc_idx_a,
+                 pc_idx_b):
+
+    # The matrix_meta contains:
+    #   [0] = icode
+    #   [1] = num terms (usually 1 or 3 (for xyz)).
+    #   [2] = tag string
 
     idx1 = lam_pc_list[pc_idx_a] + 1
     idx2 = lam_pc_list[pc_idx_b] + 1
 
-    if (spec_idx == 0):
+    # Create a substring that defines the range of the current segment.
+    substring = f"segIndices(1,i,{idx1},{idx2}):"
+    substring += f"segIndices(2,i,{idx1},{idx2})"
 
-        # Create a substring that defines the range of the current segment.
-        substring = f"segIndices(1,i,{idx1},{idx2}):"
-        substring += f"segIndices(2,i,{idx1},{idx2})"
+    string = f"do i = 1, numSegs({idx1},{idx2})\n"
+    string += f"   do j = segIndices(1,i,{idx1},{idx2}),"
+    string += f"segIndices(2,i,{idx1},{idx2})\n"
+    f.write(string)
 
-        string = f"do i = 1, numSegs({idx1},{idx2})\n"
-        string += f"   do j = segIndices(1,i,{idx1},{idx2}),"
-        string += f"segIndices(2,i,{idx1},{idx2})\n"
-        f.write(string)
-        string = f"   pc{matrix_tag}(j,{pc_idx_a+1},{pc_idx_b+1})"
-
+    if (matrix_meta[1] > 1):
+        string = f"   pc(j,{pc_idx_a+1},{pc_idx_b+1},{xyz+1})"
+        element = matrix[pc_idx_a][pc_idx_b][xyz].replace(":", "j")
+    else:
+        string = f"   pc{matrix_meta[2]}(j,{pc_idx_a+1},{pc_idx_b+1})"
         element = matrix[pc_idx_a][pc_idx_b].replace(":", "j")
-        string += f" = {element}"
-        print_cont_string(string, 80, 3, f, False)
+    string += f" = {element}"
+    print_cont_string(string, 80, 3, f, False)
 
-        f.write("\n   enddo\nenddo\n\n")
-
-    elif (spec_idx > 0):
-
-        # Create a substring that defines the range of the current segment.
-        substring = f"segIndices(1,i,{idx1},{idx2}):"
-        substring += f"segIndices(2,i,{idx1},{idx2})"
-
-        string = f"do i = 1, numSegs({idx1},{idx2})\n"
-        string += f"   do j = segIndices(1,i,{idx1},{idx2}),"
-        string += f"segIndices(2,i,{idx1},{idx2})\n"
-        f.write(string)
-        string = f"   pc(j,{pc_idx_a+1},{pc_idx_b+1},{spec_idx})"
-
-        element = matrix[pc_idx_a][pc_idx_b][spec_idx-1].replace(":", "j")
-        string += f" = {element}"
-        print_cont_string(string, 80, 3, f, False)
-
-        f.write("\n   enddo\nenddo\n\n")
+    f.write("\n   enddo\nenddo\n\n")
 
 
-def print_one_sh(conversion, f, lam_sh_list, spec_idx, sh_idx_a, sh_idx_b):
+#def print_one_sh(conversion, f, lam_sh_list, spec_idx, sh_idx_a, sh_idx_b):
+def print_one_sh(conversion, f, lam_sh_list, matrix_meta, xyz, sh_idx_a,
+                 sh_idx_b):
 
     idx1 = lam_sh_list[sh_idx_a] + 1
     idx2 = lam_sh_list[sh_idx_b] + 1
@@ -147,6 +183,15 @@ def print_one_sh(conversion, f, lam_sh_list, spec_idx, sh_idx_a, sh_idx_b):
     # Assign the appropriate array index completion string according to the
     #   value of spec_idx (1, 2, 3 for momentum matrics, 1 for analytic
     #   nuclear potential but not for numerical nuclear potential).
+    if (matrix_meta[1] == 1): # Overlap, KE, Nuclear, 3C-electron, mass vel.
+        sh_idx = ""
+        pc_idx = ""
+        if (matrix_meta[0] == 4): # Nuclear
+            pc_idx = ",1"
+    elif (matrix_meta[1] == 3): # Momentum, dipole moment
+        sh_idx = f",{xyz+1}"
+        pc_idx = f",{xyz+1}"
+    '''
     if (spec_idx == 0):
         sh_idx = ""
         pc_idx = ""
@@ -156,6 +201,7 @@ def print_one_sh(conversion, f, lam_sh_list, spec_idx, sh_idx_a, sh_idx_b):
     else:
         sh_idx = f",{spec_idx}"
         pc_idx = f",{spec_idx}"
+    '''
 
     # Grab the conversion coefficients and indices for pc terms.
     orb_a_coeff = conversion[sh_idx_a][0]
@@ -218,13 +264,41 @@ def print_one_sh(conversion, f, lam_sh_list, spec_idx, sh_idx_a, sh_idx_b):
 #   in a production environment. Note that the key result matrix is always
 #   given in matrix1. However, sometimes the overlap matrix is a needed
 #   ingredient. In such a case it is supplied as matrix2.
-def print_pc(conversion, f, matrix1, matrix2, spec_idx, pc_max_idx_a,
+def print_pc(conversion, f, matrix_list, matrix_meta, pc_max_idx_a,
              pc_max_idx_b):
+#def print_pc(conversion, f, matrix1, matrix2, spec_idx, pc_max_idx_a,
+#             pc_max_idx_b):
 
     # Compute the max indices for the pc-to-sh conversion.
     sh_max_idx_a = map_pc_to_sh(pc_max_idx_a)
     sh_max_idx_b = map_pc_to_sh(pc_max_idx_b)
 
+    for n in range(len(matrix_list)):
+        if (matrix_meta[n][0] == 4):
+            # Use the special print subroutine for the nuclear matrix.
+            print_nuclear_pc(f, matrix_list[0], pc_max_idx_a, pc_max_idx_b)
+        else:
+            for xyz in range(matrix_meta[n][1]):
+                for b in range(pc_max_idx_b):
+                    for a in range(pc_max_idx_a):
+                        if (matrix_meta[n][1] > 1):
+                            string = f"pc{matrix_meta[n][2]}({a+1},"
+                            string += f"{b+1},{xyz+1}) = "
+                            string += f"{matrix_list[n][a][b][xyz]}"
+                        else:
+                            string = f"pc{matrix_meta[n][2]}({a+1},{b+1}) = "
+                            string += f"{matrix_list[n][a][b]}"
+                        print_cont_string(string, 80, 3, f, True)
+
+        # Use the number of terms from the meta data of the last matrix in the
+        #   list to control the printing format. Also, this should only need
+        #   to be done for the last matrix in the list.
+        if (n == len(matrix_list)-1):
+            for xyz in range(matrix_meta[n][1]):
+                print_pc_to_sh(conversion, f, matrix_meta[n], xyz, sh_max_idx_a,
+                               sh_max_idx_b)
+
+    '''
     # If matrix2 is required, then print those elements first.
     if (matrix2 != ""):
         for b in range(pc_max_idx_b):
@@ -270,6 +344,7 @@ def print_pc(conversion, f, matrix1, matrix2, spec_idx, pc_max_idx_a,
         print_pc_to_sh(conversion, f, spec_idx, sh_max_idx_a,
                        sh_max_idx_b)
 
+    '''
 
 def print_nuclear_pc_vec(f, matrix, lam_pc_list, pc_max_idx):
 
@@ -302,7 +377,7 @@ def print_nuclear_pc_vec(f, matrix, lam_pc_list, pc_max_idx):
     #   the lower m terms, but within one m level many of the lower terms
     #   need to be known to compute higher terms in the same m level.
 
-    # Initialize the m=0 list of needed_pc .
+    # Initialize the m=0 list of needed_pc.
     needed_pc = []
     m = 0
     for b in range(pc_max_idx):
@@ -484,11 +559,22 @@ def print_nuclear_pc(f, matrix, pc_max_idx_a, pc_max_idx_b):
 #   0, 1, 2, 3, or -1 for the cases of "no third index required", x, y, z or
 #   "no special sh index required, but use index 1 for pc" respectively.
 #   Note: spec_idx = special index.
-def print_pc_to_sh(conversion, f, spec_idx, sh_max_idx_a, sh_max_idx_b):
+#def print_pc_to_sh(conversion, f, spec_idx, sh_max_idx_a, sh_max_idx_b):
+def print_pc_to_sh(conversion, f, matrix_meta, xyz, sh_max_idx_a,
+                   sh_max_idx_b):
 
     # Assign the appropriate array index completion string according to the
     #   value of spec_idx (1, 2, 3 for momentum matrics, 1 for analytic
     #   nuclear potential but not for numerical nuclear potential).
+    if (matrix_meta[1] == 1): # Overlap, KE, Nuclear, 3C-electron, mass vel.
+        sh_idx = ""
+        pc_idx = ""
+        if (matrix_meta[0] == 4): # Nuclear
+            pc_idx = ",1"
+    elif (matrix_meta[1] == 3): # Momentum, dipole moment
+        sh_idx = f",{xyz+1}"
+        pc_idx = f",{xyz+1}"
+    '''
     if (spec_idx == 0):
         sh_idx = ""
         pc_idx = ""
@@ -498,6 +584,7 @@ def print_pc_to_sh(conversion, f, spec_idx, sh_max_idx_a, sh_max_idx_b):
     else:
         sh_idx = f",{spec_idx}"
         pc_idx = f",{spec_idx}"
+    '''
 
     # Construct the sh matrix from the pc matrix and the conversion helper
     #   for the range of a and b orbitals requested.

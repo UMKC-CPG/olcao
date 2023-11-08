@@ -80,14 +80,20 @@ subroutine bispec
    !   j = j1 + j2 and 2*j1 and 2*j2 are given in the olcao.dat input file.
    ! The factorial argument can be algebraically reduced to:
    !   2*j1 + 2*j2 + 1.
-   ! The largest input number that will not overflow the default integer
-   !   size is 12. This is because 12! = 479,001,600 while 13! =
-   !   6,227,020,800 which is greater than the maximum default signed
-   !   integer of 2,147,483,647.
-   if (twoj1 + twoj2 + 1 > 12) then
+   ! The largest input number that will not overflow the 8 byte integer
+   !   size is 20. This is because 20! = 2,432,902,008,176,640,000 = ~2.432e18
+   !   21! = 51,090,942,171,709,440,000 = ~ 5.109e19 which is greater than the
+   !   maximum 8 byte signed integer of 9,223,372,036,854,775,807 = ~9.223e18.
+   ! An alternative would be to use the gfortran compiler which permits a 16
+   !   byte integer with a maximum value of:
+   !   170,141,183,460,469,231,731,687,303,715,884,105,727 = ~170.1e36
+   ! Another alternative would be to use floating point numbers for the
+   !   factorial and permit approximate values. It isn't clear what impact
+   !   that would have on the results though.
+   if (twoj1 + twoj2 + 1 > 20) then
       write (20,fmt="(a,a,i5,a)") &
-            & "Maximum default factorial argument is 12. ", &
-            & "You requested: ",twoj1 + twoj2 + 1,"from twoj1 + twoj2 + 1:"
+            & "Maximum default factorial argument is 20. ", &
+            & "You requested: ",twoj1 + twoj2 + 1, " from twoj1 + twoj2 + 1:"
       write (20,fmt="(a,i5)") "twoj1 = ", twoj1
       write (20,fmt="(a,i5)") "twoj2 = ", twoj2
       write (20,fmt="(a)") &

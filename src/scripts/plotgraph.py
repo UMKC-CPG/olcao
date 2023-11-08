@@ -102,10 +102,10 @@ class ScriptSettings():
 
     def __init__(self):
         """Define default values for the graph parameters by pulling them
-        from the resource control file $OLCAO_DIR/.olcao/plotgraphrc.py"""
+        from the resource control file $OLCAO_RC/plotgraphrc.py"""
 
         # Read default variables from the plotgraph resource control file.
-        sys.path.insert(1, os.getenv('OLCAO_DIR') + "/.olcao")
+        sys.path.insert(1, os.getenv('OLCAO_RC'))
         from plotgraphrc import parameters_and_defaults
         default_rc = parameters_and_defaults()
 

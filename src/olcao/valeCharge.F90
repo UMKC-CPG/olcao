@@ -21,6 +21,7 @@ module O_ValeCharge
    real (kind=double), allocatable, dimension (:)   :: nucPotTrace
    real (kind=double), allocatable, dimension (:)   :: kineticEnergyTrace
    real (kind=double), allocatable, dimension (:)   :: massVelocityTrace
+   real (kind=double), allocatable, dimension (:,:) :: dipoleMomentTrace
 
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    ! Begin list of module subroutines.!
@@ -32,15 +33,18 @@ subroutine makeValenceRho
    ! Import the necessary modules.
    use O_Kinds
    use O_TimeStamps
+   use O_CommandLine,     only: doDIMO
    use O_AtomicSites,     only: valeDim
    use O_Input,           only: numStates
    use O_KPoints,         only: numKPoints
    use O_Constants,       only: smallThresh
-   use O_Potential,       only: rel, spin, potDim, potCoeffs, numPlusUJAtoms
+   use O_Potential,       only: rel, spin, potDim, potCoeffs, numPlusUJAtoms, &
+         & converged
    use O_MainEVecHDF5,    only: valeStates, eigenVectors_did
    use O_Populate,        only: electronPopulation, cleanUpPopulation
    use O_SetupIntegralsHDF5, only: atomOverlap_did, atomKEOverlap_did, &
-         & atomMVOverlap_did, atomNucOverlap_did, atomPotOverlap_did, atomDims
+         & atomMVOverlap_did, atomNucOverlap_did, atomDMOverlap_did, &
+         & atomPotOverlap_did, atomDims
 #ifndef GAMMA
    use O_BLASZHER
    use O_SecularEquation, only: valeVale, cleanUpSecularEqn, energyEigenValues,&
@@ -113,12 +117,15 @@ subroutine makeValenceRho
          ! it will not be needed again until here.
 
    ! Allocate space to hold the trace of the charge density, nuclear potential,
-   !   and kinetic energy.
+   !   kinetic energy, mass velocity, and dipole moment.
    allocate (chargeDensityTrace(spin))
    allocate (nucPotTrace(spin))
    allocate (kineticEnergyTrace(spin))
    if (rel == 1) then
       allocate (massVelocityTrace(spin))
+   endif
+   if ((doDIMO == 1) .and. (converged == 1)) then
+      allocate (dipoleMomentTrace(3, spin))
    endif
 
    ! Allocate space to hold the currentPopulation based on spin
@@ -130,10 +137,13 @@ subroutine makeValenceRho
    potRho(:,:)           = 0.0_double
    nucPotTrace(:)        = 0.0_double
    kineticEnergyTrace(:) = 0.0_double
+   chargeDensityTrace(:) = 0.0_double
    if (rel == 1) then
       massVelocityTrace(:)  = 0.0_double
    endif
-   chargeDensityTrace(:) = 0.0_double
+   if ((doDIMO == 1) .and. (converged == 1)) then
+      dipoleMomentTrace(:,:) = 0.0_double
+   endif
 
    ! Initialize local variables
    electronEnergy(:)     = 0.0_double
@@ -284,7 +294,7 @@ subroutine makeValenceRho
       !   valeVale spin array.
       do j = 1, spin
          call packMatrixGamma(valeValeRhoGamma(:,:,j),&
-            & packedValeValeSpin(:,:,j),valeDim)
+               & packedValeValeSpin(:,:,j),valeDim)
       enddo
 #endif
 
@@ -386,6 +396,24 @@ subroutine makeValenceRho
          enddo
       enddo
 
+      ! If needed, compute the dipole moment.
+      if ((doDIMO == 1) .and. (converged == 1)) then
+         do j = 1, 3 ! xyz directions
+
+            call readPackedMatrix (atomDMOverlap_did(i,j),packedValeVale,&
+                      & atomDims,dim1,valeDim)
+            do k = 1, spin
+#ifndef GAMMA
+               call matrixElementMult (dipoleMomentTrace(j,k),packedValeVale,&
+                     & packedValeValeSpin(:,:,k),dim1,valeDim)
+#else
+               call matrixElementMultGamma (dipoleMomentTrace(j,k),packedValeVale,&
+                     & packedValeValeSpin(:,:,k),dim1,valeDim)
+#endif
+            enddo
+         enddo
+      endif
+
       ! Deallocate the space no longer needed.
       deallocate (packedValeVale)
 
@@ -452,7 +480,23 @@ subroutine makeValenceRho
       ! Write the spin down electronEnergy???
       write (20,fmt='(a24,f18.8)') '(DOWN) Electron Energy = ',electronEnergy(2)
       write (20,fmt='(a24,f18.8)') '(DOWN) Electron Sum    = ',sumElecEnergy
+   endif
 
+
+   ! If the dipole moment calculation was requested, then print it. Note that
+   !   the units of the dipole moment are e * a_0 where e is the electronic
+   !   charge and a_0 is the bohr radius.
+   ! The units of the dipole moment calculation are ea0 where e is the number of 
+   !    valence electrons and a0 is the bohr radius. 
+   if ((doDIMO == 1) .and. (converged == 1)) then
+      write (74,*) "Dipole Moment x-direction: ", dipoleMomentTrace(1,1)
+      write (74,*) "Dipole Moment y-direction: ", dipoleMomentTrace(2,1)
+      write (74,*) "Dipole Moment z-direction: ", dipoleMomentTrace(3,1)
+      if (spin == 2) then
+         write (75,*) "Dipole Moment x-direction: ", dipoleMomentTrace(1,2) 
+         write (75,*) "Dipole Moment y-direction: ", dipoleMomentTrace(2,2)
+         write (75,*) "Dipole Moment z-direction: ", dipoleMomentTrace(3,2)
+      endif
    endif
 
    ! Deallocate arrays associated with the electron population.

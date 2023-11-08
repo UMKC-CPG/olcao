@@ -40,7 +40,6 @@ subroutine readLabel(readUnit,writeUnit)
 end subroutine readLabel
 
 
-
 subroutine readAndCheckLabel(readUnit,writeUnit,length,lookLabel)
 
    implicit none
@@ -73,6 +72,7 @@ subroutine readAndCheckLabel(readUnit,writeUnit,length,lookLabel)
 
 end subroutine readAndCheckLabel
 
+
 subroutine readDouble (readUnit,writeUnit,doubleVar,length,lookLabel)
 
    use O_Kinds
@@ -99,6 +99,7 @@ subroutine readDouble (readUnit,writeUnit,doubleVar,length,lookLabel)
    call flush (writeUnit)
 
 end subroutine readDouble
+
 
 subroutine read2Double (readUnit,writeUnit,doubleVar1,doubleVar2,length,&
       & lookLabel)
@@ -129,6 +130,7 @@ subroutine read2Double (readUnit,writeUnit,doubleVar1,doubleVar2,length,&
 
 end subroutine read2Double
 
+
 subroutine read3Double (readUnit,writeUnit,doubleVar1,doubleVar2,doubleVar3,&
       & length,lookLabel)
 
@@ -158,6 +160,7 @@ subroutine read3Double (readUnit,writeUnit,doubleVar1,doubleVar2,doubleVar3,&
    call flush (writeUnit)
 
 end subroutine read3Double
+
 
 subroutine readDoubleArray (readUnit,writeUnit,numValues,doubleArray,length,&
       & lookLabel)
@@ -230,6 +233,7 @@ subroutine readDoubleMatrix (readUnit,writeUnit,numValues1,numValues2,&
 
 end subroutine readDoubleMatrix
 
+
 subroutine readInt2Double (readUnit,writeUnit,intVar,doubleVar1,doubleVar2,&
       & length,lookLabel)
 
@@ -259,6 +263,7 @@ subroutine readInt2Double (readUnit,writeUnit,intVar,doubleVar1,doubleVar2,&
    call flush (writeUnit)
 
 end subroutine readInt2Double
+
 
 subroutine readIntDouble (readUnit,writeUnit,intVar,doubleVar,length,lookLabel)
 
@@ -435,7 +440,6 @@ subroutine readIntArray (readUnit,writeUnit,numValues,intArray,length,lookLabel)
 end subroutine readIntArray
 
 
-
 subroutine readChar (readUnit,writeUnit,varLength,charVar,labelLength,lookLabel)
 
    implicit none
@@ -461,5 +465,6 @@ subroutine readChar (readUnit,writeUnit,varLength,charVar,labelLength,lookLabel)
    call flush (writeUnit)
 
 end subroutine readChar
+
 
 end module O_ReadDataSubs

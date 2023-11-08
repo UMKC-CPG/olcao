@@ -139,7 +139,7 @@ subroutine secularEqnAllKP(spinDirection, numStates)
          !   future, the sign should be incorporated into the matrix
          !   calculation itself to avoid the extra work here.
          call readPackedMatrixAccum(atomMVOverlap_did(i),packedValeVale,&
-               & tempPackedValeVale,atomDims,-1.0_double,dim1,valeDim)
+               & tempPackedValeVale,atomDims,0.0_double,dim1,valeDim)
       endif
 
       ! Read the atomic potential terms into the still packed hamiltonian.

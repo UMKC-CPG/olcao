@@ -15,6 +15,7 @@ sub printHelp
 #                 [-subpot \$potSubOut \$potSubIn [-subpot ...]]
 #                 [[[-scfkp \$a \$b \$c] [-pscfkp \$a \$b \$c]
 #                   [-altkp \$a \$b \$c]] | [-kp \$a \$b \$c]]
+#                 [-kpshift \$a \$b \$c]
 #                 [-printbz]
 #                 [-compvis]
 #                 [-xcmesh [-numvect \$numSampVectors]
@@ -162,6 +163,9 @@ sub printHelp
 #The -kp option will apply the same kpoint selection to the scf, alt, and
 #  post-scf kpoints.
 
+#The -kpshift option will force a specific shift to the kpoint mesh by the
+#  given fractional a, b, c amounts.
+
 #The -printbz option will cause an additional file to be created as part of
 #  the input. This file contains a decription of the Brillouin zone suitable
 #  for importing in a python script.
@@ -268,6 +272,7 @@ sub printHelp
 #   -pscfkp:       One general kpoint is used for all pscf calculations.
 #   -altkp:        No alternate kpoint input file is created.
 #   -kp:           One general kpoint is used for all scf and pscf calculations.
+#   -kpshift:      Use the default shift for each lattice type.
 #   -reduce:       This is off by default.  The default sub parameters are:
 #        \$reduceLevels = 2, \$reduceThick = 0.1 A, \$reduceCutoff = 4.0 A, 
 #        \$reduceOp = species, \$reduceTolerance = 0.05, \$reduceSelection = 0=all.
@@ -929,6 +934,7 @@ sub initDefaults
    $kpWeightSum = 2;
    $printBZ = 0;
    $compVis = 0;
+   $kpShift = "-1 -1 -1";
 
    # Initial setting to track the number of basis set substitutions.
    $numBasisSubs = 0;
@@ -1045,6 +1051,11 @@ sub parseCommandLine
          # Mark that all kpoints have been set from the command line.
          foreach $kpGroup (1..3)
             {$setKPFlag[$kpGroup] = 1;}
+      }
+      elsif ($ARGV[$number] eq "-kpshift")
+      {
+         $kpShift = "$ARGV[++$number] $ARGV[++$number] $ARGV[++$number]";
+         print "kpShift = $kpShift\n";
       }
       elsif ($ARGV[$number] eq "-printbz")
          {$printBZ = 1;}
@@ -1608,45 +1619,48 @@ sub initializeCell
       }
    }
 
-   if ($sybdPath =~ /tric/)
+   if ($kpShift eq "-1 -1 -1")
    {
-      $cellName = "triclinic";
-      $kpShift  = "0.5 0.5 0.5";
-   }
-   elsif ($sybdPath =~ /mono/)
-   {
-      $cellName = "monoclinic";
-      $kpShift  = "0.5 0.5 0.5";
-   }
-   elsif ($sybdPath =~ /ortho/)
-   {
-      $cellName = "orthorhombic";
-      $kpShift  = "0.5 0.5 0.5";
-   }
-   elsif ($sybdPath =~ /tet/)
-   {
-      $cellName = "tetragonal";
-      $kpShift  = "0.5 0.5 0.5";
-   }
-   elsif ($sybdPath =~ /rhomb/)
-   {
-      $cellName = "rhombohedral";
-      $kpShift  = "0.5 0.5 0.5";
-   }
-   elsif ($sybdPath eq "hex")
-   {
-      $cellName = "hexagonal";
-      $kpShift  = "0.3333333333333333 0.3333333333333333 0.25";
-   }
-   else # Nothing but cubic systems from here on.
-   {
-      $cellName = "cubic";
-      if ($sybdPath eq "sc")
-         {$kpShift  = "0.25 0.25 0.25";}
-      elsif ($sybdPath eq "fcc")
-         {$kpShift  = "0.25 0.25 0.25";}
-      elsif ($sybdPath eq "bcc")
-         {$kpShift  = "0.5 0.5 0.5";}
+      if ($sybdPath =~ /tric/)
+      {
+         $cellName = "triclinic";
+         $kpShift  = "0.5 0.5 0.5";
+      }
+      elsif ($sybdPath =~ /mono/)
+      {
+         $cellName = "monoclinic";
+         $kpShift  = "0.5 0.5 0.5";
+      }
+      elsif ($sybdPath =~ /ortho/)
+      {
+         $cellName = "orthorhombic";
+         $kpShift  = "0.5 0.5 0.5";
+      }
+      elsif ($sybdPath =~ /tet/)
+      {
+         $cellName = "tetragonal";
+         $kpShift  = "0.5 0.5 0.5";
+      }
+      elsif ($sybdPath =~ /rhomb/)
+      {
+         $cellName = "rhombohedral";
+         $kpShift  = "0.5 0.5 0.5";
+      }
+      elsif ($sybdPath eq "hex")
+      {
+         $cellName = "hexagonal";
+         $kpShift  = "0.3333333333333333 0.3333333333333333 0.25";
+      }
+      else # Nothing but cubic systems from here on.
+      {
+         $cellName = "cubic";
+         if ($sybdPath eq "sc")
+            {$kpShift  = "0.25 0.25 0.25";}
+         elsif ($sybdPath eq "fcc")
+            {$kpShift  = "0.25 0.25 0.25";}
+         elsif ($sybdPath eq "bcc")
+            {$kpShift  = "0.5 0.5 0.5";}
+      }
    }
 
    # Move the files created by the space group program when the olcao.skl input
@@ -3476,9 +3490,14 @@ sub printOLCAOInput
    print OLCAO "0 $spinMAIN\n";
    print OLCAO "TYPE_ID__SPIN_SPLIT_FACTOR\n";
 
+   # Print data useful for dipole moment calculations.
+   print OLCAO "DIPOLE_INPUT_DATA\n";
+   print OLCAO "DIPOLE_CENTER\n";
+   print OLCAO "0.5 0.5 0.5    ! FractABC: center about which to compute the dipole.\n";
+
    # Print data useful for the dos portion of the calculation
    print OLCAO "DOS_INPUT_DATA\n";
-   print OLCAO "$eDeltaDOS $sigmaDOS               ! DOS Delta Energy, DOS sigma broadening (FWHM)\n";
+   print OLCAO "$eDeltaDOS $sigmaDOS              ! DOS Delta Energy, DOS sigma broadening (FWHM)\n";
    print OLCAO "$eminDOS $emaxDOS                 ! DOS EMIN and EMAX\n";
    print OLCAO "$detailCodePDOS ! PDOS ctrl flag: 0 t; 1 a total; 2 a nl; 3 a nlm\n";
 

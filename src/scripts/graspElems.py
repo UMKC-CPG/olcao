@@ -26,7 +26,7 @@ import time
 import os
 import sys
 import copy
-
+from datetime import datetime
 
 def getAtomNum(symb):
     elems={'H': 1 , 'He': 2, 'Li': 3, 'Be': 4, 'B': 5, 'C': 6, 'N': 7, 'O': 8, 'F': 9, 'Ne': 10, 'Na': 11, 'Mg': 12, 'Al': 13, 'Si': 14, 'P': 15, 'S': 16, 'Cl': 17, 'Ar': 18, 'K': 19, 'Ca': 20, 'Sc': 21, 'Ti': 22, 'V': 23, 'Cr': 24, 'Mn': 25, 'Fe': 26, 'Co': 27, 'Ni': 28, 'Cu': 29, 'Zn': 30, 'Ga': 31, 'Ge': 32, 'As': 33, 'Se': 34, 'Br': 35, 'Kr': 36, 'Rb': 37, 'Sr': 38, 'Y': 39, 'Zr': 40, 'Nb': 41, 'Mo': 42, 'Tc': 43, 'Ru': 44, 'Rh': 45, 'Pd': 46, 'Ag': 47, 'Cd': 48, 'In': 49, 'Sn': 50, 'Sb': 51, 'Te': 52, 'I': 53, 'Xe': 54, 'Cs': 55, 'Ba': 56, 'La': 57, 'Ce': 58, 'Pr': 59, 'Nd': 60, 'Pm': 61, 'Sm': 62, 'Eu': 63, 'Gd': 64, 'Tb': 65, 'Dy': 66, 'Ho': 67, 'Er': 68, 'Tm': 69, 'Yb': 70, 'Lu': 71, 'Hf': 72, 'Ta': 73, 'W': 74, 'Re': 75, 'Os': 76, 'Ir': 77, 'Pt': 78, 'Au': 79, 'Hg': 80, 'Tl': 81, 'Pb': 82, 'Bi': 83, 'Po': 84, 'At': 85, 'Rn': 86, 'Fr': 87, 'Ra': 88, 'Ac': 89, 'Th': 90, 'Pa': 91, 'U': 92, 'Np': 93, 'Pu': 94, 'Am': 95, 'Cm': 96, 'Bk': 97, 'Cf': 98, 'Es': 99, 'Fm': 100, 'Md': 101, 'No': 102, 'Lr': 103}
@@ -268,6 +268,7 @@ cd "$WORK/ELEM_FILES/graspElems"
           g.write(atomDat.spin[atNum-1]+'\n')
           g.write(atomDat.magMoment[atNum-1]+'\n')
           g.write(atomDat.quadMoment[atNum-1]+'\n')
+          g.write('\nn\n')
           g.write('S1\n\n')
 
           #CSL
@@ -291,32 +292,44 @@ cd "$WORK/ELEM_FILES/graspElems"
               g.write(atomDat.ebNumSubs[atNum-1]+"\n")
           g.write("S1\n\n")
 
-          g.write("mv rcsl.out rcsl.inp\n\n")
+          g.write("mv rcsl.out rcsf.inp\n\n")
 
-          #JSPLIT
-          g.write("$GRASP2K_BIN/jsplit <<S1\n")
+          # RANGULAR
+          g.write("$GRASP2K_BIN/rangular <<S1\n")
           g.write("y\n")
           g.write("S1\n\n")
 
-          g.write('rm rcsl.inp\n')
-          g.write('mv rcsl.out rcsl.inp\n\n')
-
-          #MCP3
-          g.write("$GRASP2K_BIN/mcp3 <<S1\n")
+          # RWFNESTIMATE
+          g.write("$GRASP2K_BIN/rwfnestimate <<S1\n")
           g.write("y\n")
-          g.write("S1\n\n")
-
-          #ERWF
-          g.write("$GRASP2K_BIN/erwf <<S1\n")
-          g.write("y\n") 
-          if commList[i+1]=="MB":
-              g.write(atomDat.mbERWF[atNum-1]+"\n")
-          elif commList[i+1]=="FB":
-              g.write(atomDat.fbERWF[atNum-1]+"\n")
-          elif commList[i+1]=="EB":
-              g.write(atomDat.ebERWF[atNum-1]+"\n")
+          g.write("2\n")
           g.write("*\n")
-          g.write("S1\n")      
+          g.write("S1\n\n")
+
+          ##JSPLIT
+          #g.write("$GRASP2K_BIN/jsplit <<S1\n")
+          #g.write("y\n")
+          #g.write("S1\n\n")
+
+          #g.write('rm rcsl.inp\n')
+          #g.write('mv rcsl.out rcsl.inp\n\n')
+
+          ##MCP3
+          #g.write("$GRASP2K_BIN/mcp3 <<S1\n")
+          #g.write("y\n")
+          #g.write("S1\n\n")
+
+          ##ERWF
+          #g.write("$GRASP2K_BIN/erwf <<S1\n")
+          #g.write("y\n") 
+          #if commList[i+1]=="MB":
+          #    g.write(atomDat.mbERWF[atNum-1]+"\n")
+          #elif commList[i+1]=="FB":
+          #    g.write(atomDat.fbERWF[atNum-1]+"\n")
+          #elif commList[i+1]=="EB":
+          #    g.write(atomDat.ebERWF[atNum-1]+"\n")
+          #g.write("*\n")
+          #g.write("S1\n")      
 
           g.close()
           comm="chmod +x run"+commList[i]
@@ -327,7 +340,7 @@ cd "$WORK/ELEM_FILES/graspElems"
           g.write(batchHead[0])
           g.write("set -x\n")
 
-          g.write("$GRASP2K_BIN/rscf2 <<S1\n")
+          g.write("$GRASP2K_BIN/rmcdhf <<S1\n")
           g.write("y\ny\n#BLOCKS AS 1's\n")
           g.write("*\n\n100000\nS1\n\n")
 
@@ -340,6 +353,19 @@ cd "$WORK/ELEM_FILES/graspElems"
           g.write("rwfn.out\n")
           g.write("S1\n")
 
+          #g.write("$GRASP2K_BIN/rscf2 <<S1\n")
+          #g.write("y\ny\n#BLOCKS AS 1's\n")
+          #g.write("*\n\n100000\nS1\n\n")
+
+          #g.write("mv rwfn.inp rwfn-orig.inp\n")
+          #g.write("mv rwfn.out rwfn.inp\n\n")
+
+          #g.write("$GRASP2K_BIN/readrwf <<S1\n")
+          #g.write("1\n")
+          #g.write("rwfn.inp\n")
+          #g.write("rwfn.out\n")
+          #g.write("S1\n")
+
           g.close()
           comm="chmod +x runRSCF"
           os.system(comm)
@@ -351,6 +377,15 @@ cd "$WORK/ELEM_FILES/graspElems"
 
     jobFile.close()
     jobFile2.close()
+
+with open("command", "a") as cmd:
+    now = datetime.now()
+    formatted_dt = now.strftime("%b. %d, %Y: %H:%M:%S")
+    cmd.write(f"Date: {formatted_dt}\n")
+    cmd.write(f"Cmnd:")
+    for argument in sys.argv:
+        cmd.write(f" {argument}")
+    cmd.write("\n\n")
 
 elemComs=parseInputs()
 makeExecs(elemComs)

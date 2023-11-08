@@ -76,11 +76,13 @@ subroutine allocateIntegralsSCF(coreDim,valeDim,numKPoints)
 
 end subroutine allocateIntegralsSCF
 
+
 ! Standard two center overlap integral.
 subroutine gaussOverlapOL
 
    ! Import necessary modules.
    use O_Kinds
+   use O_TimeStamps
    use O_Constants, only: dim3
    use O_KPoints, only: numKPoints
    use O_GaussianRelations, only: alphaDist
@@ -91,7 +93,6 @@ subroutine gaussOverlapOL
    use O_GaussianIntegrals, only: overlap2CIntg
    use O_Basis, only: initializeAtomSite
    use O_IntgSaving
-   use O_TimeStamps
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
@@ -489,6 +490,7 @@ subroutine gaussOverlapOL
    call timeStampEnd (8)
 
 end subroutine gaussOverlapOL
+
 
 ! Two center Kinetic Energy overlap integrals.
 subroutine gaussOverlapKE
@@ -897,7 +899,6 @@ subroutine gaussOverlapKE
 
    ! Record the completion of this gaussian integration set.
    call timeStampEnd (9)
-   
 
 end subroutine gaussOverlapKE
 
@@ -988,7 +989,7 @@ subroutine gaussOverlapMV
    integer, dimension(16) :: powerOfTwo = (/0,1,1,1,2,2,2,2,2,3,3,3,3,3,3,3/)
 
    ! Record the beginning of this phase of the setup calculation.
-   call timeStampStart (28)
+   call timeStampStart (30)
 
    ! Allocate space for locally defined allocatable arrays
    allocate (currentBasisFns     (maxNumAtomAlphas,maxNumStates,2))
@@ -1224,13 +1225,16 @@ subroutine gaussOverlapMV
                         & l1l2Switch, oneAlphaPair)
 
                   ! Collect the results of the overlap of the current alpha
-                  !   times the basis functions of atom 2.
+                  !   times the basis functions of atom 2. Note that a minus
+                  !   sign is used in the accumulation because the mass
+                  !   velocity term has an overall negative contribution to
+                  !   the Hamiltonian.
                   if (contrib .eqv. .true.) then
                      do m = 1, currentNumTotalStates(2)
                         pairXBasisFn2(:currentlmAlphaIndex(alphaIndex(1),1),&
                               & alphaIndex(1),m) = &
                               & pairXBasisFn2(:currentlmAlphaIndex &
-                              & (alphaIndex(1),1),alphaIndex(1),m) + &
+                              & (alphaIndex(1),1),alphaIndex(1),m) - &
                               & oneAlphaPair(:currentlmAlphaIndex &
                               & (alphaIndex(1),1),currentlmIndex(m,2)) * &
                               & currentBasisFns(alphaIndex(2),m,2)
@@ -1311,7 +1315,7 @@ subroutine gaussOverlapMV
    call ortho(5)
 
    ! Record the completion of this gaussian integration set.
-   call timeStampEnd (28)
+   call timeStampEnd (30)
 
 end subroutine gaussOverlapMV
 
@@ -1704,9 +1708,9 @@ subroutine gaussOverlapNP
 
    ! Record the completion of this gaussian integration set.
    call timeStampEnd (10)
-   
 
 end subroutine gaussOverlapNP
+
 
 ! Electronic Potential three center overlap integrals.
 subroutine gaussOverlapEP
@@ -2745,18 +2749,18 @@ subroutine ortho (opCode)
    if (coreDim /= 0) then
 #ifndef GAMMA
       do i = 1, numKPoints
-        ! Form product of (valeCoreOL)(coreVale) and (valeCore)(coreValeOL).
-        !   Subtract both from the target matrix elements (valeVale).
-        call valeCoreCoreVale (valeDim,coreDim,valeVale(:,:,i,1),&
-              & coreVale(:,:,i),coreValeOL(:,:,i))
+         ! Form product of (valeCoreOL)(coreVale) and (valeCore)(coreValeOL).
+         !   Subtract both from the target matrix elements (valeVale).
+         call valeCoreCoreVale (valeDim,coreDim,valeVale(:,:,i,1),&
+               & coreVale(:,:,i),coreValeOL(:,:,i))
       enddo
 #else
       do i = 1, numKPoints
-        ! Form a product of (valeCoreOL)(coreVale) and (valeCore)
-        !   (coreValeOL).  Subtract both from the target matrix elements
-        !   (valeValeGamma).
-        call valeCoreCoreValeGamma (valeDim,coreDim,valeValeGamma(:,:,1),&
-              & coreValeGamma,coreValeOLGamma)
+         ! Form a product of (valeCoreOL)(coreVale) and (valeCore)
+         !   (coreValeOL).  Subtract both from the target matrix elements
+         !   (valeValeGamma).
+         call valeCoreCoreValeGamma (valeDim,coreDim,valeValeGamma(:,:,1),&
+               & coreValeGamma,coreValeOLGamma)
       enddo
 #endif
    endif
@@ -2861,14 +2865,27 @@ subroutine cleanUpIntegralsSCF
 #ifndef GAMMA
    deallocate (coreCore)
    deallocate (valeVale)
-   deallocate (coreValeOL)
+   !deallocate (coreValeOL) ! Needed in 3Terms
 #else
    deallocate (coreCoreGamma)
    deallocate (valeValeGamma)
-   deallocate (coreValeOLGamma)
+   !deallocate (coreValeOLGamma) ! Needed in 3Terms
 #endif
 
 end subroutine cleanUpIntegralsSCF
+
+
+subroutine secondCleanUpIntegralsSCF
+
+   implicit none
+
+#ifndef GAMMA
+   deallocate (coreValeOL) ! Needed in 3Terms
+#else
+   deallocate (coreValeOLGamma) ! Needed in 3Terms
+#endif
+
+end subroutine secondCleanUpIntegralsSCF
 
 
 end module O_IntegralsSCF

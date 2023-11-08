@@ -3,6 +3,7 @@
 import argparse as ap
 import os
 import sys
+from datetime import datetime
 import osrecurintgana as ana
 import osrecurintgnum as num
 
@@ -14,121 +15,182 @@ PURPOSE: This program implements the Obara-Saika recursive method for computing
 """
 
 class ScriptSettings():
-    def __init__(self, temp_params):
+    """The instance variables of this object are the user settings that
+       control the program. The variable values are pulled from a list
+       that is created within a resource control file and that are then
+       reconciled with command line parameters."""
+
+    def __init__(self):
+        """Define default values for the parameters by pulling them
+        from the resource control file in the default location:
+        $OLCAO_RC/osrecurintgrc.py or from the current working directory
+        if a local copy of osrecurintgrc.py is present."""
+
+        # Read default variables from the resource control file.
+        sys.path.insert(1, os.getenv('OLCAO_RC'))
+        from osrecurintgrc import parameters_and_defaults
+        default_rc = parameters_and_defaults()
+
+        # Assign values to the settings from the rc defaults file.
+        self.assign_rc_defaults(default_rc)
+
+        # Parse the command line.
+        args = self.parse_command_line()
+
+        # Reconcile the command line arguments with the rc file.
+        self.reconcile(args)
+
+        # Record the command line parameters that were used.
+        self.recordCLP()
+
+
+    def assign_rc_defaults(self, default_rc):
 
         # Output format.
-        self.production = temp_params[0]
+        self.production = default_rc[0]
 
         # Whether or not to vectorize the production output.
-        self.vectorize = temp_params[1]
+        self.vectorize = default_rc[1]
 
         # Highest orbital (l) angular momentum.
-        self.max_lam = temp_params[2]
+        self.max_lam = default_rc[2]
 
         # List of integrals to produce.
-        self.overlap = temp_params[3]
-        self.kinetic = temp_params[4]
-        self.nuclear = temp_params[5]
-        self.electron = temp_params[6]
-        self.momentum = temp_params[7]
+        self.overlap = default_rc[3]
+        self.kinetic = default_rc[4]
+        self.nuclear = default_rc[5]
+        self.electron = default_rc[6]
+        self.momentum = default_rc[7]
+        self.massvel = default_rc[8]
+        self.dipole = default_rc[9]
 
 
-def init_environment():
-    """Define default values for the integral equations by pulling them from
-    the resource control file $OLCAO_DIR/.olcao/osrecurintgrc.py."""
+    def parse_command_line(self):
 
-    # Read default variables from the resource control file.
-    sys.path.insert(1, os.getenv('OLCAO_DIR') + "/.olcao")
-    from osrecurintgrc import parameters_and_defaults
+        # Create the parser tool.
+        prog_name = "osrecurintg.py"
+        description_text = """
+This program will produce Fortran code for two purposes:
+(1) To compute and compare (i.e., test) for differences between numerically
+    and analytically evaluated solutions to a variety of Gaussian integrals.
+    The Fortran code produced by this program for this purpose must be
+    compiled and executed separately.
+(2) To analytically compute solutions to a variety of Gaussian integrals
+    such that the Fortran code may be directly embedded into the OLCAO
+    program.
+"""
+        epilog_text = """
+Please contact Paul Rulis (rulisp@umkc.edu) regarding questions.
+"""
+        parser = ap.ArgumentParser(prog = prog_name,
+                                   description = description_text,
+                                   epilog = epilog_text)
 
-    # Create and return an object containing the script settings.
-    return ScriptSettings(parameters_and_defaults())
+        # Add arguments to the parser.
+        parser.add_argument('-p', '--production', action='store_true',
+                            help='Request that code be produced for use in a '+
+                            'production environment instead of the default '+
+                            'behavior of producing code for use in a testing '+
+                            'environment.', default='store_false',)
+
+        parser.add_argument('-v', '--vectorize', action='store_true',
+                            default=False, help = 'Vectorize the '+
+                            'integrals. (Option ignored if not also production.)')
+
+        parser.add_argument('-l', '--max_lam', type=int, help='Highest angular '+
+                            'momentum to produce equations for.', default=-1)
+
+        parser.add_argument('-o', '--overlap', action='store_true',
+                            default=False, help = 'Include two-center '+
+                            'overlap integral.')
+
+        parser.add_argument('-k', '--kinetic', action='store_true',
+                            default=False, help = 'Include two-center '+
+                            'kinetic energy integral.')
+
+        parser.add_argument('-n', '--nuclear', action='store_true',
+                            default=False, help = 'Include three-center '+
+                            'nuclear attraction integral.')
+
+        parser.add_argument('-e', '--electron', action='store_true',
+                            default=False, help = 'Include three-center '+
+                            'overlap integral (with third term being s-type), '+
+                            'which is used for electron repulsion.')
+
+        parser.add_argument('-m', '--momentum', action='store_true',
+                            default=False, help = 'Include two-center '+
+                            'momentum integral.')
+
+        parser.add_argument('-mv', '--massvel', action='store_true',
+                            default=False, help = 'Include two-center '+
+                            'mass velocity integral.')
+
+        parser.add_argument('-d', '--dipole', action='store_true',
+                            default=False, help = 'Include two-center '+
+                            'dipole moment integral.')
+
+        parser.add_argument('-a', '--all', action='store_true',
+                            default=False, help = 'Activate o,k,n,e,m,mv,d '+
+                            'integral types.')
+
+        return parser.parse_args()
 
 
-def parse_command_line():
+    def reconcile(self, args):
 
-    # Create the parser tool.
-    parser = ap.ArgumentParser(description='Control parameters')
-
-    # Add arguments to the parser.
-    parser.add_argument('-p', '--production', action='store_true',
-                        help='Request that code be produced for use in a '+
-                        'production environment instead of the default '+
-                        'behavior of producing code for use in a testing '+
-                        'environment.', default='store_false',)
-
-    parser.add_argument('-v', '--vectorize', action='store_true',
-                        default=False, help = 'Vectorize the '+
-                        'integrals. (Option ignored if not also production.)')
-
-    parser.add_argument('-l', '--max_lam', type=int, help='Highest angular '+
-                        'momentum to produce equations for.', default=-1)
-
-    parser.add_argument('-o', '--overlap', action='store_true',
-                        default=False, help = 'Include two-center '+
-                        'overlap integral.')
-
-    parser.add_argument('-k', '--kinetic', action='store_true',
-                        default=False, help = 'Include two-center '+
-                        'kinetic energy integral.')
-
-    parser.add_argument('-n', '--nuclear', action='store_true',
-                        default=False, help = 'Include three-center '+
-                        'nuclear attraction integral.')
-
-    parser.add_argument('-e', '--electron', action='store_true',
-                        default=False, help = 'Include three-center '+
-                        'overlap integral (with third term being s-type), '+
-                        'which is used for electron repulsion.')
-
-    parser.add_argument('-m', '--momentum', action='store_true',
-                        default=False, help = 'Include two-center '+
-                        'momentum integral.')
-
-    parser.add_argument('-a', '--all', action='store_true',
-                        default=False, help = 'Activate o,k,n,e,m '+
-                        'integral types.')
-
-    return parser.parse_args()
+        # Copy each parsed argument into a settings object instance variable.
 
 
-def reconcile(args, settings):
+        # Copy each given argument over the default settings. If an argument was
+        #   not given, then retain the default setting for that argument.
+        if (args.production == True):
+            self.production = True
 
-    # Copy each given argument over the default settings. If an argument was
-    #   not given, then retain the default setting for that argument.
-    if (args.production == True):
-        settings.production = True
+        if (args.vectorize == True):
+            self.vectorize = True
 
-    if (args.vectorize == True):
-        settings.vectorize = True
+        if (args.max_lam != -1):
+            self.max_lam = args.max_lam
 
-    if (args.max_lam != -1):
-        settings.max_lam = args.max_lam
+        if (args.overlap == True):
+            self.overlap = True
 
-    if (args.overlap == True):
-        settings.overlap = True
+        if (args.kinetic == True):
+            self.kinetic = True
 
-    if (args.kinetic == True):
-        settings.kinetic = True
+        if (args.nuclear == True):
+            self.nuclear = True
 
-    if (args.nuclear == True):
-        settings.nuclear = True
+        if (args.electron == True):
+            self.electron = True
 
-    if (args.electron == True):
-        settings.electron = True
+        if (args.momentum == True):
+            self.momentum = True
 
-    if (args.momentum == True):
-        settings.momentum = True
+        if (args.massvel == True):
+            self.massvel = True
 
-    if (args.all == True):
-        settings.overlap = True
-        settings.kinetic = True
-        settings.nuclear = True
-        settings.electron = True
-        settings.momentum = True
+        if (args.dipole == True):
+            self.dipole = True
 
-    # Return settings that incorporate the command line arguments.
-    return settings
+        if (args.all == True):
+            self.overlap = True
+            self.kinetic = True
+            self.nuclear = True
+            self.electron = True
+            self.momentum = True
+            self.massvel = True
+            self.dipole = True
+
+    def recordCLP(self):
+        with open("command", "a") as cmd:
+            now = datetime.now()
+            formatted_dt = now.strftime("%b. %d, %Y: %H:%M:%S")
+            cmd.write(f"Date: {formatted_dt}\n")
+            cmd.write(f"Cmnd:")
+            for argument in sys.argv:
+                cmd.write(f" {argument}")
+            cmd.write("\n\n")
 
 
 def create_data_aids(max_lam):
@@ -495,6 +557,50 @@ def print_head(settings, f, num_sh_intg, num_pc_intg, max_lam):
                     head += '               & "momenty.dat")\n'
                 elif (xyz == 2):
                     head += '               & "momentz.dat")\n'
+
+        if(settings.massvel):
+            head += """
+
+         ! Compute the pc and sh integral results for the current parameters
+         !   using analytical formulas.
+         call massvel2CIntgAna(alphas(1),alphas(2),pos(:,1),pos(:,2),&
+               & pc(:,:,1,1),sh(:,:,1,1))
+
+         ! Compute the pc and sh integral results for the current parameters
+         !   using numerical integration.
+         call massvel2CIntgNum(alphas(1),alphas(2),pos(:,1),pos(:,2),&
+               & pc(:,:,1,2),sh(:,:,1,2),cell_size,step_size)
+
+         ! Print the pc and sh integral result differences.
+         call print_pc_sh(h,i,2,alphas,pos,pc(:,:,1,:),sh(:,:,1,:),&
+               & "massvel.dat")
+"""
+
+        if(settings.dipole):
+            head += """
+
+         ! Compute the pc and sh integral results for the current parameters
+         !   using analytical formulas.
+         call dipole3CIntgAna(alphas(1),alphas(2),pos(:,1),pos(:,2),pos(:,3),&
+                & pc(:,:,:,1),sh(:,:,:,1))
+         
+         ! Compute the pc and sh integral results for the current parameters
+         !   using numerical integration.
+         call dipole3CIntgNum(alphas(1),alphas(2),pos(:,1),pos(:,2),pos(:,3),&
+                & pc(:,:,:,2),sh(:,:,:,2),cell_size,step_size)
+
+         ! Print the pc and sh integral result differences.
+"""
+            for xyz in range(3):
+                 head += "         "
+                 head += f"call print_pc_sh(h,i,{xyz+8},alphas,pos,"
+                 head += f"pc(:,:,{xyz+1},:),sh(:,:,{xyz+1},:),&\n"
+                 if (xyz == 0):
+                     head += '               & "dipolex.dat")\n'
+                 elif (xyz == 1):
+                     head += '               & "dipoley.dat")\n'
+                 elif (xyz == 2):
+                     head += '               & "dipolez.dat")\n'
         head += """
       enddo
    enddo
@@ -589,14 +695,9 @@ end program GaussianIntegrals
 
 def main():
 
-    # Set default values from the user resource control file.
-    settings = init_environment()
-
-    # Parse the command line.
-    args = parse_command_line()
-
-    # Reconcile the default settings and the given arguments
-    settings = reconcile(args, settings)
+    # Get script settings from a combination of the resource control file
+    #   and parameters given by the user on the command line.
+    settings = ScriptSettings()
 
     # Create the data aids for the requested set of angular momenta. This
     #   includes a matrix to aid the conversion from the pc matrix to the sh
@@ -657,7 +758,7 @@ def main():
     # Manage the kinetic energy integrals.
     if (settings.kinetic):
         matrix_ol = ana.overlap(triads, True, False, settings.vectorize)
-        matrix_ke = ana.kinetic(triads, matrix_ol, settings.vectorize)
+        matrix_ke = ana.kinetic(triads, settings.vectorize, False)
         if (settings.production):
             if (settings.vectorize):
                 ana.print_production_kinetic_vec(conversion, triads, matrix_ke,
@@ -734,6 +835,45 @@ def main():
             ana.print_test_momentum_ana(conversion, triads, matrix_mm,
                                         matrix_ol, f)
             num.print_test_momentum_num(conversion, triads, f)
+
+    # Manage the mass velocity integrals.
+    if (settings.massvel):
+        matrix_ol = ana.overlap(triads, True, False, settings.vectorize)
+        matrix_ke = ana.kinetic(triads, settings.vectorize, True)
+        matrix_mv = ana.massvel(triads, settings.vectorize)
+        if (settings.production):
+            if (settings.vectorize):
+                ana.print_production_massvel_vec(conversion, triads,
+                                                 matrix_mv, matrix_ke,
+                                                 matrix_ol, lam_sh_list,
+                                                 lam_pc_list, f)
+            else:
+                ana.print_production_massvel(conversion, triads, matrix_mv,
+                                             matrix_ke, matrix_ol,
+                                             lam_sh_list, lam_pc_list, f)
+        else:
+            ana.print_test_massvel_ana(conversion, triads, matrix_mv,
+                                       matrix_ke, matrix_ol, f)
+            num.print_test_massvel_num(conversion, triads, f)
+
+    # Manage the dipole moment integrals
+    if (settings.dipole):
+        matrix_ol = ana.overlap(triads, True, False, settings.vectorize)
+        matrix_dm = ana.dipole(triads, settings.vectorize)
+        if (settings.production):
+            if (settings.vectorize):
+                ana.print_production_dipole_vec(conversion, triads, matrix_dm,
+                                                matrix_ol, lam_sh_list,
+                                                lam_pc_list, f)
+            else:
+                ana.print_production_dipole(conversion, triads, matrix_dm,
+                                            matrix_ol, lam_sh_list,
+                                            lam_pc_list, f)
+            
+        else:
+            ana.print_test_dipole_ana(conversion, triads, matrix_dm,
+                                      matrix_ol, f)
+            num.print_test_dipole_num(conversion, triads, f)
 
     # Print the overall foot.
     print_foot(settings.production, f)

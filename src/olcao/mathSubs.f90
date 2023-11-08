@@ -11,7 +11,7 @@ module O_MathSubs
    public
 
    ! Define module variables.
-   integer, allocatable, dimension(:) :: preCompFactorial
+   integer(8), allocatable, dimension(:) :: preCompFactorial
 
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    ! Begin list of module subroutines.!
@@ -215,7 +215,7 @@ subroutine computeFactorials(maxFact)
    integer :: maxFact ! Highest factorial parameter.
 
    ! Define local variables.
-   integer :: i
+   integer(8) :: i
 
    allocate (preCompFactorial(0:maxFact))
 

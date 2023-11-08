@@ -604,7 +604,7 @@ integer :: termCount
 
 
       ! Accumulate the bispectrum component.
-termCount = 0
+!termCount = 0
 !      twom2Index = 0
 !      do a = -twoj2, twoj2, 2 ! m2
 !         twom2Index = twom2Index + 1
@@ -736,19 +736,31 @@ termCount = 0
 
 
 
+   ! Print out the results in a machine readable format.
+
    ! Open the output file for machine readable results.
    open (unit=21,file='fort.21',status='new',form='formatted')
 
-   ! Create the header for the columns of data.
-   write (21,fmt="(a)") "        site          2j         BiSpecComp"//&
-         & "              Total_BSC"
+   ! Create header: site index + all 2j bispectrum component values + total
+   write (21,fmt="(a8)",advance="no") "  site# "
+   do i = 1, twoj2+1
+      write (21,fmt="(9x,a3,i3.3,x)",advance="no") "2j_", &
+            & (twoj1+twoj2) - (i-1)*2
+   enddo
+   write (21,fmt="(a15)") "          total"
 
-   ! Print out the results in a machine readable format.
+   ! Print data for each potential site.
    do i = 1, numPotSites
+      ! Print the site index.
+      write (21,fmt="(i7,x)",advance="no") i
+
+      ! Print each of the bispectrum components.
       do j = 1, twoj2+1
-         write (21,fmt="(2i12,2e25.16)") i, (twoj1+twoj2) - (j-1)*2, &
-               & real(bsComp(j,i),double), real(bsCompSum(i),double)
+         write (21,fmt="(e15.7,x)",advance="no") real(bsComp(j,i),double)
       enddo
+
+      ! Print the sum of all bispectrum components for this site.
+      write (21,fmt="(e15.4)") real(bsCompSum(i),double)
    enddo
 
    ! Close the output file.

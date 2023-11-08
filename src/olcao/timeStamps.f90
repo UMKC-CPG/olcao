@@ -63,6 +63,8 @@ subroutine initOperationLabels
    opLabels(26) = '************  Three Center Bond Order  ************'
    opLabels(27) = '***********  Initialize Field HDF5 File  **********'
    opLabels(28) = '**********  Compute Bispectrum Component  *********'
+   opLabels(29) = '***********  Dipole Moment Integrals  *************'
+   opLabels(30) = '***********  Mass Velocity Integrals  *************'
 
 end subroutine initOperationLabels
 

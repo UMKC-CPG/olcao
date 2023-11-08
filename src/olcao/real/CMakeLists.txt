@@ -18,7 +18,8 @@ add_library(gCommon OBJECT ../../kinds.f90 ../../constants.f90
 
 add_executable(gOLCAOsetup $<TARGET_OBJECTS:gCommon> ../basis.f90 
    ../elecStat.f90 ../intgOrtho.F90 ../intgSaving.F90 ../integralsSCF.F90 
-   ../coreCharge.f90 ../OLCAO_Setup.f90 ../OLCAO_SetupWrap.f90 )
+   ../integralsSCF3Terms.F90 ../coreCharge.f90 ../OLCAO_Setup.f90
+   ../OLCAO_SetupWrap.f90 )
 target_link_libraries(gOLCAOsetup gGaussIntegrals)
 
 add_executable(gOLCAOmain $<TARGET_OBJECTS:gCommon> ../hdf5MainEval.f90 

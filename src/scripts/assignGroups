@@ -296,6 +296,8 @@ sub readRoster
       # Read the information for this student.
 
       # Read past the Row number and Photo lines.
+      if ($line =~ "FERPA")
+         {$line = <ROSTER>;}
       $line = <ROSTER>;
       $line = <ROSTER>;
       $line = <ROSTER>;
@@ -344,6 +346,7 @@ sub readRoster
       $line = <ROSTER>;
       @values = StructureControl::prepLine(\*ROSTER,$line,'\s+');
       $studentLevels[$currStudent] = $values[0];
+      #$line = <ROSTER>;
 
       if ($isLab == 1)
       {
@@ -780,6 +783,12 @@ sub appendAssignmentToEmail
 
       print EMAIL "$groupNames[$studentGroupIndex[$student]]\n";
 
+      # if ($student % 2 == 0) 
+      #    {print EMAIL "\nYou will be in Town Hall Alpha\n";}
+      # else
+      #    {print EMAIL "\nYou will be in Town Hall Omega\n";}
+
+
       # Close the email file handle.
       close (EMAIL);
 
@@ -838,9 +847,17 @@ sub printEmailScript
    # Print a command to email each student.
    foreach $student (1..$numStudents)
    {
-      print SCRIPT "mailx -s \"GE-CRT-SC: Town Hall Role\" " .
-         "-r rulisp\@umkc.edu $emailAddresses[$sortedIndices[$student]] < " .
-         "emails/$studentIDs[$sortedIndices[$student]]/emailBody\n"; 
+      if ($student % 2 == 0)
+      {
+         print SCRIPT "mailx -s \"GE-CRT-SC: Town Hall Role\" " .
+            "-r rulisp\@umkc.edu $emailAddresses[$sortedIndices[$student]] < " .
+            "emails/$studentIDs[$sortedIndices[$student]]/emailBody\n"; 
+      }
+      else { # Used to be Town Hall (Omega) Role
+         print SCRIPT "mailx -s \"GE-CRT-SC: Town Hall Role\" " .
+            "-r rulisp\@umkc.edu $emailAddresses[$sortedIndices[$student]] < " .
+            "emails/$studentIDs[$sortedIndices[$student]]/emailBody\n"; 
+      }
    }
 
    # Close the script file.

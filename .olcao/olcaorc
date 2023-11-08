@@ -11,6 +11,9 @@ export OLCAO_BRANCH="CPG/cpg-repo/v34"
 export OLCAO_DIR="$HOME/$OLCAO_BRANCH"
 export GRASP2K_DIR="$OLCAO_DIR/src/grasp2k/grasp2Kdev"
 
+#Default location of all script resource control files.
+export OLCAO_RC="$OLCAO_DIR/.olcao"
+
 #Location of binary executables.
 export OLCAO_BIN="$OLCAO_DIR/bin"
 export GRASP2K_BIN="$GRASP2K_DIR/bin"

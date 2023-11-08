@@ -2,6 +2,7 @@ module O_Input
 
    ! Import necessary modules.
    use O_Kinds
+   use O_Constants, only: dim3
 
    ! Make sure that no funny variables are defined.
    implicit none
@@ -37,6 +38,9 @@ module O_Input
    !   compute the sigma to be used in the broadening subroutine. The sigma
    !   value is equal to the standard deviation of g(r) = 1/(sigma sqrt(2Pi))
    !   exp(-r^2 / 2 sigma^2).
+
+   ! Define control variables that apply only for the dipole moment program.
+   real (kind=double), dimension(dim3) :: dipoleCenter
 
    ! Define control variables that apply only to the DOS program.
    integer :: detailCodePDOS       ! 0=type;1=a total;2=a nl; 3=a nlm.
@@ -157,7 +161,10 @@ subroutine parseInput
    ! Read main input control parameters.
    call readMainControl(readUnit,writeUnit)
 
-   ! Read pdos input control parameters.
+   ! Read dipole moment input control parameters.
+   call readDIMOControl(readUnit,writeUnit)
+
+   ! Read dos input control parameters.
    call readDOSControl(readUnit,writeUnit)
 
    ! Read bond input control parameters.
@@ -500,6 +507,55 @@ subroutine readMainControl(readUnit,writeUnit)
    deallocate (typeSpinSplitTemp)
 
 end subroutine readMainControl
+
+
+subroutine readDIMOControl(readUnit,writeUnit)
+
+   ! Use necessary modules
+   use O_Constants, only: hartree
+   use O_ReadDataSubs
+   use O_Lattice, only: realVectors
+
+   implicit none
+
+   ! Passed parameters
+   integer, intent(in)    :: readUnit   ! The unit number of the file from which
+                                        ! we are reading.
+   integer, intent(in)    :: writeUnit  ! The unit number of the file to which
+                                        ! we are writing.
+
+   ! Local parameters
+   integer :: xyzAxis, abcAxis
+   real (kind=double), dimension(3) :: posXYZ, fractABC
+
+   ! Read the main DIMO label.
+   call readAndCheckLabel(readUnit,writeUnit,len('DIPOLE_INPUT_DATA'),&
+                              'DIPOLE_INPUT_DATA')
+
+   ! Read all the DIMO input data.
+   call readData(readUnit,writeUnit,3,fractABC,len('DIPOLE_CENTER'),&
+         & 'DIPOLE_CENTER')
+
+   ! Pxyz = atom position in xyz orthogonal coordinates.
+   ! Pabc = atom position in abc fractional coordinates.
+   ! ax ay az = xyz component coefficients of a lattice vector.
+   ! bx by bz = xyz component coefficients of b lattice vector.
+   ! cx cy cz = xyz component coefficients of c lattice vector.
+
+   ! Px = (Pa*ax + Pb*bx + Pc*cx) x
+   ! Py = (Pa*ay + Pb*by + Pc*cy) y
+   ! Pz = (Pa*az + Pb*bz + Pc*cz) z
+
+   ! Convert the given fractional ABC coordinates into cartesian XYZ.
+   do xyzAxis = 1, 3
+      dipoleCenter(xyzAxis) = 0.0d0
+      do abcAxis = 1, 3
+         dipoleCenter(xyzAxis) = dipoleCenter(xyzAxis) + fractABC(abcAxis) * &
+               & realVectors(xyzAxis,abcAxis)
+      enddo
+   enddo
+
+end subroutine readDIMOControl
 
 
 subroutine readDOSControl(readUnit,writeUnit)

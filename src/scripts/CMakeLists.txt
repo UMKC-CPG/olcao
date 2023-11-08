@@ -20,7 +20,7 @@ nanoTube.py normalize
 olcao olcaoCompare olcaoObject.py olcao.py olcaoStructures.py org_radwavefn.py
 osrecurintg.py osrecurintgana.py osrecurintgnum.py osrecurintglib.py
 osrecurintg_makenum.py
-pdb2skl plotgraph plotgraph.py polcao processPOPTC
+pdb2skl plotgraph plotgraph.py polcao pot2plot.py processPOPTC
 reconcileAbsences rpdf runCheck runIsoAtoms
 scanSpectra selectSYBD skl2lmp skl2pdb skl2vasp spectra2ODX
 unpackOLCAODB

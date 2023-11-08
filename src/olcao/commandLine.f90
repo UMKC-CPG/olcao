@@ -22,6 +22,9 @@ module O_CommandLine
    integer :: excitedQN_n  ! main, band, dos, bond, optc, wave
    integer :: excitedQN_l  ! main, band, dos, bond, optc, wave
 
+   ! Variables used by setup and main.
+   integer:: doDIMO ! Include computation of dipole moment matrix elements.
+
    ! Variables used by main only.
    integer :: doDOS  ! Tack on a DOS calculation (1) or not (0).
    integer :: doBond ! Tack on a bond order calculation (1) or not (0).
@@ -57,6 +60,9 @@ subroutine parseSetupCommandLine
    ! Make sure that there are no accidental variable declarations.
    implicit none
 
+   ! Define the local variables that will be used to parse the command line.
+   character*25 :: commandBuffer
+
    ! Open the file that will be written to as output for this program.
    open(20,file='fort.20',status='unknown',form='formatted')
 
@@ -69,6 +75,13 @@ subroutine parseSetupCommandLine
    ! Begin Parsing the command line.
 
    call readBasisCode
+
+   ! Read a flag indicating that a dipole moment calculation should be tacked
+   !   on to the end of the SCF iterations.
+   call getarg(nextArg,commandBuffer)
+   nextArg = nextArg + 1
+   read (commandBuffer,*) doDIMO
+   write (20,*) "doDIMO = ",doDIMO
 
    ! Record the date and time that we end.
    call timeStampEnd (24)
@@ -117,10 +130,19 @@ subroutine parseMainCommandLine
    read (commandBuffer,*) doBond
    write (20,*) "doBond = ",doBond
 
+   ! Read a flag indicating that a dipole moment calculation should be tacked
+   !   on to the end of the SCF iterations.
+   call getarg(nextArg,commandBuffer)
+   nextArg = nextArg + 1
+   read (commandBuffer,*) doDIMO
+   write (20,*) "doDIMO = ",doDIMO
+
+
    ! Record the date and time that we end.
    call timeStampEnd (24)
 
 end subroutine parseMainCommandLine
+
 
 
 subroutine parseIntgCommandLine
@@ -158,6 +180,7 @@ subroutine parseIntgCommandLine
    call timeStampEnd (24)
 
 end subroutine parseIntgCommandLine
+
 
 
 subroutine parseBandCommandLine
@@ -306,6 +329,7 @@ subroutine parseOptcCommandLine
 end subroutine parseOptcCommandLine
 
 
+
 subroutine parseWaveCommandLine
 
    ! Use necessary modules.
@@ -333,6 +357,7 @@ subroutine parseWaveCommandLine
    call timeStampEnd (24)
 
 end subroutine parseWaveCommandLine
+
 
 
 subroutine parseLoEnCommandLine
@@ -394,6 +419,8 @@ subroutine readBasisCode
 
 end subroutine readBasisCode
 
+
+
 subroutine readExcitedQN
 
    ! Make sure that there are no accidental variable declarations.
@@ -428,6 +455,7 @@ subroutine readExcitedQN
    endif
 
 end subroutine readExcitedQN
+
 
 
 subroutine initCLP

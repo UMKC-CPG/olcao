@@ -43,6 +43,7 @@ class ScriptSettings():
         self.electron = temp_params[3]
         self.momentum = temp_params[4]
         self.massvel = temp_params[5]
+        self.dipole = temp_params[6]
         # self.e_field = temp_params[5]
         # self.e_grad = temp_params[6]
         # self.ang_mom = temp_params[7]
@@ -92,6 +93,10 @@ def parse_command_line():
                         default='store_false', help = 'Include mass '+
                         'velocity integral.')
 
+    parser.add_argument('-d', '--dipole', action='store_true',
+                        default='store_false', help = 'Include the dipole '+
+                        'dipole integral.')
+
     return parser.parse_args()
 
 
@@ -118,6 +123,9 @@ def reconcile(args, settings):
     if (args.massvel == True):
         settings.massvel = True
 
+    if (args.dipole == True):
+        settings.dipole = True
+
     # Return settings that incorporate the command line arguments.
     return settings
 
@@ -138,18 +146,18 @@ def overlap():
 
 
 def kinetic_energy():
-    Px = sp.symbols('Px')
-    lx1 = sp.symbols('lx1')
-    lx2 = sp.symbols('lx2')
-    zeta1, zeta2 = sp.symbols('zeta1 zeta2')
-    Rx1 = sp.symbols('Rx1')
-    Rx2 = sp.symbols('Rx2')
+    # Px = sp.symbols('Px')
+    # lx1 = sp.symbols('lx1')
+    # lx2 = sp.symbols('lx2')
+    # zeta1, zeta2 = sp.symbols('zeta1 zeta2')
+    # Rx1 = sp.symbols('Rx1')
+    # Rx2 = sp.symbols('Rx2')
 
-    orbital_1 = (Px-Rx1)**lx1 * sp.exp(-zeta1*(Px-Rx1)**2)
-    orbital_2 = (Px-Rx2)**lx2 * sp.exp(-zeta2*(Px-Rx2)**2)
+    # orbital_1 = (Px-Rx1)**lx1 * sp.exp(-zeta1*(Px-Rx1)**2)
+    # orbital_2 = (Px-Rx2)**lx2 * sp.exp(-zeta2*(Px-Rx2)**2)
 
-    # Note, the factor of -1/2 is accounted for in the osrecurint.py program.
-    return sp.printing.fcode(orbital_1 * sp.diff(sp.diff(orbital_2, Px), Px))
+    # # Note, the factor of -1/2 is accounted for in the osrecurint.py program.
+    # return sp.printing.fcode(orbital_1 * sp.diff(sp.diff(orbital_2, Px), Px))
 
     # The commented code below will produce the full expression. However,
     #   the uncommented code above will produce the expression for one
@@ -173,6 +181,23 @@ def kinetic_energy():
     #         orbital_1 * sp.diff(sp.diff(orbital_2, Px), Px)
     #         + orbital_1 * sp.diff(sp.diff(orbital_2, Py), Py)
     #         + orbital_1 * sp.diff(sp.diff(orbital_2, Pz), Pz))
+
+    # (s|s) Case:
+    Px, Py, Pz = sp.symbols('Px Py Pz')
+    lx1, ly1, lz1 = sp.symbols('lx1 ly1 lz1')
+    lx2, ly2, lz2 = sp.symbols('lx2 ly2 lz2')
+    zeta1, zeta2, zeta3 = sp.symbols('zeta1 zeta2 zeta3')
+    Rx1, Ry1, Rz1 = sp.symbols('Rx1 Ry1 Rz1')
+    Rx2, Ry2, Rz2 = sp.symbols('Rx2 Ry2 Rz2')
+    Rx3, Ry3, Rz3 = sp.symbols('Rx3 Ry3 Rz3')
+
+    orbital_1 = sp.exp(-zeta1*( (Px-Rx1)**2 + (Py-Ry1)**2 + (Pz-Rz1)**2 ))
+    orbital_2 = sp.exp(-zeta2*( (Px-Rx2)**2 + (Py-Ry2)**2 + (Pz-Rz2)**2 ))
+
+    return sp.printing.fcode(
+            orbital_1 * sp.diff(sp.diff(orbital_2, Px), Px)
+            + orbital_1 * sp.diff(sp.diff(orbital_2, Py), Py)
+            + orbital_1 * sp.diff(sp.diff(orbital_2, Pz), Pz))
 
 
 # This integral is /not/ seperable and so we must produce the full 3D
@@ -228,41 +253,90 @@ def momentum():
 
 
 def massvel():
-    
+    # Px, Py = sp.symbols('Px Py')
+    # lx1, ly1 = sp.symbols('lx1 ly1')
+    # lx2, ly2 = sp.symbols('lx2 ly2')
+    # zeta1, zeta2 = sp.symbols('zeta1 zeta2')
+    # Rx1, Ry1 = sp.symbols('Rx1 Ry1')
+    # Rx2, Ry2 = sp.symbols('Rx2 Ry2')
 
-    return sp.printing.fcode()
+    # orbital_1a = (Px-Rx1)**lx1 * sp.exp(-zeta1*(Px-Rx1)**2)
+    # orbital_2a = (Px-Rx2)**lx2 * sp.exp(-zeta2*(Px-Rx2)**2)
+
+    # orbital_1b = (Px-Rx1)**lx1 * (Py-Ry1)**ly1 * \
+    #         sp.exp(-zeta1*( (Px-Rx1)**2 + (Py-Ry1)**2) )
+    # orbital_2b = (Px-Rx2)**lx2 * (Py-Ry2)**ly2 * \
+    #         sp.exp(-zeta2*( (Px-Rx2)**2 + (Py-Ry2)**2) )
+
+    # # Note, any coefficients are accounted for in the osrecurintg.py program.
+    # return (sp.printing.fcode(orbital_1a *
+    #         sp.diff(sp.diff(sp.diff(sp.diff(orbital_2a, Px), Px), Px), Px)),
+    #         sp.printing.fcode(orbital_1b *
+    #         sp.diff(sp.diff(sp.diff(sp.diff(orbital_2b, Py), Py), Px), Px)))
 
     # The commented code below will produce the full expression. However,
     #   the uncommented code above will produce the expression for one
     #   dimension. That 1D expression is what we later manipulate by hand
-    #   to create the separable solution.
+    #   to create the separable solution for full 3D problem.
 
-    # Px, Py, Pz = sp.symbols('Px Py Pz')
-    # lx1, ly1, lz1 = sp.symbols('lx1 ly1 lz1')
-    # lx2, ly2, lz2 = sp.symbols('lx2 ly2 lz2')
-    # zeta1, zeta2, zeta3 = sp.symbols('zeta1 zeta2 zeta3')
-    # Rx1, Ry1, Rz1 = sp.symbols('Rx1 Ry1 Rz1')
-    # Rx2, Ry2, Rz2 = sp.symbols('Rx2 Ry2 Rz2')
-    # Rx3, Ry3, Rz3 = sp.symbols('Rx3 Ry3 Rz3')
+    Px, Py, Pz = sp.symbols('Px Py Pz')
+    lx1, ly1, lz1 = sp.symbols('lx1 ly1 lz1')
+    lx2, ly2, lz2 = sp.symbols('lx2 ly2 lz2')
+    zeta1, zeta2, zeta3 = sp.symbols('zeta1 zeta2 zeta3')
+    Rx1, Ry1, Rz1 = sp.symbols('Rx1 Ry1 Rz1')
+    Rx2, Ry2, Rz2 = sp.symbols('Rx2 Ry2 Rz2')
+    Rx3, Ry3, Rz3 = sp.symbols('Rx3 Ry3 Rz3')
 
-    # orbital_1 = (Px-Rx1)**lx1 * (Py-Ry1)**ly1 * (Pz-Rz1)**lz1 * \
-    #         sp.exp(-zeta1*( (Px-Rx1)**2 + (Py-Ry1)**2 + (Pz-Rz1)**2 ))
-    # orbital_2 = (Px-Rx2)**lx2 * (Py-Ry2)**ly2 * (Pz-Rz2)**lz2 * \
-    #         sp.exp(-zeta2*( (Px-Rx2)**2 + (Py-Ry2)**2 + (Pz-Rz2)**2 ))
+    orbital_1 = (Px-Rx1)**lx1 * (Py-Ry1)**ly1 * (Pz-Rz1)**lz1 * \
+            sp.exp(-zeta1*( (Px-Rx1)**2 + (Py-Ry1)**2 + (Pz-Rz1)**2 ))
+    orbital_2 = (Px-Rx2)**lx2 * (Py-Ry2)**ly2 * (Pz-Rz2)**lz2 * \
+            sp.exp(-zeta2*( (Px-Rx2)**2 + (Py-Ry2)**2 + (Pz-Rz2)**2 ))
 
-    # return sp.printing.fcode(
-    #         orbital_1 * sp.diff(sp.diff(sp.diff(
-    #                             sp.diff(orbital_2, Px), Px), Px), Px)
-    #         + orbital_1 * sp.diff(sp.diff(sp.diff(
-    #                               sp.diff(orbital_2, Py), Py), Py), Py)
-    #         + orbital_1 * sp.diff(sp.diff(sp.diff(
-    #                               sp.diff(orbital_2, Pz), Pz), Pz), Pz)
-    #         + 2 * orbital_1 * sp.diff(sp.diff(sp.diff(
-    #                                  sp.diff(orbital_2, Py), Py), Px), Px)
-    #         + 2 * orbital_1 * sp.diff(sp.diff(sp.diff(
-    #                                  sp.diff(orbital_2, Pz), Pz), Px), Px)
-    #         + 2 * orbital_1 * sp.diff(sp.diff(sp.diff(
-    #                                  sp.diff(orbital_2, Pz), Pz), Py), Py)
+    # # # Specific for the l=0 case:
+    # # Px, Py, Pz = sp.symbols('Px Py Pz')
+    # # lx1, ly1, lz1 = sp.symbols('lx1 ly1 lz1')
+    # # lx2, ly2, lz2 = sp.symbols('lx2 ly2 lz2')
+    # # zeta1, zeta2, zeta3 = sp.symbols('zeta1 zeta2 zeta3')
+    # # Rx1, Ry1, Rz1 = sp.symbols('Rx1 Ry1 Rz1')
+    # # Rx2, Ry2, Rz2 = sp.symbols('Rx2 Ry2 Rz2')
+    # # Rx3, Ry3, Rz3 = sp.symbols('Rx3 Ry3 Rz3')
+
+    # # orbital_1 = sp.exp(-zeta1*( (Px-Rx1)**2 + (Py-Ry1)**2 + (Pz-Rz1)**2 ))
+    # # orbital_2 = sp.exp(-zeta2*( (Px-Rx2)**2 + (Py-Ry2)**2 + (Pz-Rz2)**2 ))
+
+    return sp.printing.fcode(
+            orbital_1 * sp.diff(sp.diff(sp.diff(
+                                sp.diff(orbital_2, Px), Px), Px), Px)
+            + orbital_1 * sp.diff(sp.diff(sp.diff(
+                                  sp.diff(orbital_2, Py), Py), Py), Py)
+            + orbital_1 * sp.diff(sp.diff(sp.diff(
+                                  sp.diff(orbital_2, Pz), Pz), Pz), Pz)
+            + 2 * orbital_1 * sp.diff(sp.diff(sp.diff(
+                                     sp.diff(orbital_2, Py), Py), Px), Px)
+            + 2 * orbital_1 * sp.diff(sp.diff(sp.diff(
+                                     sp.diff(orbital_2, Pz), Pz), Px), Px)
+            + 2 * orbital_1 * sp.diff(sp.diff(sp.diff(
+                                     sp.diff(orbital_2, Pz), Pz), Py), Py))
+
+
+def dipole():
+        Px, Py, Pz = sp.symbols('Px Py Pz')
+        lx1, ly1, lz1 = sp.symbols('lx1 ly1 lz1')
+        lx2, ly2, lz2 = sp.symbols('lx2 ly2 lz2')
+        mu_x, mu_y, mu_z = sp.symbols('mu_x mu_y mu_z')
+        zeta1, zeta2 = sp.symbols('zeta1 zeta2')
+        Rx1, Ry1, Rz1 = sp.symbols('Rx1 Ry1 Rz1')
+        Rx2, Ry2, Rz2 = sp.symbols('Rx2 Ry2 Rz2')
+        Rx3, Ry3, Rz3 = sp.symbols('Rx3 Ry3 Rz3')
+        x, y, z = sp.symbols('x y z')
+
+        orbital_1 = (Px-Rx1)**lx1 * (Py-Ry1)**ly1 * (Pz-Rz1)**lz1 * \
+                     sp.exp(-zeta1*( (Px-Rx1)**2 + (Py-Ry1)**2 + (Pz-Rz1)**2 ))
+        orbital_2 = (Px-Rx2)**lx2 * (Py-Ry2)**ly2 * (Pz-Rz2)**lz2 * \
+                     sp.exp(-zeta2*( (Px-Rx2)**2 + (Py-Ry2)**2 + (Pz-Rz2)**2 ))
+        mu = (Px-Rx3)**mu_x * (Py-Ry3)**mu_y * (Pz-Rz3)**mu_z
+
+        return sp.printing.fcode(orbital_1 * mu * orbital_2)
 
 
 def apply_seperable_substitutions(string):
@@ -278,11 +352,43 @@ def apply_seperable_substitutions(string):
     # Replace angular momenta with array references.
     string = string.replace("lx1", "l1(:)")
     string = string.replace("lx2", "l2(:)")
+    string = string.replace("lx3", "l3(:)")
 
     # Replace A,B,C site positions with array references.
     string = string.replace("Rx1", "A(:)")
     string = string.replace("Rx2", "B(:)")
     string = string.replace("Rx3", "C(:)")
+
+    # Replace zeta with alpha (a).
+    string = string.replace("zeta", "a")
+
+    return string
+
+
+def apply_paired_seperable_substitutions(string):
+
+    # Remove newlines, spaces, and continuation characters.
+    string = re.sub("\n", "", string)
+    string = re.sub(" ", "", string)
+    string = re.sub("@", "", string)
+
+    # Replace xyz positions with array references.
+    string = string.replace("Px", "xyz(i)")
+    string = string.replace("Py", "xyz(j)")
+
+    # Replace angular momenta with array references.
+    string = string.replace("lx1", "l1(i)")
+    string = string.replace("lx2", "l2(i)")
+    string = string.replace("ly1", "l1(j)")
+    string = string.replace("ly2", "l2(j)")
+
+    # Replace A,B,C site positions with array references.
+    string = string.replace("Rx1", "A(i)")
+    string = string.replace("Rx2", "B(i)")
+    string = string.replace("Rx3", "C(i)")
+    string = string.replace("Ry1", "A(j)")
+    string = string.replace("Ry2", "B(j)")
+    string = string.replace("Ry3", "C(j)")
 
     # Replace zeta with alpha (a).
     string = string.replace("zeta", "a")
@@ -309,6 +415,9 @@ def apply_inseperable_substitutions(string):
     string = string.replace("lx2", "l2(1)")
     string = string.replace("ly2", "l2(2)")
     string = string.replace("lz2", "l2(3)")
+    string = string.replace("lx3", "l3(1)")
+    string = string.replace("ly3", "l3(2)")
+    string = string.replace("lz3", "l3(3)")
 
     # Replace A,B,C site positions with array references.
     string = string.replace("Rx1", "A(1)")
@@ -324,13 +433,16 @@ def apply_inseperable_substitutions(string):
     # Replace sums with vector expressions.
     string = string.replace("((xyz(1)-A(1))**2+" +
                             "(xyz(2)-A(2))**2+" +
-                            "(xyz(3)-A(3))**2)", "sum((xyz(:)-A(:))**2)")
+                            "(xyz(3)-A(3))**2)",
+                            "sum((xyz(:)-A(:))**2)")
     string = string.replace("((xyz(1)-B(1))**2+" +
                             "(xyz(2)-B(2))**2+" +
-                            "(xyz(3)-B(3))**2)", "sum((xyz(:)-B(:))**2)")
+                            "(xyz(3)-B(3))**2)",
+                            "sum((xyz(:)-B(:))**2)")
     string = string.replace("((xyz(1)-C(1))**2+" +
                             "(xyz(2)-C(2))**2+" +
-                            "(xyz(3)-C(3))**2)", "sum((xyz(:)-C(:))**2)")
+                            "(xyz(3)-C(3))**2)",
+                            "sum((xyz(:)-C(:))**2)")
     string = string.replace("(xyz(1)-A(1))**l1(1)*" +
                             "(xyz(2)-A(2))**l1(2)*" +
                             "(xyz(3)-A(3))**l1(3)",
@@ -339,6 +451,10 @@ def apply_inseperable_substitutions(string):
                             "(xyz(2)-B(2))**l2(2)*" +
                             "(xyz(3)-B(3))**l2(3)",
                             "product((xyz(:)-B(:))**l2(:))")
+    string = string.replace("(xyz(1)-C(1))**l3(1)*" +
+                            "(xyz(2)-C(2))**l3(2)*" +
+                            "(xyz(3)-C(3))**l3(3)",
+                            "product((xyz(:)-C(:))**l3(:))")
 
     # Pull out the exponential terms for the second site and attach them to
     #   the first site. Take special note that this replecement uses "zeta"
@@ -381,6 +497,20 @@ def apply_inseperable_substitutions(string):
             "4*product((xyz(:)-B(:))**l2(:))*(xyz(2)-B(2))**2")
     string = string.replace("product((xyz(:)-B(:))**l2(:))*(2*xyz(3)-2*B(3))**2",
             "4*product((xyz(:)-B(:))**l2(:))*(xyz(3)-B(3))**2")
+
+    # Precompute sums and products as possible.
+    string = string.replace("product((xyz(:)-A(:))**l1(:))",
+            "product_xyz_A_l1")
+    string = string.replace("product((xyz(:)-B(:))**l2(:))",
+            "product_xyz_B_l2")
+    string = string.replace("product((xyz(:)-C(:))**l3(:))",
+            "product_xyz_C_l3")
+    string = string.replace("sum((xyz(:)-A(:))**2)",
+            "sum_xyz_A_2")
+    string = string.replace("sum((xyz(:)-B(:))**2)",
+            "sum_xyz_B_2")
+    string = string.replace("sum((xyz(:)-C(:))**2)",
+            "sum_xyz_C_2")
 
     return string
 
@@ -427,8 +557,22 @@ def main():
         lib.print_cont_string(string, 80, 3, f, True)
 
     if (settings.massvel):
+        # Create integral formulas for 1D fourth derivatives and
+        #   2D products of second derivatives.
+        #string1,string2 = massvel()
+        #string1 = apply_seperable_substitutions(string1)
+        #string2 = apply_paired_seperable_substitutions(string2)
+        #lib.print_cont_string(string1, 80, 3, f, True)
+        #lib.print_cont_string(string2, 80, 3, f, True)
+
+        # Uncomment below for the "full" 3D mesh case.
         string = massvel()
-        string = apply_seperable_substitutions(string)
+        string = apply_inseperable_substitutions(string)
+        lib.print_cont_string(string, 80, 3, f, True)
+
+    if (settings.dipole):
+        string = dipole()
+        string = apply_inseperable_substitutions(string)
         lib.print_cont_string(string, 80, 3, f, True)
 
 

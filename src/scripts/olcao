@@ -12,6 +12,7 @@ sub printHelp
 #              [[-pacs \$edge]  | [
 #              [-bond [\$edge]] [-scfbond [\$edge]]
 #              [-dos  [\$edge]] [-scfdos  [\$edge]]
+#              [-dimo [\$edge]] [-scfdimo [\$edge]]
 #              [-field [\$edge]] [-scffield [\$edge]]
 #              [-sige [\$edge]] [-scfsige [\$edge]]
 #              [-optc [\$edge]] [-nlop [\$edge]]
@@ -66,6 +67,11 @@ sub printHelp
 #       -scfdos switch instead and the computation will be shorter but will
 #       use the scf k-points instead.  This will produce a TDOS, PDOS, and
 #       localization index.
+#-dimo will do a dipole moment calculation using the potential for the requested
+#       edge. The default basis is the full basis.  Now, if you want to use the
+#       same kpoint set as was used for the scf convergence then you can use
+#       the -scfdimo switch instead and the computation will be shorter but will
+#       use the scf k-points instead. This will produce TDIP and PDIP output.
 #-bond will do a bond order and Q* calculation using the potential for the
 #       requested edge.  The default basis is the minimal basis, and it must be
 #       done as a separate calculation for now since basis types are not
@@ -139,6 +145,7 @@ my $serialxyz;
 
 # Information about which job to run.
 my $dosRun;
+my $dimoRun;
 my $pacsRun;
 my $sybdRun;
 my $bondRun;
@@ -148,6 +155,7 @@ my $sigeRun;
 my $fieldRun;
 my $loenRun;
 my $dosRunSCF;
+my $dimoRunSCF;
 my $bondRunSCF;
 my $fieldRunSCF;
 
@@ -185,6 +193,7 @@ my $intg;
 my $band;
 my $sybd;
 my $dos;
+my $dimo;
 my $bond;
 my $optc;
 my $nlop;
@@ -195,6 +204,8 @@ my $loen;
 
 # Auxiliary suffix components.
 my $loci;
+my $tdimo;
+my $pdimo;
 my $tdos;
 my $pdos;
 my $poptc;
@@ -303,13 +314,15 @@ sub setDefaultVars
    $pacsRun=0;        #Should a pacs task be done?
    $sybdRun=0;        #Should a sybd task be done?
    $dosRun=0;         #Should a dos task be done?
+   $dimoRun=0;        #Should a dipole task be done?
    $bondRun=0;        #Should a bond task be done?
    $optcRun=0;        #Should a optc task be done?
    $nlopRun=0;        #Should a nlop task be done?
    $sigeRun=0;        #Should a sige task be done?
    $fieldRun=0;       #Should a field task be done?
    $loenRun=0;        #Should a local environment task be done?
-   $dosRunSCF=0;      #Run PDOS in SCF?
+   $dosRunSCF=0;      #Run DOS in SCF?
+   $dimoRunSCF=0;     #Run dipole in SCF?
    $bondRunSCF=0;     #Run bond in SCF?
    $fieldRunSCF=0;    #Run field in SCF?
    $scfBasis="fb";    #Code for which scf basis to be use.  (Default is full.)
@@ -382,6 +395,25 @@ sub parseCLP
       elsif ($ARGV[$number] eq "-scfdos")
       {
          $dosRunSCF=1;
+         if (($#ARGV == $number) || ($ARGV[$number+1] =~ /\-/))
+            {$edge = "gs";}
+         else
+            {$edge=$ARGV[++$number];}
+      }
+      elsif ($ARGV[$number] eq "-dimo")
+      {
+         $dimoRun=1;
+         if (($#ARGV == $number) || ($ARGV[$number+1] =~ /\-/))
+            {$edge = "gs";}
+         else
+            {$edge=$ARGV[++$number];}
+         if ($pscfBasisSet == 0)
+            {$pscfBasis = "fb";}  #Full Basis
+         $pscfBasisSet = 1;
+      }
+      elsif ($ARGV[$number] eq "-scfdimo")
+      {
+         $dimoRunSCF=1;
          if (($#ARGV == $number) || ($ARGV[$number+1] =~ /\-/))
             {$edge = "gs";}
          else
@@ -621,6 +653,7 @@ sub initFileNames
    $band      = "band";
    $sybd      = "sybd";
    $dos       = "dos";
+   $dimo      = "dimo";
    $bond      = "bond";
    $pacs      = "pacs";
    $optc      = "optc";
@@ -633,6 +666,8 @@ sub initFileNames
    $loci      = ".loci";
    $tdos      = ".t";
    $pdos      = ".p";
+   $tdimo     = ".t";
+   $pdimo     = ".p";
    $poptc     = ".p";
    $bo3c      = ".3c";
    $elf       = ".elf";
@@ -769,6 +804,7 @@ sub initExes
    $executables[7] = "OLCAOoptc";
    $executables[8] = "OLCAOfield";
    $executables[9] = "OLCAOloen";
+   $executables[10] = "OLCAOdimo";
 
    # Open the each kpoint file and check to see if it requests a gamma kpoint.
    $scfGamma  = &checkGammaKP("$kp_scf$dat");
@@ -929,7 +965,7 @@ sub runOLCAO
    }
    else
    {
-      # Doing another calculation (PDOS,SYBD,BOND,OPTC,SIGE,FIELD,LOEN,etc.)
+      # Doing another calculation (DOS,DIP,SYBD,BOND,OPTC,SIGE,FIELD,LOEN,etc.)
       if ("$scfBasis" ne "no")
       {
          &runTask ($setup,$scfBasis,"");
@@ -945,6 +981,8 @@ sub runOLCAO
             &runTask ($band,$pscfBasis,$edge);
             if ($dosRun==1)
                {&runTask ($dos,$pscfBasis,$edge);}
+            elsif ($dimoRun==1)
+               {&runTask ($dimo,$pscfBasis,$edge);}
             elsif ($bondRun==1)
                {&runTask ($bond,$pscfBasis,$edge);}
             elsif ($optcRun==1)
@@ -1127,7 +1165,7 @@ sub copyInput
    elsif (("$taskName" eq "$dos") || ("$taskName" eq "$bond"))
       {&move("$taskEdge$band$taskBasis$alt$hdf","$band$tempBasis$hdf");}
    elsif (("$taskName" eq "$optc") || ("$taskName" eq "$sige") ||
-          ("$taskName" eq "$nlop"))
+          ("$taskName" eq "$nlop") || ("$taskName" eq "$dimo"))
    {
       &move("$taskEdge$band$taskBasis$alt$hdf","$band$tempBasis$hdf");
       &move("$taskEdge$intg$taskBasis$alt$hdf","$intg$tempBasis$hdf");
@@ -1231,7 +1269,13 @@ sub determineCLP
    my $taskCLP;
 
    if ("$taskName" eq "$setup")
-      {$taskCLP = "$scfBasisCode";}
+   {
+      # The first CLP indicates which basis to use.
+      $taskCLP = "$scfBasisCode ";
+
+      # The next CLP indicates if a dipole calculation should be done.
+      $taskCLP = "$taskCLP" . "$dimoRunSCF";
+   }
    elsif ("$taskName" eq "$main")
    {
       # The first CLP indicates which basis to use.
@@ -1249,7 +1293,10 @@ sub determineCLP
       $taskCLP = "$taskCLP" . "$dosRunSCF ";
 
       # The next CLP indicates if a bond calculation should also be done.
-      $taskCLP = "$taskCLP" . "$bondRunSCF";
+      $taskCLP = "$taskCLP" . "$bondRunSCF ";
+
+      # The next CLP indicates if a dipole calculation should also be done.
+      $taskCLP = "$taskCLP" . "$dimoRunSCF";
    }
    elsif ("$taskName" eq "$intg")
    {
@@ -1259,9 +1306,12 @@ sub determineCLP
       # This CLP indicates whether the momentum matrix should be computed.
       if ((($pacsRun == 1) && ($taskEdge =~ /gs/)) ||
            ($optcRun == 1) || ($sigeRun == 1) || ($nlopRun == 1))
-         {$taskCLP = $taskCLP . "1";}
+         {$taskCLP = $taskCLP . "1 ";}
       else
-         {$taskCLP = $taskCLP . "0";}
+         {$taskCLP = $taskCLP . "0 ";}
+
+      # The next CLP indicates if a dipole calculation should be done.
+      $taskCLP = "$taskCLP" . "$dimoRunSCF";
    }
    elsif ("$taskName" eq "$band")
    {
@@ -1280,6 +1330,14 @@ sub determineCLP
       $taskCLP = "$taskCLP" . "$QN_n $QN_l ";
    }
    elsif ("$taskName" eq "$dos")
+   {
+      # The first CLP indicates which basis to use.
+      $taskCLP = "$pscfBasisCode ";
+
+      # The next CLPs signal the edge that should be computed for.
+      $taskCLP = "$taskCLP" . "$QN_n $QN_l ";
+   }
+   elsif ("$taskName" eq "$dimo")
    {
       # The first CLP indicates which basis to use.
       $taskCLP = "$pscfBasisCode ";
@@ -1411,6 +1469,8 @@ sub executeProgram
       {$executable = $executables[8];}
    elsif ("$taskName" eq "$loen")
       {$executable = $executables[9];}
+   elsif ("$taskName" eq "$dimo")
+      {$executable = $executables[10];}
 
 
    # Call the executable
@@ -1487,7 +1547,7 @@ sub manageOutput
    {
       &copy("fort.7","$taskEdge$main$taskBasis.$iteration$alt.7");
       &move("fort.7","$proj_home/$taskEdge$iteration$taskBasis$alt$dat");
-      &copy("fort.14","$taskEdge$main$taskBasis.$iteration$alt.14");
+      &copy("fort.14","$taskEdge$main$taskBasis.$energy$alt.14");
       &move("fort.14","$proj_home/$taskEdge$energy$taskBasis$alt$dat");
       &copy("fort.8","$taskEdge$main$taskBasis.SCFV$alt.8");
 
@@ -1531,6 +1591,24 @@ sub manageOutput
             &move("fort.70","$proj_home/$taskEdge$dos$taskBasis$pdos$alt$raw");
             &copy("fort.80","$taskEdge$dos$taskBasis$loci$alt$plot.80");
             &move("fort.80","$proj_home/$taskEdge$dos$taskBasis$loci$alt$plot");
+         }
+      }
+      if ($dimoRunSCF == 1)
+      {
+         if ($spinPol == 2)
+         {
+            &copy("fort.74","$taskEdge$dimo$taskBasis$tdimo$alt$plot.74");
+            &move("fort.74",
+                  "$proj_home/$taskEdge$dimo$taskBasis$tdimo$alt$up$plot");
+            &copy("fort.75","$taskEdge$dimo$taskBasis$tdimo$alt$plot.61");
+            &move("fort.75",
+                  "$proj_home/$taskEdge$dimo$taskBasis$tdimo$alt$dn$plot");
+         }
+         else
+         {
+            &copy("fort.74","$taskEdge$dimo$taskBasis$tdimo$alt$plot.74");
+            &move("fort.74",
+                  "$proj_home/$taskEdge$dimo$taskBasis$tdimo$alt$plot");
          }
       }
       if ($bondRunSCF == 1)
@@ -1616,6 +1694,22 @@ sub manageOutput
          &move("fort.70","$proj_home/$taskEdge$dos$taskBasis$pdos$alt$raw");
          &copy("fort.80","$taskEdge$dos$taskBasis$loci$alt$plot.80");
          &move("fort.80","$proj_home/$taskEdge$dos$taskBasis$loci$alt$plot");
+      }
+   }
+   elsif ("$taskName" eq "$dimo")
+   {
+      &move("$band$tempBasis$hdf","$taskEdge$band$taskBasis$alt$hdf");
+      if ($spinPol == 2)
+      {
+         &copy("fort.74","$taskEdge$dimo$taskBasis$tdimo$plot$alt.74");
+         &move("fort.74","$proj_home/$taskEdge$dimo$taskBasis$tdimo$alt$up$plot");
+         &copy("fort.75","$taskEdge$dimo$taskBasis$tdimo$alt$plot.75");
+         &move("fort.75","$proj_home/$taskEdge$dimo$taskBasis$tdimo$alt$dn$plot");
+      }
+      else
+      {
+         &copy("fort.74","$taskEdge$dimo$taskBasis$tdimo$plot$alt.74");
+         &move("fort.74","$proj_home/$taskEdge$dimo$taskBasis$tdimo$alt$plot");
       }
    }
    elsif ("$taskName" eq "$bond")
@@ -1926,8 +2020,8 @@ sub manageOutput
       # Move the local environment structural analysis files if created.
       if (-e "fort.21")
       {
-         &copy("fort.21","$taskEdge$loen$taskBasis$alt$raw.21");
-         &move("fort.21","$proj_home/$taskEdge$loen$taskBasis$alt$raw");
+         &copy("fort.21","$taskEdge$loen$taskBasis$alt$plot.21");
+         &move("fort.21","$proj_home/$taskEdge$loen$taskBasis$alt$plot");
       }
    }
 

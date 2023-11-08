@@ -3,6 +3,7 @@ module O_SetupIntegralsHDF5
    ! Import any necessary definition modules.
    use HDF5
    use O_Potential, only: rel
+   use O_CommandLine, only: doDIMO
 
    ! Make sure that no funny variables are defined.
    implicit none
@@ -25,11 +26,13 @@ module O_SetupIntegralsHDF5
    integer(hid_t) :: atomKEOverlap_gid
    integer(hid_t) :: atomMVOverlap_gid
    integer(hid_t) :: atomNucOverlap_gid
+   integer(hid_t) :: atomDMOverlap_gid
    integer(hid_t) :: atomPotOverlap_gid
 
    ! Define the group IDs of the dynamically numbered subgroups of
    !   atomPotOverlap_gid.  (Number of kpoints)
    integer(hid_t), allocatable, dimension (:) :: atomPotKPointOL_gid
+   integer(hid_t), allocatable, dimension (:) :: atomDMKPointOL_gid
 
    ! The dataspaces of each dataset in atomIntgGroup_gid are the same in
    !   all characteristics (type, dimension, etc.) and therefore can be
@@ -53,6 +56,7 @@ module O_SetupIntegralsHDF5
    integer(hid_t), allocatable, dimension (:)   :: atomKEOverlap_did
    integer(hid_t), allocatable, dimension (:)   :: atomMVOverlap_did
    integer(hid_t), allocatable, dimension (:)   :: atomNucOverlap_did
+   integer(hid_t), allocatable, dimension (:,:) :: atomDMOverlap_did
    integer(hid_t), allocatable, dimension (:,:) :: atomPotOverlap_did
 
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -116,6 +120,11 @@ subroutine initSetupIntegralHDF5 (setup_fid)
    call h5gcreate_f (atomIntgGroup_gid,"atomNucOverlap",atomNucOverlap_gid,&
          & hdferr)
    if (hdferr /= 0) stop 'Failed to create atom nuclear overlap group'
+   if (doDIMO == 1) then
+      call h5gcreate_f (atomIntgGroup_gid,"atomDMOverlap",atomDMOverlap_gid,&
+            & hdferr)
+      if (hdferr /= 0) stop 'Failed to create dipole moment overlap group'
+   endif
    call h5gcreate_f (atomIntgGroup_gid,"atomPotOverlap",atomPotOverlap_gid,&
          & hdferr)
    if (hdferr /= 0) stop 'Failed to create atom potential overlap group'
@@ -129,12 +138,16 @@ subroutine initSetupIntegralHDF5 (setup_fid)
    !   subgroups that exist for each kpoint for the atomicPotential
    !   hamiltonian terms.  Also allocate space to hold the dataset IDs.
    allocate (atomPotKPointOL_gid (numKPoints))
+   allocate (atomDMKPointOL_gid  (numKPoints))
    allocate (atomOverlap_did     (numKPoints))
    allocate (atomKEOverlap_did   (numKPoints))
    if (rel == 1) then
       allocate (atomMVOverlap_did   (numKPoints))
    endif
    allocate (atomNucOverlap_did  (numKPoints))
+   if (doDIMO == 1) then
+      allocate (atomDMOverlap_did   (numKPoints,3))
+   endif
    allocate (atomPotOverlap_did  (numKPoints,potDim))
 
    ! Then loop over the kpoints and assign a gid name equal to the kpoint # for
@@ -142,9 +155,16 @@ subroutine initSetupIntegralHDF5 (setup_fid)
    do i = 1, numKPoints
       write (currentName,fmt="(i7.7)") i
       currentName = trim (currentName)
+
       call h5gcreate_f (atomPotOverlap_gid,currentName,atomPotKPointOL_gid(i),&
             & hdferr)
       if (hdferr /= 0) stop 'Failed to create potential kpoint group'
+
+      if (doDIMO == 1) then
+         call h5gcreate_f (atomDMOverlap_gid,currentName,&
+               & atomDMKPointOL_gid(i),hdferr)
+         if (hdferr /= 0) stop 'Failed to create dipole kpoint group'
+      endif
    enddo
 
 
@@ -184,6 +204,15 @@ subroutine initSetupIntegralHDF5 (setup_fid)
       call h5dcreate_f (atomNucOverlap_gid,currentName,H5T_NATIVE_DOUBLE,&
             & valeVale_dsid,atomNucOverlap_did(i),hdferr,valeVale_plid)
       if (hdferr /= 0) stop 'Failed to create nuclear overlap did'
+      if (doDIMO == 1) then
+         do j = 1, 3
+            write (currentName,fmt="(i7.7)") j
+            call h5dcreate_f (atomDMKPointOL_gid(i),currentName,&
+               & H5T_NATIVE_DOUBLE,valeVale_dsid,atomDMOverlap_did(i,j),&
+               & hdferr,valeVale_plid)
+            if (hdferr /= 0) stop 'Failed to create DM overlap did'
+         enddo
+      endif
       do j = 1, potDim
          write (currentName,fmt="(i7.7)") j
          call h5dcreate_f(atomPotKPointOL_gid(i),currentName,H5T_NATIVE_DOUBLE,&
@@ -238,6 +267,11 @@ subroutine accessSetupIntegralHDF5 (setup_fid)
    call h5gopen_f (atomIntgGroup_gid,"atomNucOverlap",atomNucOverlap_gid,&
          & hdferr)
    if (hdferr /= 0) stop 'Failed to open atom nuclear overlap group'
+   if (doDIMO == 1) then
+      call h5gopen_f (atomIntgGroup_gid,"atomDMOverlap",atomDMOverlap_gid,&
+            & hdferr)
+      if (hdferr /= 0) stop 'Failed to open dipole moment overlap group'
+   endif
    call h5gopen_f (atomIntgGroup_gid,"atomPotOverlap",atomPotOverlap_gid,&
          & hdferr)
    if (hdferr /= 0) stop 'Failed to open atom potential overlap group'
@@ -251,22 +285,33 @@ subroutine accessSetupIntegralHDF5 (setup_fid)
    !   subgroups that exist for each kpoint for the atomicPotential
    !   hamiltonian terms.  Also allocate space to hold the dataset IDs.
    allocate (atomPotKPointOL_gid (numKPoints))
-   allocate (atomOverlap_did     (numKPoints))
-   allocate (atomKEOverlap_did   (numKPoints))
+   allocate (atomDMKPointOL_gid (numKPoints))
+   allocate (atomOverlap_did (numKPoints))
+   allocate (atomKEOverlap_did (numKPoints))
    if (rel == 1) then
-      allocate (atomMVOverlap_did   (numKPoints))
+      allocate (atomMVOverlap_did (numKPoints))
    endif
-   allocate (atomNucOverlap_did  (numKPoints))
-   allocate (atomPotOverlap_did  (numKPoints,potDim))
+   allocate (atomNucOverlap_did (numKPoints))
+   if (doDIMO == 1) then
+      allocate (atomDMOverlap_did (numKPoints,3))
+   endif
+   allocate (atomPotOverlap_did (numKPoints,potDim))
 
    ! Then loop over the kpoints and assign a gid name equal to the kpoint # for
    !   the atomic-potentian hamiltonian terms.
    do i = 1, numKPoints
       write (currentName,fmt="(i7.7)") i
       currentName = trim (currentName)
+
       call h5gopen_f (atomPotOverlap_gid,currentName,atomPotKPointOL_gid(i),&
             & hdferr)
       if (hdferr /= 0) stop 'Failed to open potential kpoint group'
+
+      if (doDIMO == 1) then
+         call h5gopen_f (atomDMOverlap_gid,currentName,atomDMKPointOL_gid(i),&
+               & hdferr)
+         if (hdferr /= 0) stop 'Failed to open dipole kpoint group'
+      endif
    enddo
 
 
@@ -285,6 +330,14 @@ subroutine accessSetupIntegralHDF5 (setup_fid)
       call h5dopen_f (atomNucOverlap_gid,currentName,atomNucOverlap_did(i),&
             & hdferr)
       if (hdferr /= 0) stop 'Failed to open nuclear overlap did'
+      if (doDIMO == 1) then
+         do j = 1, 3
+            write (currentName,fmt="(i7.7)") j
+            call h5dopen_f (atomDMKPointOL_gid(i),currentName,&
+                  & atomDMOverlap_did(i,j),hdferr)
+            if (hdferr /= 0) stop 'Failed to open DM overlap did'
+         enddo
+      endif
       do j = 1, potDim
          write (currentName,fmt="(i7.7)") j
          call h5dopen_f(atomPotKPointOL_gid(i),currentName,&
@@ -318,6 +371,7 @@ subroutine closeSetupIntegralHDF5
    ! Import necessary object modules.
    use O_KPoints,   only: numKPoints
    use O_Potential, only: rel, potDim
+   use O_CommandLine, only: doDIMO
 
    ! Make sure that no variables are implicitly declared.
    implicit none
@@ -334,14 +388,25 @@ subroutine closeSetupIntegralHDF5
    do i = 1, numKPoints
       call h5dclose_f (atomOverlap_did(i),hdferr)
       if (hdferr /= 0) stop 'Failed to close atomOverlap_did.'
+
       call h5dclose_f (atomKEOverlap_did(i),hdferr)
       if (hdferr /= 0) stop 'Failed to close atomKEOverlap_did.'
+
       if (rel == 1) then
          call h5dclose_f (atomMVOverlap_did(i),hdferr)
         if (hdferr /= 0) stop 'Failed to close atomMVOverlap_did.'
       endif
+
       call h5dclose_f (atomNucOverlap_did(i),hdferr)
       if (hdferr /= 0) stop 'Failed to close atomNucOverlap_did.'
+
+      if (doDIMO == 1) then
+         do j = 1, 3
+            call h5dclose_f (atomDMOverlap_did(i,j),hdferr)
+            if (hdferr /= 0) stop 'Failed to close atomDMOverlap_did.'
+         enddo
+      endif
+
       do j = 1, potDim
          call h5dclose_f (atomPotOverlap_did(i,j),hdferr)
          if (hdferr /= 0) stop 'Failed to close atomPotOverlap_did.'
@@ -367,6 +432,14 @@ subroutine closeSetupIntegralHDF5
    endif
    call h5gclose_f (atomNucOverlap_gid,hdferr)
    if (hdferr /= 0) stop 'Failed to close atomNucOverlap_gid.'
+   if (doDIMO == 1) then
+      do i = 1, numKPoints
+         call h5gclose_f (atomDMKPointOL_gid(i),hdferr)
+         if (hdferr /= 0) stop 'Failed to close atomDMKPointOL_gid.'
+      enddo
+      call h5gclose_f (atomDMOverlap_gid,hdferr)
+      if (hdferr /= 0) stop 'Failed to close atomDMOverlap_gid.'
+   endif
    call h5gclose_f (atomPotOverlap_gid,hdferr)
    if (hdferr /= 0) stop 'Failed to close atomPotOverlap_gid.'
    call h5gclose_f (atomIntgGroup_gid,hdferr)
@@ -374,12 +447,16 @@ subroutine closeSetupIntegralHDF5
 
    ! Deallocate the arrays that hold the id numbers.
    deallocate (atomPotKPointOL_gid)
+   deallocate (atomDMKPointOL_gid)
    deallocate (atomOverlap_did)
    deallocate (atomKEOverlap_did)
    if (rel == 1) then
       deallocate (atomMVOverlap_did)
    endif
    deallocate (atomNucOverlap_did)
+   if (doDIMO == 1) then
+      deallocate (atomDMOverlap_did)
+   endif
    deallocate (atomPotOverlap_did)
    
 end subroutine closeSetupIntegralHDF5

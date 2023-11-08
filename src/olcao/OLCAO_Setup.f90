@@ -9,7 +9,7 @@ subroutine setupSCF
 
    ! Import the necessary modules.
    use O_SetupHDF5,   only: initSetupHDF5, closeSetupHDF5
-   use O_CommandLine, only: parseSetupCommandLine
+   use O_CommandLine, only: parseSetupCommandLine, doDIMO
    use O_Input,       only: parseInput
    use O_Lattice,     only: initializeLattice, initializeFindVec, cleanUpLattice
    use O_KPoints,     only: numKPoints, computePhaseFactors, cleanUpKPoints
@@ -22,7 +22,10 @@ subroutine setupSCF
    use O_IntegralsSCF,        only: allocateIntegralsSCF, gaussOverlapOL, &
                                   & gaussOverlapKE, gaussOverlapMV, &
                                   & gaussOverlapNP, elecPotGaussOverlap, &
-                                  & cleanUpIntegralsSCF
+                                  & cleanUpIntegralsSCF, &
+                                  & secondCleanUpIntegralsSCF
+   use O_IntegralsSCF3Terms,  only: allocateIntegralsSCF3Terms, &
+                                  & gaussOverlapDM, cleanUpIntegralsSCF3Terms
    use O_AtomicSites, only: coreDim, valeDim, cleanUpAtomSites
    use O_AtomicTypes, only: cleanUpRadialFns, cleanUpAtomTypes
    use O_PotSites,    only: cleanUpPotSites
@@ -120,9 +123,7 @@ subroutine setupSCF
    call makeAlphaDist
 
 
-   ! Allocate space to be used for each of the integrals.  The 1 for the
-   !   valeVale cases is a place holder for these matrices because they will
-   !   later (main.exe) consider spin.
+   ! Allocate space to be used for each of the single matrix integrals.
    call allocateIntegralsSCF(coreDim,valeDim,numKPoints)
 
 
@@ -135,6 +136,7 @@ subroutine setupSCF
    !   basis functions.
    call gaussOverlapKE
 
+
    ! Calculate the matrix elements of the mass velocity between all LCAO Bloch
    !   basis functions if needed for the scalar relativistic calculation.
    if (rel == 1) then
@@ -142,27 +144,52 @@ subroutine setupSCF
    endif
 
 
-
    ! Create the alpha distance matrix with nuclear alpha factor
    call makeAlphaNucDist
+
 
    ! Calculate the matrix elements of the overlap between all LCAO Bloch
    !   wave functions and the nuclear potentials.
    call gaussOverlapNP
 
 
-
    ! Create the alpha distance matrix with potential alpha factor
    call makeAlphaPotDist
+
 
    ! Calculate the matrix elements of the overlap between all LCAO Bloch
    !   wave functions and the potential site potential alphas.
    call elecPotGaussOverlap
 
-   ! Now that all the matrices are done being made we can deallocate the
-   !   data structures that were used in all the above subroutines but are not
-   !   necessary now.
+
+   ! Now that all the single matrices are done being made we can deallocate
+   !   the data structures that were used in all the above subroutines but are
+   !   not necessary now.
    call cleanUpIntegralsSCF
+   
+
+   ! Allocate space to be used for each of the three term matrix integrals.
+   ! If the dipole moment calculations has been requested, then do it.
+   ! FIX: Consider adding an option to do the XYZ independently to conserve
+   !   memory.
+   if (doDIMO == 1) then
+      call allocateIntegralsSCF3Terms(coreDim,valeDim,numKPoints)
+   endif
+
+
+   ! If the dipole moment calculations has been requested, then do it.
+   if (doDIMO == 1) then
+      call gaussOverlapDM
+   endif
+
+
+   ! Now that all the single matrices are done being made we can deallocate
+   !   the data structures that were used in all the above subroutines but are
+   !   not necessary now.
+   if (doDIMO == 1) then
+      call cleanUpIntegralsSCF3Terms
+   endif
+   call secondCleanupIntegralsSCF ! Overlap matrix parts used for ortho.
    call cleanUpBasis
    call cleanUpGaussRelations
 
@@ -183,13 +210,16 @@ subroutine setupSCF
    !   determine the electrostatic potential.
    call makeElectrostatics
 
+
    ! Close all the parts of the setup HDF5 file.
    call closeSetupHDF5
+
 
    ! Close the HDF5 interface.
    call h5close_f (hdferr)
    if (hdferr /= 0) stop 'Failed to close the HDF5 interface.'
 
+   
    ! Deallocate all the other as of yet un-deallocated arrays.
    call cleanUpAtomTypes
    call cleanUpAtomSites

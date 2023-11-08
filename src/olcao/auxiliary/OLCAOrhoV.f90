@@ -191,7 +191,7 @@ subroutine openFilesPrelimRead
    ! Initialize the count of the number of types.
    numTypes = 0
 
-   ! Read until we reach the end of the file.
+   ! Read each atom and track number of types.
    do i = 1, numAtoms
 
       ! The first value is the atom number and the second is the type number.
@@ -401,13 +401,11 @@ subroutine latticeProperties
    do i = 1, 3
       latticeMag(i) = sqrt(sum(latticeVectors(:,i)**2))
    enddo
-!write (6,*) "latticeMag(:)=",latticeMag(:)
 
 
    ! Compute the unit vectors of the lattice vectors.
    do i = 1, 3
       latticeUnitVectors(:,i) = latticeVectors(:,i) / latticeMag(i)
-!write (6,*) i,"latticeUnitVectors(:,i) = ",latticeUnitVectors(:,i)
    enddo
 
 
@@ -419,7 +417,6 @@ subroutine latticeProperties
             & latticeVectors(:,index2)) / latticeMag(index1) / &
             & latticeMag(index2))
    enddo
-!write (6,*) "latticeAngles bc ac ab = ",latticeAngles(:)*180.0_double/pi
 
    ! Compute the fractional cross sectional areas (bc, ac, ab).  This is the
    !   cross sectional area of a unit in the mesh and essentially represents
@@ -435,10 +432,7 @@ subroutine latticeProperties
       fractCrossArea(i) = latticeMag(index1) * fractStrideLength(index1) * &
                         & latticeMag(index2) * fractStrideLength(index2) * &
                         & sin(latticeAngles(i))
-!write (6,*) "sin(theta)=",sin(latticeAngles(i))
-!write (6,*) latticeMag(mod(i,3)+1),latticeMag(mod(i+1,3)+1)
    enddo
-!write (6,*) "fractCrossArea(:)=",fractCrossArea(:)
 
 
    ! Compute the unit normal vectors that define the orientation of each
@@ -450,7 +444,6 @@ subroutine latticeProperties
       call crossProduct(unitNormal(:,i),latticeUnitVectors(:,index1),&
             latticeUnitVectors(:,index2))
       unitNormal(:,i) = unitNormal(:,i) / sin(latticeAngles(i))
-!write (6,*) i,"unitNormal(:,i) = ",unitNormal(:,i)
    enddo
 
 
@@ -467,7 +460,6 @@ subroutine latticeProperties
       planeAngles(i) = &
             asin(dot_product(unitNormal(:,i),latticeUnitVectors(:,i)))
    enddo
-!write (6,*) "planeAngles bc,a ac,b ab,c = ",planeAngles(:)*180.0_double/pi
 
 end subroutine latticeProperties
 

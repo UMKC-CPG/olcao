@@ -19,7 +19,7 @@
 #
 #  GRASP2K INPUTS: Grasp2K is run in a predefined order such that the
 #    scientist can tailor their calculation to their specific needs. For our
-#    purposes, we will have two paths (non-parallel and and parallel).
+#    purposes, we will have two paths: non-parallel and parallel.
 #    Specifically in the cases of extended basis sets which converge at a slow
 #    rate it is recommended to run in parallel.
 #
