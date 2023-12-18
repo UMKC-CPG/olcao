@@ -63,6 +63,9 @@ class ScriptSettings():
         self.momentum = default_rc[7]
         self.massvel = default_rc[8]
         self.dipole = default_rc[9]
+        self.dkinetic = default_rc[10]
+        self.dnuclear = default_rc[11]
+        self.delectron = default_rc[12]
 
 
     def parse_command_line(self):
@@ -119,7 +122,10 @@ Please contact Paul Rulis (rulisp@umkc.edu) regarding questions.
 
         parser.add_argument('-m', '--momentum', action='store_true',
                             default=False, help = 'Include two-center '+
-                            'momentum integral.')
+                            'momentum integral. The -ih_bar factor is ' +
+                            'implicit. Consequently, this is equivalent to ' +
+                            'the Pulay correction calculation which does ' +
+                            'not have a -ih_bar factor.')
 
         parser.add_argument('-mv', '--massvel', action='store_true',
                             default=False, help = 'Include two-center '+
@@ -129,8 +135,21 @@ Please contact Paul Rulis (rulisp@umkc.edu) regarding questions.
                             default=False, help = 'Include two-center '+
                             'dipole moment integral.')
 
+        parser.add_argument('-dk', '--dkinetic', action='store_true',
+                            default=False, help = 'Include two-center '+
+                            'derivative kinetic energy integral.')
+
+        parser.add_argument('-dn', '--dnuclear', action='store_true',
+                            default=False, help = 'Include three-center '+
+                            'derivative nuclear attraction integral.')
+
+        parser.add_argument('-de', '--delectron', action='store_true',
+                            default=False, help = 'Include three-center '+
+                            'overlap integral (with third term being s-type), '+
+                            'which is used for derivative electron repulsion.')
+
         parser.add_argument('-a', '--all', action='store_true',
-                            default=False, help = 'Activate o,k,n,e,m,mv,d '+
+                            default=False, help = 'Activate o,k,n,e,m,mv,d,dk,dn,de '+
                             'integral types.')
 
         return parser.parse_args()
@@ -173,6 +192,15 @@ Please contact Paul Rulis (rulisp@umkc.edu) regarding questions.
         if (args.dipole == True):
             self.dipole = True
 
+        if (args.dkinetic == True):
+            self.dkinetic = True
+
+        if (args.dnuclear == True):
+            self.dnuclear = True
+
+        if (args.delectron == True):
+            self.delectron = True
+
         if (args.all == True):
             self.overlap = True
             self.kinetic = True
@@ -181,6 +209,9 @@ Please contact Paul Rulis (rulisp@umkc.edu) regarding questions.
             self.momentum = True
             self.massvel = True
             self.dipole = True
+            self.dkinetic = True
+            self.dnuclear = True
+            self.delectron = True
 
     def recordCLP(self):
         with open("command", "a") as cmd:
@@ -601,6 +632,69 @@ def print_head(settings, f, num_sh_intg, num_pc_intg, max_lam):
                      head += '               & "dipoley.dat")\n'
                  elif (xyz == 2):
                      head += '               & "dipolez.dat")\n'
+
+
+        if(settings.dkinetic):
+            head += """
+
+         ! Compute the pc and sh integral results for the current parameters.
+         call dkinetic2CIntgAna(alphas(1),alphas(2),pos(:,1),&
+               & pos(:,2),"""
+            head += f"pc(:,:,:,1),sh(:,:,:,1))"
+            head += """
+
+         ! Compute the pc and sh integral results for the current parameters
+         !   using numerical integration.
+         call dkinetic2CIntgNum(alphas(1),alphas(2),pos(:,1),&
+               & pos(:,2),"""
+            head += f"pc(:,:,:,2),sh(:,:,:,2),cell_size,"
+            head += """step_size)
+
+         ! Print the pc and sh integral result differences.
+"""
+
+            for xyz in range(3):
+                head += "         "
+                head += f"call print_pc_sh(h,i,{xyz+8},alphas,pos,"
+                head += f"pc(:,:,{xyz+1},:),sh(:,:,{xyz+1},:),&\n"
+                if (xyz == 0):
+                    head += '               & "DKnetcx.dat")\n'
+                elif (xyz == 1):
+                    head += '               & "DKnetcy.dat")\n'
+                elif (xyz == 2):
+                    head += '               & "DKnetcz.dat")\n'
+
+
+        if(settings.delectron):
+            head += """
+
+         ! Compute the pc and sh integral results for the current parameters.
+         call ElectronDeriv3CIntgAna(alphas(1),alphas(2),alphas(3),pos(:,1),pos(:,2),&
+               & pos(:,3),"""
+            head += f"pc(:,:,:,1),sh(:,:,:,1))"
+            head += """
+
+         ! Compute the pc and sh integral results for the current parameters
+         !   using numerical integration.
+         call ElectronDeriv3CIntgNum(alphas(1),alphas(2),alphas(3),pos(:,1),pos(:,2),&
+               & pos(:,3),"""
+            head += f"pc(:,:,:,2),sh(:,:,:,2),cell_size,"
+            head += """step_size)
+
+         ! Print the pc and sh integral result differences.
+"""
+
+            for xyz in range(3):
+                head += "         "
+                head += f"call print_pc_sh(h,i,{xyz+8},alphas,pos,"
+                head += f"pc(:,:,{xyz+1},:),sh(:,:,{xyz+1},:),&\n"
+                if (xyz == 0):
+                    head += '               & "DElectronx.dat")\n'
+                elif (xyz == 1):
+                    head += '               & "DElectrony.dat")\n'
+                elif (xyz == 2):
+                    head += '               & "DElectronz.dat")\n'
+
         head += """
       enddo
    enddo
@@ -816,7 +910,8 @@ def main():
             ana.print_test_nuclear_ana(conversion, triads, matrix,
                                        settings.max_lam, f)
             ana.print_boys(f)
-            num.print_test_nuclear_num(conversion, triads, f)
+            # num.print_test_nuclear_num(conversion, triads, f)
+            num.print_test_nuclear_num1dFast(conversion, triads, f)
 
     # Manage the momentum matrix integrals.
     if (settings.momentum):
@@ -874,6 +969,76 @@ def main():
             ana.print_test_dipole_ana(conversion, triads, matrix_dm,
                                       matrix_ol, f)
             num.print_test_dipole_num(conversion, triads, f)
+
+    # Manage the derivative of the two-center kinetic energy integrals
+    if (settings.dkinetic):
+        matrix_ol = ana.overlap(triads, True, False, settings.vectorize)
+        matrix_ke = ana.kinetic(triads, settings.vectorize, True)
+        matrix_dk = ana.dkinetic(triads, settings.vectorize)
+        if (settings.production):
+            if (settings.vectorize):
+                ana.print_production_dkinetic_vec(conversion, triads,
+                        matrix_dk, matrix_ol, lam_sh_list, lam_pc_list, f)
+            else:
+                ana.print_production_dkinetic(conversion, triads, matrix_dk,
+                        matrix_ol, lam_sh_list, lam_pc_list, f)
+            
+        else:
+            ana.print_test_dkinetic_ana(conversion, triads, matrix_dk,
+                                        matrix_ke, matrix_ol, f)
+            num.print_test_dkinetic_num(conversion, triads, f)
+
+    # Manage the derivative of the three-center nuclear attraction integrals
+    if (settings.dnuclear):
+        num_triads = len(triads)
+        matrix = [[[""]*(2*settings.max_lam+1) for i in range(num_triads)] \
+                   for j in range(num_triads)]
+        for m in range(2*settings.max_lam + 1):
+            matrix_temp = ana.nuclear(triads, m, settings.vectorize)
+            for i in range(num_triads):
+                for j in range(num_triads):
+                    matrix[i][j][m] = matrix_temp[i][j]
+        if (settings.production):
+            if (settings.vectorize):
+                ana.print_dboys_vec(f)
+                ana.print_production_dnuclear_vec(conversion, triads, matrix,
+                                                  settings.max_lam,
+                                                  lam_sh_list, lam_pc_list, f)
+            else:
+                ana.print_dboys(f)
+                ana.print_production_dnuclear(conversion, triads, matrix,
+                                              settings.max_lam, lam_sh_list,
+                                              lam_pc_list, f)
+        else:
+            ana.print_test_dnuclear_ana(conversion, triads, matrix,
+                                        settings.max_lam, f)
+            ana.print_dboys(f)
+            num.print_test_dnuclear_num(conversion, triads, f)
+
+    # Manage the derivative of three-center overlap (e-e repulsion) integrals
+    if (settings.delectron):
+        # The recursive matrix terms for the three center integral are all
+        #   exactly the same as for the two center. The only differences
+        #   will be evident in the definition of some base variables in the
+        #   printed Fortran subroutine. (I.e., zeta, and G instead of P.)
+        matrix_ol = ana.overlap(triads, True, True, settings.vectorize)
+        matrix_de1 = ana.delectron_1(triads, settings.vectorize)
+        matrix_de2 = ana.delectron_2(triads, settings.vectorize)
+        matrix_de3 = ana.delectron_3(triads, settings.vectorize)
+        matrix_de = ana.delectron(triads, settings.vectorize, matrix_de1,
+                                  matrix_de2, matrix_de3)
+        matrix_list = (matrix_ol, matrix_de1, matrix_de2, matrix_de3,
+                       matrix_de)
+        matrix_meta = (("pc_ol",0), ("pc_1",5), ("pc_2", 5), ("pc_3", 5),
+                       ("pc", 5))
+        if (settings.production):
+            ana.print_production_delectron(conversion, triads, matrix_de,
+                                           matrix_list, matrix_meta,
+                                           lam_sh_list, lam_pc_list, f)
+        else:
+            ana.print_test_delectron_ana(conversion, triads,
+                                         matrix_list, matrix_meta, f)
+            num.print_test_delectron_num(conversion, triads, f)
 
     # Print the overall foot.
     print_foot(settings.production, f)

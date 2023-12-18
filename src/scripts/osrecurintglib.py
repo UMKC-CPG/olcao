@@ -13,11 +13,14 @@
 #   [2] = tag string (usually "_ol" or "_ke")
 # icode = 1: Overlap matrix
 # icode = 2: Kinetic energy matrix
-# icode = 3: Three-center overlap matrix
+# icode = 3: Three-center overlap matrix (electronic potential)
 # icode = 4: Nuclear potential
-# icode = 5: Momentum matrix
-# icode = 6: Mass velocity
+# icode = 5: Mass velocity
+# icode = 6: Momentum matrix
 # icode = 7: Dipole moment
+# icode = 8: Derivative of the kinetic energy
+# icode = 9: Derivative of the electronic potential
+# icode = 10: Derivative of the nuclear potential.
 def print_production_pc_sh(conversion, triads, f, matrix_list, matrix_meta,
                            lam_sh_list, lam_pc_list, vectorize):
 
@@ -571,7 +574,7 @@ def print_pc_to_sh(conversion, f, matrix_meta, xyz, sh_max_idx_a,
         pc_idx = ""
         if (matrix_meta[0] == 4): # Nuclear
             pc_idx = ",1"
-    elif (matrix_meta[1] == 3): # Momentum, dipole moment
+    elif (matrix_meta[1] == 3): # Momentum, dipole moment, derivatives
         sh_idx = f",{xyz+1}"
         pc_idx = f",{xyz+1}"
     '''

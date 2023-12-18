@@ -71,7 +71,8 @@ sub printHelp
 #       edge. The default basis is the full basis.  Now, if you want to use the
 #       same kpoint set as was used for the scf convergence then you can use
 #       the -scfdimo switch instead and the computation will be shorter but will
-#       use the scf k-points instead. This will produce TDIP and PDIP output.
+#       use the scf k-points instead. This will produce total and partial dipole
+#       moment output files.
 #-bond will do a bond order and Q* calculation using the potential for the
 #       requested edge.  The default basis is the minimal basis, and it must be
 #       done as a separate calculation for now since basis types are not

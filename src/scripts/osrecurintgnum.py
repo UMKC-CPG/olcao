@@ -709,6 +709,161 @@ def print_test_electron_num(conversion, triads, f):
     f.write(foot)
 
 
+def print_test_nuclear_num1dFast(conversion, triads, f):
+
+    # Print the subroutine header for the numerical portion.
+    head = """
+   subroutine nuclear3CIntgNum(a1,a2,a3,A,B,C,pc,sh,cell_size,step_size)
+
+   use O_Kinds
+   use O_Constants, only: pi
+
+   implicit none
+
+   ! sh(16,16): 1,s; 2,x; 3,y; 4,z; 5,xy; 6,xz; 7,yz; 8,xx-yy;
+   ! 9,2zz-xx-yy; 10,xyz; 11,xxz-yyz; 12,xxx-3yyx; 13,3xxy-yyy; 
+   ! 14,2zzz-3xxz-3yyz; 15,4zzx-xxx-yyx; 16,4zzy-xxy-yyy
+
+   ! pc(20,20): 1,s; 2,x; 3,y; 4,z; 5,xx; 6,yy; 7,zz; 8,xy; 9,xz;
+   ! 10,yz; 11,xyz; 12,xxy; 13,xxz; 14,yyx; 15,yyz; 16,zzx; 17,zzy
+   ! 18,xxx; 19,yyy; 20,zzz
+
+   ! Define the dummy variables passed to this subroutine.
+   real (kind=double), intent (in) :: a1, a2, a3
+   real (kind=double), dimension (3), intent (in) :: A, B, C
+   real (kind=double), dimension (""" \
+           + f"{len(triads)},{len(triads)},1), intent(out) :: pc" + """
+   real (kind=double), dimension (""" \
+           + f"{len(conversion)},{len(conversion)}), intent(out) :: sh" + """
+   real (kind=double), intent (in) :: cell_size, step_size
+
+   ! Define local variables.
+   integer :: p, q, h, i, j, k
+   integer :: num_steps
+   integer, dimension (""" + f"{len(triads)},3) :: triads" + """
+   integer, dimension (""" + f"{len(conversion)},2,3) :: conversion" + """
+   integer, dimension (3) :: l1, l2
+   real (kind=double) :: start_pos, r, soln, xyz_sum_coeff
+   real (kind=double), allocatable, dimension (:,:) :: xyz, xyz_sum
+   real (kind=double), allocatable, dimension (:,:) :: C_dist, C_dist_sqrd
+
+   ! Initialize local variables.
+"""
+
+    for i in range(len(triads)):
+        head += f"   triads({i+1},:) = (/{triads[i][0]}," + \
+                f"{triads[i][1]},{triads[i][2]}/)\n"
+
+    for i in range(len(conversion)):
+        head += f"   conversion({i+1},1,:) = (/{conversion[i][0][0]}," + \
+                f"{conversion[i][0][1]},{conversion[i][0][2]}/)\n"
+        head += f"   conversion({i+1},2,:) = (/{conversion[i][1][0]}," + \
+                f"{conversion[i][1][1]},{conversion[i][1][2]}/)\n"
+
+    head += """
+   start_pos = -cell_size
+   num_steps = cell_size * 2.0d0 / step_size + 1  ! +1 accounts for xyz=zero.
+
+   allocate(xyz(num_steps,3))
+   allocate(xyz_sum(num_steps,3))
+   allocate(C_dist(num_steps,3))
+   allocate(C_dist_sqrd(num_steps,3))
+
+   ! Original equation from sympy:
+   !   (xyz(1)-A(1))**l1(1)*(xyz(1)-B(1))**l2(1)*(xyz(2)-A(2))**l1(2)*
+   !   (xyz(2)-B(2))**l2(2)*(xyz(3)-A(3))**l1(3)*(xyz(3)-B(3))**l2(3)*
+   !   exp(-a1*sum((xyz(:)-A(:))**2)) * &
+   !   exp(-a2*sum((xyz(:)-B(:))**2)) * &
+   !   exp(-a3*sum((xyz(:)-C(:))**2)) / &
+   !   sqrt(sum((xyz(:)-C(:))**2))
+
+   ! By-hand algebraic rearrangement to the expression below for faster
+   !   computation in the triple nested loop environment.
+
+   ! Initialize a counter of the triad pq pairs.
+   h = 0
+
+   do p = 1, """ + f"{len(triads)}" + """
+      do q = 1, """ + f"{len(triads)}" + """
+
+         ! Assign l1 and l2 values for each gto.
+         l1 = triads(q,:)
+         l2 = triads(p,:)
+
+         ! Precompute all one dimensional distance and exp factors.
+         do i = 1, 3
+             do j = 1, num_steps+1
+                xyz(j,i) = (start_pos + ((j-1)*step_size))
+                C_dist(j,i) = xyz(j,i) - C(i)
+                C_dist_sqrd(j,i) = (xyz(j,i) - C(i))**2
+                xyz_sum(j,i) = (xyz(j,i)-A(i))**l1(i)*(xyz(j,i)-B(i))**l2(i) &
+                    & *exp(-a1*((xyz(j,i)-A(i))**2) - a2*((xyz(j,i)-B(i))**2) &
+                    & - a3*(C_dist(j,i))**2)
+             enddo
+         enddo
+
+         ! Initialize the solution
+         soln = 0.0d0
+
+         do i = 0, num_steps
+            do j = 0, num_steps
+               do k = 0, num_steps
+
+                  ! Compute the distance between the electron and the nucleus.
+                  r = C_dist_sqrd(i,1) + C_dist_sqrd(j,2) + C_dist_sqrd(k,3)
+
+                  ! If the distance is zero, then cycle.
+                  if (r == 0) cycle
+
+                  ! Compute the current z xyz_sum.
+                  xyz_sum_coeff = xyz_sum(i,1)*xyz_sum(j,2)*xyz_sum(k,3)
+
+                  soln = soln + xyz_sum_coeff / sqrt(r)
+               enddo
+            enddo
+         enddo
+
+         ! Multiply the results by the mesh step size.
+         soln = soln * step_size**3
+
+         pc(q,p,1) = soln
+
+         ! Record progress thorugh the pq pairs.
+         h = h + 1
+         if (mod(h,10) .eq. 0) then
+            write (6,ADVANCE="NO",FMT="(a1)") "|"
+         else
+            write (6,ADVANCE="NO",FMT="(a1)") "."
+         endif
+         if (mod(h,50) .eq. 0) then
+            write (6,*) " ",h
+         endif
+         call flush (6)
+
+      enddo
+   enddo
+
+   deallocate(xyz)
+   deallocate(xyz_sum)
+   deallocate(C_dist)
+   deallocate(C_dist_sqrd)
+
+"""
+    f.write(head)
+
+    # Print the section to assemble the sh matrix.
+    num_conversion = len(conversion)
+    lib.print_pc_to_sh(conversion, f, [4, 1, ""], 0, num_conversion,
+                       num_conversion)
+
+
+    # Print the subroutine foot.
+    foot = """
+   end subroutine nuclear3CIntgNum
+"""
+    f.write(foot)
+
+
 def print_test_nuclear_num(conversion, triads, f):
 
     # Print the subroutine header for the numerical portion.
@@ -1022,11 +1177,11 @@ def print_test_momentum_num(conversion, triads, f):
 
     # Print the section to assemble the sh matrix.
     num_conversion = len(conversion)
-    lib.print_pc_to_sh(conversion, f, [5, 3, ""], 0, num_conversion,
+    lib.print_pc_to_sh(conversion, f, [6, 3, ""], 0, num_conversion,
                        num_conversion)
-    lib.print_pc_to_sh(conversion, f, [5, 3, ""], 1, num_conversion,
+    lib.print_pc_to_sh(conversion, f, [6, 3, ""], 1, num_conversion,
                        num_conversion)
-    lib.print_pc_to_sh(conversion, f, [5, 3, ""], 2, num_conversion,
+    lib.print_pc_to_sh(conversion, f, [6, 3, ""], 2, num_conversion,
                        num_conversion)
 
 
@@ -1105,6 +1260,157 @@ def print_test_momentum_num(conversion, triads, f):
    end function primeMM
 """
     f.write(foot)
+
+
+def print_test_dipole_num(conversion, triads, f):
+
+    # Print the subroutine header for the numerical portion.
+    head = """
+   subroutine dipole3CIntgNum(a1,a2,A,B,C,pc,sh,cell_size,step_size)
+
+   use O_Kinds
+   use O_Constants, only: pi
+
+   implicit none
+
+   ! sh(16,16,3): 1,s; 2,x; 3,y; 4,z; 5,xy; 6,xz; 7,yz; 8,xx-yy;
+   ! 9,2zz-xx-yy; 10,xyz; 11,xxz-yyz; 12,xxx-3yyx; 13,3xxy-yyy; 
+   ! 14,2zzz-3xxz-3yyz; 15,4zzx-xxx-yyx; 16,4zzy-xxy-yyy
+
+   ! pc(20,20,3): 1,s; 2,x; 3,y; 4,z; 5,xx; 6,yy; 7,zz; 8,xy; 9,xz;
+   ! 10,yz; 11,xyz; 12,xxy; 13,xxz; 14,yyx; 15,yyz; 16,zzx; 17,zzy
+   ! 18,xxx; 19,yyy; 20,zzz
+
+   ! Define the dummy variables passed to this subroutine.
+   real (kind=double), intent (in) :: a1, a2
+   real (kind=double), dimension (3), intent (in) :: A, B, C
+   real (kind=double), dimension (""" \
+           + f"{len(triads)},{len(triads)},3), intent(out) :: pc" + """
+   real (kind=double), dimension (""" \
+           + f"{len(conversion)},{len(conversion)},3), intent(out) :: sh" + """
+   real (kind=double), intent (in) :: cell_size, step_size
+
+   ! Define local variables
+   integer :: p, q, h, i
+   integer :: num_steps
+   integer, dimension (""" + f"{len(triads)},3) :: triads" + """
+   integer, dimension (""" + f"{len(conversion)},2,3) :: conversion" + """
+   integer, dimension (3) :: l1, l2
+   real (kind=double) :: start_pos, xyz
+   real (kind=double), dimension (3) :: soln, xyz_sol, xyz_sol_mu
+   real (kind=double), dimension (3) :: mu_soln, xyz_sum, xyz_sum_mu
+
+   ! Initialize local variables.
+"""
+
+    for i in range(len(triads)):
+        head += f"   triads({i+1},:) = (/{triads[i][0]}," + \
+                f"{triads[i][1]},{triads[i][2]}/)\n"
+
+    for i in range(len(conversion)):
+        head += f"   conversion({i+1},1,:) = (/{conversion[i][0][0]}," + \
+                f"{conversion[i][0][1]},{conversion[i][0][2]}/)\n"
+
+        head += f"   conversion({i+1},2,:) = (/{conversion[i][1][0]}," + \
+                f"{conversion[i][1][1]},{conversion[i][1][2]}/)\n"
+
+    head += """
+
+   start_pos = -cell_size
+   num_steps = cell_size * 2.0d0 / step_size + 1  ! +1 accounts for xyz=zero.
+
+
+   ! Original equation from sympy:
+   !(xyz(1)-A(1))**l1(1)*(xyz(1)-B(1))**l2(1)
+   !   *(xyz(2)-A(2))**l1(2)*(xyz(2)-B(2))**l2(2)
+   !   *(xyz(3)-A(3))**l1(3)*(xyz(3)-B(3))**l2(3)
+   !   *((xyz(1)-C(1))**mu_x(1)*(xyz(2)-C(2))**mu_y(2)
+   !   * (xyz(3)-C(3))**mu_z(3))
+   !   *exp(-a1*sum((xyz(:)-A(:))**2))
+   !   *exp(-a2*sum((xyz(:)-B(:))**2))
+
+   ! Because the expression can be separated along cartesian coordinates
+   !   we can rewrite the integral as a product of three 1D integrals instead
+   !   of needing to do a single (much more expensive) 3D integral.
+   ! Note: Each x, y, z dipole moment solution is a product of three 1D
+   !   integrals where each 1D integral is used more than once.
+
+   ! Initialize a counter of the number of triad pairs completed.
+   h = 0
+
+   do p = 1,""" + f"{len(triads)}" + """ 
+      do q = 1,""" + f"{len(triads)}" + """
+
+         ! Assign l1 and l2 values for each gto.
+         l1 = triads(q,:)
+         l2 = triads(p,:)
+
+         ! Initialize the solution
+         soln(:) = 0.0d0
+         xyz_sum(:) = 0.0d0
+         xyz_sum_mu(:) = 0.0d0
+
+         do i = 0, num_steps
+
+            ! Compute the current x position, distance and sum.
+            xyz = (start_pos + (i*step_size))
+
+            xyz_sol_mu(:) = step_size * ((xyz - A(:))**l1(:)) &
+                  & * ((xyz - B(:))**l2(:)) &
+                                & * exp(-a1*(xyz-A(:))**2) * &
+                                & exp(-a2*(xyz-B(:))**2) * &
+                                & (xyz-C(:))
+
+            xyz_sol(:) = step_size * ((xyz - A(:))**l1(:)) &
+                  & *((xyz - B(:))**l2(:)) &
+                  & * exp(-a1*(xyz-A(:))**2) * &
+                  & exp(-a2*(xyz-B(:))**2)
+
+            xyz_sum_mu(:) = xyz_sum_mu(:) + xyz_sol_mu(:)
+
+            xyz_sum(:) = xyz_sum(:) + xyz_sol(:)
+
+         enddo
+
+         pc(q,p,1) = xyz_sum_mu(1)*xyz_sum(2)*xyz_sum(3)
+         pc(q,p,2) = xyz_sum(1)*xyz_sum_mu(2)*xyz_sum(3)
+         pc(q,p,3) = xyz_sum(1)*xyz_sum(2)*xyz_sum_mu(3)
+
+         ! Record progress thorugh the pq pairs.
+         h = h + 1
+         if (mod(h,10) .eq. 0) then
+            write (6,ADVANCE="NO",FMT="(a1)") "|"
+         else
+            write (6,ADVANCE="NO",FMT="(a1)") "."
+         endif
+         if (mod(h,50) .eq. 0) then
+            write (6,*) " ",h
+         endif
+         call flush (6)
+
+      enddo
+   enddo
+
+"""
+
+    f.write(head)
+        
+    # Print the section to assemble the sh matrix.
+    num_conversion = len(conversion)
+    lib.print_pc_to_sh(conversion, f, [7, 3, ""], 0, num_conversion,
+                       num_conversion)
+    lib.print_pc_to_sh(conversion, f, [7, 3, ""], 1, num_conversion,
+                       num_conversion)
+    lib.print_pc_to_sh(conversion, f, [7, 3, ""], 2, num_conversion,
+                       num_conversion)
+
+
+    # Print the subroutine foot.
+    foot = """
+   end subroutine dipole3CIntgNum
+"""
+    f.write(foot)
+
 
 # The "full" test subroutine is intended to only be used for solving
 #   integrals of the form (0|MV|0) to guide the creation of the mass
@@ -1922,7 +2228,7 @@ def print_test_massvel_full_num(conversion, triads, f):
 
     # Print the section to assemble the sh matrix.
     num_conversion = len(conversion)
-    lib.print_pc_to_sh(conversion, f, [6, 1, ""], 0, num_conversion,
+    lib.print_pc_to_sh(conversion, f, [5, 1, ""], 0, num_conversion,
                        num_conversion)
 
 
@@ -2193,7 +2499,7 @@ def print_test_massvel_num(conversion, triads, f):
 
     # Print the section to assemble the sh matrix.
     num_conversion = len(conversion)
-    lib.print_pc_to_sh(conversion, f, [6, 1, ""], 0, num_conversion,
+    lib.print_pc_to_sh(conversion, f, [5, 1, ""], 0, num_conversion,
                        num_conversion)
 
 
@@ -2426,43 +2732,142 @@ def print_test_massvel_num(conversion, triads, f):
     f.write(foot)
 
 
-def print_test_dipole_num(conversion, triads, f):
+def print_test_dkinetic_num(conversion, triads, f):
 
     # Print the subroutine header for the numerical portion.
     head = """
-   subroutine dipole3CIntgNum(a1,a2,A,B,C,pc,sh,cell_size,step_size)
+   subroutine dkinetic2CIntgNum(a1,a2,A,B,pc,sh,cell_size,step_size)
 
    use O_Kinds
-   use O_Constants, only: pi
+   use O_Constants, only: pi, fineStructure
 
    implicit none
 
-   ! sh(16,16): 1,s; 2,x; 3,y; 4,z; 5,xy; 6,xz; 7,yz; 8,xx-yy;
+   ! sh(16,16,3): 1,s; 2,x; 3,y; 4,z; 5,xy; 6,xz; 7,yz; 8,xx-yy;
    ! 9,2zz-xx-yy; 10,xyz; 11,xxz-yyz; 12,xxx-3yyx; 13,3xxy-yyy; 
    ! 14,2zzz-3xxz-3yyz; 15,4zzx-xxx-yyx; 16,4zzy-xxy-yyy
 
-   ! pc(20,20): 1,s; 2,x; 3,y; 4,z; 5,xx; 6,yy; 7,zz; 8,xy; 9,xz;
+   ! pc(20,20,3): 1,s; 2,x; 3,y; 4,z; 5,xx; 6,yy; 7,zz; 8,xy; 9,xz;
    ! 10,yz; 11,xyz; 12,xxy; 13,xxz; 14,yyx; 15,yyz; 16,zzx; 17,zzy
    ! 18,xxx; 19,yyy; 20,zzz
 
    ! Define the dummy variables passed to this subroutine.
    real (kind=double), intent (in) :: a1, a2
-   real (kind=double), dimension (3), intent (in) :: A, B, C
-   real (kind=double), dimension (""" \
-           + f"{len(triads)},{len(triads)},3), intent(out) :: pc" + """
-   real (kind=double), dimension (""" \
-           + f"{len(conversion)},{len(conversion)},3), intent(out) :: sh" + """
+   real (kind=double), dimension (3), intent (in) :: A, B
+   real (kind=double), dimension (""" + \
+           f"{len(triads)},{len(triads)}" + """,3), intent(out) :: pc
+   real (kind=double), dimension (""" + \
+           f"{len(conversion)},{len(conversion)}" + """,3), intent(out) :: sh
    real (kind=double), intent (in) :: cell_size, step_size
 
-   ! Define local variables
-   integer :: p, q, h, i
+   ! Define local variables.
+   integer :: p, q, h, i, j, k
    integer :: num_steps
-   integer, dimension (""" + f"{len(triads)},3) :: triads" + """
-   integer, dimension (""" + f"{len(conversion)},2,3) :: conversion" + """
+   integer, dimension (""" + f"{len(triads)}" + """,3) :: triads
+   integer, dimension (""" + f"{len(conversion)}" + """,2,3) :: conversion
    integer, dimension (3) :: l1, l2
-   real (kind=double) :: start_pos, xyz
-   real (kind=double), dimension (3) :: soln, xyz_sol, xyz_sol_mu
-   real (kind=double), dimension (3) :: mu_soln, xyz_sum, xyz_sum_mu
+   real (kind=double) :: start_pos, coeff
+   real (kind=double), dimension (2) :: curr_pos
+   real (kind=double), dimension (3) :: xyz, xyz_soln
+   real (kind=double), dimension (6,3) :: xyz_I
+      ! The second index is for prime, noprime, 2Dprime.
+      ! The first index is xyz for prime and noprime while it is xy, xz, yx,
+      !   yz, zx, zy for the 2Dprime case.
+
+   ! Before we proceed with the calculation we need to understand a bit more
+   !   about exactly what is being computed. The form of the integration is:
+   ! SSS [(Px-Rx1)**lx1 * (Py-Ry1)**ly1 * (Pz-Rz1)**lz1 * 
+   !        exp(-zeta1*( (Px-Rx1)**2 + (Py-Ry1)**2 + (Pz-Rz1)**2 ))] *
+   !        coeff * dell ( dell^2
+   !        [(Px-Rx2)**lx2 * (Py-Ry2)**ly2 * (Pz-Rz2)**lz2 *
+   !        exp(-zeta2*( (Px-Rx2)**2 + (Py-Ry2)**2 + (Pz-Rz2)**2 ))]) dxdydz
+   ! We use Pxyz for points in space; Rxyz1,2 for atomic sites 1 and 2;
+   !   zeta1,2 for the exponential decay factors; lxyz1,2 for the angular
+   !   momentum numbers for atoms 1 and 2; and coeff = -1/2.
+   !
+   ! The dell^2 operator is d^2/dx^2 + d^2/dy^2 + d^2/dz^2 so that dell of
+   !   dell^2 is:
+   !      [d^3/dx^3 + d/dx d^2/dy^2 + d/dx d^2/dz^2] x-hat
+   !     +[d/dy d^2/dx^2 + d^3/dy^3 + d/dy d^2/dz^2] y-hat
+   !     +[d/dz d^2/dx^2 + d/dz d^2/dy^2 + d^3/dz^3] z-hat
+   ! The integral must be computed over all space for all different possible
+   !   values of lxyz1,2 for some arbitrarily chosen test coordinates and
+   !   decay rates.
+   !
+   ! Because of the plus signs in the dell of dell^2 operator we arrive
+   !   at three identical integrals of the form (with # in d^3/d#^3 = x, y,
+   !   or z):
+   ! SSS [(Px-Rx1)**lx1 * (Py-Ry1)**ly1 * (Pz-Rz1)**lz1 *
+   !        exp(-zeta1*( (Px-Rx1)**2 + (Py-Ry1)**2 + (Pz-Rz1)**2 ))] *
+   !        coeff * d^3/d#^3 [(Px-Rx2)**lx2 * (Py-Ry2)**ly2 * (Pz-Rz2)**lz2 *
+   !        exp(-zeta2*( (Px-Rx2)**2 + (Py-Ry2)**2 + (Pz-Rz2)**2 ))] dxdydz
+   !
+   ! Also, because of the plus signs, we arrive at six other identical
+   !   integrals of the form (with #,@ = x,y ; x,z ; y,x ; y,z ; z,x ; z,y):
+   ! SSS [(Px-Rx1)**lx1 * (Py-Ry1)**ly1 * (Pz-Rz1)**lz1 * 
+   !        exp(-zeta1*( (Px-Rx1)**2 + (Py-Ry1)**2 + (Pz-Rz1)**2 ))] *
+   !        coeff * d/d# d^2/d@^2
+   !        [(Px-Rx2)**lx2 * (Py-Ry2)**ly2 * (Pz-Rz2)**lz2 *
+   !        exp(-zeta2*( (Px-Rx2)**2 + (Py-Ry2)**2 + (Pz-Rz2)**2 ))] dxdydz
+   !
+   ! Now, focusing on just the d^3/dx^3 version of the set of three integrals,
+   !   we will pull all terms with Py and Pz out of the dx integral to get:
+   ! SS { [(Py-Ry1)**ly1 * (Pz-Rz1)**lz1 *
+   !       exp(-zeta1*((Py-Ry1)**2 + (Pz-Rz1)**2 ))] *
+   !      [(Py-Ry2)**ly2 * (Pz-Rz2)**lz2 *
+   !       exp(-zeta2*((Py-Ry2)**2 + (Pz-Rz2)**2 ))] *
+   !     S [(Px-Rx1)**lx1 * exp(-zeta1*((Px-Rx1)**2)) * coeff * d^3/dx^3 [
+   !      (Px-Rx2)**lx2 * exp(-zeta2*((Px-Rx2)**2))]] dx
+   !    } dydz
+   ! Applying the third derivative, the internal 1D dx integral has the form:
+   !   Ix' = S [(Px-Rx1)**lx1 * exp(-zeta1*((Px-Rx1)**2)) * coeff *
+   !          [lx2*(lx2^2 - 3lx2 + 2) * (Px-Rx2)^(lx2-3) +
+   !           (zeta2*-6lx2^2) * (Px-Rx2)^(lx2-1) +
+   !           (zeta2^2*(12*lx2 + 12)) * (Px-Rx2)^(lx2+1) +
+   !           (zeta2^3*-8) * (Px-Rx2)^(lx2+3)] * exp(-zeta2*(Px - Rx2)**2)
+   !        ]
+   ! Each of the other integrals (Iy, Iz) will have the form of a simple
+   !   1D overlap integral:
+   !   Iy = S [(Py-Ry1)^ly1 * exp(-zeta1*((Py-Ry1)^2)) *
+   !            (Py-Ry2)^ly2 * exp(-zeta2*((Py-Ry2)^2))] dy
+   !   Iz = S [(Pz-Rz1)^lz1 * exp(-zeta1*((Pz-Rz1)^2)) *
+   !            (Pz-Rz2)^lz2 * exp(-zeta2*((Pz-Rz2)^2))] dz
+   ! The total integral !! for the d^3/dx^3 portion !! is thus Ix' * Iy * Iz
+   !   in the x-hat direcetion. Similarly, the d^3/dy^3 portion in the y-hat
+   !   direction would be Ix * Iy' * Iz and the d^3/dz^3 portion in the z-hat
+   !   direction would be Ix * Iy * Iz'. The Iy' and Iz' are the appropriate
+   !   analongs of Ix' and Ix is the analog of the Iy or Iz.
+   !
+   ! Now, focusing on just the d/d# d^2/d@^2 where (say) #,@ = x,y,
+   !   we will pull terms with Pz out of the dx dy integral to get:
+   ! S { [(Pz-Rz1)^lz1 * exp(-zeta1*(Pz-Rz1)^2)] *
+   !     [(Pz-Rz2)^lz2 * exp(-zeta2*(Pz-Rz2)^2)] *
+   !   SS [(Px-Rx1)^lx1 * exp(-zeta1*((Px-Rx1)^2 + (Py-Ry1)^2)) * coeff *
+   !      d/dx d^2/dy^2 [(Px-Rx2)^lx2 * (Py-Ry2)^ly2 *
+   !      exp(-zeta2*((Px-Rx2)^2 + (Py-Ry2)**2))]] dx dy
+   !   } dz
+   ! Applying the two second derivatives, the internal 2D dx dy integral has
+   !   the form:
+   ! Ix'y" = S [(Px-Rx1)^lx1 * (Py-Ry1)^ly1 *
+   !    exp(-zeta1*((Px-Rx1)^2 + (Py-Ry1)^2)) * coeff *
+   !    lx2*ly2 (lx2 - 1) (Px-Rx2)^(lx2-1)*(Py-Ry2)^(ly2-2) *
+   !    zeta2 2lx2 (-2ly2 + 1) (Px-Rx2)^(lx2-1)*(Py-Ry2)^(ly2) *
+   !    zeta2^2 4lx2 (Px-Rx2)^(lx2-1)*(Py-Ry2)^(ly2+2) *
+   !    zeta2 2ly2 (-ly2 + 1) (Px-Rx2)^(lx2+1)*(Py-Ry2)^(ly2-2) *
+   !    zeta2^2 4 (2ly2 + 1) (Px-Rx2)^(lx2+1)*(Py-Ry2)^(ly2) *
+   !    zeta2^3 (-8) (Px-Rx2)^(lx2+1)*(Py-Ry2)^(ly2+2) *
+   !    exp(-zeta2*((Px-Rx2)^2 + (Py-Ry2)^2))] dx dy
+   !
+   ! Thus, every total integral in a particular Cartesian direction is a sum
+   !   of various independent integrals. We can do 1D overlap integrals for
+   !   x, y, z; 1D third derivative integrals for x, y, z; and 2D second
+   !   derivative integrals for xy, xz, yx, yz, zx, zy pairs to construct the
+   !   total integral.
+   ! With regard to the term in each integral that has the **(lx2-2) form
+   !   (or **(ly2-2) or **(lz2-2), or -1 or -3 form), some special care must
+   !   be taken. This term represents an angular momentum and the integral will
+   !   have the form of an overlap integral. Because we cannot have a negative
+   !   angular momentum we must discard this term when lx2-2 < 0, etc.
 
    ! Initialize local variables.
 """
@@ -2474,71 +2879,113 @@ def print_test_dipole_num(conversion, triads, f):
     for i in range(len(conversion)):
         head += f"   conversion({i+1},1,:) = (/{conversion[i][0][0]}," + \
                 f"{conversion[i][0][1]},{conversion[i][0][2]}/)\n"
-
         head += f"   conversion({i+1},2,:) = (/{conversion[i][1][0]}," + \
                 f"{conversion[i][1][1]},{conversion[i][1][2]}/)\n"
 
     head += """
-
+   coeff = -0.5d0
    start_pos = -cell_size
    num_steps = cell_size * 2.0d0 / step_size + 1  ! +1 accounts for xyz=zero.
 
-
-   ! Original equation from sympy:
-   !(xyz(1)-A(1))**l1(1)*(xyz(1)-B(1))**l2(1)
-   !   *(xyz(2)-A(2))**l1(2)*(xyz(2)-B(2))**l2(2)
-   !   *(xyz(3)-A(3))**l1(3)*(xyz(3)-B(3))**l2(3)
-   !   *((xyz(1)-C(1))**mu_x(1)*(xyz(2)-C(2))**mu_y(2)
-   !   * (xyz(3)-C(3))**mu_z(3))
-   !   *exp(-a1*sum((xyz(:)-A(:))**2))
-   !   *exp(-a2*sum((xyz(:)-B(:))**2))
-
-   ! Because the expression can be separated along cartesian coordinates
-   !   we can rewrite the integral as a product of three 1D integrals instead
-   !   of needing to do a single (much more expensive) 3D integral.
-   ! Note: Each x, y, z dipole moment solution is a product of three 1D
-   !   integrals where each 1D integral is used more than once.
-
-   ! Initialize a counter of the number of triad pairs completed.
+   ! Initialize a counter of the triad pq pairs.
    h = 0
 
-   do p = 1,""" + f"{len(triads)}" + """ 
-      do q = 1,""" + f"{len(triads)}" + """
+   do p = 1, """ + f"{len(triads)}" + """
+      do q = 1, """ + f"{len(triads)}" + """
 
-         ! Assign l1 and l2 values for each gto.
+         ! Assign l1 and l2 values for each primitive Cartesian gto.
          l1 = triads(q,:)
          l2 = triads(p,:)
 
-         ! Initialize the solution
-         soln(:) = 0.0d0
-         xyz_sum(:) = 0.0d0
-         xyz_sum_mu(:) = 0.0d0
+         ! Initialize sum variables.
+         xyz_I(:,:) = 0.0d0
 
+         ! Start a loop over 1D coordinates.
          do i = 0, num_steps
+            curr_pos(1) = start_pos + (i*step_size)
 
-            ! Compute the current x position, distance and sum.
-            xyz = (start_pos + (i*step_size))
+            ! Compute the prime integrals first. (Third derivative)
+            do j = 1, 3
+               xyz_I(j,1) = xyz_I(j,1) &
+                     & + primeDK(step_size, curr_pos(1), A(j), &
+                     & B(j), a1, a2, l1(j), l2(j))
+            enddo
 
-            xyz_sol_mu(:) = step_size * ((xyz - A(:))**l1(:)) &
-                  & * ((xyz - B(:))**l2(:)) &
-                                & * exp(-a1*(xyz-A(:))**2) * &
-                                & exp(-a2*(xyz-B(:))**2) * &
-                                & (xyz-C(:))
+            ! Compute the no-prime integrals second. (No derivative)
+            do j = 1, 3
+               xyz_I(j,2) = xyz_I(j,2) &
+                     & + noPrimeDK(step_size, curr_pos(1), A(j), &
+                     & B(j), a1, a2, l1(j), l2(j))
+            enddo
 
-            xyz_sol(:) = step_size * ((xyz - A(:))**l1(:)) &
-                  & *((xyz - B(:))**l2(:)) &
-                  & * exp(-a1*(xyz-A(:))**2) * &
-                  & exp(-a2*(xyz-B(:))**2)
+            ! Start a loop over a second set of 1D coordiantes.
+            do j = 0, num_steps
+                curr_pos(2) = start_pos + (j*step_size)
 
-            xyz_sum_mu(:) = xyz_sum_mu(:) + xyz_sol_mu(:)
+                ! Compute the two-prime integrals.
 
-            xyz_sum(:) = xyz_sum(:) + xyz_sol(:)
+                ! Compute the xy term.
+                xyz_I(1,3) = xyz_I(1,3) &
+                      & + twoPrimeDK(step_size, curr_pos(1), curr_pos(2), &
+                      & A(1), A(2), B(1), B(2), a1, a2, l1(1), l1(2), l2(1), &
+                      & l2(2))
 
+                ! Compute the xz term.
+                xyz_I(2,3) = xyz_I(2,3) &
+                      & + twoPrimeDK(step_size, curr_pos(1), curr_pos(2), &
+                      & A(1), A(3), B(1), B(3), a1, a2, l1(1), l1(3), l2(1), &
+                      & l2(3))
+
+                ! Compute the yx term.
+                xyz_I(3,3) = xyz_I(3,3) &
+                      & + twoPrimeDK(step_size, curr_pos(1), curr_pos(2), &
+                      & A(2), A(1), B(2), B(1), a1, a2, l1(2), l1(1), l2(2), &
+                      & l2(1))
+
+                ! Compute the yz term.
+                xyz_I(4,3) = xyz_I(4,3) &
+                      & + twoPrimeDK(step_size, curr_pos(1), curr_pos(2), &
+                      & A(2), A(3), B(2), B(3), a1, a2, l1(2), l1(3), l2(2), &
+                      & l2(3))
+
+                ! Compute the zx term.
+                xyz_I(5,3) = xyz_I(5,3) &
+                      & + twoPrimeDK(step_size, curr_pos(1), curr_pos(2), &
+                      & A(3), A(1), B(3), B(1), a1, a2, l1(3), l1(1), l2(3), &
+                      & l2(1))
+
+                ! Compute the zy term.
+                xyz_I(6,3) = xyz_I(6,3) &
+                      & + twoPrimeDK(step_size, curr_pos(1), curr_pos(2), &
+                      & A(3), A(2), B(3), B(2), a1, a2, l1(3), l1(2), l2(3), &
+                      & l2(2))
+            enddo
          enddo
 
-         pc(q,p,1) = xyz_sum_mu(1)*xyz_sum(2)*xyz_sum(3)
-         pc(q,p,2) = xyz_sum(1)*xyz_sum_mu(2)*xyz_sum(3)
-         pc(q,p,3) = xyz_sum(1)*xyz_sum(2)*xyz_sum_mu(3)
+         ! Assemble the integrals associated with the third derivative.
+         pc(q,p,1) = xyz_I(1,1)*xyz_I(2,2)*xyz_I(3,2)  ! Third D wrt x only
+         pc(q,p,2) = xyz_I(1,2)*xyz_I(2,1)*xyz_I(3,2)  ! Third D wrt y only
+         pc(q,p,3) = xyz_I(1,2)*xyz_I(2,2)*xyz_I(3,1)  ! Third D wrt z only
+
+         ! Add on the integrals associated with the second derivatives.
+
+         ! The x-axis qp term uses d/dx d^2/dy^2 with no D wrt z plus
+         !   d/dx d^2/dz^2 with no D wrt y.
+         pc(q,p,1) = pc(q,p,1) + (xyz_I(1,3)*xyz_I(3,2) &
+               & + (xyz_I(2,3)*xyz_I(2,2)))
+
+         ! The y-axis qp term uses d/dy d^2/dx^2 with no D wrt z plus
+         !   d/dy d^2/dz^2 with no D wrt x.
+         pc(q,p,2) = pc(q,p,2) + (xyz_I(3,3)*xyz_I(3,2) &
+               & + (xyz_I(4,3)*xyz_I(2,1)))
+
+         ! The z-axis qp term uses d/dz d^2/dx^2 with no D wrt y plus
+         !   d/dz d^2/dy^2 with no D wrt x.
+         pc(q,p,3) = pc(q,p,3) + (xyz_I(5,3)*xyz_I(2,2) &
+               & + (xyz_I(6,3)*xyz_I(1,2)))
+
+         ! Multiply by the coefficient.
+         pc(q,p,:) = pc(q,p,:) * coeff
 
          ! Record progress thorugh the pq pairs.
          h = h + 1
@@ -2556,22 +3003,640 @@ def print_test_dipole_num(conversion, triads, f):
    enddo
 
 """
-
     f.write(head)
-        
+
     # Print the section to assemble the sh matrix.
     num_conversion = len(conversion)
-    lib.print_pc_to_sh(conversion, f, [7, 3, ""], 0, num_conversion,
+    lib.print_pc_to_sh(conversion, f, [8, 3, ""], 0, num_conversion,
                        num_conversion)
-    lib.print_pc_to_sh(conversion, f, [7, 3, ""], 1, num_conversion,
-                       num_conversion)
-    lib.print_pc_to_sh(conversion, f, [7, 3, ""], 2, num_conversion,
+
+
+    # Print the subroutine foot and the subsequent functions.
+    foot = """
+   end subroutine dkinetic2CIntgNum
+
+
+   function noPrimeDK(step_size, curr_pos, A, B, a1, a2, l1, l2)
+
+      ! Use necessary modules.
+      use O_Kinds
+
+      ! Make sure no funny variables are defined.
+      implicit none
+
+      ! Define passed parameters.
+      real (kind=double), intent(in) :: step_size, curr_pos, A, B, a1, a2
+      integer, intent(in) :: l1, l2
+
+      ! Define local and return variables.
+      real (kind=double) :: noPrimeDK
+
+      ! Compute the integral part.
+      noPrimeDK = step_size * (curr_pos - A)**l1 * (curr_pos - B)**l2 &
+            & * exp(-a1*(curr_pos - A)**2) * exp(-a2*(curr_pos - B)**2)
+
+      return
+
+   end function noPrimeDK
+
+
+   function primeDK(step_size, curr_pos, A, B, a1, a2, l1, l2)
+
+      ! Use necessary modules.
+      use O_Kinds
+
+      ! Make sure no funny variables are defined.
+      implicit none
+
+      ! Define passed parameters.
+      real (kind=double), intent(in) :: step_size, curr_pos, A, B, a1, a2
+      integer, intent(in) :: l1, l2
+
+      ! Define local and return variables.
+      real (kind=double) :: primeDK
+
+      ! Compute each "internal" term of the prime integral. Compare each
+      !   of these lines with the 1D mass velocity equation produced by the
+      !   osrecurintg_makenum.py script (appropriately separated into terms).
+      !   Conceptually, these are similar to the expression in the last
+      !   equals of equation 65 in Ben Walker's dissertation for the regular
+      !   kinetic energy. Note that a factor of XXX is included in all of the
+      !   below expressions. The most succinctly refactored equations are in
+      !   ...
+
+      primeDK = a2**3 * -8 * (curr_pos - B)**(l2+3)
+
+      primeDK = primeDK + a2**2 * (12*l2 + 12) * (curr_pos - B)**(l2+1)
+
+      if (l2 >= 1) then
+         primeDK = primeDK + a2 * (-6*l2**2) * &
+               & (curr_pos - B)**(l2-1)
+      endif
+
+      if (l2 >= 3) then
+         primeDK = primeDK + l2*(l2**2 - 3*l2 + 2) * &
+               & (curr_pos - B)**(l2-3)
+      endif
+
+      ! Multiply the prime integral by the preceeding primitive gaussian
+      !   coefficient and exponential and multiply by the succeeding
+      !   exponential. (We have already multiplied by the succeeding
+      !   primitive gaussian coefficient in the above lines.)
+      primeDK = primeDK * (curr_pos-A)**l1 * exp(-a1*(curr_pos-A)**2) &
+            & * exp(-a2*(curr_pos-B)**2)
+
+      ! Finally, multiply by the step size.
+      primeDK = primeDK * step_size
+
+      return
+
+   end function primeDK
+
+
+   ! The notation may be confusing so here is some clarification:
+   ! As in the previous subroutines, the 1 and 2 for the alphas (a's)
+   !   correspond to the first and second orbitals of the integral. I.e.,
+   !   they are independent of x,y,z.
+   ! The 1 and 2 for A corresponds to the position of site A with respect to
+   !   the first xyz coordinate axis and second xyz coordinate axis
+   !   respectively. So, when we are doing the xy term, then 1=x and 2=y.
+   !   When we are doing the xz term, then 1=x and 2=z. Then, for the yz
+   !   term 1=y and 2=z. Etc. for the yx, zx, and zy terms.
+   ! The same concept described above for A applies to B.
+   ! For the l variables the first number (1 or 2) corresponds to the first
+   !   and second orbitals of the integrals. The second number (1 or 2)
+   !   corresponds to the first xyz or second xyz coordinate axes as for the
+   !   A1 A2 and B1 B2.
+
+   function twoPrimeDK(step_size, curr_pos1, curr_pos2, A1, A2, B1, B2, &
+         & alpha1, alpha2, l11, l12, l21, l22)
+
+      ! Use necessary modules.
+      use O_Kinds
+
+      ! Make sure no funny variables are defined.
+      implicit none
+
+      ! Define passed parameters.
+      real (kind=double), intent(in) :: step_size, curr_pos1, curr_pos2
+      real (kind=double), intent(in) :: A1, A2, B1, B2
+      real (kind=double), intent(in) :: alpha1, alpha2
+      integer, intent(in) :: l11, l12, l21, l22
+
+      ! Define local and return variables.
+      real (kind=double) :: twoPrimeDK
+
+      ! Compute each internal term of the twoPrime integral. As with the prime
+      !   integral, these terms are obtained from sympy derivations and simple
+      !   algebraic manipulations.
+
+      twoPrimeDK = alpha2**3*-8 &
+            & * (curr_pos1 - B1)**(l21 + 1) * (curr_pos2 - B2)**(l22 + 2)
+
+      twoPrimeDK = twoPrimeDK + alpha2**2*4*(2*l22 + 1) &
+            & * (curr_pos1 - B1)**(l21 + 1) * (curr_pos2 - B2)**(l22)
+
+      if (l21 >= 1) then
+         twoPrimeDK = twoPrimeDK + alpha2**2*4*l21 &
+               & * (curr_pos1 - B1)**(l21-1) * (curr_pos2 - B2)**(l22+2)
+
+         twoPrimeDK = twoPrimeDK + alpha2*2*l21*(-2*l22 + 1) &
+               & * (curr_pos1 - B1)**(l21-1) * (curr_pos2 - B2)**(l22)
+      endif
+
+      if (l22 >= 2) then
+         twoPrimeDK = twoPrimeDK + alpha2*2*l22*(-l22 + 1) &
+               & * (curr_pos1 - B1)**(l21+1) * (curr_pos2 - B2)**(l22-2)
+      endif
+
+      if ((l21 >= 1) .and. (l22 >= 2)) then
+         twoPrimeDK = twoPrimeDK + l21*l22*(l22 - 1) &
+               & * (curr_pos1 - B1)**(l21 - 1) * (curr_pos2 - B2)**(l22 - 2)
+      endif
+
+      ! Multiply the integral by the preceeding primitive gaussian
+      !   coefficient and exponential and multiply by the succeeding
+      !   exponential. (We have already multiplied by the succeeding
+      !   primitive gaussian coefficient in the above lines.)
+      twoPrimeDK = twoPrimeDK * (curr_pos1-A1)**l11 * (curr_pos2-A2)**l12 * &
+            & exp(-alpha1*((curr_pos1-A1)**2 + (curr_pos2-A2)**2)) * &
+            & exp(-alpha2*((curr_pos1-B1)**2 + (curr_pos2-B2)**2))
+
+      ! Finally, multiply by the step size squared (2D integral).
+      twoPrimeDK = twoPrimeDK * step_size * step_size
+
+      return
+
+   end function twoPrimeDK
+"""
+    f.write(foot)
+
+
+def print_test_dnuclear_num(conversion, triads, f):
+
+    # Print the subroutine header for the numerical portion.
+    head = """
+   subroutine dnuclear3CIntgNum(a1,a2,a3,A,B,C,pc,sh,cell_size,step_size)
+
+   use O_Kinds
+   use O_Constants, only: pi
+
+   implicit none
+
+   ! sh(16,16,3): 1,s; 2,x; 3,y; 4,z; 5,xy; 6,xz; 7,yz; 8,xx-yy;
+   ! 9,2zz-xx-yy; 10,xyz; 11,xxz-yyz; 12,xxx-3yyx; 13,3xxy-yyy; 
+   ! 14,2zzz-3xxz-3yyz; 15,4zzx-xxx-yyx; 16,4zzy-xxy-yyy
+
+   ! pc(20,20,3): 1,s; 2,x; 3,y; 4,z; 5,xx; 6,yy; 7,zz; 8,xy; 9,xz;
+   ! 10,yz; 11,xyz; 12,xxy; 13,xxz; 14,yyx; 15,yyz; 16,zzx; 17,zzy
+   ! 18,xxx; 19,yyy; 20,zzz
+
+   ! Define the dummy variables passed to this subroutine.
+   real (kind=double), intent (in) :: a1, a2, a3
+   real (kind=double), dimension (3), intent (in) :: A, B, C
+   real (kind=double), dimension (""" \
+           + f"{len(triads)},{len(triads)},3), intent(out) :: pc" + """
+   real (kind=double), dimension (""" \
+           + f"{len(conversion)},{len(conversion)},3), intent(out) :: sh" + """
+   real (kind=double), intent (in) :: cell_size, step_size
+
+   ! Define local variables.
+   integer :: p, q, h, i, j, k
+   integer :: num_steps
+   integer, dimension (""" + f"{len(triads)},3) :: triads" + """
+   integer, dimension (""" + f"{len(conversion)},2,3) :: conversion" + """
+   integer, dimension (3) :: l1, l2
+   real (kind=double), dimenstion(3) :: soln
+   real (kind=double) :: start_pos, r, xyz_sum_coeff
+   real (kind=double), allocatable, dimension (:,:) :: xyz, xyz_sum
+   real (kind=double), allocatable, dimension (:,:) :: C_dist, C_dist_sqrd
+
+   ! Initialize local variables.
+"""
+
+    for i in range(len(triads)):
+        head += f"   triads({i+1},:) = (/{triads[i][0]}," + \
+                f"{triads[i][1]},{triads[i][2]}/)\n"
+
+    for i in range(len(conversion)):
+        head += f"   conversion({i+1},1,:) = (/{conversion[i][0][0]}," + \
+                f"{conversion[i][0][1]},{conversion[i][0][2]}/)\n"
+        head += f"   conversion({i+1},2,:) = (/{conversion[i][1][0]}," + \
+                f"{conversion[i][1][1]},{conversion[i][1][2]}/)\n"
+
+    head += """
+   start_pos = -cell_size
+   num_steps = cell_size * 2.0d0 / step_size + 1  ! +1 accounts for xyz=zero.
+
+   ! Original equation for d/dx nuclear from sympy:
+   ! (xyz(1)-A(1))**l1(1)*(xyz(1)-B(1))**l2(1)
+   ! *exp(-a1*((xyz(1)-A(1))**2)-a2*((xyz(1)-B(1))**2)-a3*((xyz(1)-C(1))**2))
+   ! *(xyz(2)-A(2))**l1(2)*(xyz(2)-B(2))**l2(2)
+   ! *exp(-a1*((xyz(2)-A(2))**2)-a2*((xyz(2)-B(2))**2)-a3*((xyz(2)-C(2))**2))
+   ! *(xyz(3)-A(3))**l1(3)*(xyz(3)-B(3))**l2(3)
+   ! *exp(-a1*((xyz(3)-A(3))**2)-a2*((xyz(3)-B(3))**2)-a3*((xyz(3)-C(3))**2))
+   ! *(
+   !  l2(1)
+   !  /((xyz(1)-B(1))*sqrt((xyz(1)-C(1))**2+(xyz(2)-C(2))**2+(xyz(3)-C(3))**2))
+   ! -
+   !  2*a2*(xyz(1)-B(1))
+   !  /sqrt((xyz(1)-C(1))**2+(xyz(2)-C(2))**2+(xyz(3)-C(3))**2)
+   ! -
+   !  2*a3*(xyz(1)-C(1))
+   !  /sqrt((xyz(1)-C(1))**2+(xyz(2)-C(2))**2+(xyz(3)-C(3))**2)
+   ! -
+   !  (xyz(1)-C(1))
+   !  /((xyz(1)-C(1))**2+(xyz(2)-C(2))**2+(xyz(3)-C(3))**2)**(3.0d0/2.0d0)
+   ! )
+
+   ! Original equation for d/dy nuclear from sympy:
+   ! (xyz(1)-A(1))**l1(1)*(xyz(1)-B(1))**l2(1)
+   ! *exp(-a1*((xyz(1)-A(1))**2-a2*(xyz(1)-B(1))**2-a3*(xyz(1)-C(1))**2))
+   ! *(xyz(2)-A(2))**l1(2)*(xyz(2)-B(2))**l2(2)
+   ! *exp(-a1*((xyz(2)-A(2))**2-a2*(xyz(2)-B(2))**2-a3*(xyz(2)-C(2))**2))
+   ! *(xyz(3)-A(3))**l1(3)*(xyz(3)-B(3))**l2(3)
+   ! *exp(-a1*((xyz(3)-A(3))**2-a2*(xyz(3)-B(3))**2-a3*(xyz(3)-C(3))**2))
+   ! *(
+   !  l2(2)
+   !  /((xyz(2)-B(2))*sqrt((xyz(1)-C(1))**2+(xyz(2)-C(2))**2+(xyz(3)-C(3))**2))
+   ! -
+   !  2*a2*(xyz(2)-B(2))
+   !  /sqrt((xyz(1)-C(1))**2+(xyz(2)-C(2))**2+(xyz(3)-C(3))**2)
+   ! -
+   !  2*a3*(xyz(2)-C(2))
+   !  /sqrt((xyz(1)-C(1))**2+(xyz(2)-C(2))**2+(xyz(3)-C(3))**2)
+   ! -
+   !  (xyz(2)-C(2))
+   !  /((xyz(1)-C(1))**2+(xyz(2)-C(2))**2+(xyz(3)-C(3))**2)**(3.0d0/2.0d0)
+   ! )
+
+   ! Original equation for d/dz nuclear from sympy:
+   ! (xyz(1)-A(1))**l1(1)*(xyz(1)-B(1))**l2(1)
+   ! *exp(-a1*((xyz(1)-A(1))**2-a2*(xyz(1)-B(1))**2-a3*(xyz(1)-C(1))**2))
+   ! *(xyz(2)-A(2))**l1(2)*(xyz(2)-B(2))**l2(2)
+   ! *exp(-a1*((xyz(2)-A(2))**2-a2*(xyz(2)-B(2))**2-a3*(xyz(2)-C(2))**2))
+   ! *(xyz(3)-A(3))**l1(3)*(xyz(3)-B(3))**l2(3)
+   ! *exp(-a1*((xyz(3)-A(3))**2-a2*(xyz(3)-B(3))**2-a3*(xyz(3)-C(3))**2))
+   ! *(
+   !  l2(3)
+   !  /((xyz(3)-B(3))*sqrt((xyz(1)-C(1))**2+(xyz(2)-C(2))**2+(xyz(3)-C(3))**2))
+   ! -
+   !  2*a2*(xyz(3)-B(3))
+   !  /sqrt((xyz(1)-C(1))**2+(xyz(2)-C(2))**2+(xyz(3)-C(3))**2)
+   ! -
+   !  2*a3*(xyz(3)-C(3))
+   !  /sqrt((xyz(1)-C(1))**2+(xyz(2)-C(2))**2+(xyz(3)-C(3))**2)
+   ! -
+   !  (xyz(3)-C(3))
+   !  /((xyz(1)-C(1))**2+(xyz(2)-C(2))**2+(xyz(3)-C(3))**2)**(3.0d0/2.0d0)
+   ! )
+
+   ! Alocate space to hold precomputed quantities.
+   allocate(xyz(num_steps,3))
+   allocate(xyz_sum(num_steps,3))
+   allocate(C_dist(num_steps,3))
+   allocate(C_dist_sqrd(num_steps,3))
+
+   ! By-hand algebraic rearrangement to the expression below for faster
+   !   computation in the triple nested loop environment.
+
+   ! Initialize a counter of the triad pq pairs.
+   h = 0
+
+   do p = 1, """ + f"{len(triads)}" + """
+      do q = 1, """ + f"{len(triads)}" + """
+
+         ! Assign l1 and l2 values for each gto.
+         l1 = triads(q,:)
+         l2 = triads(p,:)
+
+         ! Precompute all one dimensional distance and exp factors.
+         do i = 1, 3
+             do j = 1, num_steps+1
+                xyz(j,i) = (start_pos + ((j-1)*step_size))
+                C_dist(j,i) = xyz(j,i) - C(i)
+                C_dist_sqrd(j,i) = (xyz(j,i) - C(i))**2
+                xyz_sum(j,i) = (xyz(j,i)-A(i))**l1(i)*(xyz(j,i)-B(i))**l2(i) &
+                    & *exp(-a1*((xyz(j,i)-A(i))**2) - a2*((xyz(j,i)-B(i))**2) &
+                    & - a3*(C_dist(j,i))**2)
+             enddo
+         enddo
+
+         ! Initialize the solution
+         soln(:) = 0.0d0
+
+         do i = 0, num_steps
+            do j = 0, num_steps
+               do k = 0, num_steps
+
+                  ! Compute the distance between the electron and the nucleus.
+                  r = C_dist_sqrd(i,1) + C_dist_sqrd(j,2) + C_dist_sqrd(k,3)
+
+                  ! If the distance is zero, then cycle.
+                  if (r == 0) cycle
+
+                  xyz_sum_coeff = xyz_sum(i,1)*xyz_sum(j,2)*xyz_sum(k,3)
+
+                  ! Accumulate the solution.
+                  soln(1) = soln(1) + xyz_sum_coeff &
+                        & * ((l2(1)/(B_dist(i,1)) - 2.0d0 &
+                        & * (a2 * B_dist(i,1) + a3 * C_dist(i,1)) / sqrt(r) &
+                        & - C_dist(i,1) / r**(3.0d0/2.0d0))
+
+                  soln(2) = soln(2) + xyz_sum_coeff &
+                        & * ((l2(2)/(B_dist(j,2)) - 2.0d0 &
+                        & * (a2 * B_dist(j,2) + a3 * C_dist(j,2)) / sqrt(r) &
+                        & - C_dist(j,2) / r**(3.0d0/2.0d0))
+
+                  soln(3) = soln(3) + xyz_sum_coeff &
+                        & * ((l2(3)/(B_dist(k,3)) - 2.0d0 &
+                        & * (a2 * B_dist(k,3) + a3 * C_dist(k,3)) / sqrt(r) &
+                        & - C_dist(k,3) / r**(3.0d0/2.0d0))
+               enddo
+            enddo
+         enddo
+
+         ! Multiply the results by the mesh step size.
+         soln(:) = soln(:) * step_size**3
+
+         pc(q,p,:) = soln(:)
+
+         ! Record progress thorugh the pq pairs.
+         h = h + 1
+         if (mod(h,10) .eq. 0) then
+            write (6,ADVANCE="NO",FMT="(a1)") "|"
+         else
+            write (6,ADVANCE="NO",FMT="(a1)") "."
+         endif
+         if (mod(h,50) .eq. 0) then
+            write (6,*) " ",h
+         endif
+         call flush (6)
+
+      enddo
+   enddo
+
+   deallocate(xyz)
+   deallocate(xyz_sum)
+   deallocate(C_dist)
+   deallocate(C_dist_sqrd)
+
+"""
+    f.write(head)
+
+    # Print the section to assemble the sh matrix.
+    num_conversion = len(conversion)
+    lib.print_pc_to_sh(conversion, f, [4, 1, ""], 0, num_conversion,
                        num_conversion)
 
 
     # Print the subroutine foot.
     foot = """
-   end subroutine dipole3CIntgNum
+   end subroutine dnuclear3CIntgNum
+"""
+    f.write(foot)
+
+
+
+def print_test_delectron_num(conversion, triads, f):
+
+    # Print the subroutine header for the numerical portion.
+    head = """
+   subroutine DElectron3CIntgNum(a1,a2,a3,A,B,C,pc,sh,cell_size,step_size)
+
+   use O_Kinds
+   use O_Constants, only: pi
+
+   implicit none
+
+   ! sh(16,16,3): 1,s; 2,x; 3,y; 4,z; 5,xy; 6,xz; 7,yz; 8,xx-yy;
+   ! 9,2zz-xx-yy; 10,xyz; 11,xxz-yyz; 12,xxx-3yyx; 13,3xxy-yyy; 
+   ! 14,2zzz-3xxz-3yyz; 15,4zzx-xxx-yyx; 16,4zzy-xxy-yyy
+
+   ! pc(20,20,3): 1,s; 2,x; 3,y; 4,z; 5,xx; 6,yy; 7,zz; 8,xy; 9,xz;
+   ! 10,yz; 11,xyz; 12,xxy; 13,xxz; 14,yyx; 15,yyz; 16,zzx; 17,zzy
+   ! 18,xxx; 19,yyy; 20,zzz
+
+   ! Define the dummy variables passed to this subroutine.
+   real (kind=double), intent (in) :: a1, a2, a3
+   real (kind=double), dimension (3), intent (in) :: A, B, C
+   real (kind=double), dimension (""" \
+    + f"{len(triads)},{len(triads)},3), intent(out) :: pc" + """
+   real (kind=double), dimension (""" \
+    + f"{len(conversion)},{len(conversion)},3), intent(out) :: sh" + """
+   real (kind=double), intent (in) :: cell_size, step_size
+
+   ! Define local variables.
+   integer :: p, q, i, j
+   integer :: num_steps
+   integer, dimension (""" + f"{len(triads)}" + """,3) :: triads
+   integer, dimension (""" + f"{len(conversion)}" + """,2,3) :: conversion
+   integer, dimension (3) :: l1, l2
+   real (kind=double) :: start_pos, curr_pos
+   real (kind=double), dimension (3) :: xyz
+   real (kind=double), dimension (3,2) :: xyz_I ! Indices=xyz, noprime||prime
+
+   ! Before we proceed with the calculation we need to understand a bit more
+   !   about exactly what is being computed. The form of the integration is:
+   ! SSS [(Px-Rx1)**lx1 * (Py-Ry1)**ly1 * (Pz-Rz1)**lz1 * 
+   !        exp(-zeta1*( (Px-Rx1)**2 + (Py-Ry1)**2 + (Pz-Rz1)**2 ))] *
+   !        d/d_xyz  [exp(-zeta3*( (Px-Rx3)**2 + (Py-Ry3)**2 + (Pz-Rz3)**2 )) *
+   !        (Px-Rx2)**lx2 * (Py-Ry2)**ly2 * (Pz-Rz2)**lz2 *
+   !        exp(-zeta2*( (Px-Rx2)**2 + (Py-Ry2)**2 + (Pz-Rz2)**2 ))] dxdydz
+   ! We use Pxyz for points in space; Rxyz1,2,3 for atomic sites 1,2 and 3;
+   !   zeta1,2,3 for the exponential decay factors; lxyz1,2 for the angular
+   !   momentum numbers for atoms 1 and 2,and lxyz3=0 (Always s-type) for the 
+   !   angular momentum number for atom 3, and d/d_xyz for independent
+   !   derivatives (i.e.,we have three separate triple integrals).
+   !   The integral must be computed over all space for all different possible
+   !   values of lxyz1,2 for some arbitrarily chosen test coordinates and
+   !   decay rates.
+   ! Now, focusing on just the d/dx version of the set of triple integrals,
+   !   we will pull all terms with Py and Pz out of the dx integral to get:
+   ! SS { [(Py-Ry1)**ly1 * (Pz-Rz1)**lz1 *
+   !       exp(-zeta1*((Py-Ry1)**2 + (Pz-Rz1)**2 ))]*
+   !       [exp(-zeta3*((Py-Ry3)**2 + (Pz-Rz3)**2 ))]*
+   !       [(Py-Ry2)**ly2 * (Pz-Rz2)**lz2 *
+   !       exp(-zeta2*((Py-Ry2)**2 + (Pz-Rz2)**2 ))] *
+   !     S [(Px-Rx1)**lx1 * exp(-zeta1*((Px-Rx1)**2)) * d/dx [
+   !     exp(-zeta3*((Px-Rx3)**2)) * (Px-Rx2)**lx2 * exp(-zeta2*((Px-Rx2)**2))
+   !    ]] dx} dydz
+   ! Applying the derivative, the internal 1D dx integral has the form:
+   !   Ix' = S [(Px-Rx1)**lx1 * exp(-zeta1*((Px-Rx1)**2)) *                
+   !           [-2*zeta3*(Px-Rx3)*(Px-Rx2)**lx2
+   !            +lx2*(Px-Rx2)**(lx2-1)
+   !            -2*zeta2*(Px-Rx2)*(Px-Rx2)**lx2] 
+   !           * exp(-zeta2*(Px-Rx2)**2) * exp(-zeta3*(Px-Rx3)**2)
+   !        ]
+   ! Each of the other integrals (Iy, Iz) will have the form of a simple
+   !   1D overlap integral (without a derivative):
+   !   Iy = S [(Py-Ry1)**ly1 * exp(-zeta1*((Py-Ry1)**2)) *
+   !           (Py-Ry2)**ly2 * exp(-zeta2*((Py-Ry2)**2)) * 
+   !                           exp(-zeta3*((Py-Ry3)**2))] dy
+   !   Iz = S [(Pz-Rz1)**lz1 * exp(-zeta1*((Pz-Rz1)**2)) *
+   !           (Pz-Rz2)**lz2 * exp(-zeta2*((Pz-Rz2)**2)) *
+   !                           exp(-zeta3*((Pz-Rz3)**2))] dz
+   ! The total integral !! for the d/dx version !! is thus Ix' * Iy * Iz.
+   !   Similarly, the total integrals for d/dy and d/dz will have the form:
+   !   Ix*Iy'*Iz and Ix*Iy*Iz' where the Iy' and Iz' are the appropriate
+   !   analogs of the Ix' and the Ix is the analog of the Iy or Iz.
+   ! Thus, every integral is a product of independent 1D integrals and the
+   !   solution of the total integral is a set of products of integrals that
+   !   can all be computed at once.
+   ! With regard to the term in each integral that has the **(lx2-1) form
+   !   (or **(ly2-1) or **(lz2-1)), some special care must be taken. This
+   !   term represents an angular momentum and the integral will have the
+   !   form of an overlap integral. Because we cannot have a negative angular
+   !   momentum therefore we must discard this term when lx2-1 < 0.
+
+   ! Initialize local variables.
+"""
+
+    for i in range(len(triads)):
+        head += f"   triads({i+1},:) = (/{triads[i][0]}," + \
+                f"{triads[i][1]},{triads[i][2]}/)\n"
+
+    for i in range(len(conversion)):
+        head += f"   conversion({i+1},1,:) = (/{conversion[i][0][0]}," + \
+                f"{conversion[i][0][1]},{conversion[i][0][2]}/)\n"
+        head += f"   conversion({i+1},2,:) = (/{conversion[i][1][0]}," + \
+                f"{conversion[i][1][1]},{conversion[i][1][2]}/)\n"
+
+    head += """
+   start_pos = -cell_size
+   num_steps = cell_size * 2.0d0 / step_size + 1  ! +1 accounts for xyz=zero.
+
+   do p = 1, """ + f"{len(triads)}" + """
+      do q = 1, """ + f"{len(triads)}" + """
+
+         ! Assign l1 and l2 values for each gto.
+         l1 = triads(q,:)
+         l2 = triads(p,:)
+
+         ! Initialize sum variables.
+         xyz_I(:,:) = 0.0d0
+
+         ! Start a loop over x coordinates.
+         do i = 0, num_steps
+            curr_pos = start_pos + (i*step_size)
+
+            ! Compute the no-prime integrals first.
+            do j = 1, 3
+               xyz_I(j,2) = xyz_I(j,2) &
+                     & + noPrimeDElectron(step_size, curr_pos, A(j), &
+                     & B(j), C(j), a1, a2, a3, l1(j), l2(j))
+            enddo
+
+            ! Compute the prime integrals second.
+            do j = 1, 3
+               xyz_I(j,1) = xyz_I(j,1) &
+                     & + primeElecDeriv(step_size, curr_pos, A(j), &
+                     & B(j), C(j), a1, a2, a3, l1(j), l2(j))
+            enddo
+         enddo
+
+         pc(q,p,1) = xyz_I(1,1)*xyz_I(2,2)*xyz_I(3,2)
+         pc(q,p,2) = xyz_I(1,2)*xyz_I(2,1)*xyz_I(3,2)
+         pc(q,p,3) = xyz_I(1,2)*xyz_I(2,2)*xyz_I(3,1)
+      enddo
+    enddo
+
+"""
+    f.write(head)
+
+    # Print the section to assemble the sh matrix.
+    num_conversion = len(conversion)
+    lib.print_pc_to_sh(conversion, f, [3, 1, ""], 0, num_conversion,
+                       num_conversion)
+    lib.print_pc_to_sh(conversion, f, [3, 1, ""], 1, num_conversion,
+                       num_conversion)
+    lib.print_pc_to_sh(conversion, f, [3, 1, ""], 2, num_conversion,
+                       num_conversion)
+
+    # Print the subroutine foot.
+    foot = """
+   end subroutine DElectron3CIntgNum 
+
+
+   function noPrimeDElectron(step_size, curr_pos, A, B, C, a1, a2, a3, l1, l2)
+
+      ! Use necessary modules.
+      use O_Kinds
+
+      ! Make sure no funny variables are defined.
+      implicit none
+
+      ! Define passed parameters.
+      real (kind=double), intent(in) :: step_size, curr_pos
+      real (kind=double), intent(in) :: A, B, C, a1, a2, a3
+      integer, intent(in) :: l1, l2
+
+      ! Define local and return variables.
+      real (kind=double) :: noPrimeDElectron
+
+      ! Compute the integral part.
+      noPrimeDElectron = step_size * (curr_pos - A)**l1 * (curr_pos - B)**l2 &
+            & * exp(-a1*(curr_pos - A)**2) * exp(-a2*(curr_pos - B)**2) &
+            & * exp(-a3*(curr_pos - C)**2)
+
+      return
+ 
+   end function noPrimeDElectron
+
+
+   function PrimeDElectron(step_size, curr_pos, A, B, C, a1, a2, a3, l1, l2)
+
+      ! Use necessary modules.
+      use O_Kinds
+
+      ! Make sure no funny variables are defined.
+      implicit none
+
+      ! Define passed parameters.
+      real (kind=double), intent(in) :: step_size, curr_pos
+      real (kind=double), intent(in) :: A, B, C, a1, a2, a3
+      integer, intent(in) :: l1, l2
+
+      ! Define local and return variables.
+      real (kind=double) :: primeDElectron
+
+      ! Compute each "internal" term of the prime integral. Compare each of
+      !   these lines with the 1D electron derivative matrix equation produced
+      !   by the osrecurintg_makenum.py script (appropriately separated into
+      !   terms) and the expression in the last equals of equation 45 in the
+      !   dissertation. FIX: Check equation number from Nuha's dissertation.
+
+      ! Third line of equation 45. Also visible as second term in the
+      !   script-produced equation. FIX: As above.
+      PrimeDElectron = - 2.0d0 * a2 * (curr_pos - B)**(l2+1)
+
+      ! First line in the equation produced by sympy and second line in
+      !   equation 45 in the dissertation. As mentioned above,
+      !   we only compute this if the angular momentum will allow it.
+      if (l2 >= 1) then
+         PrimeDElectron = PrimeDElectron + l2 * (curr_pos - B)**(l2-1)
+      endif
+
+      ! First line of equation 45. Also visible as third term in the
+      !   script-produced equation.
+      PrimeDElectron = PrimeDElectron - 2.0d0*a3 * (curr_pos - C) &
+            & * (curr_pos - B)**l2
+
+
+      ! Multiply prime integral by the preceeding primitive gaussian
+      !   coefficient and exponential and multiply by the succeeding
+      !   exponential. (We have already multiplied by the succeeding
+      !   primitive gaussian coefficient in the above lines.)
+      PrimeDElectron = PrimeDElectron &
+            & * (curr_pos-A)**l1 * exp(-a1*(curr_pos-A)**2) &
+            & * exp(-a2*(curr_pos-B)**2) * exp(-a3*(curr_pos-C)**2)
+
+      ! Finally, multiply by the step size.
+      PrimeDElectron = PrimeDElectron * step_size
+
+      return
+
+   end function PrimeDElectron
 """
     f.write(foot)
 

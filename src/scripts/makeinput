@@ -1469,17 +1469,15 @@ sub initializeCell
    {
       if ($spaceGroupNum <= 2)
       {
-         my @angleRecip =
-            qw/$angleRecip_ref->[1] $angleRecip_ref->[2] $angleRecip_ref->[3]/;
          if (($angleRecip_ref->[1] > $pi/2.0) &&
              ($angleRecip_ref->[2] > $pi/2.0) &&
              ($angleRecip_ref->[3] > $pi/2.0) &&
-             ($angleRecip_ref->[3] == min(@angleRecip)))
+             ($angleRecip_ref->[3] == min(@{$angleRecip_ref}[1,2,3])))
             {$sybdPath="tric1a";}
          elsif (($angleRecip_ref->[1] < $pi/2.0) &&
              ($angleRecip_ref->[2] < $pi/2.0) &&
              ($angleRecip_ref->[3] < $pi/2.0) &&
-             ($angleRecip_ref->[3] == max(@angleRecip)))
+             ($angleRecip_ref->[3] == max(@{$angleRecip_ref}[1,2,3])))
             {$sybdPath="tric1b";}
          elsif (($angleRecip_ref->[1] > $pi/2.0) &&
              ($angleRecip_ref->[2] > $pi/2.0) &&
@@ -5003,7 +5001,7 @@ sub makeSubFile
             {$character2 = "f";}
 
          # Print the pacs command with the appropriate edge.
-         print SUBFILE "\$OLCAO_BIN/olcao -pacs $character1$character2\n";
+         print SUBFILE "\"\$OLCAO_BIN/olcao\" -pacs $character1$character2\n";
       }
    }
 

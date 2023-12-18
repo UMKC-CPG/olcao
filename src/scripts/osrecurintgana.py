@@ -32,6 +32,19 @@ def triad_search(triad, triads, increment, xyz_index, min_idx, max_idx):
 def add_recursive_minus_terms(idx, icode, a, b, i, a_minus_idx, b_minus_idx,
                               triads, preFactorTag, vectorize):
 
+    # Current meanings for icode and the associate preFactorTag:
+    #   1: Overlap, "OL"
+    #   2: Kinetic energy, "KE"
+    #   3: Not used, because the 1 icode also works for the three center
+    #      electronic potential matrix elements.
+    #   4: Nuclear, "N"
+    #   5: Mass velocity, "MV"
+    #   6: Momentum matrix, "MM"
+    #   7: Dipole moment, "DM"
+    #   8: Derivative of the kinetic energy, "DKE"
+    #   9: Derivative of the electronic potential, "DE1", "DE2", "DE3", "DE"
+    #  10: Derivative of the nuclear potential, "DN"
+
     # If we need to vectorize, then add (:) or :, in the appropriate places.
     if (vectorize):
         vec_tag = "(:)"
@@ -51,26 +64,36 @@ def add_recursive_minus_terms(idx, icode, a, b, i, a_minus_idx, b_minus_idx,
         if (triads[a][i] > 1):
             temp_string += f"{triads[a][i]}*"
         if (a_minus_idx+1 == 1 and b+1 == 1):
-            if (icode == 4):  # Nuclear with two auxiliary integrals.
+            # Nuclear with two auxiliary integrals.
+            if (icode == 4):
                 temp_string += \
                         f"(preFactor{preFactorTag}({vec_tag_comma}{idx+1}) - "
                 temp_string += \
                         f"preFactor{preFactorTag}({vec_tag_comma}{idx+2}))"
-            elif ((icode == 5) or (icode == 7)):  # Momentum, dipole mom.
+
+            # Momentum, dipole moment, dke, de
+            elif ((icode >= 6) and (icode <= 10)):
                 temp_string += \
                         f"preFactor{preFactorTag}({vec_tag_comma}{idx+1})"
-            else:  # Overlap, KE, Elec. 3C, Mass Vel.
+
+            # Overlap, KE, Elec. 3C, Mass Vel.
+            else:
                 temp_string += f"preFactor{preFactorTag}{vec_tag}"
         else:
-            if (icode == 4):  # (Nuclear with two auxiliary integrals.)
+            # Nuclear with two auxiliary integrals.
+            if (icode == 4):
                 temp_string += \
                         f"(pc({vec_tag_comma}{a_minus_idx+1},{b+1},{idx+1}) - "
                 temp_string += \
                         f"pc({vec_tag_comma}{a_minus_idx+1},{b+1},{idx+2}))"
-            elif ((icode == 5) or (icode == 7)):  # Momentum, dipole mom.
+
+            # Momentum, dipole moment, dKE, dElec. 3C.
+            elif ((icode >= 6) and (icode <= 10)):
                 temp_string += \
                         f"pc({vec_tag_comma}{a_minus_idx+1},{b+1},{idx+1})"
-            else:  # Overlap, KE, Elec. 3C, Mass Vel.
+                        
+            # Overlap, KE, Elec. 3C, Mass Vel.
+            else:
                 temp_string += f"pc({vec_tag_comma}{a_minus_idx+1},{b+1})"
 
     if ((a_minus_idx != -1) and (b_minus_idx != -1)):
@@ -80,25 +103,34 @@ def add_recursive_minus_terms(idx, icode, a, b, i, a_minus_idx, b_minus_idx,
         if (triads[b][i] > 1):
             temp_string += f"{triads[b][i]}*"
         if (a+1 == 1 and b_minus_idx+1 == 1):
-            if (icode == 4):  # Nuclear with two auxiliary integrals.
+            # Nuclear with two auxiliary integrals.
+            if (icode == 4):
                 temp_string += \
                         f"(preFactor{preFactorTag}({vec_tag_comma}{idx+1}) - "
                 temp_string += \
                         f"preFactor{preFactorTag}({vec_tag_comma}{idx+2}))"
-            elif ((icode == 5) or (icode == 7)): # Momentum or dipole
+
+            # Momentum, dipole, DKE, DE
+            elif ((icode >= 6) and (icode <= 10)):
                 temp_string += \
                         f"preFactor{preFactorTag}({vec_tag_comma}{idx+1})"
-            else: # Everyone else
+
+            # Everyone else
+            else:
                 temp_string += f"preFactor{preFactorTag}{vec_tag}"
         else:
-            if (icode == 4): # Nuclear with two auxiliary integrals
+            # Nuclear with two auxiliary integrals
+            if (icode == 4):
                 temp_string += \
                         f"(pc({vec_tag_comma}{a+1},{b_minus_idx+1},{idx+1}) - "
                 temp_string += \
                         f"pc({vec_tag_comma}{a+1},{b_minus_idx+1},{idx+2}))"
-            elif ((icode == 5) or (icode == 7)): # Momentum, dipole mom.
+
+            # Momentum, dipole moment, DKE, DE
+            elif ((icode >= 6) and (icode <= 10)):
                 temp_string += \
                         f"pc({vec_tag_comma}{a+1},{b_minus_idx+1},{idx+1})"
+
             else: # Everyone else
                 temp_string += \
                         f"pc({vec_tag_comma}{a+1},{b_minus_idx+1})"
@@ -618,7 +650,7 @@ def kinetic(triads, vectorize, self_reference):
 
                 soln_mtx_ke[a][b_plus_idx] = temp_string
 
-    # If the kinetic energy solutions is used to compute another matrix, then
+    # If the kinetic energy solutions are used to compute another matrix, then
     #   we need to change the references to the recursive pc elements.
     if (self_reference):
         soln_mtx_ke = \
@@ -859,7 +891,7 @@ def momentum(triads, vectorize):
                     # Add the first set of terms from lower cart. ang. mom.
                     #   This process is exactly the same as the overlap and
                     #   so we just reuse this recursive code.
-                    temp_string += add_recursive_minus_terms(xyz, 5, a, b, i,
+                    temp_string += add_recursive_minus_terms(xyz, 6, a, b, i,
                             a_minus_idx, b_minus_idx, triads, "MM", vectorize)
 
                     # Add the second term (which is of equal ang. mom.)
@@ -914,7 +946,7 @@ def momentum(triads, vectorize):
                     # Add the first set of terms from lower cart. ang. mom.
                     #   this process is exactly the same as the overlap and
                     #   so we just reuse this recursive code.
-                    temp_string += add_recursive_minus_terms(xyz, 5, a, b, i,
+                    temp_string += add_recursive_minus_terms(xyz, 6, a, b, i,
                             a_minus_idx, b_minus_idx, triads, "MM", vectorize)
                     
                     # Add the second term (which is of equal ang. mom.)
@@ -1013,7 +1045,7 @@ def massvel(triads, vectorize):
                 # Add the first set of terms from lower cart. ang. momentum.
                 #   This process is exactly the same as the overlap and so
                 #   we just reuse this recursive code.
-                temp_string += add_recursive_minus_terms(1, 6, a, b, i,
+                temp_string += add_recursive_minus_terms(1, 5, a, b, i,
                         a_minus_idx, b_minus_idx, triads, "MV", vectorize)
 
                 # Add the second set of terms (both higher and lower angular
@@ -1067,7 +1099,7 @@ def massvel(triads, vectorize):
                 # Add the first set of terms from lower cart. ang. momentum.
                 #   This process is exactly the same as the overlap and so
                 #   we just reuse this recursive code.
-                temp_string += add_recursive_minus_terms(1, 6, a, b, i,
+                temp_string += add_recursive_minus_terms(1, 5, a, b, i,
                         a_minus_idx, b_minus_idx, triads, "MV", vectorize)
 
                 # Add the second set of terms (both higher and lower angular
@@ -1236,6 +1268,76 @@ def dipole(triads, vectorize):
                     soln_mtx_dm[a][b_plus_idx][xyz] = temp_string
 
     return soln_mtx_dm
+
+
+# Relies on the overlap solutions.
+def dkinetic(triads, vectorize):
+
+    # If we need to vectorize, then add (:) or :, in the appropriate places.
+    if (vectorize):
+        vec_tag = "(:)"
+        vec_tag_comma = ":,"
+    else:
+        vec_tag = ""
+        vec_tag_comma = ""
+
+    # Make a convenient shorthand for the length of the triad array.
+    num_triads = len(triads)
+
+    # Initialize the solution matrix to empty strings.
+    soln_mtx_dke = [[[""]*3 for i in range(num_triads)] \
+                   for j in range(num_triads)]
+
+    # Produce a string for each element of the solution matrix.
+    for xyz in range(3):
+        for a in range(num_triads):
+            for b in range(num_triads):
+
+                # Unlike for the other cases where a recursive construction
+                #   of matrix elements is performed, the derivative of the
+                #   kinetic energy terms can each be directly expressed in
+                #   terms of equal or lower angular momentum elements from
+                #   the regular kinetic energy and overlap matrices which
+                #   are assumed to already have been computed.
+
+                # Get the indices for matrix elements that have "one lower"
+                #   angular momentum along the current xyz axis
+                a_minus_idx = triad_search(triads[a].copy(), triads, False,
+                                           xyz, 0, num_triads)
+                b_minus_idx = triad_search(triads[b].copy(), triads, False,
+                                           xyz, 0, num_triads)
+
+                soln_mtx_dke[a][b][xyz] = f"-0.5d0*(PB({xyz+1})*2.0d0*a2*" \
+                        + f"(pc_ke({a+1},{b+1})+" \
+                        + f"8.0d0*a1*a2*pc_ol({a+1},{b+1}))"
+                if (a_minus_idx >= 0):
+                    soln_mtx_dke[a][b][xyz] += f"+ {triads[a][xyz]}*a2/P" \
+                            + f"*(pc_ke({a_minus_idx+1},{b+1})" \
+                            + f"+8.0d0*a1*a2*pc_ol({a_minus_idx+1},{b+1}))"
+                if (b_minus_idx >= 0):
+                    soln_mtx_dke[a][b][xyz] += f"+ {triads[b][xyz]}*a2/P" \
+                            + f"*(pc_ke({a+1},{b_minux_idx+1})" \
+                            + f"+8.0d0*a1*a2*pc_ol({a+1},{b_minus_idx+1}))" \
+                            + f"+{triads[b][xyz]}*(8.0d0*a1*a2" \
+                            + f"*pc_ol({a+1},{b_minus_idx+1})" \
+                            + f"-pc_ke({a+1},{b_minus_idx+1}))"
+                soln_mtx_dke[a][b][xyz] += ")"
+                # soln_mtx_dke[a][b][xyz] = f"-0.5d0*(PA({xyz+1})*2.0d0*a1*" \
+                #         + f"(pc_ke({a+1},{b+1})-4.0d0*a2*pc_ol({a+1},{b+1}))"
+                # if (a_minus_idx >= 0):
+                #     soln_mtx_dke[a][b][xyz] += f"+ {triads[a][xyz]}*a2/P" \
+                #             + f"*(pc_ke({a_minus_idx+1},{b+1})" \
+                #             + f"-4.0d0*a2*pc_ol({a_minus_idx+1},{b+1}))" \
+                #             + f"+{triads[a][xyz]}*(8.0d0*a1*a2" \
+                #             + f"*pc_ol({a_minus_idx+1},{b+1})" \
+                #             + f"-pc_ke({a_minus_idx+1},{b+1}))"
+                # if (b_minus_idx >= 0):
+                #     soln_mtx_dke[a][b][xyz] += f"+ {triads[a][xyz]}*a1/P" \
+                #             + f"*(pc_ke({a+1},{b_minux_idx+1})" \
+                #             + f"-4.0d0*a2*pc_ol({a+1},{b_minus_idx+1}))"
+                # soln_mtx_dke[a][b][xyz] += ")"
+                        
+    return soln_mtx_dke
 
 
 def print_production_overlap_vec(conversion, triads, matrix, lam_sh_list,
@@ -1616,7 +1718,7 @@ def print_production_momentum_vec(conversion, triads, matrix_mm, matrix_ol,
 
     # Print the pc and sh Gaussian terms.
     lib.print_production_pc_sh(conversion, triads, f, [matrix_ol, matrix_mm],
-                               [[1, 1, "_ol"], [5, 3, ""]], lam_sh_list,
+                               [[1, 1, "_ol"], [6, 3, ""]], lam_sh_list,
                                lam_pc_list, True)
 
     foot = """
@@ -1690,7 +1792,7 @@ def print_production_massvel_vec(conversion, triads, matrix_mv, matrix_ol,
     # Print the pc and sh Gaussian terms.
     lib.print_production_pc_sh(conversion, triads, f,
                                [matrix_ol, matrix_ke, matrix_mv],
-                               [[1, 1, "_ol"], [2, 1, "_ke"], [6, 1, ""]],
+                               [[1, 1, "_ol"], [2, 1, "_ke"], [5, 1, ""]],
                                lam_sh_list, lam_pc_list, True)
 
     foot = """
@@ -2079,7 +2181,7 @@ def print_production_momentum(conversion, triads, matrix_mm, matrix_ol,
 
     # Print the pc and sh Gaussian terms.
     lib.print_production_pc_sh(conversion, triads, f, [matrix_ol, matrix_mm],
-                               [[1, 1, "_ol"], [5, 3, ""]],
+                               [[1, 1, "_ol"], [6, 3, ""]],
                                lam_sh_list, lam_pc_list, False)
 
     foot = """
@@ -2156,7 +2258,7 @@ def print_production_massvel(conversion, triads, matrix_mv, matrix_ke,
     # Print the pc and sh Gaussian terms.
     lib.print_production_pc_sh(conversion, triads, f,
                                [matrix_ol, matrix_ke, matrix_mv],
-                               [[1, 1, "_ol"], [2, 1, "_ke"], [6, 1, ""]],
+                               [[1, 1, "_ol"], [2, 1, "_ke"], [5, 1, ""]],
                                lam_sh_list, lam_pc_list, False)
 
     foot = """
@@ -3067,7 +3169,7 @@ def print_test_momentum_ana(conversion, triads, matrix_mm, matrix_ol, f):
     # Print the pc and sh Gaussian terms.
     num_triads = len(triads)
     lib.print_pc(conversion, f, [matrix_ol, matrix_mm],
-                 [[1, 1, "_ol"], [5, 3, ""]], num_triads, num_triads)
+                 [[1, 1, "_ol"], [6, 3, ""]], num_triads, num_triads)
 
     # Print the subroutine foot.
     foot = """
@@ -3144,7 +3246,7 @@ def print_test_massvel_ana(conversion, triads, matrix_mv, matrix_ke,
     # Print the pc and sh Gaussian terms.
     num_triads = len(triads)
     lib.print_pc(conversion, f, [matrix_ol, matrix_ke, matrix_mv],
-                 [[1, 1, "_ol"], [2, 1, "_ke"], [6, 1, ""]], num_triads,
+                 [[1, 1, "_ol"], [2, 1, "_ke"], [5, 1, ""]], num_triads,
                  num_triads)
 
     # Print the subroutine foot.
@@ -3220,6 +3322,78 @@ def print_test_dipole_ana(conversion, triads, matrix_dm, matrix_ol, f):
     # Print the subroutine foot.
     foot = """
    end subroutine dipole3CIntgAna
+"""
+    f.write(foot)
+
+
+def print_test_dkinetic_ana(conversion, triads, matrix_dk, matrix_ke,
+                            matrix_ol, f):
+
+    # Print the subroutine header for the analytical portion.
+    head = """
+   subroutine dkinetic2CIntgAna(a1,a2,A,B,pc,sh)
+
+   use O_Kinds
+   use O_Constants, only: pi
+
+   implicit none
+
+   ! sh(16,16,:): 1,s; 2,x; 3,y; 4,z; 5,xy; 6,xz; 7,yz; 8,xx-yy;
+   ! 9,2zz-xx-yy; 10,xyz; 11,xxz-yyz; 12,xxx-3yyx; 13,3xxy-yyy; 
+   ! 14,2zzz-3xxz-3yyz; 15,4zzx-xxx-yyx; 16,4zzy-xxy-yyy
+
+   ! pc(20,20,:): 1,s; 2,x; 3,y; 4,z; 5,xx; 6,yy; 7,zz; 8,xy; 9,xz;
+   ! 10,yz; 11,xyz; 12,xxy; 13,xxz; 14,yyx; 15,yyz; 16,zzx; 17,zzy
+   ! 18,xxx; 19,yyy; 20,zzz
+
+   ! Define the dummy variables passed to this subroutine.
+   real (kind=double), intent (in) :: a1, a2
+   real (kind=double), dimension (3), intent (in) :: A, B
+   real (kind=double), dimension (""" \
+           + f"{len(triads)},{len(triads)},3), intent(out) :: pc" + """
+   real (kind=double), dimension (""" \
+           + f"{len(conversion)},{len(conversion)},3), intent(out) :: sh" \
+           + """
+
+   ! Define local variables.
+   real (kind=double), dimension (""" \
+           + f"{len(triads)},{len(triads)}) :: pc_ol" + """
+   real (kind=double), dimension (""" \
+           + f"{len(triads)},{len(triads)}) :: pc_ke" + """
+   real (kind=double), dimension (3) :: P, PA, PB, d
+   real (kind=double) :: zeta, inv_2zeta, xi
+   real (kind=double) :: zeta_a_zeta, zeta_b_zeta
+   real (kind=double) :: preFactorOL, preFactorKE
+   real (kind=double), dimension (3) :: preFactorDK
+
+   ! Initialize local variables.
+   zeta = a1 + a2
+   zeta_a_zeta = a1/zeta
+   zeta_b_zeta = a2/zeta
+   inv_2zeta = 1.0d0 / (2.0d0 * zeta)
+   xi = a1 * a2 / zeta
+   P = (a1*A + a2*B) / zeta
+   PA = P - A
+   PB = P - B
+   d = A - B
+   preFactorOL = ((pi/zeta)**1.5)*exp(-xi*sum(d**2))
+   preFactorKE = xi*(3 - 2*xi*sum(d*d))*preFactorOL
+   preFactorDK(1) = 2.0d0*a1*(PA(1)*preFactorKE - 8.0d0*a1*a2*PA(1)*preFactorOL)
+   preFactorDK(2) = 2.0d0*a1*(PA(2)*preFactorKE - 8.0d0*a1*a2*PA(2)*preFactorOL)
+   preFactorDK(3) = 2.0d0*a1*(PA(3)*preFactorKE - 8.0d0*a1*a2*PA(3)*preFactorOL)
+
+"""
+    f.write(head)
+
+    # Print the pc and sh Gaussian terms.
+    num_triads = len(triads)
+    lib.print_pc(conversion, f, [matrix_ol, matrix_ke, matrix_dk],
+                 [[1, 1, "_ol"], [2, 1, "_ke"], [8, 3, ""]], num_triads,
+                 num_triads)
+
+    # Print the subroutine foot.
+    foot = """
+   end subroutine dkinetic2CIntgAna
 """
     f.write(foot)
 
