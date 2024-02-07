@@ -65,6 +65,7 @@ subroutine initOperationLabels
    opLabels(28) = '**********  Compute Bispectrum Component  *********'
    opLabels(29) = '***********  Dipole Moment Integrals  *************'
    opLabels(30) = '***********  Mass Velocity Integrals  *************'
+   opLabels(31) = '***********  Initialize SCF HDF5 File  ************'
 
 end subroutine initOperationLabels
 

@@ -2778,18 +2778,23 @@ def print_test_dkinetic_num(conversion, triads, f):
    !   about exactly what is being computed. The form of the integration is:
    ! SSS [(Px-Rx1)**lx1 * (Py-Ry1)**ly1 * (Pz-Rz1)**lz1 * 
    !        exp(-zeta1*( (Px-Rx1)**2 + (Py-Ry1)**2 + (Pz-Rz1)**2 ))] *
-   !        coeff * dell ( dell^2
+   !        coeff * dellR2 ( dell^2
    !        [(Px-Rx2)**lx2 * (Py-Ry2)**ly2 * (Pz-Rz2)**lz2 *
    !        exp(-zeta2*( (Px-Rx2)**2 + (Py-Ry2)**2 + (Pz-Rz2)**2 ))]) dxdydz
    ! We use Pxyz for points in space; Rxyz1,2 for atomic sites 1 and 2;
    !   zeta1,2 for the exponential decay factors; lxyz1,2 for the angular
-   !   momentum numbers for atoms 1 and 2; and coeff = -1/2.
+   !   momentum numbers for atoms 1 and 2; and coeff = -1/2. Note that "dell"
+   !   implies derivatives with respect to electron positional coordinates
+   !   x,y,z while "dellR2" implies derivatives with respect to the atomic
+   !   coordinates of site 2. Derivatives of a Cartesian Gaussian wrt the
+   !   atomic site are the negatives of the derivatives wrt the electron
+   !   coordinates. I.e., dG/dx = -dG/dBx so that dell = -dellR2.
    !
-   ! The dell^2 operator is d^2/dx^2 + d^2/dy^2 + d^2/dz^2 so that dell of
-   !   dell^2 is:
-   !      [d^3/dx^3 + d/dx d^2/dy^2 + d/dx d^2/dz^2] x-hat
-   !     +[d/dy d^2/dx^2 + d^3/dy^3 + d/dy d^2/dz^2] y-hat
-   !     +[d/dz d^2/dx^2 + d/dz d^2/dy^2 + d^3/dz^3] z-hat
+   ! The dell^2 operator is d^2/dx^2 + d^2/dy^2 + d^2/dz^2 so that dellR2 of
+   !   dell^2 (or -dell of dell^2) is:
+   !     -[d^3/dx^3 + d/dx d^2/dy^2 + d/dx d^2/dz^2] x-hat
+   !     -[d/dy d^2/dx^2 + d^3/dy^3 + d/dy d^2/dz^2] y-hat
+   !     -[d/dz d^2/dx^2 + d/dz d^2/dy^2 + d^3/dz^3] z-hat
    ! The integral must be computed over all space for all different possible
    !   values of lxyz1,2 for some arbitrarily chosen test coordinates and
    !   decay rates.
@@ -2797,14 +2802,14 @@ def print_test_dkinetic_num(conversion, triads, f):
    ! Because of the plus signs in the dell of dell^2 operator we arrive
    !   at three identical integrals of the form (with # in d^3/d#^3 = x, y,
    !   or z):
-   ! SSS [(Px-Rx1)**lx1 * (Py-Ry1)**ly1 * (Pz-Rz1)**lz1 *
+   ! -SSS [(Px-Rx1)**lx1 * (Py-Ry1)**ly1 * (Pz-Rz1)**lz1 *
    !        exp(-zeta1*( (Px-Rx1)**2 + (Py-Ry1)**2 + (Pz-Rz1)**2 ))] *
    !        coeff * d^3/d#^3 [(Px-Rx2)**lx2 * (Py-Ry2)**ly2 * (Pz-Rz2)**lz2 *
    !        exp(-zeta2*( (Px-Rx2)**2 + (Py-Ry2)**2 + (Pz-Rz2)**2 ))] dxdydz
    !
    ! Also, because of the plus signs, we arrive at six other identical
    !   integrals of the form (with #,@ = x,y ; x,z ; y,x ; y,z ; z,x ; z,y):
-   ! SSS [(Px-Rx1)**lx1 * (Py-Ry1)**ly1 * (Pz-Rz1)**lz1 * 
+   ! -SSS [(Px-Rx1)**lx1 * (Py-Ry1)**ly1 * (Pz-Rz1)**lz1 * 
    !        exp(-zeta1*( (Px-Rx1)**2 + (Py-Ry1)**2 + (Pz-Rz1)**2 ))] *
    !        coeff * d/d# d^2/d@^2
    !        [(Px-Rx2)**lx2 * (Py-Ry2)**ly2 * (Pz-Rz2)**lz2 *
@@ -2812,13 +2817,13 @@ def print_test_dkinetic_num(conversion, triads, f):
    !
    ! Now, focusing on just the d^3/dx^3 version of the set of three integrals,
    !   we will pull all terms with Py and Pz out of the dx integral to get:
-   ! SS { [(Py-Ry1)**ly1 * (Pz-Rz1)**lz1 *
-   !       exp(-zeta1*((Py-Ry1)**2 + (Pz-Rz1)**2 ))] *
-   !      [(Py-Ry2)**ly2 * (Pz-Rz2)**lz2 *
-   !       exp(-zeta2*((Py-Ry2)**2 + (Pz-Rz2)**2 ))] *
-   !     S [(Px-Rx1)**lx1 * exp(-zeta1*((Px-Rx1)**2)) * coeff * d^3/dx^3 [
-   !      (Px-Rx2)**lx2 * exp(-zeta2*((Px-Rx2)**2))]] dx
-   !    } dydz
+   ! -SS { [(Py-Ry1)**ly1 * (Pz-Rz1)**lz1 *
+   !        exp(-zeta1*((Py-Ry1)**2 + (Pz-Rz1)**2 ))] *
+   !       [(Py-Ry2)**ly2 * (Pz-Rz2)**lz2 *
+   !        exp(-zeta2*((Py-Ry2)**2 + (Pz-Rz2)**2 ))] *
+   !      S [(Px-Rx1)**lx1 * exp(-zeta1*((Px-Rx1)**2)) * coeff * d^3/dx^3 [
+   !         (Px-Rx2)**lx2 * exp(-zeta2*((Px-Rx2)**2))]] dx
+   !     } dydz
    ! Applying the third derivative, the internal 1D dx integral has the form:
    !   Ix' = S [(Px-Rx1)**lx1 * exp(-zeta1*((Px-Rx1)**2)) * coeff *
    !          [lx2*(lx2^2 - 3lx2 + 2) * (Px-Rx2)^(lx2-3) +
@@ -2840,18 +2845,19 @@ def print_test_dkinetic_num(conversion, triads, f):
    !
    ! Now, focusing on just the d/d# d^2/d@^2 where (say) #,@ = x,y,
    !   we will pull terms with Pz out of the dx dy integral to get:
-   ! S { [(Pz-Rz1)^lz1 * exp(-zeta1*(Pz-Rz1)^2)] *
-   !     [(Pz-Rz2)^lz2 * exp(-zeta2*(Pz-Rz2)^2)] *
-   !   SS [(Px-Rx1)^lx1 * exp(-zeta1*((Px-Rx1)^2 + (Py-Ry1)^2)) * coeff *
-   !      d/dx d^2/dy^2 [(Px-Rx2)^lx2 * (Py-Ry2)^ly2 *
-   !      exp(-zeta2*((Px-Rx2)^2 + (Py-Ry2)**2))]] dx dy
-   !   } dz
+   ! -S { [(Pz-Rz1)^lz1 * exp(-zeta1*(Pz-Rz1)^2)] *
+   !      [(Pz-Rz2)^lz2 * exp(-zeta2*(Pz-Rz2)^2)] *
+   !     SS [(Px-Rx1)^lx1 * (Py-Ry1)^ly1 * 
+   !        exp(-zeta1*((Px-Rx1)^2 + (Py-Ry1)^2)) * coeff *
+   !        d/dx d^2/dy^2 [(Px-Rx2)^lx2 * (Py-Ry2)^ly2 *
+   !        exp(-zeta2*((Px-Rx2)^2 + (Py-Ry2)**2))]] dx dy
+   !    } dz
    ! Applying the two second derivatives, the internal 2D dx dy integral has
    !   the form:
    ! Ix'y" = S [(Px-Rx1)^lx1 * (Py-Ry1)^ly1 *
    !    exp(-zeta1*((Px-Rx1)^2 + (Py-Ry1)^2)) * coeff *
-   !    lx2*ly2 (lx2 - 1) (Px-Rx2)^(lx2-1)*(Py-Ry2)^(ly2-2) *
-   !    zeta2 2lx2 (-2ly2 + 1) (Px-Rx2)^(lx2-1)*(Py-Ry2)^(ly2) *
+   !    lx2*ly2 (ly2 - 1) (Px-Rx2)^(lx2-1)*(Py-Ry2)^(ly2-2) *
+   !    zeta2 2lx2 (-2ly2 - 1) (Px-Rx2)^(lx2-1)*(Py-Ry2)^(ly2) *
    !    zeta2^2 4lx2 (Px-Rx2)^(lx2-1)*(Py-Ry2)^(ly2+2) *
    !    zeta2 2ly2 (-ly2 + 1) (Px-Rx2)^(lx2+1)*(Py-Ry2)^(ly2-2) *
    !    zeta2^2 4 (2ly2 + 1) (Px-Rx2)^(lx2+1)*(Py-Ry2)^(ly2) *
@@ -2883,7 +2889,7 @@ def print_test_dkinetic_num(conversion, triads, f):
                 f"{conversion[i][1][1]},{conversion[i][1][2]}/)\n"
 
     head += """
-   coeff = -0.5d0
+   coeff = 0.5d0 ! Sign cancelled with minus from dellR2 = -dell
    start_pos = -cell_size
    num_steps = cell_size * 2.0d0 / step_size + 1  ! +1 accounts for xyz=zero.
 
@@ -2977,7 +2983,7 @@ def print_test_dkinetic_num(conversion, triads, f):
          ! The y-axis qp term uses d/dy d^2/dx^2 with no D wrt z plus
          !   d/dy d^2/dz^2 with no D wrt x.
          pc(q,p,2) = pc(q,p,2) + (xyz_I(3,3)*xyz_I(3,2) &
-               & + (xyz_I(4,3)*xyz_I(2,1)))
+               & + (xyz_I(4,3)*xyz_I(1,2)))
 
          ! The z-axis qp term uses d/dz d^2/dx^2 with no D wrt y plus
          !   d/dz d^2/dy^2 with no D wrt x.
@@ -3008,6 +3014,10 @@ def print_test_dkinetic_num(conversion, triads, f):
     # Print the section to assemble the sh matrix.
     num_conversion = len(conversion)
     lib.print_pc_to_sh(conversion, f, [8, 3, ""], 0, num_conversion,
+                       num_conversion)
+    lib.print_pc_to_sh(conversion, f, [8, 3, ""], 1, num_conversion,
+                       num_conversion)
+    lib.print_pc_to_sh(conversion, f, [6, 3, ""], 2, num_conversion,
                        num_conversion)
 
 
@@ -3130,7 +3140,7 @@ def print_test_dkinetic_num(conversion, triads, f):
       !   integral, these terms are obtained from sympy derivations and simple
       !   algebraic manipulations.
 
-      twoPrimeDK = alpha2**3*-8 &
+      twoPrimeDK = alpha2**3*(-8) &
             & * (curr_pos1 - B1)**(l21 + 1) * (curr_pos2 - B2)**(l22 + 2)
 
       twoPrimeDK = twoPrimeDK + alpha2**2*4*(2*l22 + 1) &
@@ -3140,7 +3150,7 @@ def print_test_dkinetic_num(conversion, triads, f):
          twoPrimeDK = twoPrimeDK + alpha2**2*4*l21 &
                & * (curr_pos1 - B1)**(l21-1) * (curr_pos2 - B2)**(l22+2)
 
-         twoPrimeDK = twoPrimeDK + alpha2*2*l21*(-2*l22 + 1) &
+         twoPrimeDK = twoPrimeDK + alpha2*2*l21*(-2*l22 - 1) &
                & * (curr_pos1 - B1)**(l21-1) * (curr_pos2 - B2)**(l22)
       endif
 
@@ -3172,11 +3182,285 @@ def print_test_dkinetic_num(conversion, triads, f):
     f.write(foot)
 
 
-def print_test_dnuclear_num(conversion, triads, f):
+# The "full" test subroutine is intended to only be used for solving
+#   integrals of the form (0|d/dB del|0) to guide the creation of the
+#   derivative of the kinetic energy s-s case.
+# Note that the numerical solution here is "full" because it does a full
+#   3D numerical integral instead of the usual 1D and 2D integrals.
+def print_test_dkinetic_full_num(conversion, triads, f):
 
     # Print the subroutine header for the numerical portion.
     head = """
-   subroutine dnuclear3CIntgNum(a1,a2,a3,A,B,C,pc,sh,cell_size,step_size)
+   subroutine dkinetic2CIntgNum(a1,a2,A,B,pc,sh,cell_size,step_size)
+
+   use O_Kinds
+   use O_Constants, only: pi, fineStructure
+
+   implicit none
+
+   ! sh(16,16): 1,s; 2,x; 3,y; 4,z; 5,xy; 6,xz; 7,yz; 8,xx-yy;
+   ! 9,2zz-xx-yy; 10,xyz; 11,xxz-yyz; 12,xxx-3yyx; 13,3xxy-yyy; 
+   ! 14,2zzz-3xxz-3yyz; 15,4zzx-xxx-yyx; 16,4zzy-xxy-yyy
+
+   ! pc(20,20): 1,s; 2,x; 3,y; 4,z; 5,xx; 6,yy; 7,zz; 8,xy; 9,xz;
+   ! 10,yz; 11,xyz; 12,xxy; 13,xxz; 14,yyx; 15,yyz; 16,zzx; 17,zzy
+   ! 18,xxx; 19,yyy; 20,zzz
+
+   ! Define the dummy variables passed to this subroutine.
+   real (kind=double), intent (in) :: a1, a2
+   real (kind=double), dimension (3), intent (in) :: A, B
+   real (kind=double), dimension (""" + \
+           f"{len(triads)},{len(triads)}" + """,3), intent(out) :: pc
+   real (kind=double), dimension (""" + \
+           f"{len(conversion)},{len(conversion)}" + """,3), intent(out) :: sh
+   real (kind=double), intent (in) :: cell_size, step_size
+
+   ! Define local variables.
+   integer :: p, q, h, i, j, k
+   integer :: num_steps
+   integer, dimension (""" + f"{len(triads)}" + """,3) :: triads
+   integer, dimension (""" + f"{len(conversion)}" + """,2,3) :: conversion
+   integer, dimension (3) :: l1, l2
+   real (kind=double) :: start_pos, coeff
+   real (kind=double), dimension (2) :: curr_pos
+   real (kind=double), dimension (3) :: xyz, xyz_soln
+   real (kind=double), dimension (3,3) :: xyz_I
+      ! The second index is for prime, noprime, 2Dprime.
+      ! The first index is xyz for prime and noprime while it is xy,xz,yz for
+      !   the 2Dprime case.
+
+   ! Full solution variables.
+   real (kind=double), dimension(3) :: soln
+   real (kind=double) :: sum_xyz_A_2, sum_xyz_B_2
+   real (kind=double) :: zeta, xi
+   real (kind=double) :: preFactorOL, preFactor02, preFactor04, preFactor22
+   real (kind=double), dimension (3) :: d, S
+
+   ! Before we proceed with the calculation we need to understand a bit more
+   !   about exactly what is being computed. The form of the integration is:
+   ! SSS [(Px-Rx1)**lx1 * (Py-Ry1)**ly1 * (Pz-Rz1)**lz1 * 
+   !        exp(-zeta1*( (Px-Rx1)**2 + (Py-Ry1)**2 + (Pz-Rz1)**2 ))] *
+   !        coeff * dellR2 ( dell^2
+   !        [(Px-Rx2)**lx2 * (Py-Ry2)**ly2 * (Pz-Rz2)**lz2 *
+   !        exp(-zeta2*( (Px-Rx2)**2 + (Py-Ry2)**2 + (Pz-Rz2)**2 ))]) dxdydz
+   ! We use Pxyz for points in space; Rxyz1,2 for atomic sites 1 and 2;
+   !   zeta1,2 for the exponential decay factors; lxyz1,2 for the angular
+   !   momentum numbers for atoms 1 and 2; and coeff = -1/2. Note that "dell"
+   !   implies derivatives with respect to electron positional coordinates
+   !   x,y,z while "dellR2" implies derivatives with respect to the atomic
+   !   coordinates of site 2. Derivatives of a Cartesian Gaussian wrt the
+   !   atomic site are the negatives of the derivatives wrt the electron
+   !   coordinates. I.e., dG/dx = -dG/dBx so that dell = -dellR2.
+   !
+   ! The dell^2 operator is d^2/dx^2 + d^2/dy^2 + d^2/dz^2 so that dellR2 of
+   !   dell^2 (or -dell of dell^2) is:
+   !     -[d^3/dx^3 + d/dx d^2/dy^2 + d/dx d^2/dz^2] x-hat
+   !     -[d/dy d^2/dx^2 + d^3/dy^3 + d/dy d^2/dz^2] y-hat
+   !     -[d/dz d^2/dx^2 + d/dz d^2/dy^2 + d^3/dz^3] z-hat
+   ! The integral must be computed over all space for all different possible
+   !   values of lxyz1,2 for some arbitrarily chosen test coordinates and
+   !   decay rates.
+   !
+   ! Because of the plus signs in the dell of dell^2 operator we arrive
+   !   at three identical integrals of the form (with # in d^3/d#^3 = x, y,
+   !   or z):
+   ! -SSS [(Px-Rx1)**lx1 * (Py-Ry1)**ly1 * (Pz-Rz1)**lz1 *
+   !        exp(-zeta1*( (Px-Rx1)**2 + (Py-Ry1)**2 + (Pz-Rz1)**2 ))] *
+   !        coeff * d^3/d#^3 [(Px-Rx2)**lx2 * (Py-Ry2)**ly2 * (Pz-Rz2)**lz2 *
+   !        exp(-zeta2*( (Px-Rx2)**2 + (Py-Ry2)**2 + (Pz-Rz2)**2 ))] dxdydz
+   !
+   ! Also, because of the plus signs, we arrive at six other identical
+   !   integrals of the form (with #,@ = x,y ; x,z ; y,x ; y,z ; z,x ; z,y):
+   ! -SSS [(Px-Rx1)**lx1 * (Py-Ry1)**ly1 * (Pz-Rz1)**lz1 * 
+   !        exp(-zeta1*( (Px-Rx1)**2 + (Py-Ry1)**2 + (Pz-Rz1)**2 ))] *
+   !        coeff * d/d# d^2/d@^2
+   !        [(Px-Rx2)**lx2 * (Py-Ry2)**ly2 * (Pz-Rz2)**lz2 *
+   !        exp(-zeta2*( (Px-Rx2)**2 + (Py-Ry2)**2 + (Pz-Rz2)**2 ))] dxdydz
+   !
+   ! Now, focusing on just the d^3/dx^3 version of the set of three integrals,
+   !   we will pull all terms with Py and Pz out of the dx integral to get:
+   ! -SS { [(Py-Ry1)**ly1 * (Pz-Rz1)**lz1 *
+   !        exp(-zeta1*((Py-Ry1)**2 + (Pz-Rz1)**2 ))] *
+   !       [(Py-Ry2)**ly2 * (Pz-Rz2)**lz2 *
+   !        exp(-zeta2*((Py-Ry2)**2 + (Pz-Rz2)**2 ))] *
+   !      S [(Px-Rx1)**lx1 * exp(-zeta1*((Px-Rx1)**2)) * coeff * d^3/dx^3 [
+   !         (Px-Rx2)**lx2 * exp(-zeta2*((Px-Rx2)**2))]] dx
+   !     } dydz
+   ! Applying the third derivative, the internal 1D dx integral has the form:
+   !   Ix' = S [(Px-Rx1)**lx1 * exp(-zeta1*((Px-Rx1)**2)) * coeff *
+   !          [lx2*(lx2^2 - 3lx2 + 2) * (Px-Rx2)^(lx2-3) +
+   !           (zeta2*-6lx2^2) * (Px-Rx2)^(lx2-1) +
+   !           (zeta2^2*(12*lx2 + 12)) * (Px-Rx2)^(lx2+1) +
+   !           (zeta2^3*-8) * (Px-Rx2)^(lx2+3)] * exp(-zeta2*(Px - Rx2)**2)
+   !        ]
+   ! Each of the other integrals (Iy, Iz) will have the form of a simple
+   !   1D overlap integral:
+   !   Iy = S [(Py-Ry1)^ly1 * exp(-zeta1*((Py-Ry1)^2)) *
+   !            (Py-Ry2)^ly2 * exp(-zeta2*((Py-Ry2)^2))] dy
+   !   Iz = S [(Pz-Rz1)^lz1 * exp(-zeta1*((Pz-Rz1)^2)) *
+   !            (Pz-Rz2)^lz2 * exp(-zeta2*((Pz-Rz2)^2))] dz
+   ! The total integral !! for the d^3/dx^3 portion !! is thus Ix' * Iy * Iz
+   !   in the x-hat direcetion. Similarly, the d^3/dy^3 portion in the y-hat
+   !   direction would be Ix * Iy' * Iz and the d^3/dz^3 portion in the z-hat
+   !   direction would be Ix * Iy * Iz'. The Iy' and Iz' are the appropriate
+   !   analongs of Ix' and Ix is the analog of the Iy or Iz.
+   !
+   ! Now, focusing on just the d/d# d^2/d@^2 where (say) #,@ = x,y,
+   !   we will pull terms with Pz out of the dx dy integral to get:
+   ! -S { [(Pz-Rz1)^lz1 * exp(-zeta1*(Pz-Rz1)^2)] *
+   !      [(Pz-Rz2)^lz2 * exp(-zeta2*(Pz-Rz2)^2)] *
+   !     SS [(Px-Rx1)^lx1 * (Py-Ry1)^ly1 * 
+   !        exp(-zeta1*((Px-Rx1)^2 + (Py-Ry1)^2)) * coeff *
+   !        d/dx d^2/dy^2 [(Px-Rx2)^lx2 * (Py-Ry2)^ly2 *
+   !        exp(-zeta2*((Px-Rx2)^2 + (Py-Ry2)**2))]] dx dy
+   !    } dz
+   ! Applying the two second derivatives, the internal 2D dx dy integral has
+   !   the form:
+   ! Ix'y" = S [(Px-Rx1)^lx1 * (Py-Ry1)^ly1 *
+   !    exp(-zeta1*((Px-Rx1)^2 + (Py-Ry1)^2)) * coeff *
+   !    lx2*ly2 (ly2 - 1) (Px-Rx2)^(lx2-1)*(Py-Ry2)^(ly2-2) *
+   !    zeta2 2lx2 (-2ly2 - 1) (Px-Rx2)^(lx2-1)*(Py-Ry2)^(ly2) *
+   !    zeta2^2 4lx2 (Px-Rx2)^(lx2-1)*(Py-Ry2)^(ly2+2) *
+   !    zeta2 2ly2 (-ly2 + 1) (Px-Rx2)^(lx2+1)*(Py-Ry2)^(ly2-2) *
+   !    zeta2^2 4 (2ly2 + 1) (Px-Rx2)^(lx2+1)*(Py-Ry2)^(ly2) *
+   !    zeta2^3 (-8) (Px-Rx2)^(lx2+1)*(Py-Ry2)^(ly2+2) *
+   !    exp(-zeta2*((Px-Rx2)^2 + (Py-Ry2)^2))] dx dy
+   !
+   ! Thus, every total integral in a particular Cartesian direction is a sum
+   !   of various independent integrals. We can do 1D overlap integrals for
+   !   x, y, z; 1D third derivative integrals for x, y, z; and 2D second
+   !   derivative integrals for xy, xz, yx, yz, zx, zy pairs to construct the
+   !   total integral.
+   ! With regard to the term in each integral that has the **(lx2-2) form
+   !   (or **(ly2-2) or **(lz2-2), or -1 or -3 form), some special care must
+   !   be taken. This term represents an angular momentum and the integral will
+   !   have the form of an overlap integral. Because we cannot have a negative
+   !   angular momentum we must discard this term when lx2-2 < 0, etc.
+
+
+   ! Initialize local variables.
+"""
+
+    for i in range(len(triads)):
+        head += f"   triads({i+1},:) = (/{triads[i][0]}," + \
+                f"{triads[i][1]},{triads[i][2]}/)\n"
+
+    for i in range(len(conversion)):
+        head += f"   conversion({i+1},1,:) = (/{conversion[i][0][0]}," + \
+                f"{conversion[i][0][1]},{conversion[i][0][2]}/)\n"
+        head += f"   conversion({i+1},2,:) = (/{conversion[i][1][0]}," + \
+                f"{conversion[i][1][1]},{conversion[i][1][2]}/)\n"
+
+    head += """
+
+   ! Initialize terms used to compute analytical factors.
+   coeff = -0.5d0 ! The - sign is because we did not convert d/dB_x into d/dx.
+   zeta = a1 + a2
+   xi = a1 * a2 / zeta
+   d = A - B
+
+   ! Initialize numerical mesh quantities.
+   start_pos = -cell_size
+   num_steps = cell_size * 2.0d0 / step_size + 1  ! +1 accounts for xyz=zero.
+
+   ! Initialize a counter of the triad pq pairs.
+   h = 0
+
+   do p = 1, """ + f"{len(triads)}" + """
+      do q = 1, """ + f"{len(triads)}" + """
+
+         ! Assign l1 and l2 values for each primitive Cartesian gto.
+         l1 = triads(q,:)
+         l2 = triads(p,:)
+
+         ! Initialize sum solution.
+         soln(:) = 0.0d0
+
+         ! Start a loop over 1D coordinates.
+         do i = 0, num_steps
+
+            ! Compute the current x position, distance, and sum.
+            xyz(1) = (start_pos + (i*step_size))
+
+            do j = 0, num_steps
+
+               ! Compute the current y position, distance, and sum.
+               xyz(2) = (start_pos + (j*step_size))
+
+               do k = 0, num_steps
+
+                  ! Compute the current z position, distance, and sum.
+                  xyz(3) = (start_pos + (k*step_size))
+                  sum_xyz_A_2 = sum((xyz(:)-A(:))**2)
+                  sum_xyz_B_2 = sum((xyz(:)-B(:))**2)
+
+                  soln(:) = soln(:) + &
+&exp(-a1*sum_xyz_A_2) * exp(-a2*sum_xyz_B_2) * (&
+&8*a2**3*(xyz(:)-B(:))*(sum_xyz_B_2)&
+&-20*a2**2*(xyz(:)-B(:)))
+! Above is for the <0|d/dB del|0> case.
+
+
+!(-a2**3*(-2*xyz(1)+2*B(1))*(2*xyz(1)-2*B(1))**2*exp(-a2*((xyz(1)-B(1))**2+(xyz&
+!&(2)-B(2))**2+(xyz(3)-B(3))**2))-a2**3*(-2*xyz(1)+2*B(1))*(2*xyz(2)-2*B(2))**2*&
+!&exp(-a2*((xyz(1)-B(1))**2+(xyz(2)-B(2))**2+(xyz(3)-B(3))**2))-a2**3*(-2*xyz(1)&
+!&+2*B(1))*(2*xyz(3)-2*B(3))**2*exp(-a2*((xyz(1)-B(1))**2+(xyz(2)-B(2))**2+(xyz(&
+!&3)-B(3))**2))+a2**2*(-8*xyz(1)+8*B(1))*exp(-a2*((xyz(1)-B(1))**2+(xyz(2)-B(2))&
+!&**2+(xyz(3)-B(3))**2))+6*a2**2*(-2*xyz(1)+2*B(1))*exp(-a2*((xyz(1)-B(1))**2+(x&
+!&yz(2)-B(2))**2+(xyz(3)-B(3))**2)))*exp(-a1*((xyz(1)-A(1))**2+(xyz(2)-A(2))**2+&
+!&(xyz(3)-A(3))**2))
+
+! All above is for the <0|d/dB del|0> case.
+
+               enddo
+            enddo
+         enddo
+
+         ! Multiply the results by the mesh step size.
+         soln(:) = soln(:) * step_size**3
+
+         pc(q,p,:) = soln(:) * coeff
+
+         ! Record progress thorugh the pq pairs.
+         h = h + 1
+         if (mod(h,10) .eq. 0) then
+            write (6,ADVANCE="NO",FMT="(a1)") "|"
+         else
+            write (6,ADVANCE="NO",FMT="(a1)") "."
+         endif
+         if (mod(h,50) .eq. 0) then
+            write (6,*) " ",h
+         endif
+         call flush (6)
+
+      enddo
+   enddo
+            
+"""
+    f.write(head)
+
+    # Print the section to assemble the sh matrix.
+    num_conversion = len(conversion)
+    lib.print_pc_to_sh(conversion, f, [8, 3, ""], 0, num_conversion,
+                       num_conversion)
+    lib.print_pc_to_sh(conversion, f, [8, 3, ""], 1, num_conversion,
+                       num_conversion)
+    lib.print_pc_to_sh(conversion, f, [8, 3, ""], 2, num_conversion,
+                       num_conversion)
+
+
+    # Print the subroutine foot and the subsequent functions.
+    foot = """
+   end subroutine dkinetic2CIntgNum
+"""
+    f.write(foot)
+
+
+def print_test_dnuclearcb_num(conversion, triads, f):
+
+    # Print the subroutine header for the numerical portion.
+    head = """
+   subroutine dnuclear3CIntgNumCB(a1,a2,a3,A,B,C,pc,sh,cell_size,step_size)
 
    use O_Kinds
    use O_Constants, only: pi
@@ -3206,7 +3490,7 @@ def print_test_dnuclear_num(conversion, triads, f):
    integer, dimension (""" + f"{len(triads)},3) :: triads" + """
    integer, dimension (""" + f"{len(conversion)},2,3) :: conversion" + """
    integer, dimension (3) :: l1, l2
-   real (kind=double), dimenstion(3) :: soln
+   real (kind=double), dimension(3) :: soln
    real (kind=double) :: start_pos, r, xyz_sum_coeff
    real (kind=double), allocatable, dimension (:,:) :: xyz, xyz_sum
    real (kind=double), allocatable, dimension (:,:) :: C_dist, C_dist_sqrd
@@ -3386,23 +3670,26 @@ def print_test_dnuclear_num(conversion, triads, f):
 
     # Print the section to assemble the sh matrix.
     num_conversion = len(conversion)
-    lib.print_pc_to_sh(conversion, f, [4, 1, ""], 0, num_conversion,
+    lib.print_pc_to_sh(conversion, f, [4, 3, ""], 0, num_conversion,
+                       num_conversion)
+    lib.print_pc_to_sh(conversion, f, [4, 3, ""], 1, num_conversion,
+                       num_conversion)
+    lib.print_pc_to_sh(conversion, f, [4, 3, ""], 2, num_conversion,
                        num_conversion)
 
 
     # Print the subroutine foot.
     foot = """
-   end subroutine dnuclear3CIntgNum
+   end subroutine dnuclear3CIntgNumCB
 """
     f.write(foot)
 
 
-
-def print_test_delectron_num(conversion, triads, f):
+def print_test_delectroncb_num(conversion, triads, f):
 
     # Print the subroutine header for the numerical portion.
     head = """
-   subroutine DElectron3CIntgNum(a1,a2,a3,A,B,C,pc,sh,cell_size,step_size)
+   subroutine delectron3CIntgNumCB(a1,a2,a3,A,B,C,pc,sh,cell_size,step_size)
 
    use O_Kinds
    use O_Constants, only: pi
@@ -3440,7 +3727,8 @@ def print_test_delectron_num(conversion, triads, f):
    !   about exactly what is being computed. The form of the integration is:
    ! SSS [(Px-Rx1)**lx1 * (Py-Ry1)**ly1 * (Pz-Rz1)**lz1 * 
    !        exp(-zeta1*( (Px-Rx1)**2 + (Py-Ry1)**2 + (Pz-Rz1)**2 ))] *
-   !        d/d_xyz  [exp(-zeta3*( (Px-Rx3)**2 + (Py-Ry3)**2 + (Pz-Rz3)**2 )) *
+   !        d/dR_xyz2 [
+   !        exp(-zeta3*( (Px-Rx3)**2 + (Py-Ry3)**2 + (Pz-Rz3)**2 )) *
    !        (Px-Rx2)**lx2 * (Py-Ry2)**ly2 * (Pz-Rz2)**lz2 *
    !        exp(-zeta2*( (Px-Rx2)**2 + (Py-Ry2)**2 + (Pz-Rz2)**2 ))] dxdydz
    ! We use Pxyz for points in space; Rxyz1,2,3 for atomic sites 1,2 and 3;
@@ -3451,22 +3739,297 @@ def print_test_delectron_num(conversion, triads, f):
    !   The integral must be computed over all space for all different possible
    !   values of lxyz1,2 for some arbitrarily chosen test coordinates and
    !   decay rates.
-   ! Now, focusing on just the d/dx version of the set of triple integrals,
+   ! Note importantly, that in this case we are considering the solution for
+   !   the scenario when the middle term is at site C and the last term is
+   !   also at site "B". The B is in quotes to emphasize the following idea:
+   !   Consider that we want to take the derivative of the Hamiltonian with
+   !   respect to the coordinate of, say, atom #7 in order to get the force on
+   !   atom #7. For the three center overlap contribution to the Hamiltonian,
+   !   (commonly expressed as <A|C|B>) we find that atom #7 will be used in
+   !   each of the A, C, and B terms. Sometimes it will be <7|C|B> with
+   !   arbitrary other atoms for C and B. Other times it will be <A|7|B> or
+   !   <A|C|7> or <A|7|7>. Presently, we are dealing with the <A|C|7> case.
+   ! Note, importantly, that the derivative is with respect to the atomic
+   !   coordinate of the second basis function only.
+   ! Now, focusing on just the d/dRx2 version of the set of triple integrals,
    !   we will pull all terms with Py and Pz out of the dx integral to get:
    ! SS { [(Py-Ry1)**ly1 * (Pz-Rz1)**lz1 *
    !       exp(-zeta1*((Py-Ry1)**2 + (Pz-Rz1)**2 ))]*
    !       [exp(-zeta3*((Py-Ry3)**2 + (Pz-Rz3)**2 ))]*
    !       [(Py-Ry2)**ly2 * (Pz-Rz2)**lz2 *
    !       exp(-zeta2*((Py-Ry2)**2 + (Pz-Rz2)**2 ))] *
-   !     S [(Px-Rx1)**lx1 * exp(-zeta1*((Px-Rx1)**2)) * d/dx [
+   !     S [(Px-Rx1)**lx1 * exp(-zeta1*((Px-Rx1)**2)) * d/dRx2 [
    !     exp(-zeta3*((Px-Rx3)**2)) * (Px-Rx2)**lx2 * exp(-zeta2*((Px-Rx2)**2))
    !    ]] dx} dydz
    ! Applying the derivative, the internal 1D dx integral has the form:
    !   Ix' = S [(Px-Rx1)**lx1 * exp(-zeta1*((Px-Rx1)**2)) *                
-   !           [-2*zeta3*(Px-Rx3)*(Px-Rx2)**lx2
-   !            +lx2*(Px-Rx2)**(lx2-1)
-   !            -2*zeta2*(Px-Rx2)*(Px-Rx2)**lx2] 
+   !           [-lx2*(Px-Rx2)**(lx2-1)
+   !            + 2*zeta2*(Px-Rx2)**(lx2+1)] 
    !           * exp(-zeta2*(Px-Rx2)**2) * exp(-zeta3*(Px-Rx3)**2)
+   !        ]
+   ! Each of the other integrals (Iy, Iz) will have the form of a simple
+   !   1D overlap integral (without a derivative):
+   !   Iy = S [(Py-Ry1)**ly1 * exp(-zeta1*((Py-Ry1)**2)) *
+   !           (Py-Ry2)**ly2 * exp(-zeta2*((Py-Ry2)**2)) * 
+   !                           exp(-zeta3*((Py-Ry3)**2))] dy
+   !   Iz = S [(Pz-Rz1)**lz1 * exp(-zeta1*((Pz-Rz1)**2)) *
+   !           (Pz-Rz2)**lz2 * exp(-zeta2*((Pz-Rz2)**2)) *
+   !                           exp(-zeta3*((Pz-Rz3)**2))] dz
+   ! The total integral !! for the d/dRx2 version !! is thus Ix' * Iy * Iz.
+   !   Similarly, the total integrals for d/dRy2 and d/dRz2 will have the
+   !   form: Ix*Iy'*Iz and Ix*Iy*Iz' where the Iy' and Iz' are the appropriate
+   !   analogs of the Ix' and the Ix is the analog of the Iy or Iz.
+   ! Thus, every integral is a product of independent 1D integrals and the
+   !   solution of the total integral is a set of products of integrals that
+   !   can all be computed at once.
+   ! With regard to the term in each integral that has the **(lx2-1) form
+   !   (or **(ly2-1) or **(lz2-1)), some special care must be taken. This
+   !   term represents an angular momentum and the integral will have the
+   !   form of an overlap integral. Because we cannot have a negative angular
+   !   momentum therefore we must discard this term when lx2-1 < 0.
+
+   ! Initialize local variables.
+"""
+
+    for i in range(len(triads)):
+        head += f"   triads({i+1},:) = (/{triads[i][0]}," + \
+                f"{triads[i][1]},{triads[i][2]}/)\n"
+
+    for i in range(len(conversion)):
+        head += f"   conversion({i+1},1,:) = (/{conversion[i][0][0]}," + \
+                f"{conversion[i][0][1]},{conversion[i][0][2]}/)\n"
+        head += f"   conversion({i+1},2,:) = (/{conversion[i][1][0]}," + \
+                f"{conversion[i][1][1]},{conversion[i][1][2]}/)\n"
+
+    head += """
+   start_pos = -cell_size
+   num_steps = cell_size * 2.0d0 / step_size + 1  ! +1 accounts for xyz=zero.
+
+   do p = 1, """ + f"{len(triads)}" + """
+      do q = 1, """ + f"{len(triads)}" + """
+
+         ! Assign l1 and l2 values for each gto.
+         l1 = triads(q,:)
+         l2 = triads(p,:)
+
+         ! Initialize sum variables.
+         xyz_I(:,:) = 0.0d0
+
+         ! Start a loop over x coordinates.
+         do i = 0, num_steps
+            curr_pos = start_pos + (i*step_size)
+
+            ! Compute the no-prime integrals first.
+            do j = 1, 3
+               xyz_I(j,2) = xyz_I(j,2) &
+                     & + noPrimeDElectronCB(step_size, curr_pos, A(j), &
+                     & B(j), C(j), a1, a2, a3, l1(j), l2(j))
+            enddo
+
+            ! Compute the prime integrals second.
+            do j = 1, 3
+               xyz_I(j,1) = xyz_I(j,1) &
+                     & + primeDElectronCB(step_size, curr_pos, A(j), &
+                     & B(j), C(j), a1, a2, a3, l1(j), l2(j))
+            enddo
+         enddo
+
+         pc(q,p,1) = xyz_I(1,1)*xyz_I(2,2)*xyz_I(3,2)
+         pc(q,p,2) = xyz_I(1,2)*xyz_I(2,1)*xyz_I(3,2)
+         pc(q,p,3) = xyz_I(1,2)*xyz_I(2,2)*xyz_I(3,1)
+      enddo
+    enddo
+
+"""
+    f.write(head)
+
+    # Print the section to assemble the sh matrix.
+    num_conversion = len(conversion)
+    lib.print_pc_to_sh(conversion, f, [9, 3, ""], 0, num_conversion,
+                       num_conversion)
+    lib.print_pc_to_sh(conversion, f, [9, 3, ""], 1, num_conversion,
+                       num_conversion)
+    lib.print_pc_to_sh(conversion, f, [9, 3, ""], 2, num_conversion,
+                       num_conversion)
+
+    # Print the subroutine foot.
+    foot = """
+   end subroutine delectron3CIntgNumCB
+
+
+   function noPrimeDElectronCB(step_size, curr_pos, A, B, C, &
+         & a1, a2, a3, l1, l2)
+
+      ! Use necessary modules.
+      use O_Kinds
+
+      ! Make sure no funny variables are defined.
+      implicit none
+
+      ! Define passed parameters.
+      real (kind=double), intent(in) :: step_size, curr_pos
+      real (kind=double), intent(in) :: A, B, C, a1, a2, a3
+      integer, intent(in) :: l1, l2
+
+      ! Define local and return variables.
+      real (kind=double) :: noPrimeDElectronCB
+
+      ! Compute the integral part.
+      noPrimeDElectronCB = step_size &
+            & * (curr_pos - A)**l1 * (curr_pos - B)**l2 &
+            & * exp(-a1*(curr_pos - A)**2) * exp(-a2*(curr_pos - B)**2) &
+            & * exp(-a3*(curr_pos - C)**2)
+
+      return
+ 
+   end function noPrimeDElectronCB
+
+
+   function primeDElectronCB(step_size, curr_pos, A, B, C, a1, a2, a3, l1, l2)
+
+      ! Use necessary modules.
+      use O_Kinds
+
+      ! Make sure no funny variables are defined.
+      implicit none
+
+      ! Define passed parameters.
+      real (kind=double), intent(in) :: step_size, curr_pos
+      real (kind=double), intent(in) :: A, B, C, a1, a2, a3
+      integer, intent(in) :: l1, l2
+
+      ! Define local and return variables.
+      real (kind=double) :: primeDElectronCB
+
+      ! Compute each "internal" term of the prime integral. Compare each of
+      !   these lines with the 1D electron derivative matrix equation produced
+      !   by the osrecurintg_makenum.py script (appropriately separated into
+      !   terms) and the expression in Nuha's dissertation. FIX: Check
+      !   equation number from Nuha's dissertation.
+
+      ! Last term in the reduced equation produced by sympy. FIX: As above.
+      primeDElectronCB = 2.0d0 * a2 * (curr_pos - B)**(l2+1)
+
+      ! First term in the equation produced by sympy (after the exponentials
+      !   of course). As mentioned above, we only compute this if the
+      !   angular momentum will allow it.
+      if (l2 >= 1) then
+         primeDElectronCB = primeDElectronCB - l2 * (curr_pos - B)**(l2-1)
+      endif
+
+      ! Multiply prime integral by the preceeding primitive gaussian
+      !   coefficient and exponential and multiply by the succeeding
+      !   exponential. (We have already multiplied by the succeeding
+      !   primitive gaussian coefficient in the above lines.)
+      primeDElectronCB = primeDElectronCB &
+            & * (curr_pos-A)**l1 * exp(-a1*(curr_pos-A)**2) &
+            & * exp(-a2*(curr_pos-B)**2) * exp(-a3*(curr_pos-C)**2)
+
+      ! Finally, multiply by the step size.
+      primeDElectronCB = primeDElectronCB * step_size
+
+      return
+
+   end function primeDElectronCB
+"""
+    f.write(foot)
+
+
+def print_test_delectronbb_num(conversion, triads, f):
+
+    # Print the subroutine header for the numerical portion.
+    head = """
+   subroutine delectron3CIntgNumBB(a1,a2,a3,A,B,C,pc,sh,cell_size,step_size)
+
+   use O_Kinds
+   use O_Constants, only: pi
+
+   implicit none
+
+   ! sh(16,16,3): 1,s; 2,x; 3,y; 4,z; 5,xy; 6,xz; 7,yz; 8,xx-yy;
+   ! 9,2zz-xx-yy; 10,xyz; 11,xxz-yyz; 12,xxx-3yyx; 13,3xxy-yyy; 
+   ! 14,2zzz-3xxz-3yyz; 15,4zzx-xxx-yyx; 16,4zzy-xxy-yyy
+
+   ! pc(20,20,3): 1,s; 2,x; 3,y; 4,z; 5,xx; 6,yy; 7,zz; 8,xy; 9,xz;
+   ! 10,yz; 11,xyz; 12,xxy; 13,xxz; 14,yyx; 15,yyz; 16,zzx; 17,zzy
+   ! 18,xxx; 19,yyy; 20,zzz
+
+   ! Define the dummy variables passed to this subroutine.
+   real (kind=double), intent (in) :: a1, a2, a3
+   real (kind=double), dimension (3), intent (in) :: A, B, C
+   real (kind=double), dimension (""" \
+    + f"{len(triads)},{len(triads)},3), intent(out) :: pc" + """
+   real (kind=double), dimension (""" \
+    + f"{len(conversion)},{len(conversion)},3), intent(out) :: sh" + """
+   real (kind=double), intent (in) :: cell_size, step_size
+
+   ! Define local variables.
+   integer :: p, q, i, j
+   integer :: num_steps
+   integer, dimension (""" + f"{len(triads)}" + """,3) :: triads
+   integer, dimension (""" + f"{len(conversion)}" + """,2,3) :: conversion
+   integer, dimension (3) :: l1, l2
+   real (kind=double) :: start_pos, curr_pos
+   real (kind=double), dimension (3) :: xyz
+   real (kind=double), dimension (3,2) :: xyz_I ! Indices=xyz, noprime||prime
+
+   ! Before we proceed with the calculation we need to understand a bit more
+   !   about exactly what is being computed. The form of the integration is:
+   ! SSS [(Px-Rx1)**lx1 * (Py-Ry1)**ly1 * (Pz-Rz1)**lz1 * 
+   !        exp(-zeta1*( (Px-Rx1)**2 + (Py-Ry1)**2 + (Pz-Rz1)**2 ))] *
+   !        d/dR_xyz2  [
+   !        exp(-zeta3*( (Px-Rx3)**2 + (Py-Ry3)**2 + (Pz-Rz3)**2 )) *
+   !        (Px-Rx2)**lx2 * (Py-Ry2)**ly2 * (Pz-Rz2)**lz2 *
+   !        exp(-zeta2*( (Px-Rx2)**2 + (Py-Ry2)**2 + (Pz-Rz2)**2 ))] dxdydz
+   ! We use Pxyz for points in space; Rxyz1,2,3 for atomic sites 1,2 and 3;
+   !   zeta1,2,3 for the exponential decay factors; lxyz1,2 for the angular
+   !   momentum numbers for atoms 1 and 2,and lxyz3=0 (Always s-type) for the 
+   !   angular momentum number for atom 3, and d/d_xyz for independent
+   !   derivatives (i.e.,we have three separate triple integrals).
+   !   The integral must be computed over all space for all different possible
+   !   values of lxyz1,2 for some arbitrarily chosen test coordinates and
+   !   decay rates.
+   ! Note importantly, that in this case we are considering the solution for
+   !   the scenario when the middle term is at site "B" and the last term is
+   !   also at site "B". The B is in quotes to emphasize the following idea:
+   !   Consider that we want to take the derivative of the Hamiltonian with
+   !   respect to the coordinate of, say, atom #7 in order to get the force on
+   !   atom #7. For the three center overlap contribution to the Hamiltonian,
+   !   (commonly expressed as <A|C|B>) we find that atom #7 will be used in
+   !   each of the A, C, and B terms. Sometimes it will be <7|C|B> with
+   !   arbitrary other atoms for C and B. Other times it will be <A|7|B> or
+   !   <A|C|7> or <A|7|7>. Presently, we are dealing with the <A|7|7> case.
+   ! Note, importantly, that the derivative is with respect to the atomic
+   !   coordinate of both the middle term and the second basis function. We
+   !   are dealing with the scenario when C=B. Therefore, we will rewrite the
+   !   integral now to reflect that.
+   ! SSS [(Px-Rx1)**lx1 * (Py-Ry1)**ly1 * (Pz-Rz1)**lz1 * 
+   !        exp(-zeta1*( (Px-Rx1)**2 + (Py-Ry1)**2 + (Pz-Rz1)**2 ))] *
+   !        d/dR_xyz2  [
+   !        exp(-zeta3*( (Px-Rx2)**2 + (Py-Ry2)**2 + (Pz-Rz2)**2 )) *
+   !        (Px-Rx2)**lx2 * (Py-Ry2)**ly2 * (Pz-Rz2)**lz2 *
+   !        exp(-zeta2*( (Px-Rx2)**2 + (Py-Ry2)**2 + (Pz-Rz2)**2 ))] dxdydz
+   ! Let's now rewrite this one more time to condense terms.
+   ! SSS [(Px-Rx1)**lx1 * (Py-Ry1)**ly1 * (Pz-Rz1)**lz1 * 
+   !        exp(-zeta1*( (Px-Rx1)**2 + (Py-Ry1)**2 + (Pz-Rz1)**2 ))] *
+   !        d/dR_xyz2  [ exp((-zeta3 - zeta2)*
+   !        ((Px-Rx2)**2 + (Py-Ry2)**2 + (Pz-Rz2)**2 )) *
+   !        (Px-Rx2)**lx2 * (Py-Ry2)**ly2 * (Pz-Rz2)**lz2 ] dxdydz
+   ! Now, focusing on just the d/dRx2 version of the set of triple integrals,
+   !   we will pull all terms with Py and Pz out of the dx integral to get:
+   ! SS { [(Py-Ry1)**ly1 * (Pz-Rz1)**lz1 *
+   !       exp(-zeta1*((Py-Ry1)**2 + (Pz-Rz1)**2 ))]*
+   !       [exp((-zeta3-zeta2)*((Py-Ry2)**2 + (Pz-Rz2)**2 ))]*
+   !       [(Py-Ry2)**ly2 * (Pz-Rz2)**lz2] *
+   !     S [(Px-Rx1)**lx1 * exp(-zeta1*((Px-Rx1)**2)) * d/dRx2 [
+   !       exp((-zeta3-zeta2)*((Px-Rx3)**2)) * (Px-Rx2)**lx2 ]
+   !       ] dx}
+   !     dydz
+   ! Applying the derivative, the internal 1D dx integral has the form:
+   !   Ix' = S [(Px-Rx1)**lx1 * exp(-zeta1*((Px-Rx1)**2)) *                
+   !           [- lx2*(Px-Rx2)**(lx2-1)
+   !            + 2*zeta2*zeta3*(Px-Rx2)**(lx2+1)]
+   !           * exp((-zeta2-zeta3)*(Px-Rx2)**2)
    !        ]
    ! Each of the other integrals (Iy, Iz) will have the form of a simple
    !   1D overlap integral (without a derivative):
@@ -3523,14 +4086,14 @@ def print_test_delectron_num(conversion, triads, f):
             ! Compute the no-prime integrals first.
             do j = 1, 3
                xyz_I(j,2) = xyz_I(j,2) &
-                     & + noPrimeDElectron(step_size, curr_pos, A(j), &
+                     & + noPrimeDElectronBB(step_size, curr_pos, A(j), &
                      & B(j), C(j), a1, a2, a3, l1(j), l2(j))
             enddo
 
             ! Compute the prime integrals second.
             do j = 1, 3
                xyz_I(j,1) = xyz_I(j,1) &
-                     & + primeElecDeriv(step_size, curr_pos, A(j), &
+                     & + primeDElectronBB(step_size, curr_pos, A(j), &
                      & B(j), C(j), a1, a2, a3, l1(j), l2(j))
             enddo
          enddo
@@ -3546,19 +4109,20 @@ def print_test_delectron_num(conversion, triads, f):
 
     # Print the section to assemble the sh matrix.
     num_conversion = len(conversion)
-    lib.print_pc_to_sh(conversion, f, [3, 1, ""], 0, num_conversion,
+    lib.print_pc_to_sh(conversion, f, [9, 3, ""], 0, num_conversion,
                        num_conversion)
-    lib.print_pc_to_sh(conversion, f, [3, 1, ""], 1, num_conversion,
+    lib.print_pc_to_sh(conversion, f, [9, 3, ""], 1, num_conversion,
                        num_conversion)
-    lib.print_pc_to_sh(conversion, f, [3, 1, ""], 2, num_conversion,
+    lib.print_pc_to_sh(conversion, f, [9, 3, ""], 2, num_conversion,
                        num_conversion)
 
     # Print the subroutine foot.
     foot = """
-   end subroutine DElectron3CIntgNum 
+   end subroutine delectron3CIntgNumBB
 
 
-   function noPrimeDElectron(step_size, curr_pos, A, B, C, a1, a2, a3, l1, l2)
+   function noPrimeDElectronBB(step_size, curr_pos, A, B, C, &
+         & a1, a2, a3, l1, l2)
 
       ! Use necessary modules.
       use O_Kinds
@@ -3572,19 +4136,20 @@ def print_test_delectron_num(conversion, triads, f):
       integer, intent(in) :: l1, l2
 
       ! Define local and return variables.
-      real (kind=double) :: noPrimeDElectron
+      real (kind=double) :: noPrimeDElectronBB
 
       ! Compute the integral part.
-      noPrimeDElectron = step_size * (curr_pos - A)**l1 * (curr_pos - B)**l2 &
+      noPrimeDElectronBB = step_size &
+            & * (curr_pos - A)**l1 * (curr_pos - B)**l2 &
             & * exp(-a1*(curr_pos - A)**2) * exp(-a2*(curr_pos - B)**2) &
-            & * exp(-a3*(curr_pos - C)**2)
+            & * exp(-a3*(curr_pos - B)**2)
 
       return
  
-   end function noPrimeDElectron
+   end function noPrimeDElectronBB
 
 
-   function PrimeDElectron(step_size, curr_pos, A, B, C, a1, a2, a3, l1, l2)
+   function primeDElectronBB(step_size, curr_pos, A, B, C, a1, a2, a3, l1, l2)
 
       ! Use necessary modules.
       use O_Kinds
@@ -3598,45 +4163,277 @@ def print_test_delectron_num(conversion, triads, f):
       integer, intent(in) :: l1, l2
 
       ! Define local and return variables.
-      real (kind=double) :: primeDElectron
+      real (kind=double) :: primeDElectronBB
 
       ! Compute each "internal" term of the prime integral. Compare each of
       !   these lines with the 1D electron derivative matrix equation produced
       !   by the osrecurintg_makenum.py script (appropriately separated into
-      !   terms) and the expression in the last equals of equation 45 in the
-      !   dissertation. FIX: Check equation number from Nuha's dissertation.
+      !   terms) and the expression in Nuha's dissertation. FIX: Check
+      !   equation number from Nuha's dissertation.
 
-      ! Third line of equation 45. Also visible as second term in the
-      !   script-produced equation. FIX: As above.
-      PrimeDElectron = - 2.0d0 * a2 * (curr_pos - B)**(l2+1)
+      ! Last term in the sympy script-produced equation. FIX: As above.
+      primeDElectronBB = 2.0d0 * (a2 + a3) * (curr_pos - B)**(l2+1)
 
-      ! First line in the equation produced by sympy and second line in
-      !   equation 45 in the dissertation. As mentioned above,
+      ! First line in the equation produced by sympy. As mentioned above,
       !   we only compute this if the angular momentum will allow it.
       if (l2 >= 1) then
-         PrimeDElectron = PrimeDElectron + l2 * (curr_pos - B)**(l2-1)
+         primeDElectronBB = primeDElectronBB - l2 * (curr_pos - B)**(l2-1)
       endif
-
-      ! First line of equation 45. Also visible as third term in the
-      !   script-produced equation.
-      PrimeDElectron = PrimeDElectron - 2.0d0*a3 * (curr_pos - C) &
-            & * (curr_pos - B)**l2
-
 
       ! Multiply prime integral by the preceeding primitive gaussian
       !   coefficient and exponential and multiply by the succeeding
       !   exponential. (We have already multiplied by the succeeding
       !   primitive gaussian coefficient in the above lines.)
-      PrimeDElectron = PrimeDElectron &
+      primeDElectronBB = primeDElectronBB &
             & * (curr_pos-A)**l1 * exp(-a1*(curr_pos-A)**2) &
-            & * exp(-a2*(curr_pos-B)**2) * exp(-a3*(curr_pos-C)**2)
+            & * exp(-a2*(curr_pos-B)**2) * exp(-a3*(curr_pos-B)**2)
 
       ! Finally, multiply by the step size.
-      PrimeDElectron = PrimeDElectron * step_size
+      primeDElectronBB = primeDElectronBB * step_size
 
       return
 
-   end function PrimeDElectron
+   end function primeDElectronBB
+"""
+    f.write(foot)
+
+
+def print_test_delectronbc_num(conversion, triads, f):
+
+    # Print the subroutine header for the numerical portion.
+    head = """
+   subroutine delectron3CIntgNumBC(a1,a2,a3,A,B,C,pc,sh,cell_size,step_size)
+
+   use O_Kinds
+   use O_Constants, only: pi
+
+   implicit none
+
+   ! sh(16,16,3): 1,s; 2,x; 3,y; 4,z; 5,xy; 6,xz; 7,yz; 8,xx-yy;
+   ! 9,2zz-xx-yy; 10,xyz; 11,xxz-yyz; 12,xxx-3yyx; 13,3xxy-yyy; 
+   ! 14,2zzz-3xxz-3yyz; 15,4zzx-xxx-yyx; 16,4zzy-xxy-yyy
+
+   ! pc(20,20,3): 1,s; 2,x; 3,y; 4,z; 5,xx; 6,yy; 7,zz; 8,xy; 9,xz;
+   ! 10,yz; 11,xyz; 12,xxy; 13,xxz; 14,yyx; 15,yyz; 16,zzx; 17,zzy
+   ! 18,xxx; 19,yyy; 20,zzz
+
+   ! Define the dummy variables passed to this subroutine.
+   real (kind=double), intent (in) :: a1, a2, a3
+   real (kind=double), dimension (3), intent (in) :: A, B, C
+   real (kind=double), dimension (""" \
+    + f"{len(triads)},{len(triads)},3), intent(out) :: pc" + """
+   real (kind=double), dimension (""" \
+    + f"{len(conversion)},{len(conversion)},3), intent(out) :: sh" + """
+   real (kind=double), intent (in) :: cell_size, step_size
+
+   ! Define local variables.
+   integer :: p, q, i, j
+   integer :: num_steps
+   integer, dimension (""" + f"{len(triads)}" + """,3) :: triads
+   integer, dimension (""" + f"{len(conversion)}" + """,2,3) :: conversion
+   integer, dimension (3) :: l1, l2
+   real (kind=double) :: start_pos, curr_pos
+   real (kind=double), dimension (3) :: xyz
+   real (kind=double), dimension (3,2) :: xyz_I ! Indices=xyz, noprime||prime
+
+   ! Before we proceed with the calculation we need to understand a bit more
+   !   about exactly what is being computed. The form of the integration is:
+   ! SSS [(Px-Rx1)**lx1 * (Py-Ry1)**ly1 * (Pz-Rz1)**lz1 * 
+   !        exp(-zeta1*( (Px-Rx1)**2 + (Py-Ry1)**2 + (Pz-Rz1)**2 ))] *
+   !        d/dR_xyz2  [
+   !        exp(-zeta3*( (Px-Rx3)**2 + (Py-Ry3)**2 + (Pz-Rz3)**2 )) *
+   !        (Px-Rx2)**lx2 * (Py-Ry2)**ly2 * (Pz-Rz2)**lz2 *
+   !        exp(-zeta2*( (Px-Rx2)**2 + (Py-Ry2)**2 + (Pz-Rz2)**2 ))] dxdydz
+   ! We use Pxyz for points in space; Rxyz1,2,3 for atomic sites 1,2 and 3;
+   !   zeta1,2,3 for the exponential decay factors; lxyz1,2 for the angular
+   !   momentum numbers for atoms 1 and 2,and lxyz3=0 (Always s-type) for the 
+   !   angular momentum number for atom 3, and d/d_xyz for independent
+   !   derivatives (i.e.,we have three separate triple integrals).
+   !   The integral must be computed over all space for all different possible
+   !   values of lxyz1,2 for some arbitrarily chosen test coordinates and
+   !   decay rates.
+   ! Note importantly, that in this case we are considering the solution for
+   !   the scenario when the middle term is at site "B" and the last term is
+   !   at another site C. The B is in quotes to emphasize the following idea:
+   !   Consider that we want to take the derivative of the Hamiltonian with
+   !   respect to the coordinate of, say, atom #7 in order to get the force on
+   !   atom #7. For the three center overlap contribution to the Hamiltonian,
+   !   (commonly expressed as <A|C|B>) we find that atom #7 will be used in
+   !   each of the A, C, and B terms. Sometimes it will be <7|C|B> with
+   !   arbitrary other atoms for C and B. Other times it will be <A|7|B> or
+   !   <A|C|7> or <A|7|7>. Presently, we are dealing with the <A|7|B> case.
+   ! Note, importantly, that the derivative is with respect to the atomic
+   !   coordinate of the middle term only. Therefore, we change the derivative
+   !   to be with respect to the R_xyz3 coordinate.
+   ! Now, focusing on just the d/dRx3 version of the set of triple integrals,
+   !   we will pull all terms with Py and Pz out of the dx integral to get:
+   ! SS { [(Py-Ry1)**ly1 * (Pz-Rz1)**lz1 *
+   !       exp(-zeta1*((Py-Ry1)**2 + (Pz-Rz1)**2 ))]*
+   !       [exp(-zeta3*((Py-Ry3)**2 + (Pz-Rz3)**2 ))]*
+   !       [(Py-Ry2)**ly2 * (Pz-Rz2)**lz2 *
+   !       exp(-zeta2*((Py-Ry2)**2 + (Pz-Rz2)**2 ))] *
+   !     S [(Px-Rx1)**lx1 * exp(-zeta1*((Px-Rx1)**2)) * d/dRx3 [
+   !     exp(-zeta3*((Px-Rx3)**2)) * (Px-Rx2)**lx2 * exp(-zeta2*((Px-Rx2)**2))
+   !    ]] dx} dydz
+   ! Applying the derivative, the internal 1D dx integral has the form:
+   !   Ix' = S [(Px-Rx1)**lx1 * exp(-zeta1*((Px-Rx1)**2)) *                
+   !           [2*zeta3*(Px-Rx3)*(Px-Rx2)**lx2]
+   !           * exp(-zeta2*(Px-Rx2)**2) * exp(-zeta3*(Px-Rx3)**2)
+   !        ]
+   ! Each of the other integrals (Iy, Iz) will have the form of a simple
+   !   1D overlap integral (without a derivative):
+   !   Iy = S [(Py-Ry1)**ly1 * exp(-zeta1*((Py-Ry1)**2)) *
+   !           (Py-Ry2)**ly2 * exp(-zeta2*((Py-Ry2)**2)) * 
+   !                           exp(-zeta3*((Py-Ry3)**2))] dy
+   !   Iz = S [(Pz-Rz1)**lz1 * exp(-zeta1*((Pz-Rz1)**2)) *
+   !           (Pz-Rz2)**lz2 * exp(-zeta2*((Pz-Rz2)**2)) *
+   !                           exp(-zeta3*((Pz-Rz3)**2))] dz
+   ! The total integral !! for the d/dx version !! is thus Ix' * Iy * Iz.
+   !   Similarly, the total integrals for d/dy and d/dz will have the form:
+   !   Ix*Iy'*Iz and Ix*Iy*Iz' where the Iy' and Iz' are the appropriate
+   !   analogs of the Ix' and the Ix is the analog of the Iy or Iz.
+   ! Thus, every integral is a product of independent 1D integrals and the
+   !   solution of the total integral is a set of products of integrals that
+   !   can all be computed at once.
+
+   ! Initialize local variables.
+"""
+
+    for i in range(len(triads)):
+        head += f"   triads({i+1},:) = (/{triads[i][0]}," + \
+                f"{triads[i][1]},{triads[i][2]}/)\n"
+
+    for i in range(len(conversion)):
+        head += f"   conversion({i+1},1,:) = (/{conversion[i][0][0]}," + \
+                f"{conversion[i][0][1]},{conversion[i][0][2]}/)\n"
+        head += f"   conversion({i+1},2,:) = (/{conversion[i][1][0]}," + \
+                f"{conversion[i][1][1]},{conversion[i][1][2]}/)\n"
+
+    head += """
+   start_pos = -cell_size
+   num_steps = cell_size * 2.0d0 / step_size + 1  ! +1 accounts for xyz=zero.
+
+   do p = 1, """ + f"{len(triads)}" + """
+      do q = 1, """ + f"{len(triads)}" + """
+
+         ! Assign l1 and l2 values for each gto.
+         l1 = triads(q,:)
+         l2 = triads(p,:)
+
+         ! Initialize sum variables.
+         xyz_I(:,:) = 0.0d0
+
+         ! Start a loop over x coordinates.
+         do i = 0, num_steps
+            curr_pos = start_pos + (i*step_size)
+
+            ! Compute the no-prime integrals first.
+            do j = 1, 3
+               xyz_I(j,2) = xyz_I(j,2) &
+                     & + noPrimeDElectronBC(step_size, curr_pos, A(j), &
+                     & B(j), C(j), a1, a2, a3, l1(j), l2(j))
+            enddo
+
+            ! Compute the prime integrals second.
+            do j = 1, 3
+               xyz_I(j,1) = xyz_I(j,1) &
+                     & + primeDElectronBC(step_size, curr_pos, A(j), &
+                     & B(j), C(j), a1, a2, a3, l1(j), l2(j))
+            enddo
+         enddo
+
+         pc(q,p,1) = xyz_I(1,1)*xyz_I(2,2)*xyz_I(3,2)
+         pc(q,p,2) = xyz_I(1,2)*xyz_I(2,1)*xyz_I(3,2)
+         pc(q,p,3) = xyz_I(1,2)*xyz_I(2,2)*xyz_I(3,1)
+      enddo
+    enddo
+
+"""
+    f.write(head)
+
+    # Print the section to assemble the sh matrix.
+    num_conversion = len(conversion)
+    lib.print_pc_to_sh(conversion, f, [9, 3, ""], 0, num_conversion,
+                       num_conversion)
+    lib.print_pc_to_sh(conversion, f, [9, 3, ""], 1, num_conversion,
+                       num_conversion)
+    lib.print_pc_to_sh(conversion, f, [9, 3, ""], 2, num_conversion,
+                       num_conversion)
+
+    # Print the subroutine foot.
+    foot = """
+   end subroutine delectron3CIntgNumBC
+
+
+   function noPrimeDElectronBC(step_size, curr_pos, A, B, C, &
+         & a1, a2, a3, l1, l2)
+
+      ! Use necessary modules.
+      use O_Kinds
+
+      ! Make sure no funny variables are defined.
+      implicit none
+
+      ! Define passed parameters.
+      real (kind=double), intent(in) :: step_size, curr_pos
+      real (kind=double), intent(in) :: A, B, C, a1, a2, a3
+      integer, intent(in) :: l1, l2
+
+      ! Define local and return variables.
+      real (kind=double) :: noPrimeDElectronBC
+
+      ! Compute the integral part.
+      noPrimeDElectronBC = step_size &
+            & * (curr_pos - A)**l1 * (curr_pos - B)**l2 &
+            & * exp(-a1*(curr_pos - A)**2) * exp(-a2*(curr_pos - B)**2) &
+            & * exp(-a3*(curr_pos - C)**2)
+
+      return
+ 
+   end function noPrimeDElectronBC
+
+
+   function primeDElectronBC(step_size, curr_pos, A, B, C, a1, a2, a3, l1, l2)
+
+      ! Use necessary modules.
+      use O_Kinds
+
+      ! Make sure no funny variables are defined.
+      implicit none
+
+      ! Define passed parameters.
+      real (kind=double), intent(in) :: step_size, curr_pos
+      real (kind=double), intent(in) :: A, B, C, a1, a2, a3
+      integer, intent(in) :: l1, l2
+
+      ! Define local and return variables.
+      real (kind=double) :: primeDElectronBC
+
+      ! Compute each "internal" term of the prime integral. Compare each of
+      !   these lines with the 1D electron derivative matrix equation produced
+      !   by the osrecurintg_makenum.py script (appropriately separated into
+      !   terms) and the expression in Nuha's dissertation. FIX: Check
+      !   equation number from Nuha's dissertation.
+
+      ! This is the only term in the sympy script-produced equation.
+      !   FIX: As above.
+      primeDElectronBC = 2.0d0 * a3 * (curr_pos - C)
+
+      ! Multiply prime integral by the preceeding primitive gaussian
+      !   coefficient and exponential and multiply by the succeeding
+      !   exponential. (We have already multiplied by the succeeding
+      !   primitive gaussian coefficient in the above lines.)
+      primeDElectronBC = primeDElectronBC &
+            & * (curr_pos-A)**l1 * exp(-a1*(curr_pos-A)**2) &
+            & * (curr_pos-B)**l2 * exp(-a2*(curr_pos-B)**2) &
+            & * exp(-a3*(curr_pos-C)**2)
+
+      ! Finally, multiply by the step size.
+      primeDElectronBC = primeDElectronBC * step_size
+
+      return
+
+   end function primeDElectronBC
 """
     f.write(foot)
 

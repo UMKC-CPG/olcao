@@ -195,7 +195,6 @@ def kinetic_energy():
     # zeta1, zeta2, zeta3 = sp.symbols('zeta1 zeta2 zeta3')
     # Rx1, Ry1, Rz1 = sp.symbols('Rx1 Ry1 Rz1')
     # Rx2, Ry2, Rz2 = sp.symbols('Rx2 Ry2 Rz2')
-    # Rx3, Ry3, Rz3 = sp.symbols('Rx3 Ry3 Rz3')
 
     # orbital_1 = (Px-Rx1)**lx1 * (Py-Ry1)**ly1 * (Pz-Rz1)**lz1 * \
     #         sp.exp(-zeta1*( (Px-Rx1)**2 + (Py-Ry1)**2 + (Pz-Rz1)**2 ))
@@ -214,7 +213,6 @@ def kinetic_energy():
     zeta1, zeta2, zeta3 = sp.symbols('zeta1 zeta2 zeta3')
     Rx1, Ry1, Rz1 = sp.symbols('Rx1 Ry1 Rz1')
     Rx2, Ry2, Rz2 = sp.symbols('Rx2 Ry2 Rz2')
-    Rx3, Ry3, Rz3 = sp.symbols('Rx3 Ry3 Rz3')
 
     orbital_1 = sp.exp(-zeta1*( (Px-Rx1)**2 + (Py-Ry1)**2 + (Pz-Rz1)**2 ))
     orbital_2 = sp.exp(-zeta2*( (Px-Rx2)**2 + (Py-Ry2)**2 + (Pz-Rz2)**2 ))
@@ -277,7 +275,7 @@ def momentum():
     return sp.printing.fcode(orbital_1 * sp.diff(orbital_2, Px), Px)
 
 
-def massvel():
+def mass_velocity():
     Px, Py = sp.symbols('Px Py')
     lx1, ly1 = sp.symbols('lx1 ly1')
     lx2, ly2 = sp.symbols('lx2 ly2')
@@ -307,10 +305,9 @@ def massvel():
     # Px, Py, Pz = sp.symbols('Px Py Pz')
     # lx1, ly1, lz1 = sp.symbols('lx1 ly1 lz1')
     # lx2, ly2, lz2 = sp.symbols('lx2 ly2 lz2')
-    # zeta1, zeta2, zeta3 = sp.symbols('zeta1 zeta2 zeta3')
+    # zeta1, zeta2 = sp.symbols('zeta1 zeta2')
     # Rx1, Ry1, Rz1 = sp.symbols('Rx1 Ry1 Rz1')
     # Rx2, Ry2, Rz2 = sp.symbols('Rx2 Ry2 Rz2')
-    # Rx3, Ry3, Rz3 = sp.symbols('Rx3 Ry3 Rz3')
 
     # orbital_1 = (Px-Rx1)**lx1 * (Py-Ry1)**ly1 * (Pz-Rz1)**lz1 * \
     #         sp.exp(-zeta1*( (Px-Rx1)**2 + (Py-Ry1)**2 + (Pz-Rz1)**2 ))
@@ -321,10 +318,9 @@ def massvel():
     # # Px, Py, Pz = sp.symbols('Px Py Pz')
     # # lx1, ly1, lz1 = sp.symbols('lx1 ly1 lz1')
     # # lx2, ly2, lz2 = sp.symbols('lx2 ly2 lz2')
-    # # zeta1, zeta2, zeta3 = sp.symbols('zeta1 zeta2 zeta3')
+    # # zeta1, zeta2 = sp.symbols('zeta1 zeta2')
     # # Rx1, Ry1, Rz1 = sp.symbols('Rx1 Ry1 Rz1')
     # # Rx2, Ry2, Rz2 = sp.symbols('Rx2 Ry2 Rz2')
-    # # Rx3, Ry3, Rz3 = sp.symbols('Rx3 Ry3 Rz3')
 
     # # orbital_1 = sp.exp(-zeta1*( (Px-Rx1)**2 + (Py-Ry1)**2 + (Pz-Rz1)**2 ))
     # # orbital_2 = sp.exp(-zeta2*( (Px-Rx2)**2 + (Py-Ry2)**2 + (Pz-Rz2)**2 ))
@@ -364,6 +360,7 @@ def dipole():
         return sp.printing.fcode(orbital_1 * mu * orbital_2)
 
 
+# KE derivative wrt Rx2 using the regular 1D and 2D expressions.
 def derivative_kinetic_energy():
     Px, Py = sp.symbols('Px Py')
     lx1, ly1 = sp.symbols('lx1 ly1')
@@ -382,12 +379,41 @@ def derivative_kinetic_energy():
 
     # Note, any coefficients are accounted for in the osrecurintg.py program.
     return (sp.printing.fcode(orbital_1a *
-            sp.diff(sp.diff(sp.diff(orbital_2a, Px), Px), Px)),
+            sp.diff(sp.diff(sp.diff(orbital_2a, Px), Px), Rx2)),
             sp.printing.fcode(orbital_1b *
-            sp.diff(sp.diff(sp.diff(orbital_2b, Py), Py), Px)))
+            sp.diff(sp.diff(sp.diff(orbital_2b, Py), Py), Rx2)))
 
 
-def derivative_nuclear():
+# KE derivative wrt Rx2 using a full 3D expression for the 00 case only.
+def derivative_kinetic_energy_full():
+    Px, Py, Pz = sp.symbols('Px Py Pz')
+    #lx1, ly1, lz1 = sp.symbols('lx1 ly1 lz1')
+    #lx2, ly2, lz2 = sp.symbols('lx2 ly2 lz2')
+    zeta1, zeta2 = sp.symbols('zeta1 zeta2')
+    Rx1, Ry1, Rz1 = sp.symbols('Rx1 Ry1 Rz1')
+    Rx2, Ry2, Rz2 = sp.symbols('Rx2 Ry2 Rz2')
+
+    orbital_1 = sp.exp(-zeta1*((Px-Rx1)**2 + (Py-Ry1)**2 + (Pz-Rz1)**2))
+    orbital_2 = sp.exp(-zeta2*((Px-Rx2)**2 + (Py-Ry2)**2 + (Pz-Rz2)**2))
+
+    # Note, any coefficients are accounted for in the osrecurintg.py program.
+    return (sp.printing.fcode(orbital_1 * (
+            sp.diff(sp.diff(sp.diff(orbital_2, Px), Px), Rx2) +
+            sp.diff(sp.diff(sp.diff(orbital_2, Py), Py), Rx2) +
+            sp.diff(sp.diff(sp.diff(orbital_2, Pz), Pz), Rx2))),
+            sp.printing.fcode(orbital_1 * (
+            sp.diff(sp.diff(sp.diff(orbital_2, Px), Px), Ry2) +
+            sp.diff(sp.diff(sp.diff(orbital_2, Py), Py), Ry2) +
+            sp.diff(sp.diff(sp.diff(orbital_2, Pz), Pz), Ry2))),
+            sp.printing.fcode(orbital_1 * (
+            sp.diff(sp.diff(sp.diff(orbital_2, Px), Px), Rz2) +
+            sp.diff(sp.diff(sp.diff(orbital_2, Py), Py), Rz2) +
+            sp.diff(sp.diff(sp.diff(orbital_2, Pz), Pz), Rz2))))
+
+
+# Nuclear derivative terms wrt Rx2, Ry2, Rz2 with C /= B (R#2 != R#3),
+#   but with R#2 being the site of the second basis function.
+def derivative_nuclearCB():
     Px, Py, Pz = sp.symbols('Px Py Pz')
     lx1, ly1, lz1 = sp.symbols('lx1 ly1 lz1')
     lx2, ly2, lz2 = sp.symbols('lx2 ly2 lz2')
@@ -405,14 +431,69 @@ def derivative_nuclear():
     inv_r3 = 1 / sp.sqrt((Px-Rx3)**2 + (Py-Ry3)**2 + (Pz-Rz3)**2)
 
     return (sp.printing.fcode(orbital_1 * (
-            sp.diff(((orbital_3 * inv_r3) * orbital_2), Px))),
+            sp.diff(((orbital_3 * inv_r3) * orbital_2), Rx2))),
             sp.printing.fcode(orbital_1 * (
-            sp.diff(((orbital_3 * inv_r3) * orbital_2), Py))),
+            sp.diff(((orbital_3 * inv_r3) * orbital_2), Ry2))),
             sp.printing.fcode(orbital_1 * (
-            sp.diff(((orbital_3 * inv_r3) * orbital_2), Pz))))
+            sp.diff(((orbital_3 * inv_r3) * orbital_2), Rz2))))
 
 
-def derivative_electron():
+# Nuclear derivative terms with Rx2, Ry2, Rz2 C == B (R#2 = R#3),
+#   and with R#2 being the site of the second basis function and the
+#   nuclear center.
+def derivative_nuclearBB():
+    Px, Py, Pz = sp.symbols('Px Py Pz')
+    lx1, ly1, lz1 = sp.symbols('lx1 ly1 lz1')
+    lx2, ly2, lz2 = sp.symbols('lx2 ly2 lz2')
+    zeta1, zeta2, zeta3 = sp.symbols('zeta1 zeta2 zeta3')
+    Rx1, Ry1, Rz1 = sp.symbols('Rx1 Ry1 Rz1')
+    Rx2, Ry2, Rz2 = sp.symbols('Rx2 Ry2 Rz2')
+
+    orbital_1 = (Px-Rx1)**lx1 * (Py-Ry1)**ly1 * (Pz-Rz1)**lz1 * \
+            sp.exp(-zeta1*( (Px-Rx1)**2 + (Py-Ry1)**2 + (Pz-Rz1)**2 ))
+    orbital_2 = (Px-Rx2)**lx2 * (Py-Ry2)**ly2 * (Pz-Rz2)**lz2 * \
+            sp.exp(-zeta2*( (Px-Rx2)**2 + (Py-Ry2)**2 + (Pz-Rz2)**2 ))
+    orbital_3 = sp.exp(-zeta3*( (Px-Rx2)**2 + (Py-Ry2)**2 + (Pz-Rz2)**2 ))
+
+    inv_r3 = 1 / sp.sqrt((Px-Rx2)**2 + (Py-Ry2)**2 + (Pz-Rz2)**2)
+
+    return (sp.printing.fcode(orbital_1 * (
+            sp.diff(((orbital_3 * inv_r3) * orbital_2), Rx2))),
+            sp.printing.fcode(orbital_1 * (
+            sp.diff(((orbital_3 * inv_r3) * orbital_2), Ry2))),
+            sp.printing.fcode(orbital_1 * (
+            sp.diff(((orbital_3 * inv_r3) * orbital_2), Rz2))))
+
+# Nuclear derivative terms wrt Rx2, Ry2, Rz2 with C /= B (R#2 != R#3),
+#   but with R#2 being the site of the nuclear center while R#3 is the
+#   site of the second basis function.
+def derivative_nuclearCB():
+    Px, Py, Pz = sp.symbols('Px Py Pz')
+    lx1, ly1, lz1 = sp.symbols('lx1 ly1 lz1')
+    lx2, ly2, lz2 = sp.symbols('lx2 ly2 lz2')
+    zeta1, zeta2, zeta3 = sp.symbols('zeta1 zeta2 zeta3')
+    Rx1, Ry1, Rz1 = sp.symbols('Rx1 Ry1 Rz1')
+    Rx2, Ry2, Rz2 = sp.symbols('Rx2 Ry2 Rz2')
+    Rx3, Ry3, Rz3 = sp.symbols('Rx3 Ry3 Rz3')
+
+    orbital_1 = (Px-Rx1)**lx1 * (Py-Ry1)**ly1 * (Pz-Rz1)**lz1 * \
+            sp.exp(-zeta1*( (Px-Rx1)**2 + (Py-Ry1)**2 + (Pz-Rz1)**2 ))
+    orbital_2 = (Px-Rx2)**lx2 * (Py-Ry2)**ly2 * (Pz-Rz2)**lz2 * \
+            sp.exp(-zeta2*( (Px-Rx2)**2 + (Py-Ry2)**2 + (Pz-Rz2)**2 ))
+    orbital_3 = sp.exp(-zeta3*( (Px-Rx3)**2 + (Py-Ry3)**2 + (Pz-Rz3)**2 ))
+
+    inv_r3 = 1 / sp.sqrt((Px-Rx3)**2 + (Py-Ry3)**2 + (Pz-Rz3)**2)
+
+    return (sp.printing.fcode(orbital_1 * (
+            sp.diff(((orbital_3 * inv_r3) * orbital_2), Rx3))),
+            sp.printing.fcode(orbital_1 * (
+            sp.diff(((orbital_3 * inv_r3) * orbital_2), Ry3))),
+            sp.printing.fcode(orbital_1 * (
+            sp.diff(((orbital_3 * inv_r3) * orbital_2), Rz3))))
+
+
+# Electron derivative terms wrt Rx2 with CB (Rx2 != Rx3)
+def derivative_electronCB():
     Px = sp.symbols('Px')
     lx1 = sp.symbols('lx1')
     lx2 = sp.symbols('lx2')
@@ -425,7 +506,42 @@ def derivative_electron():
     orbital_2 = (Px-Rx2)**lx2 * sp.exp(-zeta2*(Px-Rx2)**2)
     orbital_3 = sp.exp(-zeta3*(Px-Rx3)**2) # Always s-type so lx3=0.
 
-    return sp.printing.fcode(orbital_1 * sp.diff((orbital_3 * orbital_2), Px))
+    return sp.printing.fcode(orbital_1 * sp.diff((orbital_3 * orbital_2), Rx2))
+
+
+# Electron derivative terms wrt Rx2 with BB (Rx3 = Rx2)
+def derivative_electronBB():
+    Px = sp.symbols('Px')
+    lx1 = sp.symbols('lx1')
+    lx2 = sp.symbols('lx2')
+    zeta1, zeta2, zeta3 = sp.symbols('zeta1 zeta2 zeta3')
+    Rx1 = sp.symbols('Rx1')
+    Rx2 = sp.symbols('Rx2')
+
+    orbital_1 = (Px-Rx1)**lx1 * sp.exp(-zeta1*(Px-Rx1)**2)
+    orbital_2 = (Px-Rx2)**lx2 * sp.exp(-zeta2*(Px-Rx2)**2)
+    orbital_3 = sp.exp(-zeta3*(Px-Rx2)**2) # Always s-type so lx3=0.
+
+    return sp.printing.fcode(orbital_1 * sp.diff((orbital_3 * orbital_2), Rx2))
+
+
+# Electron derivative terms wrt Rx2, Ry2, Rz2 with C /= B (R#2 != R#3),
+#   but with R#2 being the site of the potential center while R#3 is the
+#   site of the second basis function.
+def derivative_electronBC():
+    Px = sp.symbols('Px')
+    lx1 = sp.symbols('lx1')
+    lx2 = sp.symbols('lx2')
+    zeta1, zeta2, zeta3 = sp.symbols('zeta1 zeta2 zeta3')
+    Rx1 = sp.symbols('Rx1')
+    Rx2 = sp.symbols('Rx2')
+    Rx3 = sp.symbols('Rx3')
+
+    orbital_1 = (Px-Rx1)**lx1 * sp.exp(-zeta1*(Px-Rx1)**2)
+    orbital_2 = (Px-Rx2)**lx2 * sp.exp(-zeta2*(Px-Rx2)**2)
+    orbital_3 = sp.exp(-zeta3*(Px-Rx3)**2) # Always s-type so lx3=0.
+
+    return sp.printing.fcode(orbital_1 * sp.diff((orbital_3 * orbital_2), Rx3))
 
 
 def apply_seperable_substitutions(string):
@@ -654,14 +770,14 @@ def main():
     if (settings.massvel):
         # Create integral formulas for 1D fourth derivatives and
         #   2D products of second derivatives.
-        string1, string2 = massvel()
+        string1, string2 = mass_velocity()
         string1 = apply_seperable_substitutions(string1)
         string2 = apply_paired_seperable_substitutions(string2)
         lib.print_cont_string(string1, 80, 3, f, True)
         lib.print_cont_string(string2, 80, 3, f, True)
 
         # Uncomment below for the "full" 3D mesh case.
-        #string = massvel()
+        #string = mass_velocity()
         #string = apply_inseperable_substitutions(string, False)
         #lib.print_cont_string(string, 80, 3, f, True)
 
@@ -671,14 +787,15 @@ def main():
         lib.print_cont_string(string, 80, 3, f, True)
 
     if (settings.dkinetic):
-        string1, string2 = derivative_kinetic_energy()
-        string1 = apply_seperable_substitutions(string1)
-        string2 = apply_paired_seperable_substitutions(string2)
-        lib.print_cont_string(string1, 80, 3, f, True)
-        lib.print_cont_string(string2, 80, 3, f, True)
+        # Uncomment below for the 1D and 2D mesh case.
+        #string1, string2 = derivative_kinetic_energy()
+        #string1 = apply_seperable_substitutions(string1)
+        #string2 = apply_paired_seperable_substitutions(string2)
+        #lib.print_cont_string(string1, 80, 3, f, True)
+        #lib.print_cont_string(string2, 80, 3, f, True)
 
-    if (settings.dnuclear):
-        string1, string2, string3 = derivative_nuclear()
+        # Uncomment below for the "full" 3D mesh case.
+        string1, string2, string3 = derivative_kinetic_energy_full()
         string1 = apply_inseperable_substitutions(string1, False)
         string2 = apply_inseperable_substitutions(string2, False)
         string3 = apply_inseperable_substitutions(string3, False)
@@ -686,9 +803,54 @@ def main():
         lib.print_cont_string(string2, 80, 3, f, True)
         lib.print_cont_string(string3, 80, 3, f, True)
 
+    if (settings.dnuclear):
+        # Compute the terms for the CB cases.
+        string1, string2, string3 = derivative_nuclearCB()
+        string1 = apply_inseperable_substitutions(string1, False)
+        string2 = apply_inseperable_substitutions(string2, False)
+        string3 = apply_inseperable_substitutions(string3, False)
+        f.write("!<A|C|B> solutions:")
+        lib.print_cont_string(string1, 80, 3, f, True)
+        lib.print_cont_string(string2, 80, 3, f, True)
+        lib.print_cont_string(string3, 80, 3, f, True)
+
+        # Compute the terms for the BB cases.
+        string1, string2, string3 = derivative_nuclearBB()
+        string1 = apply_inseperable_substitutions(string1, False)
+        string2 = apply_inseperable_substitutions(string2, False)
+        string3 = apply_inseperable_substitutions(string3, False)
+        f.write("\n\n!<A|B|B> solutions:")
+        lib.print_cont_string(string1, 80, 3, f, True)
+        lib.print_cont_string(string2, 80, 3, f, True)
+        lib.print_cont_string(string3, 80, 3, f, True)
+
+        # Compute the terms for the BC cases.
+        string1, string2, string3 = derivative_nuclearBC()
+        string1 = apply_inseperable_substitutions(string1, False)
+        string2 = apply_inseperable_substitutions(string2, False)
+        string3 = apply_inseperable_substitutions(string3, False)
+        f.write("\n\n!<A|B|C> solutions:")
+        lib.print_cont_string(string1, 80, 3, f, True)
+        lib.print_cont_string(string2, 80, 3, f, True)
+        lib.print_cont_string(string3, 80, 3, f, True)
+
     if (settings.delectron):
-        string = derivative_electron()
+        # Compute the terms for the CB cases.
+        string = derivative_electronCB()
         string = apply_seperable_substitutions(string)
+        f.write("!<A|C|B> solutions:\n")
+        lib.print_cont_string(string, 80, 3, f, True)
+
+        # Compute the terms for the BB cases.
+        string = derivative_electronBB()
+        string = apply_seperable_substitutions(string)
+        f.write("\n\n!<A|B|B> solutions:\n")
+        lib.print_cont_string(string, 80, 3, f, True)
+
+        # Compute the terms for the BC cases.
+        string = derivative_electronBC()
+        string = apply_seperable_substitutions(string)
+        f.write("\n\n!<A|B|C> solutions:\n")
         lib.print_cont_string(string, 80, 3, f, True)
 
 

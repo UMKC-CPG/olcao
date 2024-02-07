@@ -79,28 +79,35 @@ class ScriptSettings():
     def assign_rc_defaults(self, default_rc):
 
         # First group of default variables.
-        self.a_list = [default_rc[0], default_rc[1]]
+        self.a_list = [default_rc["some"], default_rc["thing"]]
 
         # Second group of default variables.
-        self.b_list = [default_rc[2], default_rc[3], default_rc[4]]
+        self.b_list = [default_rc["more"], default_rc["other"],
+                default_rc["things"]]
 
         # Third group of default variables.
-        self.c = default_rc[5]
+        self.c = default_rc["final_thing"]
 
 
     def parse_command_line(self):
     
         # Create the parser tool.
         prog_name = "<Program Name>"
+
         description_text = """
-<Description Text>
+<Meta data: Version, date of last edit, relevant URL, requirements.>
+<Description Text: Purpose, capabilities, limitations.>
 """
+
         epilog_text = """
-<Epilog Text>
+Please contact <name> (<email>) regarding questions.
+Defaults are given in ./XYZrc.py or $OLCAO_RC/XYZrc.py.
 """
+
         parser = ap.ArgumentParser(prog = prog_name,
-                                   description = description_text,
-                                   epilog = epilog_text)
+                formatter_class=ap.RawDescriptionHelpFormatter,
+                description = description_text,
+                epilog = epilog_text)
     
         # Add arguments to the parser.
         self.add_parser_arguments(parser)
@@ -114,13 +121,13 @@ class ScriptSettings():
         # Define the XYZa_list argument.
         parser.add_argument('-x', '--XYZx', nargs=2, dest='a_list',
                             type=str, default=self.a_list,
-                            help='Arguments a_list. Default: ' +
+                            help='Argument a_list. Default: ' +
                             f'{self.a_list}')
     
         # Define the XYZb_list argument.
         parser.add_argument('-y', '--XYZb', nargs=3, dest='b_list',
                             type=float, default=self.b_list,
-                            help='Arguments b_list. ' +
+                            help='Argument b_list. ' +
                             f'Default: {self.b_list}')
     
         # Define the XYZc argument.
@@ -134,8 +141,8 @@ class ScriptSettings():
 
 
     def reconcile(self, args):
-        self.a_list = args.a_list.copy()
-        self.b_list = args.b_list.copy()
+        self.a_list = args.a_list.deepcopy()
+        self.b_list = args.b_list.deepcopy()
         self.c = args.c
 
 

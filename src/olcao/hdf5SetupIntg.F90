@@ -138,7 +138,6 @@ subroutine initSetupIntegralHDF5 (setup_fid)
    !   subgroups that exist for each kpoint for the atomicPotential
    !   hamiltonian terms.  Also allocate space to hold the dataset IDs.
    allocate (atomPotKPointOL_gid (numKPoints))
-   allocate (atomDMKPointOL_gid  (numKPoints))
    allocate (atomOverlap_did     (numKPoints))
    allocate (atomKEOverlap_did   (numKPoints))
    if (rel == 1) then
@@ -146,6 +145,7 @@ subroutine initSetupIntegralHDF5 (setup_fid)
    endif
    allocate (atomNucOverlap_did  (numKPoints))
    if (doDIMO == 1) then
+      allocate (atomDMKPointOL_gid  (numKPoints))
       allocate (atomDMOverlap_did   (numKPoints,3))
    endif
    allocate (atomPotOverlap_did  (numKPoints,potDim))

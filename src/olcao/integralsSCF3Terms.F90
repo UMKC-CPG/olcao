@@ -585,9 +585,9 @@ subroutine ortho (opCode)
       else
 
          ! Initialize the index for packing the valeVale matrix.
-         currIndex = 0
 #ifndef GAMMA
          do j = 1, 3
+            currIndex = 0
             do k = 1, valeDim
                do l = 1, k
                   currIndex = currIndex + 1
@@ -599,6 +599,7 @@ subroutine ortho (opCode)
          enddo
 #else
          do j = 1, 3
+            currIndex = 0
             do k = 1, valeDim
                do l = 1, k
                   currIndex = currIndex + 1

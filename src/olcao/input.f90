@@ -512,9 +512,7 @@ end subroutine readMainControl
 subroutine readDIMOControl(readUnit,writeUnit)
 
    ! Use necessary modules
-   use O_Constants, only: hartree
    use O_ReadDataSubs
-   use O_Lattice, only: realVectors
 
    implicit none
 
@@ -524,17 +522,36 @@ subroutine readDIMOControl(readUnit,writeUnit)
    integer, intent(in)    :: writeUnit  ! The unit number of the file to which
                                         ! we are writing.
 
-   ! Local parameters
-   integer :: xyzAxis, abcAxis
-   real (kind=double), dimension(3) :: posXYZ, fractABC
-
    ! Read the main DIMO label.
    call readAndCheckLabel(readUnit,writeUnit,len('DIPOLE_INPUT_DATA'),&
                               'DIPOLE_INPUT_DATA')
 
    ! Read all the DIMO input data.
-   call readData(readUnit,writeUnit,3,fractABC,len('DIPOLE_CENTER'),&
+   call readData(readUnit,writeUnit,3,dipoleCenter,len('DIPOLE_CENTER'),&
          & 'DIPOLE_CENTER')
+
+   ! Note that the given center will need to be converted to Cartesian
+   !   coordinates as part of the implicit information subroutine.
+
+end subroutine readDIMOControl
+
+
+subroutine getDipoleMomentCenter
+
+   use O_Constants, only: hartree
+   use O_Lattice, only: realVectors
+
+   implicit none
+
+   ! Local parameters
+   integer :: xyzAxis, abcAxis
+   real (kind=double), dimension(3) :: posXYZ, fractABC
+
+   ! The dipole moment center that was given in the input was in the form
+   !   of ABC fractional coordinates.
+   fractABC(:) = dipoleCenter(:)
+
+   ! Now, we convert the fractABC to cartesianXYZ coordinates.
 
    ! Pxyz = atom position in xyz orthogonal coordinates.
    ! Pabc = atom position in abc fractional coordinates.
@@ -555,7 +572,7 @@ subroutine readDIMOControl(readUnit,writeUnit)
       enddo
    enddo
 
-end subroutine readDIMOControl
+end subroutine getDipoleMomentCenter
 
 
 subroutine readDOSControl(readUnit,writeUnit)

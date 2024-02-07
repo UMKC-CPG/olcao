@@ -22,14 +22,18 @@ module O_CommandLine
    integer :: excitedQN_n  ! main, band, dos, bond, optc, wave
    integer :: excitedQN_l  ! main, band, dos, bond, optc, wave
 
-   ! Variables used by setup and main.
-   integer:: doDIMO ! Include computation of dipole moment matrix elements.
+   ! Variables used by the SCF process.
+   integer :: doDIMO ! Include computation of dipole moment matrix elements.
+   integer :: doOPTC ! Include computation of the optical properties.
+   integer :: doPACS ! Include computation of core level spectrum.
+   integer :: doSIGE ! Include computation of the electronic thermal cond.
+   integer :: doNLOP ! Include computation of the non-linear optical prop.
 
-   ! Variables used by main only.
+   ! Variables used by main only or the total SCF program.
    integer :: doDOS  ! Tack on a DOS calculation (1) or not (0).
    integer :: doBond ! Tack on a bond order calculation (1) or not (0).
 
-   ! Variables used by intg only.
+   ! Variables for any request that requires the momentum matrix elements.
    integer :: doMOME ! Include computation of the momentum matrix elements.
 
    ! Variables used by band only.
@@ -50,6 +54,101 @@ module O_CommandLine
    ! Begin list of module subroutines.!
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    contains
+
+
+subroutine parseSCFCommandLine
+
+   ! Use necessary modules.
+   use O_TimeStamps
+
+   ! Make sure that there are no accidental variable declarations.
+   implicit none
+
+   ! Define the local variables that will be used to parse the command line.
+   character*25 :: commandBuffer
+
+   ! Open the file that will be written to as output for this program.
+   open(20,file='fort.20',status='unknown',form='formatted')
+
+   ! Record the date and time that we start.
+   call timeStampStart (24)
+
+   ! Initialize all the command line parameters.
+   call initCLP
+
+   ! Begin Parsing the command line.
+
+   call readBasisCode
+
+   call readExcitedQN
+
+   ! Read a flag indicating that a DOS calculation should be tacked on to the
+   !   end of the SCF iterations.
+   call getarg(nextArg,commandBuffer)
+   nextArg = nextArg + 1
+   read (commandBuffer,*) doDOS
+   write (20,*) "doDOS = ",doDOS
+
+   ! Read a flag indicating that a BOND calculation should be tacked on to the
+   !   end of the SCF iterations.
+   call getarg(nextArg,commandBuffer)
+   nextArg = nextArg + 1
+   read (commandBuffer,*) doBond
+   write (20,*) "doBond = ",doBond
+
+   ! Read a flag indicating that a dipole moment calculation should be tacked
+   !   on to the end of the SCF iterations.
+   call getarg(nextArg,commandBuffer)
+   nextArg = nextArg + 1
+   read (commandBuffer,*) doDIMO
+   write (20,*) "doDIMO = ",doDIMO
+
+   ! Read a flag indicating that an optical properties calculation should be
+   !   tacked on to the end of the SCF iterations.
+   call getarg(nextArg,commandBuffer)
+   nextArg = nextArg + 1
+   read (commandBuffer,*) doOPTC
+   write (20,*) "doOPTC = ",doOPTC
+
+   ! Read a flag indicating that a core-level spectroscopy calculation should
+   !   be tacked on to the end of the SCF iterations.
+   call getarg(nextArg,commandBuffer)
+   nextArg = nextArg + 1
+   read (commandBuffer,*) doPACS
+   write (20,*) "doPACS = ",doPACS
+
+   ! Read a flag indicating that a sigma E (electronic contribution to the
+   !   thermal conductivity) calculation should be tacked on to the end of
+   !   the SCF iterations.
+   call getarg(nextArg,commandBuffer)
+   nextArg = nextArg + 1
+   read (commandBuffer,*) doSIGE
+   write (20,*) "doSIGE = ",doSIGE
+
+   ! Read a flag indicating that a non-linear optical properties calculation
+   !   should be tacked on to the end of the SCF iterations.
+   call getarg(nextArg,commandBuffer)
+   nextArg = nextArg + 1
+   read (commandBuffer,*) doNLOP
+   write (20,*) "doNLOP = ",doNLOP
+
+   ! If *any* of the flags that require the momentum matrix elements was
+   !   requested, then we turn on the doMME flag.
+   if ((doOPTC == 1) .or. (doPACS == 1) .or. (doSIGE == 1) .or. &
+         & (doNLOP == 1)) then
+      doMOME = 1
+   else
+      doMOME = 0
+   endif
+
+   ! It should be generally expected that no one will do an SCF calculation
+   !   using the k-points that are used for a SYBD calculation.
+
+   ! Record the date and time that we end.
+   call timeStampEnd (24)
+
+end subroutine parseSCFCommandLine
+
 
 
 subroutine parseSetupCommandLine
@@ -85,6 +184,7 @@ subroutine parseSetupCommandLine
 
    ! Record the date and time that we end.
    call timeStampEnd (24)
+
 
 end subroutine parseSetupCommandLine
 
@@ -470,6 +570,7 @@ subroutine initCLP
    basisCode   = 0
    excitedQN_n = 0
    excitedQN_l = 0
+   doDIMO      = 0
    doDOS       = 0
    doBond      = 0
    doMOME      = 0

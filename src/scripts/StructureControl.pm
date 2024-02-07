@@ -1494,6 +1494,7 @@ sub readPDB
          $angle[3] = $pi/180.0 * substr($line,47,7,"1234567");
 
          # Convert the values to a,b,c into x,y,z vector lattice format.
+print STDOUT "Should not be here\n";
          &getABCVectors;
 
          # Compute the sine of the angles.
@@ -1524,6 +1525,7 @@ sub readPDB
          #   we store it in the pdbAtomTag.
          @values = &prepLine("",$tempTag,'\s+');
          $pdbAtomTag[$numAtoms] = $values[0];
+print STDOUT "PDB Atom Tag: $pdbAtomTag[$numAtoms]\n";
 
          # Now, if the element symbol is provided on this ATOM line of the PDB
          #   file, then we get that name and use it to construct the atomTag.
@@ -1539,6 +1541,7 @@ sub readPDB
          else
             {$element = "";}
          chomp ($element);
+print STDOUT "element = $element\n";
          if ($element ne "")
          {
             @values = &prepLine("",$element,'\s+'); # Get rid of spaces.
@@ -3908,6 +3911,9 @@ sub computeCrystalParameters
    #   with a buffer on all sides of the system. Even though the box is
    #   orthorhombic, we will make it space group 1_a.
    $spaceGroup = "1_a";
+   $spaceGroupName = "P1";
+   $spaceGroupNum = 1;
+   $spaceGroupSubNum = 1;
 
    # Define the angles.
    $angle[1] = $pi/2.0;

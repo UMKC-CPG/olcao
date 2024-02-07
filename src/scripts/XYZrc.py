@@ -5,15 +5,15 @@ import os
 
 
 def parameters_and_defaults():
-    param_list = [
-            "a_arg1",
-            "a_arg2",
-            1.0,
-            2.0,
-            3.0,
-            False
-            ]
-    return param_list
+    param_dict = {
+            "some" : "Foo", # String
+            "thing" : "Bar", # String
+            "more" : False, # T (F) = Property is (isn't) true.
+            "other" : True, # T (F) = Property is (isn't) true.
+            "things" : False, # T (F) = Property is (isn't) true.
+            "final_thing" : [1.1, 2.2]  # Real list = Set of numbers.
+            }
+    return param_dict
 
 
 if __name__ == '__main__':

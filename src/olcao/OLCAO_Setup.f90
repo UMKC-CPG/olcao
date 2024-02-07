@@ -255,11 +255,16 @@ subroutine getImplicitInfo
    use O_Lattice
    use O_KPoints
    use O_Potential
+   use O_Input, only: getDipoleMomentCenter
    use O_TimeStamps
 
    implicit none
 
    call timeStampStart(2)
+
+   ! If a dipole moment calculation is being done, then compute the
+   !   coordinates of the moment center "C" in Cartesian coordinates.
+   call getDipoleMomentCenter
 
    ! Subroutines need to be called in this order due to data dependencies.
    call makeSampleVectors
