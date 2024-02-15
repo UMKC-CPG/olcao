@@ -202,10 +202,13 @@ module Lattice_O
    real (kind=double), dimension (3,3) :: recipLattice ! (xyz,abc)
    integer, allocatable, dimension (:) :: numBZVertices
    integer, allocatable, dimension (:) :: numBZEdges
-   integer, allocatable, dimension (:) :: numBZFacets
+   integer, allocatable, dimension (:) :: numBZFaces
+   integer, allocatable, dimension (:) :: numNonBZVertices ! V. not in BZ
+   integer, allocatable, dimension (:) :: numNonBZEdges ! Edges not in BZ
+   integer, allocatable, dimension (:) :: numNonBZFaces ! Faces not in BZ
    real (kind=double), dimension (4,26) :: planeEquation
    real (kind=double), dimension (3,26) :: latticePointXYZ
-   real (kind=double), dimension (3) :: recipMag ! Along reciprocal abc axes.
+   real (kind=double), dimension (3) :: recipMag ! Along reciprocal abc axes
    real (kind=double), dimension (3) :: realMag ! Along real abc axes
    real (kind=double), dimension (3) :: recipAngle ! Radians
    real (kind=double), dimension (3) :: recipAngleDeg
@@ -222,13 +225,14 @@ module Lattice_O
    end type edgeType
    type (edgeType), dimension (1000) :: uniqueEdgeList
 
-   type facetType
+   type faceType
       integer :: pointID
       integer :: numVertices
       type (vertexType), dimension (20) :: vertex
       integer, dimension (20) :: indexToUniqueVertexList
-   end type facetType
-   type (facetType), dimension (50) :: facetList
+   end type faceType
+   type (faceType), dimension (50) :: faceList
+   type (faceType), dimension (50) :: nonFaceList
    
 
    ! Begin list of module subroutines.
@@ -323,7 +327,7 @@ module Lattice_O
    end subroutine computeLatticeData
 
 
-   subroutine printLatticeData (maxBZ)
+   subroutine printLatticeData (maxBZ, lattCode)
 
       use CommandLine_O
 
@@ -331,156 +335,173 @@ module Lattice_O
 
       ! Define passed parameters.
       integer :: maxBZ
+      integer :: lattCode ! 0 = real; 1 = reciprocal
 
       ! Define local variables.
       integer :: h, i, j, k, l
       integer :: vertexCount
-      type (vertexType), dimension (8) :: recipLattVertices
-      type (edgeType), dimension(12) :: recipLattEdges
-      type (facetType), dimension(6) :: recipLattFaces
+      real (kind=double), dimension (3,3) :: lattice ! (xyz,abc)
+      type (vertexType), dimension (8) :: latticeVertices
+      type (edgeType), dimension(12) :: latticeEdges
+      type (faceType), dimension(6) :: latticeFaces
 
-      ! Create the list of vertices
+      ! Print the requested lattice type.
+      if (lattCode == 0) then
+         lattice(:,:) = realLattice(:,:)
+      else
+         lattice(:,:) = recipLattice(:,:)
+      endif
+
+      ! Create the list of vertices. Also, initialize the plane triple
+      !   indices to zero. For the lattices themselves, the vertices
+      !   are not defined by a triplet of plane indices.
       vertexCount = 0
       do i = 0, 1
       do j = 0, 1
       do k = 0, 1
          vertexCount = vertexCount + 1
          do l = 1, 3
-            recipLattVertices(vertexCount)%coord(l) = &
-                  & i * recipLattice(l,1) + &
-                  & j * recipLattice(l,2) + &
-                  & k * reciplattice(l,3)
+            latticeVertices(vertexCount)%coord(l) = &
+                  & i * lattice(l,1) + &
+                  & j * lattice(l,2) + &
+                  & k * lattice(l,3)
+            latticeVertices(vertexCount)%planeTripleIndex(:) = 0
          enddo
-         recipLattVertices(vertexCount)%coord(:) = &
-               & recipLattVertices(vertexCount)%coord(:) * scaleFactor
+         latticeVertices(vertexCount)%coord(:) = &
+               & latticeVertices(vertexCount)%coord(:) * scaleFactor
       enddo
       enddo
       enddo
 
       ! Create the list of edges.
-      call copyVertex(recipLattVertices(1),recipLattEdges(1)%vertex(1))
-      call copyVertex(recipLattVertices(2),recipLattEdges(1)%vertex(2))
-      call copyVertex(recipLattVertices(1),recipLattEdges(2)%vertex(1))
-      call copyVertex(recipLattVertices(3),recipLattEdges(2)%vertex(2))
-      call copyVertex(recipLattVertices(2),recipLattEdges(3)%vertex(1))
-      call copyVertex(recipLattVertices(4),recipLattEdges(3)%vertex(2))
-      call copyVertex(recipLattVertices(3),recipLattEdges(4)%vertex(1))
-      call copyVertex(recipLattVertices(4),recipLattEdges(4)%vertex(2))
-      call copyVertex(recipLattVertices(5),recipLattEdges(5)%vertex(1))
-      call copyVertex(recipLattVertices(6),recipLattEdges(5)%vertex(2))
-      call copyVertex(recipLattVertices(5),recipLattEdges(6)%vertex(1))
-      call copyVertex(recipLattVertices(7),recipLattEdges(6)%vertex(2))
-      call copyVertex(recipLattVertices(6),recipLattEdges(7)%vertex(1))
-      call copyVertex(recipLattVertices(8),recipLattEdges(7)%vertex(2))
-      call copyVertex(recipLattVertices(7),recipLattEdges(8)%vertex(1))
-      call copyVertex(recipLattVertices(8),recipLattEdges(8)%vertex(2))
-      call copyVertex(recipLattVertices(2),recipLattEdges(9)%vertex(1))
-      call copyVertex(recipLattVertices(6),recipLattEdges(9)%vertex(2))
-      call copyVertex(recipLattVertices(4),recipLattEdges(10)%vertex(1))
-      call copyVertex(recipLattVertices(8),recipLattEdges(10)%vertex(2))
-      call copyVertex(recipLattVertices(1),recipLattEdges(11)%vertex(1))
-      call copyVertex(recipLattVertices(5),recipLattEdges(11)%vertex(2))
-      call copyVertex(recipLattVertices(3),recipLattEdges(12)%vertex(1))
-      call copyVertex(recipLattVertices(7),recipLattEdges(12)%vertex(2))
-      recipLattEdges(1)%indexToUniqueVertexList(1) = 0
-      recipLattEdges(1)%indexToUniqueVertexList(2) = 1
-      recipLattEdges(2)%indexToUniqueVertexList(1) = 0
-      recipLattEdges(2)%indexToUniqueVertexList(2) = 2
-      recipLattEdges(3)%indexToUniqueVertexList(1) = 1
-      recipLattEdges(3)%indexToUniqueVertexList(2) = 3
-      recipLattEdges(4)%indexToUniqueVertexList(1) = 2
-      recipLattEdges(4)%indexToUniqueVertexList(2) = 3
-      recipLattEdges(5)%indexToUniqueVertexList(1) = 4
-      recipLattEdges(5)%indexToUniqueVertexList(2) = 5
-      recipLattEdges(6)%indexToUniqueVertexList(1) = 4
-      recipLattEdges(6)%indexToUniqueVertexList(2) = 6
-      recipLattEdges(7)%indexToUniqueVertexList(1) = 5
-      recipLattEdges(7)%indexToUniqueVertexList(2) = 7
-      recipLattEdges(8)%indexToUniqueVertexList(1) = 6
-      recipLattEdges(8)%indexToUniqueVertexList(2) = 7
-      recipLattEdges(9)%indexToUniqueVertexList(1) = 1
-      recipLattEdges(9)%indexToUniqueVertexList(2) = 5
-      recipLattEdges(10)%indexToUniqueVertexList(1) = 3
-      recipLattEdges(10)%indexToUniqueVertexList(2) = 7
-      recipLattEdges(11)%indexToUniqueVertexList(1) = 0
-      recipLattEdges(11)%indexToUniqueVertexList(2) = 4
-      recipLattEdges(12)%indexToUniqueVertexList(1) = 2
-      recipLattEdges(12)%indexToUniqueVertexList(2) = 6
+      call copyVertex(latticeVertices(1),latticeEdges(1)%vertex(1))
+      call copyVertex(latticeVertices(2),latticeEdges(1)%vertex(2))
+      call copyVertex(latticeVertices(1),latticeEdges(2)%vertex(1))
+      call copyVertex(latticeVertices(3),latticeEdges(2)%vertex(2))
+      call copyVertex(latticeVertices(2),latticeEdges(3)%vertex(1))
+      call copyVertex(latticeVertices(4),latticeEdges(3)%vertex(2))
+      call copyVertex(latticeVertices(3),latticeEdges(4)%vertex(1))
+      call copyVertex(latticeVertices(4),latticeEdges(4)%vertex(2))
+      call copyVertex(latticeVertices(5),latticeEdges(5)%vertex(1))
+      call copyVertex(latticeVertices(6),latticeEdges(5)%vertex(2))
+      call copyVertex(latticeVertices(5),latticeEdges(6)%vertex(1))
+      call copyVertex(latticeVertices(7),latticeEdges(6)%vertex(2))
+      call copyVertex(latticeVertices(6),latticeEdges(7)%vertex(1))
+      call copyVertex(latticeVertices(8),latticeEdges(7)%vertex(2))
+      call copyVertex(latticeVertices(7),latticeEdges(8)%vertex(1))
+      call copyVertex(latticeVertices(8),latticeEdges(8)%vertex(2))
+      call copyVertex(latticeVertices(2),latticeEdges(9)%vertex(1))
+      call copyVertex(latticeVertices(6),latticeEdges(9)%vertex(2))
+      call copyVertex(latticeVertices(4),latticeEdges(10)%vertex(1))
+      call copyVertex(latticeVertices(8),latticeEdges(10)%vertex(2))
+      call copyVertex(latticeVertices(1),latticeEdges(11)%vertex(1))
+      call copyVertex(latticeVertices(5),latticeEdges(11)%vertex(2))
+      call copyVertex(latticeVertices(3),latticeEdges(12)%vertex(1))
+      call copyVertex(latticeVertices(7),latticeEdges(12)%vertex(2))
+      latticeEdges(1)%indexToUniqueVertexList(1) = 0
+      latticeEdges(1)%indexToUniqueVertexList(2) = 1
+      latticeEdges(2)%indexToUniqueVertexList(1) = 0
+      latticeEdges(2)%indexToUniqueVertexList(2) = 2
+      latticeEdges(3)%indexToUniqueVertexList(1) = 1
+      latticeEdges(3)%indexToUniqueVertexList(2) = 3
+      latticeEdges(4)%indexToUniqueVertexList(1) = 2
+      latticeEdges(4)%indexToUniqueVertexList(2) = 3
+      latticeEdges(5)%indexToUniqueVertexList(1) = 4
+      latticeEdges(5)%indexToUniqueVertexList(2) = 5
+      latticeEdges(6)%indexToUniqueVertexList(1) = 4
+      latticeEdges(6)%indexToUniqueVertexList(2) = 6
+      latticeEdges(7)%indexToUniqueVertexList(1) = 5
+      latticeEdges(7)%indexToUniqueVertexList(2) = 7
+      latticeEdges(8)%indexToUniqueVertexList(1) = 6
+      latticeEdges(8)%indexToUniqueVertexList(2) = 7
+      latticeEdges(9)%indexToUniqueVertexList(1) = 1
+      latticeEdges(9)%indexToUniqueVertexList(2) = 5
+      latticeEdges(10)%indexToUniqueVertexList(1) = 3
+      latticeEdges(10)%indexToUniqueVertexList(2) = 7
+      latticeEdges(11)%indexToUniqueVertexList(1) = 0
+      latticeEdges(11)%indexToUniqueVertexList(2) = 4
+      latticeEdges(12)%indexToUniqueVertexList(1) = 2
+      latticeEdges(12)%indexToUniqueVertexList(2) = 6
 
 
       ! Create the list of faces.
-      recipLattFaces(1)%numVertices = 4
-      recipLattFaces(1)%indexToUniqueVertexList(1) = 0
-      recipLattFaces(1)%indexToUniqueVertexList(2) = 1
-      recipLattFaces(1)%indexToUniqueVertexList(3) = 2
-      recipLattFaces(1)%indexToUniqueVertexList(4) = 3
-      call copyVertex(recipLattVertices(1),recipLattFaces(1)%vertex(1))
-      call copyVertex(recipLattVertices(2),recipLattFaces(1)%vertex(2))
-      call copyVertex(recipLattVertices(4),recipLattFaces(1)%vertex(3))
-      call copyVertex(recipLattVertices(3),recipLattFaces(1)%vertex(4))
+      latticeFaces(1)%numVertices = 4
+      latticeFaces(1)%indexToUniqueVertexList(1) = 0
+      latticeFaces(1)%indexToUniqueVertexList(2) = 1
+      latticeFaces(1)%indexToUniqueVertexList(3) = 2
+      latticeFaces(1)%indexToUniqueVertexList(4) = 3
+      call copyVertex(latticeVertices(1),latticeFaces(1)%vertex(1))
+      call copyVertex(latticeVertices(2),latticeFaces(1)%vertex(2))
+      call copyVertex(latticeVertices(4),latticeFaces(1)%vertex(3))
+      call copyVertex(latticeVertices(3),latticeFaces(1)%vertex(4))
 
-      recipLattFaces(2)%numVertices = 4
-      recipLattFaces(2)%indexToUniqueVertexList(1) = 0
-      recipLattFaces(2)%indexToUniqueVertexList(2) = 1
-      recipLattFaces(2)%indexToUniqueVertexList(3) = 5
-      recipLattFaces(2)%indexToUniqueVertexList(4) = 4
-      call copyVertex(recipLattVertices(1),recipLattFaces(2)%vertex(1))
-      call copyVertex(recipLattVertices(2),recipLattFaces(2)%vertex(2))
-      call copyVertex(recipLattVertices(6),recipLattFaces(2)%vertex(3))
-      call copyVertex(recipLattVertices(5),recipLattFaces(2)%vertex(4))
+      latticeFaces(2)%numVertices = 4
+      latticeFaces(2)%indexToUniqueVertexList(1) = 0
+      latticeFaces(2)%indexToUniqueVertexList(2) = 1
+      latticeFaces(2)%indexToUniqueVertexList(3) = 5
+      latticeFaces(2)%indexToUniqueVertexList(4) = 4
+      call copyVertex(latticeVertices(1),latticeFaces(2)%vertex(1))
+      call copyVertex(latticeVertices(2),latticeFaces(2)%vertex(2))
+      call copyVertex(latticeVertices(6),latticeFaces(2)%vertex(3))
+      call copyVertex(latticeVertices(5),latticeFaces(2)%vertex(4))
 
-      recipLattFaces(3)%numVertices = 4
-      recipLattFaces(3)%indexToUniqueVertexList(1) = 0
-      recipLattFaces(3)%indexToUniqueVertexList(2) = 2
-      recipLattFaces(3)%indexToUniqueVertexList(3) = 6
-      recipLattFaces(3)%indexToUniqueVertexList(4) = 4
-      call copyVertex(recipLattVertices(1),recipLattFaces(3)%vertex(1))
-      call copyVertex(recipLattVertices(3),recipLattFaces(3)%vertex(2))
-      call copyVertex(recipLattVertices(7),recipLattFaces(3)%vertex(3))
-      call copyVertex(recipLattVertices(5),recipLattFaces(3)%vertex(4))
+      latticeFaces(3)%numVertices = 4
+      latticeFaces(3)%indexToUniqueVertexList(1) = 0
+      latticeFaces(3)%indexToUniqueVertexList(2) = 2
+      latticeFaces(3)%indexToUniqueVertexList(3) = 6
+      latticeFaces(3)%indexToUniqueVertexList(4) = 4
+      call copyVertex(latticeVertices(1),latticeFaces(3)%vertex(1))
+      call copyVertex(latticeVertices(3),latticeFaces(3)%vertex(2))
+      call copyVertex(latticeVertices(7),latticeFaces(3)%vertex(3))
+      call copyVertex(latticeVertices(5),latticeFaces(3)%vertex(4))
 
-      recipLattFaces(4)%numVertices = 4
-      recipLattFaces(4)%indexToUniqueVertexList(1) = 1
-      recipLattFaces(4)%indexToUniqueVertexList(2) = 3
-      recipLattFaces(4)%indexToUniqueVertexList(3) = 7
-      recipLattFaces(4)%indexToUniqueVertexList(4) = 5
-      call copyVertex(recipLattVertices(2),recipLattFaces(4)%vertex(1))
-      call copyVertex(recipLattVertices(4),recipLattFaces(4)%vertex(2))
-      call copyVertex(recipLattVertices(8),recipLattFaces(4)%vertex(3))
-      call copyVertex(recipLattVertices(6),recipLattFaces(4)%vertex(4))
+      latticeFaces(4)%numVertices = 4
+      latticeFaces(4)%indexToUniqueVertexList(1) = 1
+      latticeFaces(4)%indexToUniqueVertexList(2) = 3
+      latticeFaces(4)%indexToUniqueVertexList(3) = 7
+      latticeFaces(4)%indexToUniqueVertexList(4) = 5
+      call copyVertex(latticeVertices(2),latticeFaces(4)%vertex(1))
+      call copyVertex(latticeVertices(4),latticeFaces(4)%vertex(2))
+      call copyVertex(latticeVertices(8),latticeFaces(4)%vertex(3))
+      call copyVertex(latticeVertices(6),latticeFaces(4)%vertex(4))
 
-      recipLattFaces(5)%numVertices = 4
-      recipLattFaces(5)%indexToUniqueVertexList(1) = 2
-      recipLattFaces(5)%indexToUniqueVertexList(2) = 3
-      recipLattFaces(5)%indexToUniqueVertexList(3) = 7
-      recipLattFaces(5)%indexToUniqueVertexList(4) = 6
-      call copyVertex(recipLattVertices(3),recipLattFaces(5)%vertex(1))
-      call copyVertex(recipLattVertices(4),recipLattFaces(5)%vertex(2))
-      call copyVertex(recipLattVertices(8),recipLattFaces(5)%vertex(3))
-      call copyVertex(recipLattVertices(7),recipLattFaces(5)%vertex(4))
+      latticeFaces(5)%numVertices = 4
+      latticeFaces(5)%indexToUniqueVertexList(1) = 2
+      latticeFaces(5)%indexToUniqueVertexList(2) = 3
+      latticeFaces(5)%indexToUniqueVertexList(3) = 7
+      latticeFaces(5)%indexToUniqueVertexList(4) = 6
+      call copyVertex(latticeVertices(3),latticeFaces(5)%vertex(1))
+      call copyVertex(latticeVertices(4),latticeFaces(5)%vertex(2))
+      call copyVertex(latticeVertices(8),latticeFaces(5)%vertex(3))
+      call copyVertex(latticeVertices(7),latticeFaces(5)%vertex(4))
 
-      recipLattFaces(6)%numVertices = 4
-      recipLattFaces(6)%indexToUniqueVertexList(1) = 4
-      recipLattFaces(6)%indexToUniqueVertexList(2) = 5
-      recipLattFaces(6)%indexToUniqueVertexList(3) = 7
-      recipLattFaces(6)%indexToUniqueVertexList(4) = 6
-      call copyVertex(recipLattVertices(5),recipLattFaces(6)%vertex(1))
-      call copyVertex(recipLattVertices(6),recipLattFaces(6)%vertex(2))
-      call copyVertex(recipLattVertices(8),recipLattFaces(6)%vertex(3))
-      call copyVertex(recipLattVertices(7),recipLattFaces(6)%vertex(4))
+      latticeFaces(6)%numVertices = 4
+      latticeFaces(6)%indexToUniqueVertexList(1) = 4
+      latticeFaces(6)%indexToUniqueVertexList(2) = 5
+      latticeFaces(6)%indexToUniqueVertexList(3) = 7
+      latticeFaces(6)%indexToUniqueVertexList(4) = 6
+      call copyVertex(latticeVertices(5),latticeFaces(6)%vertex(1))
+      call copyVertex(latticeVertices(6),latticeFaces(6)%vertex(2))
+      call copyVertex(latticeVertices(8),latticeFaces(6)%vertex(3))
+      call copyVertex(latticeVertices(7),latticeFaces(6)%vertex(4))
 
 
       ! Print the reciprocal lattice vertices.
       do h = 1, maxBZ
-         write (51+h,fmt="(a26)") "recip_lattice_vertices = ["
+         if (lattCode == 0) then
+            write (51+h,fmt="(a25)") "real_lattice_vertices = ["
+         else
+            write (51+h,fmt="(a26)") "recip_lattice_vertices = ["
+         endif
+
          do i = 1, 8
             write (51+h,advance="NO",fmt="(a1)") "("
             write (51+h,advance="NO",fmt="(f16.12, a2)") &
-                  & recipLattVertices(i)%coord(1), ", "
+                  & latticeVertices(i)%coord(1), ", "
             write (51+h,advance="NO",fmt="(f16.12, a2)") &
-                  & recipLattVertices(i)%coord(2), ", "
+                  & latticeVertices(i)%coord(2), ", "
             write (51+h,advance="NO",fmt="(f16.12)") &
-                  & recipLattVertices(i)%coord(3)
+                  & latticeVertices(i)%coord(3)
 
             if (i < 8) then
                write (51+h,fmt="(a3)") "),"
@@ -492,30 +513,35 @@ module Lattice_O
 
       ! Print the reciprocal lattice edges.
       do h = 1, maxBZ
-         write (51+h,fmt="(a23)") "recip_lattice_edges = ["
+         if (lattCode == 0) then
+            write (51+h,fmt="(a22)") "real_lattice_edges = ["
+         else
+            write (51+h,fmt="(a23)") "recip_lattice_edges = ["
+         endif
+
          do i = 1, 12
 ! POVRay
 !            write (51+h,advance="NO",fmt="(a2)") "[["
 !            write (51+h,advance="NO",fmt="(f16.12, a2)") &
-!               & recipLattEdges(i)%vertex(1)%coord(1), ", "
+!               & latticeEdges(i)%vertex(1)%coord(1), ", "
 !            write (51+h,advance="NO",fmt="(f16.12, a2)") &
-!               & recipLattEdges(i)%vertex(1)%coord(2), ", "
+!               & latticeEdges(i)%vertex(1)%coord(2), ", "
 !            write (51+h,advance="NO",fmt="(f16.12, a3)") &
-!               & recipLattEdges(i)%vertex(1)%coord(3), "], "
+!               & latticeEdges(i)%vertex(1)%coord(3), "], "
 !            write (51+h,advance="NO",fmt="(a1)") "["
 !            write (51+h,advance="NO",fmt="(f16.12, a2)") &
-!               & recipLattEdges(i)%vertex(2)%coord(1), ", "
+!               & latticeEdges(i)%vertex(2)%coord(1), ", "
 !            write (51+h,advance="NO",fmt="(f16.12, a2)") &
-!               & recipLattEdges(i)%vertex(2)%coord(2), ", "
+!               & latticeEdges(i)%vertex(2)%coord(2), ", "
 !            write (51+h,advance="NO",fmt="(f16.12)") &
-!               & recipLattEdges(i)%vertex(2)%coord(3)
+!               & latticeEdges(i)%vertex(2)%coord(3)
 ! Blender
             ! Print mapping of vertices to unique vertex list.
             write (51+h,advance="NO",fmt="(a2)") "("
             write (51+h,advance="NO",fmt="(i3, a2)") &
-               & recipLattEdges(i)%indexToUniqueVertexList(1), ", "
+               & latticeEdges(i)%indexToUniqueVertexList(1), ", "
             write (51+h,advance="NO",fmt="(i3)") &
-               & recipLattEdges(i)%indexToUniqueVertexList(2)
+               & latticeEdges(i)%indexToUniqueVertexList(2)
 
             if (i < 12) then
                write (51+h,fmt="(a4)") "), "
@@ -527,40 +553,44 @@ module Lattice_O
 
       ! Print the reciprocal lattice faces.
       do h = 1, maxBZ
-         write (51+h,fmt="(a23)") "recip_lattice_faces = ["
+         if (lattCode == 0) then
+            write (51+h,fmt="(a22)") "real_lattice_faces = ["
+         else
+            write (51+h,fmt="(a23)") "recip_lattice_faces = ["
+         endif
 
          do i = 1, 6
 ! For POVRay
 !            write (51+h,advance="NO",fmt="(a1)") "["
-!            do j = 1, recipLattFaces(i)%numVertices
+!            do j = 1, latticeFaces(i)%numVertices
 !               write (51+h,advance="NO",fmt="(a1)") "["
 !               write (51+h,advance="NO",fmt="(f16.12, a2)") &
-!                     & recipLattFaces(i)%vertex(j)%coord(1), ", "
+!                     & latticeFaces(i)%vertex(j)%coord(1), ", "
 !               write (51+h,advance="NO",fmt="(f16.12, a2)") &
-!                     & recipLattFaces(i)%vertex(j)%coord(2), ", "
+!                     & latticeFaces(i)%vertex(j)%coord(2), ", "
 !               write (51+h,advance="NO",fmt="(f16.12, a3)") &
-!                     & recipLattFaces(i)%vertex(j)%coord(3), "], "
+!                     & latticeFaces(i)%vertex(j)%coord(3), "], "
 !            enddo
 !
 !            ! Write the first vertex again to close the polygon.
 !            write (51+h,advance="NO",fmt="(a1)") "["
 !            write (51+h,advance="NO",fmt="(f16.12, a2)") &
-!                  & recipLattFaces(i)%vertex(1)%coord(1), ", "
+!                  & latticeFaces(i)%vertex(1)%coord(1), ", "
 !            write (51+h,advance="NO",fmt="(f16.12, a2)") &
-!                  & recipLattFaces(i)%vertex(1)%coord(2), ", "
+!                  & latticeFaces(i)%vertex(1)%coord(2), ", "
 !            write (51+h,advance="NO",fmt="(f16.12, a1)") &
-!                  & recipLattFaces(i)%vertex(1)%coord(3), "]"
+!                  & latticeFaces(i)%vertex(1)%coord(3), "]"
 
             ! For Blender
-            do j = 1, recipLattFaces(i)%numVertices - 1
+            do j = 1, latticeFaces(i)%numVertices - 1
                write (51+h,advance="NO",fmt="(i3, a2)") &
-                     & recipLattFaces(i)%indexToUniqueVertexList(j), ", "
+                     & latticeFaces(i)%indexToUniqueVertexList(j), ", "
             enddo
 
             ! Write the last vertex.
             write (51+h,advance="NO",fmt="(i3)") &
-                  & recipLattFaces(i)%indexToUniqueVertexList( &
-                  & recipLattFaces(i)%numVertices)
+                  & latticeFaces(i)%indexToUniqueVertexList( &
+                  & latticeFaces(i)%numVertices)
 
             if (i < 6) then
                write (51+h,fmt="(a2)") "],"
@@ -651,7 +681,7 @@ module v3do_O
          write (71+i,fmt="(a)") "recip_plane = []"
          write (71+i,fmt="(a)") "bz_point = []"
          write (71+i,fmt="(a)") "bz_plane = []"
-         write (71+i,fmt="(a)") "facet_vertex = []"
+         write (71+i,fmt="(a)") "face_vertex = []"
          write (71+i,fmt="(a)")
          write (71+i,fmt="(a)") "# Create the initial scene"
          write (71+i,fmt="(a)")
@@ -831,7 +861,7 @@ module VPython_O
          write (61+i,fmt="(a)") "recip_plane = []"
          write (61+i,fmt="(a)") "bz_point = []"
          write (61+i,fmt="(a)") "bz_plane = []"
-         write (61+i,fmt="(a)") "facet_vertex = []"
+         write (61+i,fmt="(a)") "face_vertex = []"
          write (61+i,fmt="(a)")
          write (61+i,fmt="(a)") "# Create the initial scene"
          write (61+i,fmt="(a)")
@@ -971,25 +1001,28 @@ module BrillouinZones_O
       ! Allocate space to hold BZ data.
       allocate (numBZVertices(maxBZ))
       allocate (numBZEdges(maxBZ))
-      allocate (numBZFacets(maxBZ))
+      allocate (numBZFaces(maxBZ))
+      allocate (numNonBZVertices(maxBZ))
+      allocate (numNonBZEdges(maxBZ))
+      allocate (numNonBZFaces(maxBZ))
 
       ! FIX At present this will only work for the first BZ. (I.e., maxBZ==1)
 
-      ! Construct a list of all facets involved.
-      call makeFacetList(maxBZ)
+      ! Construct a list of all faces involved.
+      call makeFaceList(maxBZ)
 
-      ! Add vertices to each facet.
-      call addFacetVertices(maxBZ)
+      ! Add vertices to each face.
+      call addFaceVertices(maxBZ)
 
-      ! Sort the order of the vertices for each facet so that they are in
+      ! Sort the order of the vertices for each face so that they are in
       !   the order of a ring.
-      call ringSortFacetVertices(maxBZ)
+      call ringSortFaceVertices(maxBZ)
 
-      ! Assign an index number to each vertex in each facet that maps it to
+      ! Assign an index number to each vertex in each face that maps it to
       !   the list of unique vertices.
-      call mapFacetVertices(maxBZ)
+      call mapFaceVertices(maxBZ)
 
-      ! Create a list of edges by traversing the list of facets and
+      ! Create a list of edges by traversing the list of faces and
       !   accumulating each unique sequential pair of vertices plus the final
       !   first-vertex + last-vertex pair.
       call makeUniqueEdgeList(maxBZ)
@@ -998,7 +1031,7 @@ module BrillouinZones_O
 
 
 
-   subroutine makeFacetList (currBZ)
+   subroutine makeFaceList (currBZ)
 
       ! Make sure that no variables are accidentally declared.
       implicit none
@@ -1039,7 +1072,8 @@ module BrillouinZones_O
 #endif
 
       ! Now, consider each plane in turn.
-      numBZFacets(currBZ) = 0
+      numBZFaces(currBZ) = 0
+      numNonBZFaces(currBZ) = 0
       do i = 1, 26
 
 #ifdef COMPVIS
@@ -1057,8 +1091,9 @@ module BrillouinZones_O
          ! Determine if the current lattice point, i, (that defines some plane)
          !   also happens to lie *on* a plane defined by some other lattice
          !   point, j. If so, then the plane defined by the current lattice
-         !   point is disqualified as a participant in the construction of the
-         !   Brillouin zone. Assume that the current lattice point will not
+         !   point, i, is disqualified as a participant in the construction of
+         !   the Brillouin zone.
+         ! We start by assuming that the current lattice point, i, will not
          !   sit on some other plane.
          onOtherPlane = 0
          do j = 1, 26
@@ -1075,17 +1110,26 @@ module BrillouinZones_O
 !               write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
 !               write (61+currBZ,fmt=formatString_j) j-1, "].visible = True"
 !#endif
-
-            if (abs(sum(planeEquation(1:3,j) &
-                  & * (planeEquation(1:3,i) - planeEquation(1:3,j)))) &
-                  & < smallThresh) then
+            ! The equation of a plane is l*x + m*y + n*z - l^2 - m^2 - n^2 = 0
+            !   The l, m, and n are the coordinates of the lattice point that
+            !   defines the plane (with a 0.5 factor for making the BZ).
+            !   The x, y, and z are variables that are constrained by the
+            !   l, m, and n such that the equation is only true when x, y, z
+            !   are selected to lie on a plane. Thus, to check if another
+            !   lattice point lies on the plane (as may happen with a corner
+            !   point on a cubic lattice) we just need to insert the
+            !   coordinates of the lattice point as the x, y, z in the
+            !   equation of the first plane. I.e., put the x, y, z coordinates
+            !   of the i plane into the equation of the j plane.
+            if (abs(sum(planeEquation(1:3,j * planeEquation(1:3,i) - &
+                  & planeEquation(1:3,j)**2))) < smallThresh) then
                onOtherPlane = 1
 !#ifdef COMPVIS
 !               write (61+currBZ,fmt="(a)") "vp.sleep(0.010)"
 !               write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
 !               write (61+currBZ,fmt=formatString_j) j-1, "].visible = False"
 !#endif
-               exit
+               exit ! Leave the j loop. This i *is* on another plane.
 !#ifdef COMPVIS
 !            else
 !               write (61+currBZ,fmt="(a)") "vp.sleep(0.01)"
@@ -1110,14 +1154,15 @@ module BrillouinZones_O
 !            write (61+currBZ,fmt=formatString_i) i-1, "].color = vp.color.white"
 !#endif
 
-            beyondOtherPlane = checkBeyondOtherPlane(planeEquation(1:3,i), i, 0)
+            beyondOtherPlane = checkBeyondOtherPlane(planeEquation(1:3,i), &
+                  & i, 0)
          endif
 
 
          ! Plane i has satisfied all the requirements of being included in the
-         !   construction of the Brillouin zone if it is not on another plane
+         !   construction of the Brillouin zone: it is not on another plane
          !   and not beyond another plane. Upon satisfaction of the
-         !   requirements we increase the number of facets for the Brillouin
+         !   requirements we increase the number of faces for the Brillouin
          !   zone and record the index number of i.
          if ((onOtherPlane == 0) .and. (beyondOtherPlane == 0)) then
 
@@ -1127,8 +1172,8 @@ module BrillouinZones_O
             write (61+currBZ,advance="no",fmt="(a)") "bz_point["
             write (61+currBZ,fmt=formatString_i) i-1, "].color = vp.color.white"
 #endif
-            numBZFacets(currBZ) = numBZFacets(currBZ) + 1
-            facetList(numBZFacets(currBZ))%pointID = i
+            numBZFaces(currBZ) = numBZFaces(currBZ) + 1
+            faceList(numBZFaces(currBZ))%pointID = i
 !#ifdef COMPVIS
 !         else
 !            write (61+currBZ,advance="no",fmt="(a)") "bz_point["
@@ -1136,17 +1181,23 @@ module BrillouinZones_O
 !            write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
 !            write (61+currBZ,fmt=formatString_i) i-1, "].visible = False"
 !#endif
+         else
+            ! For one reason or another this particular plane will not
+            !   contribute to the BZ, so we record it officially as a
+            !   nonBZ plane.
+            numNonBZFaces(currBZ) = numNonBZFaces(currBZ) + 1
+            nonFaceList(numNonBZFaces(currBZ))%pointID = i
          endif
       enddo ! i loop
       write (71+currBZ,fmt="(a)")
       write (71+currBZ,fmt="(a)") "# Update the plot"
       write (71+currBZ,fmt="(a)") "plt.show(interactive=True)"
 
-write (6,*) "numBZFacets = ", numBZFacets(currBZ)
-   end subroutine makeFacetList
+write (6,*) "numBZFaces = ", numBZFaces(currBZ)
+   end subroutine makeFaceList
 
 
-   subroutine addFacetVertices(currBZ)
+   subroutine addFaceVertices(currBZ)
 
       implicit none
 
@@ -1166,68 +1217,71 @@ write (6,*) "numBZFacets = ", numBZFacets(currBZ)
 #endif
 
 
-      ! Initialize the number of vertices at each facet.
-      do i = 1, numBZFacets(currBZ)
-         facetList(i)%numVertices = 0
+      ! Initialize the number of vertices at each face (and nonFace).
+      do i = 1, numBZFaces(currBZ)
+         faceList(i)%numVertices = 0
+      enddo
+      do i = 1, numNonBZFaces(currBZ)
+         nonFaceList(i)%numVertices = 0
       enddo
 
       ! Initialize the number of unique vertices.
       numBZVertices(currBZ) = 0
 
-      ! For each facet, we will iterate over all pairs of other facets to
-      !   find the set of vertices that belong to the current facet. That is,
-      !   we will evaluate every possible facet triplet.
-      do i = 1, numBZFacets(currBZ)
+      ! For each face, we will iterate over all pairs of other faces to
+      !   find the set of vertices that belong to the current face. That is,
+      !   we will evaluate every possible face triplet.
+      do i = 1, numBZFaces(currBZ)
 !#ifdef COMPVIS
-!         if (facetList(i)%pointID < 11) then
+!         if (faceList(i)%pointID < 11) then
 !            write (formatString_i,fmt="(a)") "(i0.1,a)"
 !         else
 !            write (formatString_i,fmt="(a)") "(i0.2,a)"
 !         endif
 !         write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
-!         write (61+currBZ,fmt=formatString_i) facetList(i)%pointID - 1, &
+!         write (61+currBZ,fmt=formatString_i) faceList(i)%pointID - 1, &
 !               & "].visible = True"
 !         write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
-!         write (61+currBZ,fmt=formatString_i) facetList(i)%pointID - 1, &
+!         write (61+currBZ,fmt=formatString_i) faceList(i)%pointID - 1, &
 !               & "].opacity = 0.2"
 !#endif
-         do j = i+1, numBZFacets(currBZ)
+         do j = i+1, numBZFaces(currBZ)
 !#ifdef COMPVIS
-!            if (facetList(j)%pointID < 11) then
+!            if (faceList(j)%pointID < 11) then
 !               write (formatString_j,fmt="(a)") "(i0.1,a)"
 !            else
 !               write (formatString_j,fmt="(a)") "(i0.2,a)"
 !            endif
 !            write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
-!            write (61+currBZ,fmt=formatString_j) facetList(j)%pointID - 1, &
+!            write (61+currBZ,fmt=formatString_j) faceList(j)%pointID - 1, &
 !                  & "].visible = True"
 !            write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
-!            write (61+currBZ,fmt=formatString_j) facetList(j)%pointID - 1, &
+!            write (61+currBZ,fmt=formatString_j) faceList(j)%pointID - 1, &
 !                  & "].opacity = 0.2"
 !#endif
-            do k = j+1, numBZFacets(currBZ)
+            do k = j+1, numBZFaces(currBZ)
 !#ifdef COMPVIS
-!               if (facetList(k)%pointID < 11) then
+!               if (faceList(k)%pointID < 11) then
 !                  write (formatString_k,fmt="(a)") "(i0.1,a)"
 !               else
 !                  write (formatString_k,fmt="(a)") "(i0.2,a)"
 !               endif
 !               write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
-!               write (61+currBZ,fmt=formatString_k) facetList(k)%pointID - 1, &
+!               write (61+currBZ,fmt=formatString_k) faceList(k)%pointID - 1, &
 !                     & "].visible = True"
 !               write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
-!               write (61+currBZ,fmt=formatString_k) facetList(k)%pointID - 1, &
+!               write (61+currBZ,fmt=formatString_k) faceList(k)%pointID - 1, &
 !                     & "].opacity = 0.2"
 !#endif
 
-               A(1,:) = planeEquation(1:3, facetList(i)%pointID)
-               B(1) = planeEquation(4, facetList(i)%pointID)
+               A(1,:) = planeEquation(1:3, faceList(i)%pointID)
+               B(1) = planeEquation(4, faceList(i)%pointID)
 
-               A(2,:) = planeEquation(1:3, facetList(j)%pointID)
-               B(2) = planeEquation(4, facetList(j)%pointID)
+               A(2,:) = planeEquation(1:3, faceList(j)%pointID)
+               B(2) = planeEquation(4, faceList(j)%pointID)
 
-               A(3,:) = planeEquation(1:3, facetList(k)%pointID)
-               B(3) = planeEquation(4, facetList(k)%pointID)
+               A(3,:) = planeEquation(1:3, faceList(k)%pointID)
+               B(3) = planeEquation(4, faceList(k)%pointID)
 
                call dgesv(3, 1, A, 3, pivotIndices, B, 3, info)
 
@@ -1241,7 +1295,7 @@ write (6,*) "numBZFacets = ", numBZFacets(currBZ)
 
                if (info == 0) then
 if (i == 1) then
-   write (6,*) facetList(i)%numVertices, i, j, k, info
+   write (6,*) faceList(i)%numVertices, i, j, k, info
    write (6,fmt="(3f12.6)") B(:)
 endif
 
@@ -1256,7 +1310,7 @@ if (i == 1) then
 endif
 !#ifdef COMPVIS
 !                     ! Print a sphere at this vertex site.
-!                     write (61+currBZ,fmt="(a)") "facet_vertex.append("
+!                     write (61+currBZ,fmt="(a)") "face_vertex.append("
 !                     write (61+currBZ,advance="no",fmt="(a)") &
 !"        vp.sphere(pos=vp.vector("
 !                     do s = 1, 3
@@ -1274,8 +1328,8 @@ endif
 !                     write(61+currBZ,fmt="(a)") "vp.sleep(5.5)"
 !#endif
 
-                     ! Add this vertex to each of the associated facets, but
-                     !   only if it is unique for the facet.
+                     ! Add this vertex to each of the associated faces, but
+                     !   only if it is unique for the face.
                      do h = 1, 3
                         select case (h)
                            case (1)
@@ -1288,39 +1342,39 @@ endif
 
                         ! We will pull a nasty trick to perform the addition
                         !   and ensure that the vertex is unique for this
-                        !   facet. We are going to add the vertex to the list
-                        !   of vertices for this facet, *BUT* we will only
+                        !   face. We are going to add the vertex to the list
+                        !   of vertices for this face, *BUT* we will only
                         !   keep the increased number of vertices if this last
                         !   one added is actually unique. We do this so that
                         !   we can create a vertex that can be used in the
                         !   comparison routine and because we will only ever
                         !   print/use the "numVertices" vertices in the list
-                        !   for the facet.
+                        !   for the face.
 
-                        facetList(g)%numVertices = facetList(g)%numVertices + 1
-                        facetList(g)%vertex( &
-                              & facetList(g)%numVertices)%coord(:) = B(:)
-                        facetList(g)%vertex(facetList(g)%numVertices)&
+                        faceList(g)%numVertices = faceList(g)%numVertices + 1
+                        faceList(g)%vertex( &
+                              & faceList(g)%numVertices)%coord(:) = B(:)
+                        faceList(g)%vertex(faceList(g)%numVertices)&
                               & %planeTripleIndex(1) = i
-                        facetList(g)%vertex(facetList(g)%numVertices)&
+                        faceList(g)%vertex(faceList(g)%numVertices)&
                               & %planeTripleIndex(2) = j
-                        facetList(g)%vertex(facetList(g)%numVertices)&
+                        faceList(g)%vertex(faceList(g)%numVertices)&
                               & %planeTripleIndex(3) = k
 
                         found = .false.
-                        do l = 1, facetList(g)%numVertices - 1
-                           if (vertexPosEqual(facetList(g)%vertex(l), &
-                                 & facetList(g)%vertex(&
-                                 & facetlist(g)%numVertices))) then
+                        do l = 1, faceList(g)%numVertices - 1
+                           if (vertexPosEqual(faceList(g)%vertex(l), &
+                                 & faceList(g)%vertex(&
+                                 & facelist(g)%numVertices))) then
                               ! We found an equal vertex. Quit!
                               found = .true.
                               exit
                            endif
                         enddo ! l
                         if (found) then
-                           ! Restore the number of vertices in this facet.
-                           facetList(g)%numVertices = &
-                                 & facetList(g)%numVertices - 1
+                           ! Restore the number of vertices in this face.
+                           faceList(g)%numVertices = &
+                                 & faceList(g)%numVertices - 1
                         endif
                      enddo ! h
 
@@ -1348,23 +1402,23 @@ endif
                endif ! dsegv success
 !#ifdef COMPVIS
 !               write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
-!               write (61+currBZ,fmt=formatString_k) facetList(k)%pointID - 1, &
+!               write (61+currBZ,fmt=formatString_k) faceList(k)%pointID - 1, &
 !                     & "].visible = False"
 !#endif
             enddo ! k
 !#ifdef COMPVIS
 !            write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
-!            write (61+currBZ,fmt=formatString_j) facetList(j)%pointID - 1, &
+!            write (61+currBZ,fmt=formatString_j) faceList(j)%pointID - 1, &
 !                  & "].visible = False"
 !#endif
          enddo ! j
 !#ifdef COMPVIS
 !         write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
-!         write (61+currBZ,fmt=formatString_i) facetList(i)%pointID - 1, &
+!         write (61+currBZ,fmt=formatString_i) faceList(i)%pointID - 1, &
 !               & "].visible = False"
 !#endif
       enddo ! i
-   end subroutine addFacetVertices
+   end subroutine addFaceVertices
 
 
    ! Check if the plane defined by the lattice index i OR if the point given
@@ -1560,7 +1614,7 @@ endif
    end function checkBeyondOtherPlane
 
 
-   subroutine ringSortFacetVertices(currBZ)
+   subroutine ringSortFaceVertices(currBZ)
 
       implicit none
 
@@ -1576,9 +1630,9 @@ endif
       real(kind=double) :: currentAngle
       real(kind=double), dimension (3) :: centerVector
       real(kind=double), dimension (3) :: vertexVertexVector
-      type (facetType) :: tempFacet
+      type (faceType) :: tempFace
 !#ifdef COMPVIS
-!      write(61+currBZ,fmt="(a)") "facetVec = vp.arrow(shaftwidth=0.05)"
+!      write(61+currBZ,fmt="(a)") "faceVec = vp.arrow(shaftwidth=0.05)"
 !      write(61+currBZ,fmt="(a)") &
 !            & "centerVec = vp.arrow(shaftwidth=0.05, color=vp.color.green)"
 !      write(61+currBZ,fmt="(a)") "centerVec.visible = False"
@@ -1587,13 +1641,13 @@ endif
 !      write(61+currBZ,fmt="(a)") "vvVec.visible = False"
 !#endif
 
-      do i = 1, numBZFacets(currBZ)
+      do i = 1, numBZFaces(currBZ)
 
 !#ifdef COMPVIS
-!         write(61+currBZ,advance="no",fmt="(a)") "facetVec.axis=vp.vector("
+!         write(61+currBZ,advance="no",fmt="(a)") "faceVec.axis=vp.vector("
 !         do j = 1, 3
 !            write(61+currBZ,advance="no",fmt=("(sp,e10.3)")) &
-!                  & planeEquation(j,facetlist(i)%pointID)
+!                  & planeEquation(j,facelist(i)%pointID)
 !            if (j < 3) then
 !               write (61+currBZ,advance="no",fmt="(a)") ", "
 !            endif
@@ -1602,35 +1656,35 @@ endif
 !         write(61+currBZ,fmt="(a)") "vp.sleep(0.5)"
 !#endif
 
-         ! Initialize the temp facet that will hold the ring sorted vertices.
-         tempFacet%pointID = facetList(i)%pointID
-         tempFacet%numVertices = facetList(i)%numVertices
-         call copyVertex(facetList(i)%vertex(1), tempFacet%vertex(1))
+         ! Initialize the temp face that will hold the ring sorted vertices.
+         tempFace%pointID = faceList(i)%pointID
+         tempFace%numVertices = faceList(i)%numVertices
+         call copyVertex(faceList(i)%vertex(1), tempFace%vertex(1))
 
          ! Allocate space to hold the list of used vertices as we use them.
          !   Because we always assign the first, it is already used and so
          !   we will mark it as such. Also, we will initialize the list of
          !   other used vertices to zero so that any comparison against their
          !   value will pass.
-         allocate(usedVertices(facetList(i)%numVertices))
+         allocate(usedVertices(faceList(i)%numVertices))
          usedVertices(:) = 0
          usedVertices(1) = 1
 
-         ! Now, we need to add numVertices to the tempFacet. For each vertex
+         ! Now, we need to add numVertices to the tempFace. For each vertex
          !   that we want to add we will choose from all vertices in the
-         !   current facet (i). The one we will pick to add to the tempFacet
+         !   current face (i). The one we will pick to add to the tempFace
          !   will be the one with the most positive angle between the position
          !   of the most recently added vertex and the center point of the
-         !   facet.
-         do j = 2, tempFacet%numVertices
+         !   face.
+         do j = 2, tempFace%numVertices
 
             ! Assume that the max angle is zero.
             maxAngle = 0
 
             ! Compute the vector from the previously added vertex to the
             !   center point of the plane.
-            centerVector(:) = planeEquation(1:3,tempFacet%pointID) &
-                  & - tempFacet%vertex(j-1)%coord(:)
+            centerVector(:) = planeEquation(1:3,tempFace%pointID) &
+                  & - tempFace%vertex(j-1)%coord(:)
 !#ifdef COMPVIS
 !            write(61+currBZ,fmt="(a)") "centerVec.visible = True"
 !            write(61+currBZ,advance="no",fmt="(a)") "centerVec.axis=vp.vector("
@@ -1644,7 +1698,7 @@ endif
 !            write(61+currBZ,advance="no",fmt="(a)") "centerVec.pos=vp.vector("
 !            do k = 1, 3
 !               write(61+currBZ,advance="no",fmt="(sp,e10.3)") &
-!                     & tempFacet%vertex(j-1)%coord(k)
+!                     & tempFace%vertex(j-1)%coord(k)
 !               if (k < 3) then
 !                  write (61+currBZ,advance="no",fmt="(a)") ", "
 !               endif
@@ -1653,21 +1707,21 @@ endif
 !            write(61+currBZ,fmt="(a)") "vp.sleep(2.5)"
 !#endif
 
-            ! Iterate through all other vertices of this facet to find the
+            ! Iterate through all other vertices of this face to find the
             !   one with the largest positive angle A-B-C where A is the
             !   point defined by the centerVector, B is the point of the
             !   previously added vertex, and C is each of the other vertices
-            !   in this facet.
+            !   in this face.
             ! Initialize the next vertex to zero.
             nextVertex = 0
-            kloop: do k = 2, facetList(i)%numVertices
-               do l = 1, facetList(i)%numVertices
+            kloop: do k = 2, faceList(i)%numVertices
+               do l = 1, faceList(i)%numVertices
                   if (usedVertices(l) == k) then
                      cycle kloop
                   endif
                enddo
-               vertexVertexVector(:) = facetList(i)%vertex(k)%coord(:) &
-                     & - tempFacet%vertex(j-1)%coord(:)
+               vertexVertexVector(:) = faceList(i)%vertex(k)%coord(:) &
+                     & - tempFace%vertex(j-1)%coord(:)
                do l = 1, 3
                   if (abs(vertexVertexVector(l)) < smallThresh) then
                      vertexVertexVector(l) = 0.0_double
@@ -1687,7 +1741,7 @@ endif
 !               write(61+currBZ,advance="no",fmt="(a)") "vvVec.pos=vp.vector("
 !               do l = 1, 3
 !                  write(61+currBZ,advance="no",fmt="(sp,e10.3)") &
-!                        & tempFacet%vertex(j-1)%coord(l)
+!                        & tempFace%vertex(j-1)%coord(l)
 !                  if (l < 3) then
 !                     write (61+currBZ,advance="no",fmt="(a)") ", "
 !                  endif
@@ -1716,8 +1770,8 @@ endif
             endif
 
             ! After reviewing all other vertices we know the next vertex.
-            call copyVertex(facetList(i)%vertex(nextVertex), &
-                  & tempFacet%vertex(j))
+            call copyVertex(faceList(i)%vertex(nextVertex), &
+                  & tempFace%vertex(j))
 
             ! Store this vertex in the list of used vertices.
             usedVertices(j) = nextVertex
@@ -1727,17 +1781,17 @@ endif
          ! Free the list of used vertices.
          deallocate(usedVertices)
 
-         ! Now, all the vertices in the tempFacet are copied back over the
-         !   vertices in the facetList(i) facet.
-         do j = 1, facetList(i)%numVertices
-            call copyVertex(tempFacet%vertex(j), facetList(i)%vertex(j))
+         ! Now, all the vertices in the tempFace are copied back over the
+         !   vertices in the faceList(i) face.
+         do j = 1, faceList(i)%numVertices
+            call copyVertex(tempFace%vertex(j), faceList(i)%vertex(j))
          enddo
 
       enddo ! i
-   end subroutine ringSortFacetVertices
+   end subroutine ringSortFaceVertices
 
 
-   subroutine mapFacetVertices(currBZ)
+   subroutine mapFaceVertices(currBZ)
 
       implicit none
 
@@ -1748,20 +1802,20 @@ endif
       integer :: found
       integer :: i, j, k
 
-      ! For each facet, compare each of its vertices to the vertices stored
+      ! For each face, compare each of its vertices to the vertices stored
       !   in the unique vertex list. When a match is found, store the index
-      !   number in indexToUniqueVertexList for the current facet.
-      do i = 1, numBZFacets(currBZ)
-         do j = 1, facetList(i)%numVertices
+      !   number in indexToUniqueVertexList for the current face.
+      do i = 1, numBZFaces(currBZ)
+         do j = 1, faceList(i)%numVertices
 
-            ! Assume that we will not find a match between the current facet
+            ! Assume that we will not find a match between the current face
             !   vertex and any of the unque vertices.
             found = 0
 
             ! Look at each unique vertex for a match. If we find a match, then
             !   hold that index number in "k".
             do k = 1, numBZVertices(currBZ)
-               if (vertexPosEqual(facetList(i)%vertex(j), &
+               if (vertexPosEqual(faceList(i)%vertex(j), &
                      & uniqueVertexList(k))) then
                   found = k
                   exit ! exit k loop
@@ -1769,16 +1823,16 @@ endif
             enddo
 
             ! If found, store the mapping index number. If not found we have a
-            !   problem because this implies that a facet vertex is not
+            !   problem because this implies that a face vertex is not
             !   present in the unique vertex list.
             if (found > 0) then
-               facetList(i)%indexToUniqueVertexList(j) = found - 1 ! Start @ 0
+               faceList(i)%indexToUniqueVertexList(j) = found - 1 ! Start @ 0
             else
-               stop "Facet has a vertex that the unique list does not have."
+               stop "Face has a vertex that the unique list does not have."
             endif
          enddo
       enddo
-   end subroutine mapFacetVertices
+   end subroutine mapFaceVertices
 
 
    subroutine makeUniqueEdgeList (currBZ)
@@ -1791,23 +1845,23 @@ endif
       ! Define local variables.
       integer :: i, j
 
-      ! Traverse the ring list of each facet and add the unique edges to the
+      ! Traverse the ring list of each face and add the unique edges to the
       !   list of unique edges.
-      do i = 1, numBZFacets(currBZ)
+      do i = 1, numBZFaces(currBZ)
 
-         do j = 1, facetList(i)%numVertices - 1
-            call addUniqueEdge(facetList(i)%vertex(j), &
-                  & facetList(i)%vertex(j+1), &
-                  & facetList(i)%indexToUniqueVertexList(j), &
-                  & facetList(i)%indexToUniqueVertexList(j+1), currBZ)
+         do j = 1, faceList(i)%numVertices - 1
+            call addUniqueEdge(faceList(i)%vertex(j), &
+                  & faceList(i)%vertex(j+1), &
+                  & faceList(i)%indexToUniqueVertexList(j), &
+                  & faceList(i)%indexToUniqueVertexList(j+1), currBZ)
          enddo
 
          ! Add the last edge from the final vertex back to the first one.
-         call addUniqueEdge(facetList(i)%vertex(facetList(i)%numVertices), &
-               & facetList(i)%vertex(1), &
-               & facetList(i)%indexToUniqueVertexList( &
-               & facetList(i)%numVertices), &
-               & facetList(i)%indexToUniqueVertexList(1), currBZ)
+         call addUniqueEdge(faceList(i)%vertex(faceList(i)%numVertices), &
+               & faceList(i)%vertex(1), &
+               & faceList(i)%indexToUniqueVertexList( &
+               & faceList(i)%numVertices), &
+               & faceList(i)%indexToUniqueVertexList(1), currBZ)
       enddo
    end subroutine makeUniqueEdgeList
 
@@ -2143,61 +2197,61 @@ endif
       ! Step through each of the Brillouin zones we will make.
       do i = 1, maxBZ
 
-         ! Print all of the facets.
+         ! Print all of the faces.
          write (51+i,fmt="(a9)") "faces = ["
-         do j = 1, numBZFacets(i)
+         do j = 1, numBZFaces(i)
             write (51+i,advance="NO",fmt="(a1)") "("
 
             ! For POVRAY
-!            do k = 1, facetList(j)%numVertices
-!               facetList(j)%vertex(k)%coord(:) = &
-!                     & facetList(j)%vertex(k)%coord(:) * scaleFactor
+!            do k = 1, faceList(j)%numVertices
+!               faceList(j)%vertex(k)%coord(:) = &
+!                     & faceList(j)%vertex(k)%coord(:) * scaleFactor
 !               write (51+i,advance="NO",fmt="(a1)") "["
 !               write (51+i,advance="NO",fmt="(d16.8, a2)") &
-!                     & facetList(j)%vertex(k)%coord(1), ", "
+!                     & faceList(j)%vertex(k)%coord(1), ", "
 !               write (51+i,advance="NO",fmt="(d16.8, a2)") &
-!                     & facetList(j)%vertex(k)%coord(2), ", "
+!                     & faceList(j)%vertex(k)%coord(2), ", "
 !               write (51+i,advance="NO",fmt="(d16.8, a3)") &
-!                     & facetList(j)%vertex(k)%coord(3), "], "
+!                     & faceList(j)%vertex(k)%coord(3), "], "
 !            enddo ! k
 !
 !            ! Write the first vertex again to close the polygon
 !            write (51+i,advance="NO",fmt="(a1)") "["
 !            write (51+i,advance="NO",fmt="(d16.8, a2)") &
-!                  & facetList(j)%vertex(1)%coord(1), ", "
+!                  & faceList(j)%vertex(1)%coord(1), ", "
 !            write (51+i,advance="NO",fmt="(d16.8, a2)") &
-!                  & facetList(j)%vertex(1)%coord(2), ", "
+!                  & faceList(j)%vertex(1)%coord(2), ", "
 !            write (51+i,advance="NO",fmt="(d16.8, a1)") &
-!                  & facetList(j)%vertex(1)%coord(3), "]"
+!                  & faceList(j)%vertex(1)%coord(3), "]"
 
             ! For Blender
-            do k = facetList(j)%numVertices, 2, -1
+            do k = faceList(j)%numVertices, 2, -1
                write (51+i,advance="NO",fmt="(i3, a2)") &
-                     & facetList(j)%indexToUniqueVertexList(k), ", "
+                     & faceList(j)%indexToUniqueVertexList(k), ", "
             enddo ! k
 
             ! Write the first vertex.
             write (51+i,advance="NO",fmt="(i3)") &
-                  & facetList(j)%indexToUniqueVertexList(1)
+                  & faceList(j)%indexToUniqueVertexList(1)
 
 
 !            ! For Blender
-!            do k = 1, facetList(j)%numVertices - 1
+!            do k = 1, faceList(j)%numVertices - 1
 !               write (51+i,advance="NO",fmt="(i3, a2)") &
-!                     & facetList(j)%indexToUniqueVertexList(k), ", "
+!                     & faceList(j)%indexToUniqueVertexList(k), ", "
 !            enddo ! k
 !
 !            ! Write the last vertex.
 !            write (51+i,advance="NO",fmt="(i3)") &
-!                  & facetList(j)%indexToUniqueVertexList( &
-!                  & facetList(j)%numVertices)
+!                  & faceList(j)%indexToUniqueVertexList( &
+!                  & faceList(j)%numVertices)
 
-            if (j < numBZFacets(i)) then
+            if (j < numBZFaces(i)) then
                write (51+i,fmt="(a2)") "),"
             else
                write (51+i,fmt="(a2)") ")]"
             endif
-         enddo ! j numBZFacets(i)
+         enddo ! j numBZFaces(i)
 
          ! Print all of the edges.
          write (51+i,fmt="(a9)") "edges = ["
@@ -2768,14 +2822,14 @@ end module KPointMesh_O
 !   subroutine printEdges
 !   end subroutine printEdges
 !
-!   subroutine printFaces (maxBZ, numBZFacets, facetList)
+!   subroutine printFaces (maxBZ, numBZFaces, faceList)
 !
 !      implicit none
 !
 !      ! Define passed parameters.
 !      integer :: maxBZ
-!      integer, dimension(:) :: numBZFacets
-!      type (facetType), 
+!      integer, dimension(:) :: numBZFaces
+!      type (faceType), 
 !
 !   end subroutine printFaces
 !
@@ -2866,7 +2920,9 @@ program makekpoints
    call readRealLattice(50)
    call computeLatticeData
    if (doBrillouinZone > 0) then
-      call printLatticeData(doBrillouinZone) ! Print if requested
+      ! Print if requested
+      call printLatticeData(doBrillouinZone, 0) ! Real lattice
+      call printLatticeData(doBrillouinZone, 1) ! Reciprocal lattice
    endif
 
 
@@ -2928,7 +2984,7 @@ program makekpoints
       if (doBrillouinZone > 0) then
          deallocate (numBZVertices)
          deallocate (numBZEdges)
-         deallocate (numBZFacets)
+         deallocate (numBZFaces)
       endif
    end subroutine cleanUp
 

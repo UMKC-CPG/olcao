@@ -19,7 +19,7 @@ module O_TimeStamps
    character(len=10) :: tempTime
    character(len=12) :: time
    character(len=51) :: banner
-   character(len=51), dimension(30) :: opLabels
+   character(len=51), dimension(31) :: opLabels
    integer :: numOpCodes
 
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -33,7 +33,7 @@ subroutine initOperationLabels
    implicit none
 
    ! Set the number of operation codes.
-   numOpCodes = 30
+   numOpCodes = 31
 
    opLabels(1)  = '***************  Parse Input Files  ***************'
    opLabels(2)  = '***********  Get Implicit Information  ************'

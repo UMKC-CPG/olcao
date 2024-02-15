@@ -3,6 +3,8 @@
 import argparse as ap
 import os
 import sys
+import math as m
+import numpy as np
 
 def print_help():
     output = """
@@ -217,8 +219,11 @@ class PotData():
         # Create an array to store the number of terms for each type.
         self.num_terms = []
 
-        # Create an array to store the list of terms for each type.
-        self.terms = []
+        # Create an array to store the list of coefficients for all types.
+        self.coeffs = []
+
+        # Create an array to store the list of alphas for all types.
+        self.alphas = []
 
         # For each potential type, read in the term coefficients.
         for pot_type in range(self.num_pot_types):
@@ -229,8 +234,11 @@ class PotData():
             # Get the number of terms for this type.
             self.num_terms.append(int(lines[current_line].split()[0]))
 
-            # Create the nested array to hold the terms for this type.
-            self.terms.append([])
+            # Create the nested array to hold the coeffs for this type.
+            self.coeffs.append([])
+
+            # Create the nested array to hold the alphas for this type.
+            self.alphas.append([])
 
             # Store each term.
             for pot_term in range(self.num_terms[pot_type]):
@@ -238,9 +246,11 @@ class PotData():
                 # Move the line position counter.
                 current_line += 1
 
-                # Store this term.
-                self.terms[pot_type].append(
+                # Store this coefficient and alpha.
+                self.coeffs[pot_type].append(
                         float(lines[current_line].split()[0]))
+                self.alphas[pot_type].append(
+                        float(lines[current_line].split()[1]))
 
 
     def rewrite_pot(self):
@@ -263,11 +273,43 @@ class PotData():
                         # Increment the number of types of this element.
                         num_elem_types += 1
 
-                        # Write the potential terms of this type of this elem.
+                        # Write the potential coeffs of this type of this elem
                         f.write(f"{num_elem_types}")
-                        for term in self.terms[pot_type]:
-                            f.write(f" {term}")
+                        for coeff in self.coeffs[pot_type]:
+                            f.write(f" {coeff}")
                         f.write("\n")
+
+
+    def evaluate_pot(self):
+
+        # Consider each element.
+        for element in (self.elements):
+
+            # Open an element specific output file.
+            with open(f"pot_eval_{element}.plot",'w') as f:
+
+                # Evaluate the potential function of each set of types for
+                #   this element at "x".
+                for x in np.linspace(0, 5, 1000):
+                    f.write(f"{x}")
+
+                    # Visit all types.
+                    for pot_type in range(self.num_pot_types):
+
+                        # Only evaluate terms from types of the same element.
+                        if (self.type_element[pot_type] == element):
+
+                            # Consider all terms in this type and evaluate
+                            #   them at x.
+                            summation = 0
+                            for term in range(len(self.coeffs[pot_type])):
+                                summation += self.coeffs[pot_type][term] * \
+                                        m.exp(-self.alphas[pot_type][term] * 
+                                                x*x)
+
+                            f.write(f" {summation}")
+
+                    f.write(f"\n")
 
 
 def main():
@@ -283,6 +325,9 @@ def main():
 
     # Print the potential function data in the new format.
     pot_data.rewrite_pot()
+
+    # Evaluate all the potential functions.
+    pot_data.evaluate_pot()
 
 
 if __name__ == '__main__':

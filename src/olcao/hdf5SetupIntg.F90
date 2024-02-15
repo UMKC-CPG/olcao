@@ -447,7 +447,6 @@ subroutine closeSetupIntegralHDF5
 
    ! Deallocate the arrays that hold the id numbers.
    deallocate (atomPotKPointOL_gid)
-   deallocate (atomDMKPointOL_gid)
    deallocate (atomOverlap_did)
    deallocate (atomKEOverlap_did)
    if (rel == 1) then
@@ -455,6 +454,7 @@ subroutine closeSetupIntegralHDF5
    endif
    deallocate (atomNucOverlap_did)
    if (doDIMO == 1) then
+      deallocate (atomDMKPointOL_gid)
       deallocate (atomDMOverlap_did)
    endif
    deallocate (atomPotOverlap_did)

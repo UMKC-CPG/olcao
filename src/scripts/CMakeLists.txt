@@ -6,7 +6,7 @@ message("At the set of scripts.")
 set (SCRIPTS
 ab2pf.py addAtoms appendCol assignSeats atomPosDX
 batchChange batchClean batchSub bondAnalysis
-cif2skl collectSpectra condense copyInputs
+cif2skl collectSpectra collectSYBD.py condense copyInputs
 dump2skl
 ensembleCondense
 gaussInt2C gaussInt3C gaussIntKE gaussIntMom gaussIntNucV gaussOverlapRT

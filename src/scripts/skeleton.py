@@ -5,41 +5,6 @@ import os
 import sys
 from datetime import datetime
 
-def print_help():
-    output = """
-#Script to XYZ
-#Last updated Month, DD, YYYY
-########################################################################
-#This python script will execute the necessary steps to ...
-# Note that default parameters are define by the file "$OLCAO_RC/XYZrc".
-#
-#-----------------------------------------------------------------------
-#
-#USAGE:  XYZ [-x a1 a2] [-y b1 b2 b3] [-z c] filename
-#OR:     XYZ --help | -h
-#
-#If the "-x" option is given then a1 and a2 are ...
-#If the "-y" option is given then b1, b2, b3 are ...
-#If the "-z" option is given then c is ...
-#The "filename" is required and has no default value here.
-#
-#
-#DEFAULTS: Check the XYZrc file in either the local directory or in
-#   the $OLCAO_RC directory for total confirmation of default values.
-#For -x: The default is probably ...
-#For -y: The default is probably ...
-#For -z: The default is probably ...
-#
-#-----------------------------------------------------------------------
-#
-#REQUIREMENTS
-#
-#You need to have ...
-#You need to be in ...
-#
-"""
-    print (output)
-
 
 # Define the main class that holds script data structures and settings.
 class ScriptSettings():
