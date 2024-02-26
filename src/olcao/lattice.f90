@@ -343,7 +343,6 @@ subroutine initializeLattice (doRecip)
    negligLimitReal = logBasisFnThresh * max(2.0_double/minAtomicAlpha, &
          & 1.0_double/minPotAlpha + 0.5_double/minAtomicAlpha)
 
-
    ! The boundary is then adjusted by the size of the primitive cell in another
    !   unexplain way.  First we look at the primitive vectors and determine the
    !   largest one from the squares.  x^2 + y^2 + z^2, find the max of a,b,c.
@@ -420,7 +419,6 @@ subroutine initializeLattice (doRecip)
 
       call makeLattice(primRepsRecip,numCellsRecip,cellSizesRecip,&
             & cellDimsRecip,negligLimitRecip,recipVectors)
-
    endif
 
    ! Note the number of lattice points in real and reciprocal space.

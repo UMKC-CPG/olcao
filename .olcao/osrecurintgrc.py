@@ -1,9 +1,6 @@
 #!/usr/bin/env python3
 
 
-import os
-
-
 def parameters_and_defaults():
     # Note that the "CB" and "BB" below are for the different cases where the
     #   C site and B site are different: "CB"; and when the C site and B site

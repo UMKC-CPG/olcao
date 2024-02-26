@@ -442,6 +442,13 @@ subroutine makePathKPoints
                !   this path.
                numSegmentKPoints = int((symKPDistMag(j,i) - &
                      & symKPDistMag(j-1,i)) / averageDelta)
+
+               ! Check that this number of segment kpoints will not take us
+               !   over the limit. If it does, then reduce the number of
+               !   points in this segment.
+               if (kPointCounter + numSegmentKPoints > numPathKP) then
+                  numSegmentKPoints = numPathKP - kPointCounter
+               endif
 !write (20,*) "j,i = ",j,i
 !write (20,*) "numSegmentKPoints = ",numSegmentKPoints
 !write (20,*) "symKPDistMag(j,i) = ",symKPDistMag(j,i)
