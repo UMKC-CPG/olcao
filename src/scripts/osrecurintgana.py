@@ -3830,11 +3830,11 @@ def print_test_delectronbc_ana(conversion, triads, matrix_de, matrix_ol, f):
     f.write(foot)
 
 
-def print_test_dnuclear_ana(conversion, triads, matrix_dn, matrix_n, f):
+def print_test_dnuclearcb_ana(conversion, triads, matrix_dn, matrix_n, f):
 
     # Print the subroutine header for the analytical portion.
     head = """
-   subroutine dnuclear3CIntgAna(a1,a2,a3,A,B,C,pc,sh)
+   subroutine dnuclear3CIntgAnaCB(a1,a2,a3,A,B,C,pc,sh)
 
    use O_Kinds
    use O_Constants, only: pi
@@ -3897,7 +3897,7 @@ def print_test_dnuclear_ana(conversion, triads, matrix_dn, matrix_n, f):
 
     # Print the subroutine foot.
     foot = """
-   end subroutine dnuclear3CIntgAna
+   end subroutine dnuclear3CIntgAnaCB
 """
     f.write(foot)
 

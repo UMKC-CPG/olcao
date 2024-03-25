@@ -3696,6 +3696,7 @@ sub processSYBDPath
          }
 
          # Reduce to a single number.
+         $values[$axis-1] =~ s/--/+/g; # Remove double negatives.
          $values[$axis-1] = eval($values[$axis-1]);
       }
 

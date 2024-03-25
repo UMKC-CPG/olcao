@@ -26413,7 +26413,7 @@ end if
    ! Integrals", Ch. 12 from "Modern Electronic Structure Theory."
    ! Pp. 809 - 815.
    ! ****************************************************************
-   subroutine boys(T,F)
+subroutine boys(T,F)
    use o_kinds
    use o_constants, only: pi
    implicit none

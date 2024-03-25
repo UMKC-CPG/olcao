@@ -625,9 +625,7 @@ def print_head(settings, f, num_sh_intg, num_pc_intg, max_lam):
 
          ! Compute the pc and sh integral results for the current parameters.
          call momentum2CIntgAna(alphas(1),alphas(2),pos(:,1),pos(:,2),&
-               & """
-            head += f"pc(:,:,:,1),sh(:,:,:,1))"
-            head += """
+               & pc(:,:,:,1),sh(:,:,:,1))
 
          ! Compute the pc and sh integral results for the current parameters
          !   using numerical integration.
@@ -701,16 +699,13 @@ def print_head(settings, f, num_sh_intg, num_pc_intg, max_lam):
 
          ! Compute the pc and sh integral results for the current parameters.
          call dkinetic2CIntgAna(alphas(1),alphas(2),pos(:,1),&
-               & pos(:,2),"""
-            head += f"pc(:,:,:,1),sh(:,:,:,1))"
-            head += """
+               & pos(:,2),pc(:,:,:,1),sh(:,:,:,1))
 
          ! Compute the pc and sh integral results for the current parameters
          !   using numerical integration.
          call dkinetic2CIntgNum(alphas(1),alphas(2),pos(:,1),&
-               & pos(:,2),"""
-            head += f"pc(:,:,:,2),sh(:,:,:,2),cell_size,"
-            head += """step_size)
+               & pos(:,2),pc(:,:,:,2),sh(:,:,:,2),cell_size,&
+               & step_size)
 
          ! Print the pc and sh integral result differences.
 """
@@ -732,16 +727,13 @@ def print_head(settings, f, num_sh_intg, num_pc_intg, max_lam):
 
          ! Compute the pc and sh integral results for the current parameters.
          call dnuclear3CIntgAnaCB(alphas(1),alphas(2),alphas(3),pos(:,1),&
-               & pos(:,2),pos(:,3),"""
-            head += f"pc(:,:,:,1),sh(:,:,:,1))"
-            head += """
+               & pos(:,2),pos(:,3),pc(:,:,:,1),sh(:,:,:,1))
 
          ! Compute the pc and sh integral results for the current parameters
          !   using numerical integration.
          call dnuclear3CIntgNumCB(alphas(1),alphas(2),alphas(3),pos(:,1),&
-               & pos(:,2),pos(:,3),"""
-            head += f"pc(:,:,:,2),sh(:,:,:,2),cell_size,"
-            head += """step_size)
+               & pos(:,2),pos(:,3),pc(:,:,:,2),sh(:,:,:,2),cell_size,&
+               & step_size)
 
          ! Print the pc and sh integral result differences.
 """
@@ -763,16 +755,13 @@ def print_head(settings, f, num_sh_intg, num_pc_intg, max_lam):
 
          ! Compute the pc and sh integral results for the current parameters.
          call dnuclear3CIntgAnaBB(alphas(1),alphas(2),alphas(3),pos(:,1),
-               & pos(:,2),pos(:,3),"""
-            head += f"pc(:,:,:,1),sh(:,:,:,1))"
-            head += """
+               & pos(:,2),pos(:,3),pc(:,:,:,1),sh(:,:,:,1))
 
          ! Compute the pc and sh integral results for the current parameters
          !   using numerical integration.
          call dnuclear3CIntgNumBB(alphas(1),alphas(2),alphas(3),pos(:,1),&
-               & pos(:,2),pos(:,3),"""
-            head += f"pc(:,:,:,2),sh(:,:,:,2),cell_size,"
-            head += """step_size)
+               & pos(:,2),pos(:,3),pc(:,:,:,2),sh(:,:,:,2),cell_size,&
+               & step_size)
 
          ! Print the pc and sh integral result differences.
 """
@@ -794,16 +783,13 @@ def print_head(settings, f, num_sh_intg, num_pc_intg, max_lam):
 
          ! Compute the pc and sh integral results for the current parameters.
          call dnuclear3CIntgAnaBC(alphas(1),alphas(2),alphas(3),pos(:,1),&
-               & pos(:,2),pos(:,3),"""
-            head += f"pc(:,:,:,1),sh(:,:,:,1))"
-            head += """
+               & pos(:,2),pos(:,3),pc(:,:,:,1),sh(:,:,:,1))
 
          ! Compute the pc and sh integral results for the current parameters
          !   using numerical integration.
          call dnuclear3CIntgNumBC(alphas(1),alphas(2),alphas(3),pos(:,1),&
-               & pos(:,2),pos(:,3),"""
-            head += f"pc(:,:,:,2),sh(:,:,:,2),cell_size,"
-            head += """step_size)
+               & pos(:,2),pos(:,3),pc(:,:,:,2),sh(:,:,:,2),cell_size,&
+               & step_size)
 
          ! Print the pc and sh integral result differences.
 """
@@ -825,16 +811,13 @@ def print_head(settings, f, num_sh_intg, num_pc_intg, max_lam):
 
          ! Compute the pc and sh integral results for the current parameters.
          call delectron3CIntgAnaCB(alphas(1),alphas(2),alphas(3),pos(:,1),&
-               & pos(:,2),pos(:,3),"""
-            head += f"pc(:,:,:,1),sh(:,:,:,1))"
-            head += """
+               & pos(:,2),pos(:,3),pc(:,:,:,1),sh(:,:,:,1))
 
          ! Compute the pc and sh integral results for the current parameters
          !   using numerical integration.
          call delectron3CIntgNumCB(alphas(1),alphas(2),alphas(3),pos(:,1),&
-               & pos(:,2),pos(:,3),"""
-            head += f"pc(:,:,:,2),sh(:,:,:,2),cell_size,"
-            head += """step_size)
+               & pos(:,2),pos(:,3),pc(:,:,:,2),sh(:,:,:,2),cell_size,&
+               & step_size)
 
          ! Print the pc and sh integral result differences.
 """
@@ -856,16 +839,13 @@ def print_head(settings, f, num_sh_intg, num_pc_intg, max_lam):
 
          ! Compute the pc and sh integral results for the current parameters.
          call delectron3CIntgAnaBB(alphas(1),alphas(2),alphas(3),pos(:,1),&
-               & pos(:,2),pos(:,3),"""
-            head += f"pc(:,:,:,1),sh(:,:,:,1))"
-            head += """
+               & pos(:,2),pos(:,3),pc(:,:,:,1),sh(:,:,:,1))
 
          ! Compute the pc and sh integral results for the current parameters
          !   using numerical integration.
          call delectron3CIntgNumBB(alphas(1),alphas(2),alphas(3),pos(:,1),&
-               & pos(:,2),pos(:,3),"""
-            head += f"pc(:,:,:,2),sh(:,:,:,2),cell_size,"
-            head += """step_size)
+               & pos(:,2),pos(:,3),pc(:,:,:,2),sh(:,:,:,2),cell_size,&
+               & step_size)
 
          ! Print the pc and sh integral result differences.
 """
@@ -886,16 +866,13 @@ def print_head(settings, f, num_sh_intg, num_pc_intg, max_lam):
 
          ! Compute the pc and sh integral results for the current parameters.
          call delectron3CIntgAnaBC(alphas(1),alphas(2),alphas(3),pos(:,1),&
-               & pos(:,2),pos(:,3),"""
-            head += f"pc(:,:,:,1),sh(:,:,:,1))"
-            head += """
+               & pos(:,2),pos(:,3),pc(:,:,:,1),sh(:,:,:,1))
 
          ! Compute the pc and sh integral results for the current parameters
          !   using numerical integration.
          call delectron3CIntgNumBC(alphas(1),alphas(2),alphas(3),pos(:,1),&
-               & pos(:,2),pos(:,3),"""
-            head += f"pc(:,:,:,2),sh(:,:,:,2),cell_size,"
-            head += """step_size)
+               & pos(:,2),pos(:,3),pc(:,:,:,2),sh(:,:,:,2),cell_size,&
+               & step_size)
 
          ! Print the pc and sh integral result differences.
 """
