@@ -5,7 +5,7 @@ message("At the real OLCAO application.")
 
 # Library for gaussIntegrals.f90
 add_library(gGaussIntegrals STATIC ../../kinds.f90 ../../constants.f90 
-   ../gaussIntegrals.f90)
+   ../gaussIntegrals.f90 ../gaussIntegrals.vec.f90)
 
 # Library containing common source files that all executables need
 add_library(gCommon OBJECT ../../kinds.f90 ../../constants.f90 
@@ -18,7 +18,8 @@ add_library(gCommon OBJECT ../../kinds.f90 ../../constants.f90
 
 add_executable(gOLCAOsetup $<TARGET_OBJECTS:gCommon> ../basis.f90 
    ../elecStat.f90 ../intgOrtho.F90 ../intgSaving.F90 ../integralsSCF.F90 
-   ../coreCharge.f90 ../OLCAO_Setup.f90 ../OLCAO_SetupWrap.f90 )
+   ../integralsSCF3Terms.F90 ../coreCharge.f90 ../OLCAO_Setup.f90
+   ../OLCAO_SetupWrap.f90 )
 target_link_libraries(gOLCAOsetup gGaussIntegrals)
 
 add_executable(gOLCAOmain $<TARGET_OBJECTS:gCommon> ../hdf5MainEval.f90 
@@ -63,11 +64,15 @@ add_executable(gOLCAOfield $<TARGET_OBJECTS:gCommon> ../basis.f90
    ../secularEqn.F90 ../populate.F90 ../openDX.f90 ../xdmf_vtk.f90 ../field.F90
    ../OLCAO_Field.f90 )
 
+add_executable(gOLCAOloen $<TARGET_OBJECTS:gCommon> ../basis.f90
+   ../matrixSubs.F90 ../loen.f90 ../OLCAO_LocalEnv.f90
+   ../OLCAO_LocalEnvWrap.f90)
+
 # At this point we need to add the -DGAMMA preprocessor definition to the
 #   compile command for these gamma k-point executables. This addition applies
 #   only to the current directory.
 add_definitions(-DGAMMA)
 
 install(TARGETS gOLCAOsetup gOLCAOmain gOLCAOintg gOLCAOband gOLCAOdos
-   gOLCAObond gOLCAOoptc gOLCAOfield DESTINATION bin)
+   gOLCAObond gOLCAOoptc gOLCAOfield gOLCAOloen DESTINATION bin)
 

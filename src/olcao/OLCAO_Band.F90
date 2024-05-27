@@ -126,9 +126,12 @@ subroutine computeBands
          & energyEigenValues, preserveValeValeOL, restoreValeValeOL, &
          & secularEqnOneKP
 #endif
+   use HDF5 ! Needed to define the kludgeInt hid_t integer.
 
    ! Define local variables.
    integer :: i,j
+   integer (hid_t) :: kludgeInt ! Place holder integer to avoid accessing
+         ! unallocated memory.
 
    ! Record the date and time we start.
    call timeStampStart(15)
@@ -160,13 +163,28 @@ subroutine computeBands
 
    do i = 1, numKPoints
 
-      ! Read the overlap integral results and apply kpoints effects.
+      ! Read the overlap integral results and apply kpoints effects. Note
+      !   that the doSYBD if statement is a bit of a kludge because we do
+      !   not allocate the valeValeBand_did array in the doSYBD==1 case
+      !   so it is improper to try to access and pass an unallocated data
+      !   value. Hence we send a temporary integer instead. (This is a
+      !   placeholder until the partial SYBD code is implemented.)
 #ifndef GAMMA
-      call getIntgResults(valeValeOL(:,:,:,1),coreValeOL,i,1,&
-            & valeValeBand_did(i),valeValeBand,doSYBD,1)
+      if (doSYBD == 0) then
+         call getIntgResults(valeValeOL(:,:,:,1),coreValeOL,i,1,&
+               & valeValeBand_did(i),valeValeBand,1,1)
+      else
+         call getIntgResults(valeValeOL(:,:,:,1),coreValeOL,i,1,&
+               & kludgeInt,valeValeBand,0,1)
+      endif
 #else
-      call getIntgResults(valeValeOLGamma(:,:,1),coreValeOLGamma,1,&
-            & valeValeBand_did(i),valeValeBand,doSYBD,1)
+      if (doSYBD == 0) then
+         call getIntgResults(valeValeOLGamma(:,:,1),coreValeOLGamma,1,&
+               & valeValeBand_did(i),valeValeBand,1,1)
+      else
+         call getIntgResults(valeValeOLGamma(:,:,1),coreValeOLGamma,1,&
+               & kludgeInt,valeValeBand,0,1)
+      endif
 #endif
 
       ! Write the coreValeOL for later use by other programs (if needed).
@@ -184,13 +202,24 @@ subroutine computeBands
 
       do j = 1, spin
 #ifndef GAMMA
-         ! Read the hamiltonian integral results and apply kpoint effects.
-         call getIntgResults(valeVale(:,:,:,j),coreValeOL,i,2,&
-               & valeValeBand_did(i),valeValeBand,doSYBD,j)
+         ! Read the hamiltonian integral results and apply kpoint effects. See
+         !   note above about the doSYBD 'if' statement.
+         if (doSYBD == 0) then
+            call getIntgResults(valeVale(:,:,:,j),coreValeOL,i,2,&
+                  & valeValeBand_did(i),valeValeBand,0,j)
+         else
+            call getIntgResults(valeVale(:,:,:,j),coreValeOL,i,2,&
+                  & kludgeInt,valeValeBand,1,j)
+         endif
 #else
          ! Read the hamiltonian integral results and apply kpoint effects.
-         call getIntgResults(valeValeGamma(:,:,j),coreValeOLGamma,2,&
-               & valeValeBand_did(i),valeValeBand,doSYBD,j)
+         if (doSYBD == 0) then
+            call getIntgResults(valeValeGamma(:,:,j),coreValeOLGamma,2,&
+                  & valeValeBand_did(i),valeValeBand,0,j)
+         else
+            call getIntgResults(valeValeGamma(:,:,j),coreValeOLGamma,2,&
+                  & kludgeInt,valeValeBand,1,j)
+         endif
 #endif
 
          ! Solve the wave equation for this kpoint.

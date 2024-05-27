@@ -544,6 +544,9 @@ sub threeCenterOL {
       if ($string =~ m/\*\(1\)\)/) {
         $string =~ s/\*\(1\)\)/\)/g;
       }
+      if ($string =~ m/1\*\*2/) {
+        $string =~ s/1\*\*2/1/g;
+      }
       if ($string =~ m/\(1\*/) {
         $string =~ s/\(1\*/\(/g;
       }

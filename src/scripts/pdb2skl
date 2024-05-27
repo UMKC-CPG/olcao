@@ -54,13 +54,17 @@ my $mapFile;
 &initEnvironment;
 
 # Read the PDB input file and store/calculate all the important information.
+print STDOUT "Got here pdb 1\n";
 StructureControl::readInputFile($pdbFile,$pdbTypes);
 
 # Print the skl input file.
+print STDOUT "Got here pdb 2\n";
 StructureControl::printOLCAO(\*SKL,"Generated from PDB file.","cartesian");
 
 # Print the data file that maps the pdb nature of each atom to the skl atoms.
+print STDOUT "Got here pdb 3\n";
 StructureControl::printOLCAOMap(\*MAP);
+print STDOUT "Got here pdb 4\n";
 
 # END PROGRAM EXECUTION ###################
 

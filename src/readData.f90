@@ -5,13 +5,10 @@ module O_ReadDataSubs
    private
    public :: readLabel, readAndCheckLabel, readData
 
-   integer :: readUnit
-   integer :: writeUnit
-
    interface readData
       module procedure readDouble, read2Double, read3Double, readDoubleArray,&
-            & readDoubleMatrix, readIntDouble, readInt2Double, readInt, &
-            & read2Int, read3Int, readIntArray, readChar
+            & readDoubleMatrix, readIntDouble, readInt2Double,&
+            & readInt, read2Int, read3Int, readIntArray, readChar
    end interface readData
 
    contains
@@ -41,7 +38,6 @@ subroutine readLabel(readUnit,writeUnit)
    call flush (writeUnit)
 
 end subroutine readLabel
-
 
 
 subroutine readAndCheckLabel(readUnit,writeUnit,length,lookLabel)
@@ -76,6 +72,7 @@ subroutine readAndCheckLabel(readUnit,writeUnit,length,lookLabel)
 
 end subroutine readAndCheckLabel
 
+
 subroutine readDouble (readUnit,writeUnit,doubleVar,length,lookLabel)
 
    use O_Kinds
@@ -102,6 +99,7 @@ subroutine readDouble (readUnit,writeUnit,doubleVar,length,lookLabel)
    call flush (writeUnit)
 
 end subroutine readDouble
+
 
 subroutine read2Double (readUnit,writeUnit,doubleVar1,doubleVar2,length,&
       & lookLabel)
@@ -132,6 +130,7 @@ subroutine read2Double (readUnit,writeUnit,doubleVar1,doubleVar2,length,&
 
 end subroutine read2Double
 
+
 subroutine read3Double (readUnit,writeUnit,doubleVar1,doubleVar2,doubleVar3,&
       & length,lookLabel)
 
@@ -161,6 +160,7 @@ subroutine read3Double (readUnit,writeUnit,doubleVar1,doubleVar2,doubleVar3,&
    call flush (writeUnit)
 
 end subroutine read3Double
+
 
 subroutine readDoubleArray (readUnit,writeUnit,numValues,doubleArray,length,&
       & lookLabel)
@@ -233,6 +233,7 @@ subroutine readDoubleMatrix (readUnit,writeUnit,numValues1,numValues2,&
 
 end subroutine readDoubleMatrix
 
+
 subroutine readInt2Double (readUnit,writeUnit,intVar,doubleVar1,doubleVar2,&
       & length,lookLabel)
 
@@ -263,6 +264,7 @@ subroutine readInt2Double (readUnit,writeUnit,intVar,doubleVar1,doubleVar2,&
 
 end subroutine readInt2Double
 
+
 subroutine readIntDouble (readUnit,writeUnit,intVar,doubleVar,length,lookLabel)
 
    use O_Kinds
@@ -290,6 +292,34 @@ subroutine readIntDouble (readUnit,writeUnit,intVar,doubleVar,length,lookLabel)
    call flush (writeUnit)
 
 end subroutine readIntDouble
+
+!subroutine readDoubleInt (readUnit,writeUnit,doubleVar,intVar,length,lookLabel)
+!
+!   use O_Kinds
+!
+!   implicit none
+!
+!   ! Passed parameters
+!   real (kind=double)     :: doubleVar  ! The double that we wish to read.
+!   integer                :: intVar     ! The integer that we wish to read.
+!   integer                :: length     ! Label length.
+!   character (LEN=length) :: lookLabel  ! Label that we are looking for.
+!   integer, intent(in)    :: readUnit  ! The unit number of the file from which
+!                                       ! we are reading.
+!   integer, intent(in)    :: writeUnit  ! The unit number of the file to which
+!                                        ! we are writing.
+!
+!   ! Check that the label is present and correct.
+!   if (length /= 0) then
+!      call readAndCheckLabel(readUnit,writeUnit,length,lookLabel)
+!   endif
+!
+!   ! Read and regurgitate the input parameters.
+!   read (readUnit,*) doubleVar, intVar
+!   write (writeUnit,fmt="(e28.8,i5)") doubleVar, intVar
+!   call flush (writeUnit)
+!
+!end subroutine readDoubleInt
 
 subroutine readInt (readUnit,writeUnit,integerVar,length,lookLabel)
 
@@ -410,7 +440,6 @@ subroutine readIntArray (readUnit,writeUnit,numValues,intArray,length,lookLabel)
 end subroutine readIntArray
 
 
-
 subroutine readChar (readUnit,writeUnit,varLength,charVar,labelLength,lookLabel)
 
    implicit none
@@ -436,5 +465,6 @@ subroutine readChar (readUnit,writeUnit,varLength,charVar,labelLength,lookLabel)
    call flush (writeUnit)
 
 end subroutine readChar
+
 
 end module O_ReadDataSubs

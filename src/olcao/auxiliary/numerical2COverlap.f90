@@ -41,23 +41,23 @@ array(19,:) = (/0,3,0/)
 array(20,:) = (/0,0,3/)
 
 ! Define the constants
-a1 = 0.10d0
-a2 = 0.10d0
+a1 = 0.50d0
+a2 = 0.95d0
 A(1) = 1.0d0
-A(2) = 3.0d0
-A(3) = 5.0d0
-B(1) = 2.0d0
-B(2) = 4.0d0
-B(3) = 6.0d0
+A(2) = 2.0d0
+A(3) = 3.0d0
+B(1) = 6.0d0
+B(2) = 5.0d0
+B(3) = 4.0d0
 ! Open output file
 open(2,file='testOutput',status='new')
 
 ! Loop over the x, y, and z triad values
-do p = 1, 20
-  do q = 1, 20
+do p = 1, 4
+  do q = 1, 4
     ! Properly assign l1 and l2 values for each dimension
-    l1 = array(p,:)
-    l2 = array(q,:)
+    l1 = array(q,:)
+    l2 = array(p,:)
 
     ! Initialize sum variables
     x_sum = 0

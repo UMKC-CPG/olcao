@@ -19,7 +19,7 @@ module O_TimeStamps
    character(len=10) :: tempTime
    character(len=12) :: time
    character(len=51) :: banner
-   character(len=51), dimension(30) :: opLabels
+   character(len=51), dimension(31) :: opLabels
    integer :: numOpCodes
 
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -33,7 +33,7 @@ subroutine initOperationLabels
    implicit none
 
    ! Set the number of operation codes.
-   numOpCodes = 30
+   numOpCodes = 31
 
    opLabels(1)  = '***************  Parse Input Files  ***************'
    opLabels(2)  = '***********  Get Implicit Information  ************'
@@ -57,11 +57,15 @@ subroutine initOperationLabels
    opLabels(20) = '*************  PSCF Integrals and MME  ************'
    opLabels(21) = '*****  Symmetric Band Structure Path KPoints  *****'
    opLabels(22) = '********  Bond Order and Effective Charge  ********'
-   opLabels(23) = '*************  Transition Calculation  ************'
+   opLabels(23) = '*********  Optical Transition Calculation  ********'
    opLabels(24) = '*************  Parse The Command Line  ************'
    opLabels(25) = '************  Evaluate WaveFn on Mesh  ************'
    opLabels(26) = '************  Three Center Bond Order  ************'
    opLabels(27) = '***********  Initialize Field HDF5 File  **********'
+   opLabels(28) = '**********  Compute Bispectrum Component  *********'
+   opLabels(29) = '***********  Dipole Moment Integrals  *************'
+   opLabels(30) = '***********  Mass Velocity Integrals  *************'
+   opLabels(31) = '***********  Initialize SCF HDF5 File  ************'
 
 end subroutine initOperationLabels
 

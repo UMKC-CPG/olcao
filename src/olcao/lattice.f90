@@ -18,6 +18,10 @@ module O_Lattice  ! Lattice and superlattice object.
    ! Begin list of module data.!
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
+   ! Crystal information
+   integer :: spaceGroupNum, spaceGroupSubNum ! Space group number and cell
+         !   center sub-number.
+
    ! Real space cell information.
    real (kind=double), dimension (dim3,dim3) :: realVectors ! Cell vectors
          !   of the real space lattice for a, b, c, given in x, y, z
@@ -339,7 +343,6 @@ subroutine initializeLattice (doRecip)
    negligLimitReal = logBasisFnThresh * max(2.0_double/minAtomicAlpha, &
          & 1.0_double/minPotAlpha + 0.5_double/minAtomicAlpha)
 
-
    ! The boundary is then adjusted by the size of the primitive cell in another
    !   unexplain way.  First we look at the primitive vectors and determine the
    !   largest one from the squares.  x^2 + y^2 + z^2, find the max of a,b,c.
@@ -416,7 +419,6 @@ subroutine initializeLattice (doRecip)
 
       call makeLattice(primRepsRecip,numCellsRecip,cellSizesRecip,&
             & cellDimsRecip,negligLimitRecip,recipVectors)
-
    endif
 
    ! Note the number of lattice points in real and reciprocal space.
@@ -695,9 +697,9 @@ subroutine cellBorderCheck (vectors, tempDimensions, negligLimit, &
    enddo
 
    ! Begin testing the 7 possible locations that would indicate whether
-   !   this cell has some part within the negligability distance.  This is
-   !   done by following a path from one point to the next via a sequence of
-   !   cellShifts.
+   !   this cell has some part within the negligability distance. This is
+   !   done by following a path from one point to the next via a specific
+   !   sequence of cellShifts.
 
    currentTest(:) = tempDimensions(:)
    currentTest(1) = currentTest(1) + cellShifts(1)
@@ -755,8 +757,8 @@ subroutine findLatticeVector (arbitraryVector, latticeVector)
    implicit none
 
    ! Define the dummy variables passed to this subroutine.
-   real (kind=double), dimension (:), intent(in)  :: arbitraryVector
-   real (kind=double), dimension (:), intent(out) :: latticeVector
+   real (kind=double), dimension (dim3), intent(in)  :: arbitraryVector
+   real (kind=double), dimension (dim3), intent(out) :: latticeVector
 
    ! Define the local variables used in this subroutine.
    integer :: i ! Loop variable.
@@ -955,7 +957,7 @@ subroutine initializeFindVec
    !           component in the Wigner-Seitz cell.  Therefor, the comparison
    !           of this segment continues.
    !      b)   If the segment is "outside" then the segment can never be a
-   !           component in the Wigner-Seitz cell.  Therefor all consideration
+   !           component in the Wigner-Seitz cell.  Therefore all consideration
    !           of this pair from (2) is stopped and the next pair is
    !           considered.
    ! 4)  If a segment completes all the comparisons of (3) without being

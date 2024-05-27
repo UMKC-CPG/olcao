@@ -79,7 +79,7 @@ program gaussfit
       read (5,*) radialValue(i), dataFn(i), dummyValue
    enddo
 
-   ! Compute the squard radial values.
+   ! Compute the squared radial values.
    radialValueSqrd(:) = radialValue(:)**2
 
 

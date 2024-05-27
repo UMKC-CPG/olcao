@@ -192,12 +192,15 @@ my $precursorDB = "$OLCAO_DATA/precursorDB";
 
 # Assemble the packmol input file and run packmol.
 &runPackmol;
+print STDOUT "Got Here1\n";
 
 # Create LAMMPS data_file, LAMMPS in_file, and the slurm submission file.
 &createLAMMPSFiles;
+print STDOUT "Got Here2\n";
 
 # Make all types and bond types consistent across all files.
 &normalizeTypes;
+print STDOUT "Got Here3\n";
 
 ###############################################
 # End program execution #######################
@@ -414,6 +417,7 @@ sub copyReactionTemplates
 
    # For each reaction, copy the reaction templates and map files from the
    #   precursor database.
+print STDOUT "numReactionTypes $numReactionTypes\n";
    foreach $rxn (1..$numReactionTypes)
    {
       # Construct the name for the current reaction molecule pair ensuring
@@ -430,11 +434,16 @@ sub copyReactionTemplates
       # For the current reaction, grab the appropriate reaction templates
       #   and store them in the collective $rxnTemplatesDir directory with
       #   appropriate names to distinguish them.
+print STDOUT "rxnBinding[1][$rxn] $rxnBinding[1][$rxn]\n";
+print STDOUT "rxnBinding[2][$rxn] $rxnBinding[2][$rxn]\n";
+print STDOUT "rxnMolName[1][$rxn] $rxnMolName[2][$rxn]\n";
       $rxnBindingPair = $rxnBinding[1][$rxn] . "_" . $rxnBinding[2][$rxn];
       $rxnMolBindingPair = $rxnMolName[1][$rxn] ."_". $rxnBinding[1][$rxn] .
          "_" . $rxnMolName[2][$rxn] . "_" . $rxnBinding[2][$rxn];
 
       # Copy all the pre- and post- template files.
+print STDOUT "$precursorDB/$currRxnMolPair/rxnTemplates/preRxn.$rxnBindingPair.data\n";
+print STDOUT "$precursorDB/$currRxnMolPair/rxnTemplates/postRxn.$rxnBindingPair.data\n";
       copy("$precursorDB/$currRxnMolPair/rxnTemplates/preRxn." .
          "$rxnBindingPair.data","preRxn.$rxnMolBindingPair.data");
       copy("$precursorDB/$currRxnMolPair/rxnTemplates/postRxn." .
@@ -534,7 +543,7 @@ sub runPackmol
       {
          print FIXED substr($line,0,54);
          print FIXED "  1.00  0.00";
-         printf FIXED "%12s", $values[$#values];
+         printf FIXED "%13s", $values[$#values];
          print FIXED "\n";
       }
       else
@@ -638,23 +647,30 @@ sub createLAMMPSFiles
    chdir ("lammps");
 
    # Convert the packmol PDB into a skeleton file.
+print STDOUT "Got here 2a\n";
    copy("../packmol/packmol.fixed.pdb","./");
+print STDOUT "Got here 2b\n";
    system("pdb2skl -i packmol.fixed.pdb -o packmol.skl -pdbtypes");
+print STDOUT "Got here 2c\n";
 
    # Read the skeleton file and extract necessary information.
    StructureControl::readInputFile("packmol.skl",1);
    $numAtoms = StructureControl::getNumAtoms;
    $directXYZ_ref = StructureControl::getDirectXYZRef;
    $atomElementName_ref = StructureControl::getAtomElementNameRef;
+print STDOUT "$atomElementName_ref->[1]\n";
    $atomElementID_ref = StructureControl::getAtomElementIDRef;
    $atomSpeciesID_ref = StructureControl::getAtomSpeciesIDRef;
    $atomicZ_ref = StructureControl::getAtomicZRef;
    $numElements = StructureControl::getNumElements;
    $numSpecies_ref = StructureControl::getNumSpeciesRef;
+print STDOUT "Got here 2d\n";
 
    # Perform a bond analysis to get bond length and bond angle information.
    system("bondAnalysis -bl -bf 1.1 -i packmol.skl");
+print STDOUT "Got here 2e\n";
    system("bondAnalysis -ba -bf 1.1 -i packmol.skl");
+print STDOUT "Got here 2f\n";
 
    # Read the bondAnalysis results and extract necessary information.
    StructureControl::readBondAnalysisBL("bondAnalysis.bl",$numAtoms);
@@ -828,6 +844,7 @@ sub createLAMMPSFiles
 
          # Get the current tag for this bond angle and then extract the atomic
          #   Z numbers for the vertex atom and the non-vertex atoms.
+print STDOUT "$atomElementName_ref->[$atom] $atomSpeciesID_ref->[$atom] $atomMoleculeName[$atom]\n";
          $tagPart2 = "$atomElementName_ref->[$atom] ".
                "$atomSpeciesID_ref->[$atom] $atomMoleculeName[$atom]";
          $tagPart1 =
@@ -846,9 +863,11 @@ sub createLAMMPSFiles
          # Extract the Z numbers by search. (Probably the middle part can be
          #   directly extracted because it should always correspond to $atom.
          @values = StructureControl::prepLine("",$currentTag,'\s+');
+print STDOUT "$currentTag\n";
          $atom1Z = ElementData::getElementZ($values[0]);
          $atom2Z = ElementData::getElementZ($values[3]);
          $atom3Z = ElementData::getElementZ($values[6]);
+print STDOUT "$atom1Z $atom2Z $atom3Z\n";
 
          # Make sure that $atom1Z < $atom3Z.
          if ($atom1Z > $atom3Z)
@@ -1176,7 +1195,7 @@ ENDLAMMPSTAIL
 #SBATCH --mem=2G
 #
 export OMP_NUM_THREADS=1
-cd $lmpDir
+cd \$SLURM_SUBMIT_DIR
 mpirun $HOME/bin/lmp_mpi_gcc4_intel2016 < lammps.in
 ENDSLURM
 
@@ -1578,7 +1597,8 @@ sub normalizeTypes
          if (($atom1Z == $hookeAngleCoeffs_ref->[$hookeAngle][1]) and
              ($atom2Z == $hookeAngleCoeffs_ref->[$hookeAngle][2]) and
              ($atom3Z == $hookeAngleCoeffs_ref->[$hookeAngle][3]) and
-             ($currBondAngle == $hookeAngleCoeffs_ref->[$hookeAngle][5]))
+             (abs($currBondAngle - $hookeAngleCoeffs_ref->[$hookeAngle][5])
+                <= $hookeAngleCoeffs_ref->[$hookeAngle][6]))
          {
             $uniqueAngleCoeffs[$uniqueAngle][1] =
                   $hookeAngleCoeffs_ref->[$hookeAngle][4];
@@ -1597,11 +1617,6 @@ sub normalizeTypes
       @values = StructureControl::prepLine("",$uniqueAtomTypes[$atomType],
             '\s+');
       $atom1Z = ElementData::getElementZ($values[0]);
-#      foreach $element (1..$numPeriodicElements)
-#      {
-#         if ($values[0] eq $elementNames_ref->[$element])
-#            {$atom1Z = $element; last;}
-#      }
       $uniqueLJPairCoeffs[$atomType] = "$ljPairCoeffs_ref->[$atom1Z][1] ".
          "$ljPairCoeffs_ref->[$atom1Z][2]";
       $uniqueMasses[$atomType] = $atomicMasses_ref->[$atom1Z];

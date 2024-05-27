@@ -1101,7 +1101,7 @@ subroutine makeNeutralCoeffs
 
    ! Import any necessary modules.
    use O_Kinds
-   use O_Constants,   only: maxOrbitals
+   use O_Constants,   only: lAngMomCount
    use O_ElementData, only: coreCharge, valeCharge
    use O_KPoints,     only: numKPoints
    use O_AtomicSites, only: valeDim, numAtomSites, atomSites
@@ -1118,7 +1118,7 @@ subroutine makeNeutralCoeffs
    integer :: currQN_l
    integer :: totalStateCount
    real (kind=double) :: electronsPerQN_m
-   real (kind=double), dimension(maxOrbitals) :: localValeCharge
+   real (kind=double), dimension(lAngMomCount) :: localValeCharge
    real (kind=double), allocatable, dimension(:) :: neutralCoeffs
 
    ! Allocate temp space to hold the neutral coefficients before copying them

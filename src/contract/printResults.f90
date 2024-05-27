@@ -518,6 +518,9 @@ subroutine createIsoUnion(i,j,k,fileUnit,orbitalCount)
    character*8 :: orbSignNote
    character*25 :: lmType
 
+   ! Initialize normalization to prevent compiler warnings.
+   normalization = 0
+
    ! Determine the current lmType and the normalization value.
    select case (i)
    case (1)
@@ -583,6 +586,11 @@ subroutine createIsoUnion(i,j,k,fileUnit,orbitalCount)
          write (6,*) "Only 1,2,3,4 for s,p,d,f have been implemented"
          stop
    end select
+
+   ! Ensure that normalization was actually initialized.
+   if (normalization == 0) then
+      stop "The normalization variable was not properly initialized."
+   endif
 
    ! Create the union of the negative and positive components of the basis fn.
    write (fileUnit,*)

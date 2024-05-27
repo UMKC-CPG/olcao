@@ -347,7 +347,7 @@ subroutine setPotControlParameters (fbL,lastIt,corrCode,rlxFact,cTest,&
 
    ! Use necessary modules.
    use O_Kinds
-   use O_PotTypes, only: numPotTypes, potTypes
+   use O_PotTypes, only: numPotTypes
 
    implicit none
 

@@ -89,9 +89,9 @@ subroutine getECMeshParameters
          ! replicated cell.
    real (kind=double), dimension (dim3) :: currentAngleVector ! This vector
          ! is the current angular sample vector in the loop over sample vectors.
-   real (kind=double), allocatable, dimension (:,:,:) :: exchCorrDist ! This
-         ! is the distance between a potential site and all of its replicated
-         ! images in neighboring cells.
+   real (kind=double), allocatable, dimension (:,:,:) :: xcSiteList ! This
+         ! is the position of each exchange correlation potential site in the
+         ! super lattice of replicated image cells.
    real (kind=double) :: siteAngleDot ! This is the dot product of the potential
          ! site position vector, and the angular sample vector of the current
          ! loop iteration.
@@ -117,12 +117,14 @@ subroutine getECMeshParameters
 
 
    ! Determine the number of cell replications that must be considered to find
-   !   the exchange correlation matrix parameters.  (i.e. can the real super
-   !   lattice be truncated to a smaller set?)
+   !   the exchange correlation matrix parameters.  (I.e., can the real super
+   !   lattice be truncated to a smaller set?) There is no clear reason given
+   !   to do this. It could be tested to determine if it is enough or too
+   !   much for current calculations and why. FIX
    numRepsNeeded = min (4**dim3,numCellsReal)
 
    ! Allocate space for local arrays and matrices that will not be used later.
-   allocate(exchCorrDist (dim3,numRepsNeeded,numPotSites))
+   allocate(xcSiteList (dim3,numRepsNeeded,numPotSites))
 
    ! Allocate space for local arrays that will be pointed to later by globally
    !   accessable data structures.
@@ -156,13 +158,13 @@ subroutine getECMeshParameters
 
       ! Store the difference in distance between the nearest lattice
       !   vector, and the potential site vector.
-      potLatticeSep(:,i) = potSites(i)%cartPos(:) - latticeVector
+      potLatticeSep(:,i) = potSites(i)%cartPos(:) - latticeVector(:)
 
       ! Determine the distance from the origin to each replication of the
-      !   current potential site within real super lattice or its truncated
-      !   limit.
+      !   current potential site within the real super lattice or its
+      !   truncated limit.
       do j = 1, numRepsNeeded
-         exchCorrDist(:,j,i) = potLatticeSep(:,i) + cellDimsReal(:,j)
+         xcSiteList(:,j,i) = potLatticeSep(:,i) + cellDimsReal(:,j)
       enddo
    enddo
 
@@ -198,11 +200,11 @@ subroutine getECMeshParameters
       minRadius = sqrt(rSampleIn / potTypes(currentPotType(1))%alphas&
             & (potTypes(currentPotType(1))%numAlphas))
 
-      ! Begin a loop over each of the angular sample vectors
+      ! Begin a loop over each of the angular sample vectors at site i.
       do j = 1, numSampleVectors
 
          ! Store the value of the current angular sample vector.
-         currentAngleVector = angSampleVectors(:,j)
+         currentAngleVector(:) = angSampleVectors(:,j)
 
          ! Initialize the value for the maximum length of the current ray.
          currentMaxRadius = maxRadius
@@ -229,10 +231,10 @@ subroutine getECMeshParameters
             do l = 1, numRepsNeeded
 
                ! Get the seperation between the current (i) potential site and
-               !   the potential site (j) in the current replicated cell.
+               !   the potential site (k) in the current replicated cell (l).
                !   Including the covalent radius factor.
                potSiteSep(:) = covalentRadiusFactor * &
-                  & (exchCorrDist(:,l,k) - exchCorrDist(:,1,i))
+                  & (xcSiteList(:,l,k) - xcSiteList(:,1,i))
 
                ! Get the dot product of the potential site seperation vector
                !   just obtained, and the current angular sample vector.  This
@@ -241,15 +243,17 @@ subroutine getECMeshParameters
                siteAngleDot = sum(potSiteSep(:) * currentAngleVector(:))
 
                ! If these two vectors are perpendicular then we don't consider
-               !   them for helping to estimate the maximum ray length.
+               !   the k,l site to help estimate the maximum ray length. This
+               !   is because the ray from site (i) is not at all directed
+               !   toward the site (k).
                if (siteAngleDot <= smallThresh) cycle
 
                ! Redetermine the value for the maximum length of the current
                !   ray.
                currentMaxRadius = min(sum(potSiteSep(:)**2)/siteAngleDot,&
                   & currentMaxRadius)
-            enddo
-         enddo
+            enddo ! l, numRepsNeeded
+         enddo ! k, numPotSites
 
          ! Save the maximum radius obtained for this angular sample vector
          !   for this potential site.
@@ -305,7 +309,7 @@ subroutine getECMeshParameters
          if (printXCMesh == 1) then
             write (200,*) "END"
          endif
-      enddo
+      enddo ! j, numSampleVectors
 
       ! Determine the maximum number of ray points required so far.  This will
       !   later determine the dimension of the exchange correlation mesh
@@ -322,7 +326,7 @@ subroutine getECMeshParameters
          write (20,*) " ",i
       endif
       call flush (20)
-   enddo
+   enddo ! i, numPotSites
 
    ! At this point, the numRayPoints is the maximum possible number of points
    !   for any ray and we can rename it for use as the dimension of the
@@ -330,7 +334,7 @@ subroutine getECMeshParameters
    maxNumRayPoints = numRayPoints
 
    ! Deallocate arrays and matrices that will not be used later.
-   deallocate(exchCorrDist)
+   deallocate(xcSiteList)
 
    ! Log the date and time we end.
    call timeStampEnd(5)
@@ -448,22 +452,22 @@ subroutine makeECMeshAndOverlap
 
    ! Allocate space for matrices that will be pointed to by global data
    !   structures later.
-   allocate (radialWeight    (maxNumRayPoints))
+   allocate (radialWeight(maxNumRayPoints))
    ! When GGA=0 only space for the rho operator is allocated. When GGA=1 space
    !   is also allocated for first and second derivatives of the rho operator.
    if (GGA == 0) then ! Doing LDA
       numOpValues = 1
-   allocate (exchRhoOp       (potDim,maxNumRayPoints,1))
+      allocate (exchRhoOp(potDim,maxNumRayPoints,1))
    else ! Doing GGA
       numOpValues = 10
-   allocate (exchRhoOp       (potDim,maxNumRayPoints,10))
+      allocate (exchRhoOp(potDim,maxNumRayPoints,10))
    endif
-   allocate (exchCorrOverlap (potDim,potDim))
+   allocate (exchCorrOverlap(potDim,potDim))
 
 
    ! Allocate space for matrices and arrays that are used only locally
-   allocate (currentPotAlphas    (maxNumPotAlphas))
-   allocate (exchangePointRadius (dim3,maxNumRayPoints))
+   allocate (currentPotAlphas (maxNumPotAlphas))
+   allocate (exchangePointRadius(dim3,maxNumRayPoints))
 
    ! Initialize the exchCorrOverlap matrix to zero since it will later be
    !   created through cumulative summation.
@@ -595,7 +599,7 @@ subroutine makeECMeshAndOverlap
 
             ! Multiply the radius by a spacing factor to reduce its distance.
             currentPointRadius = currentPointRadius * rSampleSpace
-         enddo
+         enddo ! while true
 
 
          ! Initiate a loop over the points for this ray.
@@ -673,6 +677,8 @@ subroutine makeECMeshAndOverlap
 
                   ! Determine the magnitude of the radial component.
                   radialMagnitude = sum((latticeOffset(:)-cellDimsReal(:,m))**2)
+!write(20,*) "rM=", radialMagnitude, latticeOffset(:), cellDimsReal(:,m)
+!write(20,*) "lkmn=", l, k, m
 
                   ! If this particular potential site is beyond the required
                   !   range then we cycle on this loop.
@@ -759,11 +765,11 @@ subroutine makeECMeshAndOverlap
                               & exchRhoOp(currentPotAlphaIndex,k,10) + &
                               & zzdistance*exp(-currentAlphaMagnitude)
                      endif
-                  enddo
-               enddo
-            enddo
-         enddo
-      enddo
+                  enddo ! n, currentNumPotAlphas
+               enddo ! m, numCellsReal
+            enddo ! l, numPotSites
+         enddo ! k, numRayPoints - currentNumRayPoints + 1, numRayPoints
+      enddo ! j, numSampleVectors
 
 
       ! Accumulate values in the exchange correlation overlap matrix here
@@ -890,8 +896,11 @@ subroutine makeSampleVectors
    allocate (phiK(numSampleVectors))
    allocate (hK(numSampleVectors))
 
-   ! Initialize the values of hK.
-   do k = 1, numSampleVectors
+   ! Initialize the values of hK. Note that we make the first and last values
+   !   explicitly because some high optimizations might turn them into NaNs.
+   hK(1) = -1.0_double
+   hK(numSampleVectors) = 1.0_double
+   do k = 2, numSampleVectors - 1
       hK(k) = -1.0_double + 2.0_double * &
             & (k-1.0_double) / (numSampleVectors-1.0_double)
    enddo

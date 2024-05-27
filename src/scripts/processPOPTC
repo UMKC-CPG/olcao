@@ -1,0 +1,412 @@
+#!/usr/bin/env perl
+
+#PROGRAM:  processPOPTC
+#PURPOSE:  This program will read the raw Epsilon 2 pOptc data file
+#          with the purpose of collecting label information and 
+#          data along with creating a control file for makePDOS so
+#          that the raw data for one partial pair can be formatted
+#          to run OLCAOkkc. The purpose of this script is to allow
+#          for the calculation of partial ELF, Eps1, Eps1i and ref.
+#
+#AUTHOR:  Alysse Weigand
+#LAST MODIFIED:  Dec. 25, 2021
+#USAGE:  processPOPTC
+
+ 
+##########################################################
+# Use necessary modules
+##########################################################
+use strict;
+use warnings;
+use Env;
+use lib "$OLCAO_BIN/perl5";
+use StructureControl;
+
+##########################################################
+# Define global variables
+##########################################################
+
+# File Names
+my $outputFile;
+my $rawDataFile;
+my $kkcControl;
+my $e1e2elf;
+my $re1e2elf;
+my $eps1;
+my $reps1;
+my $elf;
+my $relf;
+my $refract;
+my $rrefract;
+my $eps1i;
+my $reps1i;
+
+# Data descriptors
+my $numSequences;
+my $style;
+my $numEnergyPoints;
+my $poptcFactor;
+my $poptcLines;
+my @energyPoint; # The values of the energy at each point on the energy scale
+my @element1;
+my @element2;
+my @pairKKCFactor;
+
+# Globally used temporary variables and loop variables.
+my @values;
+my $line;
+my $i;
+my $j;
+my $k;
+my $l;
+
+
+###########################################################
+# Begin execution of script
+###########################################################
+
+   #Declare files
+   $rawDataFile = "fort.250";
+   $kkcControl = "fort.200";
+   $e1e2elf = "fort.300";
+   $eps1 = "fort.310";
+   $elf = "fort.320";
+   $refract = "fort.330";
+   $eps1i = "fort.350";
+   $re1e2elf = "fort.100";
+   $reps1 = "fort.110";
+   $relf = "fort.120";
+   $rrefract = "fort.130";
+   $reps1i = "fort.140";
+
+   # Gather data and labels from raw file
+   &getRawData;
+
+
+   # Open files for writing
+   open (E1E2ELF,">$e1e2elf");
+   open (EPS1,">$eps1");
+   open (ELF,">$elf");
+   open (REF,">$refract");
+   open (EPS1I,">$eps1i");
+
+   # Open files and print header and energy points
+   &openHeader;
+  
+   # Delete any existing files with the same file number
+   system("rm -f fort.50 fort.100 fort.110 fort.120 fort.130 fort.140");
+
+   #Begin the loop
+   for ($i=1;$i<=$numSequences;$i++)
+   {
+      # create a control file for makePDOS
+      &createControl;
+
+      # call makePDOS on fort.777
+      &callMakePDOS;
+
+      # run OLCAO.kkc on fort.777
+      &callOLCAOkkc;
+
+      # copy data to a new raw file and delete various fort.xxx
+      &copyData;
+   }
+
+   # Close files
+   close(E1E2ELF);
+   close(EPS1);
+   close(ELF);
+   close(REF);
+   close(EPS1I);
+
+   # Delete any existing files for OLCAOkkc
+   system("rm -f fort.50 fort.100 fort.110 fort.120 fort.130 fort.140 fort.209");
+   
+
+##########################################################
+# End execution of the script
+##########################################################
+
+
+##########################################################
+# Subroutines
+##########################################################
+
+# Subroutine to gather information from eps2.raw
+sub getRawData
+{
+   open (EPS2,"<$rawDataFile") || die "Cannot open $rawDataFile file.\n";
+   
+   # Get the file style (1, 2, etc)
+   @values = StructureControl::prepLine(\*EPS2,$line,'\s+');
+   $style = $values[$#values];
+   
+   #Get the number of POPTC units in this data file.
+   @values = StructureControl::prepLine(\*EPS2,$line,'\s+');
+   $numSequences = $values[$#values];
+
+   #Get the number of energy points for each unit.
+   @values = StructureControl::prepLine(\*EPS2,$line,'\s+');
+   $numEnergyPoints = $values[$#values];
+
+   #Get the energy values that apply to each unit.
+   for ($i=1;$i<=$numEnergyPoints;$i++)
+   {
+      @values = StructureControl::prepLine(\*EPS2,$line,'\s+');
+      $energyPoint[$i] = $values[0];
+   }
+
+   $element1[0] = "";
+   $element2[0] = "";
+
+   # Get a list of the element name pairs.
+   $j = 1;
+   while ($line=<EPS2>)
+   {
+
+      # Get the element names for element 1
+      if ($line =~ /ELEMENT_1_NAME/)
+      {
+         #Get element one name
+         chomp ($line);
+         $element1[$j]=$line;
+
+         # Get element two name
+         $line=<EPS2>;
+         chomp ($line);
+         $element2[$j]=$line;
+
+         $j = $j + 1;
+      }
+   }
+
+   close (EPS2);
+
+
+   # Get information for OLCAOkkc scaling factor.
+   open (KKCCON,"<$kkcControl") || die "Cannot open $kkcControl file.\n";
+
+   #Get the scaling value for each pair.
+   for ($i=1;$i<=$numSequences;$i++)
+   {
+     @values = StructureControl::prepLine(\*KKCCON,$line,'\s+');
+     $pairKKCFactor[$i] = $values[$#values];
+   }
+
+   close(KKCCON);
+
+}
+
+# Subroutine to open the files and print the header
+sub openHeader
+{
+
+   print E1E2ELF ("STYLE   $style \n");
+   print E1E2ELF ("NUM_UNITS  $numSequences \n");
+   print E1E2ELF ("NUM_POINTS   $numEnergyPoints \n");
+   for ($i=1;$i<=$numEnergyPoints;$i++)
+   {
+      # Print the Energy Scale
+      printf E1E2ELF ("%10.4f",$energyPoint[$i]);
+      print E1E2ELF "\n";
+   }
+
+   print EPS1 ("STYLE   $style \n");
+   print EPS1 ("NUM_UNITS  $numSequences \n");
+   print EPS1 ("NUM_POINTS   $numEnergyPoints \n");
+   for ($i=1;$i<=$numEnergyPoints;$i++)
+   {
+      # Print the Energy Scale
+      printf EPS1 ("%10.4f",$energyPoint[$i]);
+      print EPS1 "\n";
+   }
+
+   print ELF ("STYLE   $style \n");
+   print ELF ("NUM_UNITS  $numSequences \n");
+   print ELF ("NUM_POINTS   $numEnergyPoints \n");
+   for ($i=1;$i<=$numEnergyPoints;$i++)
+   {
+      # Print the Energy Scale
+      printf ELF ("%10.4f",$energyPoint[$i]);
+      print ELF "\n";
+   }
+
+   print REF ("STYLE   $style \n");
+   print REF ("NUM_UNITS  $numSequences \n");
+   print REF ("NUM_POINTS   $numEnergyPoints \n");
+   for ($i=1;$i<=$numEnergyPoints;$i++)
+   {
+      # Print the Energy Scale
+      printf REF ("%10.4f",$energyPoint[$i]);
+      print REF "\n";
+   }
+
+   print EPS1I ("STYLE   $style \n");
+   print EPS1I ("NUM_UNITS  $numSequences \n");
+   print EPS1I ("NUM_POINTS   $numEnergyPoints \n");
+   for ($i=1;$i<=$numEnergyPoints;$i++)
+   {
+      # Print the Energy Scale
+      printf EPS1I ("%10.4f",$energyPoint[$i]);
+      print EPS1I "\n";
+   }
+}
+
+# Subroutine to create the control file for makePDOS
+sub createControl
+{ 
+   # Initialize the default file name.
+   $outputFile = "fort.700";
+ 
+   # Open the output file
+   open (OUTPUT,">$outputFile") || die "Cannot open $outputFile file.\n";
+
+      print OUTPUT ("LABEL : SEQUENCE_NUM : COL_LABELS\n");
+      print OUTPUT ("$i T : $i : TOTAL\n");
+      print OUTPUT ("$i x : $i : x\n");
+      print OUTPUT ("$i y : $i : y\n");
+      print OUTPUT ("$i z : $i : z\n");
+
+   close (OUTPUT)
+}
+
+sub callMakePDOS
+{ 
+   # Call makePDOS using control file, fort.702 and new output
+   system ("$OLCAO_BIN/makePDOS -i fort.700 -f fort.702 -o fort.50");
+   
+   # Remove the Control file
+   system ("rm -f fort.700");
+
+}
+
+sub callOLCAOkkc
+{
+   # Define local variables
+   my $lineCount;
+   my $optcLines;
+
+   $lineCount = `(wc -l fort.50)`;
+   @values = StructureControl::prepLine("",$lineCount,'\s+');
+   $optcLines = $values[0];
+
+   # Call OLCAOkkc
+   system("$OLCAO_BIN/OLCAOkkc $optcLines 1 $pairKKCFactor[$i] ");
+
+  #Currently not set up for spin 2 (olcao line 1376)
+
+}
+
+sub copyData
+{
+   # Copy data to new raw file
+
+   # Print E1E2ELF   
+   print E1E2ELF ("SEQUENCE_NUM ", $i, "\n");
+   print E1E2ELF ($element1[$i],"\n");
+   print E1E2ELF ($element2[$i],"\n");
+   print E1E2ELF ("COL_LABELS 3\n");
+   print E1E2ELF ("Epsilon1 Epsilon2 ELF\n");
+
+   open (RE1E2ELF,"<$re1e2elf") || die "Cannot open $re1e2elf file.\n";
+
+      <RE1E2ELF>;
+      while ($line=<RE1E2ELF>)
+      {
+         chomp ($line);
+         @values = split (/\s+/,"$line");
+         shift (@values);
+         shift (@values);
+         printf E1E2ELF ("@values\n");
+      }
+
+   close (RE1E2ELF);
+
+   # Print EPS1  
+   print EPS1 ("SEQUENCE_NUM ", $i, "\n");
+   print EPS1 ($element1[$i],"\n");
+   print EPS1 ($element2[$i],"\n");
+   print EPS1 ("COL_LABELS 4\n");
+   print EPS1 ("TOTAL x y z\n");
+
+   open (REPS1,"<$reps1") || die "Cannot open $reps1 file.\n";
+
+      <REPS1>;
+      while ($line=<REPS1>)
+      {
+         chomp ($line);
+         @values = split (/\s+/,"$line");
+         shift (@values);
+         shift (@values);
+         printf EPS1 ("@values\n");
+      }
+
+   close (REPS1);
+
+   # Print ELF   
+   print ELF ("SEQUENCE_NUM ", $i, "\n");
+   print ELF ($element1[$i],"\n");
+   print ELF ($element2[$i],"\n");
+   print ELF ("COL_LABELS 4\n");
+   print ELF ("TOTAL x y z \n");
+
+   open (RELF,"<$relf") || die "Cannot open $relf file.\n";
+
+      <RELF>;
+      while ($line=<RELF>)
+      {
+         chomp ($line);
+         @values = split (/\s+/,"$line");
+         shift (@values);
+         shift (@values);
+         printf ELF ("@values\n");
+      }
+
+   close (RELF);
+
+   # Print REF   
+   print REF ("SEQUENCE_NUM ", $i, "\n");
+   print REF ($element1[$i],"\n");
+   print REF ($element2[$i],"\n");
+   print REF ("COL_LABELS 4\n");
+   print REF ("TOTAL x y z\n");
+
+   open (RREF,"<$rrefract") || die "Cannot open $rrefract file.\n";
+
+      <RREF>;
+      while ($line=<RREF>)
+      {
+         chomp ($line);
+         @values = split (/\s+/,"$line");
+         shift (@values);
+         shift (@values);
+         printf REF ("@values\n");
+      }
+
+   close (RREF);
+
+   # Print EPS1I  
+   print EPS1I ("SEQUENCE_NUM ", $i, "\n");
+   print EPS1I ($element1[$i],"\n");
+   print EPS1I ($element2[$i],"\n");
+   print EPS1I ("COL_LABELS 4\n");
+   print EPS1I ("TOTAL x y z\n");
+
+   open (REPS1I,"<$reps1i") || die "Cannot open $reps1i file.\n";
+
+      <REPS1I>;
+      while ($line=<REPS1I>)
+      {
+         chomp ($line);
+         @values = split (/\s+/,"$line");
+         shift (@values);
+         shift (@values);
+         printf EPS1I ("@values\n");
+      }
+
+   close (REPS1I);
+
+   # Delete fort.xxx
+   system ("rm -f fort.50 fort.100 fort.110 fort.120 fort.130 fort.140");
+}
+

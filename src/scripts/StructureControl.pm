@@ -12,6 +12,9 @@ use ElementData;
 use Math::Complex;
 use Math::Trig;
 use Math::MatrixReal;
+#use Inline (C => Config => cc => 'gcc',
+#            ld => 'gcc',
+#            inc => '-I/usr/include');
 use Inline C => 'DATA',
            NAME => 'StructureControl';
 
@@ -62,6 +65,8 @@ my $title;
 my $numElements;     # The number of unique elements in the system.
 my $numAtoms;        # The number of atoms in the system.
 my $numAtomsExt;     # The number of relevant atoms in the periodic system.
+my $numAtomUniqSpecies; # The number of unique atomic species in the system.
+my @atomUniqSpecies; # A unique index number for each atomic species.
 my @central2ExtItemMap;  # Maps from central cell atom # to extended list.
 my @ext2CentralItemMap;  # Maps from extended atom # to central cell atom #.
 my @datSklMap;       # A Map, given dat atom#, gives skl atom#.
@@ -106,20 +111,34 @@ my @recipLattice;    # Reciprocal space lattice [a',b',c'][x,y,z] (A).[2pi*Inv]
 my @mag;             # Magnitude of each a,b,c vector in @realLattice.
 my @angle;           # Alpha(b,c),beta(a,c),gamma(a,b) in @realLattice. Radians
 my @angleDeg;        # Alpha(b,c),beta(a,c),gamma(a,b) in @realLattice. Degrees
+my @fullCellMag;     # Given cell (full cell) lattice magnitudes.
+my @fullCellAngle;   # Given cell (full cell) angles in radians.
+my @fullCellAngleDeg;# Given cell (full cell) angles in degrees.
+my @magRecip;        # Magnitude of each vector k_a, k_b, k_c in @recipLattice.
+my @angleRecip;      # Radians k_alpha(k_b, k_c), etc. in @recipLattice.
+my @angleDegRecip;   # Degrees k_alpha(k_b, k_c), etc. in @recipLattice.
+my @sineAngle;       # Sine of each angle: alpha, beta, gamma.
 my @abcOrder;        # Order in which abc lattice vectors relate to @xyzOrder.
 my @xyzOrder;        # Order in which xyz axes are used by @abcOrder;
 my $realCellVolume;  # Volume of the real space cell in angstroms.
 my $recipCellVolume; # Volume of the reciprocal space cell in angstroms.
+my @sortedLatIndices;  # Indices used to sort the angles and lattice magnitudes.
+
+
+# Brillouin zone descriptors.
+my @bZoneSurfaces;   # Array holding surface normal vectors of the BZs.
+my @bZoneVertices;   # Array holding vertices of each BZ.
 
 
 # Extra lattice data and replicated cell data.
 my $doFullCell;      # Flag requesting to use the conventional (full) cell.
-my $spaceGroup;      # Space group name or number for this system.
+my $spaceGroup;      # Space group name or number for this system from skel.
 my $spaceGroupNum;   # Space group root number for this system.
+my $spaceGroupSubNum;# Space group root sub number for this system (a=1, etc.).
 my $spaceGroupName;  # Space group name for this system.
+my $latticeType;     # A letter designating type face=F, body=I, prim=P, etc.
 my @supercell;       # Definition of a supercell request.
-my @scMirror;        # Definition of a supercell request for mirroring.
-my @sineAngle;       # Sine of each angle.
+my @scMirror;        # Flags to request mirroring of cells in a supercell.
 my @negBit;          # Num. of replicated cells needed in the -abc directions.
 my @posBit;          # Num. of replicated cells needed in the +abc directions.
 my $buffer=10;       # Buffer space between the system and the simulation box
@@ -237,6 +256,9 @@ sub getNumAtoms
 sub getNumAtomsExt
    {return $numAtomsExt;}
 
+sub getAtomUniqSpecies
+   {return \@atomUniqSpecies;}
+
 sub getDatSklMapRef
    {return \@datSklMap;}
 
@@ -309,17 +331,35 @@ sub getMagRef
 sub getAngleRef
    {return \@angle;}
 
+sub getFullCellMagRef
+   {return \@fullCellMag;}
+
+sub getFullCellAngleRef
+   {return \@fullCellAngle;}
+
+sub getMagRecipRef
+   {return \@magRecip;}
+
+sub getAngleRecipRef
+   {return \@angleRecip;}
+
 sub getSineAngleRef
    {return \@sineAngle;}
 
 sub getSpaceGroupNum
    {return $spaceGroupNum;}
 
+sub getSpaceGroupSubNum
+   {return $spaceGroupSubNum;}
+
 sub getSpaceGroup
    {return $spaceGroup;}
 
 sub getSpaceGroupName
    {return $spaceGroupName;}
+
+sub getLatticeType
+   {return $latticeType;}
 
 sub getNegBitRef
    {return \@negBit;}
@@ -639,6 +679,7 @@ sub reset
    undef @elementCount;
    undef @atomSpeciesID;
    undef @numSpecies;
+   undef @atomUniqSpecies;
    undef @speciesList;
    undef @atomicZ;
    undef @atomTag;
@@ -662,6 +703,9 @@ sub reset
    undef @mag;
    undef @angle;
    undef @angleDeg;
+   undef @magRecip;
+   undef @angleRecip;
+   undef @angleDegRecip;
    undef @abcOrder;
    undef @xyzOrder;
    undef $realCellVolume;
@@ -669,7 +713,9 @@ sub reset
    undef $doFullCell;
    undef $spaceGroup;
    undef $spaceGroupNum;
+   undef $spaceGroupSubNum;
    undef $spaceGroupName;
+   undef $latticeType;
    undef @supercell;
    undef @scMirror;
    undef @sineAngle;
@@ -704,6 +750,7 @@ sub reset
    undef @bondAnglesExt;
    undef @numBondAngles;
    undef $numBondsTotal;
+   undef $numUniqueBondTags;
    undef @bondTagID;
    undef @uniqueBondTags;
    undef $numAnglesTotal;
@@ -856,7 +903,6 @@ sub readOLCAOSkl
    my $useFileSpecies = $_[1];
 
    # Declare local parameters.
-   my $line;
    my $axisABC;
    my $axisXYZ;
    my $atom;
@@ -864,22 +910,40 @@ sub readOLCAOSkl
    my @tempValues;
    my $coordType;
    my $coordIndex;
+   my $fixedLattice;
+   my $lineNum; # Which current line number is being processed.
+   my $numLines; # Total number of lines in the skeleton file.
+   my @skeleton;
+   my $gettingTitle;
+   my $magAngleForm;
 
    # This is going to be a bit crude to make it easier to program.  Sorry.
 
-   # The olcao.skl file MUST have 'title' on the first line.  The title ends
-   #   when the word 'end' is found on a line by itself.
-   # This MUST be followed by a line with 'cell' or 'cellxyz'.  If 'cell' is
-   #   used, then the line after cell contains the a, b, c, alpha, beta, gamma
-   #   lattice parameters in Angstroms and degrees.  If 'cellxyz' is used
-   #   then the next three lines contain the lattice vectors in xyz format.
-   #   The first line is the 'a' vector's x,y,z components, the second line is
-   #   the 'b' vector's x,y,z components and the third line is for 'c'.
-   # This MUST be followed by a line with either 'frac' or 'cart' that
+   # The olcao.skl file MUST include a 'title' line. The title ends
+   #   when the word 'end' is found on a line by itself. Between the two
+   #   the user may include any information (e.g. citations etc.).
+   # The file MUST include a line with 'cell' or 'cellxyz'. Optionally,
+   #   the user may add 'fixed" after 'cell' or 'cellxyz'. The impact of that
+   #   option is discussed below. First, however, if 'cell' is used, then
+   #   the line after cell contains the a, b, c, alpha, beta, gamma lattice
+   #   parameters in Angstroms and degrees.  If 'cellxyz' is used then the
+   #   next three lines contain the lattice vectors in xyz format. The first
+   #   line is the x,y,z components of the 'a' vector, the second line is the
+   #   x,y,z components of the 'b' vector, and the third line is for 'c'. The
+   #   'fixed' option will demand that the cell be used as given. If the
+   #   'fixed' option is *not* given then the lattice parameters (a, b, c
+   #   magnitudes and alpha, beta, gamma angles) will be automatically
+   #   arranged such that a <= b <= c and alpha <= beta <= gamma. Note also
+   #   that the if 'cell' is given then the a-axis will be colinear with the
+   #   Cartesian x-axis, the b-axis will be in the Cartesian x-y plane, and
+   #   the c-axis will point as needed out of the x-y plane. On the other
+   #   hand, if the celxyz format is used, then the a, b, c axes will be
+   #   oriented as given.
+   # The file MUST include a line with either 'frac' or 'cart' that
    #   specifies the form of the atomic coordinates.  Also on the line there 
    #   MUST be a single integer specifying how many atoms are listed in the
    #   file.
-   # This MUST be followed by a list of the atoms in the model equal to the
+   # The file MUST include a list of the atoms in the model equal to the
    #   number provided in the 'frac' or 'cart' line.  Each atom must have a
    #   tag followed by the three spatial coordinates in either fractional or
    #   cartesian coordinates as specified above.  After the coordinates for a
@@ -887,7 +951,7 @@ sub readOLCAOSkl
    #   covalently bonded atoms to the atom in that line.  The tags are defined
    #   as colon separated element lists (e.g. "H:H").  If such a tag is found
    #   on a line defining an O atom it will create water.
-   # This MUST be followed by 'space' with the space group designated on the
+   # The file MUST include a line with 'space' and the space group # on the
    #   same line.  The space group can be given as either a number (which will
    #   use the standard default origin and unique axis), or you can specify
    #   the exact space group name using the uniform ASCII form for specifying
@@ -902,202 +966,410 @@ sub readOLCAOSkl
    #   Copyright 1997-1999.  Birkbeck College, University of London.  Available
    #   at the web site:  http://img.chem.ucl.ac.uk/sgp/mainmenu.htm.  All
    #   names are from the book.  Notational scheme is from first reference.
-   # This MUST be followed by supercell with three integers on that line
-   #   indicating how many times each of the a,b,c axes should be duplicated.
-   # This MUST be followed by a line with either 'full' or 'prim'.  This
+   # The file MUST include a line with 'supercell' with three integers on that
+   #   line indicating how many times each of the a,b,c axes should be
+   #   duplicated. (It is common to use "1 1 1" to generate a single cell.)
+   # The file MUST include a line with either 'full' or 'prim'.  This
    #   indicates a request for either a primitive cell or a full
    #   (non-primitive) cell.  The full cell is only attainable if it was given
    #   in the input file.  (i.e. This can convert from full to prim, but not
    #   the other way around.)
-   # This MUST be followed by a line with 'cutd' that contains a decimal
-   #   number indicating the distance beyond which interatomic distances should
-   #   not be considered when determining a simple structural analysis.
 
    # Open the file for reading.
    open (OLCAO,"<$inFile") || die "Could not open $inFile for reading\n";
 
+   # We are going to read all the information into a temporary variable so that
+   #   it can be processed in whatever way that we want afterward.
+   @skeleton = <OLCAO>;
+   $numLines = $#skeleton + 1;
+   close (OLCAO);
+
+   # Extract the title. The title is found between two special lines that must
+   #   start with barewords "title" and "end". The extraction is a little bit
+   #   tricky because we read a line and increment the line number counter.
+   #   So, for a given line, we have to check if we found the "end" before we
+   #   check for "title". This way the words "title" and "end" will not be
+   #   included as part of the actual title.
+   $lineNum = 0;
+   $gettingTitle = 0;
+   while (@values = &prepLine("",$skeleton[$lineNum++],'\s+'))
+   {
+      if (($values[0] eq "end") && ($#values == 0))
+         {$gettingTitle = 0; last;}
+
+      if ($gettingTitle == 1)
+         {push (@systemTitle,$skeleton[$lineNum-1]);}
+
+      if (($values[0] eq "title") && ($#values == 0))
+         {$gettingTitle = 1;}
+
+      # If the end of the file is reached and we fail to read the desired data
+      #   then we need to quit and report the issue to the user.
+      if ($lineNum > $numLines)
+      {
+         print <<ENDHELP;
+Finished reading the skeleton file but did not successfully read the title.
+The title must have the word 'title' on a line by itself followed by any
+number of lines describing the system (e.g., citations, previous
+calculations, other pertanent information, etc.). The title is closed by
+giving the word 'end' on a line by itself. Please adjust your input
+accordingly and resubmit. Exiting.
+ENDHELP
+         exit;
+      }
+   }
+
+   # Extract the space group identifier. The value given here must exactly
+   #   match the name of some file (or soft link to a file) in the space
+   #   group database. (The database is usually found in
+   #   $OLCAO_DIR/share/spaceDB.)
+   $lineNum = 0;
+   while (@values = &prepLine("",$skeleton[$lineNum++],'\s+'))
+   {
+      if (($values[0] eq "space") && ($#values == 1))
+      {
+         # Get the space group indicator (which might be either a full
+         #   name in ASCII form or a number with optional center after an
+         #   underscore.
+         $spaceGroup = $values[1];
+
+         # Open the file and extract a specific space group number and type.
+         #   Use the space group ID (name or number) to open the space group
+         #   operations file from the space group data base.
+         open (SPACE,"<$spaceGroupDB/$spaceGroup") ||
+               die "Cannot open $spaceGroup for reading in $spaceGroupDB.\n";
+
+         # Read the first line to get the cell lattice type (primitive or non-
+         #   primitive) and the space group name.
+         @values = &prepLine(\*SPACE,"",'\s+');
+         $latticeType = $values[0];
+         $spaceGroupName = $values[1];
+
+         # If there is an alternative definition for this space group it is
+         #   labeled in the space group file with an index starting at 'a'.  In
+         #   such a case, the file name is extended by "_a" for the complete
+         #   name of the space group (i.e. not the number)
+         #   (e.g. 227 = Fd3~m_a).
+         if (($#values > 1) && ($values[2] =~ /[a-z]/))
+            {$spaceGroupName = $spaceGroupName . "_$values[2]";}
+
+         # Read the second line to get the root space group number and sub
+         #   number.
+         @values = &prepLine(\*SPACE,"",'\s+');
+         $spaceGroupNum = $values[0];
+         $spaceGroupSubNum = $values[1];
+
+         close (SPACE);
+
+         last;
+      }
+
+      # If the end of the file is reached and we fail to read the desired data
+      #   then we need to quit and report the issue to the user.
+      if ($lineNum > $numLines)
+      {
+         print <<ENDHELP;
+Finished reading the skeleton file but did not successfully read the space
+group information. The space group information is given by using the word
+'space' on a line followed (on the same line) by the space group. The space
+group must be given by using one of the available options from the
+$spaceGroupDB directory.  Please adjust your input accordingly and resubmit.
+Exiting.
+ENDHELP
+         exit;
+      }
+   }
+
+   # Extract the supercell and any optionally included mirror plane numbers.
+   $lineNum = 0;
+   while (@values = &prepLine("",$skeleton[$lineNum++],'\s+'))
+   {
+      if (($values[0] eq "supercell") && (($#values == 3) || ($#values == 6)))
+      {
+         @supercell[1..3] = @values[1..3];
+
+         if ($#values > 3)
+            {@scMirror[1..3] = @values[4..6];}
+         else
+            {@scMirror[1..3] = (0,0,0);}
+
+         # We've read this data so we can quite the while loop.
+         last;
+      }
+
+      # If the end of the file is reached and we fail to read the desired data
+      #   then we need to quit and report the issue to the user.
+      if ($lineNum > $numLines)
+      {
+         print <<ENDHELP;
+Finished reading the skeleton file but did not successfully read the supercell
+information. The supercell information is given by using the word 'space' on a
+line followed (on the same line) by at least three integers. The integers
+define the number of duplicate cells to be created along each of the a, b, c
+axes. If a single unit cell calculation is desired, then the integers should
+be 1 1 1. Optionally, an additional three binary values (0 or 1) may be
+appended to turn on mirroring of the cell along the axes designated with a 1.
+If these numbers are not given then they are assumed to be 0 by default.
+Please adjust your input accordingly and resubmit. Exiting.
+ENDHELP
+         exit;
+      }
+   }
+
+   # It is expected that the lattice parameters will be for the conventional
+   #   cell of the associated space group. Therefore, we need to extract a
+   #   flag that indicates whether or not the conventional cell should be
+   #   reduced to a primitive cell.
+   $lineNum = 0;
+   while (@values = &prepLine("",$skeleton[$lineNum++],'\s+'))
+   {
+      if (($values[0] eq "full") && ($#values == 0))
+         {$doFullCell = 1; last;}
+      elsif (($values[0] eq "prim") && ($#values == 0))
+         {$doFullCell = 0; last;}
+
+      # If the end of the file is reached and we fail to read the desired data
+      #   then we need to quit and report the issue to the user.
+      if ($lineNum > $numLines)
+      {
+         print <<ENDHELP;
+Finished reading the skeleton file but did not successfully read the flag
+information indicating whether to do a full cell or a primitive cell
+calculation. The cell type information is given by using either the word
+'full' or 'prim' on a line by itself. Please adjust your input accordingly
+and resubmit. Exiting.
+ENDHELP
+         exit;
+      }
+   }
+
+   # Extract the cell parameters in either a,b,c,alpha,beta,gamma format or
+   #   in abc,xyz vector format. Initially assume that the lattice will be
+   #   given in abc,xyz vector format.
+   $magAngleForm = 0;
+   $lineNum = 0;
+   while (@values = &prepLine("",$skeleton[$lineNum++],'\s+'))
+   {
+      if ((($values[0] eq "cell") || ($values[0] eq "cellxyz")) &&
+          ($#values <= 1))
+      {
+         # It is possible that for some reason the structure as defined in the
+         #   skeleton file needs to be reoriented. For example, the structure
+         #   may be triclinic and may have been given with a > b and c > b.
+         #   Then, perhaps the user would like to have the structure reordered
+         #   such that a < b < c. Perhaps there are some other issues with the
+         #   angles too. On the line with "cell" or "cellxyz" the user can
+         #   also specify information to direct the reordering of the lattice
+         #   information.
+         # This is the place where such information would be provided and
+         #   read in. For now, we will not implement this capability.
+
+         # Read in the lattice parameters depending on whether "cell" or
+         #   "cellxyz" is given.
+         if($values[0] eq "cell")
+         {
+            # Record that the magnitudes and angles were given.
+            $magAngleForm = 1;
+
+            # Read a,b,c magnitudes and alpha, beta, gamma angles.
+            @values   = &prepLine("",$skeleton[$lineNum],'\s+');
+
+            $mag[1]   = $values[0];
+            $mag[2]   = $values[1];
+            $mag[3]   = $values[2];
+            $angleDeg[1] = $values[3];  # Degrees.
+            $angleDeg[2] = $values[4];  # Degrees.
+            $angleDeg[3] = $values[5];  # Degrees.
+            $angle[1] = $pi/180.0 * $values[3];  # Radians.
+            $angle[2] = $pi/180.0 * $values[4];  # Radians.
+            $angle[3] = $pi/180.0 * $values[5];  # Radians.
+
+            # The above cell parameters are the "operational" cell paramters.
+            #   Somewhat problematically, they act as both the full cell and
+            #   the primitive cell paramters. I.e., the same variable is used
+            #   for both purposes. The values are simply overwritten when the
+            #   primitive cell is created. Doing so simplifies some other work,
+            #   but obviously it can cause other points of confusion. So, to
+            #   help reduce confusion we will also store here the cell
+            #   parameters as originally given and we will always consider
+            #   these to be "full" cell parameters.
+            $fullCellMag[1] = $mag[1];
+            $fullCellMag[2] = $mag[2];
+            $fullCellMag[3] = $mag[3];
+            $fullCellAngleDeg[1] = $angleDeg[1];
+            $fullCellAngleDeg[2] = $angleDeg[2];
+            $fullCellAngleDeg[3] = $angleDeg[3];
+            $fullCellAngle[1] = $angle[1];
+            $fullCellAngle[2] = $angle[2];
+            $fullCellAngle[3] = $angle[3];
+         }
+         else # $values[0] eq "cellxyz"
+         {
+            # Read a,b,c vectors in x,y,z format.
+            foreach $axisABC (1..3)
+            {
+               @values   = &prepLine("",$skeleton[$lineNum++],'\s+');
+               unshift @values, "";
+               @{$realLattice[$axisABC]} = @values;
+            }
+         }
+         last;
+      }
+
+      # If the end of the file is reached and we fail to read the desired data
+      #   then we need to quit and report the issue to the user.
+      if ($lineNum > $numLines)
+      {
+         print <<ENDHELP;
+Finished reading the skeleton file but did not successfully read the cell
+parameter information indicating the lattice vector magnitudes and angles or
+the explicit lattice vectors. The cell parameters are given by using either
+the word 'cell' or 'cellxyz' on a line by itself. If the word 'cell' is used
+then the next line must contain 6 real numbers that define (in order) the
+magnitudes of the lattice vectors: a, b, c and the angles between vectors:
+alpha, beta, gamma. If the word 'cellxyz' is used then the next three lines
+must contain (one after the other) the x, y, z vector representation of each
+of the a, b, c vectors. (I.e., the next line contains the x,y,z values for the
+'a' vector, then the next line contains the x,y,z values for the 'b' vector,
+and then the final line describes the x,y,z values for the 'c' vector. In both
+cases the units are Angstroms. Please adjust your input accordingly and
+resubmit. Exiting.
+ENDHELP
+         exit;
+      }
+   }
+
+   # If the lattice was given using a,b,c magnitudes and alpha,beta,gamma
+   #   angles, then we need to compute the a,b,c x,y,z vectors. Otherwise,
+   #   we were given the lattice directly in a,b,c x,y,z vectors and now
+   #   we need to obtain the a,b,c magnitudes and alpha,beta,gamma angles.
+   if ($magAngleForm == 1)
+      {&getABCVectors;} # Following W. Setyawan, S. Curtarolo, Comp. Mat. Sci.
+            #   vol. 49, pp. 299-312, (2010) as much as possible and extending
+            #   from there according to "A Hypertext Book of Crystallographic
+            #   Space Group Diagrams and Tables", Copyright 1997-1999.
+            #   Birkbeck College, University of London.  Available at the web
+            #   site:  http://img.chem.ucl.ac.uk/sgp/mainmenu.htm.
+   else
+      {&abcAlphaBetaGamma(\@realLattice,\@mag,\@angle,\@angleDeg,1);}
+
+   # Obtain the inverse of the real lattice.  This must be done now so that
+   #   we can get the abc coordinates of atoms if we are given xyz.  It must
+   #   be done again later after applying the spacegroup, supercell, and
+   #   any reordering of the lattice parameters.
+   &makeLatticeInv(\@realLattice,\@realLatticeInv,0);
+
+   # Obtain the sine function of each angle.
+   &getAngleSine(\@angle);
+
    # Initialize the atomic counter.
    $numAtoms = 0;
 
-
-   # Read the title.
-   @values = &prepLine(\*OLCAO,"",'\s+');
-   if ($values[0] ne "title")
-      {die "Missing 'title' as first line in olcao.skl file.\n";}
-   else
+   # Extract the atomic positions and apply any sorted lattice order.
+   $lineNum = 0;
+   while (@values = &prepLine("",$skeleton[$lineNum++],'\s+'))
    {
-      while ($line = <OLCAO>)
+      if (($values[0] =~ /^frac/) || ($values[0] =~ /^cart/))
       {
-         @values = &prepLine("",$line,'\s+');
-         if ($values[0] eq 'end')
-            {last;}
-         else
-            {push (@systemTitle,$line);}
-      }
-   }
+         # Save the form that the coordinates are given in.
+         $coordType = $values[0];
 
+         # Save the number of atoms in the system
+         $numAtoms = $values[1];
 
-
-   # Read the cell parameters.
-   @values = &prepLine(\*OLCAO,"",'\s+');
-   if (($values[0] ne "cell") && ($values[0] ne "cellxyz"))
-      {die "Missing 'cell' or 'cellxyz' after title section " .
-             "in olcao.skl file.\n";}
-   elsif($values[0] eq "cell")
-   {
-      # Read a,b,c magnitudes and alpha, beta, gamma angles.
-      @values   = &prepLine(\*OLCAO,"",'\s+');
-
-      $mag[1]   = $values[0];
-      $mag[2]   = $values[1];
-      $mag[3]   = $values[2];
-      $angleDeg[1] = $values[3];  # Degrees.
-      $angleDeg[2] = $values[4];  # Degrees.
-      $angleDeg[3] = $values[5];  # Degrees.
-      $angle[1] = $pi/180.0 * $values[3];  # Radians.
-      $angle[2] = $pi/180.0 * $values[4];  # Radians.
-      $angle[3] = $pi/180.0 * $values[5];  # Radians.
-
-      # Convert the values to a,b,c in x,y,z vector format.
-      &getABCVectors;
-
-      # Obtain the inverse of the real lattice.  This must be done now so that
-      #   we can get the abc coordinates of atoms if we are given xyz.  It must
-      #   be done again later after applying the spacegroup and supercell.
-      &makeLatticeInv(\@realLattice,\@realLatticeInv,0);
-
-      # Obtain the sine function of each angle.
-      &getAngleSine(\@angle);
-   }
-   else
-   {
-      # Read a,b,c vectors in x,y,z format.
-      foreach $axisABC (1..3)
-      {
-         @values = &prepLine(\*OLCAO,"",'\s+');
-         unshift @values, "";
-         @{$realLattice[$axisABC]} = @values;
-      }
-
-      # Obtain the lattice vectors in a,b,c,alpha,beta,gamma form.
-      &abcAlphaBetaGamma;
-
-      # Obtain the inverse of the real lattice.  This must be done now so that
-      #   we can get the abc coordinates of atoms if we are given xyz.  It must
-      #   be done again later after applying the spacegroup and supercell.
-      &makeLatticeInv(\@realLattice,\@realLatticeInv,0);
-
-      # Obtain the sine function of each angle.
-      &getAngleSine(\@angle);
-   }
-
-
-
-   # Read the atomic positions.
-   @values = &prepLine(\*OLCAO,"",'\s+');
-   if (($values[0] !~ /^frac/) && ($values[0] !~ /^cart/))
-      {die "Missing 'frac' or 'cart' after cell section in olcao.skl file.\n";}
-   else
-   {
-      # Save the form that the coordinates are given in.
-      $coordType = $values[0];
-
-      # Save the number of atoms in the system
-      $numAtoms = $values[1];
-
-      # Read the information for each atom.
-      foreach $atom (1..$numAtoms)
-      {
-         @values = &prepLine(\*OLCAO,"",'\s+');
-
-         # Save the atom tag element name and species ID (1 if undefined).
-         $atomTag[$atom] = lc($values[0]);
-         if ($atomTag[$atom] !~ /[0-9]/)
-            {$atomTag[$atom] = $atomTag[$atom] . "1";}
-
-         # If a connection tag exists, then we save it.  Otherwise empty it.
-         if ($#values > 3)
-            {$connectionTag[$atom] = lc($values[4]);}
-         else
-            {$connectionTag[$atom] = "";}
-
-         # Check for an overcount of the number of atoms.
-         if ($atomTag[$atom] eq "space")
-            {die "File claims $numAtoms atoms but only ", $atom-1," found.\n";}
-
-         # Save the atomic coordinates in the form that they are presented
-         #   (cart or fract) and then convert them to the other possible forms.
-         if ($coordType =~ /frac/)
+         # Read the information for each atom. Note that we have applied here
+         #   Thoreau's fourth theory of adaptation which states: That's not a
+         #   "bug", that's a feature! If the user specifies a number atoms on
+         #   the "frac" or "cart" line (say x) that is less than the number
+         #   of atoms actually listed in the skeleton file (say q), then only
+         #   the first x atoms will be read in and the q-x atoms at the end
+         #   of the list will be ignored.
+         # To help the poor user that misses this "feature" we print a notice
+         #   here indicating the number of atoms being read in. Hopefully, the
+         #   user will notice the discrepancy (if there is one) and will make
+         #   a correction.
+         print STDOUT "Reading in $numAtoms atoms.\n";
+         foreach $atom (1..$numAtoms)
          {
-            # Initialize the $fractABC[$atom][0] to "";
-            $fractABC[$atom][0] = "";
+            @values = &prepLine("",$skeleton[$lineNum++],'\s+');
 
-            # Get the fractional a,b,c coordinates.
-            foreach $axisABC (1..3)
-               {$fractABC[$atom][$axisABC] = $values[$axisABC];}
+            # Save the atom tag element name and species ID (1 if undefined).
+            $atomTag[$atom] = lc($values[0]);
+            if ($atomTag[$atom] !~ /[0-9]/)
+               {$atomTag[$atom] = $atomTag[$atom] . "1";}
 
-            # Compute the direct space coordinates in a,b,c.
-            foreach $axisABC (1..3)
+            # If a connection tag exists, then save it. Otherwise empty it.
+            if ($#values > 3)
+               {$connectionTag[$atom] = lc($values[4]);}
+            else
+               {$connectionTag[$atom] = "";}
+
+            # Save the atomic coordinates in the form that they are presented
+            #   (cart or fract) and then convert them to the other possible
+            #   forms.
+            if ($coordType =~ /frac/)
             {
-               $directABC[$atom][$axisABC] = 
-                     $fractABC[$atom][$axisABC]*$mag[$axisABC];
-            }
-            # Calculate the atomic coordinates in x,y,z direct space.
-            &getDirectXYZ($atom);
-         }
-         elsif ($coordType =~ /cart/)
-         {
-            # Get the x,y,z direct space coordinates.
-            foreach $axisXYZ (1..3)
-               {$directXYZ[$atom][$axisXYZ] = $values[$axisXYZ];}
+               # Initialize the $fractABC[$atom][0] to "";
+               $fractABC[$atom][0] = "";
 
-            # Convert to direct a,b,c and then to fractional a,b,c.
-            &getDirectABC($atom);
-            &getFractABC($atom);
+               # Get the fractional a,b,c coordinates.
+               foreach $axisABC (1..3)
+                  {$fractABC[$atom][$axisABC] = $values[$axisABC];}
+
+               # Compute the direct space coordinates in a,b,c.
+               foreach $axisABC (1..3)
+               {
+                  $directABC[$atom][$axisABC] = 
+                        $fractABC[$atom][$axisABC]*$mag[$axisABC];
+               }
+               # Calculate the atomic coordinates in x,y,z direct space.
+               &getDirectXYZ($atom);
+            }
+            elsif ($coordType =~ /cart/)
+            {
+               # Get the x,y,z direct space coordinates.
+               foreach $axisXYZ (1..3)
+                  {$directXYZ[$atom][$axisXYZ] = $values[$axisXYZ];}
+
+               # Convert to direct a,b,c and then to fractional a,b,c.
+               &getDirectABC($atom);
+               &getFractABC($atom);
+            }
          }
-         else
-            {die "Unknown coordinate specification:  $coordType.  Aborting.\n";}
+
+         # We have read in all the atom information.
+         last;
+      }
+
+      # If the end of the file is reached and we fail to read the desired data
+      #   then we need to quit and report the issue to the user.
+      if ($lineNum > $numLines)
+      {
+         print <<ENDHELP;
+Finished reading the skeleton file but did not successfully read the atomic
+coordinate information indicating the types and positions of the symmetry
+equivalent atoms in the model. The atomic coordinates are given by using
+either the word 'fract' or 'cart' on a line followed (on the same line) by an
+integer X equal to the number of symmetry equivalent atoms listed in the
+skeleton file. On each of the X subsequent lines one symmetry equivalent atom
+type and coordinates are given. The type consists of the letters from the
+periodic table of the elements designating the element followed by an integer
+number indicating the type number. (E.g., for silicon type 1 you would write
+"si1" or "Si1".) The coordinates are given in either a,b,c fractional units
+if 'fract' was used or x,y,z Cartesian units (Angstroms) if 'cart' was used.
+Take note that for all coordinates they should be specified to at least eight
+decimal places to ensure correct application of symmetry operations.
+Optionally, after the coordinates (and on the same line) a special tag may be
+added for the purpose of adding additional covalently bonded atoms to the
+atom given on that line. The tags are defined as colon separated element lists
+(e.g. "H:H").  If a tag such as that example is found on a line defining an
+oxygen atom then it will create a water molecule at that site. Please adjust
+your input accordingly and resubmit. Exiting.
+ENDHELP
+         exit;
       }
    }
 
-
-   # Read the space group identifier.
-   @values = &prepLine(\*OLCAO,"",'\s+');
-   if ($values[0] ne "space")
-      {die "Missing 'space' after atom position section in olcao.skl file.\n";}
-   else
-      {$spaceGroup = $values[1];}
-
-
-   # Read the supercell and optional mirror specification.
-   @values = &prepLine(\*OLCAO,"",'\s+');
-   if ($values[0] ne "supercell")
-      {die "Missing 'supercell' after spacegroup section in olcao.skl file.\n";}
-   else
-   {
-      @supercell[1..3] = @values[1..3];
-
-      if ($#values > 4)
-         {@scMirror[1..3] = @values[4..6];}
-      else
-         {@scMirror[1..3] = (0,0,0);}
-   }
-
-
-   # Read the request for full or primitive cell.
-   @values = &prepLine(\*OLCAO,"",'\s+');
-   if (($values[0] !~ /^prim/) && ($values[0] !~ /^full/))
-      {die "Missing 'full' or 'prim' after supercell ".
-           "section in olcao.skl file.\n";}
-   else
-   {
-      if ($values[0] eq "full")
-         {$doFullCell = 1;}
-      else
-         {$doFullCell = 0;}
-   }
-
-   close (OLCAO);
 
    # Add atoms listed in connection tags.
    &addConnectionAtoms;
@@ -1113,6 +1385,53 @@ sub readOLCAOSkl
 
    # Apply the supercell request to the cell.
    &applySupercell(@supercell[1..3],@scMirror[1..3]);
+
+   # Under certain constraints we will now reorder the magnitudes and angles.
+   #   To be in agreement with W. Setyawan, S. Curtarolo, Comp. Mat. Sci.,
+   #   v. 49, pp. 299-312, (2010) we would try to obtain the ordering of
+   #   alpha <= beta <= gamma and a <= b <= c where possible. However, we will
+   #   realign with whatever the user specifies. Take note that due to
+   #   symmetry, reordering is not needed or is limited for certain crystal
+   #   lattices as follows:
+   #   Cubic:     No reordering needed because a=b=c and alpha=beta=gamma=90.
+   #   Hexagonal: No reordering needed. The basal plane axes will always be
+   #              the a and b axes by convention while the c axis will always
+   #              be perpindicular to the basal axes.
+   #   Trigonal:  No reordering needed because for the non-hexagonal cells we
+   #              have a=b=c and alpha=beta=gamma /= 90.
+   #   Tetragonal: Reordering is probably unlikely. Usually a=b /= c is the
+   #               conventional presentation. However, someone may want an
+   #               unconventional presentation at some time so it is still
+   #               permitted.
+   #   Orthorhombic: Reordering of a,b,c may be requested.
+   #   Monoclinic: No reordering required. The a and b axes are, by
+   #               convention, always the same. The c axis may be greater or
+   #               less than a,b but it is always perpendicular to the a,b
+   #               plane. Similar to tetragonal.
+   #   Triclinic: Sort angles first and then sort axes by magnitude. In the
+   #              event that this is not possible the lattice vectors will be
+   #              ordered first by their angles and then by their magnitudes.
+#   if ($fixedLattice == 0)
+#   {
+#      &reorderLatticeParameters;
+#
+#      # Reobtain the inverse lattice and the reciprocal lattice vectors.
+#      &makeLatticeInv(\@realLattice,\@realLatticeInv,0);
+#      &makeLatticeInv(\@realLattice,\@recipLattice,1);
+#      &abcAlphaBetaGamma(\@realLattice,\@mag,\@angle,\@angleDeg,1);
+#      &abcAlphaBetaGamma(\@recipLattice,\@magRecip,\@angleRecip,
+#                         \@angleDegRecip,0);
+#
+#      # If the coordinates are not 'fixed' then they should be reordered as
+#      #   the lattice parameters were. The tricky issue is that it is
+#      #   possible (although probably stupid and therefor unlikely) that
+#      #   someone could give the lattice parameters in non-orthogonal abc
+#      #   axes and then provide the coordinates in cartesian xyz format.
+#      #   The sorting is done according to abc,alpha,beta,gamma and so it
+#      #   should be carried out on the abc form first and then propogated.
+#      foreach $atom (1..$numAtoms)
+#         {&reorderAtomCoordinates($atom);}
+#   }
 
    # Create an interatomic distance list.
 #   &makeInteratomicDist;
@@ -1175,6 +1494,7 @@ sub readPDB
          $angle[3] = $pi/180.0 * substr($line,47,7,"1234567");
 
          # Convert the values to a,b,c into x,y,z vector lattice format.
+print STDOUT "Should not be here\n";
          &getABCVectors;
 
          # Compute the sine of the angles.
@@ -1205,6 +1525,7 @@ sub readPDB
          #   we store it in the pdbAtomTag.
          @values = &prepLine("",$tempTag,'\s+');
          $pdbAtomTag[$numAtoms] = $values[0];
+print STDOUT "PDB Atom Tag: $pdbAtomTag[$numAtoms]\n";
 
          # Now, if the element symbol is provided on this ATOM line of the PDB
          #   file, then we get that name and use it to construct the atomTag.
@@ -1220,6 +1541,7 @@ sub readPDB
          else
             {$element = "";}
          chomp ($element);
+print STDOUT "element = $element\n";
          if ($element ne "")
          {
             @values = &prepLine("",$element,'\s+'); # Get rid of spaces.
@@ -1470,7 +1792,7 @@ sub readStruct
    }
 
    # Obtain the lattice vectors in a,b,c,alpha,beta,gamma form.
-   &abcAlphaBetaGamma;
+   &abcAlphaBetaGamma(\@realLattice,\@mag,\@angle,\@angleDeg,1);
 
    # Obtain the inverse of the real lattice.  This must be done now so that
    #   we can get the abc coordinates of atoms if we are given xyz.
@@ -1525,7 +1847,7 @@ sub readABC
 
    # Compute the magnitude of the a,b,c vectors, the angles between then, and
    #   the sine of each angle.
-   &abcAlphaBetaGamma;
+   &abcAlphaBetaGamma(\@realLattice,\@mag,\@angle,\@angleDeg,1);
 
    # Initialize a count of the number of atoms.
    $numAtoms = 0;
@@ -1589,7 +1911,7 @@ sub readCIF
    open (INFILE,"<$inFile") || die "Could not open $inFile for reading\n";
 
    # Assume space group 1.
-   $spaceGroup = 1;
+   $spaceGroup = "1_a";
 
    # Get the title.
    @values = &prepLine(\*INFILE,"",'\s+');
@@ -1792,7 +2114,7 @@ sub readLMP
    open (INFILE,"<$inFile") || die "Could not open $inFile for reading\n";
 
    # Assume space group 1.
-   $spaceGroup = 1;
+   $spaceGroup = "1_a";
 
    # Get the title.
    @values = &prepLine(\*INFILE,"",'\s+');
@@ -1804,6 +2126,117 @@ sub readLMP
    <INFILE>;
    <INFILE>;
 }
+
+sub reorderLatticeParameters
+{
+   # Define local variables.
+   my $abcAxis;
+   my $xyzAxis;
+   my @tempLattice;
+
+   # Find the order of the angles from smallest to largest via a stable sort.
+   use sort 'stable';
+   @sortedLatIndices = sort{$angle[$a] <=> $angle[$b]} 1..3;
+   @angle = @angle[@sortedLatIndices];
+   @angleDeg = @angleDeg[@sortedLatIndices];
+
+   # The cell vector magnitudes must be assigned in agreement with the angles.
+   #   Alpha is the angle between b and c axes, beta is the angle between a
+   #   and c axes, and gamma is the angle between a and b axes. Therefore the
+   #   old axis a must follow the same index as alpha, b must follow beta, and
+   #   c must follow gamma.
+   @mag = @mag[@sortedLatIndices];
+
+   # From that initial ordering we need to further refine the ordering in the
+   #   event that more that one angle is the same but where the magnitudes
+   #   differ. For example an orthorhombic cell has alpha=beta=gamma=90 but
+   #   the lattice vector magnitudes will be different. We want to sort the
+   #   vectors by their magnitudes from least to greatest.
+   # First we check if all three angles are the same. If so, then we can just
+   #   directly sort the indices for the magnitudes. Otherwise we need to
+   #   check the angles in pairs.
+   if ((abs($angle[1] - $angle[2]) < $epsilon) &&
+       (abs($angle[2] - $angle[3]) < $epsilon))
+   {
+      @sortedLatIndices = sort{$mag[$a] <=> $mag[$b]} @sortedLatIndices[1..3];
+      @mag = @mag[@sortedLatIndices];
+   }
+   else
+   {
+      if ((abs($angle[1] - $angle[3]) < $epsilon) && ($mag[1] > $mag[3]))
+      {
+         ($sortedLatIndices[1],$sortedLatIndices[3]) =
+               ($sortedLatIndices[3],$sortedLatIndices[1]);
+         ($mag[1],$mag[3]) = ($mag[3],$mag[1]);
+      }
+      if ((abs($angle[1] - $angle[2]) < $epsilon) && ($mag[1] > $mag[2]))
+      {
+         ($sortedLatIndices[1],$sortedLatIndices[2]) =
+               ($sortedLatIndices[2],$sortedLatIndices[1]);
+         ($mag[1],$mag[2]) = ($mag[2],$mag[1]);
+      }
+      if ((abs($angle[2] - $angle[3]) < $epsilon) && ($mag[2] > $mag[3]))
+      {
+         ($sortedLatIndices[2],$sortedLatIndices[3]) =
+               ($sortedLatIndices[3],$sortedLatIndices[2]);
+         ($mag[2],$mag[3]) = ($mag[3],$mag[2]);
+      }
+   }
+
+   # Now, we have to apply the sorted order to the vector (abc,xyz)
+   #   representation of the lattice parameters.
+   foreach $xyzAxis (1..3)
+   {
+      # Store a temporary copy of the current xyz for each abc.
+      foreach $abcAxis (1..3)
+         {$tempLattice[$abcAxis][$xyzAxis] = $realLattice[$abcAxis][$xyzAxis];}
+      
+      # For the current xyz, copy the sorted abc out of the tempLattice.
+      foreach $abcAxis (1..3)
+      {
+         $realLattice[$abcAxis][$xyzAxis] =
+               $tempLattice[$sortedLatIndices[$abcAxis]][$xyzAxis];
+      }
+   }
+
+   # At this point, the angles are certain to be in sorted order from least to
+   #   greatest. Then, within the constraint of the ordered angles, the
+   #   magnitudes are also in sorted order from least to greatest. After that,
+   #   we have sorted the abc,xyz representation of the lattice vectors.
+   #   Finally, the indices that reflect the final sort are obtained.
+}
+
+
+sub reorderAtomCoordinates
+{
+   # Give nice names to the passed parameters.
+   my $atom = $_[0];
+
+   # Define local variables.
+   my @tempABC;
+   my $axisABC;
+
+   # Copy the current abc coordinates into a temporary variable.
+   foreach $axisABC (1..3)
+      {$tempABC[$axisABC] = $fractABC[$atom][$axisABC];}
+
+   # Apply the reordering learned from the reordering of the lattice params.
+   foreach $axisABC (1..3)
+      {$fractABC[$atom][$axisABC] = $tempABC[$sortedLatIndices[$axisABC]];}
+
+   # Propogate the reordering to all other representations of the coordinates.
+
+   # Compute the direct space coordinates in a,b,c.
+   foreach $axisABC (1..3)
+   {
+      $directABC[$atom][$axisABC] = 
+            $fractABC[$atom][$axisABC]*$mag[$axisABC];
+   }
+
+   # Calculate the atomic coordinates in x,y,z direct space.
+   &getDirectXYZ($atom);
+}
+
 
 sub addConnectionAtoms
 {
@@ -1823,7 +2256,7 @@ sub addConnectionAtoms
    my $phi;
    my $phiPrime;
    my @tempDirectXYZ;
-   my $beta = 1.9111;
+   my $beta = 1.91113553; # radians = 109.5 degrees
 
    foreach $atom (1..$numAtoms)
    {
@@ -2755,7 +3188,7 @@ sub prepSurface
    #   the process of identifying duplicate atoms in the new cell easier.
    &makeLatticeInv(\@realLattice,\@realLatticeInv,0);
    &makeLatticeInv(\@realLattice,\@recipLattice,1);
-   &abcAlphaBetaGamma;
+   &abcAlphaBetaGamma(\@realLattice,\@mag,\@angle,\@angleDeg,1);
 
    # At this point our new real lattice is defined with its periodic boundary
    #   conditions matching up with lattice points of the original real lattice.
@@ -3060,7 +3493,7 @@ sub prepSurface
    # Reobtain the inverse lattice and the reciprocal lattice vectors.
    &makeLatticeInv(\@realLattice,\@realLatticeInv,0);
    &makeLatticeInv(\@realLattice,\@recipLattice,1);
-   &abcAlphaBetaGamma;
+   &abcAlphaBetaGamma(\@realLattice,\@mag,\@angle,\@angleDeg,1);
 
    # Obtain the directABC and fractABC coordinates of the atoms in the model
    #   such that they match the directXYZ.
@@ -3077,7 +3510,6 @@ sub applySpaceGroup
    my $axis;
    my $atom;
    my @values;
-   my $latticeType;
    my @applySpaceGroupIn;
 
    # Use the space group ID (name or number) to open the space group operations
@@ -3091,8 +3523,8 @@ sub applySpaceGroup
    $latticeType = $values[0];
    $spaceGroupName = $values[1];
 
-   # If there is an altername definition for this space group it is labeled in
-   #   the space group file with an index starting at 'a'.  In such a case,
+   # If there is an alternative definition for this space group it is labeled
+   #   in the space group file with an index starting at 'a'.  In such a case,
    #   the file name is extended by "_a" for the complete name of the space
    #   group (i.e. not the number)  (e.g. 227 = Fd3~m_a).
    if (($#values > 1) && ($values[2] =~ /[a-z]/))
@@ -3101,10 +3533,12 @@ sub applySpaceGroup
    # Read the second line to get the root space group number.
    @values = &prepLine(\*SPACE,"",'\s+');
    $spaceGroupNum = $values[0];
+   $spaceGroupSubNum = $values[1];
 
    # Read remaining lines and prepare input for applySpaceGroup.f90 program.
    @applySpaceGroupIn = <SPACE>;
-   unshift (@applySpaceGroupIn,"$latticeType\n$spaceGroupNum\n");
+   unshift (@applySpaceGroupIn,
+         "$latticeType\n$spaceGroupNum  $spaceGroupSubNum\n");
    close (SPACE);
 
    # Add the flag indicating whether to do a full (possibly non-primitive)
@@ -3143,7 +3577,7 @@ sub applySpaceGroup
       @{$realLattice[$axis]} = &prepLine(\*SGOUTPUT,"",'\s+');
       unshift (@{$realLattice[$axis]},"");
    }
-   &abcAlphaBetaGamma;
+   &abcAlphaBetaGamma(\@realLattice,\@mag,\@angle,\@angleDeg,1);
 
    # Read the number of atoms in the newly defined system.
    @values = &prepLine(\*SGOUTPUT,"",'\s+');
@@ -3294,7 +3728,9 @@ sub applySupercell
    # Reobtain the inverse lattice and the reciprocal lattice vectors.
    &makeLatticeInv(\@realLattice,\@realLatticeInv,0);
    &makeLatticeInv(\@realLattice,\@recipLattice,1);
-   &abcAlphaBetaGamma;
+   &abcAlphaBetaGamma(\@realLattice,\@mag,\@angle,\@angleDeg,1);
+   &abcAlphaBetaGamma(\@recipLattice,\@magRecip,\@angleRecip,
+                      \@angleDegRecip,0);
 
    # Obtain the directABC and directXYZ coordinates of the atoms in the model
    #   such that they match the fractionalABC.
@@ -3471,8 +3907,13 @@ sub computeCrystalParameters
    # Find the maximum and minimum values of all atoms for each x,y,z axis.
    &getMinMaxXYZ;
 
-   #  We will assume an orthorhomic box that contains all the atoms
-   #   with a buffer on all sides of the system.
+   # We will assume an orthorhomic box that contains all the atoms
+   #   with a buffer on all sides of the system. Even though the box is
+   #   orthorhombic, we will make it space group 1_a.
+   $spaceGroup = "1_a";
+   $spaceGroupName = "P1";
+   $spaceGroupNum = 1;
+   $spaceGroupSubNum = 1;
 
    # Define the angles.
    $angle[1] = $pi/2.0;
@@ -3498,17 +3939,30 @@ sub computeCrystalParameters
 }
 
 
+# Compute the magnitudes and angles between vectors in some lattice (real or
+#   reciprocal). Originially this was written just for real lattices, but it
+#   was adapted to serve reciprocal lattices too later on. Hence some of the
+#   notes are written more in terms of real lattices. However, for reciprocal
+#   lattices we use k_a, k_b, k_c, k_alpha, k_beta, and k_gamma in place of
+#   a, b, c, alpha, beta, gamma. Otherwise everything is the same.
 sub abcAlphaBetaGamma
 {
+   # Define local names for passed variables.
+   my $lattice_ref = $_[0];
+   my $mag_ref = $_[1];
+   my $angle_ref = $_[2];
+   my $angleDeg_ref = $_[3];
+   my $getSineAngle = $_[4];
+
    # Declare local variables.
    my $axis;
 
    foreach $axis (1..3) # Loop over a,b,c
    {
       # Compute the magnitude of each vector.
-      $mag[$axis] = sqrt($realLattice[$axis][1]*$realLattice[$axis][1] +
-                         $realLattice[$axis][2]*$realLattice[$axis][2] +
-                         $realLattice[$axis][3]*$realLattice[$axis][3]);
+      $mag_ref->[$axis]=sqrt($lattice_ref->[$axis][1]*$lattice_ref->[$axis][1]+
+                             $lattice_ref->[$axis][2]*$lattice_ref->[$axis][2]+
+                             $lattice_ref->[$axis][3]*$lattice_ref->[$axis][3]);
    }
 
    # Compute the angles (alpha,beta,gamma) between lattice vectors.
@@ -3517,24 +3971,26 @@ sub abcAlphaBetaGamma
    # Beta  = angle between a and c.
    # Gamma = angle between a and b.
    # All in radians.
-   $angle[1] = &acos(($realLattice[2][1]*$realLattice[3][1] + 
-                      $realLattice[2][2]*$realLattice[3][2] + 
-                      $realLattice[2][3]*$realLattice[3][3])/
-                      ($mag[2]*$mag[3]));
-   $angle[2] = &acos(($realLattice[1][1]*$realLattice[3][1] + 
-                      $realLattice[1][2]*$realLattice[3][2] + 
-                      $realLattice[1][3]*$realLattice[3][3])/
-                      ($mag[1]*$mag[3]));
-   $angle[3] = &acos(($realLattice[1][1]*$realLattice[2][1] + 
-                      $realLattice[1][2]*$realLattice[2][2] + 
-                      $realLattice[1][3]*$realLattice[2][3])/
-                      ($mag[1]*$mag[2]));
-   $angleDeg[1] = $angle[1] * 180.0/$pi;
-   $angleDeg[2] = $angle[2] * 180.0/$pi;
-   $angleDeg[3] = $angle[3] * 180.0/$pi;
+   $angle_ref->[1] = &acos(($lattice_ref->[2][1]*$lattice_ref->[3][1] +
+                           $lattice_ref->[2][2]*$lattice_ref->[3][2] +
+                           $lattice_ref->[2][3]*$lattice_ref->[3][3])/
+                           ($mag_ref->[2]*$mag_ref->[3]));
+   $angle_ref->[2] = &acos(($lattice_ref->[1][1]*$lattice_ref->[3][1] +
+                           $lattice_ref->[1][2]*$lattice_ref->[3][2] +
+                           $lattice_ref->[1][3]*$lattice_ref->[3][3])/
+                           ($mag_ref->[1]*$mag_ref->[3]));
+   $angle_ref->[3] = &acos(($lattice_ref->[1][1]*$lattice_ref->[2][1] +
+                           $lattice_ref->[1][2]*$lattice_ref->[2][2] +
+                           $lattice_ref->[1][3]*$lattice_ref->[2][3])/
+                           ($mag_ref->[1]*$mag_ref->[2]));
+   $angleDeg_ref->[1] = $angle_ref->[1] * 180.0/$pi;
+   $angleDeg_ref->[2] = $angle_ref->[2] * 180.0/$pi;
+   $angleDeg_ref->[3] = $angle_ref->[3] * 180.0/$pi;
 
-   # Compute the sine of each angle.
-   &getAngleSine(\@angle);
+   # Compute the sine of each angle. Presently this only works for real
+   #   lattices.
+   if ($getSineAngle == 1)
+      {&getAngleSine($angle_ref);}
 }
 
 sub getAngleSine
@@ -3552,31 +4008,243 @@ sub getAngleSine
 
 sub getABCVectors
 {
+   # If the space group has not been defined yet, then we will assume a space
+   #   group of 1.
+   if (length $spaceGroup == 0)
+      {$spaceGroup = 1;}
+
    # Define local variables.
    my $abcAxis;
    my $xyzAxis;
+   my $uniqueAxis;
+
+   # Given the space group, define the lattice vectors according to W. Setyawan,
+   #   S. Curtarolo, Comp. Mat. Sci. v. 49, pp. 299-312, (2010).
 
    # Initialize the realLattice[0][0] components to "".
    foreach $abcAxis (1..3)
       {$realLattice[$abcAxis][0] = "";}
 
-   # We first assume that a and x are co-axial.
-   $realLattice[1][1] = $mag[1];
-   $realLattice[1][2] = 0.0;
-   $realLattice[1][3] = 0.0;
+   # Initially assume that the lattice will use the conventional cell.
+   if ($spaceGroupNum <= 2) # Triclinic: alpha<beta<gamma then a<b<c if possible
+   {
 
-   # Then, b is in the x,y plane.
-   $realLattice[2][1] = $mag[2] * cos($angle[3]);  # (b*cos(gamma))
-   $realLattice[2][2] = $mag[2] * sin($angle[3]);  # (b*sin(gamma))
-   $realLattice[2][3] = 0.0;
+      # We first assume that a and x are co-axial.
+      $realLattice[1][1] = $mag[1];
+      $realLattice[1][2] = 0.0;
+      $realLattice[1][3] = 0.0;
+   
+      # Then, b is in the x,y plane.
+      $realLattice[2][1] = $mag[2] * cos($angle[3]);  # (b*cos(gamma))
+      $realLattice[2][2] = $mag[2] * sin($angle[3]);  # (b*sin(gamma))
+      $realLattice[2][3] = 0.0;
+   
+      # Then, c is a mix of all x,y,z directions.
+      $realLattice[3][1] = $mag[3] * cos($angle[2]);  # (c*cos(beta))
+      $realLattice[3][2] = $mag[3] * 
+                           (cos($angle[1]) - cos($angle[3])*cos($angle[2])) /
+                            sin($angle[3]);
+      $realLattice[3][3] = $mag[3] * sqrt(1.0 - cos($angle[2])**2 -
+                           ($realLattice[3][2]/$mag[3])**2);
+   }
+   elsif ($spaceGroupNum <= 15) # Monoclinic: a<=b<=c; alpha<90; beta,gamma=90
+   {
+      # Define the conditions in which a y-axis unique setting is used.
+      if ((($spaceGroupNum == 3) && ($spaceGroupSubNum <= 2)) ||
+          (($spaceGroupNum == 4) && ($spaceGroupSubNum <= 2)) ||
+          (($spaceGroupNum == 5) && ($spaceGroupSubNum <= 4)) ||
+          (($spaceGroupNum == 6) && ($spaceGroupSubNum <= 2)) ||
+          (($spaceGroupNum == 7) && ($spaceGroupSubNum <= 5)) ||
+          (($spaceGroupNum == 8) && ($spaceGroupSubNum <= 4)) ||
+          (($spaceGroupNum == 9) && ($spaceGroupSubNum <= 4)) ||
+          (($spaceGroupNum == 10) && ($spaceGroupSubNum <= 2)) ||
+          (($spaceGroupNum == 11) && ($spaceGroupSubNum <= 2)) ||
+          (($spaceGroupNum == 12) && ($spaceGroupSubNum <= 4)) ||
+          (($spaceGroupNum == 13) && ($spaceGroupSubNum <= 5)) ||
+          (($spaceGroupNum == 14) && ($spaceGroupSubNum <= 5)) ||
+          (($spaceGroupNum == 15) && ($spaceGroupSubNum <= 7)))
+         {$uniqueAxis = 2;} # y(b)-axis unique
+      elsif ((($spaceGroupNum == 3) && ($spaceGroupSubNum <= 4)) ||
+          (($spaceGroupNum == 4) && ($spaceGroupSubNum <= 4)) ||
+          (($spaceGroupNum == 5) && ($spaceGroupSubNum <= 8)) ||
+          (($spaceGroupNum == 6) && ($spaceGroupSubNum <= 4)) ||
+          (($spaceGroupNum == 7) && ($spaceGroupSubNum <= 10)) ||
+          (($spaceGroupNum == 8) && ($spaceGroupSubNum <= 8)) ||
+          (($spaceGroupNum == 9) && ($spaceGroupSubNum <= 8)) ||
+          (($spaceGroupNum == 10) && ($spaceGroupSubNum <= 4)) ||
+          (($spaceGroupNum == 11) && ($spaceGroupSubNum <= 4)) ||
+          (($spaceGroupNum == 12) && ($spaceGroupSubNum <= 8)) ||
+          (($spaceGroupNum == 13) && ($spaceGroupSubNum <= 10)) ||
+          (($spaceGroupNum == 14) && ($spaceGroupSubNum <= 10)) ||
+          (($spaceGroupNum == 15) && ($spaceGroupSubNum <= 14)))
+         {$uniqueAxis = 3;} # z(c)-axis unique
+      else
+         {$uniqueAxis = 1;} # x(a)-axis unique
 
-   # Then, c is a mix of all x,y,z directions.
-   $realLattice[3][1] = $mag[3] * cos($angle[2]);  # (c*cos(beta))
-   $realLattice[3][2] = $mag[3] * 
-                        (cos($angle[1]) - cos($angle[3])*cos($angle[2])) /
-                         sin($angle[3]);
-   $realLattice[3][3] = $mag[3] * sqrt(1.0 - cos($angle[2])**2 -
-                        ($realLattice[3][2]/$mag[3])**2);
+      if ($uniqueAxis == 1) # y(b)-axis unique
+      {
+         # Define the a axis as (a*sin(beta), 0, a*cos(beta))
+         $realLattice[1][1] = $mag[1] * sin($angle[2]);
+         $realLattice[1][2] = 0.0;
+         $realLattice[1][3] = $mag[1] * cos($angle[2]);
+
+         # Define the b axis as (0, b, 0)
+         $realLattice[2][1] = 0.0;
+         $realLattice[2][2] = $mag[2];
+         $realLattice[2][3] = 0.0;
+   
+         # Define the c axis as (0, 0, c)
+         $realLattice[3][1] = 0.0;
+         $realLattice[3][2] = 0.0;
+         $realLattice[3][3] = $mag[3];
+      }
+      elsif ($uniqueAxis == 2) # z(c)-axis unique
+      {
+         # Define the a axis as (a, 0, 0)
+         $realLattice[1][1] = $mag[1];
+         $realLattice[1][2] = 0.0;
+         $realLattice[1][3] = 0.0;
+   
+         # Define the b axis as (b*cos(gamma), b*sin(gamma), 0)
+         $realLattice[2][1] = $mag[2] * cos($angle[3]);
+         $realLattice[2][2] = $mag[2] * sin($angle[3]);
+         $realLattice[2][3] = 0.0;
+   
+         # Define the c axis as (0, 0, c)
+         $realLattice[3][1] = 0.0;
+         $realLattice[3][2] = 0.0;
+         $realLattice[3][3] = $mag[3];
+      }
+      else # ($uniqueAxis == 3) # x(a)-axis unique
+      {
+         # Define the a axis as (a, 0, 0)
+         $realLattice[1][1] = $mag[1];
+         $realLattice[1][2] = 0.0;
+         $realLattice[1][3] = 0.0;
+   
+         # Define the b axis as (0, b, 0)
+         $realLattice[2][1] = 0.0;
+         $realLattice[2][2] = $mag[2];
+         $realLattice[2][3] = 0.0;
+   
+         # Define the c axis as (0, c*cos(alpha), c*sin(alpha))
+         $realLattice[3][1] = 0.0;
+         $realLattice[3][2] = $mag[3] * cos($angle[1]);
+         $realLattice[3][3] = $mag[3] * sin($angle[1]);
+      }
+   }
+   elsif ($spaceGroupNum <= 74) # Orthorhombic: a<b<c; alpha=beta=gamma=90
+   {
+      # Define the a axis as (a, 0, 0)
+      $realLattice[1][1] = $mag[1];
+      $realLattice[1][2] = 0.0;
+      $realLattice[1][3] = 0.0;
+
+      # Define the b axis as (0, b, 0)
+      $realLattice[2][1] = 0.0;
+      $realLattice[2][2] = $mag[2];
+      $realLattice[2][3] = 0.0;
+
+      # Define the c axis as (0, 0, c)
+      $realLattice[3][1] = 0.0;
+      $realLattice[3][2] = 0.0;
+      $realLattice[3][3] = $mag[3];
+   }
+   elsif ($spaceGroupNum <= 142) # Tetragonal: a=b/=c; alpha=beta=gamma=90
+   {
+      # Define the a axis as (a, 0, 0)
+      $realLattice[1][1] = $mag[1];
+      $realLattice[1][2] = 0.0;
+      $realLattice[1][3] = 0.0;
+
+      # Define the b axis as (0, b, 0)
+      $realLattice[2][1] = 0.0;
+      $realLattice[2][2] = $mag[2];
+      $realLattice[2][3] = 0.0;
+
+      # Define the c axis as (0, 0, c)
+      $realLattice[3][1] = 0.0;
+      $realLattice[3][2] = 0.0;
+      $realLattice[3][3] = $mag[3];
+   }
+   elsif ($spaceGroupNum <= 167) # Trigonal: Two Options:
+   {
+      # Hexagonal cell: a=b/=c; alpha=beta=90, gamma=120 occurs for P,
+      #   H-centered (made from three hexagonal cells) and R with hexagonal
+      #   axes (made from three primitive rhombohedral cells).
+      if (($latticeType eq "P") || ($latticeType eq "H") ||
+          (($latticeType eq "R") && ($spaceGroupSubNum == 2))) # Hexagonal cell
+      {
+         # Define the a axis as (a/2, -(a*sqrt(3))/2, 0)
+         $realLattice[1][1] = $mag[1]/2.0;
+         $realLattice[1][2] = -($mag[1]*sqrt(3.0)/2.0);
+         $realLattice[1][3] = 0.0;
+
+         # Define the b axis as (b/2,  (b*sqrt(3))/2, 0)
+         $realLattice[2][1] = $mag[2]/2.0;
+         $realLattice[2][2] =  ($mag[2]*sqrt(3.0)/2.0);
+         $realLattice[2][3] = 0.0;
+
+         # Define the c axis as (0, 0, c)
+         $realLattice[3][1] = 0.0;
+         $realLattice[3][2] = 0.0;
+         $realLattice[3][3] = $mag[3];
+      }
+      # Rhombohedral cell: a=b=c; alpha=beta=gamma/=90
+      else # Primitive Rhombohedral cell
+      {
+         # Define the a axis as (a*cos(alpha/2), -a*sin(alpha/2), 0)
+         $realLattice[1][1] =  $mag[1]*cos($angle[1]/2.0);
+         $realLattice[1][2] = -$mag[1]*sin($angle[1]/2.0);
+         $realLattice[1][3] =  0.0;
+
+         # Define the b axis as (a*cos(alpha/2), a*sin(alpha/2), 0)
+         $realLattice[2][1] = $mag[1]*cos($angle[1]/2.0);
+         $realLattice[2][2] = $mag[1]*sin($angle[1]/2.0);
+         $realLattice[2][3] = 0.0;
+
+         # Define the c axis as: (a*cos(alpha)/cos(alpha/2), 0,
+         #   a*sqrt(1 - cos(alpha)**2 / cos(alpha/2)**2))
+         $realLattice[3][1] = $mag[1]*cos($angle[1])/cos($angle[1]/2.0);
+         $realLattice[3][2] = 0.0;
+         $realLattice[3][3] = $mag[1]*sqrt(1.0 - cos($angle[1])**2 / 
+               cos($angle[1]/2.0)**2);
+      }
+   }
+   elsif ($spaceGroupNum <= 194) # Hexagonal: a=b/=c; alpha=beta=90; gamma=120
+   {
+      # Define the a axis as (a/2, -(a*sqrt(3))/2, 0)
+      $realLattice[1][1] = $mag[1]/2.0;
+      $realLattice[1][2] = -($mag[1]*sqrt(3.0)/2.0);
+      $realLattice[1][3] = 0.0;
+
+      # Define the b axis as (b/2,  (b*sqrt(3))/2, 0)
+      $realLattice[2][1] = $mag[2]/2.0;
+      $realLattice[2][2] =  ($mag[2]*sqrt(3.0)/2.0);
+      $realLattice[2][3] = 0.0;
+
+      # Define the c axis as (0, 0, c)
+      $realLattice[3][1] = 0.0;
+      $realLattice[3][2] = 0.0;
+      $realLattice[3][3] = $mag[3];
+   }
+   elsif ($spaceGroupNum <= 230) # Cubic: a=b=c; alpha=beta=gamma=90
+   {
+      # Define the a axis as (a, 0, 0)
+      $realLattice[1][1] = $mag[1];
+      $realLattice[1][2] = 0.0;
+      $realLattice[1][3] = 0.0;
+
+      # Define the b axis as (0, b, 0)
+      $realLattice[2][1] = 0.0;
+      $realLattice[2][2] = $mag[2];
+      $realLattice[2][3] = 0.0;
+
+      # Define the c axis as (0, 0, c)
+      $realLattice[3][1] = 0.0;
+      $realLattice[3][2] = 0.0;
+      $realLattice[3][3] = $mag[3];
+   }
 
    
    # Correct numerical errors.
@@ -3632,6 +4300,19 @@ sub makeLatticeInv
             {$outLattice_ref->[$axisXYZ][$axisABC] /= (2.0 * $pi);}
       }
    }
+}
+
+
+sub computeBZ_WS
+{
+   # Define passed parameters.
+   my $inLattice_ref = $_[0];
+   my $zoneLevel = $_[1];
+   my $zone_ref = $_[2];
+
+   # Define local variables.
+
+   # 
 }
 
 # Given some (real/reciprocal) set of lattice vectors, this subroutine will
@@ -4025,7 +4706,7 @@ sub insertVacuum
    # Reobtain the inverse lattice and the reciprocal lattice vectors.
    &makeLatticeInv(\@realLattice,\@realLatticeInv,0);
    &makeLatticeInv(\@realLattice,\@recipLattice,1);
-   &abcAlphaBetaGamma;
+   &abcAlphaBetaGamma(\@realLattice,\@mag,\@angle,\@angleDeg,1);
 
    # Get new fractional ABC atomic positions based on the old direct space
    #   ABC atomic positions which are still the same.  Note that the direct
@@ -5092,6 +5773,99 @@ sub printCIF
 }
 
 
+sub printLMP
+{
+   # Define short names for passed parameters.
+   my $lmpFile = $_[0];
+
+   # Define local variables.
+   my $atom;
+   my $element;
+   my $species;
+   my $xy;
+   my $xz;
+   my $yz;
+   my $numUniqueSpecies;
+   my $currentElement;
+   my $currentSpecies;
+   my $atomicMasses_ref;
+   $atomicMasses_ref = ElementData::getAtomicMassesRef;
+
+   # Compute the number of unique species.
+   $numUniqueSpecies = 0;
+   foreach $element (1..$numElements)
+   {
+      foreach $species (1..$numSpecies[$element])
+         {$numUniqueSpecies++;}
+   }
+
+   # Open the lammps file for writing.
+   open (LMP, ">$lmpFile") || die "Cannot open $lmpFile for writing.\n";
+
+   # Print the header.
+   print LMP "$lmpFile\n\n";
+
+   # Print the number of items and number of types.
+   print LMP "$numAtoms atoms\n";
+   print LMP "$numUniqueSpecies atom types\n";
+
+   # Print the orthogonal cell information.
+   print LMP "0.000 $mag[1] xlo xhi\n";
+   print LMP "0.000 $mag[2] ylo yhi\n";
+   print LMP "0.000 $mag[3] zlo zhi\n";
+
+   # If the cell is non-orthogonal, then compute and print the tilt parameters.
+   #   See: https://lammps.sandia.gov/doc/Howto_triclinic.html
+   if (($angleDeg[1] != 90) || ($angleDeg[2] != 90) || ($angleDeg[3] != 90))
+   {
+      $xy = $mag[2] * cos($angle[3]);
+      $xz = $mag[3] * cos($angle[2]);
+      $yz = ($mag[2]*$mag[3]*cos($angle[1]) - $xy*$xz)
+            / sqrt($mag[2]*$mag[2] - $xy*$xy);
+      print LMP "$xy $xz $yz xy xz yz\n\n";
+   }
+
+   # Print information about the masses.
+   print LMP "Masses\n\n";
+   $currentElement = 0;
+   $currentSpecies = 0;
+   $numUniqueSpecies = 0;
+   foreach $atom (1..$numAtoms)
+   {
+      if ($atomElementID[$atom] != $currentElement)
+      {
+         $currentElement = $atomElementID[$atom];
+         $currentSpecies = $atomSpeciesID[$atom];
+         $numUniqueSpecies++;
+         print LMP "$numUniqueSpecies $atomicMasses_ref->[$atomicZ[$atom]] ";
+         print LMP "# $atomElementName[$atom] $currentSpecies\n";
+      }
+      elsif ($atomSpeciesID[$atom] != $currentSpecies)
+      {
+         $currentSpecies = $atomSpeciesID[$atom];
+         $numUniqueSpecies++;
+         print LMP "$numUniqueSpecies $atomicMasses_ref->[$atomicZ[$atom]] ";
+         print LMP "# $atomElementName[$atom] $currentSpecies\n";
+      }
+
+      $atomUniqSpecies[$atom] = $currentSpecies;
+   }
+
+   # Print information about the atoms.
+   print LMP "\nAtoms\n\n";
+   foreach $atom (1..$numAtoms)
+   {
+      print LMP "$atom $atomUniqSpecies[$atom] ";
+      print LMP "$directXYZ[$atom][1] $directXYZ[$atom][2] ";
+      print LMP "$directXYZ[$atom][3] ";
+      print LMP "# $atomElementName[$atom] $currentSpecies\n";
+   }
+
+   # Close the lammps file.
+   close (LMP);
+}
+
+
 # Get the number of atoms of each element in the system.
 sub countElementAtoms
 {
@@ -5241,6 +6015,7 @@ sub computePoreMap
    my $zPoint;
    my $currCovalRadiusSqrd;
    my @miniCubeSize; # Circumscribes a sphere of size equal to the coval rad.
+#   my @coordDiff; # Used by the Perl implementation of CdistanceSqrd
    my $distanceSqrd;
 
    # Determine the number of cells in each direction needed to account for all
@@ -5302,11 +6077,27 @@ sub computePoreMap
 
          # Compute the square of the exact distance between this mesh
          #   point and the atom.
+# This is the Inline C implementation.
          $distanceSqrd = CdistanceSqrd($limitDistSqrd,$limitDist,
             $extDirectXYZList[$atom][1],$extDirectXYZList[$atom][2],
             $extDirectXYZList[$atom][3],$xPoint*$resolution_ref->[1],
             $yPoint*$resolution_ref->[2],$zPoint*$resolution_ref->[3]);
-         
+
+# Perl implementation of CdistanceSqrd         
+#         foreach $axis (1..3)
+#         {
+#            $coordDiff[$axis] = $xPoint*$resolution_ref->[$axis]
+#                              - $extDirectXYZList[$atom][$axis];
+#            if ($coordDiff[$axis] > $limitDist)
+#               {$distanceSqrd = $bigReal; last;}
+#         }
+#
+#         # At this point the limit dist criterion has been met so we can
+#         #   compute the square of the distance.
+#         $distanceSqrd = $coordDiff[1]*$coordDiff[1]
+#                       + $coordDiff[2]*$coordDiff[2]
+#                       + $coordDiff[3]*$coordDiff[3];
+
          if ($distanceSqrd < $currCovalRadiusSqrd)
             {$extPoreMap[$xPoint][$yPoint][$zPoint] = 1;}
       }
@@ -5731,15 +6522,30 @@ sub obtainAtomicInteraction
                           $item2XYZ_ref->[$item2][$axis];}
 
          # Calculate the direct distance between the two items.
+# This approach uses C Inline.
          $distance = Cdistance($limitDistSqrd,$limitDist,
                $item1XYZ_ref->[$item1][1],$item1XYZ_ref->[$item1][2],
                $item1XYZ_ref->[$item1][3],$item2XYZ_ref->[$item2][1],
                $item2XYZ_ref->[$item2][2],$item2XYZ_ref->[$item2][3]);
-#print STDOUT "$distance\n";
-#         $distance = sqrt($diff[1]*$diff[1] +
-#                          $diff[2]*$diff[2] +
-#                          $diff[3]*$diff[3]);
 
+# Perl code version of the Inline C.
+#         # Check that no axis is beyond the limit distance. If one is, then
+#         #   abandon this distance calculation.
+#         foreach $axis (1..3)
+#         {
+#            if ($diff[$axis] > $limitDist)
+#               {$distance = $bigReal; next;}
+#         }
+#
+#         # If we are within the limit distance, then compute the square root of
+#         #    the distance. Otherwise, abort.
+#         $distance = $diff[1]*$diff[1] + $diff[2]*$diff[2] + $diff[3]*$diff[3];
+#         if ($distance < $limitDistSqrd)
+#            {$distance = sqrt($distance);}
+#         else
+#            {$distance = $bigReal; next;}
+
+# This check is used when Cdistance is called.
          # In the event that the distance between the two items is judged to
          #   be beyond a set "limitDist" then the Cdistance subroutine will
          #   return a quantity equal to $bigReal. Thus, this interaction datum

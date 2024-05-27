@@ -1,0 +1,107 @@
+#!/usr/bin/env perl
+sub printHelp
+{
+   print STDOUT <<ENDHELP;
+###############################################################################
+#Program:  skl2lmp
+#Purpose:  This program will convert a olcao skeleton .skl file into a lammps
+#          data input file with the atoms all rearranged such that they
+#          are sorted according to their elements.  This will also produce a
+#          mapping between the lammps file atoms and the skl atoms.
+#
+#USAGE:  skl2lmp [-i \$sklInputFile] [-o \$lmpOutputFile] [-m \$mapFile]
+#                 [-skltypes] [-help]
+#
+#The -i option is used to request that a specific input file be used for the
+#   conversion.  If this option is not given, then the default value for the
+#   input file is olcao.skl.
+#The -o option is used to request that a specific output file be written to
+#   for the conversion.  If this option is not given, then the default value
+#   for the output file is lammps.dat.
+#The -m option is used to request that the mapping between the lammps and skl
+#   files be stored in the file named \$mapFile.
+#The -skltypes option will require that the resultant lammps file use the types
+#   as defined in the skeleton file. The default is to have no types assigned.
+#   
+###############################################################################
+ENDHELP
+   exit;
+}
+
+# BEGIN PROGRAM EXECUTION #################
+
+# Use necessary modules.
+use strict;
+use warnings;
+use Env;
+use lib "$OLCAO_BIN/perl5";
+use ElementData;
+use StructureControl;
+
+# Declare global variables.
+my $sklTypes;
+my $lmpFile;
+my $sklFile;
+my $mapFile;
+
+# Initialize the environment.
+&initEnvironment;
+
+# Read the command line for requested options.
+&parseCommandLine;
+
+# Read the skeleton input file and store/calculate all important information.
+StructureControl::readInputFile($sklFile,$sklTypes);
+
+# Print the skl input file.
+StructureControl::printLMP($lmpFile);
+
+# Print the data file that maps the pdb nature of each atom to the skl atoms.
+#StructureControl::printOLCAOMap(\*MAP);
+
+# END PROGRAM EXECUTION ###################
+
+sub initEnvironment
+{
+   # Define the default file names.
+   $lmpFile  = "lammps.dat";
+   $sklFile  = "olcao.skl";
+   $mapFile  = "sklLMP.map";
+
+   # Assign default behavior for types assignment.
+   $sklTypes = 0;
+}
+
+sub parseCommandLine
+{
+   # Define local variables.
+   my $number=0;
+   my $argument;
+   my $commandLine = "command";
+
+   while ($number < scalar(@ARGV))
+   {
+      if ($ARGV[$number] eq "-i")
+         {$sklFile = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-o")
+         {$lmpFile = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-m")
+         {$mapFile = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-skltypes")
+         {$sklTypes = 1;}
+      elsif ($ARGV[$number] eq "-help")
+         {&printHelp;}
+      else
+         {die "Unknown command line parameter: $ARGV[$number].  Aborting\n";}
+
+      $number++;
+   }
+
+   #Record the command line used to create this set of input files.
+   open (COMMANDLINE,">>$commandLine");
+   print COMMANDLINE "skl2lmp ";
+   foreach $argument (0..$#ARGV)
+      {print COMMANDLINE "$ARGV[$argument] ";}
+   print COMMANDLINE "\n";
+   close (COMMANDLINE);
+}

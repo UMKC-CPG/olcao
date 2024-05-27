@@ -103,10 +103,10 @@ my $doOpenDX;
 # Compute difference between SCF data and non-interacting data.
 &computeDiff;
 
-# Print an input file for the makeRho.exe fortran program.
+# Print an input file for the OLCAOrhoV.exe fortran program.
 &printTempData;
 
-# Run the makeRho.exe program
+# Run the OLCAOrhoV.exe program
 &runOLCAOrhoVF90;
 
 ###############################################
@@ -273,6 +273,7 @@ sub computeDiff
    # Read past the line that lists the number of types.  (This was already
    #   computed from the structure.dat file where the element data was also
    #   obtained.) Also read past the "TOTAL__OR__SPIN_UP" label.
+   <INPOT>;
    <INPOT>;
 
    # If we need to do the spin down data, then read past the first section.

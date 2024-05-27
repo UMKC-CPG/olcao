@@ -15,6 +15,9 @@ sub printHelp
 #                 [-subpot \$potSubOut \$potSubIn [-subpot ...]]
 #                 [[[-scfkp \$a \$b \$c] [-pscfkp \$a \$b \$c]
 #                   [-altkp \$a \$b \$c]] | [-kp \$a \$b \$c]]
+#                 [-kpshift \$a \$b \$c]
+#                 [-printbz]
+#                 [-compvis]
 #                 [-xcmesh [-numvect \$numSampVectors]
 #                          [-weight \$xcInWeight \$xcOutWeight]
 #                          [-samp \$xcInSamp \$xcOutSamp \$xcSpacingSamp]]
@@ -160,6 +163,17 @@ sub printHelp
 #The -kp option will apply the same kpoint selection to the scf, alt, and
 #  post-scf kpoints.
 
+#The -kpshift option will force a specific shift to the kpoint mesh by the
+#  given fractional a, b, c amounts.
+
+#The -printbz option will cause an additional file to be created as part of
+#  the input. This file contains a decription of the Brillouin zone suitable
+#  for importing in a python script.
+
+#The -compvis option will cause makeinput to use alternative executables for
+#  many called programs. The alternative executables are designed to output
+#  a file that helps visualize the execution of the program.
+
 #The -xcmesh option will define the construction of the real space mesh for
 #  sampling the charge density for the exchange correlation evaluation.  The
 #  mesh is spherical and atom centered.  The -level option sets the number of
@@ -211,8 +225,8 @@ sub printHelp
 #  be used in the symmetric band calculation (SYBD).  You should be consistant
 #  with the actual cell type or you will get a warning (even though it will
 #  still allow you to create the input files).  The valid options are present
-#  in the \$OLCAO_DATA/data/sybdDB directory.  Simply specify one of those names
-#  as the \$sybdPath.
+#  in the \$OLCAO_DATA/share/sybdDB directory.  Simply specify one of those
+#  names as the \$sybdPath.
 
 #The -rel option will prepare the OLCAO input files for a relativistic
 #  calculation.  (Whenever this gets implemented in the future.)
@@ -234,6 +248,14 @@ sub printHelp
 #  the basis functions, and a set of POVRay scene files (one for each type of
 #  atomic orbital in the system).
 
+#The -nocore option will cause the basis functions that are normally
+#  orthogonalized out of the problem to instead be included as part of the
+#  list of valence basis functions so that they are also part of the
+#  SCF process. This allows one to compute the core energy eigen values.
+#  If this option is not given, then basis functions that are default
+#  designated as "core" will be orthogonalized out of the eigen value
+#  problem.
+
 #The -help option will print all this great useful information.
 
 ##############
@@ -250,6 +272,7 @@ sub printHelp
 #   -pscfkp:       One general kpoint is used for all pscf calculations.
 #   -altkp:        No alternate kpoint input file is created.
 #   -kp:           One general kpoint is used for all scf and pscf calculations.
+#   -kpshift:      Use the default shift for each lattice type.
 #   -reduce:       This is off by default.  The default sub parameters are:
 #        \$reduceLevels = 2, \$reduceThick = 0.1 A, \$reduceCutoff = 4.0 A, 
 #        \$reduceOp = species, \$reduceTolerance = 0.05, \$reduceSelection = 0=all.
@@ -271,7 +294,7 @@ sub printHelp
 #   -pdb:          No pdb crystal structure diagram file will be made.
 #   -cif:          No cif crystal structure diagram file will be made.
 #   -basisVis:     No files will be made to help visualize the basis.
-#   -nocore:       All "core" orbitals will be orthogonalized vs. the valence.
+#   -nocore:       All "core" orbitals will be treated as part of the valence.
 #   -help:         No help will be printed.
 ENDHELP
    exit(0);
@@ -286,6 +309,7 @@ use Env;
 use lib "$OLCAO_BIN/perl5";
 use POSIX qw(ceil floor);
 use Math::Trig;
+use List::Util qw(min max);
 use ElementData;
 use StructureControl;
 
@@ -307,6 +331,10 @@ my $atomicBDB;   # Full path to the atomic basis function data base.
 my $atomicPDB;   # Full path to the atomic potential function data base.
 my $sybdDB;      # Full path to data base of reciprocal cell paths.
 my $spaceDB;     # Full path to data base of space group operations.
+
+# Names of called programs.
+my $makekpoints_exec;
+my $contract_exec;
 
 # File names for olcao input generation and olcao calculations.
 my $olcao_skl;   # Input file for generating all other OLCAO input.
@@ -367,6 +395,7 @@ my $sigmaDOS;    # Gaussian broadening for DOS curves.
 my $eminDOS;     # Minimum energy to evaluate DOS at.
 my $emaxDOS;     # Maximum energy to evaluate DOS at.
 my $detailCodePDOS; # PDOS output style: 0=type;1=a total;2=a nl; 3=a nlm.
+my $detailCodePOPTC; # POPTC style: 0=NONE;1=elem;2=a tot;3=e nl;4=e nlm
 my $iterTDOS;    # Flag to compute TDOS for each SCF iteration.
 my $maxLenBOND;  # Length beyond which atoms are not considered to "bond".
 my $eDeltaBOND;  # Energy delta for BOND evaluation.
@@ -381,12 +410,16 @@ my $sigmaPACS;   # Gaussian broadening for ELNES/XANES curves.
 my $onsetSlackPACS; # Amount of slack in window before onset.
 my $energyWindowPACS; # Energy window size for PACS calculations.
 my $eDeltaOPTC;  # Energy delta for valence band optical evaluation.
+my $eDeltaNLOP;  # Energy delta for valence band nonlines optical evaluation.
 my $eDeltaSIGE;  # Energy delta for Sigma(E) thermal conductivity evaluation.
 my $sigmaOPTC;   # Gaussian broadening for valence band optical curves.
+my $sigmaNLOP;   # Gaussian broadening for VB nonlinear optical curves.
 my $sigmaSIGE;   # Gaussian broadening for Sigma(E) curves.
 my $eTransOPTC;  # Maximum transition energy for valence band optical calcs.
+my $eTransNLOP;  # Maximum transition energy for VB nonlines optical calcs.
 my $eTransSIGE;  # Maximum transition energy for Sigma(E) calculations.
 my $eCutOffOPTC; # Highest final state energy value for optical calculations.
+my $eCutOffNLOP; # Highest final state energy value for nonlines optical calcs.
 my $eCutOffSIGE; # Highest final state energy value for sigma(E) calculations.
 my $numIterMAIN; # Limit to the number of iterations for SCF.
 my $convergMAIN; # Convergence criteria for potential function variation in SCF.
@@ -399,7 +432,9 @@ my $kpShift;  # Lattice dependent shift of the regular kpoint mesh.
 my @kpMesh;   # Num. of kpoints in each dim. for Scf, Pscf, and Alt.[SPA][1..3]
 my @kpNum;    # Total number of kpoints after symmetry reduction.
 my @kpNote;   # String for each group indicating general or gamma.  [1..3]
-my @setKPFlag;# Flag  1=done; 0=not done.  Set kpoints on command line.
+my @setKPFlag;# Flag 1=done; 0=not done. Set kpoints on command line.
+my $printBZ;  # Flag 1=do it; 0=do not. Print a file describing the BZ.
+my $compVis;  # Flag 1=do it; 0=do not. Make certain program execution vis.
 
 # Variables that control structure analysis and description.
 my $cellName; # String of bravis lattice cell name.
@@ -477,8 +512,11 @@ my $numElements;
 my @elementList;     # Element names for each unique element in the system.
 my @atomElementName; # Element names for each atom in the system.
 my @atomElementID;   # Element ID number for each atom in the system.
-my $spaceGroupName;
-my $spaceGroupNum;
+my $spaceGroupName;  # Name from the Hypertext space group listing.
+my $latticeType;     # F, I, P, ... designating face, body, primitive, etc.
+my $spaceGroupNum;   # H-M space group number
+my $spaceGroupSubNum;# Index number for the center of the space group. (a=1...)
+my $spaceGroupSubLet;# Index letter for the center of the space group. (a=1...)
 my $sybdPath;
 
 # These variables are different.  They are dependent on the type of calculation
@@ -512,7 +550,11 @@ my @numStatesUsed; # Number of states to use for each basis, accounting for the
 # References to data in StructureControl.
 my $systemTitle_ref;
 my $mag_ref;
+my $fullCellMag_ref;
+my $magRecip_ref;
 my $angle_ref;
+my $fullCellAngle_ref;
+my $angleRecip_ref;
 my $realLattice_ref;
 my $realLatticeInv_ref;
 my $recipLattice_ref;
@@ -802,6 +844,10 @@ sub initDefaults
    my $axis;
    my $kpGroup;
 
+   # Define the default name of any executables to be called.
+   $makekpoints_exec = "makekpoints";
+   $contract_exec = "contract";
+
    # Will any potentials be modified.  (Default=0=no)
    $modPot = 0;
    $modElementName = "";
@@ -826,7 +872,6 @@ sub initDefaults
    $xcOutSamp=3.5;
    $xcSpacingSamp=0.8;
    $numSampVectors=100;
-
 
    # Default DOS options
    $eDeltaDOS=0.01;
@@ -854,13 +899,18 @@ sub initDefaults
    
    # Default OPTC options
    $eDeltaOPTC=0.01;
+   $eDeltaNLOP=0.01;
    $eDeltaSIGE=0.001;
    $sigmaOPTC=0.1;
+   $sigmaNLOP=0.1;
    $sigmaSIGE=0.1;
    $eTransOPTC=100;
+   $eTransNLOP=100;
    $eTransSIGE=0.3;
    $eCutOffOPTC=45;
+   $eCutOffNLOP=45;
    $eCutOffSIGE=5;
+   $detailCodePOPTC=0;
    
    # Default MAIN options
    $numIterMAIN=50;
@@ -882,6 +932,9 @@ sub initDefaults
       $kpNote[$axis] = "(General)";
    }
    $kpWeightSum = 2;
+   $printBZ = 0;
+   $compVis = 0;
+   $kpShift = "-1 -1 -1";
 
    # Initial setting to track the number of basis set substitutions.
    $numBasisSubs = 0;
@@ -946,31 +999,7 @@ sub parseCommandLine
       elsif ($ARGV[$number] eq "-cif")
          {$cif=1;}
       elsif ($ARGV[$number] eq "-sybdpath")
-      {
-         $sybdPath=lc($ARGV[++$number]);
-         if ($sybdPath =~ /mono/)
-            {$cellName = "monoclinic";}
-         elsif ($sybdPath =~ /ortho/)
-            {$cellName = "orthorhombic";}
-         elsif ($sybdPath =~ /tet/)
-            {$cellName = "tetragonal";}
-         elsif ($sybdPath =~ /trig/)
-            {$cellName = "trigonal";}
-         elsif ($sybdPath =~ /hex/)
-            {$cellName = "hexagonal";}
-         elsif ($sybdPath =~ /tri/)
-            {$cellName = "triclinic";}
-         elsif ($sybdPath =~ /rhomb/)
-            {$cellName = "rhombohedral";}
-         elsif ($sybdPath =~ /fcc/)
-            {$cellName = "cubic";}
-         elsif ($sybdPath =~ /sc/)
-            {$cellName = "cubic";}
-         elsif ($sybdPath =~ /bcc/)
-            {$cellName = "cubic";}
-         elsif ($sybdPath =~ /zb/)
-            {$cellName = "cubic";}
-      }
+         {$sybdPath=lc($ARGV[++$number]);}
       elsif ($ARGV[$number] eq "-rel")
       {
          $rel=1;
@@ -1022,6 +1051,18 @@ sub parseCommandLine
          # Mark that all kpoints have been set from the command line.
          foreach $kpGroup (1..3)
             {$setKPFlag[$kpGroup] = 1;}
+      }
+      elsif ($ARGV[$number] eq "-kpshift")
+      {
+         $kpShift = "$ARGV[++$number] $ARGV[++$number] $ARGV[++$number]";
+         print "kpShift = $kpShift\n";
+      }
+      elsif ($ARGV[$number] eq "-printbz")
+         {$printBZ = 1;}
+      elsif ($ARGV[$number] eq "-compvis")
+      {
+         $compVis = 1;
+         $makekpoints_exec = "makekpoints_cv";
       }
       elsif ($ARGV[$number] eq "-subbasis")
       {
@@ -1297,17 +1338,33 @@ sub initState
    $initXanesStates[2][1] = "  3  5 ";  # 2p
    $initXanesStates[3][0] = "  6  6 ";  # 3s
    $initXanesStates[3][1] = "  7  9 ";  # 3p
-   $initXanesStates[4][0] = " 10 10 ";  # 4s
-   $initXanesStates[3][2] = " 11 15 ";  # 3d
+   $initXanesStates[3][2] = " 10 14 ";  # 3d
+   $initXanesStates[4][0] = " 15 15 ";  # 4s
    $initXanesStates[4][1] = " 16 18 ";  # 4p
-   $initXanesStates[5][0] = " 19 19 ";  # 5s
-   $initXanesStates[4][2] = " 20 24 ";  # 4d
-   $initXanesStates[5][1] = " 25 27 ";  # 5p
-   $initXanesStates[6][0] = " 28 28 ";  # 6s
-   $initXanesStates[4][3] = " 29 35 ";  # 4f
-   $initXanesStates[5][2] = " 36 40 ";  # 5d
+   $initXanesStates[4][2] = " 19 23 ";  # 4d
+   $initXanesStates[4][3] = " 24 30 ";  # 4f
+   $initXanesStates[5][0] = " 31 31 ";  # 5s
+   $initXanesStates[5][1] = " 32 34 ";  # 5p
+   $initXanesStates[5][2] = " 35 39 ";  # 5d
+   $initXanesStates[6][0] = " 40 40 ";  # 6s
    $initXanesStates[6][1] = " 41 43 ";  # 6p
    $initXanesStates[7][0] = " 44 44 ";  # 7s
+#   $initXanesStates[1][0] = "  1  1 ";  # 1s
+#   $initXanesStates[2][0] = "  2  2 ";  # 2s
+#   $initXanesStates[2][1] = "  3  5 ";  # 2p
+#   $initXanesStates[3][0] = "  6  6 ";  # 3s
+#   $initXanesStates[3][1] = "  7  9 ";  # 3p
+#   $initXanesStates[4][0] = " 10 10 ";  # 4s
+#   $initXanesStates[3][2] = " 11 15 ";  # 3d
+#   $initXanesStates[4][1] = " 16 18 ";  # 4p
+#   $initXanesStates[5][0] = " 19 19 ";  # 5s
+#   $initXanesStates[4][2] = " 20 24 ";  # 4d
+#   $initXanesStates[5][1] = " 25 27 ";  # 5p
+#   $initXanesStates[6][0] = " 28 28 ";  # 6s
+#   $initXanesStates[4][3] = " 29 35 ";  # 4f
+#   $initXanesStates[5][2] = " 36 40 ";  # 5d
+#   $initXanesStates[6][1] = " 41 43 ";  # 6p
+#   $initXanesStates[7][0] = " 44 44 ";  # 7s
 }
 
 # This subroutine will read the olcao.skl input file and initialize all the
@@ -1343,11 +1400,17 @@ sub initializeCell
    $directABC_ref      = StructureControl::getDirectABCRef();
    $mag_ref            = StructureControl::getMagRef();
    $angle_ref          = StructureControl::getAngleRef();
+   $fullCellMag_ref    = StructureControl::getFullCellMagRef();
+   $fullCellAngle_ref  = StructureControl::getFullCellAngleRef();
+   $magRecip_ref       = StructureControl::getMagRecipRef();
+   $angleRecip_ref     = StructureControl::getAngleRecipRef();
 
    # Retrieve local versions of certain values.
    $doFullCell       = StructureControl::getDoFullCell();
    $spaceGroupName   = StructureControl::getSpaceGroupName();
    $spaceGroupNum    = StructureControl::getSpaceGroupNum();
+   $spaceGroupSubNum = StructureControl::getSpaceGroupSubNum();
+   $latticeType      = StructureControl::getLatticeType();
    $numElements      = StructureControl::getNumElements();
    $numAtoms         = StructureControl::getNumAtoms();
    $minPotAlpha      = StructureControl::getMinPotAlpha();
@@ -1368,7 +1431,7 @@ sub initializeCell
       $atomElementName[$atom] = $atomElementName_ref->[$atom];
       $atomElementID[$atom]   = $atomElementID_ref->[$atom];
       $atomSpeciesID[$atom]   = $atomSpeciesID_ref->[$atom];
-      $atomTypeID[0][$atom]    = 1;
+      $atomTypeID[0][$atom]   = 1;
    }
 
    # Initialize system species numbers.  (Copy)
@@ -1406,93 +1469,179 @@ sub initializeCell
    {
       if ($spaceGroupNum <= 2)
       {
-         $sybdPath = "tric";
-         $cellName = "triclinic";
-         $kpShift  = "0.5 0.5 0.5";
+         if (($angleRecip_ref->[1] > $pi/2.0) &&
+             ($angleRecip_ref->[2] > $pi/2.0) &&
+             ($angleRecip_ref->[3] > $pi/2.0) &&
+             ($angleRecip_ref->[3] == min(@{$angleRecip_ref}[1,2,3])))
+            {$sybdPath="tric1a";}
+         elsif (($angleRecip_ref->[1] < $pi/2.0) &&
+             ($angleRecip_ref->[2] < $pi/2.0) &&
+             ($angleRecip_ref->[3] < $pi/2.0) &&
+             ($angleRecip_ref->[3] == max(@{$angleRecip_ref}[1,2,3])))
+            {$sybdPath="tric1b";}
+         elsif (($angleRecip_ref->[1] > $pi/2.0) &&
+             ($angleRecip_ref->[2] > $pi/2.0) &&
+             ($angleRecip_ref->[3] == $pi/2.0))
+            {$sybdPath="tric2a";}
+         elsif (($angleRecip_ref->[1] < $pi/2.0) &&
+             ($angleRecip_ref->[2] < $pi/2.0) &&
+             ($angleRecip_ref->[3] == $pi/2.0))
+            {$sybdPath="tric2b";}
+         else
+         {
+            print STDOUT "No SYBD path identifiable.\n";
+            print STDOUT "Expecting form as in Setyawan and Curtarolo\n";
+            print STDOUT "Comp. Mat. Sci., v49, pp299-312, (2010)\n";
+            print STDOUT "Defaulting to use 'tric1a' as the path.\n";
+            $sybdPath="tric1a";
+         }
       }
       elsif ($spaceGroupNum <= 15)
       {
-         $sybdPath = "mono";
-         $cellName = "monoclinic";
-         $kpShift  = "0.5 0.5 0.5";
+         # Assign a sybd path for P, A, B, F, and I all as a "standard"
+         #   monoclinic path. Only for the C-centered case will we make some
+         #   distinctions. In the future this will need to be fixed for the
+         #   other settings.
+         if (($latticeType eq "P") || ($latticeType eq "A") ||
+             ($latticeType eq "B") || ($latticeType eq "I") ||
+             ($latticeType eq "F") || ($doFullCell == 1))
+            {$sybdPath = "mono";}
+         elsif ($angleRecip_ref->[3] > $pi/2.0)
+            {$sybdPath = "monoc1";}
+         elsif ($angleRecip_ref->[3] == $pi/2.0)
+            {$sybdPath = "monoc2";}
+         else # $angleRecip_ref->[3] < $pi/2.0
+         {
+            my $factor = $fullCellMag_ref->[2]
+                  * cos($fullCellAngle_ref->[1]) / $fullCellMag_ref->[3]
+                  + $fullCellMag_ref->[2]**2
+                  * sin($fullCellAngle_ref->[1])**2
+                  / $fullCellMag_ref->[1]**2;
+            # Out of order for easier programming computation.
+            if (abs($factor - 1) < $epsilon) # Use if within $epsilon of one.
+               {$sybdPath = "monoc4";}
+            elsif ($factor < 1) # Use if more than $epsilon less than one.
+               {$sybdPath = "monoc3";}
+            else # Use if more than $epsilon greater than one.
+               {$sybdPath = "monoc5";}
+         }
       }
       elsif ($spaceGroupNum <= 74)
       {
-         $sybdPath = "ortho";
-         $cellName = "orthorhombic";
-         $kpShift  = "0.5 0.5 0.5";
+         # Assign a sybd path for P, A, and B
+         if (($latticeType eq "P") || ($latticeType eq "A") ||
+             ($latticeType eq "B") || ($doFullCell == 1))
+            {$sybdPath = "ortho";}
+         elsif ($latticeType eq "I")
+            {$sybdPath = "orthoi";}
+         elsif ($latticeType eq "C")
+            {$sybdPath = "orthoc";}
+         else # Face centered orthorhombic
+         {
+            my $factor1 = 1.0 / $fullCellMag_ref->[1]**2;
+            my $factor2 = 1.0 / $fullCellMag_ref->[2]**2
+                  + 1.0 / $fullCellMag_ref->[3]**2;
+            # Out of order for easier programming and computation.
+            if (abs($factor1 - $factor2) < $epsilon)
+               {$sybdPath = "orthof3";} # Use if factors are within epsilon.
+            elsif ($factor1 > $factor2)
+               {$sybdPath = "orthof1";}
+            else
+               {$sybdPath = "orthof2";}
+         }
       }
       elsif ($spaceGroupNum <= 142)
       {
-         $sybdPath = "tet";
-         $cellName = "tetragonal";
-         $kpShift  = "0.5 0.5 0.5";
+         # Assign sybd path for P, F, and C.
+         if (($latticeType eq "P") || ($latticeType eq "F") ||
+             ($latticeType eq "C") || ($doFullCell == 1))
+            {$sybdPath = "tet";}
+         elsif ($latticeType eq "I") # Body centered tetragonal.
+         {
+            if ($fullCellMag_ref->[3] < $fullCellMag_ref->[1])
+               {$sybdPath = "teti1";}
+            else
+               {$sybdPath = "teti2";}
+         }
+
       }
       elsif ($spaceGroupNum <= 167)
       {
-         $sybdPath = "trig";
-         $cellName = "trigonal";
-         $kpShift  = "0.5 0.5 0.5";
-      }
-      elsif ($spaceGroupNum <= 194)
-      {
-         $sybdPath = "hex";
-         $cellName = "hexagonal";
-         $kpShift  = "0.3333333333333333 0.3333333333333333 0.25";
-      }
-      elsif ($spaceGroupNum <= 230)
-      {
-         if ($doFullCell == 1)
-         {
-            $sybdPath = "sc";
-            $kpShift  = "0.25 0.25 0.25";
-         }
+         if (($latticeType eq "P") || ($latticeType eq "H"))
+            {$sybdPath = "hex";} # Hexagonal cell
+         elsif (($latticeType eq "R") && ($spaceGroupSubNum == 2) &&
+                ($doFullCell == 1))
+            {$sybdPath = "hex";} # Hexagonal cell (made of 3 rhomb cells.)
          else
          {
-            if ($spaceGroupName =~ /^F/)
-            {
-               $sybdPath = "fcc";
-               $kpShift  = "0.25 0.25 0.25";
-            }
-            elsif ($spaceGroupName =~ /^I/)
-            {
-               $sybdPath = "bcc";
-               $kpShift  = "0.5 0.5 0.5";
-            }
+            # We have a rhombohedral cell. In the Setyawan and Curtarolo 2010
+            #   paper they propose two variations for the rhombohedral
+            #   symmetric band structure path. The selection of which path to
+            #   use is said to depend on the value of the cell angle alpha. In
+            #   the paper, the angle alpha is defined as the interaxial angle
+            #   between the b and c axes of the conventional cell. For
+            #   trigonal systems the conventional cell is nominally hexagonal
+            #   and so the angle alpha is defined to always be 90 degrees.
+            #   But, in the paper the alpha dependence states that one path
+            #   should be taken when alpha > 90 and another path take when the
+            #   angle alpha < 90 degrees. There is no "equal to 90 degrees"
+            #   option specified. The combination of those facts indicates
+            #   that the angle alpha for the rhombohedral cell should be the
+            #   angle alpha of the primitive cell which follows alpha = beta =
+            #   gamma for the rhombohedral primitive cell. (Also, for that
+            #   cell a=b=c.) Therefor, even though the paper says that alpha
+            #   should be understood as the angle from the conventional cell
+            #   we should take it in this case as the angle from the primitive
+            #   cell. Specifically, that is $angle_ref[1].
+            if ($angle_ref->[1] < $pi/2.0)
+               {$sybdPath = "rhomb1";} # Includes prim cells of R*_b groups
             else
-            {
-               $sybdPath = "sc";
-               $kpShift  = "0.25 0.25 0.25";
-            }
+               {$sybdPath = "rhomb2";}
          }
-         $cellName = "cubic";
+      }
+      elsif ($spaceGroupNum <= 194)
+         {$sybdPath = "hex";}
+      elsif ($spaceGroupNum <= 230)
+      {
+         if (($doFullCell == 1) || ($latticeType eq "P"))
+            {$sybdPath = "sc";}
+         else
+         {
+            if ($latticeType eq "F")
+               {$sybdPath = "fcc";}
+            elsif ($latticeType eq "I")
+               {$sybdPath = "bcc";}
+            else
+               {$sybdPath = "sc";}
+         }
       }
    }
-   else
+
+   if ($kpShift eq "-1 -1 -1")
    {
-      if ($sybdPath eq "tric")
+      if ($sybdPath =~ /tric/)
       {
          $cellName = "triclinic";
          $kpShift  = "0.5 0.5 0.5";
       }
-      elsif ($sybdPath eq "mono")
+      elsif ($sybdPath =~ /mono/)
       {
          $cellName = "monoclinic";
          $kpShift  = "0.5 0.5 0.5";
       }
-      elsif ($sybdPath eq "ortho")
+      elsif ($sybdPath =~ /ortho/)
       {
          $cellName = "orthorhombic";
          $kpShift  = "0.5 0.5 0.5";
       }
-      elsif ($sybdPath eq "tet")
+      elsif ($sybdPath =~ /tet/)
       {
          $cellName = "tetragonal";
          $kpShift  = "0.5 0.5 0.5";
       }
-      elsif ($sybdPath eq "trig")
+      elsif ($sybdPath =~ /rhomb/)
       {
-         $cellName = "trigonal";
+         $cellName = "rhombohedral";
          $kpShift  = "0.5 0.5 0.5";
       }
       elsif ($sybdPath eq "hex")
@@ -1503,9 +1652,7 @@ sub initializeCell
       else # Nothing but cubic systems from here on.
       {
          $cellName = "cubic";
-         if ($sybdPath eq "zb")
-            {$kpShift  = "0.25 0.25 0.25";}
-         elsif ($sybdPath eq "sc")
+         if ($sybdPath eq "sc")
             {$kpShift  = "0.25 0.25 0.25";}
          elsif ($sybdPath eq "fcc")
             {$kpShift  = "0.25 0.25 0.25";}
@@ -2756,10 +2903,10 @@ sub makeKP
    foreach $kpGroup (1..3)
    {
       &printKPInFile(@{$kpMesh[$kpGroup]}[1..3],$kpGroup);
-      system("makekpoints");
+      system("$makekpoints_exec $printBZ");
       $kpNum[$kpGroup] = `wc -l $kpOutFile`;  # Count the lines.
       @values=StructureControl::prepLine("",$kpNum[$kpGroup],'\s+');
-      $kpNum[$kpGroup] = $values[0] - 3; # Subtract the three line header.
+      $kpNum[$kpGroup] = $values[0] - 7; # Subtract the seven line header.
       &move("$kpOutFile","$inputTemp/$kpGroupFile[$kpGroup]");
    }
    &move("$kpInFile","$inputTemp/$kpInFile");
@@ -2897,7 +3044,7 @@ sub contractBasis
             &copy("$atomicBDB/$elementList[$element]/gauss.fit","gauss.fit");
 
             # Run the contraction program and rename the results files.
-            system("contract $doBasisVis");
+            system("$contract_exec $doBasisVis");
             $tempFileName = $currBasisFile . ".out";
             &move("contract.out","$tempFileName");
             $tempFileName = $currBasisFile . ".dat";
@@ -2919,7 +3066,7 @@ sub contractBasis
                      "contract.dat");
 
                # Run the contraction program and rename the results files.
-               system("contract 0");
+               system("$contract_exec 0");
                $tempFileName = $currBasisFileNC . ".out";
                &move("contract.out","$tempFileName");
                $tempFileName = $currBasisFileNC . ".dat";
@@ -3304,6 +3451,10 @@ sub printOLCAOInput
    #   thermal smearing parameter.
    print OLCAO "SHARED_INPUT_DATA\n";
 
+   # Print the space group information.
+   print OLCAO "SPACE_GROUP\n";
+   print OLCAO "$spaceGroupNum $spaceGroupSubNum\n";
+
    # Print the cutoff criteria for negligable gaussian interactions.
    print OLCAO "BASISFUNCTION_AND_ELECTROSTATIC_CUTOFFS\n";
    print OLCAO "    1.00000000E-$bfCutoff    1.00000000E-$esCutoff\n";
@@ -3337,9 +3488,14 @@ sub printOLCAOInput
    print OLCAO "0 $spinMAIN\n";
    print OLCAO "TYPE_ID__SPIN_SPLIT_FACTOR\n";
 
+   # Print data useful for dipole moment calculations.
+   print OLCAO "DIPOLE_INPUT_DATA\n";
+   print OLCAO "DIPOLE_CENTER\n";
+   print OLCAO "0.5 0.5 0.5    ! FractABC: center about which to compute the dipole.\n";
+
    # Print data useful for the dos portion of the calculation
    print OLCAO "DOS_INPUT_DATA\n";
-   print OLCAO "$eDeltaDOS $sigmaDOS               ! DOS Delta Energy, DOS sigma broadening (FWHM)\n";
+   print OLCAO "$eDeltaDOS $sigmaDOS              ! DOS Delta Energy, DOS sigma broadening (FWHM)\n";
    print OLCAO "$eminDOS $emaxDOS                 ! DOS EMIN and EMAX\n";
    print OLCAO "$detailCodePDOS ! PDOS ctrl flag: 0 t; 1 a total; 2 a nl; 3 a nlm\n";
 
@@ -3356,19 +3512,22 @@ sub printOLCAOInput
    print OLCAO "SYBD_INPUT_DATA\n";
    open (SYMKP,"<$sybdDB/$sybdPath") ||
          die "$sybdPath not found in sybd database.\n";
-   while ($line = <SYMKP>)
-      {print OLCAO $line;}
+   &processSYBDPath;
    close (SYMKP);
 
    # Print data that is useful for the xanes portion of the calculation.
    print OLCAO "PACS_INPUT_DATA\n";
-   print OLCAO "$sortedXanesAtoms[$fileSet]                       ! Excited atom number\n";
-   print OLCAO "$eDeltaPACS $sigmaPACS               ! PACS delta Energy, PACS sigma factor\n";
-   print OLCAO "$onsetSlackPACS $energyWindowPACS               ! Energy slack before onset, energy window\n";
-   print OLCAO "$numCoreXanes                    ! Number of possible core orbitals to excite\n";
+   print OLCAO "$sortedXanesAtoms[$fileSet]                       ".
+         "! Excited atom number\n";
+   print OLCAO "$eDeltaPACS $sigmaPACS               ".
+         "! PACS delta Energy, PACS sigma factor\n";
+   print OLCAO "$onsetSlackPACS $energyWindowPACS               ".
+         "! Energy slack before onset, energy window\n";
+   print OLCAO "$numCoreXanes                    ".
+         "! Number of possible core orbitals to excite\n";
    foreach $orbital (1..$numCoreXanes)
    {
-      print OLCAO "$xanesControl[$orbital] -1  ! QN_n QN_l Init1 Init2 TEDiff\n";
+      print OLCAO "$xanesControl[$orbital] -1 ! QN_n QN_l Init1 Init2 TEDiff\n";
    }
 
    # Print Optical properties input data
@@ -3377,6 +3536,14 @@ sub printOLCAOInput
    print OLCAO "$eTransOPTC                     ! OPTC energy trans\n";
    print OLCAO "$eDeltaOPTC                     ! OPTC delta energy\n";
    print OLCAO "$sigmaOPTC                      ! OPTC broadening\n";
+   print OLCAO "$detailCodePOPTC                ! POPTC 0N;1e;2a;3enl;4enlm\n";
+
+   # Print nonlinear optical properties input data
+   print OLCAO "NLOP_INPUT_DATA\n";
+   print OLCAO "$eCutOffNLOP                    ! NLOP energy cutoff\n";
+   print OLCAO "$eTransNLOP                     ! NLOP energy trans\n";
+   print OLCAO "$eDeltaNLOP                     ! NLOP delta energy\n";
+   print OLCAO "$sigmaNLOP                      ! NLOP broadening\n";
 
    # Print sigma(E) input data
    print OLCAO "SIGE_INPUT_DATA\n";
@@ -3394,11 +3561,148 @@ sub printOLCAOInput
    print OLCAO "1                             ! 1=Produce XDMF+HDF5 output\n";
    print OLCAO "1                             ! 1=Produce 1D profile output\n";
 
+   # Print local environment (loen) control parameters.
+   print OLCAO "LOEN_INPUT_DATA\n";
+   print OLCAO "1                          ! Method: 1 Bispec. Comp.\n";
+   print OLCAO "4 4                        ! Bispec-Comp.: 2j1 2j2\n";
+   print OLCAO "20 5.0 0.85                ! max_neigh cutoff angleSqueeze\n";
+
    # Print the end of data marker
    print OLCAO "END_OF_DATA\n";
 
    # Close the olcao file.
    close (OLCAO);
+}
+
+
+sub processSYBDPath
+{
+   # Define local variables.
+   my $numLattSpecificVars;
+   my @variableName;
+   my @variableEqn;
+   my $variable;
+   my $previousVariable;
+   my @values;
+   my $line;
+   my $axis;
+   my $angle;
+   my @angleName;
+   my $axisLetter;
+
+   # Create the list of names used for angles in the equations such that they
+   #   fill array indices 1 through 3. Index 0 is empty.
+   @angleName = qw/'' alpha beta gamma/;
+
+   # Read the number of lattice specific variables and the equation that
+   #   specifies each. Do not print this information to the olcao.dat file.
+   @values = StructureControl::prepLine(\*SYMKP,"",'\s+');
+   $numLattSpecificVars = $values[0];
+   foreach $variable (1..$numLattSpecificVars)
+   {
+      @values = StructureControl::prepLine(\*SYMKP,"",' = ');
+      $variableName[$variable] = $values[0];
+      $variableEqn[$variable] = $values[1];
+
+      # Reduce the equation to a specific number.
+
+      # First we reduce the angles to numbers (in radians).
+      foreach $angle (1..3)
+      {
+         while (index($variableEqn[$variable],$angleName[$angle]) >= 0)
+         {
+            substr($variableEqn[$variable],
+                  index($variableEqn[$variable],$angleName[$angle]),
+                  length($angleName[$angle]),$fullCellAngle_ref->[$angle])
+         }
+      }
+
+      # Now we reduce variable names from any previous definition. (I.e., if
+      #   zeta was defined as the first variableName and then zeta gets used
+      #   as part of the definition of a later variable, then we need to
+      #   replace the zeta in the later variable with the equation for zeta
+      #   from earlier.) Note that there are no looping dependencies. So we
+      #   do not have anything like: mu depends on zeta which depends on delta
+      #   which depends on mu. Additionally, the variables are listed in such
+      #   an order that there are no funky string mixing issues such as: the
+      #   variable is named "zeta" and we perform substitutions on "eta"
+      #   which produces "z0.83847" or some mess like that.
+      foreach $previousVariable (1..($variable-1))
+      {
+         while (index($variableEqn[$variable],
+               $variableName[$previousVariable]) >= 0)
+         {
+            substr($variableEqn[$variable],
+                  index($variableEqn[$variable],
+                  $variableName[$previousVariable]),
+                  length($variableName[$previousVariable]),
+                  $variableEqn[$previousVariable])
+         }
+      }
+
+      # Now we reduce lattice magnitudes. The tricky thing here is that the
+      #   lattice magnitudes such as a, b, c might be part of other quantities
+      #   such as cos, csc, sec, tan, cot, etc. Therefore, we need to make
+      #   sure that if we find any letter (a,b,c) that there are no other a-z
+      #   letters either before or after it. The requirement is that lattice
+      #   magniude must be written as either " a ", " b ", or " c ".
+      foreach $axis (1..3)
+      {
+         $axisLetter = " " . chr(ord("a") - 1 + $axis) . " ";
+         while (index($variableEqn[$variable],$axisLetter) >= 0)
+         {
+            substr($variableEqn[$variable],
+                   index($variableEqn[$variable],$axisLetter),3,
+                         $fullCellMag_ref->[$axis]);
+         }
+      }
+
+      # Reduce the equation to a number.
+      $variableEqn[$variable] = eval($variableEqn[$variable]);
+   }
+
+   # Read the two data structure size specification and parameter
+   #   specification lines and append them to the olcao.dat file. Note, I'm
+   #   doing it this way because it was interpreting "print OLCAO <SYMKP>" in
+   #   array context and reading the whole rest of the file before the next
+   #   while loop.
+   $line = <SYMKP>;
+   print OLCAO $line;
+   $line = <SYMKP>;
+   print OLCAO $line;
+
+   # Read the rest of the SYMKP file and substitute in variable corrected
+   #   values where expressed in the file as it is appended into the olcao.dat
+   #   file. We do that by first reading the line and then splitting it by
+   #   spaces. Then we take each axis in turn and repeatedly search for each
+   #   of the variable names. When we find one we substitute in the value that
+   #   we computed just above. Finally, when all substitutions have been
+   #   performed we evaluate the expression and assemble them together to add
+   #   to the olcao.dat file.
+   while ($line = <SYMKP>)
+   {
+      @values = StructureControl::prepLine("",$line,'\s+');
+      foreach $axis (1..3)
+      {
+         foreach $variable (1..$numLattSpecificVars)
+         {
+            while (index($values[$axis-1],$variableName[$variable]) >= 0)
+            {
+               substr($values[$axis-1],index($values[$axis-1],
+                      $variableName[$variable]),
+                      length($variableName[$variable]),
+                      $variableEqn[$variable])
+            }
+         }
+
+         # Reduce to a single number.
+         $values[$axis-1] =~ s/--/+/g; # Remove double negatives.
+         $values[$axis-1] = eval($values[$axis-1]);
+      }
+
+      # Print the line into the olcao.dat file.
+      printf OLCAO "%12.8f%12.8f%12.8f %1s %-5s\n", @values;
+   }
 }
 
 
@@ -4656,30 +4960,30 @@ sub makeSubFile
    # Print the default commands (these are not system dependent).
    if ($xanes == 0)
    {
-      print SUBFILE "source $OLCAO_DIR/.olcao\n";
+      print SUBFILE "source $OLCAO_DIR/.olcao/olcaorc\n";
       print SUBFILE "export OMP_NUM_THREADS=1\n";
       print SUBFILE "cd $proj_dir\n";
-      print SUBFILE "\$OLCAO_BIN/olcao -dos\n";
-      print SUBFILE "\$OLCAO_BIN/olcao -bond\n";
-      print SUBFILE "\$OLCAO_BIN/olcao -sybd\n";
-      print SUBFILE "\$OLCAO_BIN/olcao -optc\n";
+      print SUBFILE "\"\$OLCAO_BIN/olcao\" -dos\n";
+      print SUBFILE "\"\$OLCAO_BIN/olcao\" -bond\n";
+      print SUBFILE "\"\$OLCAO_BIN/olcao\" -sybd\n";
+      print SUBFILE "\"\$OLCAO_BIN/olcao\" -optc\n";
    }
    elsif ($h == 0)
    {
-      print SUBFILE "source $OLCAO_DIR/.olcao\n";
+      print SUBFILE "source $OLCAO_DIR/.olcao/olcaorc\n";
       @values = StructureControl::prepLine("","$proj_dir",'\/');
       $basename = "/" . $values[$#values];
       print SUBFILE "export OMP_NUM_THREADS=1\n";
       print SUBFILE "cd $proj_dir$basename\n";
-      print SUBFILE "\$OLCAO_BIN/olcao -dos\n";
-      print SUBFILE "\$OLCAO_BIN/olcao -bond\n";
-      print SUBFILE "\$OLCAO_BIN/olcao -sybd\n";
-      print SUBFILE "\$OLCAO_BIN/olcao -optc\n";
+      print SUBFILE "\"\$OLCAO_BIN/olcao\" -dos\n";
+      print SUBFILE "\"\$OLCAO_BIN/olcao\" -bond\n";
+      print SUBFILE "\"\$OLCAO_BIN/olcao\" -sybd\n";
+      print SUBFILE "\"\$OLCAO_BIN/olcao\" -optc\n";
    }
    else
    {
       $proj_dir = "$proj_dir" . "/" . lc($currentName);
-      print SUBFILE "source $OLCAO_DIR/.olcao\n";
+      print SUBFILE "source $OLCAO_DIR/.olcao/olcaorc\n";
       print SUBFILE "export OMP_NUM_THREADS=1\n";
       print SUBFILE "cd $proj_dir\n";
       foreach $orbital (1..$numCoreXanes)
@@ -4698,7 +5002,7 @@ sub makeSubFile
             {$character2 = "f";}
 
          # Print the pacs command with the appropriate edge.
-         print SUBFILE "\$OLCAO_BIN/olcao -pacs $character1$character2\n";
+         print SUBFILE "\"\$OLCAO_BIN/olcao\" -pacs $character1$character2\n";
       }
    }
 
@@ -4706,7 +5010,7 @@ sub makeSubFile
 
    # If bash was used, then make the submission file executable.
    if ($queue == 0)
-      {system ("chmod u+x $subDir/$bash_sub");}
+      {system("chmod u+x $subDir/$bash_sub");}
 }
 
 

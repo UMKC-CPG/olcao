@@ -1,0 +1,1910 @@
+##############################################################################
+# TABLE OF ISOTOPES
+#  This table will be looped through to run Grasp2K calculations for all of
+#  the isotopes for all known periodic table elements.
+#
+#  Sources:
+#      Ground state occupation: "ELECTRON CONFIGURATION AND IONIZATION ENERGY
+#      OF NEUTRAL ATOMS IN THE GROUND STATE", CRC Handbook of Chemisty and
+#      Physics
+#
+#      Abundance, atomic mass, spin, nuclear magnetic moment, electric
+#      quadrupole moment: "TABLE OF THE ISOTOPES", CRC Handbook of Chemisty
+#      and Physics
+#
+#  Note: Isotopes without Atomic Mass will not be calculated.  Spin, Magnetic
+#        Moment and Quadrupole moments with # for a value will be given a
+#        standard value of 1. This is the recommended procedure by GRASP2K
+#        paper.
+#
+#  GRASP2K INPUTS: Grasp2K is run in a predefined order such that the
+#    scientist can tailor their calculation to their specific needs. For our
+#    purposes, we will have two paths: non-parallel and parallel.
+#    Specifically in the cases of extended basis sets which converge at a slow
+#    rate it is recommended to run in parallel.
+#
+#   1) ISO
+#     This program sets up the inital picture of the atom.
+#     * Atomic Number
+#     * Mass Number (0 if nucleus is point source)
+#         <Program calculates rms radius and default skin thickness, and will
+#         ask if you want to revise the values. It is not necessary to revise,
+#         therefore default answer being programmed is no>
+#     * Revise these values? (see above)
+#     * Mass of Neutral Atom (0 if nucleus is static)
+#     * Nuclear Spin Quantum Number in units of h/2pi
+#     * Nuclear Dipole Moment (nuclear magnetons)
+#     * Nuclear Quadrupole Moment (barns)
+#
+#   2) CSL
+#     This program generates a list of all possible electron state
+#     configuration in the atom.  In order to make the inputs easier it is
+#     recommended to use the non-relativistic scheme.  The program will
+#     still generate relativistic wavefunctions.
+#     * Enter the list of nonrelativistic core subshells:
+#     * Enter the list of nonrelativistic peel subshells:
+#     * Redefine maximum nonrelativistic peel subshell occupations?
+#     * Redefine default minimum nonrelativistic peel subshell occupations?
+#         <There is no need to redefine the above values>
+#     * Enter a nonrelativistic reference peel subsheel configuration
+#       (null if done)
+#         <Here we want to enter in the "standard occupation">
+#               
+##############################################################################
+#
+#  Name Percentage Atomic_Mass Spin Mag_Moment Quad_Moment
+#
+#####################
+# HYDROGEN ISOTOPES #
+#####################
+ATOM_SYM: H
+ATOM_NUM: 1
+CORE
+
+VALE
+1s
+1s 2s 2p
+1s 2s 2p 3s 3p
+OCCUPATION
+1s(1)
+NUM_SUBSTITUTIONS
+1 1 1
+ERWF
+2 2 2
+	1H	99.988570	1.007825032	0.5	2.7928473	#
+###################
+# HELIUM ISOTOPES #
+###################
+ATOM_SYM: He
+ATOM_NUM: 2
+CORE
+
+VALE
+1s
+1s 2s 2p
+1s 2s 2p 3s 3p
+OCCUPATION
+1s(2)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	4He	99.9998663 	4.002603254 	0	#		#
+####################
+# LITHIUM ISOTOPES #
+####################
+ATOM_SYM: Li
+ATOM_NUM: 3
+CORE
+1s
+VALE
+2s 2p
+2s 2p 3s 3p
+2s 2p 3s 3p 4s 4p
+OCCUPATION
+2s(1)
+NUM_SUBSTITUTIONS
+1 1 1
+ERWF
+2 2 2
+	7Li	92.414 		7.0160046 	1.5	3.25644 	-0.0406
+######################
+# BERYLLIUM ISOTOPES #
+######################
+ATOM_SYM: Be
+ATOM_NUM: 4
+CORE
+1s
+VALE
+2s 2p
+2s 2p 3s 3p
+2s 2p 3s 3p 4s 4p
+OCCUPATION
+2s(2)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	9Be	100 		9.0121822 	-1.5 	-1.1776 	0.0529
+##################
+# BORON ISOTOPES #
+##################
+ATOM_SYM: B
+ATOM_NUM: 5
+CORE
+1s
+VALE
+2s 2p
+2s 2p 3s 3p
+2s 2p 3s 3p 4s 4p
+OCCUPATION
+2s(2) 2p(1)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	11B	80.17 		11.0093054 	-1.5 	2.688649 	0.0407
+###################
+# CARBON ISOTOPES #
+###################
+ATOM_SYM: C
+ATOM_NUM: 6
+CORE
+1s
+VALE
+2s 2p
+2s 2p 3s 3p
+2s 2p 3s 3p 4s 4p
+OCCUPATION
+2s(2) 2p(2)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	12C	98.938 		12.000000000 	0	#		#
+#####################
+# NITROGEN ISOTOPES #
+#####################
+ATOM_SYM: N
+ATOM_NUM: 7
+CORE
+1s
+VALE
+2s 2p
+2s 2p 3s 3p
+2s 2p 3s 3p 4s 4p
+OCCUPATION
+2s(2) 2p(3)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	14N	99.63620 	14.003074005 	1 	0.403761 	0.02044
+###################
+# OXYGEN ISOTOPES #
+###################
+ATOM_SYM: O
+ATOM_NUM: 8
+CORE
+1s
+VALE
+2s 2p
+2s 2p 3s 3p
+2s 2p 3s 3p 4s 4p
+OCCUPATION
+2s(2) 2p(4)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	16O	99.75716 	15.9949146196	0	#		#
+#####################
+# FLUORINE ISOTOPES #
+#####################
+ATOM_SYM: F
+ATOM_NUM: 9
+CORE
+1s
+VALE
+2s 2p
+2s 2p 3s 3p
+2s 2p 3s 3p 4s 4p
+OCCUPATION
+2s(2) 2p(5)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	19F	100 		18.9984032 	0.5 	2.62887		#
+#################
+# NEON ISOTOPES #
+#################
+ATOM_SYM: Ne
+ATOM_NUM: 10
+CORE
+1s
+VALE
+2s 2p
+2s 2p 3s 3p
+2s 2p 3s 3p 4s 4p
+OCCUPATION
+2s(2) 2p(6)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	20Ne	90.483 		19.992440175 	0	#		#
+###################
+# SODIUM ISOTOPES #
+###################
+ATOM_SYM: Na
+ATOM_NUM: 11
+CORE
+1s 2s 2p
+VALE
+3s 3p
+3s 3p 3d 4s 4p
+3s 3p 3d 4s 4p 4d 5s 5p
+OCCUPATION
+3s(1)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	23Na	100 		22.989769281	1.5	2.21752		0.106
+######################
+# MAGNESIUM ISOTOPES #
+######################
+ATOM_SYM: Mg
+ATOM_NUM: 12
+CORE
+1s 2s 2p
+VALE
+3s 3p
+3s 3p 3d 4s 4p
+3s 3p 3d 4s 4p 4d 5s 5p
+OCCUPATION
+3s(2)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	24Mg	78.994 		23.98504170	0	#		#
+######################
+# ALUMINIUM ISOTOPES #
+######################
+ATOM_SYM: Al
+ATOM_NUM: 13
+CORE
+1s 2s 2p
+VALE
+3s 3p
+3s 3p 3d 4s 4p
+3s 3p 3d 4s 4p 4d 5s 5p
+OCCUPATION
+3s(2) 3p(1)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	27Al	100 		26.9815386	2.5 	3.641507	0.147
+####################
+# SILICON ISOTOPES #
+####################
+ATOM_SYM: Si
+ATOM_NUM: 14
+CORE
+1s 2s 2p
+VALE
+3s 3p
+3s 3p 3d 4s 4p
+3s 3p 3d 4s 4p 4d 5s 5p
+OCCUPATION
+3s(2) 3p(2)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	28Si	92.22319 	27.976926533	0	#		#
+#######################
+# PHOSPHORUS ISOTOPES #
+#######################
+ATOM_SYM: P
+ATOM_NUM: 15
+CORE
+1s 2s 2p
+VALE
+3s 3p
+3s 3p 3d 4s 4p
+3s 3p 3d 4s 4p 4d 5s 5p
+OCCUPATION
+3s(2) 3p(3)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	31P	100 		30.9737616	0.5	1.13160		#
+###################
+# SULFUR ISOTOPES #
+###################
+ATOM_SYM: S
+ATOM_NUM: 16
+CORE
+1s 2s 2p
+VALE
+3s 3p
+3s 3p 3d 4s 4p
+3s 3p 3d 4s 4p 4d 5s 5p
+OCCUPATION
+3s(2) 3p(4)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	32S	94.9926 	31.9720710	0	#		#
+#####################
+# CHLORINE ISOTOPES #
+#####################
+ATOM_SYM: Cl
+ATOM_NUM: 17
+CORE
+1s 2s 2p
+VALE
+3s 3p
+3s 3p 3d 4s 4p
+3s 3p 3d 4s 4p 4d 5s 5p
+OCCUPATION
+3s(2) 3p(5)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	35Cl	75.7610 	34.96885268	1.5	0.82187		-0.082
+##################
+# ARGON ISOTOPES #
+##################
+ATOM_SYM: Ar
+ATOM_NUM: 18
+CORE
+1s 2s 2p
+VALE
+3s 3p
+3s 3p 3d 4s 4p
+3s 3p 3d 4s 4p 4d 5s 5p
+OCCUPATION
+3s(2) 3p(6)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	40Ar	99.603525 	39.962383123	0	#		#
+######################
+# POTASSIUM ISOTOPES #
+######################
+ATOM_SYM: K
+ATOM_NUM: 19
+CORE
+1s 2s 2p 3s
+VALE
+3p 3d 4s
+3p 3d 4s 4p 4d 5s
+3p 3d 4s 4p 4d 5s 5p 5d 6s
+OCCUPATION
+3p(6) 4s(1)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	39K	93.258144 	38.9637067	1.5	0.39146		0.049
+####################
+# CALCIUM ISOTOPES #
+####################
+ATOM_SYM: Ca
+ATOM_NUM: 20
+CORE
+1s 2s 2p 3s
+VALE
+3p 3d 4s
+3p 3d 4s 4p 4d 5s
+3p 3d 4s 4p 4d 5s 5p 5d 6s
+OCCUPATION
+3p(6) 4s(2)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	40Ca	96.941156 	39.9625910	0	#		#
+#####################
+# SCANDIUM ISOTOPES #
+#####################
+ATOM_SYM: Sc
+ATOM_NUM: 21
+CORE
+1s 2s 2p 3s
+VALE
+3p 3d 4s
+3p 3d 4s 4p 4d 5s
+3p 3d 4s 4p 4d 5s 5p 5d 6s
+OCCUPATION
+3p(6) 3d(1) 4s(2)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	45Sc	100 		44.955912 	-3.5	4.75649		-0.220
+#####################
+# TITANIUM ISOTOPES #
+#####################
+ATOM_SYM: Ti
+ATOM_NUM: 22
+CORE
+1s 2s 2p 3s 3p
+VALE
+3d 4s 4p
+3d 4s 4p 4d 5s 5p
+3d 4s 4p 4d 5s 5p 5d 6s 6p
+OCCUPATION
+3d(2) 4s(2)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	48Ti	73.723 		47.947946	0	#		#
+#####################
+# VANADIUM ISOTOPES #
+#####################
+ATOM_SYM: V
+ATOM_NUM: 23
+CORE
+1s 2s 2p 3s 3p
+VALE
+3d 4s 4p
+3d 4s 4p 4d 5s 5p
+3d 4s 4p 4d 5s 5p 5d 6s 6p
+OCCUPATION
+3d(3) 4s(2)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	51V	99.7504 	50.943960	-3.5 	5.148706 	-0.04
+#####################
+# CHROMIUM ISOTOPES #
+#####################
+ATOM_SYM: Cr
+ATOM_NUM: 24
+CORE
+1s 2s 2p 3s 3p
+VALE
+3d 4s 4p
+3d 4s 4p 4d 5s 5p
+3d 4s 4p 4d 5s 5p 5d 6s 6p
+OCCUPATION
+3d(5) 4s(1)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	52Cr	83.78918 	51.940508	0	#		#
+######################
+# MANGANESE ISOTOPES #
+######################
+ATOM_SYM: Mn
+ATOM_NUM: 25
+CORE
+1s 2s 2p 3s 3p
+VALE
+3d 4s 4p
+3d 4s 4p 4d 5s 5p
+3d 4s 4p 4d 5s 5p 5d 6s 6p
+OCCUPATION
+3d(5) 4s(2)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	55Mn	100 		54.938045 	-2.5	3.4687		0.32
+#################
+# IRON ISOTOPES #
+#################
+ATOM_SYM: Fe
+ATOM_NUM: 26
+CORE
+1s 2s 2p 3s 3p
+VALE
+3d 4s 4p
+3d 4s 4p 4d 5s 5p
+3d 4s 4p 4d 5s 5p 5d 6s 6p
+OCCUPATION
+3d(6) 4s(2)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	56Fe	91.75436 	55.934938	0	#		#
+###################
+# COBALT ISOTOPES #
+###################
+ATOM_SYM: Co
+ATOM_NUM: 27
+CORE
+1s 2s 2p 3s 3p
+VALE
+3d 4s 4p
+3d 4s 4p 4d 5s 5p
+3d 4s 4p 4d 5s 5p 5d 6s 6p
+OCCUPATION
+3d(7) 4s(2)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	59Co	100 		58.933195 	-3.5	4.63		0.41
+###################
+# NICKEL ISOTOPES #
+###################
+ATOM_SYM: Ni
+ATOM_NUM: 28
+CORE
+1s 2s 2p 3s 3p
+VALE
+3d 4s 4p
+3d 4s 4p 4d 5s 5p
+3d 4s 4p 4d 5s 5p 5d 6s 6p
+OCCUPATION
+3d(8) 4s(2)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	58Ni	68.07719 	57.935343	0	#		#
+###################
+# COPPER ISOTOPES #
+###################
+ATOM_SYM: Cu
+ATOM_NUM: 29
+CORE
+1s 2s 2p 3s 3p
+VALE
+3d 4s 4p
+3d 4s 4p 4d 5s 5p
+3d 4s 4p 4d 5s 5p 5d 6s 6p
+OCCUPATION
+3d(10) 4s(1)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	63Cu	69.1515 	62.929598 	-1.5	2.2273		-0.211
+#################
+# ZINC ISOTOPES #
+#################
+ATOM_SYM: Zn
+ATOM_NUM: 30
+CORE
+1s 2s 2p 3s 3p
+VALE
+3d 4s 4p
+3d 4s 4p 4d 5s 5p
+3d 4s 4p 4d 5s 5p 5d 6s 6p
+OCCUPATION
+3d(10) 4s(2)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	64Zn	49.1775 	63.929142	0	#		#
+####################
+# GALLIUM ISOTOPES #
+####################
+ATOM_SYM: Ga
+ATOM_NUM: 31
+CORE
+1s 2s 2p 3s 3p
+VALE
+3d 4s 4p
+3d 4s 4p 4d 5s 5p
+3d 4s 4p 4d 5s 5p 5d 6s 6p
+OCCUPATION
+3d(10) 4s(2) 4p(1)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	69Ga	60.1089 	68.925574 	-1.5	2.01659		0.165
+######################
+# GERMANIUM ISOTOPES #
+######################
+ATOM_SYM: Ge
+ATOM_NUM: 32
+CORE
+1s 2s 2p 3s 3p 3d
+VALE
+4s 4p
+4s 4p 4d 5s 5p
+4s 4p 4d 5s 5p 5d 6s 6p
+OCCUPATION
+4s(2) 4p(2)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	74Ge	36.5020 	73.921178	0	#		#
+####################
+# ARSENIC ISOTOPES #
+####################
+ATOM_SYM: As
+ATOM_NUM: 33
+CORE
+1s 2s 2p 3s 3p 3d
+VALE
+4s 4p
+4s 4p 4d 5s 5p
+4s 4p 4d 5s 5p 5d 6s 6p
+OCCUPATION
+4s(2) 4p(3)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	75As	100 		74.921597 	-1.5 	1.43947 	0.31
+#####################
+# SELENIUM ISOTOPES #
+#####################
+ATOM_SYM: Se
+ATOM_NUM: 34
+CORE
+1s 2s 2p 3s 3p 3d
+VALE
+4s 4p
+4s 4p 4d 5s 5p
+4s 4p 4d 5s 5p 5d 6s 6p
+OCCUPATION
+4s(2) 4p(4)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	80Se	49.6141 	79.916521	0	#		#
+####################
+# BROMINE ISOTOPES #
+####################
+ATOM_SYM: Br
+ATOM_NUM: 35
+CORE
+1s 2s 2p 3s 3p 3d
+VALE
+4s 4p
+4s 4p 4d 5s 5p
+4s 4p 4d 5s 5p 5d 6s 6p
+OCCUPATION
+4s(2) 4p(5)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	79Br	50.697 		78.918337	-1.5	2.106400	0.31
+####################
+# KRYPTON ISOTOPES #
+####################
+ATOM_SYM: Kr
+ATOM_NUM: 36
+CORE
+1s 2s 2p 3s 3p 3d
+VALE
+4s 4p
+4s 4p 4d 5s 5p
+4s 4p 4d 5s 5p 5d 6s 6p
+OCCUPATION
+4s(2) 4p(6)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	84Kr	56.98715 	83.911507	0	#		#
+#####################
+# RUBIDIUM ISOTOPES #
+#####################
+ATOM_SYM: Rb
+ATOM_NUM: 37
+CORE
+1s 2s 2p 3s 3p 3d 4s
+VALE
+4p 4d 5s
+4p 4d 5s 6s 5p 5d
+4p 4d 5s 6s 5p 5d 6p 6d 7s
+OCCUPATION
+4p(6) 5s(1)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	85Rb	72.172 		84.91178974	-2.5	1.353		0.28
+######################
+# STRONTIUM ISOTOPES #
+######################
+ATOM_SYM: Sr
+ATOM_NUM: 38
+CORE
+1s 2s 2p 3s 3p 3d 4s
+VALE
+4p 4d 5s
+4p 4d 5s 6s 5p 5d
+4p 4d 5s 6s 5p 5d 6p 6d 7s
+OCCUPATION
+4p(6) 5s(2)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	88Sr	82.581 		87.905612	0	#		#
+####################
+# YTTRIUM ISOTOPES #
+####################
+ATOM_SYM: Y
+ATOM_NUM: 39
+CORE
+1s 2s 2p 3s 3p 3d 4s
+VALE
+4p 4d 5s
+4p 4d 5s 6s 5p 5d
+4p 4d 5s 6s 5p 5d 6p 6d 7s
+OCCUPATION
+4p(6) 4d(10) 5s(2)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	89Y	100		88.905848	0.5	-0.13742	#
+######################
+# ZIRCONIUM ISOTOPES #
+######################
+ATOM_SYM: Zr
+ATOM_NUM: 40
+CORE
+1s 2s 2p 3s 3p 3d 4s
+VALE
+4p 4d 5s
+4p 4d 5s 6s 5p 5d
+4p 4d 5s 6s 5p 5d 6p 6d 7s
+OCCUPATION
+4p(6) 4d(2) 5s(2)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	90Zr	51.4540 	89.904704	0	#		#
+####################
+# NIOBIUM ISOTOPES #
+####################
+ATOM_SYM: Nb
+ATOM_NUM: 41
+CORE
+1s 2s 2p 3s 3p 3d 4s
+VALE
+4p 4d 5s
+4p 4d 5s 6s 5p 5d
+4p 4d 5s 6s 5p 5d 6p 6d 7s
+OCCUPATION
+4p(6) 4d(4) 5s(1)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	93Nb 	100 		92.906378	4.5	6.1705		-0.32
+#######################
+# MOLYBDENUM ISOTOPES #
+#######################
+ATOM_SYM: Mo
+ATOM_NUM: 42
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p
+VALE
+4d 5s 5p
+4d 5s 5p 5d 6s 6p
+4d 5s 5p 5d 6s 6p 6d 7s 7p
+OCCUPATION
+4d(5) 5s(1)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	98Mo 	24.3937 	97.905408	0	#		#
+#######################
+# TECHNETIUM ISOTOPES #
+#######################
+ATOM_SYM: Tc
+ATOM_NUM: 43
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p
+VALE
+4d 5s 5p
+4d 5s 5p 5d 6s 6p
+4d 5s 5p 5d 6s 6p 6d 7s 7p
+OCCUPATION
+4d(5) 5s(2)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	98Tc 	0		97.907216	6	#	#
+######################
+# RUTHENIUM ISOTOPES #
+######################
+ATOM_SYM: Ru
+ATOM_NUM: 44
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p
+VALE
+4d 5s 5p
+4d 5s 5p 5d 6s 6p
+4d 5s 5p 5d 6s 6p 6d 7s 7p
+OCCUPATION
+4d(7) 5s(1)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	102Ru	31.5514 	101.904349	0	#		#
+####################
+# RHODIUM ISOTOPES #
+####################
+ATOM_SYM: Rh
+ATOM_NUM: 45
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p
+VALE
+4d 5s 5p
+4d 5s 5p 5d 6s 6p
+4d 5s 5p 5d 6s 6p 6d 7s 7p
+OCCUPATION
+4d(8) 5s(1)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	103Rh	100 		102.905504	-0.5	-0.0884		#
+######################
+# PALLADIUM ISOTOPES #
+######################
+ATOM_SYM: Pd
+ATOM_NUM: 46
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p
+VALE
+4d 5s 5p
+4d 5s 5p 5d 6s 6p
+4d 5s 5p 5d 6s 6p 6d 7s 7p
+OCCUPATION
+4d(10)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	106Pd	27.333 		105.903486	0	#		#
+###################
+# SILVER ISOTOPES #
+###################
+ATOM_SYM: Ag
+ATOM_NUM: 47
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p
+VALE
+4d 5s 5p
+4d 5s 5p 5d 6s 6p
+4d 5s 5p 5d 6s 6p 6d 7s 7p
+OCCUPATION
+4d(10) 5s(1)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	107Ag	51.8398 	106.905097	-0.5	-0.113680	#
+####################
+# CADMIUM ISOTOPES #
+####################
+ATOM_SYM: Cd
+ATOM_NUM: 48
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p
+VALE
+4d 5s 5p
+4d 5s 5p 5d 6s 6p
+4d 5s 5p 5d 6s 6p 6d 7s 7p
+OCCUPATION
+4d(10) 5s(2)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	114Cd	28.7342 	113.903359	0	#		#
+###################
+# INDIUM ISOTOPES #
+###################
+ATOM_SYM: In
+ATOM_NUM: 49
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p
+VALE
+4d 5s 5p
+4d 5s 5p 5d 6s 6p
+4d 5s 5p 5d 6s 6p 6d 7s 7p
+OCCUPATION
+4d(10) 5s(2) 5p(1)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	115In	95.715 		114.903878	4.5	5.5408		0.81
+################
+# TIN ISOTOPES #
+################
+ATOM_SYM: Sn
+ATOM_NUM: 50
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p
+VALE
+4d 5s 5p
+4d 5s 5p 5d 6s 6p
+4d 5s 5p 5d 6s 6p 6d 7s 7p
+OCCUPATION
+4d(10) 5s(2) 5p(2)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	120Sn	32.589 		119.902195	0	#		#
+#####################
+# ANTIMONY ISOTOPES #
+#####################
+ATOM_SYM: Sb
+ATOM_NUM: 51
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p 4d
+VALE
+5s 5p
+5s 5p 5d 6s 6p
+5s 5p 5d 6s 6p 6d 7s 7p
+OCCUPATION
+5s(2) 5p(3)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	121Sb	57.215 		120.903816	2.5	3.3634		-0.4
+######################
+# TELLURIUM ISOTOPES #
+######################
+ATOM_SYM: Te
+ATOM_NUM: 52
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p 4d
+VALE
+5s 5p
+5s 5p 5d 6s 6p
+5s 5p 5d 6s 6p 6d 7s 7p
+OCCUPATION
+5s(2) 5p(4)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	130Te	34.0862 	129.906224	0	#		#
+###################
+# IODINE ISOTOPES #
+###################
+ATOM_SYM: I
+ATOM_NUM: 53
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p 4d
+VALE
+5s 5p
+5s 5p 5d 6s 6p
+5s 5p 5d 6s 6p 6d 7s 7p
+OCCUPATION
+5s(2) 5p(5)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	127I	100 		126.904473	2.5	2.8133		-0.71
+##################
+# XENON ISOTOPES #
+##################
+ATOM_SYM: Xe
+ATOM_NUM: 54
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p 4d
+VALE
+5s 5p
+5s 5p 5d 6s 6p
+5s 5p 5d 6s 6p 6d 7s 7p
+OCCUPATION
+5s(2) 5p(6)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	132Xe	26.908633 	131.904153	0	#		#
+###################
+# CESIUM ISOTOPES #
+###################
+ATOM_SYM: Cs
+ATOM_NUM: 55
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p 4d
+VALE
+5s 5p 5d 6s
+5s 5p 5d 6s 6p 6d 7s
+5s 5p 5d 6s 6p 6d 7s 7p 7d 8s
+OCCUPATION
+5s(2) 5p(6) 6s(1)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	133Cs	100 		132.90545193	3.5	2.58291		-0.00355
+###################
+# BARIUM ISOTOPES #
+###################
+ATOM_SYM: Ba
+ATOM_NUM: 56
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p 4d
+VALE
+5s 5p 5d 6s
+5s 5p 5d 6s 6p 6d 7s
+5s 5p 5d 6s 6p 6d 7s 7p 7d 8s
+OCCUPATION
+5s(2) 5p(6) 6s(2)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	138Ba	71.69842	137.9052472	0	#		#
+######################
+# LANTHANUM ISOTOPES #
+######################
+ATOM_SYM: La
+ATOM_NUM: 57
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p 4d 5s
+VALE
+5p 5d 6s
+5p 5d 6s 6p 6d 7s
+5p 5d 6s 6p 6d 7s 7p 7d 8s
+OCCUPATION
+5p(6) 5d(1) 6s(2)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	139La	99.9111971 	138.906353	3.5	2.783046	0.20
+###################
+# CERIUM ISOTOPES #
+###################
+ATOM_SYM: Ce
+ATOM_NUM: 58
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p 4d 5s
+VALE
+4f 5p 5d 6s
+4f 5p 5d 6s 6p 6d 7s
+4f 5p 5d 6s 6p 6d 7s 7p 7d 8s
+OCCUPATION
+5p(6) 4f(1) 5d(1) 6s(2)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	140Ce	88.45051 	139.905439	0	#		#
+#########################
+# PRASEODYMIUM ISOTOPES #
+#########################
+ATOM_SYM: Pr
+ATOM_NUM: 59
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p 4d 5s
+VALE
+4f 5p 5d 6s
+4f 5p 5d 6s 6p 6d 7s
+4f 5p 5d 6s 6p 6d 7s 7p 7d 8s
+OCCUPATION
+5p(6) 4f(3) 6s(2)
+NUM_SUBSTITUTIONS
+2 2 1
+ERWF
+2 2 2
+	141Pr	100 		140.907653	2.5	4.275		-0.08
+######################
+# NEODYMIUM ISOTOPES #
+######################
+ATOM_SYM: Nd
+ATOM_NUM: 60
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p 4d 5s
+VALE
+4f 5p 5d 6s
+4f 5p 5d 6s 6p 6d 7s
+4f 5p 5d 6s 6p 6d 7s 7p 7d 8s
+OCCUPATION
+5p(6) 4f(4) 6s(2)
+NUM_SUBSTITUTIONS
+2 2 1
+ERWF
+2 2 2
+	142Nd	27.15240 	141.907723	0	#		#
+#######################
+# PROMETHIUM ISOTOPES #
+#######################
+ATOM_SYM: Pm
+ATOM_NUM: 61
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p 4d 5s
+VALE
+4f 5p 5d 6s
+4f 5p 5d 6s 6p 6d 7s
+4f 5p 5d 6s 6p 6d 7s 7p 7d 8s
+OCCUPATION
+5p(6) 4f(5) 6s(2)
+NUM_SUBSTITUTIONS
+2 2 1
+ERWF
+2 2 2
+	145Pm	0		144.912749	2.5	3.8		0.2
+#####################
+# SAMARIUM ISOTOPES #
+#####################
+ATOM_SYM: Sm
+ATOM_NUM: 62
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p 4d 5s
+VALE
+4f 5p 5d 6s
+4f 5p 5d 6s 6p 6d 7s
+4f 5p 5d 6s 6p 6d 7s 7p 7d 8s
+OCCUPATION
+5p(6) 4f(6) 6s(2)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	152Sm	26.7516 	151.919732	0	#		#
+#####################
+# EUROPIUM ISOTOPES #
+#####################
+ATOM_SYM: Eu
+ATOM_NUM: 63
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p 4d 5s
+VALE
+4f 5p 5d 6s
+4f 5p 5d 6s 6p 6d 7s
+4f 5p 5d 6s 6p 6d 7s 7p 7d 8s
+OCCUPATION
+5p(6) 4f(7) 6s(2)
+NUM_SUBSTITUTIONS
+2 2 1
+ERWF
+2 2 2
+	153Eu	52.196 		152.921230	2.5	1.533		2.41
+#######################
+# GADOLINIUM ISOTOPES #
+#######################
+ATOM_SYM: Gd
+ATOM_NUM: 64
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p 4d 5s
+VALE
+4f 5p 5d 6s
+4f 5p 5d 6s 6p 6d 7s
+4f 5p 5d 6s 6p 6d 7s 7p 7d 8s
+OCCUPATION
+5p(6) 4f(7) 5d(1) 6s(2)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	158Gd	24.847 		157.924104	0	#		#
+####################
+# TERBIUM ISOTOPES #
+####################
+ATOM_SYM: Tb
+ATOM_NUM: 65
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p 4d 5s
+VALE
+4f 5p 5d 6s
+4f 5p 5d 6s 6p 6d 7s
+4f 5p 5d 6s 6p 6d 7s 7p 7d 8s
+OCCUPATION
+5p(6) 4f(9) 6s(2)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	159Tb	100 		158.925347	1.5	2.014		1.43
+#######################
+# DYSPROSIUM ISOTOPES #
+#######################
+ATOM_SYM: Dy
+ATOM_NUM: 66
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p 4d 5s
+VALE
+4f 5p 5d 6s
+4f 5p 5d 6s 6p 6d 7s
+4f 5p 5d 6s 6p 6d 7s 7p 7d 8s
+OCCUPATION
+5p(6) 4f(10) 6s(2)
+NUM_SUBSTITUTIONS
+2 2 1
+ERWF
+2 2 2
+	164Dy	28.26054 	163.929175	0	#		#
+####################
+# HOLMIUM ISOTOPES #
+####################
+ATOM_SYM: Ho
+ATOM_NUM: 67
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p 4d 5s
+VALE
+4f 5p 5d 6s
+4f 5p 5d 6s 6p 6d 7s
+4f 5p 5d 6s 6p 6d 7s 7p 7d 8s
+OCCUPATION
+5p(6) 4f(11) 6s(2)
+NUM_SUBSTITUTIONS
+2 2 1
+ERWF
+2 2 2
+	165Ho	100 		164.930322	-3.5	4.17		3.6
+###################
+# ERBIUM ISOTOPES #
+###################
+ATOM_SYM: Er
+ATOM_NUM: 68
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p 4d 5s
+VALE
+4f 5p 5d 6s
+4f 5p 5d 6s 6p 6d 7s
+4f 5p 5d 6s 6p 6d 7s 7p 7d 8s
+OCCUPATION
+5p(6) 4f(12) 6s(2)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	166Er 	33.50336 	165.930293	0	#		#
+####################
+# THULIUM ISOTOPES #
+####################
+ATOM_SYM: Tm
+ATOM_NUM: 69
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p 4d 5s
+VALE
+4f 5p 5d 6s
+4f 5p 5d 6s 6p 6d 7s
+4f 5p 5d 6s 6p 6d 7s 7p 7d 8s
+OCCUPATION
+5p(6) 4f(13) 6s(2)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	169Tm	100 		168.934213	0.5	-0.231		-1.2
+######################
+# YTTERBIUM ISOTOPES #
+######################
+ATOM_SYM: Yb
+ATOM_NUM: 70
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p 4d 5s
+VALE
+4f 5p 5d 6s
+4f 5p 5d 6s 6p 6d 7s
+4f 5p 5d 6s 6p 6d 7s 7p 7d 8s
+OCCUPATION
+4f(14) 5p(6) 6s(2)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	174Yb	32.02680 	173.938862	0	#		#
+#####################
+# LUTETIUM ISOTOPES #
+#####################
+ATOM_SYM: Lu
+ATOM_NUM: 71
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p 4d 5s
+VALE
+4f 5p 5d 6s
+4f 5p 5d 6s 6p 6d 7s
+4f 5p 5d 6s 6p 6d 7s 7p 7d 8s
+OCCUPATION
+5p(6) 4f(14) 5d(1) 6s(2)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	175Lu	97.40113 	174.940772	3.5	2.232		3.49
+####################
+# HAFNIUM ISOTOPES #
+####################
+ATOM_SYM: Hf
+ATOM_NUM: 72
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p 4d 4f 5s 5p
+VALE
+5d 6s 6p
+5d 6s 6p 6d 7s 7p
+5d 6s 6p 6d 7s 7p 7d 8s 8p
+OCCUPATION
+5d(2) 6s(2)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	180Hf	35.0816 	179.946550	0	#		#
+#####################
+# TANTALUM ISOTOPES #
+#####################
+ATOM_SYM: Ta
+ATOM_NUM: 73
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p 4d 4f 5s 5p
+VALE
+5d 6s 6p
+5d 6s 6p 6d 7s 7p
+5d 6s 6p 6d 7s 7p 7d 8s 8p
+OCCUPATION
+5d(3) 6s(2)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	181Ta	99.9879932 	180.947996	3.5	2.370		3.3
+#####################
+# TUNGSTEN ISOTOPES #
+#####################
+ATOM_SYM: W
+ATOM_NUM: 74
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p 4d 4f 5s 5p
+VALE
+5d 6s 6p
+5d 6s 6p 6d 7s 7p
+5d 6s 6p 6d 7s 7p 7d 8s 8p
+OCCUPATION
+5d(4) 6s(2)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	184W	30.642		183.950931	0	#		#
+####################
+# RHENIUM ISOTOPES #
+####################
+ATOM_SYM: Re
+ATOM_NUM: 75
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p 4d 4f 5s 5p
+VALE
+5d 6s 6p
+5d 6s 6p 6d 7s 7p
+5d 6s 6p 6d 7s 7p 7d 8s 8p
+OCCUPATION
+5d(5) 6s(2)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	187Re	62.602		186.955753	2.5	3.2197		2.07
+###################
+# OSMIUM ISOTOPES #
+###################
+ATOM_SYM: Os
+ATOM_NUM: 76
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p 4d 4f 5s 5p
+VALE
+5d 6s 6p
+5d 6s 6p 6d 7s 7p
+5d 6s 6p 6d 7s 7p 7d 8s 8p
+OCCUPATION
+5d(6) 6s(2)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	192Os	40.7819 	191.961481	0	#		#
+####################
+# IRIDIUM ISOTOPES #
+####################
+ATOM_SYM: Ir
+ATOM_NUM: 77
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p 4d 4f 5s 5p
+VALE
+5d 6s 6p
+5d 6s 6p 6d 7s 7p
+5d 6s 6p 6d 7s 7p 7d 8s 8p
+OCCUPATION
+5d(7) 6s(2)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	193Ir	62.72 		192.962926	1.5	0.164		0.75
+#####################
+# PLATINUM ISOTOPES #
+#####################
+ATOM_SYM: Pt
+ATOM_NUM: 78
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p 4d 4f 5s 5p
+VALE
+5d 6s 6p
+5d 6s 6p 6d 7s 7p
+5d 6s 6p 6d 7s 7p 7d 8s 8p
+OCCUPATION
+5d(9) 6s(1)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	195Pt	33.7824 	194.964791 	-0.5	0.6095		#
+#################
+# GOLD ISOTOPES #
+#################
+ATOM_SYM: Au
+ATOM_NUM: 79
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p 4d 4f 5s 5p
+VALE
+5d 6s 6p
+5d 6s 6p 6d 7s 7p
+5d 6s 6p 6d 7s 7p 7d 8s 8p
+OCCUPATION
+5d(10) 6s(1)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	197Au	100		196.966569	1.5	0.14575		0.55
+####################
+# MERCURY ISOTOPES #
+####################
+ATOM_SYM: Hg
+ATOM_NUM: 80
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p 4d 4f 5s 5p
+VALE
+5d 6s 6p
+5d 6s 6p 6d 7s 7p
+5d 6s 6p 6d 7s 7p 7d 8s 8p
+OCCUPATION
+5d(10) 6s(2)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	202Hg	29.8626		201.970643	0	#		#
+#####################
+# THALLIUM ISOTOPES #
+#####################
+ATOM_SYM: Tl
+ATOM_NUM: 81
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p 4d 4f 5s 5p
+VALE
+5d 6s 6p
+5d 6s 6p 6d 7s 7p
+5d 6s 6p 6d 7s 7p 7d 8s 8p
+OCCUPATION
+5d(10) 6s(2) 6p(1)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	205Tl	70.481		204.974428	0.5	1.638215	#
+#################
+# LEAD ISOTOPES #
+#################
+ATOM_SYM: Pb
+ATOM_NUM: 82
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p 4d 4f 5s 5p
+VALE
+5d 6s 6p
+5d 6s 6p 6d 7s 7p
+5d 6s 6p 6d 7s 7p 7d 8s 8p
+OCCUPATION
+5d(10) 6s(2) 6p(2)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	208Pb 	52.41		207.976652	0	#		#
+####################
+# BISMUTH ISOTOPES #
+####################
+ATOM_SYM: Bi
+ATOM_NUM: 83
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p 4d 4f 5s 5p
+VALE
+5d 6s 6p
+5d 6s 6p 6d 7s 7p
+5d 6s 6p 6d 7s 7p 7d 8s 8p
+OCCUPATION
+5d(10) 6s(2) 6p(3)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	209Bi 	100		208.980399	-4.5	4.111		-0.6
+#####################
+# POLONIUM ISOTOPES #
+#####################
+ATOM_SYM: Po
+ATOM_NUM: 84
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p 4d 4f 5s 5p
+VALE
+5d 6s 6p
+5d 6s 6p 6d 7s 7p
+5d 6s 6p 6d 7s 7p 7d 8s 8p
+OCCUPATION
+5d(10) 6s(2) 6p(4)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	209Po 	0		208.982430	-0.5	0.7		#
+#####################
+# ASTATINE ISOTOPES #
+#####################
+ATOM_SYM: At
+ATOM_NUM: 85
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p 4d 4f 5s 5p
+VALE
+5d 6s 6p
+5d 6s 6p 6d 7s 7p
+5d 6s 6p 6d 7s 7p 7d 8s 8p
+OCCUPATION
+5d(10) 6s(2) 6p(5)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	210At 	0		209.98715	5	#		#
+##################
+# RADON ISOTOPES #
+##################
+ATOM_SYM: Rn
+ATOM_NUM: 86
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p 4d 4f 5s 5p
+VALE
+5d 6s 6p
+5d 6s 6p 6d 7s 7p
+5d 6s 6p 6d 7s 7p 7d 8s 8p
+OCCUPATION
+5d(10) 6s(2) 6p(6)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	222Rn 	0		222.017578	0	#		#
+#####################
+# FRANCIUM ISOTOPES #
+#####################
+ATOM_SYM: Fr
+ATOM_NUM: 87
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p 4d 4f 5s 5p
+VALE
+5d 6s 6p 7s
+5d 6s 6p 6d 7s 7p 8s
+5d 6s 6p 6d 7s 7p 7d 8s 8p 9s
+OCCUPATION
+5d(10) 6s(2) 6p(6) 7s(1)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	223Fr 	0		223.019736	-1.5	1.17		1.17
+###################
+# RADIUM ISOTOPES #
+###################
+ATOM_SYM: Ra
+ATOM_NUM: 88
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p 4d 4f 5s 5p
+VALE
+5d 6s 6p 7s
+5d 6s 6p 6d 7s 7p 8s
+5d 6s 6p 6d 7s 7p 7d 8s 8p 9s
+OCCUPATION
+5d(10) 6s(2) 6p(6) 7s(2)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	226Ra 	0		226.025410	0	#		#
+#####################
+# ACTINIUM ISOTOPES #
+#####################
+ATOM_SYM: Ac
+ATOM_NUM: 89
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p 4d 4f 5s 5p 5d 6s
+VALE
+6p 6d 7s
+6p 6d 6f 7s 7p 8s
+6p 6d 6f 7s 7p 7d 8s 8p 9s
+OCCUPATION
+6p(6) 6d(1) 7s(2)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	227Ac 	0		227.027752	-1.5	1.1		1.7
+####################
+# THORIUM ISOTOPES #
+####################
+ATOM_SYM: Th
+ATOM_NUM: 90
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p 4d 4f 5s 5p 5d 6s 6p
+VALE
+5f 6d 7s 7p
+5f 6d 6f 7s 7p 7d 8s 8p
+5f 6d 6f 7s 7p 7d 7f 8s 8p 8d 9s 9p
+OCCUPATION
+6d(2) 7s(2)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	232Th 	100 		232.038055	0	#		#
+########################
+# PROACTINIUM ISOTOPES #
+########################
+ATOM_SYM: Pa
+ATOM_NUM: 91
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p 4d 4f 5s 5p 5d 6s 6p
+VALE
+5f 6d 7s 7p
+5f 6d 6f 7s 7p 7d 8s 8p
+5f 6d 6f 7s 7p 7d 7f 8s 8p 8d 9s 9p
+OCCUPATION
+5f(2) 6d(1) 7s(2)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	231Pa 	100 		231.035884	-1.5	2.01		-1.7
+####################
+# URANIUM ISOTOPES #
+####################
+ATOM_SYM: U
+ATOM_NUM: 92
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p 4d 4f 5s 5p 5d 6s 6p
+VALE
+5f 6d 7s 7p
+5f 6d 6f 7s 7p 7d 8s 8p
+5f 6d 6f 7s 7p 7d 7f 8s 8p 8d 9s 9p
+OCCUPATION
+5f(3) 6d(1) 7s(2)
+NUM_SUBSTITUTIONS
+2 2 1
+ERWF
+2 2 2
+	238U 	99.274210	238.050788	0	#		#
+######################
+# NEPTUNIUM ISOTOPES #
+######################
+ATOM_SYM: Np
+ATOM_NUM: 93
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p 4d 4f 5s 5p 5d 6s 6p
+VALE
+5f 6d 7s 7p
+5f 6d 6f 7s 7p 7d 8s 8p
+5f 6d 6f 7s 7p 7d 7f 8s 8p 8d 9s 9p
+OCCUPATION
+5f(4) 6d(1) 7s(2)
+NUM_SUBSTITUTIONS
+2 2 1
+ERWF
+2 2 2
+	237Np 	0		237.048173	2.5	3.14		3.87
+######################
+# PLUTONIUM ISOTOPES #
+######################
+ATOM_SYM: Pu
+ATOM_NUM: 94
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p 4d 4f 5s 5p 5d 6s 6p
+VALE
+5f 6d 7s 7p
+5f 6d 6f 7s 7p 7d 8s 8p
+5f 6d 6f 7s 7p 7d 7f 8s 8p 8d 9s 9p
+OCCUPATION
+5f(6) 7s(2)
+NUM_SUBSTITUTIONS
+2 2 1
+ERWF
+2 2 2
+	239Pu 	0		239.052163	0.5	0.203		#
+######################
+# AMERICIUM ISOTOPES #
+######################
+ATOM_SYM: Am
+ATOM_NUM: 95
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p 4d 4f 5s 5p 5d 6s 6p
+VALE
+5f 6d 7s 7p
+5f 6d 6f 7s 7p 7d 8s 8p
+5f 6d 6f 7s 7p 7d 7f 8s 8p 8d 9s 9p
+OCCUPATION
+5f(7) 7s(2)
+NUM_SUBSTITUTIONS
+2 2 1
+ERWF
+2 2 2
+	241Am 	0		241.056829	-2.5	1.58		3.1
+###################
+# CURIUM ISOTOPES #
+###################
+ATOM_SYM: Cm
+ATOM_NUM: 96
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p 4d 4f 5s 5p 5d 6s 6p
+VALE
+5f 6d 7s 7p
+5f 6d 6f 7s 7p 7d 8s 8p
+5f 6d 6f 7s 7p 7d 7f 8s 8p 8d 9s 9p
+OCCUPATION
+5f(7) 6d(1) 7s(2)
+NUM_SUBSTITUTIONS
+2 2 1
+ERWF
+2 2 2
+	242Cm	0		242.058836	0	#		#
+######################
+# BERKELIUM ISOTOPES #
+######################
+ATOM_SYM: Bk
+ATOM_NUM: 97
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p 4d 4f 5s 5p 5d 6s 6p
+VALE
+5f 6d 7s 7p
+5f 6d 6f 7s 7p 7d 8s 8p
+5f 6d 6f 7s 7p 7d 7f 8s 8p 8d 9s 9p
+OCCUPATION
+5f(9) 7s(2)
+NUM_SUBSTITUTIONS
+2 2 1
+ERWF
+2 2 2
+	249Bk 	0		249.074987	3.5	2.0		#
+########################
+# CALIFORNIUM ISOTOPES #
+########################
+ATOM_SYM: Cf
+ATOM_NUM: 98
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p 4d 4f 5s 5p 5d 6s 6p
+VALE
+5f 6d 7s 7p
+5f 6d 6f 7s 7p 7d 8s 8p
+5f 6d 6f 7s 7p 7d 7f 8s 8p 8d 9s 9p
+OCCUPATION
+5f(10) 7s(2)
+NUM_SUBSTITUTIONS
+2 2 1
+ERWF
+2 2 2
+	252Cf 	0		252.081626	0	#		#
+########################
+# EINSTEINIUM ISOTOPES #
+########################
+ATOM_SYM: Es
+ATOM_NUM: 99
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p 4d 4f 5s 5p 5d 6s 6p
+VALE
+5f 6d 7s 7p
+5f 6d 6f 7s 7p 7d 8s 8p
+5f 6d 6f 7s 7p 7d 7f 8s 8p 8d 9s 9p
+OCCUPATION
+5f(11) 7s(2)
+NUM_SUBSTITUTIONS
+2 2 1
+ERWF
+2 2 2
+	253Es 	0		253.084825	3.5	4.10		7.0 0.04180/5.6
+####################
+# FERMIUM ISOTOPES #
+####################
+ATOM_SYM: Fm
+ATOM_NUM: 100
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p 4d 4f 5s 5p 5d 6s 6p
+VALE
+5f 6d 7s 7p
+5f 6d 6f 7s 7p 7d 8s 8p
+5f 6d 6f 7s 7p 7d 7f 8s 8p 8d 9s 9p
+OCCUPATION
+5f(12) 7s(2)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	257Fm 	0		257.09511	4.5	#		#
+########################
+# MENDELEVIUM ISOTOPES #
+########################
+ATOM_SYM: Md
+ATOM_NUM: 101
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p 4d 4f 5s 5p 5d 6s 6p
+VALE
+5f 6d 7s 7p
+5f 6d 6f 7s 7p 7d 8s 8p
+5f 6d 6f 7s 7p 7d 7f 8s 8p 8d 9s 9p
+OCCUPATION
+5f(13) 7s(2)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	256Md 	0		256.0941	0	#		#
+#####################
+# NOBELIUM ISOTOPES #
+#####################
+ATOM_SYM: No
+ATOM_NUM: 102
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p 4d 4f 5s 5p 5d 6s 6p
+VALE
+5f 6d 7s 7p
+5f 6d 6f 7s 7p 7d 8s 8p
+5f 6d 6f 7s 7p 7d 7f 8s 8p 8d 9s 9p
+OCCUPATION
+5f(14) 7s(2)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	255No 	0		255.09324	0.5	#		#
+#######################
+# LAWRENCIUM ISOTOPES #
+#######################
+ATOM_SYM: Lr
+ATOM_NUM: 103
+CORE
+1s 2s 2p 3s 3p 3d 4s 4p 4d 4f 5s 5p 5d 6s 6p
+VALE
+5f 6d 7s 7p
+5f 6d 6f 7s 7p 7d 8s 8p
+5f 6d 6f 7s 7p 7d 7f 8s 8p 8d 9s 9p
+OCCUPATION
+5f(14) 7s(2) 7p(1)
+NUM_SUBSTITUTIONS
+2 2 2
+ERWF
+2 2 2
+	260Lr 	0		260.1055	0	#		#

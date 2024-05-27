@@ -9,48 +9,55 @@ sub printHelp
 # ALGORITHM: This program requires two directories as input that each identify
 #    a precursor molecule type. It will then create a new directory based on
 #    the combination of their names. Inside that new directory, it will copy
-#    OLCAO skeleton input files from the originally identifies directories and
+#    OLCAO skeleton input files from the originally identified directories and
 #    will then process them to create pre- and post-reaction files along with
 #    a mapping file.
 #
-#    Each input skeleton file is parsed to find and record all of its H atoms
-#    and to identify the set of atoms attached to each H atom that should be
-#    included in the list of the atoms to be deleted upon molecule bonding.
-#    That list is called the "delete list". Unless specified otherwise it is
-#    assumed that only the individual H atoms will be part of the delete list.
+#    Each input skeleton file is parsed to find and record all of a "surface"
+#    atom (a.k.a., an S atom, not to be confused with sulfur) defined by a
+#    command line parameter. The script then identifies the set of atoms
+#    attached to each S atom that should be included in the list of the atoms
+#    to be deleted upon molecule bonding. That list is called the "delete
+#    list". Unless specified otherwise it is assumed that only the individual
+#    S atoms or perhaps just one of the S atoms will be part of the delete
+#    list.
+#
 #    If it is desired to have more atoms in the delete list then the -d1 and
 #    -d2 options can be used to delete more atoms from molecules 1 and 2
-#    respectively. In the default assumption the H atoms between the two
-#    molecules will be the points at which new bonds will be identified and
-#    formed. The physical vision is that the H atoms will break off to form H_2
-#    and the remaining bare atoms will bond. (In the simulation, the H_2 is
-#    never actually created. Instead the two H atoms are just deleted when the
-#    molecules bond.) For larger tree depths, whole tree is removed.
+#    respectively. In the default assumption the so-called "trigger atoms"
+#    that are bonded to the S atoms will be the points between the two
+#    molecules at which new bonds will be identified and formed. The physical
+#    vision is that the S atoms will break off to form S_2 (or whatever) and
+#    the remaining bare (trigger) atoms will bond. (In the simulation, the S_2
+#    is never actually created. Instead the two S atoms are just deleted when
+#    the molecules bond.) For larger tree depths, whole tree is removed. That
+#    story is modified as expected if the option to keep one S atom and have
+#    it serve as the bridge between the two trigger atoms.
 #
 #    Once all the atoms in both molecules have been cataloged, then the second
 #    molecule will be systematically translated and oriented so that each of
-#    its H atoms would be in a proper position for reacting with each of the H
-#    atoms in the first molecule. Once so translated and rotated for a given H,
-#    then the skeleton files for molecule1 and the modified molecule2 are
+#    its S atoms would be in a proper position for reacting with each of the S
+#    atoms in the first molecule. Once so translated and rotated, for a given
+#    S, then the skeleton files for molecule1 and the modified molecule2 are
 #    merged into a single file.
 #
-#    At this point two product files are created that are suitable molecule
+#    At this point two product files are created that are suitable "molecule"
 #    files for use in LAMMPS bond/react calculations. The first is the
 #    pre-reaction molecule file that contains relevant segments of both
 #    molecules (where "relevant" is determined by the chain-length variable
-#    which is 4 by default so as to include the atom bonded to an H atom, the
+#    which is 4 by default so as to include the atom bonded to an S atom, the
 #    next nearest neighbor atoms, and the next-next nearest neighbor atoms).
 #    The second is the post-reaction molecule. We use a default chain length of
-#    4 because we will change angles to the atom bonded to the H atom. Those
-#    H-bonded atoms might be part of an angle that goes "two bonds deeper" into
-#    the molecule. (E.g., Consider the molecule: H-B-C-X. Because we want to
+#    4 because we will change angles to the atom bonded to the S atom. Those
+#    S-bonded atoms might be part of an angle that goes "two bonds deeper" into
+#    the molecule. (E.g., Consider the molecule: S-B-C-X. Because we want to
 #    modify the B atom and we need to account for angles, we must include the X
 #    atom in the template because of a possible B-C-X bond angle.)
 #
 #    The atomic structure (number of atoms and their coordiates) are the same
 #    in both files. The difference is in the information about their bonding
 #    patterns (topology). When it is time for both the pre- and post-reaction
-#    LAMMPS files to be created the OLCAO skeleton file containing the merged
+#    LAMMPS files to be created, the OLCAO skeleton file containing the merged
 #    pair of molecules is read, bonds and bond angles are analyzed, and a
 #    subset of the original atoms from the skeleton file are taken according to
 #    a chain-length variable.
@@ -71,21 +78,22 @@ sub printHelp
 #    matches. This variable defines the number of atoms (starting at the point
 #    of "contact" between the two molecules) to include in the reaction
 #    template from molecule 1. The -c2 option defines the same for molecule 2.
-#    This does not include the point of contact atoms. So, if the binding
-#    If the molecules are CH4 and B10C2H12 and the contact points are an H atom
-#    bound to the C atom from CH4 and a B or a C atom from B10C2H12. Then a
-#    -c1 of 3 would include the H atom bound to the central C atom, the central
-#    C atom of the CH4 itself, and all three other H atoms. A -c2 of 2 would
-#    include the H atom bound to either a B or C atom then the B or C atom
-#    itself. Further, a -c2 of 3 would additionally include each of the
-#    neighboring B or C atoms to the bound B or C atom. By default the chain
-#    length values are set to 4 for both molecules.
+#    This does ?not? include the point of contact atoms. Consider the molecules
+#    CH4 and B10C2H12 with hydrogen serving as the S atoms. The contact points
+#    are an S atom bound to the C atom from CH4 and an S atom bound to a B or
+#    a C atom from B10C2H12. Then a -c1 of 3 for the CH4 molecule would
+#    include the S atom bound to the central C atom, the central C atom of the
+#    CH4 itself, and all three other H (S) atoms. A -c2 of 2 would include the
+#    S atom bound to either a B or C atom then the B or C atom itself.
+#    Further, a -c2 of 3 would additionally include each of the neighboring B
+#    or C atoms to the bound B or C atom. By default the chain length values
+#    are set to 4 for both molecules.
 #
 # The -d1 option defines the delete tree depth variable \$delTreeDepth1 and the
 #    \$delTreeTarget element_species that is used to remove atoms from the
 #    molecules upon binding. Consider a molecule with the following form where
-#    we assume that all elements are of type 1 and that the far left H atom
-#    is the trigger atom for initiating binding:
+#    we assume that all elements are of type 1 and that the far left H (S) atom
+#    is the surface atom for initiating binding:
 #
 #           H       H
 #           |       |
@@ -105,16 +113,20 @@ sub printHelp
 #    used then either the top left or bottom left CH3 group will be the only
 #    atoms *not* added to the delete tree and the C in that group will be the
 #    binding point. (That outcome assumes that both C are type 1.) By default
-#    the depth value is zero and so the target does not need to be specified.
-#    In that case the atom directly bonded to an H atom is the target. If any
-#    depth greater than zero is specified, then it is necessary to also specify
-#    the element and species that is the end of the tree.
+#    the depth value is zero and the target will be whatever element is
+#    attached to the S triggering S atom. If any depth greater than zero is
+#    desired, then it is necessary to also specify the element and species
+#    that is the end of the tree. (That is the whole point of this option.
+#    With this option, the user specifies the target element and species.)
 #
-# The -h option defines the distance that H atoms will be separated from each
-#    other when the templates are created. By default the H atom separation is
-#    0.5. It is assumed that when the pre- and post-reaction molecule files are
-#    created the H atoms that are "in contact" with each other will not be
-#    included.
+# The -s option defines the element name from the periodic table of the
+#    elements that will serve as the surface atom, the distance that the S
+#    atoms will be separated from each other when the templates are created,
+#    and whether one or both S atoms will be deleted upon reacting. By default
+#    the S atom is hydrogen ("h"), the separation is 0.5, and it is assumed
+#    that when the pre- and post-reaction molecule files are created the S
+#    atoms that are "in contact" with each other will not be included (i.e.,
+#    \$delBothS == 1). To delete only one of the S atoms, use \$delBothS == 0.
 #
 # The -uptypes switch will request that when molecules merge the type numbers
 #    of the atoms that bind are increased. By default this option is off so
@@ -126,7 +138,8 @@ sub printHelp
 #                      [-c1 \$chainLen1] [-c2 \$chainLen2]
 #                      [-d1 \$delTreeDepth1 \$delTreeTarget1]
 #                      [-d2 \$delTreeDepth2 \$delTreeTarget2]
-#                      [-h \$hhDist] [-uptypes \$typeStep]
+#                      [-s \$sElement \$ssDist \$delBothS]
+#                      [-uptypes \$typeStep]
 #                      [-help]
 #
 ENDHELP
@@ -170,24 +183,24 @@ my $delTreeTarget1; #
 my $delTreeTarget2; # 
 my $numAtoms1;    # Number of atoms in molecule 1.
 my $numAtoms2;    # Number of atoms in molecule 2.
-my $numHAtoms1;   # Number of H atoms in the first molecule.
-my $numHAtoms2;   # Number of H atoms in the second molecule.
+my $numSAtoms1;   # Number of S atoms in the first molecule.
+my $numSAtoms2;   # Number of S atoms in the second molecule.
 my @numDelAtoms1; # Number of atoms to delete from the first molecule.
 my @numDelAtoms2; # Number of atoms to delete from the second molecule.
-my @hAtomCoords1; # Coordinates of those H atoms in the first molecule.
-my @hAtomCoords2; # Coordinates of those H atoms in the second molecule.
-my @triggerCoords1;# Coordinates of atom bound to the H atom in the first mol.
-my @triggerCoords2;# Coordinates of atom bound to the H atom in the second mol.
+my @sAtomCoords1; # Coordinates of those S atoms in the first molecule.
+my @sAtomCoords2; # Coordinates of those S atoms in the second molecule.
+my @triggerCoords1;# Coordinates of atom bound to the S atom in the first mol.
+my @triggerCoords2;# Coordinates of atom bound to the S atom in the second mol.
 my @delTree1;  # Atom numbers to be deleted in the first mol.
 my @delTree2;  # Atom numbers to be deleted in the second mol.
-my @hAtomNumber1; # Atom number of the H atoms in mol 1.
-my @hAtomNumber2; # Atom number of the H atoms in mol 2.
-my @mergedHAtomNumber1; # Atom number of H atoms in the merged molecule.
-my @mergedHAtomNumber2; # Atom number of H atoms in the merged molecule.
-my @prunedHAtomNumber1; # Atom number of H atoms in the pruned merged molecule.
-my @prunedHAtomNumber2; # Atom number of H atoms in the pruned merged molecule.
-my @triggerAtomNumber1; # Atom number of atom bonded to H atom in mol 1.
-my @triggerAtomNumber2; # Atom number of atom bonded to H atom in mol 2.
+my @sAtomNumber1; # Atom number of the S atoms in mol 1.
+my @sAtomNumber2; # Atom number of the S atoms in mol 2.
+my @mergedSAtomNumber1; # Atom number of S atoms in the merged molecule.
+my @mergedSAtomNumber2; # Atom number of S atoms in the merged molecule.
+my @prunedSAtomNumber1; # Atom number of S atoms in the pruned merged molecule.
+my @prunedSAtomNumber2; # Atom number of S atoms in the pruned merged molecule.
+my @triggerAtomNumber1; # Atom number of atom bonded to S atom in mol 1.
+my @triggerAtomNumber2; # Atom number of atom bonded to S atom in mol 2.
 my @bondedAtomNumber1; # Atom number of binding atom in mol 1 and merged mol.
 my @bondedAtomNumber2; # Atom number of binding atom in mol 2 and merged mol.
 my @bondedElemName1; # Element name of the binding atom in mol 1 & merged.
@@ -201,25 +214,27 @@ my @mergedDelTree;      # Atom numbers to delete from merged mol 1 and 2.
 my @mergedNumDelAtoms;  # Number of atoms to delete from merged mol 1 and 2.
 my @prunedAtomElemName;  # Element name of all atoms in pruned pre- & post.
 my @prunedAtomSpeciesID; # Species number of all atoms in pruned pre- & post.
-my @prunedAtomMolName;   # molecule name of all atoms in pruned pre- & post.
-my @prunedBondedAtomNumber1;# Num of binding atom H(A,B) in pruned merged mol.
-my @prunedBondedAtomNumber2;# Num of binding atom H(A,B) in pruned merged mol.
-my @prunedBondedElemName1; # Element name of binding atom H(A,B) in pruned.
-my @prunedBondedElemName2; # Element name of binding atom H(A,B) in pruned.
-my @prunedBondedSpecies1; # Species number of binding atom H(A,B) in pruned.
-my @prunedBondedSpecies2; # Species number of binding atom H(A,B) in pruned.
+my @prunedAtomMolName;   # Molecule name of all atoms in pruned pre- & post.
+my @prunedBondedAtomNumber1;# Num of binding atom S(A,B) in pruned merged mol.
+my @prunedBondedAtomNumber2;# Num of binding atom S(A,B) in pruned merged mol.
+my @prunedBondedElemName1; # Element name of binding atom S(A,B) in pruned.
+my @prunedBondedElemName2; # Element name of binding atom S(A,B) in pruned.
+my @prunedBondedSpecies1; # Species number of binding atom S(A,B) in pruned.
+my @prunedBondedSpecies2; # Species number of binding atom S(A,B) in pruned.
 my @prunedDelTree; # Atom numbers to delete from pruned mol 1 and 2.
 my @prunedTriggerAtomNumber1;#Num of trigger atom in pruned merged mol.
 my @prunedTriggerAtomNumber2;#Num of trigger atom in pruned merged mol.
-my $hhDist;       # The H-H distance in the templates.
+my $sElement;     # Name of the surface (S) atom.
+my $ssDist;       # The S-S distance in the templates.
+my $delBothS;     # Switch to delete both (1) or only one (0) of the S atoms.
 my $numBonds_ref; # The number of bonds that a given atom has.
 my $bonded_ref;   # The atom numbers that each atom is bonded to.
 my $numBondAngles_ref; # Number of bond angles for each atom.
 my $angleBonded_ref; # The atom numbers that the vertex atoms are bonded to.
 my @keepAtom;     # List of which atoms in the merged molecule to keep.
-my @prunedNumAtoms; # For each hh pair, the number of atoms left in the mol.
-my @prunedNumAtoms1; # For each hh pair, the number of atoms left in sub-mol. 1
-my @prunedNumAtoms2; # For each hh pair, the number of atoms left in sub-mol. 2
+my @prunedNumAtoms; # For each SS pair, the number of atoms *left* in the mol.
+my @prunedNumAtoms1; # For each SS pair, the number of atoms left in sub-mol. 1
+my @prunedNumAtoms2; # For each SS pair, the number of atoms left in sub-mol. 2
 my $directXYZ_ref;
 my $atomElementName_ref;
 my $atomSpeciesID_ref;
@@ -252,15 +267,15 @@ my $atomicMasses_ref;
 #   extension in all directions and orientations.
 &prepMolecules;
 
-# Catalog the positions of the H atoms, their bound neighbors for alignment and
+# Catalog the positions of the S atoms, their bound neighbors for alignment and
 #   trigger purposes upon merging and binding, and the atoms in the delete
 #   trees in both molecules which includes the specific binding atom and its
 #   key information: bonded***.
-&catalogH(1,$inFileCent1,\@hAtomCoords1,\@triggerCoords1,\@hAtomNumber1,
+&catalogS(1,$inFileCent1,\@sAtomCoords1,\@triggerCoords1,\@sAtomNumber1,
           \@triggerAtomNumber1,\@bondedAtomNumber1,\@bondedElemName1,
           \@bondedSpecies1,$delTreeDepth1,$delTreeTarget1,\@numDelAtoms1,
           \@delTree1);
-&catalogH(2,$inFileCent2,\@hAtomCoords2,\@triggerCoords2,\@hAtomNumber2,
+&catalogS(2,$inFileCent2,\@sAtomCoords2,\@triggerCoords2,\@sAtomNumber2,
           \@triggerAtomNumber2,\@bondedAtomNumber2,\@bondedElemName2,
           \@bondedSpecies2,$delTreeDepth2,$delTreeTarget2,\@numDelAtoms2,
           \@delTree2);
@@ -279,9 +294,9 @@ my $atomicMasses_ref;
 &pruneMergedMolecule;
 
 ## Build LAMMPS bond/react templates from the pruned olcao.skl files. There are
-##   four phases to a complete reaction: (a) Lead H atoms bond. (b) One lead H
-##   atom breaks from its home molecule. (c) The other lead H atom breaks from
-##   its home molecule. (d) The atoms that were bonded to the H atoms create a
+##   four phases to a complete reaction: (a) Lead S atoms bond. (b) One lead S
+##   atom breaks from its home molecule. (c) The other lead S atom breaks from
+##   its home molecule. (d) The atoms that were bonded to the S atoms create a
 ##   bond between themselves. Each phase requires a pre-template, a
 ##   post-template, and a mapping file.
 ## The terminology and notation is a bit tricky here so I will clarify. Each
@@ -311,7 +326,9 @@ sub initEnv
    $chainLen2 = 4;
    $delTreeDepth1 = 0;
    $delTreeDepth2 = 0;
-   $hhDist = 0.5;
+   $sElement = "h";
+   $ssDist = 0.5;
+   $delBothS = 1;
 
    # Initialize the element database.
    ElementData::initElementData;
@@ -360,8 +377,12 @@ sub parseCommandLine
          $delTreeDepth2 = $ARGV[++$number];
          $delTreeTarget2 = $ARGV[++$number];
       }
-      elsif ($ARGV[$number] eq "-h")
-         {$hhDist = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-s")
+      {
+         $sElement = lc($ARGV[++$number]);
+         $ssDist = $ARGV[++$number];
+         $delBothS = $ARGV[++$number];
+      }
       elsif ($ARGV[$number] eq "-uptypes")
          {$typeStep = $ARGV[++$number];}
       else
@@ -451,7 +472,8 @@ sub prepMolecules
    # Create a directory to store the merged results in.
    mkdir ("centered");
 
-   # Molecule 1 first
+   # Molecule 1 first. Read the file, get the magnitudes of the lattice
+   #   vectors, and find the largest.
    StructureControl::readInputFile($inFile1,1);
    $mag_ref = StructureControl::getMagRef;
    @sortedMag = sort { $a <=> $b } @{$mag_ref}[1..3];
@@ -460,7 +482,8 @@ sub prepMolecules
 
    StructureControl::reset();
 
-   # Molecule 2 second
+   # Molecule 2 second. Read the file, get the magnitudes of the lattice
+   #   vectors, and find the largest.
    StructureControl::readInputFile($inFile2,1);
    $mag_ref = StructureControl::getMagRef;
    @sortedMag = sort { $a <=> $b } @{$mag_ref}[1..3];
@@ -519,15 +542,15 @@ sub prepMolecules
    StructureControl::reset();
 }
 
-sub catalogH
+sub catalogS
 {
    # Define passed parameters.
-   my $molNumber = $_[0];
+   my $molNumber = $_[0]; # Working on molecule 1 or 2.
    my $inFile = $_[1];
-   my $hAtomCoords_ref = $_[2]; # Coordinates of the H atoms.
-   my $triggerCoords_ref = $_[3]; # Coords of the atom bonded to the H atom.
-   my $hAtomNumber_ref = $_[4]; # Atom number of each H atom.
-   my $triggerAtomNumber_ref = $_[5]; # Atom number bound to the H atom.
+   my $sAtomCoords_ref = $_[2]; # Coordinates of the S atoms.
+   my $triggerCoords_ref = $_[3]; # Coords of the atom bonded to the S atom.
+   my $sAtomNumber_ref = $_[4]; # Atom number of each S atom.
+   my $triggerAtomNumber_ref = $_[5]; # Atom number bound to the S atom.
    my $bondedAtomNumber_ref = $_[6]; # Atom number of the binding atom.
    my $bondedElemName_ref = $_[7]; # Element name of the binding atom.
    my $bondedSpecies_ref = $_[8]; # Species number of the bonding atom.
@@ -550,7 +573,7 @@ sub catalogH
    my $bonded_ref;
    my $directXYZ_ref;
    my $numAtoms;
-   my $numHAtoms;
+   my $numSAtoms;
    my $bondFile = "bondAnalysis" . $molNumber . ".bl";
    my $atomElementName_ref;
    my $atomElementID_ref;
@@ -576,65 +599,91 @@ sub catalogH
    $numBonds_ref = StructureControl::getNumBondsRef;
    $bonded_ref = StructureControl::getBondingListRef;
 
-   # Initialize the number of H atoms to zero. Then parse through the molecule
-   #   data to get the number of H atoms and build the bonded atom data and
+   # Initialize the number of S atoms to zero. Then parse through the molecule
+   #   data to get the number of S atoms and build the bonded atom data and
    #   delete list.
-   $numHAtoms = 0;
+   $numSAtoms = 0;
 
    foreach $atom (1..$numAtoms)
    {
-      # Check if we found a hydrogen atom.
-      if ($atomElementName_ref->[$atom] ne "h")
+      # Check if we found an S atom.
+      if ($atomElementName_ref->[$atom] ne $sElement)
          {next;}
 
-      # If so, increment count of the number of H atoms in this molecule.
-      $numHAtoms++;
+      # If so, increment count of the number of S atoms in this molecule.
+      $numSAtoms++;
 
-      # Store the atom number of this H atom.
-      $hAtomNumber_ref->[$numHAtoms] = $atom;
+      # Store the atom number of this S atom.
+      $sAtomNumber_ref->[$numSAtoms] = $atom;
 
       # Initialize the count of the number of atoms to delete from this
-      #   molecule for this H atom.
-      $numDelAtoms_ref->[$numHAtoms] = 0;
+      #   molecule for this S atom.
+      $numDelAtoms_ref->[$numSAtoms] = 0;
 
       # Make a note to the screen if there is more than one bond. We want
-      #   to assume that there should be only one bond to any H atom. If
+      #   to assume that there should be only one bond to any S atom. If
       #   there are more than one, then we will pick the closest one. There
       #   are probably other scenarios where this could be problematic so
       #   please watch out and FIX if needed.
       if ($numBonds_ref->[$atom] > 1)
       {
          print STDOUT "You may have a problem with molecule 1.\n";
-         print STDOUT "Atom $atomTag has more than one bond.\n";
+         print STDOUT "Atom $atom has more than one bond.\n";
          exit(1);
       }
 
       # Get the atom number of the trigger atom (also used for alignment).
-      $triggerAtomNumber_ref->[$numHAtoms] = $bonded_ref->[$atom][1];
-      $tempBondedAtomNumber = $triggerAtomNumber_ref->[$numHAtoms];
+      $triggerAtomNumber_ref->[$numSAtoms] = $bonded_ref->[$atom][1];
+      $tempBondedAtomNumber = $triggerAtomNumber_ref->[$numSAtoms];
 
-      # Store additional relevant information for this H-OtherAtom pair.
+      # Store additional relevant information for this S-OtherAtom pair.
       foreach $axis (1..3)
       {
-         $hAtomCoords_ref->[$numHAtoms][$axis]
+         $sAtomCoords_ref->[$numSAtoms][$axis]
             = $directXYZ_ref->[$atom][$axis];
-         $triggerCoords_ref->[$numHAtoms][$axis]
-            = $directXYZ_ref->[$triggerAtomNumber_ref->[$numHAtoms]][$axis];
+         $triggerCoords_ref->[$numSAtoms][$axis]
+            = $directXYZ_ref->[$triggerAtomNumber_ref->[$numSAtoms]][$axis];
       }
 
       # Find all the atoms that need to be deleted from this molecule and
       #   record their atom numbers and associated information. Note that
       #   presently, this is a weak algorithm that only deals with the
-      #   depth == 0,1 cases.
+      #   depth == 0,1 cases. That is, if the depth is > 1 the algorithm will
+      #   run exactly the same right now as if a depth of 1 was given. In the
+      #   future, it would be good to have the depth and the target work
+      #   together so that if a molecule had multiple atoms of the same target
+      #   type we could plan to skip one to "get to" the other. For now though,
+      #   that can't happen.
       if ($delTreeDepth == 0)
       {
-         # In this case, the alignment atom and the binding atom are the
-         #   same atom.
-         $bondedAtomNumber_ref->[$numHAtoms] = $tempBondedAtomNumber;
+         # Add the S atom to the delete tree only if we are deleting both
+         #    S atoms, OR, if we are only deleting one of the S atoms, then
+         #    we only delete them from molecule 2.
+         if ($delBothS == 1)
+         {
+            $numDelAtoms_ref->[$numSAtoms]++;
+            $delTree_ref->[$numSAtoms][$numDelAtoms_ref->[$numSAtoms]] = $atom;
 
-         # Add the H atom to the delete tree.
-         $numDelAtoms_ref->[$numHAtoms]++;
-         $delTree_ref->[$numHAtoms][$numDelAtoms_ref->[$numHAtoms]] = $atom;
+            # In this case, the alignment atom and the binding atom are the
+            #   same atom.
+            $bondedAtomNumber_ref->[$numSAtoms] = $tempBondedAtomNumber;
+         }
+         else 
+         {
+            # In this case, we only delete the S atom from molecule 2. Then,
+            #   the alignment atom and the binding atom for molecule 2 are the
+            #   same atom. However, the binding atom for molecule 1 is the S
+            #   atom from molecule 1 while the alignment atom from molecule 1
+            #   is the trigger atom.
+            if ($molNumber == 2)
+            {
+               $numDelAtoms_ref->[$numSAtoms]++;
+               $delTree_ref->[$numSAtoms][$numDelAtoms_ref->[$numSAtoms]] = $atom;
+               $bondedAtomNumber_ref->[$numSAtoms] = $tempBondedAtomNumber;
+            }
+            else
+               {$bondedAtomNumber_ref->[$numSAtoms] = $atom;}
+         }
       }
       else
       {
@@ -645,13 +694,14 @@ sub catalogH
          #   the atom we "came" from of course). Then we continue the
          #   traversal until there are no more accessible points on the
          #   molecule.
+         # Not sure that this is working right. Double check and FIX.
 
          # First we get the element name and species number of the target.
          @values = StructureControl::prepLine("",$delTreeTarget,"_");
          $targetElement = lc($values[0]);
          $targetSpecies = $values[1];
 
-         # Now we assume that no atoms will be delete.
+         # Now we assume that no atoms will be deleted.
          foreach $id (1..$numAtoms)
             {$markedAtoms[$id] = 0;}
 
@@ -659,63 +709,63 @@ sub catalogH
          &addAtomsToDelete($targetElement,$targetSpecies,$numDelAtoms_ref,
                $delTree_ref,$numBonds_ref,$bonded_ref,$atom,
                $atomElementName_ref,$atomSpeciesID_ref,$bondedAtomNumber_ref,
-               $numHAtoms,\@markedAtoms);
+               $numSAtoms,\@markedAtoms);
 
 #         # In this case we need to get to the end of the delete tree and
 #         #   then identify the next atom as the binding atom.
 #
-#         # Add the atom bonded to the H atom to the delete tree.
-#         $numDelAtoms_ref->[$numHAtoms]++;
-#         $delTree_ref->[$numHAtoms][$numDelAtoms_ref->[$numHAtoms]]
+#         # Add the atom bonded to the S atom to the delete tree.
+#         $numDelAtoms_ref->[$numSAtoms]++;
+#         $delTree_ref->[$numSAtoms][$numDelAtoms_ref->[$numSAtoms]]
 #               = $tempBondedAtomNumber;
 #
-#         # Add all H atoms bound to the above atom to the delete tree.
+#         # Add all S atoms bound to the above atom to the delete tree.
 #         foreach $bond (1..$numBonds_ref->[$tempBondedAtomNumber])
 #         {
 #            if ($atomElementName_ref->[$bonded_ref->[
-#                $tempBondedAtomNumber][$bond]] eq "h")
+#                $tempBondedAtomNumber][$bond]] eq $sElement)
 #            {
-#               $numDelAtoms_ref->[$numHAtoms]++;
-#               $delTree_ref->[$numHAtoms][$numDelAtoms_ref->[$numHAtoms]]
+#               $numDelAtoms_ref->[$numSAtoms]++;
+#               $delTree_ref->[$numSAtoms][$numDelAtoms_ref->[$numSAtoms]]
 #                     = $bonded_ref->[$tempBondedAtomNumber][$bond];
 #            }
 #         }
 #
-#         # Establish the remaining non-H atom as the binding atom.
+#         # Establish the remaining non-S atom as the binding atom.
 #         foreach $bond (1..$numBonds_ref->[$tempBondedAtomNumber])
 #         {
 #            if ($atomElementName_ref->[$bonded_ref->[
-#                $tempBondedAtomNumber][$bond]] ne "h")
+#                $tempBondedAtomNumber][$bond]] ne $sElement)
 #            {
-#               $bondedAtomNumber_ref->[$numHAtoms]
+#               $bondedAtomNumber_ref->[$numSAtoms]
 #                     = $bonded_ref->[$tempBondedAtomNumber][$bond];
 #               last;
 #            }
 #         }
 
          # Leave with temp bonded atom number referring to the binding atom.
-         $tempBondedAtomNumber = $bondedAtomNumber_ref->[$numHAtoms];
+         $tempBondedAtomNumber = $bondedAtomNumber_ref->[$numSAtoms];
       }
 
       # Get the element name of the binding atom.
-      $bondedElemName_ref->[$numHAtoms] =
+      $bondedElemName_ref->[$numSAtoms] =
             $atomElementName_ref->[$tempBondedAtomNumber];
 
       # Get the species number of the binding atom.
-      $bondedSpecies_ref->[$numHAtoms] =
+      $bondedSpecies_ref->[$numSAtoms] =
             $atomSpeciesID_ref->[$tempBondedAtomNumber];
    }
 
-#   # Read the bond analysis output looking for H atoms. Then, assemble the list
-#   #   of the H atom coordinates and the coordinates of their bonded partner
+#   # Read the bond analysis output looking for S atoms. Then, assemble the list
+#   #   of the S atom coordinates and the coordinates of their bonded partner
 #   #   atom.
-#   $numHAtoms = 0; # Initialize a count of the number of H atoms in this mol.
+#   $numSAtoms = 0; # Initialize a count of the number of S atoms in this mol.
 #   open (BOND,"<centered/$bondFile")
 #      || die "Cannot open centered/$bondFile for reading.\n";
 #   foreach $atom (1..$numAtoms)
 #   {
-#      # Check the tag of each atom. Read past the non-H, read the bonded atoms
-#      #   for the H atoms that we find, and build the associated delete tree.
+#      # Check the tag of each atom. Read past the non-S, read the bonded atoms
+#      #   for the S atoms that we find, and build the associated delete tree.
 #      @values = StructureControl::prepLine(\*BOND,"",'\s+');
 #      $atomTag = $values[0];
 #      $numBonds = $values[2];
@@ -725,14 +775,14 @@ sub catalogH
 #      if ($values[0] eq "h")
 #      {
 #         # We found a hydrogen atom.
-#         $numHAtoms++;
+#         $numSAtoms++;
 #
 #         # Initialize the count of the number of atoms to delete from this
-#         #   molecule for this H atom.
-#         $numDelAtoms_ref->[$numHAtoms] = 0;
+#         #   molecule for this S atom.
+#         $numDelAtoms_ref->[$numSAtoms] = 0;
 #
 #         # Make a note to the screen if there is more than one bond. We want
-#         #   to assume that there should be only one bond to any H atom. If
+#         #   to assume that there should be only one bond to any S atom. If
 #         #   there are more than one, then we will pick the closest one. There
 #         #   are probably other scenarios where this could be problematic so
 #         #   please watch out and FIX if needed.
@@ -749,26 +799,26 @@ sub catalogH
 #
 #         # Get the element name of the bonded atom.
 #         @values = split(/[0-9]/,$bondedAtomTag);
-#         $bondedElemName_ref->[$numHAtoms] = $values[0];
+#         $bondedElemName_ref->[$numSAtoms] = $values[0];
 #
 #         # Get the species number of the bonded atom.
 #         @values = split(/[a-zA-Z_]+/,$bondedAtomTag);
-#         $bondedSpecies_ref->[$numHAtoms] = $values[1];
+#         $bondedSpecies_ref->[$numSAtoms] = $values[1];
 #
 #         # Get the atom number of the bonded atom.
 #         @values = split(/_/,$bondedAtomTag);
 #         $tempBondedAtomNumber = $values[1];
 #
-#         # Store additional relevant information for this H-OtherAtom pair.
+#         # Store additional relevant information for this S-OtherAtom pair.
 #         foreach $axis (1..3)
 #         {
-#            $hAtomCoords_ref->[$numHAtoms][$axis]
+#            $sAtomCoords_ref->[$numSAtoms][$axis]
 #               = $directXYZ_ref->[$atom][$axis];
-#            $triggerCoords_ref->[$numHAtoms][$axis]
+#            $triggerCoords_ref->[$numSAtoms][$axis]
 #               = $directXYZ_ref->[$tempBondedAtomNumber][$axis];
 #         }
-#         $hAtomNumber_ref->[$numHAtoms] = $atom;
-#         $bondedAtomNumber_ref->[$numHAtoms] = $tempBondedAtomNumber;
+#         $sAtomNumber_ref->[$numSAtoms] = $atom;
+#         $bondedAtomNumber_ref->[$numSAtoms] = $tempBondedAtomNumber;
 #
 #         # Find all the atoms that need to be deleted from this molecule and
 #         #   record their atom numbers and associated information. Note that
@@ -776,28 +826,28 @@ sub catalogH
 #         #   depth == 0,1 cases.
 #         if ($delTreeDepth == 0)
 #         {
-#            $numDelAtoms_ref->[$numHAtoms]++;
-#            $delTree_ref->[$numHAtoms][$numDelAtoms_ref->[$numHAtoms]]=$atom;
+#            $numDelAtoms_ref->[$numSAtoms]++;
+#            $delTree_ref->[$numSAtoms][$numDelAtoms_ref->[$numSAtoms]]=$atom;
 #         }
 #         else
 #         {
-#            $numDelAtoms_ref->[$numHAtoms]++;
-#            $delTree_ref->[$numHAtoms][$numDelAtoms_ref->[$numHAtoms]]=$atom;
+#            $numDelAtoms_ref->[$numSAtoms]++;
+#            $delTree_ref->[$numSAtoms][$numDelAtoms_ref->[$numSAtoms]]=$atom;
 #
-#            # Any time that the atom that is bonded to this H atom is 
+#            # Any time that the atom that is bonded to this S atom is 
 #            foreach $bond (1..$numBonds_ref->[$tempBondedAtomNumber])
 #            {
 #               if ($atomElementName_ref->[$bonded_ref->[
 #                   $tempBondedAtomNumber][$bond]] eq "h")
 #               {
-#                  $numDelAtoms_ref->[$numHAtoms]++;
-#                  $delTree_ref->[$numHAtoms][$numDelAtoms_ref->[$numHAtoms]]
+#                  $numDelAtoms_ref->[$numSAtoms]++;
+#                  $delTree_ref->[$numSAtoms][$numDelAtoms_ref->[$numSAtoms]]
 #                        = $bonded_ref->[$tempBondedAtomNumber][$bond];
 #               }
 #            }
 #         }
 #      }
-#      else # Read past bonds associated with this non-H atom. They don't matter.
+#      else # Read past bonds associated with this non-S atom. They don't matter.
 #      {
 #         foreach my $bondSet (1..ceil($numBonds/4))
 #            {<BOND>;}
@@ -807,16 +857,16 @@ sub catalogH
    # Reset the StructureControl data for the next subroutine.
    StructureControl::reset();
 
-   # Save the total number of atoms and number of H atoms for this molecule.
+   # Save the total number of atoms and number of S atoms for this molecule.
    if ($molNumber == 1)
    {
       $numAtoms1 = $numAtoms;
-      $numHAtoms1 = $numHAtoms;
+      $numSAtoms1 = $numSAtoms;
    }
    else
    {
       $numAtoms2 = $numAtoms;
-      $numHAtoms2 = $numHAtoms;
+      $numSAtoms2 = $numSAtoms;
    }
 
    # Close the bond analysis file.
@@ -836,7 +886,7 @@ sub addAtomsToDelete
    my $atomElementName_ref = $_[7];
    my $atomSpeciesID_ref = $_[8];
    my $bondedAtomNumber_ref = $_[9];
-   my $numHAtoms = $_[10];
+   my $numSAtoms = $_[10];
    my $markedAtoms_ref = $_[11];
 
    # Define local variables.
@@ -847,14 +897,14 @@ sub addAtomsToDelete
    #   permit the traversal to continue.
    if (($atomElementName_ref->[$currentAtom] eq $targetElement) and
        ($atomSpeciesID_ref->[$currentAtom] eq $targetSpecies))
-      {$bondedAtomNumber_ref->[$numHAtoms] = $currentAtom;}
+      {$bondedAtomNumber_ref->[$numSAtoms] = $currentAtom;}
    else
    {
       # Increment the number of atoms to delete to include the current atom.
-      $numDelAtoms_ref->[$numHAtoms]++;
+      $numDelAtoms_ref->[$numSAtoms]++;
 
       # Record this atom into the delete list.
-      $delTree_ref->[$numHAtoms][$numDelAtoms_ref->[$numHAtoms]] = $currentAtom;
+      $delTree_ref->[$numSAtoms][$numDelAtoms_ref->[$numSAtoms]] = $currentAtom;
 
       # Record that this atom is going to be deleted.
       $markedAtoms_ref->[$currentAtom] = 1;
@@ -868,7 +918,7 @@ sub addAtomsToDelete
             &addAtomsToDelete($targetElement,$targetSpecies,$numDelAtoms_ref,
                   $delTree_ref,$numBonds_ref,$bonded_ref,
                   $bonded_ref->[$currentAtom][$bond],$atomElementName_ref,
-                  $atomSpeciesID_ref,$bondedAtomNumber_ref,$numHAtoms,
+                  $atomSpeciesID_ref,$bondedAtomNumber_ref,$numSAtoms,
                   $markedAtoms_ref);
          }
       }
@@ -883,8 +933,8 @@ sub generateMergedMols
    my $line;
    my $axis;
    my $atom;
-   my $hAtom1;
-   my $hAtom2;
+   my $sAtom1;
+   my $sAtom2;
    my $delAtom;
    my $outFile;
    my $command;
@@ -896,12 +946,12 @@ sub generateMergedMols
    my $notColinear; # A flag for signaling that a non-colinear set of atoms
                     # has been found.
    my @planeCoords; # Three points that define a plane that define a normal.
-   my @rotOrigin; # The origin of the axis of rotation (an H atom).
-                  # Note that this keeps the H atom in the same position.
-   my @transVector1; # The point to translate the H atom of molecule 2 to for
-                     # the first translation. (Coincident with H of molecule 1)
-   my @transVector2; # The point to translate the H atom of molecule 2 to for
-                     # the second translation. ($hhDist from H of molecule 1)
+   my @rotOrigin; # The origin of the axis of rotation (an S atom).
+                  # Note that this keeps the S atom in the same position.
+   my @transVector1; # The point to translate the S atom of molecule 2 to for
+                     # the first translation. (Coincident with S of molecule 1)
+   my @transVector2; # The point to translate the S atom of molecule 2 to for
+                     # the second translation. ($ssDist from S of molecule 1)
    my @finalCoord; # Third coordinate needed to define a plane. This coordinate
                    # is normally not accessible until after a translation so we
                    # have to do it manually first.
@@ -919,30 +969,30 @@ sub generateMergedMols
 
    # Repeatedly transform the position of molecule 2 such that every
    #   combination of the four atoms comprising a bonded atom of molecule 1,
-   #   the associated H atom of molecule 1, the H atom of molecule 2, and the
+   #   the associated S atom of molecule 1, the S atom of molecule 2, and the
    #   bonded atom of molecule 2 are all in a line in that listed order.
    # The transformation will consist of a translation, followed by a rotation,
    #   and then another a translation. All operations are applied to the
    #   coordinates of molecule 2.
-   # The first translation will make the coordinates of two H atoms become
+   # The first translation will make the coordinates of two S atoms become
    #   coincident with each other.
    # Then, the rotation will bring the vectors defined by the lines from bonded
-   #   atoms to H atoms of both molecules into anti-alignment.
-   # Finally, the last translation will put the H atoms $hhDist apart.
+   #   atoms to S atoms of both molecules into anti-alignment.
+   # Finally, the last translation will put the S atoms $ssDist apart.
    # The two molecules are then printed into a single "merged" file that
    #   contains all atoms.
    # This process will only be applied to unique combinations of atoms. So, for
-   #   example considering some arbitrary molecule with multiple B and C atoms
-   #   of various types, if the bonded atom of molecule 1 is B of type 2 and
+   #   example, consider some arbitrary molecule with multiple B and C atoms
+   #   of various types. If the bonded atom of molecule 1 is B of type 2 and
    #   the bonded atom of molecule 2 is C of type 3 at some point in the search
    #   then the next time such a combination is detected it will not be merged.
    # Also, produce a merged delete tree.
    $numUniqueBondedNames = 0;
-   foreach $hAtom1 (1..$numHAtoms1)
+   foreach $sAtom1 (1..$numSAtoms1)
    {
 
       # Some care must be taken if (either through shear coincidence or because
-      #   the molecules are the same) the H atoms and alignmnet atoms are
+      #   the molecules are the same) the S atoms and alignment atoms are
       #   co-linear with each other. That may happen easily if the two
       #   molecules are the same because we then naturally grab identical atoms.
       # If the atoms from the two molecules are colinear, then the axis of
@@ -952,16 +1002,16 @@ sub generateMergedMols
       #   point such that the angle of rotation is properly computed too.
 
 
-      # The translation vector that will bring the two H atoms $hhDist apart
+      # The translation vector that will bring the two S atoms $ssDist apart
       #   from each other is the following. Note that this is a constant for
-      #   each hAtom1 and its alignment pair. Note that this is the *second*
+      #   each sAtom1 and its alignment pair. Note that this is the *second*
       #   translation that will be applied although we compute this translation
       #   vector first. That is the reason that we ultimately produce the
       #   $transVector2 instead of $transVector1.
       foreach $axis (1..3)
       {
-         $diffVector1[$axis] = ($hAtomCoords1[$hAtom1][$axis]
-            - $triggerCoords1[$hAtom1][$axis]);
+         $diffVector1[$axis] = ($sAtomCoords1[$sAtom1][$axis]
+            - $triggerCoords1[$sAtom1][$axis]);
       }
       $diff1Mag = sqrt($diffVector1[1]**2
                    +   $diffVector1[2]**2
@@ -969,30 +1019,30 @@ sub generateMergedMols
       foreach $axis (1..3)
       {
          $diffVector1[$axis] /= $diff1Mag;
-         $transVector2[$axis-1] = $diffVector1[$axis] * $hhDist;
+         $transVector2[$axis-1] = $diffVector1[$axis] * $ssDist;
       }
 
-      # Iterate over all H atoms of the second molecule.
-      foreach $hAtom2 (1..$numHAtoms2)
+      # Iterate over all S atoms of the second molecule.
+      foreach $sAtom2 (1..$numSAtoms2)
       {
          # Produce a merged delete tree.
-         foreach $atom (1..$numDelAtoms1[$hAtom1])
+         foreach $atom (1..$numDelAtoms1[$sAtom1])
          {
-            $mergedDelTree[$hAtom1][$hAtom2][$atom]
-               = $delTree1[$hAtom1][$atom];
+            $mergedDelTree[$sAtom1][$sAtom2][$atom]
+               = $delTree1[$sAtom1][$atom];
          }
-         foreach $atom (1..$numDelAtoms2[$hAtom2])
+         foreach $atom (1..$numDelAtoms2[$sAtom2])
          {
-            $mergedDelTree[$hAtom1][$hAtom2][$atom+$numDelAtoms1[$hAtom1]]
-               = $delTree2[$hAtom2][$atom] + $numAtoms1;
+            $mergedDelTree[$sAtom1][$sAtom2][$atom+$numDelAtoms1[$sAtom1]]
+               = $delTree2[$sAtom2][$atom] + $numAtoms1;
          }
-         $mergedNumDelAtoms[$hAtom1][$hAtom2]
-               = $numDelAtoms1[$hAtom1] + $numDelAtoms2[$hAtom2];
+         $mergedNumDelAtoms[$sAtom1][$sAtom2]
+               = $numDelAtoms1[$sAtom1] + $numDelAtoms2[$sAtom2];
 
          # Produce a name that identifies the atom pair binding the molecules.
          $currBondedName =
-               "$bondedElemName1[$hAtom1] $bondedSpecies1[$hAtom1] " .
-               "$bondedElemName2[$hAtom2] $bondedSpecies2[$hAtom2]";
+               "$bondedElemName1[$sAtom1] $bondedSpecies1[$sAtom1] " .
+               "$bondedElemName2[$sAtom2] $bondedSpecies2[$sAtom2]";
 
          # Determine if this bonded name is unique so far.
          $found = StructureControl::findString($currBondedName,
@@ -1006,14 +1056,14 @@ sub generateMergedMols
             {$uniqueBondedNames[++$numUniqueBondedNames] = $currBondedName;}
 
 
-         # The translation vector that will bring the two H atoms coincident
+         # The translation vector that will bring the two S atoms coincident
          #   with each other is the following.
          foreach $axis (1..3)
-            {$transVector1[$axis-1] = $hAtomCoords1[$hAtom1][$axis]
-               - $hAtomCoords2[$hAtom2][$axis];}
+            {$transVector1[$axis-1] = $sAtomCoords1[$sAtom1][$axis]
+               - $sAtomCoords2[$sAtom2][$axis];}
 
          # The coordinates of the points that define a plane for the rotation
-         #   are given by the alignment atom of molecule 1, the H atom of
+         #   are given by the alignment atom of molecule 1, the S atom of
          #   molecule 1, and the alignment atom of molecule 2 *after* it is
          #   translated.
          # There is a tricky part here though. The position of the second
@@ -1031,21 +1081,21 @@ sub generateMergedMols
          #   colinear.
          foreach $axis (1..3)
             {$finalCoord[$axis] = $transVector1[$axis-1]
-                                + $triggerCoords2[$hAtom2][$axis];}
+                                + $triggerCoords2[$sAtom2][$axis];}
 
          # Check if the atoms are colinear. In the event that they are, then
          #   compute a new final coordinate. To check for colinearity we will
          #   obtain normalized difference vectors between the atom bonded to
-         #   the H of molecule 1 and the H atom of molecule 1 and also between
-         #   the H atom of molecule 1 and the atom bonded to the H atom of
+         #   the S of molecule 1 and the S atom of molecule 1 and also between
+         #   the S atom of molecule 1 and the atom bonded to the S atom of
          #   molecule 2 using the coordinates it would have *after* it is
-         #   translated so that the H atoms of both molecules are coincident.
+         #   translated so that the S atoms of both molecules are coincident.
          #   Then, we will compare the vector components and if none of them
          #   are different by more than epsilon we can assume that the atoms
          #   are colinear and that we need to select a different final
          #   coordiante.
          foreach $axis (1..3)
-            {$diffVector2[$axis] = $hAtomCoords1[$hAtom1][$axis]
+            {$diffVector2[$axis] = $sAtomCoords1[$sAtom1][$axis]
                                  - $finalCoord[$axis];}
 
          # Normalize the diffVector by first computing its magnitude.
@@ -1078,8 +1128,8 @@ sub generateMergedMols
             @finalCoord = StructureControl::normalizedCrossProduct(
                \@diffVector2,\@tempVector);
          }
-         @planeCoords = (@{$hAtomCoords1[$hAtom1]}[1..3],
-                         @{$triggerCoords1[$hAtom1]}[1..3],
+         @planeCoords = (@{$sAtomCoords1[$sAtom1]}[1..3],
+                         @{$triggerCoords1[$sAtom1]}[1..3],
                          @finalCoord[1..3]);
 
          $rotAngle = StructureControl::getVectorAngle(\@diffVector2,
@@ -1089,7 +1139,7 @@ sub generateMergedMols
          # Apply the translation, rotation, translation sequence.
          $command = "modStruct -i centered/$inFileCent2 -o centered/temp.skl "
                   . "-trans " . "@transVector1 -rotP @planeCoords -angle "
-                  . "$rotAngle -orig @{$hAtomCoords1[$hAtom1]}[1..3] -trans "
+                  . "$rotAngle -orig @{$sAtomCoords1[$sAtom1]}[1..3] -trans "
                   . "@transVector2";
          system("$command");
 
@@ -1097,7 +1147,7 @@ sub generateMergedMols
          #   file of the first molecule.
 
          # Make the name of the merged file.
-         $outFile = "olcao_" . $hAtom1 . "_" . $hAtom2 . ".skl";
+         $outFile = "olcao_" . $sAtom1 . "_" . $sAtom2 . ".skl";
 
          # Open both files. Then read through each and merge them into one. As
          #   we merge them, we also create a catalog of the element-species
@@ -1169,29 +1219,29 @@ sub generateMergedMols
          close (MOL1);
          close (MOL2);
          close (MERGE);
-      } # $hAtom2 loop
-   } # $hAtom1 loop
+      } # $sAtom2 loop
+   } # $sAtom1 loop
 
 
-   # We now want to record the maping of H atom numbers from the original
+   # We now want to record the mapping of S atom numbers from the original
    #   molecules to the merged single molecule. The mapping from molecule 1 is
    #   very simple. It will have the same number in both files. We "overwrite"
    #   the bondedAtomNumber1 values with the atom numbers from the merged
    #   molecule, but for the atoms from molecule 1, the numbers are the same so
    #   we don't have to actually do anything.
-   foreach $hAtom1 (1..$numHAtoms1)
-      {$mergedHAtomNumber1[$hAtom1] = $hAtomNumber1[$hAtom1];}
+   foreach $sAtom1 (1..$numSAtoms1)
+      {$mergedSAtomNumber1[$sAtom1] = $sAtomNumber1[$sAtom1];}
 
-   # Similarly, the mapping of H atom index numbers from the original molecule
+   # Similarly, the mapping of S atom index numbers from the original molecule
    #   2 is also very simple. It will be the same every time with the caveat
    #   that we just have to shift the index number by the number of atoms that
    #   are in the first molecule. For the bondedAtomNumber2 we also just have
    #   to shift by the number of atoms in molecule 1.
-   foreach $hAtom2 (1..$numHAtoms2)
+   foreach $sAtom2 (1..$numSAtoms2)
    {
-      $mergedHAtomNumber2[$hAtom2] = $hAtomNumber2[$hAtom2] + $numAtoms1;
-      $bondedAtomNumber2[$hAtom2] += $numAtoms1;
-      $triggerAtomNumber2[$hAtom2] += $numAtoms1;
+      $mergedSAtomNumber2[$sAtom2] = $sAtomNumber2[$sAtom2] + $numAtoms1;
+      $bondedAtomNumber2[$sAtom2] += $numAtoms1;
+      $triggerAtomNumber2[$sAtom2] += $numAtoms1;
    }
 }
 
@@ -1211,8 +1261,8 @@ sub catalogElemSpecMolID
    my $atomB;
    my $bond;
    my $element;
-   my $hAtom1;
-   my $hAtom2;
+   my $sAtom1;
+   my $sAtom2;
    my $mergedMolFile;
    my $numElements;
    my $numAtoms;
@@ -1232,15 +1282,15 @@ sub catalogElemSpecMolID
    my @maxSpeciesID;
 
    $numUniqueBondedNames = 0;
-   foreach $hAtom1 (1..$numHAtoms1)
+   foreach $sAtom1 (1..$numSAtoms1)
    {
-      # Iterate over all H atoms of the second molecule.
-      foreach $hAtom2 (1..$numHAtoms2)
+      # Iterate over all S atoms of the second molecule.
+      foreach $sAtom2 (1..$numSAtoms2)
       {
-         # Produce a name that identifies the atom pair bonded to the H atoms.
+         # Produce a name that identifies the atom pair bonded to the S atoms.
          $currBondedName =
-               "$bondedElemName1[$hAtom1] $bondedSpecies1[$hAtom1] " .
-               "$bondedElemName2[$hAtom2] $bondedSpecies2[$hAtom2]";
+               "$bondedElemName1[$sAtom1] $bondedSpecies1[$sAtom1] " .
+               "$bondedElemName2[$sAtom2] $bondedSpecies2[$sAtom2]";
 
          # Determine if this bonded name is unique so far.
          $found = 0;
@@ -1258,7 +1308,7 @@ sub catalogElemSpecMolID
             {$uniqueBondedNames[++$numUniqueBondedNames] = $currBondedName;}
 
          # Define the file name for the pruned molecule.
-         $mergedMolFile = "olcao_" . $hAtom1 . "_" . $hAtom2 . ".skl";
+         $mergedMolFile = "olcao_" . $sAtom1 . "_" . $sAtom2 . ".skl";
 
          # Read the skeleton file and extract useful data and references.
          StructureControl::readInputFile("merged/$mergedMolFile",1);
@@ -1285,21 +1335,21 @@ sub catalogElemSpecMolID
          foreach $atom (1..$numAtoms)
          {
             # Assign the element name.
-            $mergedAtomElemName[$hAtom1][$hAtom2][$atom]
+            $mergedAtomElemName[$sAtom1][$sAtom2][$atom]
                   = $atomElementName_ref->[$atom];
 
             # Assign the initial pre- and post-reaction species numbers. (To
             #   be corrected below according to the typeStep.)
-            $mergedAtomSpeciesID[$hAtom1][$hAtom2][$atom][1]
+            $mergedAtomSpeciesID[$sAtom1][$sAtom2][$atom][1]
                   = $atomSpeciesID_ref->[$atom];
-            $mergedAtomSpeciesID[$hAtom1][$hAtom2][$atom][2]
+            $mergedAtomSpeciesID[$sAtom1][$sAtom2][$atom][2]
                   = $atomSpeciesID_ref->[$atom];
 
             # Assign the molecule name.
             if ($atom <= $numAtoms1)
-               {$mergedAtomMolName[$hAtom1][$hAtom2][$atom] = $molName1;}
+               {$mergedAtomMolName[$sAtom1][$sAtom2][$atom] = $molName1;}
             else
-               {$mergedAtomMolName[$hAtom1][$hAtom2][$atom] = $molName2;}
+               {$mergedAtomMolName[$sAtom1][$sAtom2][$atom] = $molName2;}
          }
 
          # In the event that the $typeStep is non-zero, we correct the species
@@ -1314,15 +1364,15 @@ sub catalogElemSpecMolID
          if ($typeStep > 0)
          {
             # Identify shorthand for the atom numbers of the binding atoms.
-            $tempBonded1 = $bondedAtomNumber1[$hAtom1];
-            $tempBonded2 = $bondedAtomNumber2[$hAtom2];
+            $tempBonded1 = $bondedAtomNumber1[$sAtom1];
+            $tempBonded2 = $bondedAtomNumber2[$sAtom2];
 
             # Correct the bonded atoms first. (They will be increased by just
             #   the typeStep.)
-            $mergedAtomSpeciesID[$hAtom1][$hAtom2][$tempBonded1][2]
+            $mergedAtomSpeciesID[$sAtom1][$sAtom2][$tempBonded1][2]
                   = $numSpecies_ref->[$atomElementID_ref->[$tempBonded1]]
                   + $typeStep;
-            $mergedAtomSpeciesID[$hAtom1][$hAtom2][$tempBonded2][2]
+            $mergedAtomSpeciesID[$sAtom1][$sAtom2][$tempBonded2][2]
                   = $numSpecies_ref->[$atomElementID_ref->[$tempBonded2]]
                   + $typeStep;
 
@@ -1330,13 +1380,13 @@ sub catalogElemSpecMolID
             #   of the delete tree.
             foreach $bond (1..$numBonds_ref->[$tempBonded1])
             {
-               $mergedAtomSpeciesID[$hAtom1][$hAtom2][$bonded_ref->[
+               $mergedAtomSpeciesID[$sAtom1][$sAtom2][$bonded_ref->[
                      $tempBonded1][$bond]][2] = $numSpecies_ref->[
                      $atomElementID_ref->[$tempBonded1]] + $typeStep + 1;
             }
             foreach $bond (1..$numBonds_ref->[$tempBonded2])
             {
-               $mergedAtomSpeciesID[$hAtom1][$hAtom2][$bonded_ref->[
+               $mergedAtomSpeciesID[$sAtom1][$sAtom2][$bonded_ref->[
                      $tempBonded2][$bond]][2] = $numSpecies_ref->[
                      $atomElementID_ref->[$tempBonded2]] + $typeStep + 1;
             }
@@ -1346,8 +1396,8 @@ sub catalogElemSpecMolID
          #   or the next subroutine if this is the last iteration.
          StructureControl::reset();
 
-      } # hAtom2 loop
-   } # hAtom1 loop
+      } # sAtom2 loop
+   } # sAtom1 loop
 }
 
 #sub catalogElemSpecID
@@ -1356,8 +1406,8 @@ sub catalogElemSpecMolID
 #   my $atom;
 #   my $atomB;
 #   my $element;
-#   my $hAtom1;
-#   my $hAtom2;
+#   my $sAtom1;
+#   my $sAtom2;
 #   my $mergedMolFile;
 #   my $numElements;
 #   my $found;
@@ -1376,15 +1426,15 @@ sub catalogElemSpecMolID
 #   my @maxSpeciesID;
 #
 #   $numUniqueBondedNames = 0;
-#   foreach $hAtom1 (1..$numHAtoms1)
+#   foreach $sAtom1 (1..$numSAtoms1)
 #   {
-#      # Iterate over all H atoms of the second molecule.
-#      foreach $hAtom2 (1..$numHAtoms2)
+#      # Iterate over all S atoms of the second molecule.
+#      foreach $sAtom2 (1..$numSAtoms2)
 #      {
-#         # Produce a name that identifies the atom pair bonded to the H atoms.
+#         # Produce a name that identifies the atom pair bonded to the S atoms.
 #         $currBondedName =
-#               "$bondedElemName1[$hAtom1] $bondedSpecies1[$hAtom1] " .
-#               "$bondedElemName2[$hAtom2] $bondedSpecies2[$hAtom2]";
+#               "$bondedElemName1[$sAtom1] $bondedSpecies1[$sAtom1] " .
+#               "$bondedElemName2[$sAtom2] $bondedSpecies2[$sAtom2]";
 #
 #         # Determine if this bonded name is unique so far.
 #         $found = 0;
@@ -1402,7 +1452,7 @@ sub catalogElemSpecMolID
 #            {$uniqueBondedNames[++$numUniqueBondedNames] = $currBondedName;}
 #
 #         # Define the file name for the pruned molecule.
-#         $mergedMolFile = "olcao_" . $hAtom1 . "_" . $hAtom2 . ".skl";
+#         $mergedMolFile = "olcao_" . $sAtom1 . "_" . $sAtom2 . ".skl";
 #
 #         # Read the skeleton file and extract useful data and references.
 #         StructureControl::readInputFile("merged/$mergedMolFile",1);
@@ -1419,7 +1469,7 @@ sub catalogElemSpecMolID
 #         {
 #            # All atoms in both pre- and post-reaction templates will retain
 #            #   the same element name in all cases.
-#            $mergedAtomElementName[$hAtom1][$hAtom2][$atom]
+#            $mergedAtomElementName[$sAtom1][$sAtom2][$atom]
 #                  = $atomElementName_ref->[$atom];
 #         }
 #
@@ -1455,24 +1505,24 @@ sub catalogElemSpecMolID
 #            #   next.)
 #            foreach $atom (1..$numAtoms1)
 #            {
-#               $mergedAtomSpeciesID[$hAtom1][$hAtom2][$atom][1]
+#               $mergedAtomSpeciesID[$sAtom1][$sAtom2][$atom][1]
 #                     = $atomSpeciesID_ref->[$atom];
-#               $mergedAtomSpeciesID[$hAtom1][$hAtom2][$atom+$numAtoms1][1]
+#               $mergedAtomSpeciesID[$sAtom1][$sAtom2][$atom+$numAtoms1][1]
 #                     = $atomSpeciesID_ref->[$atom];
-#               $mergedAtomSpeciesID[$hAtom1][$hAtom2][$atom][2]
+#               $mergedAtomSpeciesID[$sAtom1][$sAtom2][$atom][2]
 #                     = $atomSpeciesID_ref->[$atom];
-#               $mergedAtomSpeciesID[$hAtom1][$hAtom2][$atom+$numAtoms1][2]
+#               $mergedAtomSpeciesID[$sAtom1][$sAtom2][$atom+$numAtoms1][2]
 #                     = $atomSpeciesID_ref->[$atom];
 #            }
 #
 #            # Correct the bonding atom species ID numbers. (They will both be
 #            #   corrected to the same ID number because they are the same type
 #            #   of molecule.)
-#            $tempBonded = $bondedAtomNumber1[$hAtom1];
-#            $mergedAtomSpeciesID[$hAtom1][$hAtom2][$tempBonded][2]
+#            $tempBonded = $bondedAtomNumber1[$sAtom1];
+#            $mergedAtomSpeciesID[$sAtom1][$sAtom2][$tempBonded][2]
 #                  = $numSpecies_ref->[$atomElementID_ref->[$tempBonded]] + 1;
-#            $tempBonded = $bondedAtomNumber2[$hAtom2];
-#            $mergedAtomSpeciesID[$hAtom1][$hAtom2][$tempBonded][2]
+#            $tempBonded = $bondedAtomNumber2[$sAtom2];
+#            $mergedAtomSpeciesID[$sAtom1][$sAtom2][$tempBonded][2]
 #                  = $numSpecies_ref->[$atomElementID_ref->[$tempBonded]] + 1;
 #         }
 #         else
@@ -1493,9 +1543,9 @@ sub catalogElemSpecMolID
 #            #   for atoms from molecule one first.
 #            foreach $atom (1..$numAtoms1)
 #            {
-#               $mergedAtomSpeciesID[$hAtom1][$hAtom2][$atom][1]
+#               $mergedAtomSpeciesID[$sAtom1][$sAtom2][$atom][1]
 #                     = $atomSpeciesID_ref->[$atom];
-#               $mergedAtomSpeciesID[$hAtom1][$hAtom2][$atom][2]
+#               $mergedAtomSpeciesID[$sAtom1][$sAtom2][$atom][2]
 #                     = $atomSpeciesID_ref->[$atom];
 #
 #               # Record the highest species ID for each of the elements present
@@ -1529,44 +1579,44 @@ sub catalogElemSpecMolID
 #               #   molecule 1.
 #               if ($found == 0)
 #               {
-#                  $mergedAtomSpeciesID[$hAtom1][$hAtom2][$atom2][1]
+#                  $mergedAtomSpeciesID[$sAtom1][$sAtom2][$atom2][1]
 #                        = $atomSpeciesID_ref->[$atom2];
-#                  $mergedAtomSpeciesID[$hAtom1][$hAtom2][$atom2][2]
+#                  $mergedAtomSpeciesID[$sAtom1][$sAtom2][$atom2][2]
 #                        = $atomSpeciesID_ref->[$atom2];
 #               }
 #               else
 #               {
-#                  $mergedAtomSpeciesID[$hAtom1][$hAtom2][$atom2][1]
+#                  $mergedAtomSpeciesID[$sAtom1][$sAtom2][$atom2][1]
 #                        = $numSpecies_ref->[$atomElementID_ref->[$found]]
 #                        + $atomSpeciesID_ref->[$atom2];
-#                  $mergedAtomSpeciesID[$hAtom1][$hAtom2][$atom2][2]
+#                  $mergedAtomSpeciesID[$sAtom1][$sAtom2][$atom2][2]
 #                        = $numSpecies_ref->[$atomElementID_ref->[$found]]
 #                        + $atomSpeciesID_ref->[$atom2];
 #               }
 #
 #               # Record highest species ID for this element found so far.
 #               if ($maxSpeciesID[$atomElementID_ref->[$atom2]] <
-#                   $mergedAtomSpeciesID[$hAtom1][$hAtom2][$atom2][1])
+#                   $mergedAtomSpeciesID[$sAtom1][$sAtom2][$atom2][1])
 #                  {$maxSpeciesID[$atomElementID_ref->[$atom2]]
-#                   = $mergedAtomSpeciesID[$hAtom1][$hAtom2][$atom2][1];}
+#                   = $mergedAtomSpeciesID[$sAtom1][$sAtom2][$atom2][1];}
 #            }
 #
 #            # Correct the bonding atom species ID numbers. (Because these are
 #            #   different molecules, they will be corrected to different ID
 #            #   number even if they are the same element. We have to check for
 #            #   that condition.)
-#            if ($atomElementID_ref->[$bondedAtomNumber1[$hAtom1]] ==
-#                $atomElementID_ref->[$bondedAtomNumber2[$hAtom2]])
+#            if ($atomElementID_ref->[$bondedAtomNumber1[$sAtom1]] ==
+#                $atomElementID_ref->[$bondedAtomNumber2[$sAtom2]])
 #               {$mol2Shift = 2;}
 #            else
 #               {$mol2Shift = 1;)
 #
 #            # Assign new species IDs for the bonded atoms.
-#            $tempBonded = $bondedAtomNumber1[$hAtom1];
-#            $mergedAtomSpeciesID[$hAtom1][$hAtom2][$tempBonded][2]
+#            $tempBonded = $bondedAtomNumber1[$sAtom1];
+#            $mergedAtomSpeciesID[$sAtom1][$sAtom2][$tempBonded][2]
 #                  = $maxSpeciesID[$atomElementID_ref->[$tempBonded]] + 1;
-#            $tempBonded = $bondedAtomNumber2[$hAtom1];
-#            $mergedAtomSpeciesID[$hAtom1][$hAtom2][$tempBonded][2]
+#            $tempBonded = $bondedAtomNumber2[$sAtom1];
+#            $mergedAtomSpeciesID[$sAtom1][$sAtom2][$tempBonded][2]
 #                  = $maxSpeciesID[$atomElementID_ref->[$tempBonded]]
 #                  + $mol2Shift;
 #         }
@@ -1575,15 +1625,15 @@ sub catalogElemSpecMolID
 #         #   or the next subroutine if this is the last iteration.
 #         StructureControl::reset();
 #
-#      } # hAtom2 loop
-#   } # hAtom1 loop
+#      } # sAtom2 loop
+#   } # sAtom1 loop
 #}
 
 # This subroutine will read each of the merged molecule files in the "merged"
 #   directory and will produce a new file for each in the "pruned" directory.
 #   The new file will simply be a pruned version of the merged molecule file.
 #   Pruning refers to the act of removing atoms that are a sufficient number of
-#   hops (defined by the chain length variable) away from the reacting H atoms.
+#   hops (defined by the chain length variable) away from the reacting S atoms.
 # One of the tasks to be executed here includes reading a bondAnalysis.bl file
 #   and constructing a representation of the data contained within. This is
 #   very similar to the activities used to create it in the first place and so
@@ -1601,14 +1651,14 @@ sub pruneMergedMolecule
    my $line;
    my $bond;
    my $atom;
-   my $hAtom1;
-   my $hAtom2;
+   my $sAtom1;
+   my $sAtom2;
    my $numAtoms = $numAtoms1 + $numAtoms2; # Number of atoms in the merged file
    my $numBondRows;
    my $numBondsInRow;
    my $mergedMolFile;
    my $prunedMolFile;
-   my $prunedAtomCount; # Temp indexer for maping merged to pruned hAtom number
+   my $prunedAtomCount; # Temp indexer for maping merged to pruned sAtom number
    my $found;
    my $bondedName;
    my $currBondedName;
@@ -1619,14 +1669,14 @@ sub pruneMergedMolecule
    mkdir "pruned";
 
    $numUniqueBondedNames = 0;
-   foreach $hAtom1 (1..$numHAtoms1)
+   foreach $sAtom1 (1..$numSAtoms1)
    {
-      foreach $hAtom2 (1..$numHAtoms2)
+      foreach $sAtom2 (1..$numSAtoms2)
       {
-         # Produce a name that identifies the atom pair bonded to the H atoms.
+         # Produce a name that identifies the atom pair bonded to the S atoms.
          $currBondedName =
-               "$bondedElemName1[$hAtom1] $bondedSpecies1[$hAtom1] " .
-               "$bondedElemName2[$hAtom2] $bondedSpecies2[$hAtom2]";
+               "$bondedElemName1[$sAtom1] $bondedSpecies1[$sAtom1] " .
+               "$bondedElemName2[$sAtom2] $bondedSpecies2[$sAtom2]";
 
          # Determine if this bonded name is unique so far.
          $found = 0;
@@ -1644,7 +1694,7 @@ sub pruneMergedMolecule
             {$uniqueBondedNames[++$numUniqueBondedNames] = $currBondedName;}
 
          # Compute the bond analysis for this merged molecule.
-         $mergedMolFile = "olcao_" . $hAtom1 . "_" . $hAtom2 . ".skl";
+         $mergedMolFile = "olcao_" . $sAtom1 . "_" . $sAtom2 . ".skl";
          system("bondAnalysis -i merged/$mergedMolFile -bl -bf 1.1");
 
          # Read the bondAnalysis.bl file.
@@ -1654,49 +1704,51 @@ sub pruneMergedMolecule
          $numBonds_ref = StructureControl::getNumBondsRef;
          $bonded_ref = StructureControl::getBondingListRef;
 
-         # New we need to prune this molecule. We start off by assuming that no
-         #   atoms will be kept and we then traverse from the current H atoms
-         #   away from the other H atom.
+         # Now we need to prune this molecule. We start off by assuming that no
+         #   atoms will be kept and we then traverse from the current S atom
+         #   away from the other S atom.
 
-         # Assume that no atoms are retained except for the current H atoms.
+         # Assume that no atoms are retained except for the current S atoms.
          #   Also, initialize the number of edge atoms.
-         $numEdgeIDs[$hAtom1][$hAtom2] = 0;
+         $numEdgeIDs[$sAtom1][$sAtom2] = 0;
          foreach $atom (1..$numAtoms)
             {$keepAtom[$atom] = 0;}
-         $keepAtom[$mergedHAtomNumber1[$hAtom1]] = 1;
-         $keepAtom[$mergedHAtomNumber2[$hAtom2]] = 1;
+         $keepAtom[$mergedSAtomNumber1[$sAtom1]] = 1;
+         $keepAtom[$mergedSAtomNumber2[$sAtom2]] = 1;
 
          # Perform a depth-first search of the data structure. Mark all atoms
          #   that are within the chain length as ones that should be kept. Note
-         #   that we have to call it twice, once for each H atom with different
+         #   that we have to call it twice, once for each S atom with different
          #   chain lengths so that the two original molecules can be treated
          #   differently if needed. There should be no cross-over because the
-         #   only place the two molecules "bond" is through the H atoms and
+         #   only place the two molecules "bond" is through the S atoms and
          #   they are initialized as keepers so that the algorithm will not
          #   attempt to "pass through" them. After the first depth-first search
          #   we have the number of pruned atoms for the first molecule and
          #   after the second depth-first search we have the total number and
          #   can compute the number of pruned atoms for the second molecule.
 
-         # Initialize the number of pruned atoms to 2 (the two H atoms).
-         $prunedNumAtoms[$hAtom1][$hAtom2] = 2;
+         # Initialize the number of pruned atoms to 2 (the two S atoms). Recall
+         #   that this is the number of atoms *left* in the molecule *after*
+         #   pruning occurs. It is *not* the number of atoms *to prune away*.
+         $prunedNumAtoms[$sAtom1][$sAtom2] = 2;
 
          # Probe the first molecule.
-         &markAtomsToKeep($chainLen1,$mergedHAtomNumber1[$hAtom1],
-            $hAtom1,$hAtom2);
+         &markAtomsToKeep($chainLen1,$mergedSAtomNumber1[$sAtom1],
+            $sAtom1,$sAtom2);
 
          # Compute the number of atoms in the pruned first molecule.
-         $prunedNumAtoms1[$hAtom1][$hAtom2] =
-            $prunedNumAtoms[$hAtom1][$hAtom2] - 1; # - mol2 H
+         $prunedNumAtoms1[$sAtom1][$sAtom2] =
+            $prunedNumAtoms[$sAtom1][$sAtom2] - 1; # - mol2 S
 
          # Probe the second molecule.
-         &markAtomsToKeep($chainLen2,$mergedHAtomNumber2[$hAtom2],
-            $hAtom1,$hAtom2);
+         &markAtomsToKeep($chainLen2,$mergedSAtomNumber2[$sAtom2],
+            $sAtom1,$sAtom2);
 
          # Compute the number of atoms in the pruned second molecule.
-         $prunedNumAtoms2[$hAtom1][$hAtom2] =
-            $prunedNumAtoms[$hAtom1][$hAtom2] -
-            $prunedNumAtoms1[$hAtom1][$hAtom2];
+         $prunedNumAtoms2[$sAtom1][$sAtom2] =
+            $prunedNumAtoms[$sAtom1][$sAtom2] -
+            $prunedNumAtoms1[$sAtom1][$sAtom2];
 
          # At this point we can create a new "pruned" skeleton file. It will
          #   have the same name as the merged file, but it will be stored in a
@@ -1717,11 +1769,11 @@ sub pruneMergedMolecule
             if ($values[0] =~ /cartesian/)
             {
                # Print a new cartesian line with the pruned number of atoms.
-               print PRUNE "cartesian $prunedNumAtoms[$hAtom1][$hAtom2]\n";
+               print PRUNE "cartesian $prunedNumAtoms[$sAtom1][$sAtom2]\n";
 
                # Go through all the atoms in the merged file and omit those
                #   that were pruned. Along the way we need to map the old
-               #   H atom index number to a new pruned H atom index number.
+               #   S atom index number to a new pruned S atom index number.
                $prunedAtomCount = 0;
                foreach $atom (1..$numAtoms)
                {
@@ -1734,48 +1786,48 @@ sub pruneMergedMolecule
 
                   # Map the specialty index numbers of atoms in the merged file
                   #   into the pruned counterpart data arrays.
-                  if ($atom == $mergedHAtomNumber1[$hAtom1])
-                     {$prunedHAtomNumber1[$hAtom1][$hAtom2] = $prunedAtomCount;}
-                  elsif ($atom == $mergedHAtomNumber2[$hAtom2])
-                     {$prunedHAtomNumber2[$hAtom1][$hAtom2] = $prunedAtomCount;}
-                  elsif ($atom == $triggerAtomNumber1[$hAtom1])
-                     {$prunedTriggerAtomNumber1[$hAtom1][$hAtom2]
+                  if ($atom == $mergedSAtomNumber1[$sAtom1])
+                     {$prunedSAtomNumber1[$sAtom1][$sAtom2] = $prunedAtomCount;}
+                  elsif ($atom == $mergedSAtomNumber2[$sAtom2])
+                     {$prunedSAtomNumber2[$sAtom1][$sAtom2] = $prunedAtomCount;}
+                  elsif ($atom == $triggerAtomNumber1[$sAtom1])
+                     {$prunedTriggerAtomNumber1[$sAtom1][$sAtom2]
                            = $prunedAtomCount;}
-                  elsif ($atom == $triggerAtomNumber2[$hAtom2])
-                     {$prunedTriggerAtomNumber2[$hAtom1][$hAtom2]
-                           = $prunedAtomCount;}
-
-                  if ($atom == $bondedAtomNumber1[$hAtom1])
-                     {$prunedBondedAtomNumber1[$hAtom1][$hAtom2]
-                           = $prunedAtomCount;}
-                  elsif ($atom == $bondedAtomNumber2[$hAtom2])
-                     {$prunedBondedAtomNumber2[$hAtom1][$hAtom2]
+                  elsif ($atom == $triggerAtomNumber2[$sAtom2])
+                     {$prunedTriggerAtomNumber2[$sAtom1][$sAtom2]
                            = $prunedAtomCount;}
 
-                  foreach $id (1..$numEdgeIDs[$hAtom1][$hAtom2])
+                  if ($atom == $bondedAtomNumber1[$sAtom1])
+                     {$prunedBondedAtomNumber1[$sAtom1][$sAtom2]
+                           = $prunedAtomCount;}
+                  elsif ($atom == $bondedAtomNumber2[$sAtom2])
+                     {$prunedBondedAtomNumber2[$sAtom1][$sAtom2]
+                           = $prunedAtomCount;}
+
+                  foreach $id (1..$numEdgeIDs[$sAtom1][$sAtom2])
                   {
-                     if ($atom == $edgeID[$id][$hAtom1][$hAtom2])
+                     if ($atom == $edgeID[$id][$sAtom1][$sAtom2])
                      {
-                        $prunedEdgeID[$id][$hAtom1][$hAtom2] = $prunedAtomCount;
+                        $prunedEdgeID[$id][$sAtom1][$sAtom2] = $prunedAtomCount;
                         last;
                      }
                   }
 
                   # Map the species ID numbers of all pruned atoms.
-                  foreach $id (1..$mergedNumDelAtoms[$hAtom1][$hAtom2])
+                  foreach $id (1..$mergedNumDelAtoms[$sAtom1][$sAtom2])
                   {
-                     if ($atom == $mergedDelTree[$hAtom1][$hAtom2][$id])
-                        {$prunedDelTree[$hAtom1][$hAtom2][$id] =
+                     if ($atom == $mergedDelTree[$sAtom1][$sAtom2][$id])
+                        {$prunedDelTree[$sAtom1][$sAtom2][$id] =
                            $prunedAtomCount;}
                   }
-                  $prunedAtomElemName[$hAtom1][$hAtom2][$prunedAtomCount]
-                        = $mergedAtomElemName[$hAtom1][$hAtom2][$atom];
-                  $prunedAtomSpeciesID[$hAtom1][$hAtom2][$prunedAtomCount][1]
-                        = $mergedAtomSpeciesID[$hAtom1][$hAtom2][$atom][1];
-                  $prunedAtomSpeciesID[$hAtom1][$hAtom2][$prunedAtomCount][2]
-                        = $mergedAtomSpeciesID[$hAtom1][$hAtom2][$atom][2];
-                  $prunedAtomMolName[$hAtom1][$hAtom2][$prunedAtomCount]
-                        = $mergedAtomMolName[$hAtom1][$hAtom2][$atom];
+                  $prunedAtomElemName[$sAtom1][$sAtom2][$prunedAtomCount]
+                        = $mergedAtomElemName[$sAtom1][$sAtom2][$atom];
+                  $prunedAtomSpeciesID[$sAtom1][$sAtom2][$prunedAtomCount][1]
+                        = $mergedAtomSpeciesID[$sAtom1][$sAtom2][$atom][1];
+                  $prunedAtomSpeciesID[$sAtom1][$sAtom2][$prunedAtomCount][2]
+                        = $mergedAtomSpeciesID[$sAtom1][$sAtom2][$atom][2];
+                  $prunedAtomMolName[$sAtom1][$sAtom2][$prunedAtomCount]
+                        = $mergedAtomMolName[$sAtom1][$sAtom2][$atom];
 
                }
             }
@@ -1795,8 +1847,8 @@ sub pruneMergedMolecule
 #   my $currentChainPoint = $_[0];
 #   my $maxChainLen = $_[1];
 #   my $currentAtom = $_[2];
-#   my $hAtom1 = $_[3];
-#   my $hAtom2 = $_[4];
+#   my $sAtom1 = $_[3];
+#   my $sAtom2 = $_[4];
 #
 #   # Define local variables.
 #   my $bond;
@@ -1809,7 +1861,7 @@ sub pruneMergedMolecule
 #   if ($keepAtom[$currentAtom] == 0)
 #   {
 #      $keepAtom[$currentAtom] = 1;
-#      $prunedNumAtoms[$hAtom1][$hAtom2]++;
+#      $prunedNumAtoms[$sAtom1][$sAtom2]++;
 #   }
 #
 #   # If the current chain point is equal to the maximum allowed chain length,
@@ -1818,8 +1870,8 @@ sub pruneMergedMolecule
 #   #   we record them.
 #   if (($currentChainPoint == $maxChainLen) and ($keepAtom[$currentAtom] == 1))
 #   {
-#      $numEdgeIDs[$hAtom1][$hAtom2]++;
-#      $edgeID[$numEdgeIDs[$hAtom1][$hAtom2]][$hAtom1][$hAtom2] = $currentAtom;
+#      $numEdgeIDs[$sAtom1][$sAtom2]++;
+#      $edgeID[$numEdgeIDs[$sAtom1][$sAtom2]][$sAtom1][$sAtom2] = $currentAtom;
 #      return 0;
 #   }
 #   else
@@ -1831,18 +1883,20 @@ sub pruneMergedMolecule
 #         if ($keepAtom[$bonded_ref->[$currentAtom][$bond]] == 0)
 #            {
 #               &markAtomsToKeep($currentChainPoint+1,$maxChainLen,
-#                  $bonded_ref->[$currentAtom][$bond],$hAtom1,$hAtom2);}
+#                  $bonded_ref->[$currentAtom][$bond],$sAtom1,$sAtom2);}
 #      }
 #   }
 #}
 
+# Depth first search of the bonding network to identify atoms that should not
+#   be pruned away to create the merged and pruned molecule.
 sub markAtomsToKeep
 {
    # Define passed parameters.
    my $maxChainLen = $_[0];
    my $currentAtom = $_[1];
-   my $hAtom1 = $_[2];
-   my $hAtom2 = $_[3];
+   my $sAtom1 = $_[2];
+   my $sAtom2 = $_[3];
 
    # Define local variables.
    my $bond;
@@ -1852,26 +1906,36 @@ sub markAtomsToKeep
    my @chainLevel;
    my $currentChainLevel;
 
-   # Add all bonded neighbors with keep==0 to queue.
-
-   # While queue is not empty
-   #    Shift from the queue.
-   #    Increase the currentChainPoint (ccp) by 1.
-   #    Increase pruned num atoms
-   #    If keep==1 reduce the ccp by one and then do nothing.
-   #    If keep==0 set keep = 1
-   #    If ccp is < maxCCP
-   #       then add all bonded neighbors with keep==0 to queue
-   #       else add self to edge to list
-   #
+   # Only the trigger atoms will have a non-zero keep value when this
+   #   subroutine is called. (They have a value of 1.) The neighbors that are
+   #   bonded to the trigger atoms with keep==0 need to be added to the queue
+   #   along with a record of their chain level (which will be 2).
+   # This is the initialization process.
    $currentChainLevel = 2;
    foreach $bond (1..$numBonds_ref->[$currentAtom])
    {
       if ($keepAtom[$bonded_ref->[$currentAtom][$bond]] == 0)
       {
          push(@chainLevel,$currentChainLevel);
-         push(@queue,$bonded_ref->[$currentAtom][$bond]);}
+         push(@queue,$bonded_ref->[$currentAtom][$bond]);
+      }
    }
+
+   # While queue is not empty:
+   #    Shift the current atom and chain level from the queue.
+   #    If keep==0 and we are withing chain length then mark atom to keep it.
+   #    Otherwise, we found an atom beyond the chain length or that has
+   #       already been identified as a keeper so we can skip to the next item
+   #       in the queue.
+   #
+   #    If we didn't skip to the next queue item we decide if we are within
+   #       the chain length or at the end of it.
+   #
+   #    If we are within the chain length the add each bonded atom (that isn't
+   #       already a keeper and isn't in the queue) to the queue.
+   #    Otherwise we are at the end of the chain and we mark this atom as an
+   #       edge and record it as so.
+   #
    while (@queue)
    {
       $currentAtom = shift(@queue);
@@ -1879,12 +1943,15 @@ sub markAtomsToKeep
       if (($keepAtom[$currentAtom] == 0) and
           ($currentChainLevel <= $maxChainLen))
       {
+         # Mark this atom as a keeper and increment the number of atoms that
+         #   will be retained after pruning.
          $keepAtom[$currentAtom] = 1;
-         $prunedNumAtoms[$hAtom1][$hAtom2]++;
+         $prunedNumAtoms[$sAtom1][$sAtom2]++;
       }
       else
          {next;}
 
+      # 
       if ($currentChainLevel < $maxChainLen)
       {
          foreach $bond (1..$numBonds_ref->[$currentAtom])
@@ -1898,15 +1965,17 @@ sub markAtomsToKeep
 
             if (($keepAtom[$bonded_ref->[$currentAtom][$bond]] == 0) and
                 ($found == -1))
-               {push(@chainLevel,$currentChainLevel+1);
-               push(@queue,$bonded_ref->[$currentAtom][$bond]);}
+            {
+               push(@chainLevel,$currentChainLevel+1);
+               push(@queue,$bonded_ref->[$currentAtom][$bond]);
+            }
          }
             
       }
-      else
+      else # Identify the edge atom.
       {
-         $numEdgeIDs[$hAtom1][$hAtom2]++;
-         $edgeID[$numEdgeIDs[$hAtom1][$hAtom2]][$hAtom1][$hAtom2]
+         $numEdgeIDs[$sAtom1][$sAtom2]++;
+         $edgeID[$numEdgeIDs[$sAtom1][$sAtom2]][$sAtom1][$sAtom2]
                = $currentAtom;
       }
    }
@@ -1914,10 +1983,10 @@ sub markAtomsToKeep
 
 # The reaction requires a pre- and a post-reaction template as well as a map
 #   file that relates the two.
-#   (1) The pre-reaction template requires nearby H-H atoms from different
+#   (1) The pre-reaction template requires nearby S-S atoms from different
 #       molecules (with no bonds between the molecules).
-#   (2) The post-reaction template deletes those H atoms and then binds the two
-#       (now bare) atoms that the H atoms were bonded to.
+#   (2) The post-reaction template deletes those S atoms and then binds the two
+#       (now bare) atoms that the S atoms were bonded to.
 #
 # Pre-reaction template:
 #
@@ -1925,20 +1994,20 @@ sub markAtomsToKeep
 #   all bonds among atoms of the originally distinct molecules, but it will
 #   not have any bonds that connect the two originally distinct molecules. All
 #   elements (masses) and all types will be assigned as per the pruned skeleton
-#   file. For the reaction to occur in the simulation, then an H atom from
-#   one molecule will need to be in close proximity to an H atom from the other
+#   file. For the reaction to occur in the simulation, then an S atom from
+#   one molecule will need to be in close proximity to an S atom from the other
 #   molecule. (There are no bonds between the molecules at this time.) All
 #   bonds and bond angles within each pruned molecule are given explicitly.
 #
 # Post-reaction template:
 #
 # This template will contain all the same atoms as in the pre-reaction
-#   template. However, all bonds and bond angles that used to include either H
+#   template. However, all bonds and bond angles that used to include either S
 #   atom will now be removed. Presently, one new bond between the now bare
-#   atoms that were bonded to the H atoms is added but no new bond angles are
+#   atoms that were bonded to the S atoms is added but no new bond angles are
 #   added. So, the newly bonded molecules may be somewhat floppy until that is
 #   fixed. A tricky aspect though is that the *types* of the atoms and bonds
-#   will be changed. The type of the atom that was bonded to the H atom will
+#   will be changed. The type of the atom that was bonded to the S atom will
 #   be changed, as will the type of the bond that it had with any neighbor.
 #   This will re-define the topology of the combined molecule.
 #
@@ -1948,7 +2017,7 @@ sub markAtomsToKeep
 #   reaction template. Therefore, there will be one equivalency for each atom
 #   and the equivalencies will all be of the type 1 1, 2 2, 3 3, etc. The
 #   bonding IDs will be the atom numbers of the two atoms that were bonded to
-#   the H atoms. The H atoms will be classified as DeleteIDs. The edge IDs will
+#   the S atoms. The S atoms will be classified as DeleteIDs. The edge IDs will
 #   be all edges that were found when pruning the molecule.
 sub makeReactionTemplates
 {
@@ -1994,8 +2063,8 @@ sub makeReactionTemplates
    my $angleAtom;
    my $hookeAngle;
    my $element;
-   my $hAtom1;
-   my $hAtom2;
+   my $sAtom1;
+   my $sAtom2;
    my $bondCount;
    my $angleCount;
    my $speciesCount;
@@ -2048,16 +2117,16 @@ sub makeReactionTemplates
    # Create a directory to store the templates.
    mkdir "rxnTemplates";
 
-   # Loop over all hAtom pairs.
+   # Loop over all sAtom pairs.
    $numUniqueBondedNames = 0;
-   foreach $hAtom1 (1..$numHAtoms1)
+   foreach $sAtom1 (1..$numSAtoms1)
    {
-      foreach $hAtom2 (1..$numHAtoms2)
+      foreach $sAtom2 (1..$numSAtoms2)
       {
          # Produce a name that identifies the binding atom pair.
          $currBondedName =
-               "$bondedElemName1[$hAtom1] $bondedSpecies1[$hAtom1] " .
-               "$bondedElemName2[$hAtom2] $bondedSpecies2[$hAtom2]";
+               "$bondedElemName1[$sAtom1] $bondedSpecies1[$sAtom1] " .
+               "$bondedElemName2[$sAtom2] $bondedSpecies2[$sAtom2]";
 
          # Determine if this bonded name is unique so far.
          $found = 0;
@@ -2075,7 +2144,7 @@ sub makeReactionTemplates
             {$uniqueBondedNames[++$numUniqueBondedNames] = $currBondedName;}
 
          # Define the file name for the pruned molecule.
-         $prunedMolFile = "olcao_" . $hAtom1 . "_" . $hAtom2 . ".skl";
+         $prunedMolFile = "olcao_" . $sAtom1 . "_" . $sAtom2 . ".skl";
 
          # Read the skeleton file and extract useful data and references.
          StructureControl::readInputFile("pruned/$prunedMolFile",1);
@@ -2092,7 +2161,7 @@ sub makeReactionTemplates
 
 #         # Read the bondAnalysis.bl file.
 #         StructureControl::readBondAnalysisBL("bondAnalysis.bl",
-#            $prunedNumAtoms[$hAtom1][$hAtom2]);
+#            $prunedNumAtoms[$sAtom1][$sAtom2]);
          open (BOND,"<bondAnalysis.bl")
                || die "Cannot open bondAnalysis.bl for reading.\n";
 
@@ -2109,7 +2178,7 @@ sub makeReactionTemplates
             $currAtom = $values2[1];
             $atomTag = "$atomElementName_ref->[$currAtom] ".
                   "$atomSpeciesID_ref->[$currAtom]";
-            if ($currAtom <= $prunedNumAtoms1[$hAtom1][$hAtom2])
+            if ($currAtom <= $prunedNumAtoms1[$sAtom1][$sAtom2])
                {$atomTag = "$atomTag" . " $molName1";}
             else
                {$atomTag = "$atomTag" . " $molName2";}
@@ -2130,13 +2199,13 @@ sub makeReactionTemplates
                   $bondedAtomTag = "$atomElementName_ref->[$values2[1]] ".
                         "$atomSpeciesID_ref->[$values2[1]]";
 
-                  # Reject any bonds (H-H) between molecules.
-                  if (&checkBonding($currAtom,$bondIndex,$hAtom1,$hAtom2,
+                  # Reject any bonds (S-S) between molecules.
+                  if (&checkBonding($currAtom,$bondIndex,$sAtom1,$sAtom2,
                         \@bonded) != 1)
                      {$bondIndex--;$numBonds[$currAtom]--;next;}
 
                   # Incorporate the molecule name into the tag.
-                  if ($values2[1] <= $prunedNumAtoms1[$hAtom1][$hAtom2])
+                  if ($values2[1] <= $prunedNumAtoms1[$sAtom1][$sAtom2])
                      {$bondedAtomTag = "$bondedAtomTag" . " $molName1";}
                   else
                      {$bondedAtomTag = "$bondedAtomTag" . " $molName2";}
@@ -2177,7 +2246,7 @@ sub makeReactionTemplates
 
 #         # Read the bondAnalysis.ba file.
 #         StructureControl::readBondAnalysisBA("bondAnalysis.ba",
-#            $prunedNumAtoms[$hAtom1][$hAtom2]);
+#            $prunedNumAtoms[$sAtom1][$sAtom2]);
 
          # Assume that all atoms have zero bond angles.
          foreach $atom (1..$numAtoms)
@@ -2202,7 +2271,7 @@ sub makeReactionTemplates
             $currAtom = $values[0];
             $numBondAngles[$currAtom] = $values[4];
             $numAnglesTotal += $numBondAngles[$currAtom];
-            if ($currAtom <= $prunedNumAtoms1[$hAtom1][$hAtom2])
+            if ($currAtom <= $prunedNumAtoms1[$sAtom1][$sAtom2])
                {$currMol = $molName1;}
             else
                {$currMol = $molName2;}
@@ -2372,7 +2441,7 @@ sub makeReactionTemplates
             # Create an identifier for the current atom.
             $currElemSpecMolName = "$atomElementName_ref->[$atom]" .
                   "$atomSpeciesID_ref->[$atom] ".
-                  "$prunedAtomMolName[$hAtom1][$hAtom2][$atom]";
+                  "$prunedAtomMolName[$sAtom1][$sAtom2][$atom]";
 
             # Determine if this identifier has been seen before.
             $found = 0;
@@ -2405,9 +2474,9 @@ sub makeReactionTemplates
 
          # Include all bond angles as defined for the molecules before bonding,
          #   and include the same set post-bonding minus any bond angles that
-         #   touched the H atoms in some way.
+         #   touched the S atoms in some way.
          # In the future it might be necessary to *add* bond angles through
-         #   the bonding atoms (after the H are removed), but presently we
+         #   the bonding atoms (after the S are removed), but presently we
          #   do not do that. (Hence the bonded molecules may be too floppy.)
          $phaseNumAngles = 0;
          foreach $atom (1..$numAtoms)
@@ -2428,7 +2497,7 @@ sub makeReactionTemplates
 #                  {next;}
 
                # Exclude any angles that cross between molecules.
-               if (&checkAngleBonding($atom,$angle,$hAtom1,$hAtom2,
+               if (&checkAngleBonding($atom,$angle,$sAtom1,$sAtom2,
                      \@angleBonded) != 1)
                   {next;}
 
@@ -2439,25 +2508,25 @@ sub makeReactionTemplates
                {
                   # Include all bond angles except for any one that includes
                   #   any atom in the delete tree because they will be deleted.
-                  #   Note that it is not possible for either H atom to be a
+                  #   Note that it is not possible for either S atom to be a
                   #   vertex atom and that the only vertex possible for any
-                  #   angle that includes the H atom will be the atom bonded to
-                  #   the H atom.
-#                  if (($atom == $prunedBondedAtomNumber1[$hAtom1][$hAtom2]) and
-#                     (($angleSet[0] == $prunedHAtomNumber1[$hAtom1][$hAtom2])or
-#                      ($angleSet[2] == $prunedHAtomNumber1[$hAtom1][$hAtom2])))
+                  #   angle that includes the S atom will be the atom bonded to
+                  #   the S atom.
+#                  if (($atom == $prunedBondedAtomNumber1[$sAtom1][$sAtom2]) and
+#                     (($angleSet[0] == $prunedSAtomNumber1[$sAtom1][$sAtom2])or
+#                      ($angleSet[2] == $prunedSAtomNumber1[$sAtom1][$sAtom2])))
 #                     {next;}
-#                  if (($atom == $prunedBondedAtomNumber2[$hAtom1][$hAtom2]) and
-#                     (($angleSet[0] == $prunedHAtomNumber2[$hAtom1][$hAtom2])or
-#                      ($angleSet[2] == $prunedHAtomNumber2[$hAtom1][$hAtom2])))
+#                  if (($atom == $prunedBondedAtomNumber2[$sAtom1][$sAtom2]) and
+#                     (($angleSet[0] == $prunedSAtomNumber2[$sAtom1][$sAtom2])or
+#                      ($angleSet[2] == $prunedSAtomNumber2[$sAtom1][$sAtom2])))
 #                     {next;}
 
                   $found = 0;
-                  foreach $id (1..$mergedNumDelAtoms[$hAtom1][$hAtom2])
+                  foreach $id (1..$mergedNumDelAtoms[$sAtom1][$sAtom2])
                   {
-                     if (($atom == $prunedDelTree[$hAtom1][$hAtom2][$id]) or
-                         ($angleSet[0]==$prunedDelTree[$hAtom1][$hAtom2][$id])or
-                         ($angleSet[2]==$prunedDelTree[$hAtom1][$hAtom2][$id]))
+                     if (($atom == $prunedDelTree[$sAtom1][$sAtom2][$id]) or
+                         ($angleSet[0]==$prunedDelTree[$sAtom1][$sAtom2][$id])or
+                         ($angleSet[2]==$prunedDelTree[$sAtom1][$sAtom2][$id]))
                         {$found = 1; last;}
                   }
                   if ($found == 1)
@@ -2492,14 +2561,14 @@ sub makeReactionTemplates
                #   bonds that do not link atoms *within* the molecule so as to
                #   form a loop. (That will kill the bond-react program.) Hence,
                #   any bond to an atom that is 
-               #   that bond directly to the H atom or the atom bonded
-               #   to the H atom from either molecule. That is the most
+               #   that bond directly to the S atom or the atom bonded
+               #   to the S atom from either molecule. That is the most
                #   permissible criterion. In the event that this atom is
                #   that type of bond then we will further constrain the list
                #   according to the particular phase below. (Note that this
                #   subroutine will also discard bonds between the molecules
                #   regardless of the atoms involved.)
-               if (&checkBonding($atom,$bond,$hAtom1,$hAtom2,\@bonded) != 1)
+               if (&checkBonding($atom,$bond,$sAtom1,$sAtom2,\@bonded) != 1)
                   {next;}
 
                # Consider each phase and keep the needed bonds.
@@ -2508,24 +2577,24 @@ sub makeReactionTemplates
                elsif ($rxnPhase == 2)
                {
                   # Include all bonds except for any one from a molecule to
-                  #   its H atom.
+                  #   its S atom.
                   $found = 0;
-                  foreach $id (1..$mergedNumDelAtoms[$hAtom1][$hAtom2])
+                  foreach $id (1..$mergedNumDelAtoms[$sAtom1][$sAtom2])
                   {
-                     if (($atom == $prunedDelTree[$hAtom1][$hAtom2][$id]) or
+                     if (($atom == $prunedDelTree[$sAtom1][$sAtom2][$id]) or
                          ($bonded[$atom][$bond] ==
-                          $prunedDelTree[$hAtom1][$hAtom2][$id]))
+                          $prunedDelTree[$sAtom1][$sAtom2][$id]))
                         {$found = 1; last;}
                   }
                   if ($found == 1)
                      {next;}
-#                  if (($atom == $prunedHAtomNumber1[$hAtom1][$hAtom2]) or
-#                      ($atom == $prunedHAtomNumber2[$hAtom1][$hAtom2]))
+#                  if (($atom == $prunedSAtomNumber1[$sAtom1][$sAtom2]) or
+#                      ($atom == $prunedSAtomNumber2[$sAtom1][$sAtom2]))
 #                     {last;} # Don't check any more bonds for this atom.
 #                  elsif (($bonded[$atom][$bond] ==
-#                          $prunedHAtomNumber1[$hAtom1][$hAtom2]) or
+#                          $prunedSAtomNumber1[$sAtom1][$sAtom2]) or
 #                         ($bonded[$atom][$bond] ==
-#                          $prunedHAtomNumber2[$hAtom1][$hAtom2]))
+#                          $prunedSAtomNumber2[$sAtom1][$sAtom2]))
 #                     {next;}
 #                  else
 #                  {
@@ -2567,12 +2636,12 @@ sub makeReactionTemplates
          $newBondAtom1 = 0;
          $newBondAtom2 = 0;
 
-          # The bond between atoms that used to be bonded to an H atom is
+          # The bond between atoms that used to be bonded to an S atom is
           #   present in the post-reaction template.
          if ($rxnPhase == 2)
          {
-            $newBondAtom1 = $prunedBondedAtomNumber1[$hAtom1][$hAtom2];
-            $newBondAtom2 = $prunedBondedAtomNumber2[$hAtom1][$hAtom2];
+            $newBondAtom1 = $prunedBondedAtomNumber1[$sAtom1][$sAtom2];
+            $newBondAtom2 = $prunedBondedAtomNumber2[$sAtom1][$sAtom2];
          }
 
          # Perform the remaining update actions for the new bond if needed.
@@ -2597,12 +2666,12 @@ sub makeReactionTemplates
 #                  "$atomSpeciesID_ref->[$newBondAtom1] ";
 #            $tempTag2 = "$atomElementName_ref->[$newBondAtom2]".
 #                  "$atomSpeciesID_ref->[$newBondAtom2]";
-            $tempTag1 = "$prunedAtomElemName[$hAtom1][$hAtom2][$newBondAtom1]".
-            " $prunedAtomSpeciesID[$hAtom1][$hAtom2][$newBondAtom1][$rxnPhase]".
-            " $prunedAtomMolName[$hAtom1][$hAtom2][$newBondAtom1]";
-            $tempTag2 = "$prunedAtomElemName[$hAtom1][$hAtom2][$newBondAtom2]".
-            " $prunedAtomSpeciesID[$hAtom1][$hAtom2][$newBondAtom2][$rxnPhase]".
-            " $prunedAtomMolName[$hAtom1][$hAtom2][$newBondAtom2]";
+            $tempTag1 = "$prunedAtomElemName[$sAtom1][$sAtom2][$newBondAtom1]".
+            " $prunedAtomSpeciesID[$sAtom1][$sAtom2][$newBondAtom1][$rxnPhase]".
+            " $prunedAtomMolName[$sAtom1][$sAtom2][$newBondAtom1]";
+            $tempTag2 = "$prunedAtomElemName[$sAtom1][$sAtom2][$newBondAtom2]".
+            " $prunedAtomSpeciesID[$sAtom1][$sAtom2][$newBondAtom2][$rxnPhase]".
+            " $prunedAtomMolName[$sAtom1][$sAtom2][$newBondAtom2]";
             if ("$tempTag1" gt "$tempTag2")
                {$bondTag = "$tempTag2 $tempTag1";}
             else
@@ -2639,17 +2708,17 @@ sub makeReactionTemplates
          # At this point we can define the bonding pair for the map file.
          if ($rxnPhase == 1)
          {
-            $bondingID1 = $prunedTriggerAtomNumber1[$hAtom1][$hAtom2];
-            $bondingID2 = $prunedTriggerAtomNumber2[$hAtom1][$hAtom2];
-#            $bondingID1 = $prunedBondedAtomNumber1[$hAtom1][$hAtom2];
-#            $bondingID2 = $prunedBondedAtomNumber2[$hAtom1][$hAtom2];
+            $bondingID1 = $prunedTriggerAtomNumber1[$sAtom1][$sAtom2];
+            $bondingID2 = $prunedTriggerAtomNumber2[$sAtom1][$sAtom2];
+#            $bondingID1 = $prunedBondedAtomNumber1[$sAtom1][$sAtom2];
+#            $bondingID2 = $prunedBondedAtomNumber2[$sAtom1][$sAtom2];
          }
 
 #         # We can also define the delete pair for the map file.
 #         if ($rxnPhase == 1)
 #         {
-#            $deleteID1 = $prunedHAtomNumber1[$hAtom1][$hAtom2];
-#            $deleteID2 = $prunedHAtomNumber2[$hAtom1][$hAtom2];
+#            $deleteID1 = $prunedSAtomNumber1[$sAtom1][$sAtom2];
+#            $deleteID2 = $prunedSAtomNumber2[$sAtom1][$sAtom2];
 #         }
 
 
@@ -2657,16 +2726,16 @@ sub makeReactionTemplates
          if ($rxnPhase == 1)
          {
             # All edge IDs obtained earlier will be used except for the
-            #   reacting H atoms of each molecule.
+            #   reacting S atoms of each molecule.
             $phaseNumEdgeIDs = 0;
-            foreach $id (1..$numEdgeIDs[$hAtom1][$hAtom2])
+            foreach $id (1..$numEdgeIDs[$sAtom1][$sAtom2])
             {
-               if (($prunedEdgeID[$id][$hAtom1][$hAtom2] !=
-                    $prunedHAtomNumber1[$hAtom1][$hAtom2]) and
-                   ($prunedEdgeID[$id][$hAtom1][$hAtom2] !=
-                    $prunedHAtomNumber2[$hAtom1][$hAtom2]))
+               if (($prunedEdgeID[$id][$sAtom1][$sAtom2] !=
+                    $prunedSAtomNumber1[$sAtom1][$sAtom2]) and
+                   ($prunedEdgeID[$id][$sAtom1][$sAtom2] !=
+                    $prunedSAtomNumber2[$sAtom1][$sAtom2]))
                   {$phasePrunedEdgeID[++$phaseNumEdgeIDs] =
-                   $prunedEdgeID[$id][$hAtom1][$hAtom2];}
+                   $prunedEdgeID[$id][$sAtom1][$sAtom2];}
             }
          }
 
@@ -2674,12 +2743,12 @@ sub makeReactionTemplates
          # Define the unique file name component.
          $rxnBindingPair =
             $atomElementName_ref->
-               [$prunedBondedAtomNumber1[$hAtom1][$hAtom2]] ."-".
+               [$prunedBondedAtomNumber1[$sAtom1][$sAtom2]] ."-".
             $atomSpeciesID_ref->
-               [$prunedBondedAtomNumber1[$hAtom1][$hAtom2]] ."_".
+               [$prunedBondedAtomNumber1[$sAtom1][$sAtom2]] ."_".
             $atomElementName_ref->
-               [$prunedBondedAtomNumber2[$hAtom1][$hAtom2]] ."-".
-            $atomSpeciesID_ref->[$prunedBondedAtomNumber2[$hAtom1][$hAtom2]];
+               [$prunedBondedAtomNumber2[$sAtom1][$sAtom2]] ."-".
+            $atomSpeciesID_ref->[$prunedBondedAtomNumber2[$sAtom1][$sAtom2]];
 
          # Define the various file names:
          if ($rxnPhase/2 != int($rxnPhase/2))
@@ -2709,9 +2778,9 @@ sub makeReactionTemplates
          {
             $currMass = $atomicMasses_ref->[$atomicZ_ref->[$atom]];
             print OUT "$atom $currMass ".
-               "# $prunedAtomElemName[$hAtom1][$hAtom2][$atom]".
-               " $prunedAtomSpeciesID[$hAtom1][$hAtom2][$atom][$rxnPhase]".
-               " $prunedAtomMolName[$hAtom1][$hAtom2][$atom]\n";
+               "# $prunedAtomElemName[$sAtom1][$sAtom2][$atom]".
+               " $prunedAtomSpeciesID[$sAtom1][$sAtom2][$atom][$rxnPhase]".
+               " $prunedAtomMolName[$sAtom1][$sAtom2][$atom]\n";
          }
 
          print OUT "\nTypes\n\n";
@@ -2719,9 +2788,9 @@ sub makeReactionTemplates
          foreach $atom (1..$numAtoms)
          {
             print OUT "$atom $orderedSpeciesID[$atom] ".
-               "# $prunedAtomElemName[$hAtom1][$hAtom2][$atom]".
-               " $prunedAtomSpeciesID[$hAtom1][$hAtom2][$atom][$rxnPhase]".
-               " $prunedAtomMolName[$hAtom1][$hAtom2][$atom]\n";
+               "# $prunedAtomElemName[$sAtom1][$sAtom2][$atom]".
+               " $prunedAtomSpeciesID[$sAtom1][$sAtom2][$atom][$rxnPhase]".
+               " $prunedAtomMolName[$sAtom1][$sAtom2][$atom]\n";
          }
 
          print OUT "\nBonds\n\n";
@@ -2762,7 +2831,7 @@ sub makeReactionTemplates
                   || die "Cannot open rxnTemplates/$mapFile for writing\n";
             print MAP "# Map file: $mapFile\n\n";
             print MAP "$phaseNumEdgeIDs edgeIDs\n";
-            print MAP "$mergedNumDelAtoms[$hAtom1][$hAtom2] deleteIDs\n";
+            print MAP "$mergedNumDelAtoms[$sAtom1][$sAtom2] deleteIDs\n";
             print MAP "$numAtoms equivalences\n\n";
 
             print MAP "BondingIDs\n\n";
@@ -2770,8 +2839,8 @@ sub makeReactionTemplates
             print MAP "$bondingID2\n\n";
 
             print MAP "DeleteIDs\n\n";
-            foreach $id (1..$mergedNumDelAtoms[$hAtom1][$hAtom2])
-               {print MAP "$prunedDelTree[$hAtom1][$hAtom2][$id]\n";}
+            foreach $id (1..$mergedNumDelAtoms[$sAtom1][$sAtom2])
+               {print MAP "$prunedDelTree[$sAtom1][$sAtom2][$id]\n";}
             print MAP "\n";
 #            print MAP "$deleteID1\n";
 #            print MAP "$deleteID2\n\n";
@@ -2790,7 +2859,7 @@ sub makeReactionTemplates
 }
 
 # This subroutine will determine whether or not a particular bond includes one
-#   of the H atoms or the atom bonded to the H atoms. Only those types of bonds
+#   of the S atoms or the atom bonded to the S atoms. Only those types of bonds
 #   can be included. (I.e., we want to avoid the case of included in the bond
 #   list a bond that is between two edge atoms. That will cause the bond_react
 #   fix to not work.)
@@ -2799,37 +2868,37 @@ sub checkBonding
    # Define passed parameters.
    my $atom = $_[0];
    my $bond = $_[1];
-   my $hAtom1 = $_[2];
-   my $hAtom2 = $_[3];
+   my $sAtom1 = $_[2];
+   my $sAtom2 = $_[3];
    my $bonded_ref = $_[4];
 
    # Make sure that we never include any bond between molecule 1 and molecule
    #   2. The two molecules should be placed "far enough" apart that they
-   #   never have bonds between them. (Including between the H atoms.) However,
+   #   never have bonds between them. (Including between the S atoms.) However,
    #   just to be certain, we do this check. 
-   if ((($atom <= $prunedNumAtoms1[$hAtom1][$hAtom2]) and
-        ($bonded_ref->[$atom][$bond] > $prunedNumAtoms1[$hAtom1][$hAtom2])) or
-       (($atom > $prunedNumAtoms1[$hAtom1][$hAtom2]) and
-        ($bonded_ref->[$atom][$bond] <= $prunedNumAtoms1[$hAtom1][$hAtom2])))
+   if ((($atom <= $prunedNumAtoms1[$sAtom1][$sAtom2]) and
+        ($bonded_ref->[$atom][$bond] > $prunedNumAtoms1[$sAtom1][$sAtom2])) or
+       (($atom > $prunedNumAtoms1[$sAtom1][$sAtom2]) and
+        ($bonded_ref->[$atom][$bond] <= $prunedNumAtoms1[$sAtom1][$sAtom2])))
       {return 0;}
    else # Added this with comments below.
       {return 1;}
 
-#   # Permit the bond if the atom is any one of: H atom from molecule 1 or 2; or
-#   #   the atom bonded to the H atom from molecule 1 or 2.
-#   if (($atom == $prunedHAtomNumber1[$hAtom1][$hAtom2]) or
-#       ($atom == $prunedHAtomNumber2[$hAtom1][$hAtom2]) or
-#       ($atom == $prunedBondedAtomNumber1[$hAtom1][$hAtom2]) or
-#       ($atom == $prunedBondedAtomNumber2[$hAtom1][$hAtom2]))
+#   # Permit the bond if the atom is any one of: S atom from molecule 1 or 2; or
+#   #   the atom bonded to the S atom from molecule 1 or 2.
+#   if (($atom == $prunedSAtomNumber1[$sAtom1][$sAtom2]) or
+#       ($atom == $prunedSAtomNumber2[$sAtom1][$sAtom2]) or
+#       ($atom == $prunedBondedAtomNumber1[$sAtom1][$sAtom2]) or
+#       ($atom == $prunedBondedAtomNumber2[$sAtom1][$sAtom2]))
 #      {return 1;}
 #
 #   # Permit the bond if the bonded atom is any one of the same set from above.
-#   if (($bonded_ref->[$atom][$bond] == $prunedHAtomNumber1[$hAtom1][$hAtom2]) or
-#       ($bonded_ref->[$atom][$bond] == $prunedHAtomNumber2[$hAtom1][$hAtom2]) or
+#   if (($bonded_ref->[$atom][$bond] == $prunedSAtomNumber1[$sAtom1][$sAtom2]) or
+#       ($bonded_ref->[$atom][$bond] == $prunedSAtomNumber2[$sAtom1][$sAtom2]) or
 #       ($bonded_ref->[$atom][$bond]
-#          == $prunedBondedAtomNumber1[$hAtom1][$hAtom2]) or
+#          == $prunedBondedAtomNumber1[$sAtom1][$sAtom2]) or
 #       ($bonded_ref->[$atom][$bond]
-#          == $prunedBondedAtomNumber2[$hAtom1][$hAtom2]))
+#          == $prunedBondedAtomNumber2[$sAtom1][$sAtom2]))
 #      {return 1;}
 #
 #   # In the event that we got here, then we must have a bond that goes between
@@ -2846,25 +2915,25 @@ sub checkAngleBonding
    # Define passed parameters.
    my $atom = $_[0];
    my $angle = $_[1];
-   my $hAtom1 = $_[2];
-   my $hAtom2 = $_[3];
+   my $sAtom1 = $_[2];
+   my $sAtom2 = $_[3];
    my $angleBonded_ref = $_[4];
 
    # Make sure that we never include any angle between molecule 1 and molecule
    #   2. The two molecules should be placed "far enough" apart that they
-   #   never have bonds between them. (Including between the H atoms.) However,
+   #   never have bonds between them. (Including between the S atoms.) However,
    #   just to be certain, we do this check. 
-   if (($atom <= $prunedNumAtoms1[$hAtom1][$hAtom2]) and
+   if (($atom <= $prunedNumAtoms1[$sAtom1][$sAtom2]) and
        (($angleBonded_ref->[$atom][$angle][1] >
-         $prunedNumAtoms1[$hAtom1][$hAtom2]) or
+         $prunedNumAtoms1[$sAtom1][$sAtom2]) or
         ($angleBonded_ref->[$atom][$angle][2] >
-         $prunedNumAtoms1[$hAtom1][$hAtom2])))
+         $prunedNumAtoms1[$sAtom1][$sAtom2])))
       {return 0;}
-   elsif (($atom > $prunedNumAtoms1[$hAtom1][$hAtom2]) and
+   elsif (($atom > $prunedNumAtoms1[$sAtom1][$sAtom2]) and
           (($angleBonded_ref->[$atom][$angle][1] <
-            $prunedNumAtoms1[$hAtom1][$hAtom2]) or
+            $prunedNumAtoms1[$sAtom1][$sAtom2]) or
            ($angleBonded_ref->[$atom][$angle][2] <
-            $prunedNumAtoms1[$hAtom1][$hAtom2])))
+            $prunedNumAtoms1[$sAtom1][$sAtom2])))
       {return 0;}
    else
       {return 1;}
@@ -2902,7 +2971,7 @@ sub checkAngleBonding
 #   $neighborAtom = $bondedAtomNumberA;
 #
 #   # In every one of the new bond angles, one of the non-vertex atoms
-#   #   will be the neighbor to the $hAtom2 atom. We will need to know the
+#   #   will be the neighbor to the $sAtom2 atom. We will need to know the
 #   #   distance to that atom and we don't have it yet so we compute it
 #   #   first.
 #   $sqrDiff = 0;
@@ -2915,7 +2984,7 @@ sub checkAngleBonding
 #   $b = sqrt($sqrDiff);
 #
 #   # Now we can compute the rest of the bond angle data that is dependent
-#   #   on each of the bonds to the neighbor of the vertex $hAtom atom.
+#   #   on each of the bonds to the neighbor of the vertex $sAtom atom.
 #   foreach $bond (1..$numBonds_ref->[$neighborAtom])
 #   {
 #      $currentAtom = $bonded_ref->[$neighborAtom][$bond];

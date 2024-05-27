@@ -8,10 +8,10 @@ subroutine mainSCF (totalEnergy, fromExternal)
    use O_Kinds
    use O_SetupHDF5,       only: accessSetupHDF5, closeSetupHDF5
    use O_MainHDF5,        only: initMainHDF5, closeMainHDF5
-   use O_CommandLine,     only: doDOS, doBond, parseMainCommandLine
+   use O_CommandLine,     only: doDOS, doBond, doDIMO, parseMainCommandLine
    use O_Input,           only: numStates, iterFlagTDOS, parseInput
    use O_Potential,       only: converged, currIteration, lastIteration, spin, &
-                              & initPotCoeffs, cleanUpPotential
+                              & rel, initPotCoeffs, cleanUpPotential
    use O_PotentialUpdate, only: makeSCFPot
    use O_AtomicSites,     only: valeDim, cleanUpAtomSites
    use O_AtomicTypes,     only: cleanUpAtomTypes
@@ -94,7 +94,11 @@ subroutine mainSCF (totalEnergy, fromExternal)
    call flush (7)
 
    ! Note the columns that record energy statistics for each iteration.
-   write (14,*) "Iter.       Kinetic         ElecStat          ExchCorr           Total"
+   if (rel == 0) then
+      write (14,*) "Iter. Kinetic        ElecStat       ExchCorr       Total"
+   else
+      write (14,*) "Iter. Kinetic        MassVel        ElecStat       ExchCorr       Total"
+   endif
    call flush (14)
 
 
@@ -165,7 +169,7 @@ subroutine mainSCF (totalEnergy, fromExternal)
 
    ! Find the Fermi level, the number of occupied bands, and the number of
    !   electrons occupying each of those bands.
-   if ((doDOS .eq. 1) .or. (doBond .eq. 1)) then
+   if ((doDOS == 1) .or. (doBond == 1) .or. (doDIMO == 1)) then
       call populateStates
    endif
 
@@ -190,6 +194,15 @@ subroutine mainSCF (totalEnergy, fromExternal)
          open (unit=11,file='fort.11',status='new',form='formatted')
       endif
       call computeBond
+   endif
+
+   ! Use the dipole moment matrix to compute the dipole.
+   if (doDIMO ==1) then
+      open (unit=74,file='fort.74',status='new',form='formatted')
+      if (spin == 2) then
+         open (unit=75,file='fort.75',status='new',form='formatted')
+      endif
+      call makeValenceRho
    endif
 
    ! Close the HDF objects that were used.
@@ -217,7 +230,9 @@ subroutine mainSCF (totalEnergy, fromExternal)
    call cleanUpKPoints
    call cleanUpExchCorr
    call cleanUpPotential
-   call cleanUpSecularEqn
+   if (doDIMO == 0) then ! Because we already deallocated in makeValence Rho
+      call cleanUpSecularEqn
+   endif
 
    ! Open file to signal completion of the program to the calling olcao script.
    open (unit=2,file='fort.2',status='unknown')

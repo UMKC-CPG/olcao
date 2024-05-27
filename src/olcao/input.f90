@@ -2,6 +2,7 @@ module O_Input
 
    ! Import necessary modules.
    use O_Kinds
+   use O_Constants, only: dim3
 
    ! Make sure that no funny variables are defined.
    implicit none
@@ -38,8 +39,11 @@ module O_Input
    !   value is equal to the standard deviation of g(r) = 1/(sigma sqrt(2Pi))
    !   exp(-r^2 / 2 sigma^2).
 
+   ! Define control variables that apply only for the dipole moment program.
+   real (kind=double), dimension(dim3) :: dipoleCenter
+
    ! Define control variables that apply only to the DOS program.
-   integer :: detailCodePDOS
+   integer :: detailCodePDOS       ! 0=type;1=a total;2=a nl; 3=a nlm.
    real (kind=double) :: deltaDOS  ! Given in eV, stored in a.u.
    real (kind=double) :: sigmaDOS  ! Given in eV, stored in a.u.
    real (kind=double) :: eminDOS   ! Given in eV, stored in a.u.
@@ -56,6 +60,25 @@ module O_Input
    real (kind=double) :: eminBOND   ! Given in eV, stored in a.u.
    real (kind=double) :: emaxBOND   ! Given in eV, stored in a.u.
 
+   ! Define control variables for the usual use of the optc program.
+   real (kind=double) :: deltaOPTC      ! Given in eV, stored in a.u.
+   real (kind=double) :: sigmaOPTC      ! Given in eV, stored in a.u.
+   real (kind=double) :: maxTransEnOPTC ! Given in eV, stored in a.u.
+   real (kind=double) :: cutoffEnOPTC   ! Given in eV, stored in a.u.
+   integer :: detailCodePOPTC           ! 0=NONE;1=elem;2=a tot;3=e nl;4=e nlm
+
+   ! Define control variables that apply to the NLOP use of the optc program.
+   real (kind=double) :: deltaNLOP      ! Given in eV, stored in a.u.
+   real (kind=double) :: sigmaNLOP      ! Given in eV, stored in a.u.
+   real (kind=double) :: maxTransEnNLOP ! Given in eV, stored in a.u.
+   real (kind=double) :: cutoffEnNLOP   ! Given in eV, stored in a.u.
+
+   ! Define control variables that apply to the SIGE use of the optc program.
+   real (kind=double) :: deltaSIGE      ! Given in eV, stored in a.u.
+   real (kind=double) :: sigmaSIGE      ! Given in eV, stored in a.u.
+   real (kind=double) :: maxTransEnSIGE ! Given in eV, stored in a.u.
+   real (kind=double) :: cutoffEnSIGE   ! Given in eV, stored in a.u.
+
    ! Define control variables that apply to the PACS use of the optc program.
    integer :: excitedAtomPACS ! Atom number of the excited atom.
    integer :: firstInitStatePACS
@@ -66,18 +89,6 @@ module O_Input
    real (kind=double) :: energyWindowPACS     ! Given in eV, stored in a.u.
    real (kind=double) :: totalEnergyDiffPACS  ! Given in eV, stored in a.u.
 
-   ! Define control variables for the usual use of the optc program.
-   real (kind=double) :: deltaOPTC      ! Given in eV, stored in a.u.
-   real (kind=double) :: sigmaOPTC      ! Given in eV, stored in a.u.
-   real (kind=double) :: maxTransEnOPTC ! Given in eV, stored in a.u.
-   real (kind=double) :: cutoffEnOPTC   ! Given in eV, stored in a.u.
-
-   ! Define control variables that apply to the SIGE use of the optc program.
-   real (kind=double) :: deltaSIGE      ! Given in eV, stored in a.u.
-   real (kind=double) :: sigmaSIGE      ! Given in eV, stored in a.u.
-   real (kind=double) :: maxTransEnSIGE ! Given in eV, stored in a.u.
-   real (kind=double) :: cutoffEnSIGE   ! Given in eV, stored in a.u.
-
    ! Define control variables that apply only to the field program.
    integer :: doRho ! Flag indicating whether or not to include state
          ! occupancy when making the plot.
@@ -86,6 +97,13 @@ module O_Input
    integer :: doProfileFIELD ! Flag requesting a set of 1D profile files.
    real (kind=double) :: eminFIELD ! Given in eV, stored in a.u.
    real (kind=double) :: emaxFIELD ! Given in eV, stored in a.u.
+
+   ! Define control variables that apply only to the local environment program.
+   integer :: loenCode
+   integer :: twoj1, twoj2
+   integer :: maxNumNeigh
+   real (kind=double) :: cutoffLoEn
+   real (kind=double) :: angleSqueeze ! See notes in loen.f90.
 
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    ! Begin list of module subroutines.!
@@ -143,7 +161,10 @@ subroutine parseInput
    ! Read main input control parameters.
    call readMainControl(readUnit,writeUnit)
 
-   ! Read pdos input control parameters.
+   ! Read dipole moment input control parameters.
+   call readDIMOControl(readUnit,writeUnit)
+
+   ! Read dos input control parameters.
    call readDOSControl(readUnit,writeUnit)
 
    ! Read bond input control parameters.
@@ -158,11 +179,17 @@ subroutine parseInput
    ! Read optc input control parameters.
    call readOptcControl(readUnit,writeUnit)
 
+   ! Read nlop input control parameters.
+   call readNlopControl(readUnit,writeUnit)
+
    ! Read sige input control parameters.
    call readSigeControl(readUnit,writeUnit)
 
    ! Read field input control parameters.
    call readFieldControl(readUnit,writeUnit)
+
+   ! Read local environment (loen) parameters.
+   call readLoEnControl(readUnit,writeUnit)
 
    ! Close the primary input file.
    close(5)
@@ -213,8 +240,8 @@ subroutine readTitle(readUnit,writeUnit)
    implicit none
 
    ! passed parameters
-   integer, intent(in)    :: readUnit   ! The unit number of the file from which
-                                        ! we are reading.
+   integer, intent(in)    :: readUnit   ! The unit number of the file from
+                                        ! which we are reading.
    integer, intent(in)    :: writeUnit  ! The unit number of the file to which
                                         ! we are writing.
 
@@ -244,7 +271,8 @@ subroutine readSharedControl(readUnit,writeUnit)
    use O_Kinds
    use O_Constants, only: hartree
    use O_CommandLine, only: basisCode
-   use O_Lattice, only: logBasisFnThresh, logElecThresh, setCutoffThresh
+   use O_Lattice, only: logBasisFnThresh, logElecThresh, setCutoffThresh, &
+                        spaceGroupNum, spaceGroupSubNum
    use O_ReadDataSubs
 
    ! Make sure no funny variables are defined.
@@ -266,6 +294,11 @@ subroutine readSharedControl(readUnit,writeUnit)
    ! Read the header for this input section.
    call readAndCheckLabel(readUnit,writeUnit,len('SHARED_INPUT_DATA'),&
          & 'SHARED_INPUT_DATA')
+
+
+   ! Read the space group number and subnumber.
+   call readData(readUnit,writeUnit,spaceGroupNum,spaceGroupSubNum,&
+         & len('SPACE_GROUP'),'SPACE_GROUP')
 
 
    ! Read the cutoff values for integrals.  (Used by setup and intg.)
@@ -300,7 +333,7 @@ subroutine readSharedControl(readUnit,writeUnit)
    ! Read the number of states to use for the command line given basis code.
    call readData(readUnit,writeUnit,3,tempArray(:),len('NUM_STATES_TO_USE'),&
          & 'NUM_STATES_TO_USE')
-   numStates = tempArray(basisCode)
+   numStates = int(tempArray(basisCode))
    write (20,*) "Using ",numStates," states."
    call flush (20)
 
@@ -476,6 +509,72 @@ subroutine readMainControl(readUnit,writeUnit)
 end subroutine readMainControl
 
 
+subroutine readDIMOControl(readUnit,writeUnit)
+
+   ! Use necessary modules
+   use O_ReadDataSubs
+
+   implicit none
+
+   ! Passed parameters
+   integer, intent(in)    :: readUnit   ! The unit number of the file from which
+                                        ! we are reading.
+   integer, intent(in)    :: writeUnit  ! The unit number of the file to which
+                                        ! we are writing.
+
+   ! Read the main DIMO label.
+   call readAndCheckLabel(readUnit,writeUnit,len('DIPOLE_INPUT_DATA'),&
+                              'DIPOLE_INPUT_DATA')
+
+   ! Read all the DIMO input data.
+   call readData(readUnit,writeUnit,3,dipoleCenter,len('DIPOLE_CENTER'),&
+         & 'DIPOLE_CENTER')
+
+   ! Note that the given center will need to be converted to Cartesian
+   !   coordinates as part of the implicit information subroutine.
+
+end subroutine readDIMOControl
+
+
+subroutine getDipoleMomentCenter
+
+   use O_Constants, only: hartree
+   use O_Lattice, only: realVectors
+
+   implicit none
+
+   ! Local parameters
+   integer :: xyzAxis, abcAxis
+   real (kind=double), dimension(3) :: posXYZ, fractABC
+
+   ! The dipole moment center that was given in the input was in the form
+   !   of ABC fractional coordinates.
+   fractABC(:) = dipoleCenter(:)
+
+   ! Now, we convert the fractABC to cartesianXYZ coordinates.
+
+   ! Pxyz = atom position in xyz orthogonal coordinates.
+   ! Pabc = atom position in abc fractional coordinates.
+   ! ax ay az = xyz component coefficients of a lattice vector.
+   ! bx by bz = xyz component coefficients of b lattice vector.
+   ! cx cy cz = xyz component coefficients of c lattice vector.
+
+   ! Px = (Pa*ax + Pb*bx + Pc*cx) x
+   ! Py = (Pa*ay + Pb*by + Pc*cy) y
+   ! Pz = (Pa*az + Pb*bz + Pc*cz) z
+
+   ! Convert the given fractional ABC coordinates into cartesian XYZ.
+   do xyzAxis = 1, 3
+      dipoleCenter(xyzAxis) = 0.0d0
+      do abcAxis = 1, 3
+         dipoleCenter(xyzAxis) = dipoleCenter(xyzAxis) + fractABC(abcAxis) * &
+               & realVectors(xyzAxis,abcAxis)
+      enddo
+   enddo
+
+end subroutine getDipoleMomentCenter
+
+
 subroutine readDOSControl(readUnit,writeUnit)
 
    ! Use necessary modules
@@ -646,6 +745,7 @@ subroutine readOptcControl(readUnit,writeUnit)
    call readData(readUnit,writeUnit,maxTransEnOPTC,0,'')
    call readData(readUnit,writeUnit,deltaOPTC,0,'')
    call readData(readUnit,writeUnit,sigmaOPTC,0,'')
+   call readData(readUnit,writeUnit,detailCodePOPTC,0,'')
 
    ! Apply necessary conversions to a.u.
    cutoffEnOPTC   = cutoffEnOPTC / hartree
@@ -655,6 +755,38 @@ subroutine readOptcControl(readUnit,writeUnit)
          & log(2.0_double)))
 
 end subroutine readOptcControl
+
+
+subroutine readNlopControl(readUnit,writeUnit)
+
+   ! Use necessary modules
+   use O_Constants, only: hartree
+   use O_ReadDataSubs
+
+   implicit none
+
+   ! passed parameters
+   integer, intent(in)    :: readUnit   ! The unit number of the file from which
+                                        ! we are reading.
+   integer, intent(in)    :: writeUnit  ! The unit number of the file to which
+                                        ! we are writing.
+
+   ! Read input OPTC control data.
+   call readAndCheckLabel(readUnit,writeUnit,len('NLOP_INPUT_DATA'),&
+         & 'NLOP_INPUT_DATA')
+   call readData(readUnit,writeUnit,cutoffEnNLOP,0,'')
+   call readData(readUnit,writeUnit,maxTransEnNLOP,0,'')
+   call readData(readUnit,writeUnit,deltaNLOP,0,'')
+   call readData(readUnit,writeUnit,sigmaNLOP,0,'')
+
+   ! Apply necessary conversions to a.u.
+   cutoffEnNLOP   = cutoffEnNLOP / hartree
+   maxTransEnNLOP = maxTransEnNLOP / hartree
+   deltaNLOP = deltaNLOP / hartree
+   sigmaNLOP = sigmaNLOP / hartree /(2.0_double*sqrt(2.0_double * &
+         & log(2.0_double)))
+
+end subroutine readNlopControl
 
 
 subroutine readSigeControl(readUnit,writeUnit)
@@ -720,6 +852,43 @@ subroutine readFieldControl(readUnit,writeUnit)
    emaxFIELD = emaxFIELD / hartree
 
 end subroutine readFieldControl
+
+
+subroutine readLoEnControl(readUnit,writeUnit)
+
+   ! Use necessary modules
+   use O_ReadDataSubs
+
+   implicit none
+
+   ! Passed parameters
+   integer, intent(in)    :: readUnit   ! The unit number of the file from which
+                                        ! we are reading.
+   integer, intent(in)    :: writeUnit  ! The unit number of the file to which
+                                        ! we are writing.
+
+   ! Local variables.
+   integer :: temp
+
+   ! Read the input wave function / charge density / potential function
+   !   plotting control variables.
+   call readAndCheckLabel(readUnit,writeUnit,len('LOEN_INPUT_DATA'),&
+         & 'LOEN_INPUT_DATA')
+   call readData(readUnit,writeUnit,loenCode,0,'')
+   call readData(readUnit,writeUnit,twoj1,twoj2,0,'')
+   call readData(readUnit,writeUnit,maxNumNeigh,cutoffLoEn,angleSqueeze,0,'')
+
+   ! Ensure that twoj1 >= twoj2 for convenience when computing the addition of
+   !   the j1, j2 angular momenta later.
+   if (twoj1 < twoj2) then
+      temp = twoj1
+      twoj1 = twoj2
+      twoj2 = temp
+
+      write (6,*) "Swapped twoj1 and twoj2 to ensure twoj1 >= twoj2."
+   endif
+
+end subroutine readLoEnControl
 
 
 end module O_Input

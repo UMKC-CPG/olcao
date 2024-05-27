@@ -20,7 +20,8 @@ module O_ValeCharge
    real (kind=double), allocatable, dimension (:)   :: chargeDensityTrace
    real (kind=double), allocatable, dimension (:)   :: nucPotTrace
    real (kind=double), allocatable, dimension (:)   :: kineticEnergyTrace
-
+   real (kind=double), allocatable, dimension (:)   :: massVelocityTrace
+   real (kind=double), allocatable, dimension (:,:) :: dipoleMomentTrace
 
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    ! Begin list of module subroutines.!
@@ -32,15 +33,18 @@ subroutine makeValenceRho
    ! Import the necessary modules.
    use O_Kinds
    use O_TimeStamps
+   use O_CommandLine,     only: doDIMO
    use O_AtomicSites,     only: valeDim
    use O_Input,           only: numStates
    use O_KPoints,         only: numKPoints
    use O_Constants,       only: smallThresh
-   use O_Potential,       only: spin, potDim, potCoeffs, numPlusUJAtoms
+   use O_Potential,       only: rel, spin, potDim, potCoeffs, numPlusUJAtoms, &
+         & converged
    use O_MainEVecHDF5,    only: valeStates, eigenVectors_did
    use O_Populate,        only: electronPopulation, cleanUpPopulation
    use O_SetupIntegralsHDF5, only: atomOverlap_did, atomKEOverlap_did, &
-         & atomNucOverlap_did, atomPotOverlap_did, atomDims
+         & atomMVOverlap_did, atomNucOverlap_did, atomDMOverlap_did, &
+         & atomPotOverlap_did, atomDims
 #ifndef GAMMA
    use O_BLASZHER
    use O_SecularEquation, only: valeVale, cleanUpSecularEqn, energyEigenValues,&
@@ -113,10 +117,16 @@ subroutine makeValenceRho
          ! it will not be needed again until here.
 
    ! Allocate space to hold the trace of the charge density, nuclear potential,
-   !   and kinetic energy.
+   !   kinetic energy, mass velocity, and dipole moment.
    allocate (chargeDensityTrace(spin))
    allocate (nucPotTrace(spin))
    allocate (kineticEnergyTrace(spin))
+   if (rel == 1) then
+      allocate (massVelocityTrace(spin))
+   endif
+   if ((doDIMO == 1) .and. (converged == 1)) then
+      allocate (dipoleMomentTrace(3, spin))
+   endif
 
    ! Allocate space to hold the currentPopulation based on spin
    allocate (currentPopulation (spin))
@@ -128,6 +138,12 @@ subroutine makeValenceRho
    nucPotTrace(:)        = 0.0_double
    kineticEnergyTrace(:) = 0.0_double
    chargeDensityTrace(:) = 0.0_double
+   if (rel == 1) then
+      massVelocityTrace(:)  = 0.0_double
+   endif
+   if ((doDIMO == 1) .and. (converged == 1)) then
+      dipoleMomentTrace(:,:) = 0.0_double
+   endif
 
    ! Initialize local variables
    electronEnergy(:)     = 0.0_double
@@ -278,14 +294,14 @@ subroutine makeValenceRho
       !   valeVale spin array.
       do j = 1, spin
          call packMatrixGamma(valeValeRhoGamma(:,:,j),&
-            & packedValeValeSpin(:,:,j),valeDim)
+               & packedValeValeSpin(:,:,j),valeDim)
       enddo
 #endif
 
 
       ! Allocate space to hold the overlap matrix. Later, this will also be used
-      !   to read in the Hamiltonian matrix terms (KE, nuclear, and electronic
-      !   potential).
+      !   to read in the Hamiltonian matrix terms (KE, nuclear, electronic
+      !   potential, and (if needed) the mass velocity).
       allocate (packedValeVale(dim1,valeDim*(valeDim+1)/2))
 
       ! Read the overlap matrix into the packedValeVale representation.
@@ -313,7 +329,7 @@ subroutine makeValenceRho
       !   spin polarized case the first index will refer to the total number of
       !   electrons and the second index will refer to the spin difference.
 
-      do j = 1, spin
+      do j = 1, spin ! j=1 -> Total; j=2 -> Difference
 #ifndef GAMMA
          call matrixElementMult (chargeDensityTrace(j),packedValeVale,&
                & packedValeValeSpin(:,:,j),dim1,valeDim)
@@ -327,7 +343,7 @@ subroutine makeValenceRho
       ! Compute the nuclear contribution to the fitted potential first.
       call readPackedMatrix (atomNucOverlap_did(i),packedValeVale,&
             & atomDims,dim1,valeDim)
-      do j = 1, spin
+      do j = 1, spin ! j=1 -> Total; j=2 -> Difference
 #ifndef GAMMA
          call matrixElementMult (nucPotTrace(j),packedValeVale,&
                & packedValeValeSpin(:,:,j),dim1,valeDim)
@@ -340,7 +356,7 @@ subroutine makeValenceRho
       ! Now compute the kinetic energy.
       call readPackedMatrix (atomKEOverlap_did(i),packedValeVale,&
             & atomDims,dim1,valeDim)
-      do j = 1, spin
+      do j = 1, spin ! j=1 -> Total; j=2 -> Difference
 #ifndef GAMMA
          call matrixElementMult (kineticEnergyTrace(j),packedValeVale,&
                & packedValeValeSpin(:,:,j),dim1,valeDim)
@@ -350,11 +366,26 @@ subroutine makeValenceRho
 #endif
       enddo
 
+      ! If needed, compute the mass velocity.
+      if (rel == 1) then
+         call readPackedMatrix (atomMVOverlap_did(i),packedValeVale,&
+               & atomDims,dim1,valeDim)
+         do j = 1, spin ! j=1 -> Total; j=2 -> Difference
+#ifndef GAMMA
+            call matrixElementMult (massVelocityTrace(j),packedValeVale,&
+                  & packedValeValeSpin(:,:,j),dim1,valeDim)
+#else
+            call matrixElementMultGamma (massVelocityTrace(j),packedValeVale,&
+                  & packedValeValeSpin(:,:,j),dim1,valeDim)
+#endif
+         enddo
+      endif
+
       ! Loop over atomic potential terms next.
       do j = 1, potDim
          call readPackedMatrix (atomPotOverlap_did(i,j),packedValeVale,&
                & atomDims,dim1,valeDim)
-         do k = 1, spin
+         do k = 1, spin ! j=1 -> Total; j=2 -> Difference
 #ifndef GAMMA
             call matrixElementMult (potRho(j,k),packedValeVale,&
                   & packedValeValeSpin(:,:,k),dim1,valeDim)
@@ -364,6 +395,24 @@ subroutine makeValenceRho
 #endif
          enddo
       enddo
+
+      ! If needed, compute the dipole moment.
+      if ((doDIMO == 1) .and. (converged == 1)) then
+         do j = 1, 3 ! xyz directions
+
+            call readPackedMatrix (atomDMOverlap_did(i,j),packedValeVale,&
+                      & atomDims,dim1,valeDim)
+            do k = 1, spin
+#ifndef GAMMA
+               call matrixElementMult (dipoleMomentTrace(j,k),packedValeVale,&
+                     & packedValeValeSpin(:,:,k),dim1,valeDim)
+#else
+               call matrixElementMultGamma (dipoleMomentTrace(j,k),packedValeVale,&
+                     & packedValeValeSpin(:,:,k),dim1,valeDim)
+#endif
+            enddo
+         enddo
+      endif
 
       ! Deallocate the space no longer needed.
       deallocate (packedValeVale)
@@ -381,9 +430,14 @@ subroutine makeValenceRho
 
    if (spin == 1) then
 
-      ! Obtain a summation of the electrons
-      sumElecEnergy = sum(potCoeffs(:,1) * potRho(:,1)) + &
-            & kineticEnergyTrace(1) + nucPotTrace(1)
+      ! Obtain a summation of the electrons.
+      if (rel == 0) then
+         sumElecEnergy = sum(potCoeffs(:,1) * potRho(:,1)) + &
+               & kineticEnergyTrace(1) + nucPotTrace(1)
+      else
+         sumElecEnergy = sum(potCoeffs(:,1) * potRho(:,1)) + &
+               & kineticEnergyTrace(1) + massVelocityTrace(1) + nucPotTrace(1)
+      endif
 
 
       ! Write the two electron numbers (both are energy values, but they
@@ -395,22 +449,54 @@ subroutine makeValenceRho
       ! Obtain a summation of the electrons for each spin.
 
       ! Do total plus the spin difference to obtain the spin up.
-      sumElecEnergy = 0.5_double * (sum(potCoeffs(:,1) * &
-            & (potRho(:,1) + potRho(:,2))) + kineticEnergyTrace(1) + &
-            & kineticEnergyTrace(2) + nucPotTrace(1) + nucPotTrace(2))
-      ! Write the two electron numbers (energy, and ???)
+      if (rel == 0) then
+         sumElecEnergy = 0.5_double * (sum(potCoeffs(:,1) * &
+               & (potRho(:,1) + potRho(:,2))) + kineticEnergyTrace(1) + &
+               & kineticEnergyTrace(2) + nucPotTrace(1) + nucPotTrace(2))
+      else
+         sumElecEnergy = 0.5_double * (sum(potCoeffs(:,1) * &
+               & (potRho(:,1) + potRho(:,2))) + kineticEnergyTrace(1) + &
+               & kineticEnergyTrace(2) + massVelocityTrace(1) + &
+               & massVelocityTrace(2) + nucPotTrace(1) + nucPotTrace(2))
+      endif
+      ! Write the two electron numbers. (Both are energy values, but they are
+      !   computed thorugh different means.
       write (20,fmt='(a24,f18.8)') '(UP)   Electron Energy = ',electronEnergy(1)
       write (20,fmt='(a24,f18.8)') '(UP)   Electron Sum    = ',sumElecEnergy
 
 
       ! Do total minus the spin difference to obtain the spin down.
-      sumElecEnergy = 0.5_double * (sum(potCoeffs(:,2) * &
-            & (potRho(:,1) - potRho(:,2))) + kineticEnergyTrace(1) - &
-            & kineticEnergyTrace(2) + nucPotTrace(1) - nucPotTrace(2))
+      if (rel == 0) then
+         sumElecEnergy = 0.5_double * (sum(potCoeffs(:,2) * &
+               & (potRho(:,1) - potRho(:,2))) + kineticEnergyTrace(1) - &
+               & kineticEnergyTrace(2) + nucPotTrace(1) - nucPotTrace(2))
+      else
+         sumElecEnergy = 0.5_double * (sum(potCoeffs(:,2) * &
+               & (potRho(:,1) - potRho(:,2))) + kineticEnergyTrace(1) - &
+               & kineticEnergyTrace(2) + massVelocityTrace(1) - &
+               & massVelocityTrace(2) + nucPotTrace(1) - nucPotTrace(2))
+      endif
+
       ! Write the spin down electronEnergy???
       write (20,fmt='(a24,f18.8)') '(DOWN) Electron Energy = ',electronEnergy(2)
       write (20,fmt='(a24,f18.8)') '(DOWN) Electron Sum    = ',sumElecEnergy
+   endif
 
+
+   ! If the dipole moment calculation was requested, then print it. Note that
+   !   the units of the dipole moment are e * a_0 where e is the electronic
+   !   charge and a_0 is the bohr radius.
+   ! The units of the dipole moment calculation are ea0 where e is the number of 
+   !    valence electrons and a0 is the bohr radius. 
+   if ((doDIMO == 1) .and. (converged == 1)) then
+      write (74,*) "Dipole Moment x-direction: ", dipoleMomentTrace(1,1)
+      write (74,*) "Dipole Moment y-direction: ", dipoleMomentTrace(2,1)
+      write (74,*) "Dipole Moment z-direction: ", dipoleMomentTrace(3,1)
+      if (spin == 2) then
+         write (75,*) "Dipole Moment x-direction: ", dipoleMomentTrace(1,2) 
+         write (75,*) "Dipole Moment y-direction: ", dipoleMomentTrace(2,2)
+         write (75,*) "Dipole Moment z-direction: ", dipoleMomentTrace(3,2)
+      endif
    endif
 
    ! Deallocate arrays associated with the electron population.

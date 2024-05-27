@@ -209,7 +209,7 @@ subroutine computeDOS
    use O_CommandLine, only: doDOS
    use O_Populate,    only: electronPopulation
    use O_KPoints,     only: numKPoints, kPointWeight
-   use O_Constants,   only: pi, hartree, maxOrbitals
+   use O_Constants,   only: pi, hartree, lAngMomCount
    use O_AtomicSites, only: valeDim, numAtomSites, atomSites
    use O_AtomicTypes, only: numAtomTypes, atomTypes, maxNumValeStates
    use O_Input,       only: numStates, sigmaDOS, eminDOS, emaxDOS, deltaDOS, &
@@ -228,8 +228,9 @@ subroutine computeDOS
 
    ! Define local variables.
    integer :: h,i,j,k,l ! Loop index variables
+integer :: m
    character*17 :: formatString
-   character*1, dimension (maxOrbitals) :: QN_lLetter
+   character*1, dimension (lAngMomCount) :: QN_lLetter
    character*14, dimension (4,7) :: QN_mLetter
    integer, allocatable, dimension (:) :: cumulNumDOS
    integer, allocatable, dimension (:) :: pdosIndex ! Given a valence state,
@@ -618,6 +619,14 @@ subroutine computeDOS
                        & real(valeValeOL(:valeDim,valeDimIndex,1,1),double) + &
                        & aimag(waveFnSqrd(:valeDim)) * &
                        & aimag(valeValeOL(:valeDim,valeDimIndex,1,1)))
+!write (22, *) "h, i, j, k, l"
+!write (22, *) h, i, j, k, l
+!write (22, *) "oneValeRealAccum"
+!write (22, *) oneValeRealAccum
+!!write (22, *) "waveFnSqrd, valeValeOL"
+!!do m = 1, valeDim
+!!write (22, *) waveFnSqrd(m), valeValeOL
+!!enddo
 #else
                   ! Compute the square of the wave function for each element.
                   waveFnSqrdGamma(:valeDim) = &
@@ -684,8 +693,9 @@ subroutine computeDOS
                         & kpointWeight(i)
 
                   ! Broaden and store the complete pdos
-                  pdosComplete(:,k) = pdosComplete(:,k) + pdosAccum(:) * &
-                        & expFactor
+                  pdosComplete(1:cumulDOSTotal,k) = &
+                        & pdosComplete(1:cumulDOSTotal,k) &
+                        & + pdosAccum(1:cumulDOSTotal) * expFactor
                endif
             enddo
          enddo ! (j numStates)
@@ -796,6 +806,7 @@ subroutine computeDOS
       if (detailCodePDOS == 0) then
 
          ! Print the key bits of information for the PDOS output.
+         write (69+h,fmt="(a7)") 'STYLE 1'
          write (69+h,fmt="(a10,i6)") 'NUM_UNITS ',numAtomTypes
          write (69+h,fmt="(a11,i9)") 'NUM_POINTS ',numEnergyPoints
 
@@ -821,7 +832,7 @@ subroutine computeDOS
             write (69+h,fmt="(a10,1x,i2)") 'COL_LABELS',finIndex-initIndex+2
             write (69+h,ADVANCE='NO',fmt="(a6)") 'TOTAL '
             numCols = 1
-            do j = 1, maxOrbitals  ! 1=s; 2=p; 3=d; 4=f
+            do j = 1, lAngMomCount  ! 1=s; 2=p; 3=d; 4=f
                do k = 1, atomTypes(i)%numQN_lValeRadialFns(j)
 
                   numCols = numCols + 1
@@ -872,6 +883,7 @@ subroutine computeDOS
       elseif (detailCodePDOS == 1) then
 
          ! Print the key bits of information for the PDOS output.
+         write (69+h,fmt="(a7)") 'STYLE 1'
          write (69+h,fmt="(a10,i6)") 'NUM_UNITS ', numAtomSites
          write (69+h,fmt="(a11,i9)") 'NUM_POINTS ', numEnergyPoints
 
@@ -905,6 +917,7 @@ subroutine computeDOS
       elseif (detailCodePDOS == 2) then
 
          ! Print the key bits of information for the PDOS output.
+         write (69+h,fmt="(a7)") 'STYLE 1'
          write (69+h,fmt="(a10,i6)") 'NUM_UNITS ',numAtomSites
          write (69+h,fmt="(a11,i9)") 'NUM_POINTS ', numEnergyPoints
 
@@ -939,7 +952,7 @@ subroutine computeDOS
             write (69+h,fmt="(a10,1x,i2)") 'COL_LABELS',finIndex-initIndex+2
             write (69+h,ADVANCE='NO',fmt="(a6)") 'TOTAL '
             numCols = 1
-            do j = 1, maxOrbitals
+            do j = 1, lAngMomCount
                do k = 1, atomTypes(currentType)%numQN_lValeRadialFns(j)
 
                   numCols = numCols + 1
@@ -990,6 +1003,7 @@ subroutine computeDOS
       elseif (detailCodePDOS == 3) then
 
          ! Print the key bits of information for the PDOS output.
+         write (69+h,fmt="(a7)") 'STYLE 1'
          write (69+h,fmt="(a10,i6)") 'NUM_UNITS ',numAtomSites
          write (69+h,fmt="(a11,i9)") 'NUM_POINTS ', numEnergyPoints
 
@@ -1024,7 +1038,7 @@ subroutine computeDOS
             write (69+h,fmt="(a10,1x,i2)") 'COL_LABELS',finIndex-initIndex+2
             write (69+h,ADVANCE='NO',fmt="(a6)") 'TOTAL '
             numCols = 1
-            do j = 1, maxOrbitals
+            do j = 1, lAngMomCount
                do k = 1, atomTypes(currentType)%numQN_lValeRadialFns(j)
                   do l = 1, (j-1)*2+1
 

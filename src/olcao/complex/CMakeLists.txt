@@ -5,7 +5,7 @@ message("At the complex OLCAO application.")
 
 # Library for gaussIntegrals.f90
 add_library(GaussIntegrals STATIC ../../kinds.f90 ../../constants.f90
-   ../gaussIntegrals.f90)
+   ../gaussIntegrals.f90 ../gaussIntegrals.vec.f90)
 
 # Library containing common source files that all executables need
 add_library(Common OBJECT ../../kinds.f90 ../../constants.f90
@@ -18,7 +18,8 @@ add_library(Common OBJECT ../../kinds.f90 ../../constants.f90
 
 add_executable(OLCAOsetup $<TARGET_OBJECTS:Common> ../basis.f90 
    ../elecStat.f90 ../intgOrtho.F90 ../intgSaving.F90 ../integralsSCF.F90 
-   ../coreCharge.f90 ../OLCAO_Setup.f90 ../OLCAO_SetupWrap.f90 )
+   ../integralsSCF3Terms.F90 ../coreCharge.f90 ../OLCAO_Setup.f90
+   ../OLCAO_SetupWrap.f90 )
 target_link_libraries(OLCAOsetup GaussIntegrals)
 
 add_executable(OLCAOmain $<TARGET_OBJECTS:Common> ../hdf5MainEval.f90 
@@ -63,5 +64,9 @@ add_executable(OLCAOfield $<TARGET_OBJECTS:Common> ../basis.f90
    ../secularEqn.F90 ../populate.F90 ../openDX.f90 ../xdmf_vtk.f90 ../field.F90
    ../OLCAO_Field.f90 )
 
+add_executable(OLCAOloen $<TARGET_OBJECTS:Common> ../basis.f90
+   ../matrixSubs.F90 ../loen.f90 ../OLCAO_LocalEnv.f90
+   ../OLCAO_LocalEnvWrap.f90)
+
 install(TARGETS OLCAOsetup OLCAOmain OLCAOintg OLCAOband OLCAOdos
-   OLCAObond OLCAOoptc OLCAOfield DESTINATION bin)
+   OLCAObond OLCAOoptc OLCAOfield OLCAOloen DESTINATION bin)

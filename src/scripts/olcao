@@ -12,10 +12,11 @@ sub printHelp
 #              [[-pacs \$edge]  | [
 #              [-bond [\$edge]] [-scfbond [\$edge]]
 #              [-dos  [\$edge]] [-scfdos  [\$edge]]
+#              [-dimo [\$edge]] [-scfdimo [\$edge]]
 #              [-field [\$edge]] [-scffield [\$edge]]
 #              [-sige [\$edge]] [-scfsige [\$edge]]
-#              [-optc [\$edge]]
-#              [-sybd [\$edge]]] |
+#              [-optc [\$edge]] [-nlop [\$edge]]
+#              [-sybd [\$edge]] [-loen]] |
 #              -help
 #
 #
@@ -66,6 +67,12 @@ sub printHelp
 #       -scfdos switch instead and the computation will be shorter but will
 #       use the scf k-points instead.  This will produce a TDOS, PDOS, and
 #       localization index.
+#-dimo will do a dipole moment calculation using the potential for the requested
+#       edge. The default basis is the full basis.  Now, if you want to use the
+#       same kpoint set as was used for the scf convergence then you can use
+#       the -scfdimo switch instead and the computation will be shorter but will
+#       use the scf k-points instead. This will produce total and partial dipole
+#       moment output files.
 #-bond will do a bond order and Q* calculation using the potential for the
 #       requested edge.  The default basis is the minimal basis, and it must be
 #       done as a separate calculation for now since basis types are not
@@ -77,6 +84,10 @@ sub printHelp
 #       requested edge.  The default basis is the extended basis and it must be
 #       done as a separate post scf calculation because of the need to compute
 #       momentum matrix elements.  (This may be modified in future versions.)
+#-nlop will do a nonlinear optical properties calculation using the potential
+#       for the requested edge.  The default basis is the extended basis and it
+#       must be done as a separate post scf calculation because of the need to
+#       compute momentum matrix elements. (This may be modified in the future.)
 #-sige is used to calculate the sigma(E) curve of optical transitions with
 #       energies of transition that are close to the Fermi energy.  It will use
 #       the alternate input parameters for the optical properties calculation.
@@ -94,6 +105,9 @@ sub printHelp
 #       spin dependency). The control parameters are in the input file.
 #       By default it will use a full basis. (As a note, all of this data is
 #       "field" data and hence the name of the option.)
+#-loen will quantify the local environment around each atom defined by a
+#       cutoff factor and some selected algorithm. Presently, the available
+#       algorithm is the bispectrum component.
 ######################################################################
 ENDHELP
    exit(0);
@@ -132,13 +146,17 @@ my $serialxyz;
 
 # Information about which job to run.
 my $dosRun;
+my $dimoRun;
 my $pacsRun;
 my $sybdRun;
 my $bondRun;
 my $optcRun;
+my $nlopRun;
 my $sigeRun;
 my $fieldRun;
+my $loenRun;
 my $dosRunSCF;
+my $dimoRunSCF;
 my $bondRunSCF;
 my $fieldRunSCF;
 
@@ -176,23 +194,33 @@ my $intg;
 my $band;
 my $sybd;
 my $dos;
+my $dimo;
 my $bond;
 my $optc;
+my $nlop;
 my $pacs;
 my $sige;
 my $field;
+my $loen;
 
 # Auxiliary suffix components.
 my $loci;
+my $tdimo;
+my $pdimo;
 my $tdos;
 my $pdos;
+my $poptc;
 my $bo3c;
 my $elf;
 my $eps1;
 my $eps1i;
 my $eps2;
-my $cond;
-my $refr;
+my $cond; # Optical conductivity
+my $chi1;
+my $chi2;
+my $refrac; # Refractive index
+my $absorp; # Absorption coeff
+my $reflec; # Reflectivity
 my $pot;
 my $rho;
 my $wave;
@@ -202,6 +230,7 @@ my $upPdn; # Up + Down
 my $upMdn; # Up - Down
 my $minusNeut; # minus the neutral atom.  "-N"
 my $profile;
+my $bsComp;
 
 # File name extensions.
 my $plot;
@@ -286,11 +315,15 @@ sub setDefaultVars
    $pacsRun=0;        #Should a pacs task be done?
    $sybdRun=0;        #Should a sybd task be done?
    $dosRun=0;         #Should a dos task be done?
+   $dimoRun=0;        #Should a dipole task be done?
    $bondRun=0;        #Should a bond task be done?
    $optcRun=0;        #Should a optc task be done?
+   $nlopRun=0;        #Should a nlop task be done?
    $sigeRun=0;        #Should a sige task be done?
    $fieldRun=0;       #Should a field task be done?
-   $dosRunSCF=0;      #Run PDOS in SCF?
+   $loenRun=0;        #Should a local environment task be done?
+   $dosRunSCF=0;      #Run DOS in SCF?
+   $dimoRunSCF=0;     #Run dipole in SCF?
    $bondRunSCF=0;     #Run bond in SCF?
    $fieldRunSCF=0;    #Run field in SCF?
    $scfBasis="fb";    #Code for which scf basis to be use.  (Default is full.)
@@ -368,6 +401,25 @@ sub parseCLP
          else
             {$edge=$ARGV[++$number];}
       }
+      elsif ($ARGV[$number] eq "-dimo")
+      {
+         $dimoRun=1;
+         if (($#ARGV == $number) || ($ARGV[$number+1] =~ /\-/))
+            {$edge = "gs";}
+         else
+            {$edge=$ARGV[++$number];}
+         if ($pscfBasisSet == 0)
+            {$pscfBasis = "fb";}  #Full Basis
+         $pscfBasisSet = 1;
+      }
+      elsif ($ARGV[$number] eq "-scfdimo")
+      {
+         $dimoRunSCF=1;
+         if (($#ARGV == $number) || ($ARGV[$number+1] =~ /\-/))
+            {$edge = "gs";}
+         else
+            {$edge=$ARGV[++$number];}
+      }
       elsif ($ARGV[$number] eq "-bond")
       {
          $bondRun=1;
@@ -393,6 +445,17 @@ sub parseCLP
       elsif ($ARGV[$number] eq "-optc")
       {
          $optcRun=1;
+         if (($#ARGV == $number) || ($ARGV[$number+1] =~ /\-/))
+            {$edge = "gs";}
+         else
+            {$edge=$ARGV[++$number];}
+         if ($pscfBasisSet == 0)
+            {$pscfBasis = "eb";}  #Extended Basis
+         $pscfBasisSet = 1;
+      }
+      elsif ($ARGV[$number] eq "-nlop")
+      {
+         $nlopRun=1;
          if (($#ARGV == $number) || ($ARGV[$number+1] =~ /\-/))
             {$edge = "gs";}
          else
@@ -430,6 +493,11 @@ sub parseCLP
             {$edge = "gs";}
          else
             {$edge=$ARGV[++$number];}
+      }
+      elsif ($ARGV[$number] eq "-loen")
+      {
+         $loenRun = 1;
+         $edge = "gs";
       }
       elsif ($ARGV[$number] eq "-help")
          {&printHelp;}
@@ -586,23 +654,33 @@ sub initFileNames
    $band      = "band";
    $sybd      = "sybd";
    $dos       = "dos";
+   $dimo      = "dimo";
    $bond      = "bond";
-   $optc      = "optc";
    $pacs      = "pacs";
+   $optc      = "optc";
+   $nlop      = "nlop";
    $sige      = "sige";
    $field     = "field";
+   $loen      = "loen";
 
    #DEFINE AUXILIARY SUFFIX COMPONENTS
    $loci      = ".loci";
    $tdos      = ".t";
    $pdos      = ".p";
+   $tdimo     = ".t";
+   $pdimo     = ".p";
+   $poptc     = ".p";
    $bo3c      = ".3c";
    $elf       = ".elf";
    $eps1      = ".eps1";
    $eps1i     = ".eps1i";
    $eps2      = ".eps2";
+   $chi2      = ".chi2";
+   $chi1      = ".chi1";
    $cond      = ".cond";
-   $refr      = ".refr";
+   $refrac    = ".nref"; # Refractive index
+   $absorp    = ".kabs"; # Absorption coeff
+   $reflec    = ".Rref"; # Reflectivity
    $pot       = ".pot";
    $rho       = ".rho";
    $wave      = ".wave";
@@ -612,6 +690,7 @@ sub initFileNames
    $upMdn     = ".up-dn";
    $minusNeut = "-N"; #A suffix of a suffix.  ARG!
    $profile   = ".prof";
+   $bsComp     = ".bc";
 
    #DEFINE FILENAME EXTENSIONS
    $plot  = ".plot";
@@ -725,6 +804,8 @@ sub initExes
    $executables[6] = "OLCAObond";
    $executables[7] = "OLCAOoptc";
    $executables[8] = "OLCAOfield";
+   $executables[9] = "OLCAOloen";
+   $executables[10] = "OLCAOdimo";
 
    # Open the each kpoint file and check to see if it requests a gamma kpoint.
    $scfGamma  = &checkGammaKP("$kp_scf$dat");
@@ -850,23 +931,24 @@ sub setEdgeCode
 
 sub runOLCAO
 {
-   # Define local variables.
-   
-
-   # Calculate the setup portion of the program.  This is independent of edge.
-   if ("$scfBasis" ne "no")
-      {&runTask ($setup,$scfBasis,"");}
-
-   if ($pacsRun==1)
+   if ($pacsRun == 1) # We are running a pacs calculation.
    {
-      # We are running a pacs calculation.
-      &runTask ($main,$scfBasis,"gs");
+      # Do setup and main as long as asked.
+      if ("$scfBasis" ne "no")
+      {
+         &runTask ($setup,$scfBasis,"");
+         &runTask ($main,$scfBasis,"gs");
+      }
+      
+      # Run the post SCF steps of the ground state.
       &runTask ($intg,$pscfBasis,"gs");
       &runTask ($band,$pscfBasis,"gs");
 
+      # Run the excited state.
       if ("$edge" ne "gs")
       {
-         &runTask ($main,$scfBasis,$edge);
+         if ("$scfBasis" ne "no")
+            {&runTask ($main,$scfBasis,$edge);}
 
          # Now that both main calculations are done for the PACS calculation,
          #   we can update the pacs input file with the total energy difference 
@@ -878,11 +960,18 @@ sub runOLCAO
          &runTask ($pacs,$pscfBasis,$edge);
       }
    }
+   elsif ($loenRun == 1) # We are running a local environment calc.
+   {
+      &runTask ($loen,$scfBasis,$edge);
+   }
    else
    {
-      # We are doing some other calculation (PDOS,SYBD,BOND,OPTC,SIGE,WAVE,etc.)
+      # Doing another calculation (DOS,DIP,SYBD,BOND,OPTC,SIGE,FIELD,LOEN,etc.)
       if ("$scfBasis" ne "no")
-         {&runTask ($main,$scfBasis,$edge);}
+      {
+         &runTask ($setup,$scfBasis,"");
+         &runTask ($main,$scfBasis,$edge);
+      }
       if ("$pscfBasis" ne "no")
       {
          &runTask ($intg,$pscfBasis,$edge);
@@ -893,10 +982,14 @@ sub runOLCAO
             &runTask ($band,$pscfBasis,$edge);
             if ($dosRun==1)
                {&runTask ($dos,$pscfBasis,$edge);}
+            elsif ($dimoRun==1)
+               {&runTask ($dimo,$pscfBasis,$edge);}
             elsif ($bondRun==1)
                {&runTask ($bond,$pscfBasis,$edge);}
             elsif ($optcRun==1)
                {&runTask ($optc,$pscfBasis,$edge);}
+            elsif ($nlopRun==1)
+               {&runTask ($nlop,$pscfBasis,$edge);}
             elsif ($sigeRun==1)
                {&runTask ($sige,$pscfBasis,$edge);}
             elsif ($fieldRun==1)
@@ -1072,7 +1165,8 @@ sub copyInput
       {&move("$taskEdge$intg$taskBasis$alt$hdf","$intg$tempBasis$hdf");}
    elsif (("$taskName" eq "$dos") || ("$taskName" eq "$bond"))
       {&move("$taskEdge$band$taskBasis$alt$hdf","$band$tempBasis$hdf");}
-   elsif (("$taskName" eq "$optc") || ("$taskName" eq "$sige"))
+   elsif (("$taskName" eq "$optc") || ("$taskName" eq "$sige") ||
+          ("$taskName" eq "$nlop") || ("$taskName" eq "$dimo"))
    {
       &move("$taskEdge$band$taskBasis$alt$hdf","$band$tempBasis$hdf");
       &move("$taskEdge$intg$taskBasis$alt$hdf","$intg$tempBasis$hdf");
@@ -1105,8 +1199,8 @@ sub getPotCoeffs
    #   potential coefficients.
    @altBasisList=("-eb","-fb","-mb");
 
-   # Setup does not need any set of potential coefficients.
-   if ("$taskName" eq "$setup")
+   # Setup and loen do not need any set of potential coefficients.
+   if (("$taskName" eq "$setup") or ("$taskName" eq "$loen"))
       {return;}
 
    # Check for the potential from the same edge and basis of the current task.
@@ -1176,7 +1270,13 @@ sub determineCLP
    my $taskCLP;
 
    if ("$taskName" eq "$setup")
-      {$taskCLP = "$scfBasisCode";}
+   {
+      # The first CLP indicates which basis to use.
+      $taskCLP = "$scfBasisCode ";
+
+      # The next CLP indicates if a dipole calculation should be done.
+      $taskCLP = "$taskCLP" . "$dimoRunSCF";
+   }
    elsif ("$taskName" eq "$main")
    {
       # The first CLP indicates which basis to use.
@@ -1194,7 +1294,10 @@ sub determineCLP
       $taskCLP = "$taskCLP" . "$dosRunSCF ";
 
       # The next CLP indicates if a bond calculation should also be done.
-      $taskCLP = "$taskCLP" . "$bondRunSCF";
+      $taskCLP = "$taskCLP" . "$bondRunSCF ";
+
+      # The next CLP indicates if a dipole calculation should also be done.
+      $taskCLP = "$taskCLP" . "$dimoRunSCF";
    }
    elsif ("$taskName" eq "$intg")
    {
@@ -1203,10 +1306,13 @@ sub determineCLP
 
       # This CLP indicates whether the momentum matrix should be computed.
       if ((($pacsRun == 1) && ($taskEdge =~ /gs/)) ||
-           ($optcRun == 1) || ($sigeRun == 1))
-         {$taskCLP = $taskCLP . "1";}
+           ($optcRun == 1) || ($sigeRun == 1) || ($nlopRun == 1))
+         {$taskCLP = $taskCLP . "1 ";}
       else
-         {$taskCLP = $taskCLP . "0";}
+         {$taskCLP = $taskCLP . "0 ";}
+
+      # The next CLP indicates if a dipole calculation should be done.
+      $taskCLP = "$taskCLP" . "$dimoRunSCF";
    }
    elsif ("$taskName" eq "$band")
    {
@@ -1225,6 +1331,14 @@ sub determineCLP
       $taskCLP = "$taskCLP" . "$QN_n $QN_l ";
    }
    elsif ("$taskName" eq "$dos")
+   {
+      # The first CLP indicates which basis to use.
+      $taskCLP = "$pscfBasisCode ";
+
+      # The next CLPs signal the edge that should be computed for.
+      $taskCLP = "$taskCLP" . "$QN_n $QN_l ";
+   }
+   elsif ("$taskName" eq "$dimo")
    {
       # The first CLP indicates which basis to use.
       $taskCLP = "$pscfBasisCode ";
@@ -1255,6 +1369,23 @@ sub determineCLP
       # The final value indicates whether or not to compute the x,y,z
       #   components in serial or all together (the default).
       $taskCLP = "$taskCLP" . "$serialxyz ";
+   }
+   elsif ("$taskName" eq "$nlop")
+   {
+      # The first CLP indicates which basis to use.
+      $taskCLP = "$pscfBasisCode ";
+
+      # The second specifies that we are doing a nonlinear optical properties
+      #   calculation.
+      $taskCLP = "$taskCLP" . "3 ";
+
+      # The next CLPs signal the edge that should be computed for.
+      $taskCLP = "$taskCLP" . "$QN_n $QN_l ";
+
+      # Because it really isn't possible to do a nonlinear calculation without
+      #   having all xyz components at the same time we will always mark this
+      #   as a zero.
+      $taskCLP = "$taskCLP" . "0 ";
    }
    elsif ("$taskName" eq "$pacs")
    {
@@ -1294,6 +1425,8 @@ sub determineCLP
       # The next CLPs signal the edge that should be computed for.
       $taskCLP = "$taskCLP" . "$QN_n $QN_l ";
    }
+   elsif ("$taskName" eq "$loen")
+      {$taskCLP = "$scfBasisCode";}
 
    return $taskCLP;
 }
@@ -1335,6 +1468,10 @@ sub executeProgram
       {$executable = $executables[7];}
    elsif ("$taskName" eq "$field")
       {$executable = $executables[8];}
+   elsif ("$taskName" eq "$loen")
+      {$executable = $executables[9];}
+   elsif ("$taskName" eq "$dimo")
+      {$executable = $executables[10];}
 
 
    # Call the executable
@@ -1351,28 +1488,35 @@ sub executeProgram
          {system("$OLCAO_BIN/makeSYBD -dat fort.5 -out fort.20 ".
                  "-raw fort.32 -plot fort.42");}
    }
-   elsif ("$taskName" eq "$optc")
+   elsif (("$taskName" eq "$optc") || ("$taskName" eq "$nlop"))
    {
       # Define local variables.
       my $lineCount;
       my $optcLines;
 
-      # Perform the kramers-kronig conversion of eps2 to eps1 and compute the
-      #   energy loss function (all done in OLCAOkkc).  We need to pass the
-      #   program the number of lines in the input file and which set of file
-      #   numbers to use.  A 1 means use the spin up or default file numbers,
-      #   and a 2 means use the spin down file numbers.
+      # Perform the kramers-kronig conversion of eps2 to eps1 for the linear
+      #   optical properties and of chi2 to chi1 for the nonlinear optical
+      #   properties. Also, compute the energy loss function (all done in
+      #   OLCAOkkc).  We need to pass the program the number of lines in the
+      #   input file and which set of file numbers to use.  A 1 means use the
+      #   spin up or default file numbers, and a 2 means use the spin down
+      #   file numbers.
       $lineCount = `(wc -l fort.50)`;
       @values = StructureControl::prepLine("",$lineCount,'\s+');
       $optcLines = $values[0];
 
       # We always use the #1 file numbers.
-      `($bin/OLCAOkkc $optcLines 1 2>&1)`;
+      `($bin/OLCAOkkc $optcLines 1 1 2>&1)`;
 
       # We only use the #2 set of file numbers for the spin polarized
       #   calculations.
       if ($spinPol == 2)
-         {`($bin/OLCAOkkc $optcLines 2 2>&1)`;}
+         {`($bin/OLCAOkkc $optcLines 2 1 2>&1)`;}
+
+      # If we are doing the partial optical properties, call processPOPTC
+      #   for the OLCAOkkc calculation.
+      if (-e "fort.250")
+         {system ("$OLCAO_BIN/processPOPTC");}
    }
 
    # Check for the existance of the fort.2 file that signals completion of
@@ -1404,7 +1548,7 @@ sub manageOutput
    {
       &copy("fort.7","$taskEdge$main$taskBasis.$iteration$alt.7");
       &move("fort.7","$proj_home/$taskEdge$iteration$taskBasis$alt$dat");
-      &copy("fort.14","$taskEdge$main$taskBasis.$iteration$alt.14");
+      &copy("fort.14","$taskEdge$main$taskBasis.$energy$alt.14");
       &move("fort.14","$proj_home/$taskEdge$energy$taskBasis$alt$dat");
       &copy("fort.8","$taskEdge$main$taskBasis.SCFV$alt.8");
 
@@ -1448,6 +1592,24 @@ sub manageOutput
             &move("fort.70","$proj_home/$taskEdge$dos$taskBasis$pdos$alt$raw");
             &copy("fort.80","$taskEdge$dos$taskBasis$loci$alt$plot.80");
             &move("fort.80","$proj_home/$taskEdge$dos$taskBasis$loci$alt$plot");
+         }
+      }
+      if ($dimoRunSCF == 1)
+      {
+         if ($spinPol == 2)
+         {
+            &copy("fort.74","$taskEdge$dimo$taskBasis$tdimo$alt$plot.74");
+            &move("fort.74",
+                  "$proj_home/$taskEdge$dimo$taskBasis$tdimo$alt$up$plot");
+            &copy("fort.75","$taskEdge$dimo$taskBasis$tdimo$alt$plot.61");
+            &move("fort.75",
+                  "$proj_home/$taskEdge$dimo$taskBasis$tdimo$alt$dn$plot");
+         }
+         else
+         {
+            &copy("fort.74","$taskEdge$dimo$taskBasis$tdimo$alt$plot.74");
+            &move("fort.74",
+                  "$proj_home/$taskEdge$dimo$taskBasis$tdimo$alt$plot");
          }
       }
       if ($bondRunSCF == 1)
@@ -1535,6 +1697,22 @@ sub manageOutput
          &move("fort.80","$proj_home/$taskEdge$dos$taskBasis$loci$alt$plot");
       }
    }
+   elsif ("$taskName" eq "$dimo")
+   {
+      &move("$band$tempBasis$hdf","$taskEdge$band$taskBasis$alt$hdf");
+      if ($spinPol == 2)
+      {
+         &copy("fort.74","$taskEdge$dimo$taskBasis$tdimo$plot$alt.74");
+         &move("fort.74","$proj_home/$taskEdge$dimo$taskBasis$tdimo$alt$up$plot");
+         &copy("fort.75","$taskEdge$dimo$taskBasis$tdimo$alt$plot.75");
+         &move("fort.75","$proj_home/$taskEdge$dimo$taskBasis$tdimo$alt$dn$plot");
+      }
+      else
+      {
+         &copy("fort.74","$taskEdge$dimo$taskBasis$tdimo$plot$alt.74");
+         &move("fort.74","$proj_home/$taskEdge$dimo$taskBasis$tdimo$alt$plot");
+      }
+   }
    elsif ("$taskName" eq "$bond")
    {
       &move("$band$tempBasis$hdf","$taskEdge$band$taskBasis$alt$hdf");
@@ -1572,52 +1750,181 @@ sub manageOutput
       {
          &move("$intg$tempBasis$hdf","$taskEdge$intg$taskBasis$alt$hdf");
          &move("$band$tempBasis$hdf","$taskEdge$band$taskBasis$alt$hdf");
-         &copy("fort.40","$taskEdge$optc$taskBasis$cond$alt$up.40");
-         &copy("fort.50","$taskEdge$optc$taskBasis$eps2$alt$up.50");
-         &move("fort.40",
-            "$proj_home/$taskEdge$optc$taskBasis$cond$alt$up$plot");
-         &move("fort.50",
-            "$proj_home/$taskEdge$optc$taskBasis$eps2$alt$up$plot");
-         &move("fort.100","$proj_home/$taskEdge$optc$taskBasis$alt$up$plot");
-         &move("fort.110",
-            "$proj_home/$taskEdge$optc$taskBasis$eps1$alt$up$plot");
-         &move("fort.120",
-            "$proj_home/$taskEdge$optc$taskBasis$elf$alt$up$plot");
-         &move("fort.130",
-            "$proj_home/$taskEdge$optc$taskBasis$refr$alt$up$plot");
-         &move("fort.140",
-            "$proj_home/$taskEdge$optc$taskBasis$eps1i$alt$up$plot");
+         if (-e "fort.40")
+         {
+            &copy("fort.40","$taskEdge$optc$taskBasis$cond$alt$up.40");
+            &copy("fort.50","$taskEdge$optc$taskBasis$eps2$alt$up.50");
+            &move("fort.40",
+               "$proj_home/$taskEdge$optc$taskBasis$cond$alt$up$plot");
+            &move("fort.50",
+               "$proj_home/$taskEdge$optc$taskBasis$eps2$alt$up$plot");
+            &move("fort.100",
+               "$proj_home/$taskEdge$optc$taskBasis$alt$up$plot");
+            &move("fort.110",
+               "$proj_home/$taskEdge$optc$taskBasis$eps1$alt$up$plot");
+            &move("fort.120",
+               "$proj_home/$taskEdge$optc$taskBasis$elf$alt$up$plot");
+            &move("fort.130",
+               "$proj_home/$taskEdge$optc$taskBasis$refrac$alt$up$plot");
+            &move("fort.140",
+               "$proj_home/$taskEdge$optc$taskBasis$absorp$alt$up$plot");
+            &move("fort.150",
+               "$proj_home/$taskEdge$optc$taskBasis$eps1i$alt$up$plot");
+            &move("fort.160",
+               "$proj_home/$taskEdge$optc$taskBasis$reflec$alt$up$plot");
 
-         &copy("fort.41","$taskEdge$optc$taskBasis$cond$alt$dn.41");
-         &copy("fort.51","$taskEdge$optc$taskBasis$eps2$alt$dn.51");
-         &move("fort.41",
-            "$proj_home/$taskEdge$optc$taskBasis$cond$alt$dn$plot");
-         &move("fort.51",
-            "$proj_home/$taskEdge$optc$taskBasis$eps2$alt$dn$plot");
-         &move("fort.101",
-            "$proj_home/$taskEdge$optc$taskBasis$alt$dn$plot");
-         &move("fort.111",
-            "$proj_home/$taskEdge$optc$taskBasis$eps1$alt$dn$plot");
-         &move("fort.121",
-            "$proj_home/$taskEdge$optc$taskBasis$elf$alt$dn$plot");
-         &move("fort.131",
-            "$proj_home/$taskEdge$optc$taskBasis$refr$alt$dn$plot");
-         &move("fort.141",
-            "$proj_home/$taskEdge$optc$taskBasis$eps1i$alt$dn$plot");
+            &copy("fort.41","$taskEdge$optc$taskBasis$cond$alt$dn.41");
+            &copy("fort.51","$taskEdge$optc$taskBasis$eps2$alt$dn.51");
+            &move("fort.41",
+               "$proj_home/$taskEdge$optc$taskBasis$cond$alt$dn$plot");
+            &move("fort.51",
+               "$proj_home/$taskEdge$optc$taskBasis$eps2$alt$dn$plot");
+            &move("fort.101",
+               "$proj_home/$taskEdge$optc$taskBasis$alt$dn$plot");
+            &move("fort.111",
+               "$proj_home/$taskEdge$optc$taskBasis$eps1$alt$dn$plot");
+            &move("fort.121",
+               "$proj_home/$taskEdge$optc$taskBasis$elf$alt$dn$plot");
+            &move("fort.131",
+               "$proj_home/$taskEdge$optc$taskBasis$refrac$alt$dn$plot");
+            &move("fort.141",
+              "$proj_home/$taskEdge$optc$taskBasis$absorp$alt$dn$plot");
+            &move("fort.151",
+               "$proj_home/$taskEdge$optc$taskBasis$eps1i$alt$dn$plot");
+            &move("fort.161",
+               "$proj_home/$taskEdge$optc$taskBasis$reflec$alt$dn$plot");
+         }
+         else # POPTC scenario.
+         {
+            &copy("fort.240",
+               "$taskEdge$optc$taskBasis$poptc$cond$alt$up$raw.240");
+            &move("fort.240",
+               "$proj_home/$taskEdge$optc$taskBasis$poptc$cond$alt$up$raw");
+            &copy("fort.250",
+               "$taskEdge$optc$taskBasis$poptc$eps2$alt$up$raw.250");
+            &move("fort.250",
+               "$proj_home/$taskEdge$optc$taskBasis$poptc$eps2$alt$up$raw");
+            &move("fort.300",
+               "$proj_home/$taskEdge$optc$taskBasis$poptc$alt$up$raw");
+            &move("fort.310",
+               "$proj_home/$taskEdge$optc$taskBasis$poptc$eps1$alt$up$raw");
+            &move("fort.320",
+               "$proj_home/$taskEdge$optc$taskBasis$poptc$elf$alt$up$raw");
+            &move("fort.330",
+               "$proj_home/$taskEdge$optc$taskBasis$poptc$refrac$alt$up$raw");
+            &move("fort.340",
+               "$proj_home/$taskEdge$optc$taskBasis$poptc$absorp$alt$up$raw");
+            &move("fort.350",
+               "$proj_home/$taskEdge$optc$taskBasis$poptc$eps1i$alt$up$raw");
+            &move("fort.360",
+               "$proj_home/$taskEdge$optc$taskBasis$poptc$reflec$alt$up$raw");
+
+            &copy("fort.241",
+               "$taskEdge$optc$taskBasis$poptc$cond$alt$dn$raw.241");
+            &move("fort.241",
+               "$proj_home/$taskEdge$optc$taskBasis$poptc$cond$alt$dn$raw");
+            &copy("fort.251",
+               "$taskEdge$optc$taskBasis$poptc$eps2$alt$dn$raw.251");
+            &move("fort.251",
+               "$proj_home/$taskEdge$optc$taskBasis$poptc$eps2$alt$dn$raw");
+            &move("fort.301",
+               "$proj_home/$taskEdge$optc$taskBasis$poptc$alt$dn$raw");
+            &move("fort.311",
+               "$proj_home/$taskEdge$optc$taskBasis$poptc$eps1$alt$dn$raw");
+            &move("fort.321",
+               "$proj_home/$taskEdge$optc$taskBasis$poptc$elf$alt$dn$raw");
+            &move("fort.331",
+               "$proj_home/$taskEdge$optc$taskBasis$poptc$refrac$alt$dn$raw");
+            &move("fort.341",
+               "$proj_home/$taskEdge$optc$taskBasis$poptc$absorp$alt$dn$raw");
+            &move("fort.351",
+               "$proj_home/$taskEdge$optc$taskBasis$poptc$eps1i$alt$dn$raw");
+            &move("fort.361",
+               "$proj_home/$taskEdge$optc$taskBasis$poptc$reflec$alt$dn$raw");
+         }
       }
       else
       {
          &move("$intg$tempBasis$hdf","$taskEdge$intg$taskBasis$alt$hdf");
          &move("$band$tempBasis$hdf","$taskEdge$band$taskBasis$alt$hdf");
-         &copy("fort.40","$taskEdge$optc$taskBasis$cond$alt.40");
-         &copy("fort.50","$taskEdge$optc$taskBasis$eps2$alt.50");
-         &move("fort.40","$proj_home/$taskEdge$optc$taskBasis$cond$alt$plot");
-         &move("fort.50","$proj_home/$taskEdge$optc$taskBasis$eps2$alt$plot");
+         if (-e "fort.40")
+         {
+            &copy("fort.40","$taskEdge$optc$taskBasis$cond$alt.40");
+            &copy("fort.50","$taskEdge$optc$taskBasis$eps2$alt.50");
+            &move("fort.40",
+               "$proj_home/$taskEdge$optc$taskBasis$cond$alt$plot");
+            &move("fort.50",
+               "$proj_home/$taskEdge$optc$taskBasis$eps2$alt$plot");
+            &move("fort.100",
+               "$proj_home/$taskEdge$optc$taskBasis$alt$plot");
+            &move("fort.110",
+               "$proj_home/$taskEdge$optc$taskBasis$eps1$alt$plot");
+            &move("fort.120",
+               "$proj_home/$taskEdge$optc$taskBasis$elf$alt$plot");
+            &move("fort.130",
+               "$proj_home/$taskEdge$optc$taskBasis$refrac$alt$plot");
+            &move("fort.140",
+               "$proj_home/$taskEdge$optc$taskBasis$absorp$alt$plot");
+            &move("fort.150",
+               "$proj_home/$taskEdge$optc$taskBasis$eps1i$alt$plot");
+            &move("fort.160",
+               "$proj_home/$taskEdge$optc$taskBasis$reflec$alt$plot");
+         }
+         else # POPTC scenario
+         {
+            &copy("fort.240",
+               "$taskEdge$optc$taskBasis$poptc$cond$alt$raw.240");
+            &move("fort.240",
+               "$proj_home/$taskEdge$optc$taskBasis$poptc$cond$alt$raw");
+            &copy("fort.250",
+               "$taskEdge$optc$taskBasis$poptc$eps2$alt$raw.250");
+            &move("fort.250",
+               "$proj_home/$taskEdge$optc$taskBasis$poptc$eps2$alt$raw");
+            &move("fort.300",
+               "$proj_home/$taskEdge$optc$taskBasis$poptc$alt$raw");
+            &move("fort.310",
+               "$proj_home/$taskEdge$optc$taskBasis$poptc$eps1$alt$raw");
+            &move("fort.320",
+               "$proj_home/$taskEdge$optc$taskBasis$poptc$elf$alt$raw");
+            &move("fort.330",
+               "$proj_home/$taskEdge$optc$taskBasis$poptc$refrac$alt$raw");
+            &move("fort.340",
+               "$proj_home/$taskEdge$optc$taskBasis$poptc$absorp$alt$raw");
+            &move("fort.350",
+               "$proj_home/$taskEdge$optc$taskBasis$poptc$eps1i$alt$raw");
+            &move("fort.360",
+               "$proj_home/$taskEdge$optc$taskBasis$poptc$reflec$alt$raw");
+         }
+      }
+   }
+   elsif ("$taskName" eq "$nlop")
+   {
+      if ($spinPol == 2)
+      {
+         &move("$intg$tempBasis$hdf","$taskEdge$intg$taskBasis$alt$hdf");
+         &move("$band$tempBasis$hdf","$taskEdge$band$taskBasis$alt$hdf");
+         &copy("fort.50","$taskEdge$optc$taskBasis$chi2$alt$up.50");
+         &move("fort.50",
+            "$proj_home/$taskEdge$optc$taskBasis$chi2$alt$up$plot");
+         &move("fort.100","$proj_home/$taskEdge$optc$taskBasis$alt$up$plot");
+         &move("fort.110",
+            "$proj_home/$taskEdge$optc$taskBasis$chi1$alt$up$plot");
+
+         &copy("fort.51","$taskEdge$optc$taskBasis$chi2$alt$dn.51");
+         &move("fort.51",
+            "$proj_home/$taskEdge$optc$taskBasis$chi2$alt$dn$plot");
+         &move("fort.101","$proj_home/$taskEdge$optc$taskBasis$alt$dn$plot");
+         &move("fort.111",
+            "$proj_home/$taskEdge$optc$taskBasis$chi1$alt$dn$plot");
+      }
+      else
+      {
+         &move("$intg$tempBasis$hdf","$taskEdge$intg$taskBasis$alt$hdf");
+         &move("$band$tempBasis$hdf","$taskEdge$band$taskBasis$alt$hdf");
+         &copy("fort.50","$taskEdge$optc$taskBasis$chi2$alt.50");
+         &move("fort.50","$proj_home/$taskEdge$optc$taskBasis$chi2$alt$plot");
          &move("fort.100","$proj_home/$taskEdge$optc$taskBasis$alt$plot");
-         &move("fort.110","$proj_home/$taskEdge$optc$taskBasis$eps1$alt$plot");
-         &move("fort.120","$proj_home/$taskEdge$optc$taskBasis$elf$alt$plot");
-         &move("fort.130","$proj_home/$taskEdge$optc$taskBasis$refr$alt$plot");
-         &move("fort.140","$proj_home/$taskEdge$optc$taskBasis$eps1i$alt$plot");
+         &move("fort.110","$proj_home/$taskEdge$optc$taskBasis$chi1$alt$plot");
       }
    }
    elsif ("$taskName" eq "$sige")
@@ -1707,6 +2014,15 @@ sub manageOutput
       {
          &move("fort.78","$proj_home/$taskEdge$field$taskBasis$alt$xdmf3");
          &move("$field$tempBasis$hdf","$taskEdge$field$taskBasis$alt$hdf");
+      }
+   }
+   elsif ("$taskName" eq "$loen")   
+   {
+      # Move the local environment structural analysis files if created.
+      if (-e "fort.21")
+      {
+         &copy("fort.21","$taskEdge$loen$taskBasis$alt$plot.21");
+         &move("fort.21","$proj_home/$taskEdge$loen$taskBasis$alt$plot");
       }
    }
 

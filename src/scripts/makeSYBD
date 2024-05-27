@@ -1,15 +1,23 @@
 #!/usr/bin/env perl
+sub printHelp
+{
+   print <<ENDHELP;
 #PURPOSE:  To write a data file that is usable by origin to plot a symmetric
 #         band diagram using the Origin band script.
 #AUTHOR:  Paul Rulis
-#LAST MODIFIED:  Oct 27, 2004
+#LAST MODIFIED:  Dec. 11, 2019
 #
-#USAGE:  makeSYBD [-dat $datFile] [-out $outFile] [-raw $rawFile]
-#                 [-plot $plotFile] [-basis $basis] [-edge $edge] | [-help]
+#USAGE:  makeSYBD [-dat \$datFile] [-out \$outFile] [-raw \$rawFile]
+#                 [-plot \$plotFile] [-basis \$basis] [-edge \$edge] | [-help]
 #
 #If no file parameters are given then it is assumed that the files to be used
 #   are "gs_sybd-fb.dat", "gs_sybd-fb.out", and "gs_sybd-fb.raw".  The default
 #   basis value is "fb", and the default edge is "gs".
+ENDHELP
+   exit;
+}
+
+use List::Util qw/sum/;
 
 #First we parse the command line.
 
@@ -26,35 +34,17 @@ while ($ARGV[$number] ne "")
    if ($ARGV[$number] eq "-help")
       {&printHelp;}
    elsif ($ARGV[$number] eq "-dat")
-   {
-      $datFile = $ARGV[$number+1];
-      $number++;
-   }
+      {$datFile = $ARGV[++$number];}
    elsif ($ARGV[$number] eq "-out")
-   {
-      $outFile = $ARGV[$number+1];
-      $number++;
-   }
+      {$outFile = $ARGV[++$number];}
    elsif ($ARGV[$number] eq "-raw")
-   {
-      $rawFile = $ARGV[$number+1];
-      $number++;
-   }
+      {$rawFile = $ARGV[++$number];}
    elsif ($ARGV[$number] eq "-plot")
-   {
-      $plotFile = $ARGV[$number+1];
-      $number++;
-   }
+      {$plotFile = $ARGV[++$number];}
    elsif ($ARGV[$number] eq "-basis")
-   {
-      $basis="-"."$ARGV[$number+1]";
-      $number++;
-   }
+      {$basis="-"."$ARGV[++$number]";}
    elsif ($ARGV[$number] eq "-edge")
-   {
-      $edge="$ARGV[$number+1]";
-      $number++;
-   }
+      {$edge="$ARGV[++$number]";}
    else
    {
       print STDOUT "UNKNOWN COMMAND LINE PARAMETER $ARGV[$number]. ABORTING.\n";
@@ -70,21 +60,6 @@ for ($i = 0; $i <= $#ARGV; $i++)
    {print COMMANDLINE "$ARGV[$i] ";}
 print COMMANDLINE "\n";
 close (COMMANDLINE);
-
-sub printHelp
-{
-print <<ENDHELP;
-#USAGE:  makeSYBD [-dat \$datFile] [-out \$outFile] [-raw \$rawFile]
-#                   [-plot \$plotFile] [-basis \$basis] [-edge \$edge] |
-#                   [-help]
-#
-#If no file parameters are given then it is assumed that the files to be
-#   used are "gs_sybd-fb.dat", "gs_sybd-fb.out", and "gs_sybd-fb.raw",
-#   "gs_sybd-fb.plot" respectively.  The default basis value is "fb", and the
-#   default edge is "gs".
-ENDHELP
-   exit;
-}
 
 $dat = ".dat";
 $raw = ".raw";
@@ -110,28 +85,32 @@ if ($plotFile eq "")
 #Open or die.
 open (SYBDDATA, "< $datFile") || die "No such file.\n";
 
-#This loop is a little Kludgy.
+#Read to the SYBD_INPUT_DATA.
 @KNames=();
 while ($line = <SYBDDATA>)
 {
-   if ($line =~ /SYBD/)
+   if ($line =~ /SYBD_INPUT_DATA/)
       {last;}
 }
+
+# Extract the number of high symmetry kpoints from the next two lines.
 $line = <SYBDDATA>;
-while ($line = <SYBDDATA>)
+$line = <SYBDDATA>;
+@tempArray = split (/\s+/,$line);
+$numHighSymKP = sum(@tempArray);
+
+foreach my $KP (1..$numHighSymKP)
 {
-   if ($line =~ /PACS/)
-      {last;}
+   $line = <SYBDDATA>;
    if ($line =~ /GAMMA/)
       {push (@KNames, ("G"));}
    if ($line !~ /GAMMA/)
    {
-      @TempArray1 = split (/=/,$line);
-      @TempArray2 = split (//,$TempArray1[0]);
-      push (@KNames, ($TempArray2[$#TempArray2]));
+      chomp ($line);
+      @tempArray = split (/\s+/,$line);
+      push (@KNames, ($tempArray[$#tempArray]));
    }
 }
-
 close (SYBDDATA);
 
 open (SYBDOUT, "< $outFile") || die "Cannot open $outFile for reading.\n";
@@ -141,49 +120,75 @@ open (SYBDFINAL, "> $plotFile") || die "Cannot open $plotFile for writing.\n";
 #Then we fill it with the number corresponding to the special k points.
 #Then we find the position values associated with the number and store them.
 @KValues=();
-#KNumberSwitch starts at zero while we get the special k point number.
-#Then it will switch to 1 while we are searching for the positions.
-#When all the positions have been found we set it back to 0.
-$KNumberSwitch=0;
-$current=0;
 while ($line = <SYBDOUT>)
 {
    #This if block will collect the special k point numbers
-   if (($line =~ /HIGH SYMMETRY K POINT/) && (!$KNumberSwitch))
+   if ($line =~ /HIGH SYMMETRY K POINT/)
    {
       chomp $line;
-      @TempArray1 = split (/\s+/,$line);
-      push (@KValues, ($TempArray1[$#TempArray1]));
+      @tempArray = split (/\s+/,$line);
+      push (@KValues, ($tempArray[$#tempArray]));
+
+      # We've already discovered all the high symmetry kpoint names from the
+      #   olcao.dat input file. Now we check if we have discovered an equal
+      #   number of index numbers from the first part of the kpoint
+      #   description in the olcao output from the SYBD calculation. Once we
+      #   have discovered all the associated index values, the we quit.
       if ($#KValues == $#KNames)
-         {$KNumberSwitch=1;}
+         {last;}
    }
-   #This if block will collect the special k point positions using the numbers
-   #   found in the above block.
-   if ($KNumberSwitch)
+}
+
+# Now, we read the positions of the special high symmetry kpoints using the
+#   numbers found in the above block. (We are continuing to read from the
+#   SYBD output file.)
+$current=0; # Index for which high symmetry kpoint index we are looking at.
+while ($line = <SYBDOUT>)
+{
+   chomp $line;
+   @tempArray = split (/\s+/,$line);
+   # If we found the number, then assign the value over top of it.
+   if ($tempArray[1] == $KValues[$current])
    {
-      chomp $line;
-      @TempArray1 = split (/\s+/,$line);
-      #If we found the number, then assign the value over top of it.
-      if ($TempArray1[1] == $KValues[$current])
-      {
-         $KValues[$current] = $TempArray1[2];
-         $current++;
-         if ($current == $#KValues+1)
-         {
-            $KNumberSwitch=0;
-            $current=0;
-         }
-      }
+      $KValues[$current] = $tempArray[2];
+      $current++;
+      if ($current == $#KValues+1)
+         {last;}
    }
 }
 close(SYBDOUT);
+
+# Go through the list and find any cases with two consecutive equal values.
+#   That implies that we have found a change from one path to another. In that
+#   case we will change the name by making it a comma separated pair of the
+#   two names. As we do this, the length of the KValues and KNames arrays will
+#   shrink. Therefore, the loop might go beyond the end of the array and so we
+#   must check for that situation and exit the loop if we do.
+foreach my $kp (1..$numHighSymKP-1) # Start with the second array index.
+{
+   # If we went beyond the end of the array then leave the loop.
+   if ($kp > $#KValues)
+      {last;}
+
+   # If the current and previous values are equal then 
+   if ($KValues[$kp] == $KValues[$kp-1])
+   {
+      splice (@KValues,$kp,1); # Remove one of the identical values.
+
+      # Remove both names, but replace the first with a "A,B" form of name.
+      splice (@KNames,$kp-1,2,("$KNames[$kp-1],$KNames[$kp]"));
+   }
+}
+
 open(SYBDRAW,"< $rawFile");
 $line = <SYBDRAW>;
-@TempArray1 = split (/ +/,$line);
-$NumKPoints=$TempArray1[1];
-$NumStates=$TempArray1[2];
+@tempArray = split (/ +/,$line);
+$NumKPoints=$tempArray[1];
+$NumStates=$tempArray[2];
 if (int($NumStates/11) < $NumStates/11)
    {$NumStates=(int($NumStates/11)+1)*11;}
+
+$current = 0;
 for ($i=0;$i<$NumKPoints;$i++)
 {
    $line = <SYBDRAW>;
@@ -195,7 +200,7 @@ for ($i=0;$i<$NumKPoints;$i++)
       chomp ($line);
       print SYBDFINAL "$line";
    }
-   if ($current < @KValues)
+   if ($current <= $#KValues)
    {
       print SYBDFINAL " $KValues[$current] $KNames[$current]";
       $current++;

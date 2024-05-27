@@ -99,11 +99,16 @@ subroutine getImplicitInfo
    use O_PotTypes, only: getPotTypeImplicitInfo
    use O_Lattice, only: getRecipCellVectors
    use O_Potential, only: initPotStructures
+   use O_Input, only: getDipoleMomentCenter
    use O_TimeStamps
 
    implicit none
 
    call timeStampStart(2)
+
+   ! If a dipole moment calculation is being done, then compute the
+   !   coordinates of the moment center "C" in Cartesian coordinates.
+   call getDipoleMomentCenter
 
    call getAtomicTypeImplicitInfo
    call getAtomicSiteImplicitInfo

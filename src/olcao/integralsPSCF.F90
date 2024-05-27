@@ -41,13 +41,13 @@ subroutine intgAndOrMom(doINTG,doMOME)
    use O_Constants,    only: dim3
    use O_PotTypes,     only: potTypes
    use O_AtomicSites,  only: numAtomSites
-   use O_Potential,    only: spin, potCoeffs
+   use O_Potential,    only: rel, spin, potCoeffs
    use O_PSCFIntgHDF5, only: targetChunkSize
    use O_Basis,        only: initializeAtomSite
    use O_PotSites,     only: numPotSites, potSites
    use O_AtomicTypes,  only: maxNumAtomAlphas, maxNumStates
-   use O_GaussianIntegrals, only: overlapInteg, KEInteg, nucPotInteg, &
-         & threeCentInteg, MOMF
+   use O_GaussianIntegrals, only: overlap2CIntg, kinetic2CIntg, &
+         & massVel2CIntg, nuclear3CIntg, electron3CIntg, momentum2CIntg
    use O_Lattice, only: logBasisFnThresh, numCellsReal, cellSizesReal, &
          & cellDimsReal, findLatticeVector
    use HDF5
@@ -599,7 +599,7 @@ subroutine intgAndOrMom(doINTG,doMOME)
                                        & latticeVector2(:) + cellDimsReal(:,p)
 
                                  if (n <= currentNumPotAlphas) then
-				                        ! Calculate the opcode to do the correct
+                                    ! Calculate the opcode to do the correct
                                     !   set of integrals for the current alpha
                                     !   pair.
                                     l1l2Switch = ishft(1,(powerOfTwo(&
@@ -608,7 +608,8 @@ subroutine intgAndOrMom(doINTG,doMOME)
                                          & (powerOfTwo(currentlmAlphaIndex(&
                                          & alphaIndex(2),2))))
 
-                                    call threeCentInteg (currentAlphas(alphaIndex(1),1),&
+                                    call electron3CIntg (&
+                                       & currentAlphas(alphaIndex(1),1),&
                                        & currentAlphas(alphaIndex(2),2),&
                                        & currentPotAlpha, currentPosition(:,1),&
                                        & shiftedAtomPos(:), shiftedPotPos(:),&
@@ -640,15 +641,18 @@ subroutine intgAndOrMom(doINTG,doMOME)
                                    ! Calculate the opcode to do the correct set
                                    ! of integrals for the current alpha pair
                                    l1l2Switch = ishft(1,&
-                                     &(powerOfTwo(currentlmAlphaIndex(alphaIndex(1),1))))&
+                                     &(powerOfTwo(currentlmAlphaIndex(&
+                                     &   alphaIndex(1),1)))) &
                                      &+ ishft(16,&
-                                     &(powerOfTwo(currentlmAlphaIndex(alphaIndex(2),2))))
+                                     &(powerOfTwo(currentlmAlphaIndex(&
+                                     &   alphaIndex(2),2))))
                                    
-                                   call nucPotInteg (currentAlphas(alphaIndex(1),1),&
-                                       & currentAlphas(alphaIndex(2),2),&
-                                       & currentPotAlpha,currentPosition(:,1),&
-                                       & shiftedAtomPos(:),shiftedPotPos(:),&
-                                       & l1l2Switch,oneAlphaSet)
+                                   call nuclear3CIntg (&
+                                      & currentAlphas(alphaIndex(1),1),&
+                                      & currentAlphas(alphaIndex(2),2),&
+                                      & currentPotAlpha,currentPosition(:,1),&
+                                      & shiftedAtomPos(:),shiftedPotPos(:),&
+                                      & l1l2Switch,oneAlphaSet)
 
 
 
@@ -682,15 +686,16 @@ subroutine intgAndOrMom(doINTG,doMOME)
                      enddo ! (m numPots (inequivalent))
 
 
-		     ! Calculate the opcode to do the correct set of integrals
+                     ! Calculate the opcode to do the correct set of integrals
                      ! for the current alpha pair
                      l1l2Switch = ishft(1,&
                        &(powerOfTwo(currentlmAlphaIndex(alphaIndex(1),1))))&
                        &+ ishft(16,&
                        &(powerOfTwo(currentlmAlphaIndex(alphaIndex(2),2))))
 
-                   ! Determine the kinetic energy contribution
-                     call KEInteg (currentAlphas(alphaIndex(1),1),&
+                     ! Determine the kinetic energy contribution.
+                     call kinetic2CIntg (&
+                           & currentAlphas(alphaIndex(1),1),&
                            & currentAlphas(alphaIndex(2),2),&
                            & currentPosition(:,1), shiftedAtomPos(:),&
                            & l1l2Switch, oneAlphaSet)
@@ -716,20 +721,57 @@ subroutine intgAndOrMom(doINTG,doMOME)
                               & (alphaIndex(2),2))
                      enddo
 
-               ! Calculate the opcode to do the correct set of integrals
-               ! for the current alpha pair
-                l1l2Switch = ishft(1,&
-                  &(powerOfTwo(currentlmAlphaIndex(alphaIndex(1),1))))&
-                  &+ ishft(16,&
-                  &(powerOfTwo(currentlmAlphaIndex(alphaIndex(2),2))))
+                     ! Compute the mass velocity integral if needed for the
+                     !   scalar relativistic calculation.
+                     if (rel == 1) then
+                        ! Calculate the opcode to do the correct set of
+                        !   integrals for the current alpha pair.
+                        l1l2Switch = ishft(1,&
+                        &(powerOfTwo(currentlmAlphaIndex(alphaIndex(1),1))))&
+                        &+ ishft(16,&
+                        &(powerOfTwo(currentlmAlphaIndex(alphaIndex(2),2))))
+
+                        ! Compute the integral.
+                        call massVel2CIntg (currentAlphas(alphaIndex(1),1),&
+                              & currentAlphas(alphaIndex(2),2),&
+                              & currentPosition(:,1), shiftedAtomPos(:),&
+                              & l1l2Switch, oneAlphaSet)
+                           
+                        ! Accumulate the contribution from this alpha pair.
+                        !   Note: a minus sign is used in the accumulation
+                        !   for the mass velocity integral because it has an
+                        !   overall negative contribution to the Hamiltonian.
+                        do m = 1, spin
+                           potAtomOverlap(:currentlmAlphaIndex &
+                                 & (alphaIndex(1),1),:currentlmAlphaIndex &
+                                 & (alphaIndex(2),2),m) = &
+                                 & potAtomOverlap(:currentlmAlphaIndex &
+                                 & (alphaIndex(1),1),:currentlmAlphaIndex &
+                                 & (alphaIndex(2),2),m) - &
+                                 & oneAlphaSet(:currentlmAlphaIndex &
+                                 & (alphaIndex(1),1),:currentlmAlphaIndex &
+                                 & (alphaIndex(2),2))
+                        enddo
+                     endif
+
+                     ! FIX: It seems unnecessary to recompute the l1l2Switch
+                     !   for OL and MV matrices after it is computed
+                     !   once for the KE.
+                     ! Calculate the opcode to do the correct set of integrals
+                     ! for the current alpha pair.
+                     l1l2Switch = ishft(1,&
+                        &(powerOfTwo(currentlmAlphaIndex(alphaIndex(1),1))))&
+                        &+ ishft(16,&
+                        &(powerOfTwo(currentlmAlphaIndex(alphaIndex(2),2))))
                 
-                !print*,l1l2Switch
-                ! We can proceed with the next step of the calculation.
-                ! This is the actual integral.
-                call overlapInteg (currentAlphas(alphaIndex(1),1),&
-                  & currentAlphas(alphaIndex(2),2), &
-                  & currentPosition(:,1), shiftedAtomPos(:),&
-                  & l1l2Switch, oneAlphaSet)
+                     !print*,l1l2Switch
+                     ! We can proceed with the next step of the calculation.
+                     ! This is the actual integral.
+                     call overlap2CIntg (&
+                           & currentAlphas(alphaIndex(1),1),&
+                           & currentAlphas(alphaIndex(2),2), &
+                           & currentPosition(:,1), shiftedAtomPos(:),&
+                           & l1l2Switch, oneAlphaSet)
 
 
                      ! Compute the atomic overlap for this atom pair.
@@ -751,7 +793,8 @@ subroutine intgAndOrMom(doINTG,doMOME)
                         & + ishft(16,&
                         & (powerOfTwo(currentlmAlphaIndex(alphaIndex(2),2))))
 
-                     call MOMF (currentAlphas(alphaIndex(1),1),&
+                     call momentum2CIntg (&
+                           & currentAlphas(alphaIndex(1),1),&
                            & currentAlphas(alphaIndex(2),2),&
                            & currentPosition(:,1), shiftedAtomPos(:),&
                            & l1l2Switch, oneAlphaSetMom)
@@ -1706,11 +1749,11 @@ end subroutine saveCurrentAccumulation
 #ifndef GAMMA
 subroutine getIntgResults (valeVale,coreValeOL,&
       & currentKPoint,runCode,valeValeBand_did,valeValeBand_dims,&
-      & noSaveValeVale,spinDirection)
+      & saveValeVale,spinDirection)
 #else
 subroutine getIntgResults (valeValeGamma,coreValeOLGamma,&
       & runCode,valeValeBand_did,valeValeBand_dims,&
-      & noSaveValeVale,spinDirection)
+      & saveValeVale,spinDirection)
 #endif
 
    ! Import the necessary modules
@@ -1745,7 +1788,7 @@ subroutine getIntgResults (valeValeGamma,coreValeOLGamma,&
    integer :: runCode  ! 1=overlap; 2=hamiltonian; 3,4,5=MOME x,y,z
    integer (hid_t) :: valeValeBand_did
    integer (hsize_t), dimension (2) :: valeValeBand_dims
-   integer :: noSaveValeVale
+   integer :: saveValeVale
    integer :: spinDirection
 
    ! Define local variables for logging and loop control
@@ -1861,7 +1904,7 @@ subroutine getIntgResults (valeValeGamma,coreValeOLGamma,&
 
          ! Open the integral dataset for this atom.
          call h5dopen_f (intg_gid,currentName,intg_did,hdferr)
-         if (hdferr /= 0) stop 'Can not open integral dataset'
+         if (hdferr /= 0) stop 'Cannot open integral dataset'
 
          ! The loopIndex information does not depend on spin direction.
          write (currentName,*) i
@@ -1869,18 +1912,18 @@ subroutine getIntgResults (valeValeGamma,coreValeOLGamma,&
 
          ! Open the loopIndex dataset for this atom.
          call h5dopen_f (loopIndices_gid,currentName,loopIndices_did,hdferr)
-         if (hdferr /= 0) stop 'Can not open loop index dataset'
+         if (hdferr /= 0) stop 'Cannot open loop index dataset'
       else
          write (currentName,*) i
          currentName = trim (currentName)
 
          ! Open the integral dataset for this atom.
          call h5dopen_f (intg_gid,currentName,intg_did,hdferr)
-         if (hdferr /= 0) stop 'Can not open integral dataset'
+         if (hdferr /= 0) stop 'Cannot open integral dataset'
 
          ! Open the loopIndex dataset for this atom.
          call h5dopen_f (loopIndices_gid,currentName,loopIndices_did,hdferr)
-         if (hdferr /= 0) stop 'Can not open loop index dataset'
+         if (hdferr /= 0) stop 'Cannot open loop index dataset'
       endif
 
       ! Determine the number of chunks that make up this dataset.
@@ -1889,9 +1932,9 @@ subroutine getIntgResults (valeValeGamma,coreValeOLGamma,&
       !   The dataspace covers all the data on the file.  The exact data to
       !   read will be selected in each j-loop iteration via hyperslab.
       call h5dget_space_f (intg_did,fileIntg_dsid,hdferr)
-      if (hdferr /= 0) stop 'Can not get space'
+      if (hdferr /= 0) stop 'Cannot get space'
       call h5dget_create_plist_f (intg_did,fileIntg_plid,hdferr)
-      if (hdferr /= 0) stop 'Can not get create plist'
+      if (hdferr /= 0) stop 'Cannot get create plist'
       call h5pget_chunk_f (fileIntg_plid,2,chunkDims,hdferr)
       if (hdferr == -1) stop 'Failed to get chunk size'
       call h5sget_simple_extent_npoints_f (fileIntg_dsid,numPoints,hdferr)
@@ -1906,9 +1949,9 @@ subroutine getIntgResults (valeValeGamma,coreValeOLGamma,&
       !   read.  This dataspace covers all the loop index data on the file.
       !   The exact loop indices to read will be chosen in the j-loop.
       call h5dget_space_f (loopIndices_did,fileLoopIndices_dsid,hdferr)
-      if (hdferr /= 0) stop 'Can not get loop index space'
+      if (hdferr /= 0) stop 'Cannot get loop index space'
       call h5dget_create_plist_f (loopIndices_did,fileLoopIndices_plid,hdferr)
-      if (hdferr /= 0) stop 'Can not get loop index create plist'
+      if (hdferr /= 0) stop 'Cannot get loop index create plist'
       call h5pget_chunk_f (fileLoopIndices_plid,2,loopIndexDims,hdferr)
       if (hdferr == -1) stop 'Failed to get loop index chunk size'
       call h5sget_simple_extent_npoints_f (fileLoopIndices_dsid,numPoints,&
@@ -2163,7 +2206,7 @@ subroutine getIntgResults (valeValeGamma,coreValeOLGamma,&
          !   type of calculation when we have some 300 kpoints.)  This is
          !   also why this question is not asked for the Gamma kpoint
          !   situation below.
-         if (noSaveValeVale == 0) then
+         if (saveValeVale == 1) then
             call h5dwrite_f (valeValeBand_did,H5T_NATIVE_DOUBLE,&
                   & packedValeVale(:,:),valeValeBand_dims,hdferr)
             if (hdferr == -1) stop 'Failed to write packed vale vale band'
@@ -2174,7 +2217,7 @@ subroutine getIntgResults (valeValeGamma,coreValeOLGamma,&
          deallocate (valeCore)
       else  ! No core dim in whole system so orthogonalization is not needed.
          deallocate (coreCore)
-         if (noSaveValeVale == 0) then
+         if (saveValeVale == 1) then
             allocate (packedValeVale(2,valeDim*(valeDim+1)/2))
 
             ! Initialize the index counter for packing.
@@ -2281,7 +2324,7 @@ subroutine getIntgResults (valeValeGamma,coreValeOLGamma,&
          deallocate (valeCoreGamma)
       else  ! No core dimension in the whole system.
          deallocate (coreCoreGamma)
-         if (noSaveValeVale == 0) then
+         if (saveValeVale == 1) then
             allocate (packedValeVale(1,valeDim*(valeDim+1)/2))
 
             ! Initialize the index counter for packing.

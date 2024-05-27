@@ -41,23 +41,27 @@ array(19,:) = (/0,3,0/)
 array(20,:) = (/0,0,3/)
 
 ! Define the constants
-a1 = 0.3d0
-a2 = 0.3d0
-a3 = 0.3d0
-A = 0d0
-B = 0d0
-C = 0d0
+a1 = 0.50d0
+a2 = 0.95d0
+a3 = 0.30d0
+A(1) = 1d0
+A(2) = 1d0
+A(3) = 1d0
+B(1) = 3d0
+B(2) = 3d0
+B(3) = 3d0
+C = 4d0
 mesh = 0.2d0 ! Width of interval.
 
 ! Open output file
 open(2,file='testOutput',status='new')
 
 ! Loop over the x, y, and z triad values
-do p = 1, 20
-  do q = 1, 20
+do p = 1, 10
+  do q = 1, 10
     ! Properly assign l1 and l2 values for each dimension
-    l1 = array(p,:)
-    l2 = array(q,:)
+    l1 = array(q,:)
+    l2 = array(p,:)
 
     ! Initialize sum variable
     sSum = 0
