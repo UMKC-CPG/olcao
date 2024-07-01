@@ -660,7 +660,7 @@ def kinetic(triads, vectorize, self_reference):
     return soln_mtx_ke
 
 
-def nuclear(triads, m, vectorize):
+def nuclear(triads, add_matrix_tag, m, vectorize):
 
     # If we need to vectorize, then add (:) or :, in the appropriate places.
     if (vectorize):
@@ -796,6 +796,19 @@ def nuclear(triads, m, vectorize):
                         a_minus_idx, b_minus_idx, triads, "N", vectorize)
 
                 soln_mtx_np[a][b_plus_idx] = temp_string
+
+    # The overlap procedure is customizable for use in other integrals. Here
+    #   we make name changes to accomodate those other uses.
+
+    # If the overlap is explicitly used (as for the kinetic energy) then we
+    #   relabel the pc terms with pc_ol to clearly identify them as being
+    #   specifically from the overlap.
+    if (add_matrix_tag):
+        # Replace all instances of "pc" from the overlap solution matrix with
+        #   "pc_ol". Thus, the overlap solution elements can be integrated
+        #   with the kinetic energy (or other) solution elements.
+        soln_mtx_np = \
+                [[y.replace("pc", "pc_np") for y in x] for x in soln_mtx_np]
 
     # For the three center nuclear we relabel the inv_2zeta variable for use
     #   in a three center integral (as inv_2zeta3C). Note that this differs
@@ -1478,6 +1491,62 @@ def delectronbc(triads, vectorize):
     return soln_mtx_debc
 
 
+# Relies on the overlap solutions.
+def dnuclearcb(triads, vectorize):
+
+    # If we need to vectorize, then add (:) or :, in the appropriate places.
+    if (vectorize):
+        vec_tag = "(:)"
+        vec_tag_comma = ":,"
+    else:
+        vec_tag = ""
+        vec_tag_comma = ""
+
+    # Make a convenient shorthand for the length of the triad array.
+    num_triads = len(triads)
+
+    # Initialize the solution matrix to empty strings.
+    soln_mtx_dncb = [[[""]*3 for i in range(num_triads)] \
+                   for j in range(num_triads)]
+
+    # Produce a string for each element of the solution matrix.
+    for xyz in range(3):
+        for a in range(num_triads):
+            for b in range(num_triads):
+
+                # Unlike for the other cases where a recursive construction
+                #   of matrix elements is performed, the derivative of the
+                #   kinetic energy terms can each be directly expressed in
+                #   terms of equal or lower angular momentum elements from
+                #   the regular kinetic energy and overlap matrices which
+                #   are assumed to already have been computed.
+
+                # Get the indices for matrix elements that have "one lower"
+                #   angular momentum along the current xyz axis
+                a_minus_idx = triad_search(triads[a].copy(), triads, False,
+                                           xyz, 0, num_triads)
+                b_minus_idx = triad_search(triads[b].copy(), triads, False,
+                                           xyz, 0, num_triads)
+
+                soln_mtx_dncb[a][b][xyz] = f"2.0d0*a2*(" \
+                        + f"GB({xyz+1})*pc_np({a+1},{b+1},1) " \
+                        + f"- GC({xyz+1})*pc_np({a+1},{b+1},2)"
+                if (a_minus_idx >= 0):
+                    soln_mtx_dncb[a][b][xyz] += f" + {triads[a][xyz]}" \
+                            + f"*inv_2zeta3C*(" \
+                            + f"pc_np({a_minus_idx+1},{b+1},1) - "\
+                            + f"pc_np({a_minus_idx+1},{b+1},2))"
+                if (b_minus_idx >= 0):
+                    soln_mtx_dncb[a][b][xyz] += f" + {triads[b][xyz]} * (" \
+                            + f"(inv_2zeta3C - inv_2zeta_b)*" \
+                            + f"pc_np({a+1},{b_minus_idx+1},1) - " \
+                            + f"inv_2zeta3C * pc_np({a+1},{b_minus_idx+1},2))"
+                soln_mtx_dncb[a][b][xyz] += ")"
+                        
+    return soln_mtx_dncb
+
+
+
 def print_production_overlap_vec(conversion, triads, matrix, lam_sh_list,
                                  lam_pc_list, f):
 
@@ -1679,7 +1748,7 @@ def print_production_electron_vec(conversion, triads, matrix, lam_sh_list,
    do i = 1, 3
       sum_PC_3C_sqrd(:) = sum_PC_3C_sqrd(:) + PC_3C(:,i)**2
    enddo
-   prefactorOL(:) = ((pi*inv_zeta3C(:))**1.5) &
+   preFactorOL(:) = ((pi*inv_zeta3C(:))**1.5) &
          & * exp(-xi(:)*sum_d_sqrd &
          &       - (zeta(:)*a3*inv_zeta3C(:))*sum_PC_3C_sqrd(:))
 
@@ -2179,7 +2248,7 @@ def print_production_electron(conversion, triads, matrix, lam_sh_list,
    GB = G - B
    PC_3C = P - C
    d = A - B
-   prefactorOL = ((pi/zeta3C)**1.5) &
+   preFactorOL = ((pi/zeta3C)**1.5) &
          & * exp(-xi*sum(d**2)-(zeta*a3/zeta3C)*sum(PC_3C**2))
 
 """
@@ -2503,7 +2572,7 @@ def print_production_dkinetic(conversion, triads, matrix_dk, matrix_ke,
 
    ! Define local variables.
    real (kind=double), dimension (""" \
-           + f"{len(triads)},{len(triads)},3), intent(out) :: pc" + """
+           + f"{len(triads)},{len(triads)},3) :: pc" + """
    real (kind=double), dimension (""" \
            + f"{len(triads)},{len(triads)}) :: pc_ol" + """
    real (kind=double), dimension (""" \
@@ -2535,7 +2604,7 @@ def print_production_dkinetic(conversion, triads, matrix_dk, matrix_ke,
     # Print the pc and sh Gaussian terms.
     lib.print_production_pc_sh(conversion, triads, f, [matrix_ol, matrix_ke,
                  matrix_dk], [[1, 1, "_ol"], [2, 1, "_ke"], [8, 3, ""]],
-                 lam_sh_list, lam_pc_list)
+                 lam_sh_list, lam_pc_list, False)
 
     # Print the subroutine foot.
     foot = """
@@ -2543,6 +2612,163 @@ def print_production_dkinetic(conversion, triads, matrix_dk, matrix_ke,
 """
     f.write(foot)
 
+
+def print_production_delectroncb(conversion, triads, matrix_de, matrix_ol,
+        lam_sh_list, lam_pc_list, f):
+
+    # Print the subroutine header for the analytical portion.
+    head = """
+   subroutine delectron3CIntgCB(a1,a2,a3,A,B,C,l1l2switch,sh)
+
+   use O_Kinds
+   use O_Constants, only: pi
+
+   implicit none
+
+   ! sh(16,16,:): 1,s; 2,x; 3,y; 4,z; 5,xy; 6,xz; 7,yz; 8,xx-yy;
+   ! 9,2zz-xx-yy; 10,xyz; 11,xxz-yyz; 12,xxx-3yyx; 13,3xxy-yyy; 
+   ! 14,2zzz-3xxz-3yyz; 15,4zzx-xxx-yyx; 16,4zzy-xxy-yyy
+
+   ! pc(20,20,:): 1,s; 2,x; 3,y; 4,z; 5,xx; 6,yy; 7,zz; 8,xy; 9,xz;
+   ! 10,yz; 11,xyz; 12,xxy; 13,xxz; 14,yyx; 15,yyz; 16,zzx; 17,zzy
+   ! 18,xxx; 19,yyy; 20,zzz
+
+   ! Define the dummy variables passed to this subroutine.
+   real (kind=double), intent (in) :: a1, a2, a3
+   real (kind=double), dimension (3), intent (in) :: A, B, C
+   integer, intent (in) :: l1l2switch
+   real (kind=double), dimension (""" \
+           + f"{len(conversion)},{len(conversion)},3), intent(out) :: sh" \
+           + """
+
+   ! Define local variables.
+   real (kind=double), dimension (""" \
+           + f"{len(triads)},{len(triads)},3) :: pc" + """
+   real (kind=double), dimension (""" \
+           + f"{len(triads)},{len(triads)}) :: pc_ol" + """
+   real (kind=double), dimension (3) :: P, PA, PB, d
+   real (kind=double), dimension (3) :: G, GA, GB, GC, PC_3C
+   real (kind=double) :: zeta, inv_2zeta, xi
+   real (kind=double) :: zeta3C, inv_2zeta3C, zetaFactor
+   real (kind=double) :: preFactorOL
+   real (kind=double) :: inv_2zeta_a, inv_2zeta_b
+
+   ! Initialize local variables.
+   zeta = a1 + a2
+   zeta3C = zeta + a3
+   zetaFactor = (a2+a3)/zeta3C
+   inv_2zeta = 1.0d0 / (2.0d0 * zeta)
+   inv_2zeta_a = 1.0d0 / (2.0d0 * a1)
+   inv_2zeta_b = 1.0d0 / (2.0d0 * a2)
+   inv_2zeta3C = 1.0d0 / (2.0d0 * zeta3C)
+   xi = a1 * a2 / zeta
+   P = (a1*A + a2*B) / zeta
+   G = (a1*A + a2*B + a3*C) / zeta3C
+   PA = P - A
+   PB = P - B
+   GA = G - A
+   GB = G - B
+   GC = G - C
+   PC_3C = P - C
+   d = A - B
+   preFactorOL = ((pi/zeta3C)**1.5) &
+         & * exp(-xi*sum(d**2)-(zeta*a3/zeta3C)*sum(PC_3C**2))
+
+"""
+    f.write(head)
+
+    # Print the pc and sh Gaussian terms.
+    lib.print_production_pc_sh(conversion, triads, f, [matrix_ol, matrix_de],
+                 [[1, 1, "_ol"], [9, 3, ""]], lam_sh_list, lam_pc_list, False)
+
+    # Print the subroutine foot.
+    foot = """
+   end subroutine delectron3CIntgCB
+"""
+    f.write(foot)
+
+
+def print_production_dnuclearcb(conversion, triads, matrix_dn, matrix_n,
+        max_lam, lam_sh_list, lam_pc_list, f):
+
+    if (2*max_lam+1 == 1):
+        max_m = 2
+    else:
+        max_m = 2*max_lam+1
+
+    # Print the subroutine header for the analytical portion.
+    head = """
+   subroutine dnuclear3CIntgCB(a1,a2,a3,A,B,C,l1l2switch,sh)
+
+   use O_Kinds
+   use O_Constants, only: pi
+
+   implicit none
+
+   ! sh(16,16,:): 1,s; 2,x; 3,y; 4,z; 5,xy; 6,xz; 7,yz; 8,xx-yy;
+   ! 9,2zz-xx-yy; 10,xyz; 11,xxz-yyz; 12,xxx-3yyx; 13,3xxy-yyy; 
+   ! 14,2zzz-3xxz-3yyz; 15,4zzx-xxx-yyx; 16,4zzy-xxy-yyy
+
+   ! pc(20,20,:): 1,s; 2,x; 3,y; 4,z; 5,xx; 6,yy; 7,zz; 8,xy; 9,xz;
+   ! 10,yz; 11,xyz; 12,xxy; 13,xxz; 14,yyx; 15,yyz; 16,zzx; 17,zzy
+   ! 18,xxx; 19,yyy; 20,zzz
+
+   ! Define the dummy variables passed to this subroutine.
+   real (kind=double), intent (in) :: a1, a2, a3
+   real (kind=double), dimension (3), intent (in) :: A, B,C
+   integer, intent (in) :: l1l2switch
+   real (kind=double), dimension (""" \
+           + f"{len(conversion)},{len(conversion)},3), intent(out) :: sh" \
+           + """
+
+   ! Define local variables.
+   real (kind=double), dimension (""" \
+           + f"{len(triads)},{len(triads)},3) :: pc" + """
+   integer :: m
+   real (kind=double), dimension (""" \
+           + f"{len(triads)},{len(triads)},{2*max_lam+max_m}) :: pc_np" + """
+   real (kind=double), dimension (3) :: G, GA, GB, GC, P, PC_3C, d1, d2, d3
+   real (kind=double) :: U, zeta, zeta3C, inv_2zeta3C, inv_2zeta_b
+   real (kind=double), dimension (""" + f"{2*max_lam+2}" + """) :: preFactorN
+   real (kind=double), dimension (7) :: F
+
+   ! Initialize local variables.
+   zeta = a1 + a2
+   zeta3C = zeta + a3
+   inv_2zeta_b = 1.0d0 / (2.0d0 * a2)
+   inv_2zeta3C = 1.0d0 / (2.0d0 * zeta3C)
+   P = (a1*A + a2*B) / zeta
+   G = (a1*A + a2*B + a3*C) / zeta3C
+   GA = G - A
+   GB = G - B
+   GC = G - C
+   PC_3C = P - C
+   d1 = A - B
+   d2 = A - C
+   d3 = B - C
+   U = zeta3C * sum(GC**2)
+   call boys(U,F)
+
+   ! Note, the number of m terms is one greater than (2 l + 1).
+   do m = 1, """ + f"{2*max_lam + 2}" + """
+      preFactorN(m) = F(m) * 2.0d0*(pi/zeta3C) * &
+            & exp(-sum(a1*a2*(d1**2) + a1*a3*(d2**2) + a2*a3*(d3**2))/zeta3C)
+      pc_np(1,1,m) = preFactorN(m)
+   enddo
+
+"""
+    f.write(head)
+
+    # Print the pc and sh Gaussian terms.
+    lib.print_production_pc_sh(conversion, triads, f, [matrix_n, matrix_dn],
+                 [[4, 2, "_np"], [10, 3, ""]],
+                 lam_sh_list, lam_pc_list, False)
+
+    # Print the subroutine foot.
+    foot = """
+   end subroutine dnuclear3CIntgCB
+"""
+    f.write(foot)
 
 
 
@@ -2713,7 +2939,7 @@ def print_test_electron_ana(conversion, triads, matrix, f):
    GB = G - B
    PC_3C = P - C
    d = A - B
-   prefactorOL = ((pi/zeta3C)**1.5) &
+   preFactorOL = ((pi/zeta3C)**1.5) &
          & * exp(-xi*sum(d**2)-(zeta*a3/zeta3C)*sum(PC_3C**2))
 
 """
@@ -2794,7 +3020,7 @@ def print_test_nuclear_ana(conversion, triads, matrix, max_lam, f):
 
     num_conversion = len(conversion)
     num_triads = len(triads)
-    lib.print_nuclear_pc(f, matrix, num_triads, num_triads)
+    lib.print_nuclear_pc(f, [matrix], [4, 1, ""], num_triads, num_triads)
     lib.print_pc_to_sh(conversion, f, [4, 1, ""], 0, num_conversion,
                        num_conversion)
 
@@ -3830,7 +4056,13 @@ def print_test_delectronbc_ana(conversion, triads, matrix_de, matrix_ol, f):
     f.write(foot)
 
 
-def print_test_dnuclearcb_ana(conversion, triads, matrix_dn, matrix_n, f):
+def print_test_dnuclearcb_ana(conversion, triads, matrix_dn, matrix_n,
+        max_lam, f):
+
+    if (2*max_lam+1 == 1):
+        max_m = 2
+    else:
+        max_m = 2*max_lam+1
 
     # Print the subroutine header for the analytical portion.
     head = """
@@ -3859,16 +4091,18 @@ def print_test_dnuclearcb_ana(conversion, triads, matrix_dn, matrix_n, f):
            + """
 
    ! Define local variables.
+   integer :: m
    real (kind=double), dimension (""" \
-           + f"{len(triads)},{len(triads)}) :: pc_n" + """
-   real (kind=double), dimension (3) :: GA, GB, GC, P, PC_3C, d1, d2, d3
-   real (kind=double) :: zeta, zeta3C, inv_2zeta3C
-   real (kind=double), dimension (""" + f"{2*max_lam+1}" + """) :: preFactorN
+           + f"{len(triads)},{len(triads)},{2*max_lam+max_m}) :: pc_np" + """
+   real (kind=double), dimension (3) :: G, GA, GB, GC, P, PC_3C, d1, d2, d3
+   real (kind=double) :: U, zeta, zeta3C, inv_2zeta3C, inv_2zeta_b
+   real (kind=double), dimension (""" + f"{2*max_lam+2}" + """) :: preFactorN
    real (kind=double), dimension (7) :: F
 
    ! Initialize local variables.
    zeta = a1 + a2
    zeta3C = zeta + a3
+   inv_2zeta_b = 1.0d0 / (2.0d0 * a2)
    inv_2zeta3C = 1.0d0 / (2.0d0 * zeta3C)
    P = (a1*A + a2*B) / zeta
    G = (a1*A + a2*B + a3*C) / zeta3C
@@ -3882,9 +4116,11 @@ def print_test_dnuclearcb_ana(conversion, triads, matrix_dn, matrix_n, f):
    U = zeta3C * sum(GC**2)
    call boys(U,F)
 
-   do m = 1, """ + f"{2*max_lam + 1}" + """
+   ! Note, the number of m terms is one greater than (2 l + 1).
+   do m = 1, """ + f"{2*max_lam + 2}" + """
       preFactorN(m) = F(m) * 2.0d0*(pi/zeta3C) * &
             & exp(-sum(a1*a2*(d1**2) + a1*a3*(d2**2) + a2*a3*(d3**2))/zeta3C)
+      pc_np(1,1,m) = preFactorN(m)
    enddo
 
 """
@@ -3893,7 +4129,8 @@ def print_test_dnuclearcb_ana(conversion, triads, matrix_dn, matrix_n, f):
     # Print the pc and sh Gaussian terms.
     num_triads = len(triads)
     lib.print_pc(conversion, f, [matrix_n, matrix_dn],
-                 [[4, 1, "_np"], [10, 3, ""]], num_triads, num_triads)
+                 [[4, 2, "_np"], [10, 3, ""]],
+                 num_triads, num_triads)
 
     # Print the subroutine foot.
     foot = """

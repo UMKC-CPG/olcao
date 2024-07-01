@@ -14,6 +14,7 @@ sub printHelp
 #              [-dos  [\$edge]] [-scfdos  [\$edge]]
 #              [-dimo [\$edge]] [-scfdimo [\$edge]]
 #              [-field [\$edge]] [-scffield [\$edge]]
+#              [-force [\$edge]] [-scfforce [\$edge]]
 #              [-sige [\$edge]] [-scfsige [\$edge]]
 #              [-optc [\$edge]] [-nlop [\$edge]]
 #              [-sybd [\$edge]] [-loen]] |
@@ -150,6 +151,7 @@ my $dimoRun;
 my $pacsRun;
 my $sybdRun;
 my $bondRun;
+my $forceRun;
 my $optcRun;
 my $nlopRun;
 my $sigeRun;
@@ -158,6 +160,7 @@ my $loenRun;
 my $dosRunSCF;
 my $dimoRunSCF;
 my $bondRunSCF;
+my $forceRunSCF;
 my $fieldRunSCF;
 
 # Basis information.
@@ -202,6 +205,7 @@ my $pacs;
 my $sige;
 my $field;
 my $loen;
+my $force;
 
 # Auxiliary suffix components.
 my $loci;
@@ -321,11 +325,13 @@ sub setDefaultVars
    $nlopRun=0;        #Should a nlop task be done?
    $sigeRun=0;        #Should a sige task be done?
    $fieldRun=0;       #Should a field task be done?
+   $forceRun=0;       #Should a force task be done?
    $loenRun=0;        #Should a local environment task be done?
    $dosRunSCF=0;      #Run DOS in SCF?
    $dimoRunSCF=0;     #Run dipole in SCF?
    $bondRunSCF=0;     #Run bond in SCF?
    $fieldRunSCF=0;    #Run field in SCF?
+   $forceRunSCF=0;    #Run force in SCF?
    $scfBasis="fb";    #Code for which scf basis to be use.  (Default is full.)
    $scfBasisSet=0;    #Will be set to 1 if given explicitly on the command line.
    $pscfBasis="no";   #Code for which pscf basis to be use.  (Default is none.)
@@ -440,6 +446,28 @@ sub parseCLP
             {$edge=$ARGV[++$number];}
          if ($scfBasisSet == 0)
             {$scfBasis = "mb";}  #Minimal Basis
+         $scfBasisSet = 1;
+      }
+      elsif ($ARGV[$number] eq "-force")
+      {
+         $forceRun=1;
+         if (($#ARGV == $number) || ($ARGV[$number+1] =~ /\-/))
+            {$edge = "gs";}
+         else
+            {$edge=$ARGV[++$number];}
+         if ($pscfBasisSet == 0)
+            {$pscfBasis = "fb";}  #Full Basis
+         $pscfBasisSet = 1;
+      }
+      elsif ($ARGV[$number] eq "-scfforce")
+      {
+         $forceRunSCF=1;
+         if (($#ARGV == $number) || ($ARGV[$number+1] =~ /\-/))
+            {$edge = "gs";}
+         else
+            {$edge=$ARGV[++$number];}
+         if ($scfBasisSet == 0)
+            {$scfBasis = "fb";}  #Full Basis
          $scfBasisSet = 1;
       }
       elsif ($ARGV[$number] eq "-optc")
@@ -662,6 +690,7 @@ sub initFileNames
    $sige      = "sige";
    $field     = "field";
    $loen      = "loen";
+   $force     = "force";
 
    #DEFINE AUXILIARY SUFFIX COMPONENTS
    $loci      = ".loci";
@@ -1297,7 +1326,10 @@ sub determineCLP
       $taskCLP = "$taskCLP" . "$bondRunSCF ";
 
       # The next CLP indicates if a dipole calculation should also be done.
-      $taskCLP = "$taskCLP" . "$dimoRunSCF";
+      $taskCLP = "$taskCLP" . "$dimoRunSCF ";
+
+      # The next CLP indicates if a force calculation should also be done.
+      $taskCLP = "$taskCLP" . "$forceRunSCF";
    }
    elsif ("$taskName" eq "$intg")
    {
@@ -1640,6 +1672,21 @@ sub manageOutput
                &move("fort.12",
                      "$proj_home/$taskEdge$bond$taskBasis$bo3c$alt$raw");
             }
+         }
+      }
+      if ($forceRunSCF == 1)
+      {
+         if ($spinPol == 2)
+         {
+            &copy("fort.98","$taskEdge$force$taskBasis$alt$dat.98");
+            &move("fort.98","$proj_home/$taskEdge$force$taskBasis$alt$up$dat");
+            &copy("fort.99","$taskEdge$force$taskBasis$alt$dat.99");
+            &move("fort.99","$proj_home/$taskEdge$force$taskBasis$alt$dn$dat");
+         }
+         else
+         {
+            &copy("fort.98","$taskEdge$force$taskBasis$alt$dat.98");
+            &move("fort.98","$proj_home/$taskEdge$force$taskBasis$alt$dat");
          }
       }
    }

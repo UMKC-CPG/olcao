@@ -30,8 +30,9 @@ module O_CommandLine
    integer :: doNLOP ! Include computation of the non-linear optical prop.
 
    ! Variables used by main only or the total SCF program.
-   integer :: doDOS  ! Tack on a DOS calculation (1) or not (0).
-   integer :: doBond ! Tack on a bond order calculation (1) or not (0).
+   integer :: doDOS   ! Tack on a DOS calculation (1) or not (0).
+   integer :: doBond  ! Tack on a bond order calculation (1) or not (0).
+   integer :: doForce ! Include computation of the force between atoms.
 
    ! Variables for any request that requires the momentum matrix elements.
    integer :: doMOME ! Include computation of the momentum matrix elements.
@@ -236,6 +237,13 @@ subroutine parseMainCommandLine
    nextArg = nextArg + 1
    read (commandBuffer,*) doDIMO
    write (20,*) "doDIMO = ",doDIMO
+
+   ! Read a flag indicating that a force calculation should be tacked
+   !   on to the end of the SCF iterations.
+   call getarg(nextArg,commandBuffer)
+   nextArg = nextArg + 1
+   read (commandBuffer,*) doForce
+   write (20,*) "doForce = ",doForce
 
 
    ! Record the date and time that we end.

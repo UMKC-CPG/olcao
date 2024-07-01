@@ -22,11 +22,13 @@ add_executable(gOLCAOsetup $<TARGET_OBJECTS:gCommon> ../basis.f90
    ../OLCAO_SetupWrap.f90 )
 target_link_libraries(gOLCAOsetup gGaussIntegrals)
 
-add_executable(gOLCAOmain $<TARGET_OBJECTS:gCommon> ../hdf5MainEval.f90 
-   ../hdf5MainEvec.F90 ../hdf5MainPotRho.f90 ../hdf5Main.f90 
-   ../hdf5PSCFBand.F90 ../elecStat.f90 ../matrixSubs.F90 ../secularEqn.F90 
-   ../populate.F90 ../valeCharge.F90 ../potentialUpdate.F90 ../dos.F90 
-   ../bond.F90 ../bond3C.F90 ../OLCAO_Main.f90 ../OLCAO_MainWrap.f90 )
+add_executable(gOLCAOmain $<TARGET_OBJECTS:gCommon> ../basis.f90
+   ../hdf5MainEval.f90 ../hdf5MainEvec.F90 ../hdf5MainPotRho.f90
+   ../hdf5Main.f90 ../hdf5PSCFBand.F90 ../elecStat.f90 ../matrixSubs.F90
+   ../secularEqn.F90 ../populate.F90 ../intgSaving.F90 ../forces.F90
+   ../valeCharge.F90 ../potentialUpdate.F90 ../dos.F90 ../bond.F90
+   ../bond3C.F90 ../OLCAO_Main.f90 ../OLCAO_MainWrap.f90)
+target_link_libraries(gOLCAOmain gGaussIntegrals)
 
 add_executable(gOLCAOintg $<TARGET_OBJECTS:gCommon> ../basis.f90 
    ../hdf5PSCFIntg.f90 ../intgOrtho.F90 ../intgSaving.F90 ../integralsPSCF.F90 

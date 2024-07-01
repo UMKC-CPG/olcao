@@ -3493,7 +3493,10 @@ def print_test_dnuclearcb_num(conversion, triads, f):
    real (kind=double), dimension(3) :: soln
    real (kind=double) :: start_pos, r, xyz_sum_coeff
    real (kind=double), allocatable, dimension (:,:) :: xyz, xyz_sum
-   real (kind=double), allocatable, dimension (:,:) :: C_dist, C_dist_sqrd
+   real (kind=double), allocatable, dimension (:,:) :: xyz_sum_plus1
+   real (kind=double), allocatable, dimension (:,:) :: xyz_sum_minus1
+   real (kind=double), allocatable, dimension (:,:) :: B_dist, C_dist
+   real (kind=double), allocatable, dimension (:,:) :: C_dist_sqrd
 
    ! Initialize local variables.
 """
@@ -3513,71 +3516,22 @@ def print_test_dnuclearcb_num(conversion, triads, f):
    num_steps = cell_size * 2.0d0 / step_size + 1  ! +1 accounts for xyz=zero.
 
    ! Original equation for d/dx nuclear from sympy:
-   ! (xyz(1)-A(1))**l1(1)*(xyz(1)-B(1))**l2(1)
-   ! *exp(-a1*((xyz(1)-A(1))**2)-a2*((xyz(1)-B(1))**2)-a3*((xyz(1)-C(1))**2))
-   ! *(xyz(2)-A(2))**l1(2)*(xyz(2)-B(2))**l2(2)
-   ! *exp(-a1*((xyz(2)-A(2))**2)-a2*((xyz(2)-B(2))**2)-a3*((xyz(2)-C(2))**2))
-   ! *(xyz(3)-A(3))**l1(3)*(xyz(3)-B(3))**l2(3)
-   ! *exp(-a1*((xyz(3)-A(3))**2)-a2*((xyz(3)-B(3))**2)-a3*((xyz(3)-C(3))**2))
+   ! (xyz(1)-A(1))**l1(1)*(xyz(2)-A(2))**l1(2)*(xyz(3)-A(3))**l1(3)
+   ! *exp(-a1*((xyz(1)-A(1))**2+(xyz(2)-A(2))**2+(xyz(3)-A(3))**2))
+   ! *exp(-a2*((xyz(1)-B(1))**2+(xyz(2)-B(2))**2+(xyz(3)-B(3))**2))
+   ! *exp(-a3*((xyz(1)-C(1))**2+(xyz(2)-C(2))**2+(xyz(3)-C(3))**2))
+   ! /sqrt((xyz(1)-C(1))**2+(xyz(2)-C(2))**2+(xyz(3)-C(3))**2)
    ! *(
-   !  l2(1)
-   !  /((xyz(1)-B(1))*sqrt((xyz(1)-C(1))**2+(xyz(2)-C(2))**2+(xyz(3)-C(3))**2))
-   ! -
-   !  2*a2*(xyz(1)-B(1))
-   !  /sqrt((xyz(1)-C(1))**2+(xyz(2)-C(2))**2+(xyz(3)-C(3))**2)
-   ! -
-   !  2*a3*(xyz(1)-C(1))
-   !  /sqrt((xyz(1)-C(1))**2+(xyz(2)-C(2))**2+(xyz(3)-C(3))**2)
-   ! -
-   !  (xyz(1)-C(1))
-   !  /((xyz(1)-C(1))**2+(xyz(2)-C(2))**2+(xyz(3)-C(3))**2)**(3.0d0/2.0d0)
-   ! )
-
-   ! Original equation for d/dy nuclear from sympy:
-   ! (xyz(1)-A(1))**l1(1)*(xyz(1)-B(1))**l2(1)
-   ! *exp(-a1*((xyz(1)-A(1))**2-a2*(xyz(1)-B(1))**2-a3*(xyz(1)-C(1))**2))
-   ! *(xyz(2)-A(2))**l1(2)*(xyz(2)-B(2))**l2(2)
-   ! *exp(-a1*((xyz(2)-A(2))**2-a2*(xyz(2)-B(2))**2-a3*(xyz(2)-C(2))**2))
-   ! *(xyz(3)-A(3))**l1(3)*(xyz(3)-B(3))**l2(3)
-   ! *exp(-a1*((xyz(3)-A(3))**2-a2*(xyz(3)-B(3))**2-a3*(xyz(3)-C(3))**2))
-   ! *(
-   !  l2(2)
-   !  /((xyz(2)-B(2))*sqrt((xyz(1)-C(1))**2+(xyz(2)-C(2))**2+(xyz(3)-C(3))**2))
-   ! -
-   !  2*a2*(xyz(2)-B(2))
-   !  /sqrt((xyz(1)-C(1))**2+(xyz(2)-C(2))**2+(xyz(3)-C(3))**2)
-   ! -
-   !  2*a3*(xyz(2)-C(2))
-   !  /sqrt((xyz(1)-C(1))**2+(xyz(2)-C(2))**2+(xyz(3)-C(3))**2)
-   ! -
-   !  (xyz(2)-C(2))
-   !  /((xyz(1)-C(1))**2+(xyz(2)-C(2))**2+(xyz(3)-C(3))**2)**(3.0d0/2.0d0)
-   ! )
-
-   ! Original equation for d/dz nuclear from sympy:
-   ! (xyz(1)-A(1))**l1(1)*(xyz(1)-B(1))**l2(1)
-   ! *exp(-a1*((xyz(1)-A(1))**2-a2*(xyz(1)-B(1))**2-a3*(xyz(1)-C(1))**2))
-   ! *(xyz(2)-A(2))**l1(2)*(xyz(2)-B(2))**l2(2)
-   ! *exp(-a1*((xyz(2)-A(2))**2-a2*(xyz(2)-B(2))**2-a3*(xyz(2)-C(2))**2))
-   ! *(xyz(3)-A(3))**l1(3)*(xyz(3)-B(3))**l2(3)
-   ! *exp(-a1*((xyz(3)-A(3))**2-a2*(xyz(3)-B(3))**2-a3*(xyz(3)-C(3))**2))
-   ! *(
-   !  l2(3)
-   !  /((xyz(3)-B(3))*sqrt((xyz(1)-C(1))**2+(xyz(2)-C(2))**2+(xyz(3)-C(3))**2))
-   ! -
-   !  2*a2*(xyz(3)-B(3))
-   !  /sqrt((xyz(1)-C(1))**2+(xyz(2)-C(2))**2+(xyz(3)-C(3))**2)
-   ! -
-   !  2*a3*(xyz(3)-C(3))
-   !  /sqrt((xyz(1)-C(1))**2+(xyz(2)-C(2))**2+(xyz(3)-C(3))**2)
-   ! -
-   !  (xyz(3)-C(3))
-   !  /((xyz(1)-C(1))**2+(xyz(2)-C(2))**2+(xyz(3)-C(3))**2)**(3.0d0/2.0d0)
+   ! -l2(1)*(xyz(1)-B(1))**(l2(1)-1)*(xyz(2)-B(2))**l2(2)*(xyz(3)-B(3))**l2(3)
+   ! +2*a2*(xyz(1)-B(1))**(l2(1)+1)*(xyz(2)-B(2))**l2(2)*(xyz(3)-B(3))**l2(3)
    ! )
 
    ! Alocate space to hold precomputed quantities.
    allocate(xyz(num_steps,3))
    allocate(xyz_sum(num_steps,3))
+   allocate(xyz_sum_plus1(num_steps,3))
+   allocate(xyz_sum_minus1(num_steps,3))
+   allocate(B_dist(num_steps,3))
    allocate(C_dist(num_steps,3))
    allocate(C_dist_sqrd(num_steps,3))
 
@@ -3598,11 +3552,23 @@ def print_test_dnuclearcb_num(conversion, triads, f):
          do i = 1, 3
              do j = 1, num_steps+1
                 xyz(j,i) = (start_pos + ((j-1)*step_size))
+                B_dist(j,i) = xyz(j,i) - B(i)
                 C_dist(j,i) = xyz(j,i) - C(i)
                 C_dist_sqrd(j,i) = (xyz(j,i) - C(i))**2
-                xyz_sum(j,i) = (xyz(j,i)-A(i))**l1(i)*(xyz(j,i)-B(i))**l2(i) &
-                    & *exp(-a1*((xyz(j,i)-A(i))**2) - a2*((xyz(j,i)-B(i))**2) &
-                    & - a3*(C_dist(j,i))**2)
+                xyz_sum(j,i) = &
+                   & (xyz(j,i)-A(i))**l1(i)*(xyz(j,i)-B(i))**l2(i) &
+                   & *exp(-a1*((xyz(j,i)-A(i))**2) - a2*((xyz(j,i)-B(i))**2) &
+                   & - a3*(C_dist(j,i))**2)
+                xyz_sum_plus1(j,i) = &
+                   & (xyz(j,i)-A(i))**l1(i)*(xyz(j,i)-B(i))**(l2(i)+1) &
+                   & *exp(-a1*((xyz(j,i)-A(i))**2) - a2*((xyz(j,i)-B(i))**2) &
+                   & - a3*(C_dist(j,i))**2)
+                if (l2(i) >= 1) then
+                   xyz_sum_minus1(j,i) = &
+                      & (xyz(j,i)-A(i))**l1(i)*(xyz(j,i)-B(i))**(l2(i)-1) &
+                      & * exp(-a1*((xyz(j,i)-A(i))**2) &
+                      & - a2*((B_dist(j,i))**2) - a3*(C_dist(j,i))**2)
+                endif
              enddo
          enddo
 
@@ -3617,25 +3583,32 @@ def print_test_dnuclearcb_num(conversion, triads, f):
                   r = C_dist_sqrd(i,1) + C_dist_sqrd(j,2) + C_dist_sqrd(k,3)
 
                   ! If the distance is zero, then cycle.
-                  if (r == 0) cycle
+                  if (abs(r) <= 0.00000001d0) cycle
 
-                  xyz_sum_coeff = xyz_sum(i,1)*xyz_sum(j,2)*xyz_sum(k,3)
+                  soln(1) = soln(1) + xyz_sum_plus1(i,1) * xyz_sum(j,2) &
+                        & * xyz_sum(k,3) * 2.0d0 * a2 / sqrt(r)
 
-                  ! Accumulate the solution.
-                  soln(1) = soln(1) + xyz_sum_coeff &
-                        & * ((l2(1)/(B_dist(i,1)) - 2.0d0 &
-                        & * (a2 * B_dist(i,1) + a3 * C_dist(i,1)) / sqrt(r) &
-                        & - C_dist(i,1) / r**(3.0d0/2.0d0))
+                  soln(2) = soln(2) + xyz_sum(i,1) * xyz_sum_plus1(j,2) &
+                        & * xyz_sum(k,3) * 2.0d0 * a2 / sqrt(r)
 
-                  soln(2) = soln(2) + xyz_sum_coeff &
-                        & * ((l2(2)/(B_dist(j,2)) - 2.0d0 &
-                        & * (a2 * B_dist(j,2) + a3 * C_dist(j,2)) / sqrt(r) &
-                        & - C_dist(j,2) / r**(3.0d0/2.0d0))
+                  soln(3) = soln(3) + xyz_sum(i,1) * xyz_sum(j,2) &
+                        & * xyz_sum_plus1(k,3) * 2.0d0 * a2 / sqrt(r)
 
-                  soln(3) = soln(3) + xyz_sum_coeff &
-                        & * ((l2(3)/(B_dist(k,3)) - 2.0d0 &
-                        & * (a2 * B_dist(k,3) + a3 * C_dist(k,3)) / sqrt(r) &
-                        & - C_dist(k,3) / r**(3.0d0/2.0d0))
+                  if (l2(1) >= 1) then
+                     soln(1) = soln(1) + xyz_sum_minus1(i,1) * xyz_sum(j,2) &
+                        & * xyz_sum(k,3) * (-l2(1)) / sqrt(r)
+                  endif
+
+                  if (l2(2) >= 1) then
+                     soln(2) = soln(2) + xyz_sum(i,1) * xyz_sum_minus1(j,2) &
+                        & * xyz_sum(k,3) * (-l2(2)) / sqrt(r)
+                  endif
+
+                  if (l2(3) >= 1) then
+                     soln(3) = soln(3) + xyz_sum(i,1) * xyz_sum(j,2) &
+                        & * xyz_sum_minus1(k,3) * (-l2(3)) / sqrt(r)
+                  endif
+
                enddo
             enddo
          enddo
@@ -3662,6 +3635,9 @@ def print_test_dnuclearcb_num(conversion, triads, f):
 
    deallocate(xyz)
    deallocate(xyz_sum)
+   deallocate(xyz_sum_plus1)
+   deallocate(xyz_sum_minus1)
+   deallocate(B_dist)
    deallocate(C_dist)
    deallocate(C_dist_sqrd)
 

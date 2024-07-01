@@ -23,6 +23,9 @@ module O_ValeCharge
    real (kind=double), allocatable, dimension (:)   :: massVelocityTrace
    real (kind=double), allocatable, dimension (:,:) :: dipoleMomentTrace
 
+   real (kind=double), allocatable, dimension (:,:)   :: packedValeVale
+   real (kind=double), allocatable, dimension (:,:,:) :: packedValeValeRho
+
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    ! Begin list of module subroutines.!
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -33,15 +36,15 @@ subroutine makeValenceRho
    ! Import the necessary modules.
    use O_Kinds
    use O_TimeStamps
-   use O_CommandLine,     only: doDIMO
-   use O_AtomicSites,     only: valeDim
-   use O_Input,           only: numStates
-   use O_KPoints,         only: numKPoints
-   use O_Constants,       only: smallThresh
-   use O_Potential,       only: rel, spin, potDim, potCoeffs, numPlusUJAtoms, &
-         & converged
-   use O_MainEVecHDF5,    only: valeStates, eigenVectors_did
-   use O_Populate,        only: electronPopulation, cleanUpPopulation
+   use O_CommandLine,        only: doDIMO, doForce
+   use O_AtomicSites,        only: valeDim
+   use O_Input,              only: numStates
+   use O_KPoints,            only: numKPoints
+   use O_Constants,          only: smallThresh
+   use O_Potential,          only: rel, spin, potDim, potCoeffs,&
+         & numPlusUJAtoms, converged
+   use O_MainEVecHDF5,       only: valeStates, eigenVectors_did
+   use O_Populate,           only: electronPopulation, cleanUpPopulation
    use O_SetupIntegralsHDF5, only: atomOverlap_did, atomKEOverlap_did, &
          & atomMVOverlap_did, atomNucOverlap_did, atomDMOverlap_did, &
          & atomPotOverlap_did, atomDims
@@ -51,19 +54,21 @@ subroutine makeValenceRho
          & update1UJ
    use O_MatrixSubs, only: readMatrix, readPackedMatrix, matrixElementMult, &
          & packMatrix
+   use O_Force, only: computeForce, valeValeF
 #else
    use O_BLASDSYR
    use O_SecularEquation, only: valeValeGamma, cleanUpSecularEqn, &
          & energyEigenValues, update1UJ
    use O_MatrixSubs, only: readMatrixGamma, readPackedMatrix, &
          & matrixElementMultGamma, packMatrixGamma
+   use O_Force, only: computeForceGamma, valeValeFGamma
 #endif
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
 
    ! Define the local variables used in this subroutine.
-   integer :: i,j,k ! Loop index variables
+   integer :: i,j,k,l ! Loop index variables
    integer :: skipKP
    integer :: dim1
    integer :: energyLevelCounter
@@ -73,8 +78,6 @@ subroutine makeValenceRho
    real (kind=double), allocatable, dimension (:)     :: currentPopulation
    real (kind=double), allocatable, dimension (:,:)   :: tempRealValeVale
    real (kind=double), allocatable, dimension (:,:)   :: tempImagValeVale
-   real (kind=double), allocatable, dimension (:,:)   :: packedValeVale
-   real (kind=double), allocatable, dimension (:,:,:) :: packedValeValeSpin
    real (kind=double), allocatable, dimension (:,:,:) :: &
          & structuredElectronPopulation
 #ifndef GAMMA
@@ -102,7 +105,7 @@ subroutine makeValenceRho
 #endif
 
    ! Allocate a temporary packed valeVale matrix with a spin component.
-   allocate (packedValeValeSpin(dim1,valeDim*(valeDim+1)/2,spin))
+   allocate (packedValeValeRho(dim1,valeDim*(valeDim+1)/2,spin))
 
    ! Allocate a temporary holder for the charge density for the case that the
    !   calculation is spin polarized.  This is needed when rewriting the charge
@@ -267,7 +270,7 @@ subroutine makeValenceRho
       !   to be read in next.  Store the result in the appropriate packed
       !   valeVale spin array.
       do j = 1, spin
-         call packMatrix(valeValeRho(:,:,j),packedValeValeSpin(:,:,j),&
+         call packMatrix(valeValeRho(:,:,j),packedValeValeRho(:,:,j),&
                & valeDim)
       enddo
 #else
@@ -294,7 +297,7 @@ subroutine makeValenceRho
       !   valeVale spin array.
       do j = 1, spin
          call packMatrixGamma(valeValeRhoGamma(:,:,j),&
-               & packedValeValeSpin(:,:,j),valeDim)
+               & packedValeValeRho(:,:,j),valeDim)
       enddo
 #endif
 
@@ -309,14 +312,14 @@ subroutine makeValenceRho
             & atomDims,dim1,valeDim)
 
       ! In the case that the calculation is spin polarized (spin=2) then we
-      !   need to convert the values in the packedValeValeSpin density matrix
+      !   need to convert the values in the packedValeValeRho density matrix
       !   from being spin up and spin down to being spin up + spin down and
       !   spin up - spin down.  This is accomplished with a temporary variable.
       if (spin == 2) then
          do j = 1, valeDim*(valeDim+1)/2
-            tempDensity(:) = packedValeValeSpin(:,j,1)
-            packedValeValeSpin(:,j,1)=tempDensity(:)+packedValeValeSpin(:,j,2)
-            packedValeValeSpin(:,j,2)=tempDensity(:)-packedValeValeSpin(:,j,2)
+            tempDensity(:) = packedValeValeRho(:,j,1)
+            packedValeValeRho(:,j,1)=tempDensity(:)+packedValeValeRho(:,j,2)
+            packedValeValeRho(:,j,2)=tempDensity(:)-packedValeValeRho(:,j,2)
          enddo
       endif
 
@@ -332,10 +335,10 @@ subroutine makeValenceRho
       do j = 1, spin ! j=1 -> Total; j=2 -> Difference
 #ifndef GAMMA
          call matrixElementMult (chargeDensityTrace(j),packedValeVale,&
-               & packedValeValeSpin(:,:,j),dim1,valeDim)
+               & packedValeValeRho(:,:,j),dim1,valeDim)
 #else
          call matrixElementMultGamma (chargeDensityTrace(j),packedValeVale,&
-               & packedValeValeSpin(:,:,j),dim1,valeDim)
+               & packedValeValeRho(:,:,j),dim1,valeDim)
 #endif
       enddo
 
@@ -346,10 +349,10 @@ subroutine makeValenceRho
       do j = 1, spin ! j=1 -> Total; j=2 -> Difference
 #ifndef GAMMA
          call matrixElementMult (nucPotTrace(j),packedValeVale,&
-               & packedValeValeSpin(:,:,j),dim1,valeDim)
+               & packedValeValeRho(:,:,j),dim1,valeDim)
 #else
          call matrixElementMultGamma (nucPotTrace(j),packedValeVale,&
-               & packedValeValeSpin(:,:,j),dim1,valeDim)
+               & packedValeValeRho(:,:,j),dim1,valeDim)
 #endif
       enddo
 
@@ -359,10 +362,10 @@ subroutine makeValenceRho
       do j = 1, spin ! j=1 -> Total; j=2 -> Difference
 #ifndef GAMMA
          call matrixElementMult (kineticEnergyTrace(j),packedValeVale,&
-               & packedValeValeSpin(:,:,j),dim1,valeDim)
+               & packedValeValeRho(:,:,j),dim1,valeDim)
 #else
          call matrixElementMultGamma (kineticEnergyTrace(j),packedValeVale,&
-               & packedValeValeSpin(:,:,j),dim1,valeDim)
+               & packedValeValeRho(:,:,j),dim1,valeDim)
 #endif
       enddo
 
@@ -373,10 +376,10 @@ subroutine makeValenceRho
          do j = 1, spin ! j=1 -> Total; j=2 -> Difference
 #ifndef GAMMA
             call matrixElementMult (massVelocityTrace(j),packedValeVale,&
-                  & packedValeValeSpin(:,:,j),dim1,valeDim)
+                  & packedValeValeRho(:,:,j),dim1,valeDim)
 #else
             call matrixElementMultGamma (massVelocityTrace(j),packedValeVale,&
-                  & packedValeValeSpin(:,:,j),dim1,valeDim)
+                  & packedValeValeRho(:,:,j),dim1,valeDim)
 #endif
          enddo
       endif
@@ -388,10 +391,10 @@ subroutine makeValenceRho
          do k = 1, spin ! j=1 -> Total; j=2 -> Difference
 #ifndef GAMMA
             call matrixElementMult (potRho(j,k),packedValeVale,&
-                  & packedValeValeSpin(:,:,k),dim1,valeDim)
+                  & packedValeValeRho(:,:,k),dim1,valeDim)
 #else
             call matrixElementMultGamma (potRho(j,k),packedValeVale,&
-                  & packedValeValeSpin(:,:,k),dim1,valeDim)
+                  & packedValeValeRho(:,:,k),dim1,valeDim)
 #endif
          enddo
       enddo
@@ -405,10 +408,40 @@ subroutine makeValenceRho
             do k = 1, spin
 #ifndef GAMMA
                call matrixElementMult (dipoleMomentTrace(j,k),packedValeVale,&
-                     & packedValeValeSpin(:,:,k),dim1,valeDim)
+                     & packedValeValeRho(:,:,k),dim1,valeDim)
 #else
                call matrixElementMultGamma (dipoleMomentTrace(j,k),packedValeVale,&
-                     & packedValeValeSpin(:,:,k),dim1,valeDim)
+                     & packedValeValeRho(:,:,k),dim1,valeDim)
+#endif
+            enddo
+         enddo
+      endif
+
+      ! If needed, compute the forces
+      if ((doForce == 1) .and. (converged == 1)) then
+         do j = 1, 3 ! xyz directions
+            do k = 1, spin
+#ifndef GAMMA
+!               call packMatrix(valeValeF(:,:,i,k,j),packedValeVale(:,:),&
+!                     & valeDim)
+!               valeValeRho(:,:,k) = valeValeRho(:,:,k) + transpose(valeValeRho(:,:,k))
+!               do l = 1, valeDim
+!                  valeValeRho(l,l,k) = valeValeRho(l,l,k) / 2.0_double
+!               enddo
+!               valeValeF(:,:,i,k,j) = valeValeF(:,:,i,k,j) * valeValeRho(:,:,k)
+!   packedValeVale(1,:) = packedValeVale(1,:)*packedValeValeRho(1,:,spin) + &
+!         & packedValeVale(2,:)*packedValeValeRho(2,:,spin)
+               call computeForce(valeValeRho,i,k,j)
+#else
+!               valeValeRhoGamma(:,:,k) = valeValeRhoGamma(:,:,k) + &
+!                     & transpose(valeValeRhoGamma(:,:,k))
+!               do l = 1, valeDim
+!                  valeValeRhoGamma(l,l,k) = valeValeRhoGamma(l,l,k) / 2.0_double
+!               enddo
+!               valeValeFGamma(:,:,i,k,j) = valeValeFGamma(:,:,i,k,j) * valeValeRhoGamma(:,:,k)
+!               call packMatrixGamma(valeValeFGamma(:,:,k,j),&
+!                     & packedValeVale(:,:),valeDim)
+               call computeForceGamma(valeValeRhoGamma,k,j)
 #endif
             enddo
          enddo
@@ -507,7 +540,7 @@ subroutine makeValenceRho
 
    ! Deallocate other arrays and matrices defined in this subroutine.
    deallocate (structuredElectronPopulation)
-   deallocate (packedValeValeSpin)
+   deallocate (packedValeValeRho)
    deallocate (currentPopulation)
    deallocate (electronEnergy)
    deallocate (tempDensity)

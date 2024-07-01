@@ -165,6 +165,9 @@ subroutine gaussOverlapOL
    ! Record the beginning of this phase of the setup calculation.
    call timeStampStart (8)
 
+   ! Determine if this calculation has already been completed by a previous
+   !   OLCAO execution.
+
    ! Allocate space for locally defined allocatable arrays
    allocate (currentBasisFns     (maxNumAtomAlphas,maxNumStates,2))
    allocate (currentAlphas       (maxNumAtomAlphas,2))
@@ -460,7 +463,7 @@ subroutine gaussOverlapOL
          call kPointLatticeOriginShift (currentNumTotalStates,currentPair,&
                & latticeVector,numKPoints,0)
          call saveCurrentPair(i,j,numKPoints,currentPair,valeVale(:,:,:,1),&
-               & coreValeOL,coreCore,0)
+               & coreValeOL,coreCore)
 #else
          call saveCurrentPairGamma(i,j,currentPairGamma,&
                & valeValeGamma(:,:,1),coreValeOLGamma,coreCoreGamma)
@@ -868,7 +871,7 @@ subroutine gaussOverlapKE
          call kPointLatticeOriginShift (currentNumTotalStates,currentPair,&
                & latticeVector,numKPoints,0)
          call saveCurrentPair(i,j,numKPoints,currentPair,valeVale(:,:,:,1),&
-               & coreVale,coreCore,0)
+               & coreVale,coreCore)
 #else
          call saveCurrentPairGamma(i,j,currentPairGamma,&
                & valeValeGamma(:,:,1),coreValeGamma,coreCoreGamma)
@@ -1285,7 +1288,7 @@ subroutine gaussOverlapMV
          call kPointLatticeOriginShift (currentNumTotalStates,currentPair,&
                & latticeVector,numKPoints,0)
          call saveCurrentPair(i,j,numKPoints,currentPair,valeVale(:,:,:,1),&
-               & coreVale,coreCore,0)
+               & coreVale,coreCore)
 #else
          call saveCurrentPairGamma(i,j,currentPairGamma,&
                & valeValeGamma(:,:,1),coreValeGamma,coreCoreGamma)
@@ -1677,7 +1680,7 @@ subroutine gaussOverlapNP
          call kPointLatticeOriginShift (currentNumTotalStates,currentPair,&
                & latticeVector,numKPoints,0)
          call saveCurrentPair(i,j,numKPoints,currentPair,valeVale(:,:,:,1),&
-               & coreVale,coreCore,0)
+               & coreVale,coreCore)
 #else
          call saveCurrentPairGamma(i,j,currentPairGamma,&
                & valeValeGamma(:,:,1),coreValeGamma,coreCoreGamma)
@@ -2086,7 +2089,7 @@ subroutine gaussOverlapEP
          call kPointLatticeOriginShift (currentNumTotalStates,currentPair,&
                & latticeVector,numKPoints,0)
          call saveCurrentPair(i,j,numKPoints,currentPair,valeVale(:,:,:,1),&
-               & coreVale,coreCore,0)
+               & coreVale,coreCore)
 #else
          call saveCurrentPairGamma(i,j,currentPairGamma,&
                & valeValeGamma(:,:,1),coreValeGamma,coreCoreGamma)
@@ -2615,10 +2618,11 @@ end subroutine electronicPE
 subroutine orthoOL
 
    ! Use necessary modules.
+   use HDF5
    use O_Kinds
    use O_AtomicSites, only: coreDim, valeDim
    use O_KPoints, only: numKPoints
-   use O_SetupIntegralsHDF5, only: atomOverlap_did, atomDims
+   use O_SCFIntegralsHDF5, only: atomOverlap_did, atomDims, atomOverlap_aid
    use O_Orthogonalization
 
    ! Make sure that no funny variables are defined.
@@ -2629,6 +2633,7 @@ subroutine orthoOL
    integer :: hdferr
    integer :: currIndex
    real (kind=double), allocatable, dimension (:,:) :: packedValeVale
+   integer(hsize_t), dimension (1) :: attribIntDims ! Attribute dataspace dim
 
    ! Allocate space for the valeCore matrix in a pre-transposed format for
    !   more efficient cache utilization during the matrix multiplication.  Also
@@ -2705,7 +2710,13 @@ subroutine orthoOL
       call h5dwrite_f(atomOverlap_did(i),H5T_NATIVE_DOUBLE,&
             & packedValeVale(:,:),atomDims,hdferr)
       if (hdferr /= 0) stop 'Can not write atom overlap.'
+
    enddo
+
+   ! Record that the calculation is complete.
+   attribIntDims(1) = 1
+   call h5awrite_f(atomOverlap_aid,H5T_NATIVE_INTEGER,1,attribIntDims,hdferr)
+   if (hdferr /= 0) stop 'Failed to record atom overlap success.'
 
    ! Deallocate remaining unnecessary matrices
 #ifndef GAMMA
@@ -2722,6 +2733,7 @@ end subroutine orthoOL
 subroutine ortho (opCode)
 
    ! Use necessary modules.
+   use HDF5
    use O_Kinds
    use O_PotTypes, only: potTypes
    use O_KPoints, only: numKPoints
@@ -2742,6 +2754,7 @@ subroutine ortho (opCode)
    integer :: hdferr
    integer :: currIndex
    real (kind=double), allocatable, dimension (:,:) :: packedValeVale
+   integer(hsize_t), dimension (1) :: attribIntDims ! Attribute dataspace dim
 
    ! Orthogonalizing against the overlap matrix is unnecessary when the core
    !   dimension is zero.  However, we must still allocate some matrices for

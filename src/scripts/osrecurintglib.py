@@ -279,7 +279,8 @@ def print_pc(conversion, f, matrix_list, matrix_meta, pc_max_idx_a,
     for n in range(len(matrix_list)):
         if (matrix_meta[n][0] == 4):
             # Use the special print subroutine for the nuclear matrix.
-            print_nuclear_pc(f, matrix_list[0], pc_max_idx_a, pc_max_idx_b)
+            print_nuclear_pc(f, matrix_list, matrix_meta[n], pc_max_idx_a,
+                             pc_max_idx_b)
         else:
             for xyz in range(matrix_meta[n][1]):
                 for b in range(pc_max_idx_b):
@@ -349,7 +350,7 @@ def print_pc(conversion, f, matrix_list, matrix_meta, pc_max_idx_a,
 
     '''
 
-def print_nuclear_pc_vec(f, matrix, lam_pc_list, pc_max_idx):
+def print_nuclear_pc_vec(f, matrix, matrix_meta, lam_pc_list, pc_max_idx):
 
     # Construct a list of only the terms that are needed from each m level.
     #   This is a bit of a funny algorithm so I'll try to explain what is
@@ -459,20 +460,24 @@ def print_nuclear_pc_vec(f, matrix, lam_pc_list, pc_max_idx):
 
         f.write("enddo\n\n")
 
-
-def print_nuclear_pc(f, matrix, pc_max_idx_a, pc_max_idx_b):
+# Note that matrix_list will contain either 1 or 2 matrices in it while
+#   matrix_meta will contain only the meta data for the first matrix in
+#   any case.
+def print_nuclear_pc(f, matrix_list, matrix_meta, pc_max_idx_a, pc_max_idx_b):
 
     # Construct a list of only the terms that are needed from each m level.
     #   This is a bit of a funny algorithm so I'll try to explain what is
     #   happening to reduce confusion. I'm sure that this could be written
     #   in a better way, but until I have a bit more time to create such
     #   an algorithm this one will have to do.
-    # There are three stages to the algorithm.
     # (1) First, we initialize a list of the needed pc terms to include
-    #   all the terms from the m=0 (first) level.
+    #   all the terms from the m=0 (first) level. I.e., every single
+    #   integral at the m=0 level is required. Therefore, we add every
+    #   single m=0 term to the needed_pc list.
     # (2) Then, we search through that linear list and examine each of the
     #   matrix element expressions associated with the members in the list.
-    #   The examination consists of creating possible additional terms
+    #   The examination consists of creating possible additional terms (of
+    #   higher m value than each of the current needed_pc integral terms)
     #   and then attempting to find those terms in the text of the needed_pc
     #   matrix element expressions. If a match is found and the search term
     #   is not already in the list of needed_pcs then we add it to the list.
@@ -482,24 +487,34 @@ def print_nuclear_pc(f, matrix, pc_max_idx_a, pc_max_idx_b):
     #   (because the list might have grown). Once the list does not grow
     #   any more (because we've found all the necessary terms) then we can
     #   quit the loop.
-    # (3) Finally, we traverse the list of needed_pc in a funny order. In
+    # (3) Then, we traverse the list of needed_pc in a funny order. In
     #   each m level we must traverse from lower to higher, but we need to
     #   start with the highest m level going down to the lowest m level.
     #   Hence, we will reverse the m=0 list and each other m level list as
-    #   it is added. Then the full list will be reverse before printing.
+    #   it is added. Then, the full list will be reversed before printing.
     #   This is because the higher m terms need to be known to compute many of
     #   the lower m terms, but within one m level many of the lower terms
     #   need to be known to compute higher terms in the same m level.
+    # (4) Additionally, there are cases where the regular nuclear calculation
+    #   results are used to compute the solutions for another (related)
+    #   integral (e.g., for force calculations). In that case, we also search
+    #   the terms in the other matrix to see if any terms in the nuclear
+    #   matrix are required.
 
-    # Initialize the m=0 list of needed_pc .
+    # Initialize the m=0 list of needed_pc.
     needed_pc = []
     m = 0
     for b in range(pc_max_idx_b):
         for a in range(pc_max_idx_a):
             needed_pc.append([a, b, m])
+    #for m in range(matrix_meta[1]):
+    #    for b in range(pc_max_idx_b):
+    #        for a in range(pc_max_idx_a):
+    #            needed_pc.append([a, b, m])
 
     # Add the reversed list of needed pcs for the m=0 level to the final list.
     final_pc = needed_pc.copy()[::-1]
+    #print(final_pc)
 
     # Search the contents of the needed_pc list for more terms to include.
     current_term = 0
@@ -509,11 +524,27 @@ def print_nuclear_pc(f, matrix, pc_max_idx_a, pc_max_idx_b):
     while (current_term < last_term):
         for b in range(pc_max_idx_b):
             for a in range(pc_max_idx_a):
-                substring = f"({a+1},{b+1},{m+1})"
                 a_idx = needed_pc[current_term][0]
                 b_idx = needed_pc[current_term][1]
                 m_idx = needed_pc[current_term][2]
-                if (matrix[a_idx][b_idx][m_idx].find(substring) != -1 and
+                if ((a_idx == 0) and (b_idx == 0)):
+                    substring = f"preFactorN({m+1})"
+                else:
+                    substring = f"({a+1},{b+1},{m+1})"
+                # If the substring is found, not already in the needed_pc
+                #   list, and not already in the next_m_pc list, then we
+                #   append it to the next_m_pc list.
+                #print (a_idx, b_idx, m_idx, substring,
+                #       matrix_list[0][a_idx][b_idx][m_idx],
+                #       matrix_list[1][a_idx][b_idx][m_idx])
+                if (matrix_list[0][a_idx][b_idx][m_idx].find(substring)
+                        != -1 and
+                        [a, b, m] not in needed_pc and
+                        [a, b, m] not in next_m_pc):
+                    next_m_pc.append([a, b, m])
+                if (len(matrix_list) > 1 and m_idx <= 1 and
+                        matrix_list[1][a_idx][b_idx][m_idx].find(substring)
+                        != -1 and
                         [a, b, m] not in needed_pc and
                         [a, b, m] not in next_m_pc):
                     next_m_pc.append([a, b, m])
@@ -552,8 +583,8 @@ def print_nuclear_pc(f, matrix, pc_max_idx_a, pc_max_idx_b):
         a_idx = term[0]
         b_idx = term[1]
         m_idx = term[2]
-        string = f"pc({a_idx+1},{b_idx+1},{m_idx+1}) = "
-        string += f"{matrix[a_idx][b_idx][m_idx]}"
+        string = f"pc{matrix_meta[2]}({a_idx+1},{b_idx+1},{m_idx+1}) = "
+        string += f"{matrix_list[0][a_idx][b_idx][m_idx]}"
         print_cont_string(string, 80, 3, f, True)
     
 

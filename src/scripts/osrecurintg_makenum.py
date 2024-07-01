@@ -467,7 +467,7 @@ def derivative_nuclearBB():
 # Nuclear derivative terms wrt Rx2, Ry2, Rz2 with C /= B (R#2 != R#3),
 #   but with R#2 being the site of the nuclear center while R#3 is the
 #   site of the second basis function.
-def derivative_nuclearCB():
+def derivative_nuclearBC():
     Px, Py, Pz = sp.symbols('Px Py Pz')
     lx1, ly1, lz1 = sp.symbols('lx1 ly1 lz1')
     lx2, ly2, lz2 = sp.symbols('lx2 ly2 lz2')

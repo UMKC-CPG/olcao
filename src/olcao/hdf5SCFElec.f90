@@ -65,7 +65,7 @@ subroutine initSetupElecStatHDF5 (setup_fid)
    integer(hid_t) :: setup_fid
 
    ! Define local variables.
-   integer(4) :: hdferr
+   integer :: hdferr
 
    ! Initialize data structure dimensions.
    potPot(1)    = potDim
@@ -80,11 +80,11 @@ subroutine initSetupElecStatHDF5 (setup_fid)
 
    ! Create the dataspaces that will be used for each dataset in the
    !   elecStatGroup.
-   call h5screate_simple_f (2_4,potTypesPot,potTypesPot_dsid,hdferr)
+   call h5screate_simple_f (2,potTypesPot,potTypesPot_dsid,hdferr)
    if (hdferr /= 0) stop 'Failed to create potTypesPot dsid'
-   call h5screate_simple_f (2_4,potPot,potPot_dsid,hdferr)
+   call h5screate_simple_f (2,potPot,potPot_dsid,hdferr)
    if (hdferr /= 0) stop 'Failed to create potPot dsid'
-   call h5screate_simple_f (1_4,pot,pot_dsid,hdferr)
+   call h5screate_simple_f (1,pot,pot_dsid,hdferr)
    if (hdferr /= 0) stop 'Failed to create pot dsid'
 
    ! Create the property lists first.  Then set the properties for each list
@@ -101,20 +101,20 @@ subroutine initSetupElecStatHDF5 (setup_fid)
    if (hdferr /= 0) stop 'Failed to set potPot chunked layout'
    call h5pset_layout_f  (pot_plid,H5D_CHUNKED_F,hdferr)
    if (hdferr /= 0) stop 'Failed to set pot chunked layout'
-   call h5pset_chunk_f   (potTypesPot_plid,2_4,potTypesPot,hdferr)
+   call h5pset_chunk_f   (potTypesPot_plid,2,potTypesPot,hdferr)
    if (hdferr /= 0) stop 'Failed to set potTypesPot chunked property'
-   call h5pset_chunk_f   (potPot_plid,2_4,potPot,hdferr)
+   call h5pset_chunk_f   (potPot_plid,2,potPot,hdferr)
    if (hdferr /= 0) stop 'Failed to set potPot chunked property'
-   call h5pset_chunk_f   (pot_plid,1_4,pot,hdferr)
+   call h5pset_chunk_f   (pot_plid,1,pot,hdferr)
    if (hdferr /= 0) stop 'Failed to set pot chunked property'
 !   call h5pset_shuffle_f (potTypesPot_plid,hdferr)
 !   call h5pset_shuffle_f (potPot_plid,hdferr)
 !   call h5pset_shuffle_f (pot_plid,hdferr)
-   call h5pset_deflate_f   (potTypesPot_plid,1_4,hdferr)
+   call h5pset_deflate_f   (potTypesPot_plid,1,hdferr)
    if (hdferr /= 0) stop 'Failed to set potTypesPot deflate property'
-   call h5pset_deflate_f   (potPot_plid,1_4,hdferr)
+   call h5pset_deflate_f   (potPot_plid,1,hdferr)
    if (hdferr /= 0) stop 'Failed to set potPot deflate property'
-   call h5pset_deflate_f   (pot_plid,1_4,hdferr)
+   call h5pset_deflate_f   (pot_plid,1,hdferr)
    if (hdferr /= 0) stop 'Failed to set pot deflate property'
 
    ! Create the datasets that will be used for the elecStatGroup.
@@ -156,7 +156,7 @@ subroutine accessSetupElecStatHDF5 (setup_fid)
    integer(hid_t) :: setup_fid
 
    ! Define local variables.
-   integer(4) :: hdferr
+   integer :: hdferr
 
    ! Initialize data structure dimensions.
    potPot(1)      = potDim
@@ -219,7 +219,7 @@ subroutine closeSetupElecStatHDF5
    implicit none
 
    ! Declare local loop variables and error control.
-   integer(4) :: hdferr
+   integer :: hdferr
 
    ! Close all access to the electrostatic calculation parts of the HDF file
    !   for setup.

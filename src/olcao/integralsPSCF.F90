@@ -2030,12 +2030,12 @@ subroutine getIntgResults (valeValeGamma,coreValeOLGamma,&
                   call kPointLatticeOriginShift (currentNumTotalStates,&
                         & currentPair,latticeVector,1,currentKPoint-1)
                   call saveCurrentPair (i,atom2Index,1,currentPair,&
-                        & valeVale,coreValeOL,coreCore)
+                        & valeVale,coreValeOL,coreCore,0)
                else
                   call kPointLatticeOriginShift (currentNumTotalStates,&
                         & currentPair,latticeVector,1,currentKPoint-1)
                   call saveCurrentPair (i,atom2Index,1,currentPair,&
-                        & valeVale,coreVale,coreCore)
+                        & valeVale,coreVale,coreCore,0)
                endif
 #else
                if (runCode .eq. 1) then
@@ -2108,12 +2108,12 @@ subroutine getIntgResults (valeValeGamma,coreValeOLGamma,&
             call kPointLatticeOriginShift (currentNumTotalStates,&
                   & currentPair,latticeVector,1,currentKPoint-1)
             call saveCurrentPair (i,atom2Index,1,currentPair,&
-                  & valeVale,coreValeOL,coreCore)
+                  & valeVale,coreValeOL,coreCore,0)
          else
             call kPointLatticeOriginShift (currentNumTotalStates,&
                   & currentPair,latticeVector,1,currentKPoint-1)
             call saveCurrentPair (i,atom2Index,1,currentPair,&
-                  & valeVale,coreVale,coreCore)
+                  & valeVale,coreVale,coreCore,0)
          endif
 #else
          if (runCode .eq. 1) then

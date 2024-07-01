@@ -5,7 +5,7 @@
 ###########################################################
 
 #Define the current branch.
-export OLCAO_BRANCH="CPG/cpg-repo/v34"
+export OLCAO_BRANCH="CPG/cpg-repo/olcao"
 
 #Root directories of the OLCAO program suite and any additional codes.
 export OLCAO_DIR="$HOME/$OLCAO_BRANCH"
@@ -46,7 +46,7 @@ export OLCAO_DOUBLE=16
 export OLCAO_QUEUE=3
 
 #Define the head location of the VASP pseudopotential database.
-export VASPPOT_DIR="/group/cpg/vasp_pot"
+export VASPPOT_DIR="/cluster/VAST/rulisp-lab/cpg/vasp_pot"
 
 # Define the location of each type of VASP potential.
 export VASPPOT_USPP_LDA="$VASPPOT_DIR/potUSPP_LDA"

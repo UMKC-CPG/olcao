@@ -4936,7 +4936,7 @@ sub makeSubFile
       open (SUBFILE,">$subDir/$slurm_sub") ||
             die "Cannot open $subDir/$slurm_sub for writing.\n";
       $subHeader[0] = "#!/bin/bash\n";
-      $subHeader[1] = "\#SBATCH -p Lewis\n";
+      $subHeader[1] = "\#SBATCH -p general\n";
       $subHeader[2] = "\#SBATCH -J $proj_name\n";
       $subHeader[3] = "\#SBATCH -o $proj_name.o\%J\n";
       $subHeader[4] = "\#SBATCH -e $proj_name.e\%J\n";

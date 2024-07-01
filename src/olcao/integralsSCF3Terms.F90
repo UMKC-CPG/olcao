@@ -456,7 +456,7 @@ subroutine gaussOverlapDM
             call kPointLatticeOriginShift (currentNumTotalStates,&
                   & currentPair(:,:,:,k),latticeVector,numKPoints,0)
             call saveCurrentPair(i,j,numKPoints,currentPair(:,:,:,k),&
-                  & valeVale(:,:,:,k),coreVale(:,:,:,k),coreCore(:,:,:,k))
+                  & valeVale(:,:,:,k),coreVale(:,:,:,k),coreCore(:,:,:,k),0)
          enddo
 #else
          do k = 1, 3

@@ -8,10 +8,13 @@ subroutine mainSCF (totalEnergy, fromExternal)
    use O_Kinds
    use O_SetupHDF5,       only: accessSetupHDF5, closeSetupHDF5
    use O_MainHDF5,        only: initMainHDF5, closeMainHDF5
-   use O_CommandLine,     only: doDOS, doBond, doDIMO, parseMainCommandLine
+   use O_CommandLine,     only: doDOS, doBond, doDIMO, doForce, &
+                              & parseMainCommandLine
    use O_Input,           only: numStates, iterFlagTDOS, parseInput
-   use O_Potential,       only: converged, currIteration, lastIteration, spin, &
-                              & rel, initPotCoeffs, cleanUpPotential
+   use O_Lattice,         only: initializeFindVec, initializeLattice
+   use O_Basis,           only: renormalizeBasis
+   use O_Potential,       only: converged, currIteration, lastIteration, &
+                              & spin, rel, initPotCoeffs, cleanUpPotential
    use O_PotentialUpdate, only: makeSCFPot
    use O_AtomicSites,     only: valeDim, cleanUpAtomSites
    use O_AtomicTypes,     only: cleanUpAtomTypes
@@ -20,12 +23,13 @@ subroutine mainSCF (totalEnergy, fromExternal)
    use O_SecularEquation, only: secularEqnAllKP, cleanUpSecularEqn, &
                               & shiftEnergyEigenValues
    use O_ValeCharge,      only: makeValenceRho
-   use O_KPoints,         only: cleanUpKPoints
+   use O_KPoints,         only: cleanUpKPoints, computePhaseFactors
    use O_Populate,        only: occupiedEnergy, populateStates
    use O_LAPACKParameters, only: setBlockSize
    use O_ExchangeCorrelation, only: cleanUpExchCorr
    use O_DOS,  only: computeIterationTDOS, printIterationTDOS, computeDOS
    use O_Bond, only: computeBond
+   use O_Force, only: computeForceIntg
    use O_TimeStamps, only: initOperationLabels
 
    ! Import the HDF5 module
@@ -169,7 +173,8 @@ subroutine mainSCF (totalEnergy, fromExternal)
 
    ! Find the Fermi level, the number of occupied bands, and the number of
    !   electrons occupying each of those bands.
-   if ((doDOS == 1) .or. (doBond == 1) .or. (doDIMO == 1)) then
+   if ((doDOS == 1) .or. (doBond == 1) .or. (doDIMO == 1) .or. &
+         & (doForce == 1)) then
       call populateStates
    endif
 
@@ -197,11 +202,25 @@ subroutine mainSCF (totalEnergy, fromExternal)
    endif
 
    ! Use the dipole moment matrix to compute the dipole.
-   if (doDIMO ==1) then
+   if (doDIMO == 1) then
       open (unit=74,file='fort.74',status='new',form='formatted')
       if (spin == 2) then
          open (unit=75,file='fort.75',status='new',form='formatted')
       endif
+      call makeValenceRho
+   endif
+
+   ! Compute forces between atoms.
+   if (doForce == 1) then
+      call initializeLattice(1)
+      call initializeFindVec
+      call computePhaseFactors
+      call renormalizeBasis
+      open (unit=98,file='fort.98',status='new',form='formatted')
+      if (spin == 2) then
+         open (unit=99,file='fort.99',status='new',form='formatted')
+      endif
+      call computeForceIntg(totalEnergy)
       call makeValenceRho
    endif
 
@@ -230,7 +249,8 @@ subroutine mainSCF (totalEnergy, fromExternal)
    call cleanUpKPoints
    call cleanUpExchCorr
    call cleanUpPotential
-   if (doDIMO == 0) then ! Because we already deallocated in makeValence Rho
+   ! Because we already deallocated in makeValence Rho
+   if ((doDIMO == 0) .and. (doForce == 0)) then
       call cleanUpSecularEqn
    endif
 

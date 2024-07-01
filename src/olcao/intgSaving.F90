@@ -199,7 +199,7 @@ end subroutine kPointLatticeOriginShift
 
 
 subroutine saveCurrentPair (i,j,kPointCount,currentPair,&
-      & valeVale,coreVale,coreCore)
+      & valeVale,coreVale,coreCore,saveFull)
 
    ! Import the necessary modules
    use O_Kinds
@@ -220,6 +220,7 @@ subroutine saveCurrentPair (i,j,kPointCount,currentPair,&
    complex (kind=double), dimension (valeDim,valeDim,numKPoints) :: valeVale
    complex (kind=double), dimension (coreDim,valeDim,numKPoints) :: coreVale
    complex (kind=double), dimension (coreDim,coreDim,numKPoints) :: coreCore
+   integer :: saveFull ! Used to save all terms even when atom1 == atom2
 
    ! Define the matrix necessary for quickly accessing the complex conjugate
    !   of the currentPair.
@@ -263,8 +264,13 @@ subroutine saveCurrentPair (i,j,kPointCount,currentPair,&
 
    ! Save the valence valence part.  The upper triangle contains the real
    !   part while the strict lower triangle contains the imaginary part.
-   call valeValeSaving (i,j,kPointCount,valeStateIndex,valeStateNum,&
-         & valeVale,currentPair)
+   if (saveFull == 0) then
+      call valeValeSaving (i,j,kPointCount,valeStateIndex,valeStateNum,&
+            & valeVale,currentPair)
+   else
+      call valeValeSavingFull (i,j,kPointCount,valeStateIndex,valeStateNum,&
+            & valeVale,currentPair,currentPairDagger)
+   endif
 
    ! If there is no core contribution then we don't have to save any
    !   core parts.
@@ -289,8 +295,13 @@ subroutine saveCurrentPair (i,j,kPointCount,currentPair,&
 
    if ((coreStateNum(1) == 0) .or. (coreStateNum(2) == 0)) return
 
-   call coreCoreSaving (i,j,kPointCount,valeStateNum,coreStateIndex,&
-         & coreStateNum,coreCore,currentPair,currentPairDagger)
+   if (saveFull == 0) then
+      call coreCoreSaving (i,j,kPointCount,valeStateNum,coreStateIndex,&
+            & coreStateNum,coreCore,currentPair,currentPairDagger)
+   else
+      call coreCoreSavingFull (i,j,kPointCount,valeStateNum,coreStateIndex,&
+            & coreStateNum,coreCore,currentPair,currentPairDagger)
+   endif
 
    ! Deallocate the dagger of the current pair since it is no longer needed.
    deallocate (currentPairDagger)
@@ -346,6 +357,48 @@ subroutine valeValeSaving (atom1,atom2,kPointCount,valeStateIndex,valeStateNum,&
    endif
 
 end subroutine valeValeSaving
+
+
+
+subroutine valeValeSavingFull (atom1,atom2,kPointCount,valeStateIndex,&
+      & valeStateNum,valeVale,currentPair,currentPairDagger)
+
+   ! Import the necessary modules
+   use O_Kinds
+
+   ! Import the necessary data modules.
+   use O_KPoints
+   use O_AtomicTypes
+   use O_AtomicSites
+
+   ! Make sure that there are not accidental variable declarations.
+   implicit none
+
+   ! Define variables passed to this subroutine
+   integer :: atom1
+   integer :: atom2
+   integer :: kPointCount
+   integer, dimension (2) :: valeStateIndex
+   integer, dimension (2) :: valeStateNum
+   complex (kind=double), dimension (valeDim,valeDim,numKPoints) :: valeVale
+   complex (kind=double), dimension (maxNumStates,maxNumStates,&
+         & numKPoints) :: currentPair
+   complex (kind=double), dimension (maxNumStates,maxNumStates,&
+         & numKPoints) :: currentPairDagger
+
+   ! Define local variables for loop control and tracking.
+   integer :: i,j,k
+
+   do i = 1, kPointCount
+      valeVale(valeStateIndex(1)+1:valeStateIndex(1)+valeStateNum(1),&
+            & valeStateIndex(2)+1:valeStateIndex(2)+valeStateNum(2),i) = &
+            & currentPair(1:valeStateNum(1),1:valeStateNum(2),i)
+      valeVale(valeStateIndex(2)+1:valeStateIndex(2)+valeStateNum(2),&
+            & valeStateIndex(1)+1:valeStateIndex(1)+valeStateNum(1),i)=&
+            & currentPairDagger(1:valeStateNum(2),1:valeStateNum(1),i)
+   enddo
+
+end subroutine valeValeSavingFull
 
 
 
@@ -450,6 +503,51 @@ subroutine coreCoreSaving (atom1,atom2,kPointCount,valeStateNum,&
    enddo
 
 end subroutine coreCoreSaving
+
+
+subroutine coreCoreSavingFull (atom1,atom2,kPointCount,valeStateNum,&
+      & coreStateIndex,coreStateNum,coreCore,currentPair,currentPairDagger)
+
+   ! Import the necessary modules
+   use O_Kinds
+
+   ! Import the necessary data modules.
+   use O_KPoints
+   use O_AtomicTypes
+   use O_AtomicSites
+
+   ! Make sure that there are not accidental variable declarations.
+   implicit none
+
+   ! Define variables passed to this subroutine
+   integer :: atom1
+   integer :: atom2
+   integer :: kPointCount
+   integer, dimension (2) :: valeStateNum
+   integer, dimension (2) :: coreStateIndex
+   integer, dimension (2) :: coreStateNum
+   complex (kind=double), dimension (coreDim,coreDim,numKPoints) :: coreCore
+   complex (kind=double), dimension (maxNumStates,maxNumStates,&
+         & numKPoints) :: currentPair
+   complex (kind=double), dimension (maxNumStates,maxNumStates,&
+         & numKPoints) :: currentPairDagger
+
+   ! Define local variables for loop control.
+   integer :: i
+
+   do i = 1, kPointCount
+      coreCore(coreStateIndex(1)+1:coreStateIndex(1)+coreStateNum(1),&
+            & coreStateIndex(2)+1:coreStateIndex(2)+coreStateNum(2),i) = &
+            & currentPair(valeStateNum(1)+1:valeStateNum(1)+coreStateNum(1),&
+            & valeStateNum(2)+1:valeStateNum(2)+coreStateNum(2),i)
+      coreCore(coreStateIndex(2)+1:coreStateIndex(2)+coreStateNum(2),&
+            & coreStateIndex(1)+1:coreStateIndex(1)+coreStateNum(1),i)=&
+            & currentPairDagger(valeStateNum(2)+1:valeStateNum(2)+ &
+            & coreStateNum(2),valeStateNum(1)+1:valeStateNum(1)+ &
+            & coreStateNum(1),i)
+   enddo
+
+end subroutine coreCoreSavingFull
 
 #else
 

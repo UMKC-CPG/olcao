@@ -436,7 +436,10 @@ def create_data_aids(max_lam):
 def print_head(settings, f, num_sh_intg, num_pc_intg, max_lam):
 
     if (settings.production):
-        head = """module O_GaussianIntegralsVec"""
+        if (settings.vectorize):
+            head = """module O_GaussianIntegralsVec"""
+        else:
+            head = """module O_GaussianIntegrals"""
     else:
         head = """program GaussianIntegrals"""
 
@@ -967,10 +970,15 @@ def print_head(settings, f, num_sh_intg, num_pc_intg, max_lam):
     f.write(head)
 
 
-def print_foot(production, f):
+def print_foot(production, vectorize, f):
     if (production):
-        foot = """
+        if (vectorize):
+            foot = """
 end module O_GaussianIntegralsVec
+"""
+        else:
+            foot = """
+end module O_GaussianIntegrals
 """
     else:
         foot = """
@@ -1082,7 +1090,7 @@ def main():
         matrix = [[[""]*(2*settings.max_lam+1) for i in range(num_triads)] \
                    for j in range(num_triads)]
         for m in range(2*settings.max_lam + 1):
-            matrix_temp = ana.nuclear(triads, m, settings.vectorize)
+            matrix_temp = ana.nuclear(triads, False, m, settings.vectorize)
             for i in range(num_triads):
                 for j in range(num_triads):
                     matrix[i][j][m] = matrix_temp[i][j]
@@ -1175,26 +1183,33 @@ def main():
     # Manage the derivative of the three-center nuclear attraction integrals
     if (settings.dnuclearcb):
         num_triads = len(triads)
-        matrix = [[[""]*(2*settings.max_lam+1) for i in range(num_triads)] \
+        if (settings.max_lam == 0):
+            num_m = 2
+        else:
+            num_m = 2*settings.max_lam+1
+        matrix = [[[""]*(num_m) for i in range(num_triads)] \
                    for j in range(num_triads)]
-        for m in range(2*settings.max_lam + 1):
-            matrix_temp = ana.nuclearcb(triads, m, settings.vectorize)
+        for m in range(num_m):
+            matrix_temp = ana.nuclear(triads, True, m, settings.vectorize)
             for i in range(num_triads):
                 for j in range(num_triads):
                     matrix[i][j][m] = matrix_temp[i][j]
+        matrix_dn = ana.dnuclearcb(triads, settings.vectorize)
         if (settings.production):
             if (settings.vectorize):
-                ana.print_dboys_vec(f)
+                if (not settings.nuclear):
+                    ana.print_boys_vec(f)
                 ana.print_production_dnuclearcb_vec(conversion, triads, matrix,
                         settings.max_lam, lam_sh_list, lam_pc_list, f)
             else:
-                ana.print_dboys(f)
-                ana.print_production_dnuclearcb(conversion, triads, matrix,
-                        settings.max_lam, lam_sh_list, lam_pc_list, f)
+                if (not settings.nuclear):
+                    ana.print_boys(f)
+                ana.print_production_dnuclearcb(conversion, triads, matrix_dn,
+                        matrix, settings.max_lam, lam_sh_list, lam_pc_list, f)
         else:
-            ana.print_test_dnuclearcb_ana(conversion, triads, matrix,
-                    settings.max_lam, f)
-            ana.print_dboys(f)
+            ana.print_test_dnuclearcb_ana(conversion, triads, matrix_dn,
+                    matrix, settings.max_lam, f)
+            ana.print_boys(f)
             num.print_test_dnuclearcb_num(conversion, triads, f)
 
     # Manage the derivative of the three-center nuclear attraction integrals
@@ -1258,10 +1273,10 @@ def main():
         if (settings.production):
             if (settings.vectorize):
                 ana.print_production_delectroncb_vec(conversion, triads,
-                        matrix_de, matrix_dk, lam_sh_list, lam_pc_list, f)
+                        matrix_de, matrix_ol, lam_sh_list, lam_pc_list, f)
             else:
-                ana.print_productioncb_delectron(conversion, triads,
-                        matrix_de, matrix_dk, lam_sh_list, lam_pc_list, f)
+                ana.print_production_delectroncb(conversion, triads,
+                        matrix_de, matrix_ol, lam_sh_list, lam_pc_list, f)
         else:
             ana.print_test_delectroncb_ana(conversion, triads, matrix_de,
                     matrix_ol, f)
@@ -1308,7 +1323,7 @@ def main():
             num.print_test_delectronbc_num(conversion, triads, f)
 
     # Print the overall foot.
-    print_foot(settings.production, f)
+    print_foot(settings.production, settings.vectorize, f)
 
     # Close the program output file.
     f.close()
