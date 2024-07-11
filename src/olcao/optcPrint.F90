@@ -37,12 +37,12 @@ subroutine printOptcResults
       sigma           = sigmaOPTC
       energyDelta     = deltaOPTC
       energyMin       = deltaOPTC ! Start as close to 0 as possible.
-      numEnergyPoints = maxTransEnergy / energyDelta + 1
+      numEnergyPoints = int(maxTransEnergy / energyDelta) + 1
    else ! PACS calculation, Sigma(E) calculations never call this subroutine.
       sigma           = sigmaPACS
       energyDelta     = deltaPACS
       ! The energyMin was already determined for PACS calculations.
-      numEnergyPoints = (maxTransEnergy - energyMin) / energyDelta + 1
+      numEnergyPoints = int((maxTransEnergy - energyMin) / energyDelta) + 1
    endif ! Sigma(E) calculations never call this subroutine.
 
    ! Initialize local conversion parameters
@@ -131,11 +131,13 @@ subroutine printOptcResults
    ! Allocate space to hold the appropriate optical conductivity and then
    !   initialize.
    if (detailCodePOPTC == 0) then
-      allocate (optcCond    (dim3,numEnergyPoints,spin))
+      allocate (optcCond(dim3,numEnergyPoints,spin))
       optcCond(:,:,:) = 0.0_double
    else
+      allocate (optcCond(dim3,numEnergyPoints,spin))
       allocate (optcCondPOPTC(sumNumPartials,sumNumPartials,dim3,&
             & numEnergyPoints,spin))
+      optcCond(:,:,:) = 0.0_double
       optcCondPOPTC(:,:,:,:,:) = 0.0_double
    endif
 
@@ -171,15 +173,19 @@ subroutine printOptcResults
 
    else ! Partial optical properties
 
-      ! Compute the POPTC optical conductivity broadened appropriately
+      ! Compute total and POPTC optical conductivity, broadened appropriately
+      call getOptcCond (numEnergyPoints,optcCond,kPointFactor,sigma)
       call getOptcCondPOPTC (numEnergyPoints,optcCondPOPTC,kPointFactor,sigma)
 
       if (stateSet == 1) then ! Doing PACS calculation.
+         call printSpectrum(0,numEnergyPoints,optcCond,conversionFactor)
          call printSpectrumPOPTC(0,numEnergyPoints,optcCondPOPTC,&
                & conversionFactor)
       else ! Do optical conductivity followed by epsilon 2.
+         call printSpectrum(1,numEnergyPoints,optcCond,conversionFactor)
          call printSpectrumPOPTC(1,numEnergyPoints,optcCondPOPTC,&
                & conversionFactor)
+         call printSpectrum(2,numEnergyPoints,optcCond,conversionFactorEps2)
          call printSpectrumPOPTC(2,numEnergyPoints,optcCondPOPTC,&
                & conversionFactorEps2)
       endif
@@ -191,6 +197,7 @@ subroutine printOptcResults
    if (detailCodePOPTC == 0) then
       deallocate (optcCond)
    else
+      deallocate (optcCond)
       deallocate (optcCondPOPTC)
    endif
 
@@ -325,6 +332,8 @@ subroutine printSpectrum (specType,numEnergyPoints,spectrum,conversionFactor)
    integer :: h,i
    integer :: unitBase
 
+
+
    ! Customize the output for the current spectrum type.
    if (specType == 0) then ! XANES/ELNES
       unitBase = 49
@@ -336,6 +345,8 @@ subroutine printSpectrum (specType,numEnergyPoints,spectrum,conversionFactor)
    elseif (specType == 2) then ! Epsilon2
       unitBase = 49
       write (header,fmt="(5a15)") "Energy","totalEps2","xEps2","yEps2","zEps2"
+   else
+      stop "Need a spectrum type of 0, 1, or 2"
    endif
 
    ! Print the total (if spin == 1) or spin up and spin down (if spin == 2).
@@ -383,7 +394,6 @@ subroutine printSpectrumPOPTC (specType,numEnergyPoints,spectrumPOPTC,&
    real (kind=double) :: conversionFactor
 
    ! Define the local variables
-   character*75 :: header
    integer :: h,i,j,k,l,m,n,o,p,q
    integer :: unitBase
    integer :: sequenceNum
@@ -396,11 +406,13 @@ subroutine printSpectrumPOPTC (specType,numEnergyPoints,spectrumPOPTC,&
 
    ! Customize the output for the current spectrum type.
    if (specType == 0) then ! XANES/ELNES
-      unitBase = 149
+      unitBase = 249
    elseif (specType == 1) then ! Optical Conductivity
-      unitBase = 139
+      unitBase = 239
    elseif (specType == 2) then ! Epsilon2
-      unitBase = 149
+      unitBase = 249
+   else
+      stop "Need a spectrum type of 0, 1, or 2"
    endif
 
    ! Define the QN_l letters.
@@ -536,16 +548,16 @@ subroutine printSpectrumPOPTC (specType,numEnergyPoints,spectrumPOPTC,&
       elseif (detailCodePOPTC == 3) then ! Decompose by atom and QN_nl
 
          ! Print the partial contributions to the spectrum.
-         poptci = 0
+         poptcI = 0
          do i = 1, numAtomTypes
             do j = 1, lAngMomCount  ! 1=s; 2=p; 3=d; 4=f
                do k = 1, atomTypes(i)%numQN_lValeRadialFns(j)
-                  poptci = poptci + 1
-                  poptcf = 0
+                  poptcI = poptcI + 1
+                  poptcF = 0
                   do l = 1, numAtomTypes
                      do m = 1, lAngMomCount  ! 1=s; 2=p; 3=d; 4=f
                         do n = 1, atomTypes(l)%numQN_lValeRadialFns(m)
-                           poptcf = poptcf + 1
+                           poptcF = poptcF + 1
 
                            sequenceNum = sequenceNum + 1
                    
@@ -570,9 +582,9 @@ subroutine printSpectrumPOPTC (specType,numEnergyPoints,spectrumPOPTC,&
 
                               ! Record the spectrum to disk.
                               write (unitBase+h,fmt="(4e15.7)") &
-                                    & sum(spectrumPOPTC(poptci,poptcf,:,o,h))&
+                                    & sum(spectrumPOPTC(poptcI,poptcF,:,o,h))&
                                     & / 3.0_double, &
-                                    & spectrumPOPTC(poptci,poptcf,:,o,h)
+                                    & spectrumPOPTC(poptcI,poptcF,:,o,h)
                            enddo
                         enddo
                      enddo
@@ -584,7 +596,7 @@ subroutine printSpectrumPOPTC (specType,numEnergyPoints,spectrumPOPTC,&
       elseif (detailCodePOPTC == 4) then ! Decompose by atom and QN_nlm
 
          ! Print the Partial contributions to the optical conductivity.
-         poptci = 0
+         poptcI = 0
 
          do i = 1, numAtomSites
 
@@ -594,8 +606,8 @@ subroutine printSpectrumPOPTC (specType,numEnergyPoints,spectrumPOPTC,&
             do j = 1, lAngMomCount  ! 1=s; 2=p; 3=d; 4=f
                do k = 1, atomTypes(currentTypeI)%numQN_lValeRadialFns(j)
                   do l = 1, (j-1)*2+1
-                     poptci = poptci +1
-                     poptcf = 0
+                     poptcI = poptcI +1
+                     poptcF = 0
                      do m = 1, numAtomSites
 
                         ! Obtain the type of the current final state atom.
@@ -605,7 +617,7 @@ subroutine printSpectrumPOPTC (specType,numEnergyPoints,spectrumPOPTC,&
                               & atomTypes(currentTypeF)%numQN_lValeRadialFns(n)
                               do p = 1, (n-1)*2+1
 
-                                 poptcf = poptcf + 1
+                                 poptcF = poptcF + 1
                                  sequenceNum = sequenceNum + 1
  
                                  ! Print the total for each pair
@@ -631,10 +643,10 @@ subroutine printSpectrumPOPTC (specType,numEnergyPoints,spectrumPOPTC,&
 
                                     ! Record the spectrum to disk.
                                     write (unitBase+h,fmt="(4e15.7)") &
-                                           & sum(spectrumPOPTC(poptci, &
-                                           & poptcf,:,q,h)) / 3.0_double, &
-                                           & spectrumPOPTC(poptci, &
-                                           & poptcf,:,q,h)
+                                           & sum(spectrumPOPTC(poptcI, &
+                                           & poptcF,:,q,h)) / 3.0_double, &
+                                           & spectrumPOPTC(poptcI, &
+                                           & poptcF,:,q,h)
                                  enddo ! q
                               enddo ! p
                            enddo ! o
@@ -648,119 +660,5 @@ subroutine printSpectrumPOPTC (specType,numEnergyPoints,spectrumPOPTC,&
    enddo ! h
 
 end subroutine printSpectrumPOPTC
-
-!subroutine printXAS (numEnergyPoints,optcCond,conversionFactor)
-!
-!   ! Include the modules we need.
-!   use O_Kinds
-!   use O_Potential,       only: spin
-!   use O_Constants,       only: hartree
-!   use O_OptcTransitions, only: energyScale
-!
-!   ! Make sure that there are not accidental variable declarations.
-!   implicit none
-!
-!   ! Define the dummy variables passed to this subroutine.
-!   integer :: numEnergyPoints
-!   real (kind=double), dimension (:,:,:) :: optcCond
-!   real (kind=double) :: conversionFactor
-!
-!   ! Define the local variables
-!   integer :: h,i
-!
-!   do h = 1, spin
-!
-!     ! Insert the header for the XANES/ELNES data.
-!     write (49+h,fmt="(5a15)") "Energy","totalXANES","xXANES",&
-!           & "yXANES","zXANES"
-!
-!      do i = 1, numEnergyPoints
-!
-!         ! Adjust the XANES/ELNES spectra for the correct units.
-!         optcCond(:,i,h) = optcCond(:,i,h) * conversionFactor / energyScale(i)
-!
-!         ! Record the spectra to disk, making sure to convert the scale to au.
-!         write (49+h,fmt="(5e15.7)") energyScale(i)*hartree,&
-!               & sum(optcCond(:,i,h))/3.0_double,optcCond(:,i,h)
-!      enddo
-!   enddo
-!
-!end subroutine printXAS
-
-
-!subroutine printCond (numEnergyPoints, optcCond, conversionFactor)
-!
-!   ! Include the modules we need
-!   use O_Kinds
-!   use O_Potential,       only: spin
-!   use O_Constants,       only: hartree
-!   use O_OptcTransitions, only: energyScale
-!
-!   ! Define the dummy variables passed to this subroutine.
-!   integer :: numEnergyPoints
-!   real (kind=double), dimension (:,:,:) :: optcCond
-!   real (kind=double) :: conversionFactor
-!
-!   ! Define the local variables
-!   integer :: h,i
-!
-!   do h = 1, spin
-!
-!      ! Insert the header for the optical conductivity data.
-!      write (39+h,fmt="(5a15)") "Energy","totalCond","xCond","yCond","zCond"
-!
-!      do i = 1, numEnergyPoints
-!
-!         ! Adjust the optical conductivity for the correct units.
-!         optcCond(:,i,h) = optcCond(:,i,h) * conversionFactor / energyScale(i)
-!
-!         ! Record the optical conductivity to disk, making sure to use au
-!         !   instead of eV.
-!         write (39+h,fmt="(5e15.7)") energyScale(i)*hartree,&
-!               & sum(optcCond(:,i,h))/3.0_double,optcCond(:,i,h)
-!      enddo
-!   enddo
-!
-!end subroutine printCond
-
-
-!subroutine printEps2 (numEnergyPoints, optcCond, conversionFactorEps2)
-!
-!   ! Include the modules we need
-!   use O_Kinds
-!   use O_Potential,       only: spin
-!   use O_OptcTransitions, only: energyScale
-!   use O_Constants,       only: dim3, hartree
-!
-!   ! Define the dummy variables passed to this subroutine.
-!   integer :: numEnergyPoints
-!   real (kind=double), dimension (:,:,:) :: optcCond
-!   real (kind=double) :: conversionFactorEps2
-!
-!   ! Define the local variables
-!   integer :: h,i
-!   real (kind=double), dimension(dim3) :: epsilon2
-!   real (kind=double) :: totalEpsilon2
-!
-!   do h = 1, spin
-!
-!      ! Insert the header for the epsilon 2 data.
-!      write (49+h,fmt="(5a15)") "Energy","totalEps2","xEps2","yEps2","zEps2"
-!
-!      do i = 1, numEnergyPoints
-!
-!         ! Compute epsilon2 for x, y, z, and the total.
-!         epsilon2(:) = optcCond(:,i,h) * conversionFactorEps2 / energyScale(i)
-!         totalEpsilon2 = sum(epsilon2(:)) / 3.0_double
-!
-!         ! Record the value of epsilon2 to disk, making sure to use au instead
-!         !   of eV for the energy scale.
-!         write (49+h,fmt="(5e15.7)") energyScale(i)*hartree,&
-!               & totalEpsilon2,epsilon2(:)
-!
-!      enddo
-!   enddo
-!
-!end subroutine printEps2
 
 end module O_OptcPrint

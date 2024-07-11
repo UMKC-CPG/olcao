@@ -36,11 +36,25 @@ def parameters_and_defaults():
             "subplot_separation" : 10,  # -ss
             "subplots_per_fig" : [1],  # -sp
             "curves_per_subplot" : [1],  # -cs
-            "curve_width" : [0.5],  # -ct
-            "curve_style" : ['-'],  # -cy
-            "curve_color" : ['xkcd:strong blue'],  # -cc Use https://xkcd.com/color/rgb/
-            "curve_separation" : [10]  # -cp
+            "curve_separation" : [10],  # -cp
+            "curve_width" : [],  # -ct
+            "curve_width_start" : 0.5,  # -cta
+            "curve_width_step" : 0.25,  # -cte
+            "curve_width_size" : 1,  # -cti
+            "curve_style" : [],  # -cy
+            "curve_style_start" : 0,  # -cya
+            "curve_style_step" : 1,  # -cye
+            "curve_style_size" : 1,  # -cyi
+            "curve_color" : [],  # -cc
+            "curve_color_start" : 18,  # -cca
+            "curve_color_step" : 1,  # -cce
+            "curve_color_size" : 1,  # -cci
+            "curve_mark" : [],  # -cm
+            "curve_mark_start" : 0,  # -cma
+            "curve_mark_step" : 1,  # -cme
+            "curve_mark_size" : 1  # -cmi
             }
+    # Note that the colors use:  Use https://xkcd.com/color/rgb/
     return param_dict
 
 

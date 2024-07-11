@@ -93,10 +93,23 @@ class ScriptSettings():
         self.subplot_separation = default_rc["subplot_separation"]
         self.subplots_per_fig = default_rc["subplots_per_fig"]
         self.curves_per_subplot = default_rc["curves_per_subplot"]
-        self.curve_width = default_rc["curve_width"]
-        self.curve_style = default_rc["curve_style"]
-        self.curve_color = default_rc["curve_color"]
         self.curve_separation = default_rc["curve_separation"]
+        self.curve_width = default_rc["curve_width"]
+        self.curve_width_start = default_rc["curve_width_start"]
+        self.curve_width_step = default_rc["curve_width_step"]
+        self.curve_width_size = default_rc["curve_width_size"]
+        self.curve_style = default_rc["curve_style"]
+        self.curve_style_start = default_rc["curve_style_start"]
+        self.curve_style_step = default_rc["curve_style_step"]
+        self.curve_style_size = default_rc["curve_style_size"]
+        self.curve_color = default_rc["curve_color"]
+        self.curve_color_start = default_rc["curve_color_start"]
+        self.curve_color_step = default_rc["curve_color_step"]
+        self.curve_color_size = default_rc["curve_color_size"]
+        self.curve_mark = default_rc["curve_mark"]
+        self.curve_mark_start = default_rc["curve_mark_start"]
+        self.curve_mark_step = default_rc["curve_mark_step"]
+        self.curve_mark_size = default_rc["curve_mark_size"]
 
         #    global dos = default_rc[24]
         #    global points = default_rc[25]
@@ -327,6 +340,21 @@ class ScriptSettings():
                             type=float, default=self.curve_width,
                             nargs='+', help='Curve width. ' +
                             f'Default: {self.curve_width}.')
+        parser.add_argument('-cta', '--curvewidthstart',
+                            dest='curve_width_start', type=float,
+                            default=self.curve_width_start,
+                            help='Starting curve width. Default: ' +
+                            f'{self.curve_width_start}.')
+        parser.add_argument('-cte', '--curvewidthstep',
+                            dest='curve_width_step', type=float,
+                            default=self.curve_width_step,
+                            help='Curve width step size. Default: ' +
+                            f'{self.curve_width_step}.')
+        parser.add_argument('-cti', '--curvewidthsize',
+                            dest='curve_width_size', type=int,
+                            default=self.curve_width_size,
+                            help='Length of size variation list. Default: ' +
+                            f'{self.curve_width_size}.')
 
         # Define the curve style.
         parser.add_argument('-cy', '--curvestyle', dest='curve_style',
@@ -336,12 +364,63 @@ class ScriptSettings():
                             'shorthand input (e.g., -. or -). You need to' +
                             'use the long option or edit the rc file ' +
                             f'for that instead. Default: {self.curve_style}.')
+        parser.add_argument('-cya', '--curvestylestart',
+                            dest='curve_style_start', type=int,
+                            default=self.curve_style_start, help='Starting ' +
+                            'curve style index in curve_style.dat. ' +
+                            f'Default: {self.curve_style_start}')
+        parser.add_argument('-cye', '--curvestylestep',
+                            dest='curve_style_step', type=int,
+                            default=self.curve_style_step, help='Indices ' +
+                            ' to step in curve_style.dat. ' +
+                            f'Default: {self.curve_style_step}')
+        parser.add_argument('-cyi', '--curvestylesize',
+                            dest='curve_style_size', type=int,
+                            default=self.curve_style_size, help='Length ' +
+                            ' of the list to build from curve_styles.dat. ' +
+                            f'Default: {self.curve_style_size}')
 
         # Define the curve color.
         parser.add_argument('-cc', '--curvecolor', dest='curve_color',
                             type=ascii, default=self.curve_color,
                             nargs='+',help='Curve color. ' +
                             f'Default: {self.curve_color}.')
+        parser.add_argument('-cca', '--curvecolorstart',
+                            dest='curve_color_start', type=int,
+                            default=self.curve_color_start, help='Starting ' +
+                            'curve color index in curve_color.dat. ' +
+                            f'Default: {self.curve_color_start}')
+        parser.add_argument('-cce', '--curvecolorstep',
+                            dest='curve_color_step', type=int,
+                            default=self.curve_color_step, help='Indices ' +
+                            ' to step in curve_color.dat. ' +
+                            f'Default: {self.curve_color_step}')
+        parser.add_argument('-cci', '--curvecolorsize',
+                            dest='curve_color_size', type=int,
+                            default=self.curve_color_size, help='Length ' +
+                            ' of the list to build from curve_colors.dat. ' +
+                            f'Default: {self.curve_color_size}')
+
+        # Define the curve mark.
+        parser.add_argument('-cm', '--curvemark', dest='curve_mark',
+                            type=ascii, default=self.curve_mark,
+                            nargs='+',help='Curve mark. ' +
+                            f'Default: {self.curve_mark}.')
+        parser.add_argument('-cma', '--curvemarkstart',
+                            dest='curve_mark_start', type=int,
+                            default=self.curve_mark_start, help='Starting ' +
+                            'curve mark index in curve_mark.dat. ' +
+                            f'Default: {self.curve_mark_start}')
+        parser.add_argument('-cme', '--curvemarkstep',
+                            dest='curve_mark_step', type=int,
+                            default=self.curve_mark_step, help='Indices ' +
+                            ' to step in curve_mark.dat. ' +
+                            f'Default: {self.curve_mark_step}')
+        parser.add_argument('-cmi', '--curvemarksize',
+                            dest='curve_mark_size', type=int,
+                            default=self.curve_mark_size, help='Length ' +
+                            ' of the list to build from curve_marks.dat. ' +
+                            f'Default: {self.curve_mark_size}')
 
         # Define the curve separation.
         parser.add_argument('-cp', '--curvesep', dest='curve_separation',
@@ -390,13 +469,88 @@ class ScriptSettings():
         self.subplot_separation = args.subplot_separation
         self.subplots_per_fig = copy.deepcopy(args.subplots_per_fig)
         self.curves_per_subplot = copy.deepcopy(args.curves_per_subplot)
-        self.curve_width = copy.deepcopy(args.curve_width)
-        self.curve_style = copy.deepcopy(args.curve_style)
-        self.curve_color = copy.deepcopy(args.curve_color)
         self.curve_separation = copy.deepcopy(args.curve_separation)
+        self.curve_width = copy.deepcopy(args.curve_width)
+        self.curve_width_start = args.curve_width_start
+        self.curve_width_step = args.curve_width_step
+        self.curve_width_size = args.curve_width_size
+        self.curve_style = copy.deepcopy(args.curve_style)
+        self.curve_style_start = args.curve_style_start
+        self.curve_style_step = args.curve_style_step
+        self.curve_style_size = args.curve_style_size
+        self.curve_color = copy.deepcopy(args.curve_color)
+        self.curve_color_start = args.curve_color_start
+        self.curve_color_step = args.curve_color_step
+        self.curve_color_size = args.curve_color_size
+        self.curve_mark = copy.deepcopy(args.curve_mark)
+        self.curve_mark_start = args.curve_mark_start
+        self.curve_mark_step = args.curve_mark_step
+        self.curve_mark_size = args.curve_mark_size
 
 
     def process_settings(self):
+
+        # The options defining the visuals for the lines may need to be
+        #   processed. Example visual aspects include the line thickness,
+        #   the line color, and the solid/dotted/dashed nature of the line.
+        #   For each aspect, the command line could include an explicit
+        #   list of the options, or it could include a "start", "step", and
+        #   "size" that are used to construct the list of options.
+        # So, if the explicit list is *not* given and thus empty by default,
+        #   then we need to construct it using the start/step/size.
+
+        # Do the curve width first because it is the easiest.
+        if (len(self.curve_width) == 0):
+            for i in range(self.curve_width_size):
+                self.curve_width.append(self.curve_width_start +
+                        self.curve_width_step * i)
+
+        # The remaining visuals have data files that define the possible
+        #   values. So, we need to be able to open those files from the
+        #   environment variable OLCAO_DATA directory.
+        OLCAO_DATA = os.getenv('OLCAO_DATA')
+
+        # The curve styles must pull data from curve_styles.dat.
+        with open(f"{OLCAO_DATA}/curve_styles.dat", "r") as dat:
+            styles = dat.read().splitlines()
+        styles = [eval(x) for x in styles]
+
+        # Append styles from curve_styles.dat starting at the requested
+        #   index and stepping by the given step while remaining within
+        #   the array that contains all styles from curve_styles.dat.
+        for x in range(self.curve_style_size):
+            self.curve_style.append(styles[(self.curve_style_start +
+                    self.curve_style_step * x) % len(styles)])
+
+        # The curve colors must pull data from curve_colors.dat. Also,
+        #   The data file contains additional #hex representations of the
+        #   colors that we will ignore. We just want the fun color name.
+        #   Fortunately, after the color name, there is always a tab
+        #   character so we just take the slice of the line string from
+        #   the first character to (but not including) the first tab.
+        with open(f"{OLCAO_DATA}/curve_colors.dat", "r") as dat:
+            colors = dat.read().splitlines()
+        colors = [x[:x.find('\t')] for x in colors]
+
+        # Append colors from curve_colors.dat starting at the requested
+        #   index and stepping by the given step while remaining within
+        #   the array that contains all colors from curve_colors.dat.
+        for x in range(self.curve_color_size):
+            self.curve_color.append('xkcd:' + colors[
+                    (self.curve_color_start + self.curve_color_step * x)
+                    % len(colors)])
+
+        # The curve marks must pull data from curve_marks.dat.
+        with open(f"{OLCAO_DATA}/curve_marks.dat", "r") as dat:
+            marks = dat.read().splitlines()
+
+        # Append marks from curve_marks.dat starting at the requested
+        #   index and stepping by the given step while remaining within
+        #   the array that contains all marks from curve_marks.dat.
+        for x in range(self.curve_mark_size):
+            self.curve_mark.append(marks[(self.curve_mark_start +
+                    self.curve_mark_step * x) % len(marks)])
+
 
         # The color command line string may contain spaces and hence was
         #   enclosed in quotes that now need to be stripped out. Do that.
@@ -901,13 +1055,16 @@ def print_figs_subplots_curves(settings, x_col_headers, y_col_headers):
         #   We also pre-compute the indices at which the color, style, and
         #   line width values should be found in their respective lists.
         color_index = (curr_subplot_curve - 1)%len(settings.curve_color)
+        mark_index = (curr_subplot_curve - 1)%len(settings.curve_mark)
         style_index = (curr_subplot_curve - 1)%len(settings.curve_style)
         width_index = (curr_subplot_curve -1)%len(settings.curve_width)
         s.write("curves.append(plt.plot(" +
                 f"data['{x_col_headers[curve]}'], " +
                 f"data['{y_col_headers[curve]}'], " +
+                f"label='{y_col_headers[curve]}', " +
                 f"color='{settings.curve_color[color_index]}', " +
-                f"linestyle='{settings.curve_style[style_index]}', " +
+                f"marker='{settings.curve_mark[mark_index]}', " +
+                f"linestyle={settings.curve_style[style_index]}, " +
                 f"linewidth={settings.curve_width[width_index]}))\n")
 
     # In the event that a SYBD plot was created, we now need to do a few

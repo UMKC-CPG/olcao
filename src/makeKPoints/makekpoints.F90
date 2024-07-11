@@ -1121,8 +1121,8 @@ module BrillouinZones_O
             !   coordinates of the lattice point as the x, y, z in the
             !   equation of the first plane. I.e., put the x, y, z coordinates
             !   of the i plane into the equation of the j plane.
-            if (abs(sum(planeEquation(1:3,j * planeEquation(1:3,i) - &
-                  & planeEquation(1:3,j)**2))) < smallThresh) then
+            if (abs(sum(planeEquation(1:3,j) * planeEquation(1:3,i) - &
+                  & planeEquation(1:3,j)**2)) < smallThresh) then
                onOtherPlane = 1
 !#ifdef COMPVIS
 !               write (61+currBZ,fmt="(a)") "vp.sleep(0.010)"
@@ -1939,7 +1939,6 @@ endif
 
       ! Define local variables.
       integer :: i, j, k, s, planeIndex
-      character*8 :: formatString
 #endif
 
       ! The plane equations must be expressed in Cartesian coordinates.

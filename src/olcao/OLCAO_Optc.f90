@@ -106,7 +106,7 @@ subroutine computeOptc
 
    ! Print the output if necessary.
    if (stateSet /= 2) then  ! Not doing a Sigma(E) calculation.
-      call printOptcResults
+      call printOptcResults  ! Internally distinguishes optc from poptc.
    endif
 
    ! Deallocate unused matrices

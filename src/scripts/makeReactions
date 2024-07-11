@@ -2834,7 +2834,7 @@ sub makeReactionTemplates
             print MAP "$mergedNumDelAtoms[$sAtom1][$sAtom2] deleteIDs\n";
             print MAP "$numAtoms equivalences\n\n";
 
-            print MAP "BondingIDs\n\n";
+            print MAP "InitiatorIDs\n\n";
             print MAP "$bondingID1\n";
             print MAP "$bondingID2\n\n";
 

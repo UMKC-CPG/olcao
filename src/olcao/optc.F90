@@ -57,7 +57,6 @@ module O_OptcTransitions
          !   groups that must be accumulated. (The "segments" in the output
          !   file are either types or atoms as this is.) Record as an
          !   accumulation.
-   integer, allocatable, dimension (:) :: numStatesAtom
    integer :: sumNumPartials ! Total number of POPTC groups
    integer :: initVDBI ! Index for initial state valeDim basis fns
    integer :: finVDBI  ! Index for final state valeDim basis fns
@@ -82,23 +81,20 @@ subroutine getEnergyStatistics
    use O_Kinds
    use O_Potential,       only: spin
    use O_CommandLine,     only: stateSet
-   use O_AtomicSites,     only: valeDim
    use O_SecularEquation, only: energyEigenValues
-   use O_Populate,        only: electronPopulation, occupiedEnergy
+   use O_Populate,        only: electronPopulation
    use O_KPoints,         only: numKPoints, kPointWeight
    use O_Constants,       only: dim3, smallThresh, bigThresh, hartree
    use O_Input, only: numStates, cutoffEnOPTC, maxTransEnOPTC, &
          & totalEnergyDiffPACS, energyWindowPACS, firstInitStatePACS, &
          & lastInitStatePACS, onsetEnergySlackPACS, cutoffEnSIGE, &
-         & maxTransEnSIGE, detailCodePOPTC, cutoffEnNLOP, maxTransEnNLOP
+         & maxTransEnSIGE, cutoffEnNLOP, maxTransEnNLOP
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
 
    ! Define local variables.
    integer :: h,i,j,k ! Loop index variables.
-   real (kind=double) :: maxOccupiedEnergy
-   real (kind=double) :: minUnoccupiedEnergy
    real (kind=double) :: currentEnergyDiff
    real (kind=double) :: currentGap
    integer :: firstInit
@@ -108,7 +104,7 @@ subroutine getEnergyStatistics
    integer :: orderedIndex
 
    ! Pull variables out of imported modules.
-   if (stateSet == 0) then      ! Standard optical properties calculation.
+   if (stateSet == 0) then   ! Standard optical properties calculation.
       ! The energy onset for standard optical properties calculations is the
       !   band gap width in eV.  The energy scale for evaluating the
       !   accumulated (and broadened) transitions will begin as close to 0 eV
@@ -219,10 +215,6 @@ subroutine getEnergyStatistics
    !   one for the originating state and one for the final state.
 
    do h = 1, spin
-
-      ! Initialize the values used to find the indirect gap and the direct gap.
-      maxOccupiedEnergy = -bigThresh
-      minUnoccupiedEnergy = bigThresh
 
       ! Pacs calculations need to have the resultant spectra shifted according
       !   to the difference in orbital energies from the ground and excited
@@ -540,21 +532,15 @@ subroutine getEnergyStatistics
 
    ! Now that the number of transitions for each kpoint are known we can 
    !   allocate space to hold information based on the number transitions.
+   !   Note that we allocate transitionProb here regardless of whether we
+   !   are doing POPTC or not, because we will *always* do a total optc.
    if (stateSet /= 2) then  ! Not doing a Sigma(E)
-      if (detailCodePOPTC == 0) then ! Standerd OPTC (not doing POPTC)
-         allocate (energyDiff (maxPairs,numKPoints,spin))
-         allocate (transitionProb  (dim3,maxPairs,numKPoints,spin))
+      allocate (energyDiff (maxPairs,numKPoints,spin))
+      allocate (transitionProb  (dim3,maxPairs,numKPoints,spin))
 
-         ! Initialize these arrays.
-         energyDiff(:maxPairs,:numKPoints,:) = 0.0_double
-         transitionProb(:dim3,:maxPairs,:numKPoints,:) = 0.0_double
-
-      else ! Doing POPTC.
-         allocate (energyDiff (maxPairs,numKPoints,spin))
-
-         ! Initialize these arrays.
-         energyDiff(:maxPairs,:numKPoints,:) = 0.0_double
-      endif
+      ! Initialize these arrays.
+      energyDiff(:maxPairs,:numKPoints,:) = 0.0_double
+      transitionProb(:dim3,:maxPairs,:numKPoints,:) = 0.0_double
    endif
 
 end subroutine getEnergyStatistics
@@ -562,7 +548,6 @@ end subroutine getEnergyStatistics
 
 
 subroutine computeTransitions
-
 
    ! Import the necessary modules.
    use HDF5
@@ -830,7 +815,7 @@ subroutine computePairs (currentKPoint,xyzComponents,spinDirection)
    use O_CommandLine, only: stateSet
    use O_SortSubs,    only: mergeSort
    use O_Input,       only: numStates
-   use O_KPoints,     only: kPointWeight,numKPoints
+   use O_KPoints,     only: kPointWeight
    use O_Populate,    only: electronPopulation
 #ifndef GAMMA
    use O_SecularEquation, only: energyEigenValues, valeVale
@@ -1084,14 +1069,7 @@ subroutine computePairs (currentKPoint,xyzComponents,spinDirection)
    call mergeSort (energyDiffTemp,energyDiff(:,currentKPoint,spinDirection),&
          & sortOrder,segmentBorders,transPairCount)
 
-   ! Allocate space to hold the transition probabilities.
-   if (.not. allocated (transitionProb)) then
-      write (6,*) "We should not be here because this was already allocated"
-      allocate (transitionProb (dim3,maxPairs,numKPoints,spin))
-      transitionProb(:dim3,:maxPairs,:numKPoints,:) = 0.0_double
-   endif
-
-   ! Copy transitionProbTemp to the real transitionProb data structure using
+   ! Copy transitionProbTemp to the actual transitionProb data structure using
    !   the sorting order determined in the mergeSort subroutine.
    if (xyzComponents == 0) then
       do i = 1, transPairCount
@@ -1123,7 +1101,7 @@ subroutine computePOPTCPairs(currentKPoint,xyzComponents,spinDirection)
    use O_CommandLine, only: stateSet
    use O_SortSubs,    only: mergeSort
    use O_Populate,    only: electronPopulation
-   use O_KPoints,     only: numKPoints, kPointWeight
+   use O_KPoints,     only: kPointWeight, numKPoints
    use O_Constants,   only: pi, hartree, lAngMomCount, dim3
    use O_AtomicSites, only: valeDim, numAtomSites, atomSites
    use O_AtomicTypes, only: numAtomTypes, atomTypes
@@ -1161,6 +1139,7 @@ subroutine computePOPTCPairs(currentKPoint,xyzComponents,spinDirection)
    integer :: indexValeDim ! FIX Name
    integer :: pOptcKKCIndex
    integer :: newPartial
+   integer, allocatable, dimension (:) :: numStatesAtom ! Vale states / atom
    real    (kind=double), allocatable, dimension (:)         :: partialsIndex
    real    (kind=double), allocatable, dimension (:,:,:,:)   :: transitionProbTemp
 
@@ -1179,14 +1158,14 @@ subroutine computePOPTCPairs(currentKPoint,xyzComponents,spinDirection)
    real    (kind=double) :: initStateFactor
    real    (kind=double) :: finStatefactor
    real    (kind=double) :: currentEnergyDiff
-   real    (kind=double) :: valeValeXMomGammaSum
-   real    (kind=double) :: valeValeXMomSumReal
-   real    (kind=double) :: valeValeXMomSumImag
    real    (kind=double), allocatable, dimension (:)       :: energyDiffTemp
 #ifndef GAMMA
+   real    (kind=double) :: valeValeXMomSumReal
+   real    (kind=double) :: valeValeXMomSumImag
    complex (kind=double), allocatable, dimension (:,:,:,:) :: conjWaveMomSum
    complex (kind=double), allocatable, dimension (:,:,:)   :: valeValeXMom
 #else
+   real    (kind=double) :: valeValeXMomGammaSum
    real    (kind=double), allocatable, dimension (:,:,:,:) :: conjWaveMomSumGamma
    real    (kind=double), allocatable, dimension (:,:,:)   :: valeValeXMomGamma
 #endif
@@ -1272,7 +1251,7 @@ subroutine computePOPTCPairs(currentKPoint,xyzComponents,spinDirection)
       ! Store the nl orbital totals for each atom. (Sum over m.)
 
       ! Initialize counter to index the cumulative sum of QN_l orbitals for all
-      !   atoms.  (This pOptc will give a O for each QN_nl pair of each atom.)
+      !   atoms.  (Make a plot for each QN_nl pair of each atom.)
       cumulNumPartials(1) = 0
 
       ! Loop to record the number of orbitals that each atom contributes.
@@ -1289,11 +1268,10 @@ subroutine computePOPTCPairs(currentKPoint,xyzComponents,spinDirection)
       ! Store the nlm for each atom.
 
       ! Initialize counter to index the cumulative sum of QN_l orbitals for
-      !   all atoms.  (This pOptc will give a Optc for each QN_nlm set for each
-      !   atom.)
+      !   all atoms.  (Make a plot for each QN_nlm set for each atom.)
       cumulNumPartials(1) = 0
 
-      ! Loop to record the index number for each atom's orbitals.
+      ! Loop to record the index number for each atomic orbital.
       do i = 1, numAtomSites
          cumulNumPartials(i+1) = cumulNumPartials(i) + &
             & atomTypes(atomSites(i)%atomTypeAssn)%numQN_lValeRadialFns(1)*1 +&
@@ -1306,19 +1284,29 @@ subroutine computePOPTCPairs(currentKPoint,xyzComponents,spinDirection)
       sumNumPartials = cumulNumPartials(numAtomSites+1)
    endif
 
-   ! Allocate storage for pOptcIndex so that each basis function can be "sent"
-   !   (or indexed) to the correct accumulation group.
-   allocate (pOptcIndex (valeDim))
+   ! Now that the sum of the number of partials is known, we can allocate
+   !   space to hold accumulated data.
 
    ! For each sub-group, we will need to record the number of basis functions
    !   that contribute to it so that we can properly normalize the KKC.
    allocate (partialsIndex(sumNumPartials))
 
+   ! We also need to store the transition probabilities for all partials.
+   if (.not. allocated(transitionProbPOPTC)) then
+      allocate(transitionProbPOPTC(sumNumPartials,sumNumPartials,dim3,&
+            & maxPairs,numKPoints,spin))
+      transitionProbPOPTC (:,:,:,:,:,:) = 0.0_double
+   endif
+
+   ! Allocate storage for pOptcIndex so that each basis function can be "sent"
+   !   (or indexed) to the correct accumulation group.
+   allocate (pOptcIndex (valeDim))
+
    pOptcKKCIndex = 0 ! Counts how many basis functions come from that partial
    newPartial = 1 ! Counts the number of partials as we go along. (At least 1)
    partialsIndex(:) = 0 ! Set counting array to zero.
 
-   ! Initialize valeDimIndex. This is used in the loop below to track the
+   ! Initialize valeDimIndex. This is used in the loop below to track
    !   which basis function is currently under consideration for the mapping
    !   into pOptcIndex. The valeDim is "valence dimension", one for each
    !   basis function (orbital).
@@ -1478,14 +1466,6 @@ subroutine computePOPTCPairs(currentKPoint,xyzComponents,spinDirection)
 
    deallocate (partialsIndex)
 
-   ! For the first time though this subroutine we will need to allocate space
-   !   to hold the transitionProb array and initilize the array.
-   if (.not. allocated(transitionProbPOPTC)) then
-      allocate(transitionProbPOPTC(sumNumPartials,sumNumPartials,dim3,&
-            & maxPairs,numKPoints,spin))
-      transitionProbPOPTC (:,:,:,:,:,:) = 0.0_double
-   endif
-
    ! Make shorthand for the state indices.
    firstInit = firstOccupiedState(currentKPoint,spinDirection)
    lastInit  = lastOccupiedState(currentKPoint,spinDirection)
@@ -1514,7 +1494,7 @@ subroutine computePOPTCPairs(currentKPoint,xyzComponents,spinDirection)
    allocate (conjWaveMomSum (valeDim,sumNumPartials,lastFin-firstFin+1,&
                              & finComponent))
 
-   conjWaveMomSum = cmplx(0.0_double,0.0_double)
+   conjWaveMomSum = cmplx(0.0_double,0.0_double,double)
 
    ! Compute the sum over the final states.
    do i = initComponent, finComponent
@@ -1699,7 +1679,7 @@ subroutine computePOPTCPairs(currentKPoint,xyzComponents,spinDirection)
          ! Loop to obtain the wave function times the momentum integral.
          do k = initComponent,finComponent
 
-            valeValeXMom (:,:,:) = cmplx(0.0_double,0.0_double)
+            valeValeXMom (:,:,:) = cmplx(0.0_double,0.0_double,double)
                    
             initVDBI = 0
 
@@ -1800,14 +1780,22 @@ subroutine computePOPTCPairs(currentKPoint,xyzComponents,spinDirection)
    !   the sorting order determined in the mergeSort subroutine.
    if (xyzComponents == 0) then
       do i = 1, transPairCount
-         transitionProbPOPTC(:,:,:,i,currentKPoint,spinDirection) =&
-         & transitionProbTemp(:,:,:,sortOrder(i))
+         transitionProbPOPTC(:,:,:,i,currentKPoint,spinDirection) = &
+               & transitionProbTemp(:,:,:,sortOrder(i))
+         do j = 1, dim3
+            transitionProb(j,i,currentKPoint,spinDirection) = &
+                  & sum(transitionProbPOPTC(:,:,j,i,currentKPoint,&
+                  & spinDirection))
+         enddo
       enddo
    else
       do i = 1, transPairCount
          transitionProbPOPTC(:,:,xyzComponents,i, &
-          & currentKPoint,spinDirection) = transitionProbTemp(: &
-          & ,:,1,sortOrder(i))
+               & currentKPoint,spinDirection) = &
+               & transitionProbTemp(:,:,1,sortOrder(i))
+         transitionProb(xyzComponents,i,currentKPoint,spinDirection) = &
+               & sum(transitionProbPOPTC(:,:,xyzComponents,i,currentKPoint,&
+               & spinDirection))
       enddo
    endif
 
@@ -1830,13 +1818,11 @@ subroutine computeSigmaE (currentKPoint,xyzComponents,spinDirection)
    use O_Constants, only: dim3, pi, auTime, lightFactor, hartree
    use O_KPoints, only: numKPoints, kPointWeight
    use O_SortSubs
-   use O_Input, only: maxTransEnSIGE, deltaSIGE, sigmaSIGE, numStates, &
-         & thermalSigma
+   use O_Input, only: maxTransEnSIGE, deltaSIGE, sigmaSIGE, numStates
    use O_Populate, only: occupiedEnergy, electronPopulation
    use O_Lattice, only: realCellVolume
    use O_Potential, only: spin
    use O_AtomicSites, only: valeDim
-   use O_CommandLine, only: stateSet
 #ifndef GAMMA
    use O_SecularEquation, only: valeVale, energyEigenValues
 #else
@@ -1852,7 +1838,7 @@ subroutine computeSigmaE (currentKPoint,xyzComponents,spinDirection)
    integer :: spinDirection
 
    ! Define local variables.
-   integer :: i,j,k,p,q ! Loop index variables
+   integer :: i,j,k ! Loop index variables
    integer :: initComponent
    integer :: finComponent
    integer :: firstInit

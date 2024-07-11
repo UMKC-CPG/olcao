@@ -3536,7 +3536,7 @@ sub printOLCAOInput
    print OLCAO "$eTransOPTC                     ! OPTC energy trans\n";
    print OLCAO "$eDeltaOPTC                     ! OPTC delta energy\n";
    print OLCAO "$sigmaOPTC                      ! OPTC broadening\n";
-   print OLCAO "$detailCodePOPTC                ! POPTC 0N;1e;2a;3enl;4enlm\n";
+   print OLCAO "$detailCodePOPTC                ! POPTC 0N;1t;2a;3enl;4enlm\n";
 
    # Print nonlinear optical properties input data
    print OLCAO "NLOP_INPUT_DATA\n";

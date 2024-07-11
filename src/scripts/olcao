@@ -211,17 +211,18 @@ my $force;
 my $loci;
 my $tdimo;
 my $pdimo;
-my $tdos;
-my $pdos;
-my $poptc;
+my $tot; # total
+my $par; # partial
 my $bo3c;
 my $elf;
 my $eps1;
 my $eps1i;
 my $eps2;
 my $cond; # Optical conductivity
+my $kkc; # Used for partial kramers-kronig.
 my $chi1;
 my $chi2;
+my $extnct; # Extinction coeff
 my $refrac; # Refractive index
 my $absorp; # Absorption coeff
 my $reflec; # Reflectivity
@@ -694,11 +695,10 @@ sub initFileNames
 
    #DEFINE AUXILIARY SUFFIX COMPONENTS
    $loci      = ".loci";
-   $tdos      = ".t";
-   $pdos      = ".p";
+   $tot       = ".t"; # total
+   $par       = ".p"; # partial
    $tdimo     = ".t";
    $pdimo     = ".p";
-   $poptc     = ".p";
    $bo3c      = ".3c";
    $elf       = ".elf";
    $eps1      = ".eps1";
@@ -707,8 +707,10 @@ sub initFileNames
    $chi2      = ".chi2";
    $chi1      = ".chi1";
    $cond      = ".cond";
+   $kkc       = ".kkc";
+   $extnct    = ".kext"; # Extinction coeff
    $refrac    = ".nref"; # Refractive index
-   $absorp    = ".kabs"; # Absorption coeff
+   $absorp    = ".aabs"; # Absorption coeff
    $reflec    = ".Rref"; # Reflectivity
    $pot       = ".pot";
    $rho       = ".rho";
@@ -1537,18 +1539,33 @@ sub executeProgram
       @values = StructureControl::prepLine("",$lineCount,'\s+');
       $optcLines = $values[0];
 
+      # The optc, poptc, and nlop calculations all need to run OLCAOkkc on
+      #   the "standard" total eps2.
+
       # We always use the #1 file numbers.
-      `($bin/OLCAOkkc $optcLines 1 1 2>&1)`;
+      `($bin/OLCAOkkc $optcLines 1 0 1 2>&1)`;
 
       # We only use the #2 set of file numbers for the spin polarized
       #   calculations.
       if ($spinPol == 2)
-         {`($bin/OLCAOkkc $optcLines 2 1 2>&1)`;}
+         {`($bin/OLCAOkkc $optcLines 2 0 1 2>&1)`;}
 
       # If we are doing the partial optical properties, call processPOPTC
-      #   for the OLCAOkkc calculation.
-      if (-e "fort.250")
-         {system ("$OLCAO_BIN/processPOPTC");}
+      #   for the OLCAOkkc calculation. (The fort.209 file contains the
+      #   information needed to produce partial epsilon1 using Kramers-
+      #   Kronig conversion. It is only produced by partial optical
+      #   properties calculations.) The processPOPTC will repeatedly call
+      #   the OLCAOkkc program.
+      if (-e "fort.209")
+      {
+         if ($spinPol == 1)
+            {system ("$OLCAO_BIN/processPOPTC 1");}
+         else
+         {
+            system ("$OLCAO_BIN/processPOPTC 1");
+            system ("$OLCAO_BIN/processPOPTC 2");
+         }
+      }
    }
 
    # Check for the existance of the fort.2 file that signals completion of
@@ -1597,31 +1614,31 @@ sub manageOutput
       {
          if ($spinPol == 2)
          {
-            &copy("fort.60","$taskEdge$dos$taskBasis$tdos$alt$plot.60");
+            &copy("fort.60","$taskEdge$dos$taskBasis$tot$alt$plot.60");
             &move("fort.60",
-                  "$proj_home/$taskEdge$dos$taskBasis$tdos$alt$up$plot");
-            &copy("fort.70","$taskEdge$dos$taskBasis$pdos$alt$raw.70");
+                  "$proj_home/$taskEdge$dos$taskBasis$tot$alt$up$plot");
+            &copy("fort.70","$taskEdge$dos$taskBasis$par$alt$raw.70");
             &move("fort.70",
-                  "$proj_home/$taskEdge$dos$taskBasis$pdos$alt$up$raw");
+                  "$proj_home/$taskEdge$dos$taskBasis$par$alt$up$raw");
             &copy("fort.80","$taskEdge$dos$taskBasis$loci$alt$plot.80");
             &move("fort.80",
                   "$proj_home/$taskEdge$dos$taskBasis$loci$alt$up$plot");
-            &copy("fort.61","$taskEdge$dos$taskBasis$tdos$alt$plot.61");
+            &copy("fort.61","$taskEdge$dos$taskBasis$tot$alt$plot.61");
             &move("fort.61",
-                  "$proj_home/$taskEdge$dos$taskBasis$tdos$alt$dn$plot");
-            &copy("fort.71","$taskEdge$dos$taskBasis$pdos$alt$raw.71");
+                  "$proj_home/$taskEdge$dos$taskBasis$tot$alt$dn$plot");
+            &copy("fort.71","$taskEdge$dos$taskBasis$par$alt$raw.71");
             &move("fort.71",
-                  "$proj_home/$taskEdge$dos$taskBasis$pdos$alt$dn$raw");
+                  "$proj_home/$taskEdge$dos$taskBasis$par$alt$dn$raw");
             &copy("fort.81","$taskEdge$dos$taskBasis$loci$alt$plot.81");
             &move("fort.81",
                   "$proj_home/$taskEdge$dos$taskBasis$loci$alt$dn$plot");
          }
          else
          {
-            &copy("fort.60","$taskEdge$dos$taskBasis$tdos$alt$plot.60");
-            &move("fort.60","$proj_home/$taskEdge$dos$taskBasis$tdos$alt$plot");
-            &copy("fort.70","$taskEdge$dos$taskBasis$pdos$alt$raw.70");
-            &move("fort.70","$proj_home/$taskEdge$dos$taskBasis$pdos$alt$raw");
+            &copy("fort.60","$taskEdge$dos$taskBasis$tot$alt$plot.60");
+            &move("fort.60","$proj_home/$taskEdge$dos$taskBasis$tot$alt$plot");
+            &copy("fort.70","$taskEdge$dos$taskBasis$par$alt$raw.70");
+            &move("fort.70","$proj_home/$taskEdge$dos$taskBasis$par$alt$raw");
             &copy("fort.80","$taskEdge$dos$taskBasis$loci$alt$plot.80");
             &move("fort.80","$proj_home/$taskEdge$dos$taskBasis$loci$alt$plot");
          }
@@ -1721,25 +1738,25 @@ sub manageOutput
       &move("$band$tempBasis$hdf","$taskEdge$band$taskBasis$alt$hdf");
       if ($spinPol == 2)
       {
-         &copy("fort.60","$taskEdge$dos$taskBasis$tdos$plot$alt.60");
-         &move("fort.60","$proj_home/$taskEdge$dos$taskBasis$tdos$alt$up$plot");
-         &copy("fort.70","$taskEdge$dos$taskBasis$pdos$alt$raw.70");
-         &move("fort.70","$proj_home/$taskEdge$dos$taskBasis$pdos$alt$up$raw");
+         &copy("fort.60","$taskEdge$dos$taskBasis$tot$plot$alt.60");
+         &move("fort.60","$proj_home/$taskEdge$dos$taskBasis$tot$alt$up$plot");
+         &copy("fort.70","$taskEdge$dos$taskBasis$par$alt$raw.70");
+         &move("fort.70","$proj_home/$taskEdge$dos$taskBasis$par$alt$up$raw");
          &copy("fort.80","$taskEdge$dos$taskBasis$loci$alt$plot.80");
          &move("fort.80","$proj_home/$taskEdge$dos$taskBasis$loci$alt$up$plot");
-         &copy("fort.61","$taskEdge$dos$taskBasis$tdos$alt$plot.61");
-         &move("fort.61","$proj_home/$taskEdge$dos$taskBasis$tdos$alt$dn$plot");
-         &copy("fort.71","$taskEdge$dos$taskBasis$pdos$alt$raw.71");
-         &move("fort.71","$proj_home/$taskEdge$dos$taskBasis$pdos$alt$dn$raw");
+         &copy("fort.61","$taskEdge$dos$taskBasis$tot$alt$plot.61");
+         &move("fort.61","$proj_home/$taskEdge$dos$taskBasis$tot$alt$dn$plot");
+         &copy("fort.71","$taskEdge$dos$taskBasis$par$alt$raw.71");
+         &move("fort.71","$proj_home/$taskEdge$dos$taskBasis$par$alt$dn$raw");
          &copy("fort.81","$taskEdge$dos$taskBasis$loci$alt$plot.81");
          &move("fort.81","$proj_home/$taskEdge$dos$taskBasis$loci$alt$dn$plot");
       }
       else
       {
-         &copy("fort.60","$taskEdge$dos$taskBasis$tdos$plot$alt.60");
-         &move("fort.60","$proj_home/$taskEdge$dos$taskBasis$tdos$alt$plot");
-         &copy("fort.70","$taskEdge$dos$taskBasis$pdos$alt$raw.70");
-         &move("fort.70","$proj_home/$taskEdge$dos$taskBasis$pdos$alt$raw");
+         &copy("fort.60","$taskEdge$dos$taskBasis$tot$plot$alt.60");
+         &move("fort.60","$proj_home/$taskEdge$dos$taskBasis$tot$alt$plot");
+         &copy("fort.70","$taskEdge$dos$taskBasis$par$alt$raw.70");
+         &move("fort.70","$proj_home/$taskEdge$dos$taskBasis$par$alt$raw");
          &copy("fort.80","$taskEdge$dos$taskBasis$loci$alt$plot.80");
          &move("fort.80","$proj_home/$taskEdge$dos$taskBasis$loci$alt$plot");
       }
@@ -1793,154 +1810,180 @@ sub manageOutput
    }
    elsif ("$taskName" eq "$optc")
    {
-      if ($spinPol == 2)
+      if ($spinPol == 2) # Spin polarized case.
       {
          &move("$intg$tempBasis$hdf","$taskEdge$intg$taskBasis$alt$hdf");
          &move("$band$tempBasis$hdf","$taskEdge$band$taskBasis$alt$hdf");
-         if (-e "fort.40")
-         {
-            &copy("fort.40","$taskEdge$optc$taskBasis$cond$alt$up.40");
-            &copy("fort.50","$taskEdge$optc$taskBasis$eps2$alt$up.50");
-            &move("fort.40",
-               "$proj_home/$taskEdge$optc$taskBasis$cond$alt$up$plot");
-            &move("fort.50",
-               "$proj_home/$taskEdge$optc$taskBasis$eps2$alt$up$plot");
-            &move("fort.100",
-               "$proj_home/$taskEdge$optc$taskBasis$alt$up$plot");
-            &move("fort.110",
-               "$proj_home/$taskEdge$optc$taskBasis$eps1$alt$up$plot");
-            &move("fort.120",
-               "$proj_home/$taskEdge$optc$taskBasis$elf$alt$up$plot");
-            &move("fort.130",
-               "$proj_home/$taskEdge$optc$taskBasis$refrac$alt$up$plot");
-            &move("fort.140",
-               "$proj_home/$taskEdge$optc$taskBasis$absorp$alt$up$plot");
-            &move("fort.150",
-               "$proj_home/$taskEdge$optc$taskBasis$eps1i$alt$up$plot");
-            &move("fort.160",
-               "$proj_home/$taskEdge$optc$taskBasis$reflec$alt$up$plot");
 
-            &copy("fort.41","$taskEdge$optc$taskBasis$cond$alt$dn.41");
-            &copy("fort.51","$taskEdge$optc$taskBasis$eps2$alt$dn.51");
-            &move("fort.41",
-               "$proj_home/$taskEdge$optc$taskBasis$cond$alt$dn$plot");
-            &move("fort.51",
-               "$proj_home/$taskEdge$optc$taskBasis$eps2$alt$dn$plot");
-            &move("fort.101",
-               "$proj_home/$taskEdge$optc$taskBasis$alt$dn$plot");
-            &move("fort.111",
-               "$proj_home/$taskEdge$optc$taskBasis$eps1$alt$dn$plot");
-            &move("fort.121",
-               "$proj_home/$taskEdge$optc$taskBasis$elf$alt$dn$plot");
-            &move("fort.131",
-               "$proj_home/$taskEdge$optc$taskBasis$refrac$alt$dn$plot");
-            &move("fort.141",
-              "$proj_home/$taskEdge$optc$taskBasis$absorp$alt$dn$plot");
-            &move("fort.151",
-               "$proj_home/$taskEdge$optc$taskBasis$eps1i$alt$dn$plot");
-            &move("fort.161",
-               "$proj_home/$taskEdge$optc$taskBasis$reflec$alt$dn$plot");
-         }
-         else # POPTC scenario.
+         # In all cases, the total optc output file set from OLCAO_OPTC and
+         #   OLCAOkkc needs to be copied.
+         &copy("fort.40","$taskEdge$optc$taskBasis$tot$cond$alt$up.40");
+         &copy("fort.50","$taskEdge$optc$taskBasis$tot$eps2$alt$up.50");
+         &move("fort.40",
+            "$proj_home/$taskEdge$optc$taskBasis$tot$cond$alt$up$plot");
+         &move("fort.50",
+            "$proj_home/$taskEdge$optc$taskBasis$tot$eps2$alt$up$plot");
+         &move("fort.100",
+            "$proj_home/$taskEdge$optc$taskBasis$tot$alt$up$plot");
+         &move("fort.110",
+            "$proj_home/$taskEdge$optc$taskBasis$tot$eps1$alt$up$plot");
+         &move("fort.120",
+            "$proj_home/$taskEdge$optc$taskBasis$tot$elf$alt$up$plot");
+         &move("fort.130",
+            "$proj_home/$taskEdge$optc$taskBasis$tot$refrac$alt$up$plot");
+         &move("fort.140",
+            "$proj_home/$taskEdge$optc$taskBasis$tot$extnct$alt$up$plot");
+         &move("fort.150",
+            "$proj_home/$taskEdge$optc$taskBasis$tot$eps1i$alt$up$plot");
+         &move("fort.160",
+            "$proj_home/$taskEdge$optc$taskBasis$tot$reflec$alt$up$plot");
+         &move("fort.170",
+            "$proj_home/$taskEdge$optc$taskBasis$tot$absorp$alt$up$plot");
+
+         &copy("fort.41","$taskEdge$optc$taskBasis$tot$cond$alt$dn.41");
+         &copy("fort.51","$taskEdge$optc$taskBasis$tot$eps2$alt$dn.51");
+         &move("fort.41",
+            "$proj_home/$taskEdge$optc$taskBasis$tot$cond$alt$dn$plot");
+         &move("fort.51",
+            "$proj_home/$taskEdge$optc$taskBasis$tot$eps2$alt$dn$plot");
+         &move("fort.101",
+            "$proj_home/$taskEdge$optc$taskBasis$tot$alt$dn$plot");
+         &move("fort.111",
+            "$proj_home/$taskEdge$optc$taskBasis$tot$eps1$alt$dn$plot");
+         &move("fort.121",
+            "$proj_home/$taskEdge$optc$taskBasis$tot$elf$alt$dn$plot");
+         &move("fort.131",
+            "$proj_home/$taskEdge$optc$taskBasis$tot$refrac$alt$dn$plot");
+         &move("fort.141",
+           "$proj_home/$taskEdge$optc$taskBasis$tot$extnct$alt$dn$plot");
+         &move("fort.151",
+            "$proj_home/$taskEdge$optc$taskBasis$tot$eps1i$alt$dn$plot");
+         &move("fort.161",
+            "$proj_home/$taskEdge$optc$taskBasis$tot$reflec$alt$dn$plot");
+         &move("fort.171",
+           "$proj_home/$taskEdge$optc$taskBasis$tot$absorp$alt$dn$plot");
+
+         # Check for the existence of a certain file (fort.240) to decide
+         #   if this optical properties calculation contains POPTC results.
+         if (-e "fort.240") # POPTC Scenario
          {
+            &copy("fort.209",
+               "$taskEdge$optc$taskBasis$par$kkc$alt$dat.209");
+            &move("fort.209",
+               "$proj_home/$taskEdge$optc$taskBasis$par$kkc$alt$dat");
+
             &copy("fort.240",
-               "$taskEdge$optc$taskBasis$poptc$cond$alt$up$raw.240");
+               "$taskEdge$optc$taskBasis$par$cond$alt$up$raw.240");
             &move("fort.240",
-               "$proj_home/$taskEdge$optc$taskBasis$poptc$cond$alt$up$raw");
+               "$proj_home/$taskEdge$optc$taskBasis$par$cond$alt$up$raw");
             &copy("fort.250",
-               "$taskEdge$optc$taskBasis$poptc$eps2$alt$up$raw.250");
+               "$taskEdge$optc$taskBasis$par$eps2$alt$up$raw.250");
             &move("fort.250",
-               "$proj_home/$taskEdge$optc$taskBasis$poptc$eps2$alt$up$raw");
+               "$proj_home/$taskEdge$optc$taskBasis$par$eps2$alt$up$raw");
             &move("fort.300",
-               "$proj_home/$taskEdge$optc$taskBasis$poptc$alt$up$raw");
+               "$proj_home/$taskEdge$optc$taskBasis$par$alt$up$raw");
             &move("fort.310",
-               "$proj_home/$taskEdge$optc$taskBasis$poptc$eps1$alt$up$raw");
+               "$proj_home/$taskEdge$optc$taskBasis$par$eps1$alt$up$raw");
             &move("fort.320",
-               "$proj_home/$taskEdge$optc$taskBasis$poptc$elf$alt$up$raw");
+               "$proj_home/$taskEdge$optc$taskBasis$par$elf$alt$up$raw");
             &move("fort.330",
-               "$proj_home/$taskEdge$optc$taskBasis$poptc$refrac$alt$up$raw");
+               "$proj_home/$taskEdge$optc$taskBasis$par$refrac$alt$up$raw");
             &move("fort.340",
-               "$proj_home/$taskEdge$optc$taskBasis$poptc$absorp$alt$up$raw");
+               "$proj_home/$taskEdge$optc$taskBasis$par$extnct$alt$up$raw");
             &move("fort.350",
-               "$proj_home/$taskEdge$optc$taskBasis$poptc$eps1i$alt$up$raw");
+               "$proj_home/$taskEdge$optc$taskBasis$par$eps1i$alt$up$raw");
             &move("fort.360",
-               "$proj_home/$taskEdge$optc$taskBasis$poptc$reflec$alt$up$raw");
+               "$proj_home/$taskEdge$optc$taskBasis$par$reflec$alt$up$raw");
+            &move("fort.370",
+               "$proj_home/$taskEdge$optc$taskBasis$par$absorp$alt$up$raw");
 
             &copy("fort.241",
-               "$taskEdge$optc$taskBasis$poptc$cond$alt$dn$raw.241");
+               "$taskEdge$optc$taskBasis$par$cond$alt$dn$raw.241");
             &move("fort.241",
-               "$proj_home/$taskEdge$optc$taskBasis$poptc$cond$alt$dn$raw");
+               "$proj_home/$taskEdge$optc$taskBasis$par$cond$alt$dn$raw");
             &copy("fort.251",
-               "$taskEdge$optc$taskBasis$poptc$eps2$alt$dn$raw.251");
+               "$taskEdge$optc$taskBasis$par$eps2$alt$dn$raw.251");
             &move("fort.251",
-               "$proj_home/$taskEdge$optc$taskBasis$poptc$eps2$alt$dn$raw");
+               "$proj_home/$taskEdge$optc$taskBasis$par$eps2$alt$dn$raw");
             &move("fort.301",
-               "$proj_home/$taskEdge$optc$taskBasis$poptc$alt$dn$raw");
+               "$proj_home/$taskEdge$optc$taskBasis$par$alt$dn$raw");
             &move("fort.311",
-               "$proj_home/$taskEdge$optc$taskBasis$poptc$eps1$alt$dn$raw");
+               "$proj_home/$taskEdge$optc$taskBasis$par$eps1$alt$dn$raw");
             &move("fort.321",
-               "$proj_home/$taskEdge$optc$taskBasis$poptc$elf$alt$dn$raw");
+               "$proj_home/$taskEdge$optc$taskBasis$par$elf$alt$dn$raw");
             &move("fort.331",
-               "$proj_home/$taskEdge$optc$taskBasis$poptc$refrac$alt$dn$raw");
+               "$proj_home/$taskEdge$optc$taskBasis$par$refrac$alt$dn$raw");
             &move("fort.341",
-               "$proj_home/$taskEdge$optc$taskBasis$poptc$absorp$alt$dn$raw");
+               "$proj_home/$taskEdge$optc$taskBasis$par$extnct$alt$dn$raw");
             &move("fort.351",
-               "$proj_home/$taskEdge$optc$taskBasis$poptc$eps1i$alt$dn$raw");
+               "$proj_home/$taskEdge$optc$taskBasis$par$eps1i$alt$dn$raw");
             &move("fort.361",
-               "$proj_home/$taskEdge$optc$taskBasis$poptc$reflec$alt$dn$raw");
+               "$proj_home/$taskEdge$optc$taskBasis$par$reflec$alt$dn$raw");
+            &move("fort.371",
+               "$proj_home/$taskEdge$optc$taskBasis$par$absorp$alt$dn$raw");
          }
       }
-      else
+      else # Spin non-polarized case.
       {
          &move("$intg$tempBasis$hdf","$taskEdge$intg$taskBasis$alt$hdf");
          &move("$band$tempBasis$hdf","$taskEdge$band$taskBasis$alt$hdf");
-         if (-e "fort.40")
+
+         # Always do the total optc results.
+
+         &copy("fort.40","$taskEdge$optc$taskBasis$tot$cond$alt.40");
+         &copy("fort.50","$taskEdge$optc$taskBasis$tot$eps2$alt.50");
+         &move("fort.40",
+            "$proj_home/$taskEdge$optc$taskBasis$tot$cond$alt$plot");
+         &move("fort.50",
+            "$proj_home/$taskEdge$optc$taskBasis$tot$eps2$alt$plot");
+         &move("fort.100",
+            "$proj_home/$taskEdge$optc$taskBasis$tot$alt$plot");
+         &move("fort.110",
+            "$proj_home/$taskEdge$optc$taskBasis$tot$eps1$alt$plot");
+         &move("fort.120",
+            "$proj_home/$taskEdge$optc$taskBasis$tot$elf$alt$plot");
+         &move("fort.130",
+            "$proj_home/$taskEdge$optc$taskBasis$tot$refrac$alt$plot");
+         &move("fort.140",
+            "$proj_home/$taskEdge$optc$taskBasis$tot$extnct$alt$plot");
+         &move("fort.150",
+            "$proj_home/$taskEdge$optc$taskBasis$tot$eps1i$alt$plot");
+         &move("fort.160",
+            "$proj_home/$taskEdge$optc$taskBasis$tot$reflec$alt$plot");
+         &move("fort.170",
+            "$proj_home/$taskEdge$optc$taskBasis$tot$absorp$alt$plot");
+
+         if (-e "fort.240") # Partial optc
          {
-            &copy("fort.40","$taskEdge$optc$taskBasis$cond$alt.40");
-            &copy("fort.50","$taskEdge$optc$taskBasis$eps2$alt.50");
-            &move("fort.40",
-               "$proj_home/$taskEdge$optc$taskBasis$cond$alt$plot");
-            &move("fort.50",
-               "$proj_home/$taskEdge$optc$taskBasis$eps2$alt$plot");
-            &move("fort.100",
-               "$proj_home/$taskEdge$optc$taskBasis$alt$plot");
-            &move("fort.110",
-               "$proj_home/$taskEdge$optc$taskBasis$eps1$alt$plot");
-            &move("fort.120",
-               "$proj_home/$taskEdge$optc$taskBasis$elf$alt$plot");
-            &move("fort.130",
-               "$proj_home/$taskEdge$optc$taskBasis$refrac$alt$plot");
-            &move("fort.140",
-               "$proj_home/$taskEdge$optc$taskBasis$absorp$alt$plot");
-            &move("fort.150",
-               "$proj_home/$taskEdge$optc$taskBasis$eps1i$alt$plot");
-            &move("fort.160",
-               "$proj_home/$taskEdge$optc$taskBasis$reflec$alt$plot");
-         }
-         else # POPTC scenario
-         {
+            &copy("fort.209",
+               "$taskEdge$optc$taskBasis$par$kkc$alt$dat.209");
+            &move("fort.209",
+               "$proj_home/$taskEdge$optc$taskBasis$par$kkc$alt$dat");
+
             &copy("fort.240",
-               "$taskEdge$optc$taskBasis$poptc$cond$alt$raw.240");
+               "$taskEdge$optc$taskBasis$par$cond$alt$raw.240");
             &move("fort.240",
-               "$proj_home/$taskEdge$optc$taskBasis$poptc$cond$alt$raw");
+               "$proj_home/$taskEdge$optc$taskBasis$par$cond$alt$raw");
             &copy("fort.250",
-               "$taskEdge$optc$taskBasis$poptc$eps2$alt$raw.250");
+               "$taskEdge$optc$taskBasis$par$eps2$alt$raw.250");
             &move("fort.250",
-               "$proj_home/$taskEdge$optc$taskBasis$poptc$eps2$alt$raw");
+               "$proj_home/$taskEdge$optc$taskBasis$par$eps2$alt$raw");
             &move("fort.300",
-               "$proj_home/$taskEdge$optc$taskBasis$poptc$alt$raw");
+               "$proj_home/$taskEdge$optc$taskBasis$par$alt$raw");
             &move("fort.310",
-               "$proj_home/$taskEdge$optc$taskBasis$poptc$eps1$alt$raw");
+               "$proj_home/$taskEdge$optc$taskBasis$par$eps1$alt$raw");
             &move("fort.320",
-               "$proj_home/$taskEdge$optc$taskBasis$poptc$elf$alt$raw");
+               "$proj_home/$taskEdge$optc$taskBasis$par$elf$alt$raw");
             &move("fort.330",
-               "$proj_home/$taskEdge$optc$taskBasis$poptc$refrac$alt$raw");
+               "$proj_home/$taskEdge$optc$taskBasis$par$refrac$alt$raw");
             &move("fort.340",
-               "$proj_home/$taskEdge$optc$taskBasis$poptc$absorp$alt$raw");
+               "$proj_home/$taskEdge$optc$taskBasis$par$extnct$alt$raw");
             &move("fort.350",
-               "$proj_home/$taskEdge$optc$taskBasis$poptc$eps1i$alt$raw");
+               "$proj_home/$taskEdge$optc$taskBasis$par$eps1i$alt$raw");
             &move("fort.360",
-               "$proj_home/$taskEdge$optc$taskBasis$poptc$reflec$alt$raw");
+               "$proj_home/$taskEdge$optc$taskBasis$par$reflec$alt$raw");
+            &move("fort.370",
+               "$proj_home/$taskEdge$optc$taskBasis$par$absorp$alt$raw");
          }
       }
    }

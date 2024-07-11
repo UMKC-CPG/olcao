@@ -30,6 +30,7 @@ program OLCAOkkc
    real (kind=double), allocatable, dimension(:,:) :: eps2,fine_eps2
    
    real (kind=double) :: coarseEnergyDiff,fineEnergyDiff,pOptcFactor
+   integer :: usePOPTCFiles ! Flag for using POPTC file numbers.
    integer :: numValues=0  ! This value will be set later to length*grain.
    integer :: grain=10     ! Grainularity factor for refining the integration.
 
@@ -156,30 +157,50 @@ program OLCAOkkc
    call getarg(2,buffer)
    read (buffer,*) spin
 
-   ! Determine if the pOptc factor needs to be used.
+   ! Read in a flag indicating that POPTC input file numbers should be used.
    call getarg(3,buffer)
+   read (buffer,*) usePOPTCFiles
+
+   ! Read in the POPTC factor for this KKC.
+   call getarg(4,buffer)
    read (buffer,*) pOptcFactor
 
-   if (spin == 1) then
-      open (unit=50, file='fort.50', status="old",form="formatted") ! Eps2
-      open (unit=100,file='fort.100',status="new",form="formatted") ! Total
-      open (unit=110,file='fort.110',status="new",form="formatted") ! Eps1
-      open (unit=120,file='fort.120',status="new",form="formatted") ! ELF 
-      open (unit=130,file='fort.130',status="new",form="formatted") ! Refract
-      open (unit=140,file='fort.140',status="new",form="formatted") ! Extnct
-      open (unit=150,file='fort.150',status="new",form="formatted") ! Eps1i
-      open (unit=160,file='fort.160',status="new",form="formatted") ! Reflctvty
-      open (unit=170,file='fort.170',status="new",form="formatted") ! Absorp
+   if (usePOPTCFiles == 0) then
+      if (spin == 1) then
+         open (unit=50, file='fort.50', status="old",form="formatted") ! Eps2
+         open (unit=100,file='fort.100',status="new",form="formatted") ! Total
+         open (unit=110,file='fort.110',status="new",form="formatted") ! Eps1
+         open (unit=120,file='fort.120',status="new",form="formatted") ! ELF 
+         open (unit=130,file='fort.130',status="new",form="formatted") ! Refrct
+         open (unit=140,file='fort.140',status="new",form="formatted") ! Extnct
+         open (unit=150,file='fort.150',status="new",form="formatted") ! Eps1i
+         open (unit=160,file='fort.160',status="new",form="formatted") ! Reflct
+         open (unit=170,file='fort.170',status="new",form="formatted") ! Absorp
+      else
+         open (unit=50, file='fort.51', status="old",form="formatted") ! Eps2
+         open (unit=100,file='fort.101',status="new",form="formatted") ! Total
+         open (unit=110,file='fort.111',status="new",form="formatted") ! Eps1
+         open (unit=120,file='fort.121',status="new",form="formatted") ! ELF 
+         open (unit=130,file='fort.131',status="new",form="formatted") ! Refrct
+         open (unit=140,file='fort.141',status="new",form="formatted") ! Extnct
+         open (unit=150,file='fort.151',status="new",form="formatted") ! Eps1i
+         open (unit=160,file='fort.161',status="new",form="formatted") ! Reflct
+         open (unit=170,file='fort.171',status="new",form="formatted") ! Absorp
+      endif
    else
-      open (unit=50, file='fort.51', status="old",form="formatted") ! Eps2
-      open (unit=100,file='fort.101',status="new",form="formatted") ! Total
-      open (unit=110,file='fort.111',status="new",form="formatted") ! Eps1
-      open (unit=120,file='fort.121',status="new",form="formatted") ! ELF 
-      open (unit=130,file='fort.131',status="new",form="formatted") ! Refract
-      open (unit=140,file='fort.141',status="new",form="formatted") ! Extnct
-      open (unit=150,file='fort.151',status="new",form="formatted") ! Eps1i
-      open (unit=160,file='fort.161',status="new",form="formatted") ! Reflctvty
-      open (unit=170,file='fort.171',status="new",form="formatted") ! Absorp
+      ! The processPOPTC script automatically calls OLCAOkkc multiple times
+      !   for all necessary spectra and it uses the same input in all cases.
+      !   (I.e., processPOPTC does not produce different input files for
+      !   OLCAOkkc for spin up vs. spin down.)
+      open (unit=50, file='fort.450',status="old",form="formatted") ! Eps2
+      open (unit=100,file='fort.500',status="new",form="formatted") ! Total
+      open (unit=110,file='fort.510',status="new",form="formatted") ! Eps1
+      open (unit=120,file='fort.520',status="new",form="formatted") ! ELF 
+      open (unit=130,file='fort.530',status="new",form="formatted") ! Refrct
+      open (unit=140,file='fort.540',status="new",form="formatted") ! Extnct
+      open (unit=150,file='fort.550',status="new",form="formatted") ! Eps1i
+      open (unit=160,file='fort.560',status="new",form="formatted") ! Reflct
+      open (unit=170,file='fort.570',status="new",form="formatted") ! Absorp
    endif
 
    allocate (energy(length))
@@ -214,7 +235,7 @@ program OLCAOkkc
    ! Determine the average energy difference for the fine grain energies.
    call getFineEnergyDiff(numValues,grain,fine_energy,fineEnergyDiff)
 
-   ! Generate a fine grained version of the eps2 data.  This will be used to
+   ! Generate a fine grained version of the eps2 data. This will be used to
    !  improve the accuracy of the integration as well as to avoid the poles in
    !  the integral.
    call makeFineEps2(length,grain,energy,fine_energy,eps2,fine_eps2)
@@ -265,7 +286,7 @@ program OLCAOkkc
    deallocate (reflectivity)
    deallocate (absorpCoeff)
 
-   stop 'Kramers-Kronig conversion relation applied.'
+   write(0,*) 'Kramers-Kronig conversion relation applied.'
 
 end program OLCAOkkc
 
