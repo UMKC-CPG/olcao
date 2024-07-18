@@ -5866,6 +5866,7 @@ sub printLMP
 }
 
 
+
 # Get the number of atoms of each element in the system.
 sub countElementAtoms
 {

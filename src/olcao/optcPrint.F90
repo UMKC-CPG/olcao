@@ -90,10 +90,10 @@ subroutine printOptcResults
    ! Sigma = EL / (M^2 * T^-1) * 1/L^3 * 1/E * (ML/T)^2
    ! Sigma = 1/T
    ! Charge^2 (Q^2) is ML^3/T^2 = EL.  (In cgs charge is sqrt(g cm^3 / s^2).)
-   ! Convert 1/T in a.u. to 1/s is cgs by applying the conversion factor of
+   ! Convert 1/T in a.u. to 1/s in cgs by applying the conversion factor of
    !   2.418884326505x10-17 s = 1 a.u. of time (taken from NIST).  Note that
    !   the factor of 1e-17 is not included in the constant auTime and it must
-   !   be accounted for.
+   !   be accounted for somewhere down the road.
    conversionFactor = conversionFactor/(auTime)
 
    ! The last step for the conductivity is to adjust the result to have the

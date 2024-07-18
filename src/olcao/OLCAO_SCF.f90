@@ -20,21 +20,21 @@ subroutine setupSCF
    use O_SCFHDF5,     only: initSCFHDF5, closeSCFHDF5
    use O_CommandLine, only: parseSetupCommandLine, doDIMO
    use O_Input,       only: parseInput
-   use O_Lattice,     only: initializeLattice, initializeFindVec, cleanUpLattice
+   use O_Lattice,     only: initializeLattice, initializeFindVec, &
+         & cleanUpLattice
    use O_KPoints,     only: numKPoints, computePhaseFactors, cleanUpKPoints
    use O_Basis,       only: renormalizeBasis, cleanUpBasis
    use O_ExchangeCorrelation, only: maxNumRayPoints, getECMeshParameters, &
-                                  & makeECMeshAndOverlap, cleanUpExchCorr
+         & makeECMeshAndOverlap, cleanUpExchCorr
    use O_ElectroStatics,      only: makeElectrostatics
    use O_GaussianRelations,   only: makeAlphaDist, makeAlphaNucDist, &
-                                  & makeAlphaPotDist, cleanUpGaussRelations
+         & makeAlphaPotDist, cleanUpGaussRelations
    use O_IntegralsSCF,        only: allocateIntegralsSCF, gaussOverlapOL, &
-                                  & gaussOverlapKE, gaussOverlapMV, &
-                                  & gaussOverlapNP, elecPotGaussOverlap, &
-                                  & cleanUpIntegralsSCF, &
-                                  & secondCleanUpIntegralsSCF
+         & gaussOverlapKE, gaussOverlapMV, gaussOverlapNP, &
+         & elecPotGaussOverlap, cleanUpIntegralsSCF, &
+         & secondCleanUpIntegralsSCF
    use O_IntegralsSCF3Terms,  only: allocateIntegralsSCF3Terms, &
-                                  & gaussOverlapDM, cleanUpIntegralsSCF3Terms
+         & gaussOverlapDM, cleanUpIntegralsSCF3Terms
    use O_AtomicSites, only: coreDim, valeDim, cleanUpAtomSites
    use O_AtomicTypes, only: cleanUpRadialFns, cleanUpAtomTypes
    use O_PotSites,    only: cleanUpPotSites
@@ -80,6 +80,7 @@ subroutine setupSCF
 
    ! Initialize the logging labels.
    call initOperationLabels
+
 
    ! Parse the command line parameters
    call parseSCFCommandLine

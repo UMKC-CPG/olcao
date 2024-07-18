@@ -1,4 +1,13 @@
 #!/usr/bin/env perl
+
+# FIX: This program is basically broken until it can be remerged with the
+#   makeBOND program. The makeBOND program now uses olcao.skl to populate
+#   the atom and lattice data. This program worked by directly modifying
+#   the structure.dat file instead. So, perhaps this program can create
+#   another file that will be read in by makeBOND and used to modify the
+#   data obtained from the olcao.skl file in the future. Until then, this
+#   program is broken.
+
 sub printHelp
 {
    print <<ENDHELP;
@@ -467,7 +476,7 @@ sub write2CBO
    my $atomNumber; # Sum of real and fake atoms.
 
    # Open the new file.  For now we will open a differently named file to avoid
-   #   accidentally hosing the original data.
+   #   accidentally destroying the original data.
    open (NEW2CBO, ">$raw23COut") || die "Cannot open $raw23COut for writing\n";
 
    # Compute the number of atoms (combined real and fake).
@@ -506,7 +515,7 @@ sub write2CBO
 }
 
 # Now we have to add the fake atoms to the structure file so that when we try
-#   to plot a figure using makeBOND these "atoms" will  be found and plotted.
+#   to plot a figure using makeBOND these "atoms" will be found and plotted.
 sub add2Struct
 {
    # Define local variables.

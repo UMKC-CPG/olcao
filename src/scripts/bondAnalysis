@@ -21,6 +21,11 @@ sub printHelp
 #   file rather than the default expected input file of "olcao.skl".  Other
 #   options include files such as the "structure.dat" OLCAO input file, the
 #   VASP input file "POSCAR".  (At present only the olcao.skl option works.)
+#The -s option allows the use of OLCAO bond order results to support the
+#   bond analysis. The default file name expected to contain BO data is
+#   "S1__S1.dat". This file is made using makeBOND with a group control file
+#   containing only the filter, "SYSTEM_NUM". Often, one may add an additional
+#   option to the makeBOND command of "-minbo 0.0".
 #The -dist option takes one parameter called \$limitDist which is a measure in
 #   angstroms of the cutoff distance beyond which atom-atom distances should
 #   not be considered.  If this option is *not* given, then the program will
@@ -33,7 +38,7 @@ sub printHelp
 #   parameters given in a,b,c x,y,z format followed by a line with the number
 #   of atoms, followed by a line for each atom.  These lines have the element,
 #   the species number, the atomic coordinates in either x,y,z direct, a,b,c
-#   direct, or a,b,c fractional, and the a list of the atom numbers to which
+#   direct, or a,b,c fractional, and the list of the atom numbers to which
 #   each atom bonds.
 #The -ba option is a list of the bond angles for each pair of atoms bonded to
 #   each atom.  The output is divided into groups, one group for each atom.
@@ -73,14 +78,19 @@ sub printHelp
 #   the diameter of the bond sticks where the default is 10% of the covalent
 #   radius of the largest radius in the model, -c will scale the overall
 #   size of the crystal lattice.  NOTE, bad choices for these values will
-#   result in bad looking models.
+#   result in bad looking models. The -r option takes a number that defines
+#   the ratio between the bond rod radius and the covalent radius.
 #The -3dparts option will produce a collection of OpenScad model files that
 #   contain descriptions of the individual parts associated with an atomic
 #   scale model. When the parts models are printed on a 3D printer they can be
 #   used to assemble a large complex 3D structural model. The three sub-options
 #   work the same way for this command as they do for the -3dfull option. The
 #   additional -vol option is used to specify the printable volume that the 3D
-#   printer has accessible to it.
+#   printer has accessible to it. The -r option takes a number that defines
+#   the ratio between the bond rod radius and the covalent radius. The -f
+#   option affects the font size for labels. The font size is taken as 0.9
+#   times the radius of the bond cylinder. This option allows one to change
+#   the value of 0.9 to any other value.
 #The -bf option allows the user to define a multiplicative factor for the
 #   determination of which atoms are bonded.  The default value is 1.  Atoms
 #   are considered to be bonded if their interatomic distance is <= (the sum of
@@ -123,11 +133,12 @@ sub printHelp
 ##   H-C-B-B would not.)
 # The -help option will print this description and usage information.
 #
-#USAGE:  bondAnalysis [-o \$outFile] [-i \$inFile] [-dist \$limitDist]
+#USAGE:  bondAnalysis [-o \$outFile] [-i \$inFile] [-s] [-dist \$limitDist]
 #                     [-bs | -ba | -bl | -boo [-Ylm_l \$Ylm_l] | -dx | -st | -co
-#                     |-3dfull  [-a \$aScale -b \$bScale -c \$cScale]]
-#                     |-3dparts [-a \$aScale -b \$bScale -c \$cScale
-#                                -vol \$x \$y \$z]]
+#                     |-3dfull  [-a \$aScale -b \$bScale -c \$cScale
+#                                -r \$bondRadiusScale]
+#                     |-3dparts [-a \$aScale -b \$bScale -c \$cScale -f \$fScale
+#                                -r \$bondRadiusScale -vol \$x \$y \$z]]
 #                     [-bf \$bondingFactor] [-xyz | -abc | -fract]
 #                     [-box \$min1 \$max1 \$min2 \$max2 \$min3 \$max3 \$zone]
 #                     [-hist \$histDelta]
@@ -157,6 +168,7 @@ use ElementData;
 # Command line defined options.
 my $outFile;
 my $inFile;
+my $bondOrderFile;
 my $bondingFactor; # Multiplicative factor to elemental covalent bond lengths.
 my $limitDist; # Cut off distance for consideration of any bonds.
 my $operation;
@@ -169,10 +181,14 @@ my $qOrder_ref;
 my $aScale; # Atom scale factor for openscad models.
 my $bScale; # Bond scale factor for openscad models.
 my $cScale; # Cell scale factor for openscad models.
+my $fScale; # Font scale for labels in 3dParts.
 my $xVol3D; # x dimension for the 3D printer's volume in mm.
 my $yVol3D; # y dimension for the 3D printer's volume in mm.
 my $zVol3D; # z dimension for the 3D printer's volume in mm.
+my $bondRadiusScale;
+my $fontSize;
 my $histDelta; # Histogram spacing in appropriate units.
+my $useOLCAOBO;
 my $doHist;
 #my $chainLength;
 #my $doFrag;
@@ -223,11 +239,6 @@ my @stdAtomBA;
 # Fragment data.
 #my $numUniqueFragments;
 #my @fragmentTagList;
-
-# Hard coded parameters.
-my $bondRadiusScale; # Used for openscad models. Default ratio of bond cylinder
-                     #    radius to atomic covalent radius.
-$bondRadiusScale = 0.1; # 10%.
 
 # Useful kludges.
 my $atomLabel = 0;  # This stupid global variable is a product of laziness.  It
@@ -412,14 +423,18 @@ sub initEnv
    # Assume that the default output file will be ok.  (Assigned automatically).
    $outFile = "bondAnalysis";
 
+   # Assume the name for the bond order raw data file.
+   $bondOrderFile = "S1__S1.dat";
+
    # Assume the default limit distance.
-   $limitDist = 3.0;
+   $limitDist = 4.0;
 
    # Assume that we will compute bond lengths.
    $operation = 3;
 
-   # Assume the default bonding factor.
-   $bondingFactor = 1.0;
+   # Assume a default bonding factor that is 10% greater than the sum of the
+   #   covalent radii.
+   $bondingFactor = 1.1;
 
    # Assume that we will use x,y,z direct space coordinates for the atomic
    #   positions.
@@ -438,6 +453,13 @@ sub initEnv
    #   computed that is what will be used.
    $bScale = 1.0;
 
+   # Assume that the font size will be scaled to be 0.9 times the radius of
+   #   the bond cylinder.
+   $fScale = 0.9;
+
+   # Set the bond ratio between the bond radius and the covalent radius.
+   $bondRadiusScale = 0.1;
+
    # Set the default volume to be 5% less than the max volume of the Prusa
    #   Mendle model 3D printer (measured in mm).
    $xVol3D = 150.0;
@@ -455,6 +477,10 @@ sub initEnv
 
    # Assume that a histogram will not be created.
    $doHist = 0;
+
+   # Assume that our bond analysis is purely geometric and does not use OLCAO
+   #   bond order data.
+   $useOLCAOBO = 0;
 
 #   # Assume that we will not be generating any fragments.
 #   $doFrag = 0;
@@ -482,6 +508,8 @@ sub parseCommandLine
          {$outFile = $ARGV[++$number];}
       elsif ($ARGV[$number] eq "-i")
          {$inFile = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-s")
+         {$useOLCAOBO = 1;}
       elsif ($ARGV[$number] eq "-dist")
          {$limitDist = $ARGV[++$number];}
       elsif ($ARGV[$number] eq "-bs")  #Ball and stick.
@@ -518,6 +546,8 @@ sub parseCommandLine
                {$bScale = $ARGV[++$number];}
             elsif ($nextTag eq "-c")
                {$cScale = $ARGV[++$number];}
+            elsif ($nextTag eq "-r")
+               {$bondRadiusScale = $ARGV[++$number];}
             else
                {$number--;last;}
          }
@@ -538,6 +568,8 @@ sub parseCommandLine
                {$bScale = $ARGV[++$number];}
             elsif ($nextTag eq "-c")
                {$cScale = $ARGV[++$number];}
+            elsif ($nextTag eq "-r")
+               {$bondRadiusScale = $ARGV[++$number];}
             elsif ($nextTag eq "-vol")
             {
                $xVol3D = $ARGV[++$number];
@@ -678,11 +710,11 @@ sub openOutput
          {$outFile = $outFile . ".co";}
       elsif ($operation == 8)
          {$outFile = $outFile . ".scad";}
-      elsif ($operation == 9)
-         {$outFile = $outFile . ".scad";}
    }
 
-   open (OUT,">$outFile") || die "Cannot open $outFile for writing\n";
+   # Only open the outFile if we will not make a different set later.
+   if ($operation != 9)
+      {open (OUT,">$outFile") || die "Cannot open $outFile for writing\n";}
 }
 
 
@@ -1252,8 +1284,8 @@ sub printOpenScad
    }
    else
    {
-      # Close the originally opened OUT handle. We need multiple output files.
-      close (OUT);
+      # Compute the font size for all labels.
+      $fontSize = $bondRadius * $fScale;
 
       # We are going to print the sheets of atom hemispheres first.
 
@@ -1290,10 +1322,6 @@ sub printOpenScad
                open (OUT, "> atomBotSheet$sheet.scad") ||
                      die "Cannot open atomBotSheet$sheet.scad for writing\n";
             }
-   
-            # Use the write module to allow for adding text labels to each of
-            #   the rod and sphere components.
-            print OUT ("use <write.scad>\n");
 
             # Set default facet values.
             print OUT ("\$fa=0.5; // default minimum facet angle\n");
@@ -1425,10 +1453,6 @@ sub printOpenScad
          open (OUT, "> bondSheet$sheet.scad") ||
                die "Cannot open bondSheet$sheet.scad for writing\n";
 
-         # Use the write module to allow for adding text labels to each of the
-         #   rod and sphere components.
-         print OUT ("use <write.scad>\n");
-
          # Set default facet values.
          print OUT ("\$fa=0.5; // default minimum facet angle\n");
          print OUT ("\$fs=0.5; // default minimum facet size\n");
@@ -1553,57 +1577,30 @@ sub printRodLabelModule
    print $out "zPos+radius/2]) {\n";
    print $out "         rotate(a=-90,v=[0,0,1]) {\n";
    print $out "            linear_extrude(radius) {\n";
-   print $out "               text(atomLabel1,font=\"Hack\",size=radius*0.9,";
+   print $out "               text(atomLabel1,font=\"Hack\",size=$fontSize,";
    print $out "halign=\"center\", valign=\"center\");}}}\n";
 
    print $out "      translate(v=[xPos,yPos+length*1/6,";
    print $out "zPos+radius/2]) {\n";
    print $out "         rotate(a=-90,v=[0,0,1]) {\n";
    print $out "            linear_extrude(radius) {\n";
-   print $out "               text(atomLabel2,font=\"Hack\",size=radius*0.9,";
+   print $out "               text(atomLabel2,font=\"Hack\",size=$fontSize,";
    print $out "halign=\"center\", valign=\"center\");}}}\n";
 
    print $out "      translate(v=[xPos,yPos+length-length*1/3,";
    print $out "zPos+radius/2]) {\n";
    print $out "         rotate(a=-90,v=[0,0,1]) {\n";
    print $out "            linear_extrude(radius) {\n";
-   print $out "               text(label1,font=\"Hack\",size=radius*0.9,";
+   print $out "               text(label1,font=\"Hack\",size=$fontSize,";
    print $out "halign=\"center\", valign=\"center\");}}}\n";
 
    print $out "      translate(v=[xPos,yPos+length*1/3,";
    print $out "zPos+radius/2]) {\n";
    print $out "         rotate(a=-90,v=[0,0,1]) {\n";
    print $out "            linear_extrude(radius) {\n";
-   print $out "               text(label2,font=\"Hack\",size=radius*0.9,";
+   print $out "               text(label2,font=\"Hack\",size=$fontSize,";
    print $out "halign=\"center\", valign=\"center\");}}}\n";
 
-#   print $out "      translate(v=[xPos,yPos,zPos]) {\n";
-#   print $out "         rotate(a=angle, v=[xNormal,yNormal,zNormal]) {\n";
-#   print $out "            translate(v=[0,0,shift]) {\n";
-#   print $out "               writecylinder(atomLabel1,[0,0,0],radius,length,";
-##   print $out "up=length*1/3,h=radius,rotate=90,\$fn=50);}}}\n";
-#   print $out "up=length*1/3,h=radius,rotate=90);}}}\n";
-#
-#   print $out "      translate(v=[xPos,yPos,zPos]) {\n";
-#   print $out "         rotate(a=angle, v=[xNormal,yNormal,zNormal]) {\n";
-#   print $out "            translate(v=[0,0,shift]) {\n";
-#   print $out "               writecylinder(atomLabel2,[0,0,0],radius,length,";
-##   print $out "down=length*1/3,h=radius,rotate=90,\$fn=50);}}}\n";
-#   print $out "down=length*1/3,h=radius,rotate=90);}}}\n";
-#
-#   print $out "      translate(v=[xPos,yPos,zPos]) {\n";
-#   print $out "         rotate(a=angle, v=[xNormal,yNormal,zNormal]) {\n";
-#   print $out "            translate(v=[0,0,shift]) {\n";
-#   print $out "               writecylinder(label1,[0,0,0],radius,length,";
-##   print $out "up=length*1/6,h=radius,rotate=90,\$fn=50);}}}\n";
-#   print $out "up=length*1/6,h=radius,rotate=90);}}}\n";
-#
-#   print $out "      translate(v=[xPos,yPos,zPos]) {\n";
-#   print $out "         rotate(a=angle, v=[xNormal,yNormal,zNormal]) {\n";
-#   print $out "            translate(v=[0,0,shift]) {\n";
-#   print $out "               writecylinder(label2,[0,0,0],radius,length,";
-##   print $out "down=length*1/6,h=radius,rotate=90,\$fn=50);}}}\n";
-#   print $out "down=length*1/6,h=radius,rotate=90);}}}\n";
    print $out "   }\n";
    print $out "}\n";
 }
@@ -1625,10 +1622,10 @@ sub printSphereLabelModule
    print $out "{\n";
    print $out "   translate(v=[xPos,yPos,zPos]) {\n";
    print $out "      rotate(a=angle, v=[xNormal,yNormal,zNormal]) {\n";
-   print $out "         translate(v=[0,0,shift]) {\n";
-   print $out "            writecube(label,[0,0,0],[radius,radius,distance],";
-#   print $out "t=thickness,h=radius*2,face=\"top\",\$fn=50);}}}\n";
-   print $out "t=thickness,h=radius*2,face=\"top\");}}}\n";
+   print $out "         translate(v=[radius,radius,distance-thickness/2]) {\n";
+   print $out "            linear_extrude(thickness) {\n";
+   print $out "               text(label,font=\"Hack\",size=$fontSize,";
+   print $out "halign=\"center\",valign=\"center\");}}}}\n";
    print $out "}\n";
 }
 
@@ -1968,9 +1965,9 @@ sub printRod
    #   labelCode 0 and 1.
    if (($labelCode == 0) || ($labelCode == 1))
    {
-      print $out "rod($point1_ref->[1],$point1_ref->[2],$point1_ref->[3],";
-      print $out "$angle,$normal[1],$normal[2],$normal[3],$rodShift,";
-      print $out "$rodLength,$rodRadius);\n";
+      print $out "      rod($point1_ref->[1],$point1_ref->[2],";
+      print $out "$point1_ref->[3],$angle,$normal[1],$normal[2],$normal[3],";
+      print $out "$rodShift,$rodLength,$rodRadius);\n";
    }
 
    # If the labelCode is 1, then print the label number next to the rod
@@ -1986,22 +1983,19 @@ sub printRod
          {$labelThickness = $rodRadius;}
 
       # Compute the distance from the center of the sphere that the label
-      #   should be positioned.  The math looks stupid here to make a point.
-      #   The label is drawn on the surface of a 3D rectangle with the relevant
-      #   length being equal to average radius between the min and max sphere
-      #   radius so that the label will be exactly between the two sphere
-      #   radii. However, the 3D rectangle is created centered on 0,0,0 and so
-      #   the surface is only 1/2 of the distance it needs to be.  Thus, we
-      #   take the average of the two radii and then multiply by two.
-      $labelDistance = ($maxSphereRadius+$minSphereRadius)/2.0*2.0;
+      #   should be positioned. The label must be positioned between the
+      #   radii of the largest and smallest spheres so that it intersects
+      #   with all sphere surfaces. Hence, the distance is tha average of
+      #   the max and min sphere radii.
+      $labelDistance = ($maxSphereRadius+$minSphereRadius)/2.0;
 
       # Print the appropriate labels for the holes for this bond rod.
       print $out "sphereLabel($point1_ref->[1],$point1_ref->[2],";
-      print $out "$point1_ref->[3],$angle+20,$normal[1],$normal[2],";
+      print $out "$point1_ref->[3],$angle+10,$normal[1],$normal[2],";
       print $out "$normal[3],0,$labelDistance,$labelThickness,";
       print $out "$rodRadius,\"$label1\");\n";
       print $out "sphereLabel($point2_ref->[1],$point2_ref->[2],";
-      print $out "$point2_ref->[3],$angle+200,$normal[1],$normal[2],";
+      print $out "$point2_ref->[3],$angle+190,$normal[1],$normal[2],";
       print $out "$normal[3],0,$labelDistance,$labelThickness,";
       print $out "$rodRadius,\"$label2\");\n";
 
@@ -2253,8 +2247,38 @@ sub getBondsToShow
    my @bondInfoExtTemp1;
    my @bondInfoExtTemp2;
    my $reducedNumBondsExt;
+   my $reducedBond;
    my @reducedBondInfoExt;
    my $prev;
+   my $numBondsBO;
+   my $bondBO;
+   my @bondBOList;
+   my $line;
+   my @values;
+   my $found;
+
+   # Prior to assembling the ordered list of bonded atoms with additional
+   #   meta data, we will read in the bond order data if requested. This
+   #   data will be used to further reduce the list of bonds to show.
+   if ($useOLCAOBO == 1)
+   {
+      open (BO, "<$bondOrderFile")
+            || die "Cannot open $bondOrderFile for reading.\n";
+
+      # Read past the BO header.
+      $line = <BO>;
+
+      $numBondsBO = 0;
+      while ($line = <BO>)
+      {
+         @values = StructureControl::prepLine("",$line,'\s+');
+         $numBondsBO++;
+         $bondBOList[$numBondsBO][0] = $values[2];
+         $bondBOList[$numBondsBO][1] = $values[3];
+      }
+
+      close(BO);
+   }
 
    # Extract all the bonds to be shown and count them up along the way.
    $numBondsExt = -1; # Note that we start from -1 to fill array from 0.
@@ -2268,7 +2292,8 @@ sub getBondsToShow
       {
          # Note that initially this double counts bonds between atoms that
          #   are both in the central cell.
-         $numBondsExt++; # Note, first bond is number 0.
+         $numBondsExt++; # Note, first bond is number 0. This is necessary
+                         # for the sorting process that is done later.
 
          # Recall that the value in bondedExtList_ref is in reference to the
          #   ext cell while the referencing index ($atom) is in reference to
@@ -2289,36 +2314,83 @@ sub getBondsToShow
             $bondInfoExtTemp1[$numBondsExt][2] = $bondedAtom1;
          }
 
-         # Record bond length info for this bond pair. (Order doesn't matter)
-         $bondInfoExtTemp1[$numBondsExt][3]=$bondLengthExt_ref->[$atom][$bond];
+         # Record bond length info for this bond pair. Order doesn't matter.
+         $bondInfoExtTemp1[$numBondsExt][3] =
+               $bondLengthExt_ref->[$atom][$bond];
       }
    }
 
-   # Sort the bonds according to the second bonded atom followed by a stable
-   #   sort according to the first bonded atom so that bonds that are between
-   #   identical atom pairs are next door.
+   # Sort the bonds according to the second bonded atom followed by a
+   #   stable sort according to the first bonded atom so that bonds that
+   #   are between identical atom pairs are next door.
    @bondInfoExtTemp2 = sort{$a->[2] <=> $b->[2]} @bondInfoExtTemp1;
    @bondInfoExt = sort{$a->[1] <=> $b->[1]} @bondInfoExtTemp2;
 
-   # Now we need to remove duplicate bonds by simply recording any non-dups.
-   $reducedNumBondsExt = 1; # Note that we start numbering from 1 here.
-   $reducedBondInfoExt[1][1] = $bondInfoExt[0][1];
-   $reducedBondInfoExt[1][2] = $bondInfoExt[0][2];
-   $reducedBondInfoExt[1][3] = $bondInfoExt[0][3];
-   foreach $bond (1..$numBondsExt) # Starts with the second bond. (1 vs. 0)
+   # Now we need to remove duplicate bonds by simply recording any
+   #   non-dups. We copy the first bond (in bondInfoExt) into the
+   #   reducedBondInfoExt array. Then, loop from 1 to the number of bonds
+   #   where the loop index refers to the *next* bond in the bondInfoExt
+   #   list.
+   # At the same time, we will only keep bonds that correspond to bonds
+   #   listed in the bond order file if asked.
+   #
+   $reducedNumBondsExt = 0;
+   foreach $bond (0..$numBondsExt-1)
    {
-      if (($bondInfoExt[$bond][1] ==
-            $reducedBondInfoExt[$reducedNumBondsExt][1]) &&
-           ($bondInfoExt[$bond][2] ==
-            $reducedBondInfoExt[$reducedNumBondsExt][2]))
-         {next;} # We found a match and so will not record this bond.
+      # If we are limited only to bonds that are present in the bond order
+      #   list, then we need to make sure that this bond is one of them.
+      if ($useOLCAOBO == 1)
+      {
+         # Assume that the current bond is *not* present.
+         $found = 0;
+         foreach $bondBO (1..$numBondsBO)
+         {
+            if (($ext2CentralItemMap_ref->[$bondInfoExt[$bond][1]] ==
+                  $bondBOList[$bondBO][0]) && 
+               ($ext2CentralItemMap_ref->[$bondInfoExt[$bond][2]] ==
+                  $bondBOList[$bondBO][1]))
+            {
+               $found = 1;
+               last;
+            }
+         }
+
+         # If the bond was not found, then we should not use it.
+         if ($found == 0)
+            {next;}
+      }
+
+      # We only reach here if the bond was found in the bond order list
+      #   or if we are not using the bond order list at all. In either case
+      #   we now search the reduced bond list to make sure that the
+      #   current bond isn't a duplicate.
+      $found = 0;
+      foreach $reducedBond (1..$reducedNumBondsExt)
+      {
+         if (($bondInfoExt[$bond][1] ==
+               $reducedBondInfoExt[$reducedBond][1]) &&
+            ($bondInfoExt[$bond][2] ==
+               $reducedBondInfoExt[$reducedBond][2]))
+         {
+            $found = 1;
+            last;
+         }
+      }
+
+      # If the bond was found, then it's a duplicate and we should not use it.
+      #   Otherwise, we add it to the reduced list of bonds.
+      if ($found == 1)
+         {next;}
       else
       {
          # Found a non-duplicate bond. Record it in the reduced list.
          $reducedNumBondsExt++;
-         $reducedBondInfoExt[$reducedNumBondsExt][1] = $bondInfoExt[$bond][1];
-         $reducedBondInfoExt[$reducedNumBondsExt][2] = $bondInfoExt[$bond][2];
-         $reducedBondInfoExt[$reducedNumBondsExt][3] = $bondInfoExt[$bond][3];
+         $reducedBondInfoExt[$reducedNumBondsExt][1] = 
+               $bondInfoExt[$bond][1];
+         $reducedBondInfoExt[$reducedNumBondsExt][2] =
+               $bondInfoExt[$bond][2];
+         $reducedBondInfoExt[$reducedNumBondsExt][3] =
+               $bondInfoExt[$bond][3];
       }
    }
 
