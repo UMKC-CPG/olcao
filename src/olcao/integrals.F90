@@ -1,4 +1,4 @@
-module O_IntegralsSCF
+module O_Integrals
 
    ! Import necessary modules.
    use O_Kinds
@@ -57,7 +57,7 @@ module O_IntegralsSCF
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    contains
 
-subroutine allocateIntegralsSCF(coreDim,valeDim,numKPoints)
+subroutine allocateIntegrals(coreDim,valeDim,numKPoints)
 
    implicit none
 
@@ -74,7 +74,7 @@ subroutine allocateIntegralsSCF(coreDim,valeDim,numKPoints)
    allocate (valeValeGamma (valeDim,valeDim,1))
 #endif
 
-end subroutine allocateIntegralsSCF
+end subroutine allocateIntegrals
 
 
 ! Standard two center overlap integral.
@@ -99,6 +99,9 @@ subroutine gaussOverlapOL
 
    ! Define local variables for logging and loop control
    integer :: i,j,k,l,m ! Loop index variables
+   integer :: hdf5Status
+   integer :: hdferr
+   integer(hsize_t), dimension (1) :: attribIntDims ! Attribute dataspace dim
 
    ! Atom specific variables that change with each atom pair loop iteration.
    integer,              dimension (2)    :: currentAtomType
@@ -163,7 +166,7 @@ subroutine gaussOverlapOL
    integer, dimension(16) :: powerOfTwo = (/0,1,1,1,2,2,2,2,2,3,3,3,3,3,3,3/)
 
    ! Record the beginning of this phase of the setup calculation.
-   call timeStampStart (8)
+   call timeStampStart(8)
 
    ! Allocate space for locally defined allocatable arrays
    allocate (currentBasisFns     (maxNumAtomAlphas,maxNumStates,2))
@@ -393,15 +396,6 @@ subroutine gaussOverlapOL
                         & currentPosition(:,1), shiftedAtomPos(:),&
                         & l1l2Switch, oneAlphaPair)
 
-                  ! We can proceed with the next step of the calculation.
-                  !   This is the actual integral.
-                  !call overlapInteg (oneAlphaPair,&
-                  !       & currentlmAlphaIndex (alphaIndex(1),1),&
-                  !       & currentlmAlphaIndex (alphaIndex(2),2),&
-                  !       & currentAlphas(alphaIndex(1),1),&
-                  !       & currentAlphas(alphaIndex(2),2),&
-                  !       & currentPosition(:,1),shiftedAtomPos(:))
-
                   ! Collect the results of the overlap of the current alpha
                   !   times the basis functions of atom 2.
                   if (contrib .eqv. .true.) then
@@ -514,6 +508,9 @@ subroutine gaussOverlapKE
 
    ! Define local variables for logging and loop control
    integer :: i,j,k,l,m ! Loop index variables
+   integer :: hdf5Status
+   integer :: hdferr
+   integer(hsize_t), dimension (1) :: attribIntDims ! Attribute dataspace dim
 
    ! Atom specific variables that change with each atom pair loop iteration.
    integer,              dimension (2)    :: currentAtomType
@@ -925,6 +922,9 @@ subroutine gaussOverlapMV
 
    ! Define local variables for logging and loop control
    integer :: i,j,k,l,m ! Loop index variables
+   integer :: hdf5Status
+   integer :: hdferr
+   integer(hsize_t), dimension (1) :: attribIntDims ! Attribute dataspace dim
 
    ! Atom specific variables that change with each atom pair loop iteration.
    integer,              dimension (2)    :: currentAtomType
@@ -1341,6 +1341,9 @@ subroutine gaussOverlapNP
 
    ! Define local variables for logging and loop control
    integer :: i,j,k,l,m ! Loop index variables
+   integer :: hdf5Status
+   integer :: hdferr
+   integer(hsize_t), dimension (1) :: attribIntDims ! Attribute dataspace dim
 
    ! Atom specific variables that change with each atom pair loop iteration.
    integer,              dimension (2)    :: currentAtomType
@@ -2141,6 +2144,9 @@ subroutine elecPotGaussOverlap
    integer :: currentIterCount
    integer (hsize_t) :: matrixSize ! Used to define the size of the
          ! anyElecPotInteraction matrix and the number of bits in hsize_t.
+   integer :: hdf5Status
+   integer :: hdferr
+   integer(hsize_t), dimension (1) :: attribIntDims ! Attribute dataspace dim
 
    ! Make a time stamp.
    call timeStampStart (11)
@@ -2415,14 +2421,6 @@ subroutine nuclearPE(contrib,alphaIndex,currentElements,currentlmAlphaIndex,&
                & shiftedAtomPos(:), shiftedPotPos(:),&
                & l1l2Switch, oneAlphaPair)
 
-         !call nucPotInteg (oneAlphaPair,&
-         !      & currentlmAlphaIndex (alphaIndex(1),1),&
-         !      & currentlmAlphaIndex (alphaIndex(2),2),&
-         !      & currentAlphas(alphaIndex(1),1),&
-         !      & currentAlphas(alphaIndex(2),2),&
-         !      & nucAlpha,currentPosition(:,1),&
-         !      & shiftedAtomPos(:),shiftedPotPos(:))
-
          ! Accumulate the results returned for this alpha set.
          nucPotAlphaOverlap(:currentlmAlphaIndex (alphaIndex(1),1), &
                & :currentlmAlphaIndex (alphaIndex(2),2)) = &
@@ -2570,11 +2568,6 @@ subroutine electronicPE(contrib,alphaIndex,currentElements,currentlmAlphaIndex,&
          shiftedPotPos(:) = potPosition(:) + latticeVector2(:) + &
                & cellDimsReal(:,n)
 
-         !call threeCentInteg (currentAlphas(alphaIndex(1),1),&
-         !& currentAlphas(alphaIndex(2),2),currPotAlpha,&
-         !& currentPosition(:,1), shiftedAtomPos(:), &
-         !& shiftedPotPos(:), oneAlphaPair, l1l2Switch)
-
          ! Calculate the opcode to do the correct set of integrals
          ! for the current alpha pair
          l1l2Switch = ishft(1,&
@@ -2586,13 +2579,6 @@ subroutine electronicPE(contrib,alphaIndex,currentElements,currentlmAlphaIndex,&
                & currentAlphas(alphaIndex(2),2),currPotAlpha,&
                & currentPosition(:,1), shiftedAtomPos(:), &
                & shiftedPotPos(:), l1l2Switch, oneAlphaPair)
-
-         !call threeCentInteg (oneAlphaPair,&
-         !      & currentlmAlphaIndex (alphaIndex(1),1),&
-         !      & currentlmAlphaIndex (alphaIndex(2),2),&
-         !      & currentAlphas(alphaIndex(1),1),&
-         !      & currentAlphas(alphaIndex(2),2),currPotAlpha,&
-         !      & currentPosition(:,1),shiftedAtomPos(:),shiftedPotPos(:))
 
          ! Accumulate the results returned for this alpha set.
          elecPotAlphaOverlap(:currentlmAlphaIndex(alphaIndex(1),1), &
@@ -2615,6 +2601,7 @@ end subroutine electronicPE
 subroutine orthoOL
 
    ! Use necessary modules.
+   use HDF5
    use O_Kinds
    use O_AtomicSites, only: coreDim, valeDim
    use O_KPoints, only: numKPoints
@@ -2629,6 +2616,7 @@ subroutine orthoOL
    integer :: hdferr
    integer :: currIndex
    real (kind=double), allocatable, dimension (:,:) :: packedValeVale
+   integer(hsize_t), dimension (1) :: attribIntDims ! Attribute dataspace dim
 
    ! Allocate space for the valeCore matrix in a pre-transposed format for
    !   more efficient cache utilization during the matrix multiplication.  Also
@@ -2705,7 +2693,7 @@ subroutine orthoOL
       call h5dwrite_f(atomOverlap_did(i),H5T_NATIVE_DOUBLE,&
             & packedValeVale(:,:),atomDims,hdferr)
       if (hdferr /= 0) stop 'Can not write atom overlap.'
-   enddo
+   enddo ! numKPoints
 
    ! Deallocate remaining unnecessary matrices
 #ifndef GAMMA
@@ -2722,6 +2710,7 @@ end subroutine orthoOL
 subroutine ortho (opCode)
 
    ! Use necessary modules.
+   use HDF5
    use O_Kinds
    use O_PotTypes, only: potTypes
    use O_KPoints, only: numKPoints
@@ -2741,7 +2730,13 @@ subroutine ortho (opCode)
    integer :: i,j,k
    integer :: hdferr
    integer :: currIndex
+   integer :: potTermIdx
    real (kind=double), allocatable, dimension (:,:) :: packedValeVale
+   integer(hsize_t), dimension (1) :: attribIntDims ! Attribute dataspace dim
+
+   ! Identify the index number of the current potential term in the list of
+   !   all potential terms (of all types).
+   potTermIdx = potTypes(currPotTypeNumber)%cumulAlphaSum + currAlphaNumber
 
    ! Orthogonalizing against the overlap matrix is unnecessary when the core
    !   dimension is zero.  However, we must still allocate some matrices for
@@ -2834,8 +2829,7 @@ subroutine ortho (opCode)
                & packedValeVale(:,:),atomDims,hdferr)
          if (hdferr /= 0) stop 'Failed to write nuclear potential vale vale'
       case (4)
-         call h5dwrite_f(atomPotOverlap_did(i,&
-               & potTypes(currPotTypeNumber)%cumulAlphaSum+currAlphaNumber),&
+         call h5dwrite_f(atomPotOverlap_did(i,potTermIdx),&
                & H5T_NATIVE_DOUBLE,packedValeVale(:,:),atomDims,hdferr)
          if (hdferr /= 0) stop 'Failed to write electronic potential vale vale'
       case (5) ! Implies that we are doing a scalar rel. calculation.
@@ -2843,8 +2837,7 @@ subroutine ortho (opCode)
                & packedValeVale(:,:),atomDims,hdferr)
          if (hdferr /= 0) stop 'Failed to write mass velocity vale vale'
       end select
-   enddo
-
+   enddo ! numKPoints
 
    ! Deallocate matrices that are no longer necessary.
 #ifndef GAMMA
@@ -2888,4 +2881,4 @@ subroutine secondCleanUpIntegralsSCF
 end subroutine secondCleanUpIntegralsSCF
 
 
-end module O_IntegralsSCF
+end module O_Integrals

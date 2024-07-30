@@ -466,7 +466,7 @@ module O_CrystalSystem
    end function findMatch
 
 
-   subroutine reduceCell (spaceLattice,spaceGroupNumber,spaceGroupSubNumber)
+   subroutine reduceCell (spaceLattice,spaceGroupSubNumber)
 
       ! Import necessary parameter modules.
       use O_Kinds
@@ -477,7 +477,6 @@ module O_CrystalSystem
 
       ! Define passed parameters.
       character*1 :: spaceLattice
-      integer :: spaceGroupNumber
       integer :: spaceGroupSubNumber
 
       ! Some of the members of this set of local variables will be copied back
@@ -513,8 +512,7 @@ module O_CrystalSystem
       allocate (reduceSpeciesID(numSymmAtoms))
 
       ! First we will reduce the lattice vectors.
-      call reduceLatticeVectors(spaceLattice,spaceGroupNumber,&
-            & spaceGroupSubNumber,reduceLattice,reduceLatticeInv)
+      call reduceLatticeVectors(spaceLattice,reduceLattice,reduceLatticeInv)
 
       ! Initialize the number of reduced atoms.  Only the atoms that remain
       !   inside the new reduced cell will be kept.
@@ -611,8 +609,8 @@ module O_CrystalSystem
    end subroutine reduceCell
 
 
-   subroutine reduceLatticeVectors (spaceLattice,spaceGroupNumber,&
-            & spaceGroupSubNumber,reduceLattice,reduceLatticeInv)
+   subroutine reduceLatticeVectors (spaceLattice,reduceLattice,&
+         & reduceLatticeInv)
 
       ! Import necessary parameter modules.
       use O_Kinds
@@ -623,8 +621,6 @@ module O_CrystalSystem
 
       ! Define passed parameters.
       character*1 :: spaceLattice
-      integer :: spaceGroupNumber
-      integer :: spaceGroupSubNumber
       real (kind=double), dimension (3,3) :: reduceLattice
       real (kind=double), dimension (3,3) :: reduceLatticeInv ! Inverse
 
@@ -760,7 +756,6 @@ module O_CrystalSystem
       real (kind=double), dimension (3,3) :: reduceLatticeInv
 
       ! Define local variables.
-      integer :: i
       real (kind=double), dimension(3) :: directXYZ
 
       ! Pxyz  = PxX   + PyY   + PzZ
@@ -943,7 +938,7 @@ program applySpaceGroup
    call applySymmetry
 
    ! Attempt to make a primitive cell if requested.
-   call reduceCell(spaceLattice,spaceGroupNumber,spaceGroupSubNumber)
+   call reduceCell(spaceLattice,spaceGroupSubNumber)
 
    ! Write the new lattice parameters.
    call writeLattice(6) ! Write to standard output.

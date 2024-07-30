@@ -1,4 +1,4 @@
-module O_SetupExchCorrHDF5
+module O_SCFExchCorrHDF5
 
    ! Import necessary modules.
    use HDF5
@@ -13,7 +13,7 @@ module O_SetupExchCorrHDF5
    ! Begin list of module data.!
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-   ! Define the main subgroup from setup_fid that holds the mesh information
+   ! Define the main subgroup from scf_fid that holds the mesh information
    !   for the exchange correlation calculation.
    integer(hid_t) :: exchCorrGroup_gid ! Exchange Correlation group.
 
@@ -54,23 +54,29 @@ module O_SetupExchCorrHDF5
    integer(hid_t), allocatable, dimension (:) :: radialWeight_did
    integer(hid_t) :: exchCorrOverlap_did
 
+   ! Define the attribute ID that will be used for tracking completion.
+   integer(hid_t) :: exchCorrGroup_aid
+
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    ! Begin list of module subroutines.!
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    contains
 
-subroutine initSetupExchCorrHDF5 (setup_fid,maxNumRayPoints)
+subroutine initSCFExchCorrHDF5 (scf_fid,attribInt_dsid,attribIntDims,&
+      & maxNumRayPoints)
 
    ! Import any necessary definition modules.
    use HDF5
-   use O_SetupElecStatHDF5, only: potPot_plid, potPot_dsid
+   use O_SCFElecStatHDF5, only: potPot_plid, potPot_dsid
 
    ! Import necessary object modules.
    use O_PotSites, only: numPotSites
    use O_Potential, only: potDim, GGA
 
    ! Define the passed parameters.
-   integer(hid_t), intent(in) :: setup_fid
+   integer(hid_t), intent(in) :: scf_fid
+   integer(hid_t) :: attribInt_dsid
+   integer(hsize_t), dimension (1) :: attribIntDims
    integer, intent(in) :: maxNumRayPoints
 
    ! Define local variables.
@@ -94,8 +100,8 @@ subroutine initSetupExchCorrHDF5 (setup_fid,maxNumRayPoints)
    points(1)       = maxNumRayPoints
    numPoints(1)    = 1
 
-   ! Create the exchange correlation group within the setup_fid.
-   call h5gcreate_f (setup_fid,"/exchCorrGroup",exchCorrGroup_gid,hdferr)
+   ! Create the exchange correlation group within the scf_fid.
+   call h5gcreate_f (scf_fid,"/exchCorrGroup",exchCorrGroup_gid,hdferr)
    if (hdferr /= 0) stop 'Failed to create exchange correlation group'
 
    ! Begin group, dataspace, dataset definitions for exchCorrGroup_gid.
@@ -157,11 +163,22 @@ subroutine initSetupExchCorrHDF5 (setup_fid,maxNumRayPoints)
       if (hdferr /= 0) stop 'Failed to create the exchRhoOp did.'
    enddo
 
-end subroutine initSetupExchCorrHDF5
+   ! Create the attribute that will indicate the completion.
+   call h5acreate_f (exchCorrGroup_gid,"status",H5T_NATIVE_INTEGER,&
+         & attribInt_dsid,exchCorrGroup_aid,hdferr)
+   if (hdferr /= 0) stop 'Failed to create exchCorrGroup aid'
+
+   ! Initialize the status to incomplete (zero).
+   call h5awrite_f (exchCorrGroup_aid,H5T_NATIVE_INTEGER,0,attribIntDims,&
+         & hdferr)
+   if (hdferr /= 0) stop 'Failed to initialize exchCorrGroup aid'
+
+
+end subroutine initSCFExchCorrHDF5
 
 
 
-subroutine accessSetupExchCorrHDF5 (setup_fid)
+subroutine accessSCFExchCorrHDF5 (scf_fid)
 
    ! Import any necessary definition modules.
    use HDF5
@@ -171,7 +188,7 @@ subroutine accessSetupExchCorrHDF5 (setup_fid)
    use O_Potential, only: potDim, GGA
 
    ! Define the passed parameters.
-   integer(hid_t), intent(in) :: setup_fid
+   integer(hid_t), intent(in) :: scf_fid
 
    ! Define local variables.
    integer :: i
@@ -192,8 +209,8 @@ subroutine accessSetupExchCorrHDF5 (setup_fid)
    !   something isn't there.)
    numPoints(1) = 1
 
-   ! Open the exchange correlation group within the setup_fid.
-   call h5gopen_f (setup_fid,"/exchCorrGroup",exchCorrGroup_gid,hdferr)
+   ! Open the exchange correlation group within the scf_fid.
+   call h5gopen_f (scf_fid,"/exchCorrGroup",exchCorrGroup_gid,hdferr)
    if (hdferr /= 0) stop 'Failed to open exchange correlation group'
 
 
@@ -260,11 +277,15 @@ subroutine accessSetupExchCorrHDF5 (setup_fid)
    endif
    points(1)    = tempMaxNumRayPoints
 
-end subroutine accessSetupExchCorrHDF5
+   ! Open the attribute that records the completion status.
+   call h5aopen_f(exchCorrGroup_gid,"status",exchCorrGroup_aid,hdferr)
+   if (hdferr /= 0) stop 'Failed to open exchCorrGroup_aid'
+
+end subroutine accessSCFExchCorrHDF5
 
 
 
-subroutine closeSetupExchCorrHDF5
+subroutine closeSCFExchCorrHDF5
 
    ! Import any necessary definition modules.
    use HDF5
@@ -298,6 +319,8 @@ subroutine closeSetupExchCorrHDF5
       if (hdferr /= 0) stop 'Failed to close radialWeight_did.'
    enddo
 
+   ! Attributes are closed when checked or written.
+
    ! Close the data spaces next.
    call h5sclose_f (potPoints_dsid,hdferr)
    if (hdferr /= 0) stop 'Failed to close potPoints_dsid.'
@@ -313,6 +336,6 @@ subroutine closeSetupExchCorrHDF5
    deallocate (exchRhoOp_did)
    deallocate (radialWeight_did)
  
-end subroutine closeSetupExchCorrHDF5
+end subroutine closeSCFExchCorrHDF5
 
-end module O_SetupExchCorrHDF5
+end module O_SCFExchCorrHDF5

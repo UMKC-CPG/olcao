@@ -329,7 +329,13 @@ module SplineSubs
 !
    10 I  = (IL+IR)/2
       IF (I.EQ.IL) GO TO 100
-      IF (XX-X(I)) 20,100,30
+      IF (XX-X(I) < 0) then
+      goto 20
+      elseif (XX-X(I) == 0) then
+      goto 100
+      else
+      goto 30
+   endif
    20 IR = I
       GO TO 10
    30 IL = I
@@ -337,7 +343,13 @@ module SplineSubs
 !
 !     LINEAR FORWARD SEARCH
 !
-   50 IF (XX-X(I+1)) 100,100,60
+   50 IF (XX-X(I+1) < 0) then
+      goto 100
+      elseif (XX-X(I+1) == 0) then
+      goto 100
+      else
+      goto 60
+      endif
    60 IF (I.GE.NM1) GO TO 80
       I  = I+1
       GO TO 50
@@ -373,7 +385,13 @@ module SplineSubs
       XX = XI(K)
       IF (XX.LT.X(1)) GO TO 90
       IF (XX.GT.X(N)) GO TO 80
-      IF (XX-XI(K-1)) 110,100,50
+      IF (XX-XI(K-1) < 0) then
+      goto 110
+      elseif (XX-XI(K-1) == 0) then
+      goto 100
+      else
+      goto 50
+      endif
   110 IL = 1
       IR = I+1
       GO TO 10

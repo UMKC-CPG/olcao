@@ -33,7 +33,7 @@ module O_SCFHDF5
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    contains
 
-subroutine initSCFDF5 (maxNumRayPoints)
+subroutine initHDF5_SCF (maxNumRayPoints, numStates)
 
    ! Use necessary modules.
    use O_TimeStamps
@@ -45,19 +45,23 @@ subroutine initSCFDF5 (maxNumRayPoints)
    use O_SCFIntegralsHDF5
    use O_SCFElecStatHDF5
    use O_SCFExchCorrHDF5
+   use O_SCFEigValHDF5
+   use O_SCFEigVecHDF5
+   use O_SCFPotRhoHDF5
 
    ! Make sure that no funny variables are defined.
    implicit none
 
    ! Define passed dummy variables.
-   integer :: maxNumRayPoints
+   integer, intent(in) :: maxNumRayPoints
+   integer, intent(in) :: numStates
 
    ! Declare local variables.
    integer :: hdferr
    logical :: file_exists
 
    ! Log the time we start to setup the SCF HDF5 files.
-   call timeStampStart(31)
+   call timeStampStart(6)
 
    ! Initialize the Fortran 90 HDF5 interface.
    call h5open_f(hdferr)
@@ -88,7 +92,10 @@ subroutine initSCFDF5 (maxNumRayPoints)
       ! Access the groups of the HDF5 file.
       call accessSCFIntegralHDF5 (scf_fid)
       call accessSCFElecStatHDF5 (scf_fid)
-      call accessSCFExchCorrHDF5 (scf_fid,maxNumRayPoints)
+      call accessSCFExchCorrHDF5 (scf_fid)
+      call accessSCFEigVecHDF5 (scf_fid,attribInt_dsid,attribIntDims,numStates)
+      call accessSCFEigValHDF5 (scf_fid,numStates)
+      call accessSCFPotRhoHDF5 (scf_fid)
 
    else
       ! We are starting a new calculation.
@@ -112,58 +119,19 @@ subroutine initSCFDF5 (maxNumRayPoints)
       call initSCFElecStatHDF5 (scf_fid,attribInt_dsid,attribIntDims)
       call initSCFExchCorrHDF5 (scf_fid,attribInt_dsid,attribIntDims,&
             & maxNumRayPoints)
+      call initSCFEigVecHDF5 (scf_fid,attribInt_dsid,attribIntDims,numStates)
+      call initSCFEigValHDF5 (scf_fid,numStates)
+      call initSCFPotRhoHDF5 (scf_fid)
    endif
 
 
    ! Log the time we finish setting up the SCF HDF5 files.
-   call timeStampEnd(31)
+   call timeStampEnd(6)
 
-end subroutine initSCFHDF5
-
-
-! I think we may not need this.
-!subroutine accessSetupHDF5
-!
-!   ! Use the HDF5 module.
-!   use HDF5
-!
-!   ! Use the subsection object modules for setup.
-!   use O_SetupIntegralsHDF5, only: accessSetupIntegralHDF5
-!   use O_SetupExchCorrHDF5, only: accessSetupExchCorrHDF5
-!   use O_SetupElecStatHDF5, only: accessSetupElecStatHDF5
-!
-!   ! Make sure that no funny variables are defined.
-!   implicit none
-!
-!   ! Declare local variables.
-!   integer :: hdferr
-!
-!   ! Create the property list for the setup hdf5 file and turn off
-!   !   chunk caching.
-!   call h5pcreate_f    (H5P_FILE_ACCESS_F,setup_plid,hdferr)
-!   if (hdferr /= 0) stop 'Failed to create setup plid in accessSetupHDF5.'
-!   call h5pget_cache_f (setup_plid,mdc_nelmts,rdcc_nelmts,rdcc_nbytes,rdcc_w0,&
-!         & hdferr)
-!   if (hdferr /= 0) stop 'Failed to get setup plid cache settings.'
-!   call h5pset_cache_f (setup_plid,mdc_nelmts,0_size_t,0_size_t,rdcc_w0,hdferr)
-!   if (hdferr /= 0) stop 'Failed to set setup plid cache settings.'
-!
-!
-!   ! Open the HDF5 file that will hold all the computed results.  This will
-!   !   die if the file already exists.  It opens read-only.
-!   call h5fopen_f ("setup-temp.hdf5",H5F_ACC_RDONLY_F,setup_fid,hdferr,&
-!         & setup_plid)
-!   if (hdferr /= 0) stop 'Failed to open setup-temp.hdf5 file.'
-!
-!   ! Access the subgroups of the setup hdf5 file.
-!   call accessSetupIntegralHDF5 (setup_fid)
-!   call accessSetupExchCorrHDF5 (setup_fid)
-!   call accessSetupElecStatHDF5 (setup_fid)
-!
-!end subroutine accessSetupHDF5
+end subroutine initHDF5_SCF
 
 
-subroutine closeSCFHDF5
+subroutine closeHDF5_SCF
 
    ! Use the HDF5 module.
    use HDF5
@@ -172,6 +140,9 @@ subroutine closeSCFHDF5
    use O_SCFIntegralsHDF5, only: closeSCFIntegralHDF5
    use O_SCFExchCorrHDF5,  only: closeSCFExchCorrHDF5
    use O_SCFElecStatHDF5,  only: closeSCFElecStatHDF5
+   use O_SCFEigVecHDF5,  only: closeSCFEigVecHDF5
+   use O_SCFEigValHDF5,  only: closeSCFEigValHDF5
+   use O_SCFPotRhoHDF5,  only: closeSCFPotRhoHDF5
 
    ! Make sure that no funny variables are defined.
    implicit none
@@ -183,6 +154,9 @@ subroutine closeSCFHDF5
    call closeSCFIntegralHDF5
    call closeSCFExchCorrHDF5
    call closeSCFElecStatHDF5
+   call closeSCFEigVecHDF5
+   call closeSCFEigValHDF5
+   call closeSCFPotRhoHDF5
 
    ! Close the property list.
    call h5pclose_f (scf_plid,hdferr)
@@ -192,7 +166,7 @@ subroutine closeSCFHDF5
    call h5fclose_f (scf_fid,hdferr)
    if (hdferr /= 0) stop 'Failed to close scf_fid.'
 
-end subroutine closeSCFHDF5
+end subroutine closeHDF5_SCF
 
 
 end module O_SCFHDF5

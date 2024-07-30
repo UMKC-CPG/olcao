@@ -1,4 +1,4 @@
-module O_SetupElecStatHDF5
+module O_SCFElecStatHDF5
 
    ! Import necessary modules.
    use HDF5
@@ -14,7 +14,7 @@ module O_SetupElecStatHDF5
    ! Begin list of module data.!
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-   ! Define the main subgroup from setup_fid that holds the mesh information
+   ! Define the main subgroup from scf_fid that holds the mesh information
    !   for the electrostatic calculation.
    integer(hid_t) :: elecStatGroup_gid ! Electrostatic group.
 
@@ -48,12 +48,17 @@ module O_SetupElecStatHDF5
    integer(hid_t) :: nonLocalResidualQ_did
    integer(hid_t) :: coreChargeDensity_did
 
+   ! Define the attribute IDs that will be used for tracking completion.
+   integer(hid_t) :: potOLAndLocalQ_aid ! Only one needed for all local.
+   integer(hid_t) :: nonLocalResidualQ_aid
+   integer(hid_t) :: coreChargeDensity_aid
+
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    ! Begin list of module subroutines.!
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    contains
 
-subroutine initSetupElecStatHDF5 (setup_fid)
+subroutine initSCFElecStatHDF5 (scf_fid,attribInt_dsid,attribIntDims)
 
    ! Import any necessary definition modules.
    use HDF5
@@ -62,7 +67,9 @@ subroutine initSetupElecStatHDF5 (setup_fid)
    use O_PotTypes    ! For potDim, numPotTypes
 
    ! Define the passed parameters.
-   integer(hid_t) :: setup_fid
+   integer(hid_t) :: scf_fid
+   integer(hid_t) :: attribInt_dsid
+   integer(hsize_t), dimension (1) :: attribIntDims
 
    ! Define local variables.
    integer :: hdferr
@@ -75,7 +82,7 @@ subroutine initSetupElecStatHDF5 (setup_fid)
    pot(1)    = potDim
 
    ! Create the electrostatic group within the HDF5 file.
-   call h5gcreate_f (setup_fid,"/elecStatGroup",elecStatGroup_gid,hdferr)
+   call h5gcreate_f (scf_fid,"/elecStatGroup",elecStatGroup_gid,hdferr)
    if (hdferr /= 0) stop 'Failed to create electrostatics group'
 
    ! Create the dataspaces that will be used for each dataset in the
@@ -140,11 +147,23 @@ subroutine initSetupElecStatHDF5 (setup_fid)
          & pot_dsid,coreChargeDensity_did,hdferr,pot_plid)
    if (hdferr /= 0) stop 'Failed to create coreChargeDensity did.'
 
-end subroutine initSetupElecStatHDF5
+   ! Create the attributes that will indicate the completion of each
+   !   calculation.
+   call h5acreate_f (potAlphaOverlap_did,"status",H5T_NATIVE_INTEGER,&
+         & attribInt_dsid,potOLAndLocalQ_aid,hdferr)
+   if (hdferr /= 0) stop 'Failed to create potOLAndLocalQ aid'
+   call h5acreate_f (nonLocalResidualQ_did,"status",H5T_NATIVE_INTEGER,&
+         & attribInt_dsid,nonLocalResidualQ_aid,hdferr)
+   if (hdferr /= 0) stop 'Failed to create nonLocalResidualQ aid'
+   call h5acreate_f (coreChargeDensity_did,"status",H5T_NATIVE_INTEGER,&
+         & attribInt_dsid,coreChargeDensity_aid,hdferr)
+   if (hdferr /= 0) stop 'Failed to create coreChargeDensity aid'
+
+end subroutine initSCFElecStatHDF5
 
 
 
-subroutine accessSetupElecStatHDF5 (setup_fid)
+subroutine accessSCFElecStatHDF5 (scf_fid)
 
    ! Import any necessary definition modules.
    use HDF5
@@ -153,7 +172,7 @@ subroutine accessSetupElecStatHDF5 (setup_fid)
    use O_PotTypes    ! For potDim, numPotTypes
 
    ! Define the passed parameters.
-   integer(hid_t) :: setup_fid
+   integer(hid_t) :: scf_fid
 
    ! Define local variables.
    integer :: hdferr
@@ -166,7 +185,7 @@ subroutine accessSetupElecStatHDF5 (setup_fid)
    pot(1)         = potDim
 
    ! Open the electrostatic group within the HDF5 file.
-   call h5gopen_f (setup_fid,"/elecStatGroup",elecStatGroup_gid,hdferr)
+   call h5gopen_f (scf_fid,"/elecStatGroup",elecStatGroup_gid,hdferr)
    if (hdferr /= 0) stop 'Failed to open electrostatics group'
 
    ! Open the datasets that will be used for the elecStatGroup.
@@ -190,7 +209,15 @@ subroutine accessSetupElecStatHDF5 (setup_fid)
          & hdferr)
    if (hdferr /= 0) stop 'Failed to open coreChargeDensity did.'
 
-   ! Obtain the property lists.  Read the note in accessSetupIntegralHDF5.
+   ! Open the attributes.
+   call h5aopen_f(potAlphaOverlap_did,"status",potOLAndLocalQ_aid,hdferr)
+   if (hdferr /= 0) stop 'Failed to open potOLAndLocalQ aid'
+   call h5aopen_f(nonLocalResidualQ_did,"status",nonLocalResidualQ_aid,hdferr)
+   if (hdferr /= 0) stop 'Failed to open nonLocalResidualQ aid'
+   call h5aopen_f(coreChargeDensity_did,"status",coreChargeDensity_aid,hdferr)
+   if (hdferr /= 0) stop 'Failed to open coreChargeDensity aid'
+
+   ! Obtain the property lists.  Read the note in accessSCFIntegralHDF5.
    call h5dget_create_plist_f (nonLocalResidualQ_did,potTypesPot_plid,hdferr)
    if (hdferr /= 0) stop 'Failed to obtain potTypesPot plid'
    call h5dget_create_plist_f (potAlphaOverlap_did,potPot_plid,hdferr)
@@ -199,7 +226,7 @@ subroutine accessSetupElecStatHDF5 (setup_fid)
    if (hdferr /= 0) stop 'Failed to obtain pot plid'
 
    ! Obtain the dataspaces that are used for the elecStatGroup datasets.  Read
-   !   the note in accessSetupINtegralHDF5.
+   !   the note in accessSCFINtegralHDF5.
    call h5dget_space_f (nonLocalResidualQ_did,potTypesPot_dsid,hdferr)
    if (hdferr /= 0) stop 'Failed to obtain potTypesPot dsid'
    call h5dget_space_f (potAlphaOverlap_did,potPot_dsid,hdferr)
@@ -207,10 +234,10 @@ subroutine accessSetupElecStatHDF5 (setup_fid)
    call h5dget_space_f (coreChargeDensity_did,pot_dsid,hdferr)
    if (hdferr /= 0) stop 'Failed to obtain pot dsid'
 
-end subroutine accessSetupElecStatHDF5
+end subroutine accessSCFElecStatHDF5
 
 
-subroutine closeSetupElecStatHDF5
+subroutine closeSCFElecStatHDF5
 
    ! Import any necessary definition modules.
    use HDF5
@@ -246,6 +273,8 @@ subroutine closeSetupElecStatHDF5
    call h5dclose_f (nonLocalResidualQ_did,hdferr)
    if (hdferr /= 0) stop 'Failed to close nonLocalResidualQ_did.'
 
+   ! The attributes tracking completion are closed when written.
+
    ! Close the data spaces next.
    call h5sclose_f (potTypesPot_dsid,hdferr)
    if (hdferr /= 0) stop 'Failed to close potTypesPot_dsid.'
@@ -258,7 +287,7 @@ subroutine closeSetupElecStatHDF5
    call h5gclose_f (elecStatGroup_gid,hdferr)
    if (hdferr /= 0) stop 'Failed to close elecStatGroup_gid.'
 
-end subroutine closeSetupElecStatHDF5
+end subroutine closeSCFElecStatHDF5
 
 
-end module O_SetupElecStatHDF5
+end module O_SCFElecStatHDF5

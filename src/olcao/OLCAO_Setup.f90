@@ -19,13 +19,13 @@ subroutine setupSCF
    use O_ElectroStatics,      only: makeElectrostatics
    use O_GaussianRelations,   only: makeAlphaDist, makeAlphaNucDist, &
                                   & makeAlphaPotDist, cleanUpGaussRelations
-   use O_IntegralsSCF,        only: allocateIntegralsSCF, gaussOverlapOL, &
-                                  & gaussOverlapKE, gaussOverlapMV, &
-                                  & gaussOverlapNP, elecPotGaussOverlap, &
-                                  & cleanUpIntegralsSCF, &
-                                  & secondCleanUpIntegralsSCF
-   use O_IntegralsSCF3Terms,  only: allocateIntegralsSCF3Terms, &
-                                  & gaussOverlapDM, cleanUpIntegralsSCF3Terms
+   use O_Integrals,        only: allocateIntegrals, gaussOverlapOL, &
+                               & gaussOverlapKE, gaussOverlapMV, &
+                               & gaussOverlapNP, elecPotGaussOverlap, &
+                               & cleanUpIntegralsSCF, &
+                               & secondCleanUpIntegralsSCF
+   use O_Integrals3Terms,  only: allocateIntegrals3Terms, &
+                               & gaussOverlapDM, cleanUpIntegrals3Terms
    use O_AtomicSites, only: coreDim, valeDim, cleanUpAtomSites
    use O_AtomicTypes, only: cleanUpRadialFns, cleanUpAtomTypes
    use O_PotSites,    only: cleanUpPotSites
@@ -124,7 +124,7 @@ subroutine setupSCF
 
 
    ! Allocate space to be used for each of the single matrix integrals.
-   call allocateIntegralsSCF(coreDim,valeDim,numKPoints)
+   call allocateIntegrals(coreDim,valeDim,numKPoints)
 
 
    ! Calculate the matrix elements of the overlap between all LCAO Bloch
@@ -173,7 +173,7 @@ subroutine setupSCF
    ! FIX: Consider adding an option to do the XYZ independently to conserve
    !   memory.
    if (doDIMO == 1) then
-      call allocateIntegralsSCF3Terms(coreDim,valeDim,numKPoints)
+      call allocateIntegrals3Terms(coreDim,valeDim,numKPoints)
    endif
 
 
@@ -187,7 +187,7 @@ subroutine setupSCF
    !   the data structures that were used in all the above subroutines but are
    !   not necessary now.
    if (doDIMO == 1) then
-      call cleanUpIntegralsSCF3Terms
+      call cleanUpIntegrals3Terms
    endif
    call secondCleanupIntegralsSCF ! Overlap matrix parts used for ortho.
    call cleanUpBasis
