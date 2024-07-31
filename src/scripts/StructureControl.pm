@@ -1022,7 +1022,7 @@ ENDHELP
    # Extract the space group identifier. The value given here must exactly
    #   match the name of some file (or soft link to a file) in the space
    #   group database. (The database is usually found in
-   #   $OLCAO_DIR/share/spaceDB.)
+   #   $OLCAO_DATA/spaceDB.)
    $lineNum = 0;
    while (@values = &prepLine("",$skeleton[$lineNum++],'\s+'))
    {

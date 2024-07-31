@@ -40,6 +40,8 @@ sub printHelp
 #                 [-pdb] [-cif] [-basisVis]
 #                 [-emu]
 #                 [-nocore]
+#                 [-slurm [-q \$queue] [-t \$time] [-m \$memory] [-n \$cpus]
+#                         [-N \$nodes]]
 #                 [-help]
 
 ###################################################
@@ -111,10 +113,10 @@ sub printHelp
 
 #The -basisdb option allows the user to supply the location of another atomic
 #   basis functions database.  The default value is in
-#   \$OLCAO_DIR/share/atomicBDB.
+#   \$OLCAO_DATA/atomicBDB.
 
 #The -potdb option allows the user to supply the location of another potential
-#   function database.  The default value is in \$OLCAO_DIR/share/atomicPDB.
+#   function database.  The default value is in \$OLCAO_DATA/atomicPDB.
 
 #If the -subbasis option is given, then when the input files are constructed,
 #  the value in \$basisSubIn will substitue for the value in \$basisSubOut.  For
@@ -225,7 +227,7 @@ sub printHelp
 #  be used in the symmetric band calculation (SYBD).  You should be consistant
 #  with the actual cell type or you will get a warning (even though it will
 #  still allow you to create the input files).  The valid options are present
-#  in the \$OLCAO_DATA/share/sybdDB directory.  Simply specify one of those
+#  in the \$OLCAO_DATA/sybdDB directory.  Simply specify one of those
 #  names as the \$sybdPath.
 
 #The -rel option will prepare the OLCAO input files for a relativistic
@@ -295,6 +297,9 @@ sub printHelp
 #   -cif:          No cif crystal structure diagram file will be made.
 #   -basisVis:     No files will be made to help visualize the basis.
 #   -nocore:       All "core" orbitals will be treated as part of the valence.
+#   -slurm:        The default sub parameters are:
+#        \$queue = general, \$time = 00:60:00, \$memory = 10G, \$cpus = 1,
+#        \$nodes = 1
 #   -help:         No help will be printed.
 ENDHELP
    exit(0);
@@ -318,7 +323,7 @@ use StructureControl;
 ######################################################################
 
 # Record keeping and misc.
-my $time;        # Record time of script events.
+my $dateTime;        # Record date and time of script events.
 my $pi;
 my $bohrRad;
 my $epsilon = 0.00001;
@@ -375,7 +380,7 @@ my $cif_ext; # Extension for crystallographic interchange format files.
 # Flags to create or not create specific files.
 my $pdb;   # Make a pdb structure file = 1; Don't = 0.
 my $cif;   # Make a cif structure file = 1; Don't = 0.
-my $queue; # Make a bash (0); pbs (1); lsf (2); or slurm (3) file.
+my $queueType; # Make a bash (0); pbs (1); lsf (2); or slurm (3) file.
 
 # Variables that define the exchange correlation mesh.
 my $xcInWeight;    # Weighting of points within the radial cutoff.
@@ -591,39 +596,46 @@ my $pso_conf;
 #   file and thus be removed from the calculation via orthogonalization.
 my $noCore;
 
+# Variables for the slurm submission script.
+my $queue;
+my $time;
+my $memory;
+my $cpus;
+my $nodes;
+
 ######################################################################
 # Begin execution of the script here
 ######################################################################
 print STDOUT "\n\nScript Executing.\n\n";
 
 # This will parse the command line, define file names, init defaults, etc.
-$time = `date`;
-chomp($time);
-print STDOUT "\nStarting environment setup at................$time.\n";
+$dateTime = `date`;
+chomp($dateTime);
+print STDOUT "\nStarting environment setup at................$dateTime.\n";
 &setupEnvironment;
 
 
 
 # Parse input, apply space group and supercell, inititialize default species.
-$time = `date`;
-chomp($time);
-print STDOUT "\nStarting structure initialization at.........$time.\n";
+$dateTime = `date`;
+chomp($dateTime);
+print STDOUT "\nStarting structure initialization at.........$dateTime.\n";
 &initializeCell;
 
 
 
 # Assign species based on command line parameters.
-$time = `date`;
-chomp($time);
-print STDOUT "\nStarting to assign species at................$time.\n";
+$dateTime = `date`;
+chomp($dateTime);
+print STDOUT "\nStarting to assign species at................$dateTime.\n";
 &assignGroup("species");
 
 
 
 # Assign types based on command line parameters.
-$time = `date`;
-chomp($time);
-print STDOUT "\nStarting to assign general types at..........$time.\n";
+$dateTime = `date`;
+chomp($dateTime);
+print STDOUT "\nStarting to assign general types at..........$dateTime.\n";
 &assignGroup("types");
 
 
@@ -631,9 +643,9 @@ print STDOUT "\nStarting to assign general types at..........$time.\n";
 # If -xanes option was given then generate a type list for each atomic species.
 if ($xanes == 1)
 {
-   $time = `date`;
-   chomp($time);
-   print STDOUT "\nStarting to assign XANES types at............$time.\n";
+   $dateTime = `date`;
+   chomp($dateTime);
+   print STDOUT "\nStarting to assign XANES types at............$dateTime.\n";
    &assignXanesTypes;
 }
 
@@ -642,34 +654,34 @@ if ($xanes == 1)
 # If the -emu option was given then create the input files for running Emu.
 if ($emu == 1)
 {
-   $time = `date`;
-   chomp($time);
-   print STDOUT "\nStarting to print emu configuration files at $time.\n";
+   $dateTime = `date`;
+   chomp($dateTime);
+   print STDOUT "\nStarting to print emu configuration files at $dateTime.\n";
    &initializeEmu
 }
 
 
 # Print out the necessary files for OLCAO (olcao.dat, scfV, kpoints etc.)
-$time = `date`;
-chomp($time);
-print STDOUT "\nStarting to print input files at.............$time.\n";
+$dateTime = `date`;
+chomp($dateTime);
+print STDOUT "\nStarting to print input files at.............$dateTime.\n";
 &printOLCAO;
 
 
 
 
 # Print summary file
-$time = `date`;
-chomp($time);
-print STDOUT "\nStarting to print summary at.................$time.\n";
+$dateTime = `date`;
+chomp($dateTime);
+print STDOUT "\nStarting to print summary at.................$dateTime.\n";
 &printSummary;
 
 
 
 # Complete the script.
-$time = `date`;
-chomp($time);
-print STDOUT "\nScript Complete at...........................$time.\n\n";
+$dateTime = `date`;
+chomp($dateTime);
+print STDOUT "\nScript Complete at...........................$dateTime.\n\n";
 
 
 
@@ -859,7 +871,7 @@ sub initDefaults
    #   Which extra files to print?
    $pdb=0;
    $cif=0;
-   $queue=$OLCAO_QUEUE; # 0=bash; 1=pbs; 2=lsf; 3=slurm
+   $queueType=$OLCAO_QUEUE; # 0=bash; 1=pbs; 2=lsf; 3=slurm
 
    # Default cutoff criteria (exponent) for negligable gaussian interations.
    $bfCutoff=16;
@@ -971,6 +983,13 @@ sub initDefaults
 
    # Default for whether or not to use all orbitals (no core orthogonalization).
    $noCore = 0; # This will have core orbitals orthogonalized out.
+
+   # Default for slurm submission scripts.
+   $queue = "general";
+   $time = "00:60:00";
+   $memory = "10G";
+   $cpus = 1;
+   $nodes = 1;
 
    # Make the inputTemp directory.
    mkdir ("$inputTemp");
@@ -1290,6 +1309,27 @@ sub parseCommandLine
          {$emu = 1;}
       elsif ($ARGV[$number] eq "-nocore")
          {$noCore = 1;}
+      elsif ($ARGV[$number] eq "-slurm")
+      {
+         foreach $argument (1..5)
+         {
+            if ($number >= $#ARGV)
+               {last;}
+
+            $nextTag = $ARGV[++$number];
+
+            if ($nextTag eq "-q")
+               {$queue = $ARGV[++$number];}
+            elsif ($nextTag eq "-t")
+               {$time = $ARGV[++$number];}
+            elsif ($nextTag eq "-m")
+               {$memory = $ARGV[++$number];}
+            elsif ($nextTag eq "-n")
+               {$cpus = $ARGV[++$number];}
+            elsif ($nextTag eq "-N")
+               {$nodes = $ARGV[++$number];}
+         }
+      }
       elsif ($ARGV[$number] eq "-help")
          {&printHelp;}
       else
@@ -4913,7 +4953,7 @@ sub makeSubFile
    chomp $proj_dir;
 
    # Initialize values that are dependent on the submission method.
-   if ($queue == 1)
+   if ($queueType == 1)
    {
       open (SUBFILE,">$subDir/$pbs_sub") ||
             die "Cannot open $subDir/$pbs_sub for writing.\n";
@@ -4921,7 +4961,7 @@ sub makeSubFile
       $subHeader[1] = "\#PBS -l cput=100:0:0,ncpus=1\n";
       $subHeader[2] = "\#\n";
    }
-   elsif ($queue == 2)
+   elsif ($queueType == 2)
    {
       open (SUBFILE,">$subDir/$lsf_sub") ||
             die "Cannot open $subDir/$lsf_sub for writing.\n";
@@ -4931,19 +4971,20 @@ sub makeSubFile
       $subHeader[3] = "\#BSUB -c 100:0\n";
       $subHeader[4] = "\#\n";
    }
-   elsif ($queue == 3)
+   elsif ($queueType == 3)
    {
       open (SUBFILE,">$subDir/$slurm_sub") ||
             die "Cannot open $subDir/$slurm_sub for writing.\n";
       $subHeader[0] = "#!/bin/bash\n";
-      $subHeader[1] = "\#SBATCH -p general\n";
+      $subHeader[1] = "\#SBATCH -p $queue\n";
       $subHeader[2] = "\#SBATCH -J $proj_name\n";
       $subHeader[3] = "\#SBATCH -o $proj_name.o\%J\n";
       $subHeader[4] = "\#SBATCH -e $proj_name.e\%J\n";
-      $subHeader[5] = "\#SBATCH -n 1\n";
-      $subHeader[6] = "\#SBATCH -t 00:60:00\n";
-      $subHeader[7] = "\#SBATCH --mem=10G\n";
-      $subHeader[8] = "\#\n";
+      $subHeader[5] = "\#SBATCH -n $cpus\n";
+      $subHeader[6] = "\#SBATCH -N $nodes\n";
+      $subHeader[7] = "\#SBATCH -t $time\n";
+      $subHeader[8] = "\#SBATCH --mem=$memory\n";
+      $subHeader[9] = "\#\n";
    }
    else
    {
@@ -4960,7 +5001,7 @@ sub makeSubFile
    # Print the default commands (these are not system dependent).
    if ($xanes == 0)
    {
-      print SUBFILE "source $OLCAO_DIR/.olcao/olcaorc\n";
+      print SUBFILE "source $OLCAO_RC/olcaorc\n";
       print SUBFILE "export OMP_NUM_THREADS=1\n";
       print SUBFILE "cd $proj_dir\n";
       print SUBFILE "\"\$OLCAO_BIN/olcao\" -dos\n";
@@ -4970,7 +5011,7 @@ sub makeSubFile
    }
    elsif ($h == 0)
    {
-      print SUBFILE "source $OLCAO_DIR/.olcao/olcaorc\n";
+      print SUBFILE "source $OLCAO_RC/olcaorc\n";
       @values = StructureControl::prepLine("","$proj_dir",'\/');
       $basename = "/" . $values[$#values];
       print SUBFILE "export OMP_NUM_THREADS=1\n";
@@ -4983,7 +5024,7 @@ sub makeSubFile
    else
    {
       $proj_dir = "$proj_dir" . "/" . lc($currentName);
-      print SUBFILE "source $OLCAO_DIR/.olcao/olcaorc\n";
+      print SUBFILE "source $OLCAO_RC/olcaorc\n";
       print SUBFILE "export OMP_NUM_THREADS=1\n";
       print SUBFILE "cd $proj_dir\n";
       foreach $orbital (1..$numCoreXanes)
@@ -5009,7 +5050,7 @@ sub makeSubFile
    close (SUBFILE);
 
    # If bash was used, then make the submission file executable.
-   if ($queue == 0)
+   if ($queueType == 0)
       {system("chmod u+x $subDir/$bash_sub");}
 }
 

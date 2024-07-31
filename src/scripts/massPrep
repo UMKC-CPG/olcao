@@ -172,7 +172,7 @@ sub makeSubmit
 #SBATCH -t 20
 #SBATCH --mem=10G
 #
-source /home/prulis/CPG/cpg-repo/v33-only/.olcao
+source $OLCAO_RC/olcaorc
 export OMP_NUM_THREADS=1
 ENDSUB
 

@@ -13,8 +13,8 @@ use strict;
 use warnings;
 use Env;
 
-# Go to the $OLCAO_DIR/share (which is where the databases are).
-chdir "$OLCAO_DIR/share";
+# Go to the $OLCAO_DATA (which is where the databases are).
+chdir "$OLCAO_DATA";
 
 # Issue the necessary unpacking commands.
 if (system("tar -xzf atomicBDB.tgz") != 0)
