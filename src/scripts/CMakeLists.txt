@@ -23,7 +23,7 @@ osrecurintg_makenum.py
 pdb2skl plotgraph plotgraph.py polcao pot2plot.py processPOPTC
 rpdf runCheck runIsoAtoms
 scanSpectra selectSYBD skl2lmp skl2pdb skl2vasp spectra2ODX
-unpackOLCAODB
+unpackOLCAODB uolcao
 vasp2skl
 xcMesh xyz2skl)
 

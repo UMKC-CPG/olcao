@@ -252,9 +252,6 @@ subroutine initSCFIntegralHDF5 (scf_fid, attribInt_dsid, attribIntDims)
       if (hdferr /= 0) stop 'Failed to create nuclear overlap did'
 
       do j = 1, 3
-         write (currentName,fmt="(i7.7)") j
-         currentName = trim (currentName)
-
          call h5dcreate_f (atomDMxyzOL_gid(j),currentName,&
                & H5T_NATIVE_DOUBLE,valeVale_dsid,atomDMOverlap_did(i,j),&
                & hdferr,valeVale_plid)
@@ -267,9 +264,6 @@ subroutine initSCFIntegralHDF5 (scf_fid, attribInt_dsid, attribIntDims)
       enddo
 
       do j = 1, potDim
-         write (currentName,fmt="(i7.7)") j
-         currentName = trim (currentName)
-
          call h5dcreate_f(atomPotTermOL_gid(j),currentName,&
                & H5T_NATIVE_DOUBLE,valeVale_dsid,atomPotOverlap_did(i,j),&
                & hdferr,valeVale_plid)
@@ -384,7 +378,7 @@ subroutine accessSCFIntegralHDF5 (scf_fid)
    if (hdferr /= 0) stop 'Failed to open atom nuclear overlap group'
    call h5gopen_f (atomIntgGroup_gid,"atomDMOverlap",atomDMOverlap_gid,hdferr)
    if (hdferr /= 0) stop 'Failed to open dipole moment overlap group'
-   call h5gopen_f (atomIntgGroup_gid,"atomMMOverlap",atomDMOverlap_gid,hdferr)
+   call h5gopen_f (atomIntgGroup_gid,"atomMMOverlap",atomMMOverlap_gid,hdferr)
    if (hdferr /= 0) stop 'Failed to open momentum matrix overlap group'
    call h5gopen_f (atomIntgGroup_gid,"atomPotOverlap",atomPotOverlap_gid,hdferr)
    if (hdferr /= 0) stop 'Failed to open atom potential overlap group'
@@ -432,6 +426,8 @@ subroutine accessSCFIntegralHDF5 (scf_fid)
    ! Open the datasets that will be used for all subgroups of atomIntgGroup.
    do i = 1, numKPoints
       write (currentName,fmt="(i7.7)") i
+      currentName = trim (currentName)
+
       call h5dopen_f (atomOverlap_gid,currentName,atomOverlap_did(i),hdferr)
       if (hdferr /= 0) stop 'Failed to open atom overlap did'
 
@@ -446,7 +442,6 @@ subroutine accessSCFIntegralHDF5 (scf_fid)
       if (hdferr /= 0) stop 'Failed to open nuclear overlap did'
 
       do j = 1, 3
-         write (currentName,fmt="(i7.7)") j
          call h5dopen_f (atomDMxyzOL_gid(j),currentName,&
                & atomDMOverlap_did(i,j),hdferr)
          if (hdferr /= 0) stop 'Failed to open DM overlap did'
@@ -457,7 +452,6 @@ subroutine accessSCFIntegralHDF5 (scf_fid)
       enddo
 
       do j = 1, potDim
-         write (currentName,fmt="(i7.7)") j
          call h5dopen_f(atomPotTermOL_gid(j),currentName,&
                & atomPotOverlap_did(i,j),hdferr)
          if (hdferr /= 0) stop 'Failed to open potential overlap did'

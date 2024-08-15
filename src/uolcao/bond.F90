@@ -16,11 +16,10 @@ subroutine computeBond (inSCF)
    use O_Potential,   only: spin
    use O_Lattice,     only: realVectors
    use O_AtomicTypes, only: numAtomTypes, atomTypes, maxNumStates
-   use O_KPoints,     only: numKPoints, kPointWeight
+   use O_KPoints,     only: numKPoints
    use O_Populate,    only: electronPopulation
    use O_AtomicSites, only: valeDim, numAtomSites, atomSites
    use O_Constants,   only: pi, hartree, bigThresh, smallThresh
-   use O_CommandLine, only: doBond_SCF, doBond_PSCF
    use O_Input,       only: numStates, sigmaBOND, eminBOND, emaxBOND, &
          & deltaBOND, maxBL, outputCodeBondQ, excitedAtomPACS, maxNumNeighbors
 #ifndef GAMMA
@@ -115,15 +114,15 @@ subroutine computeBond (inSCF)
    allocate (numAtomBasisFns  (numAtomSites))
 #ifndef GAMMA
    allocate (waveFnSqrd (valeDim))
+   allocate (valeValeOL (valeDim,valeDim,1,1))
    if (inSCF == 0) then
       allocate (valeVale   (valeDim,numStates,1,1))
-      allocate (valeValeOL (valeDim,valeDim,1,1))
    endif
 #else
    allocate (waveFnSqrdGamma (valeDim))
+   allocate (valeValeOLGamma (valeDim,valeDim,1))
    if (inSCF == 0) then
       allocate (valeValeGamma   (valeDim,numStates,1))
-      allocate (valeValeOLGamma (valeDim,valeDim,1))
    endif
 #endif
 
@@ -199,7 +198,7 @@ subroutine computeBond (inSCF)
 
    ! Determine the number of energy points to be computed for in the case of
    !   the energy dependent bond order calculation.
-   numEnergyPoints = (emaxBOND - eminBOND ) / deltaBOND
+   numEnergyPoints = int((emaxBOND - eminBOND ) / deltaBOND)
 
    ! Allocate space to hold the bondorder and charge results
    allocate (bondOrderEnergyDep (maxNumNeighbors))
@@ -215,7 +214,6 @@ subroutine computeBond (inSCF)
       allocate (bondedTypeID        (maxNumNeighbors))
       allocate (totalCalcBondOrder  (maxNumNeighbors))
    endif
-
 
    ! Assign values to the energy scale if necessary.
    if (excitedAtomPACS .ne. 0) then
@@ -242,7 +240,6 @@ subroutine computeBond (inSCF)
       ! Begin accumulating the BOND values over each kpoint
       do i = 1, numKPoints
 
-
          ! Depending on whether we are doing bondorder+Q* in a post-SCF
          !   calculation, or within an SCF calculation we will access the
          !   wave function and overlap from different sources.
@@ -253,7 +250,6 @@ subroutine computeBond (inSCF)
             ! Read necessary data from post SCF (intg,band) data structures.
             !call readDataPSCF(h,i,numStates)
          endif
-
 
          do j = 1, numStates
 
@@ -961,7 +957,7 @@ subroutine computeBond (inSCF)
             do j = 1, numBondAngles(i)
                ! Record the triplet of atoms for this bond angle and the bond
                !   angle converted into degrees.
-               write (9+h,fmt="(i5,5x,i5,5x,i5,f8.4)"), bondAngleAtoms(1,j,i),&
+               write (9+h,fmt="(i5,5x,i5,5x,i5,f8.4)") bondAngleAtoms(1,j,i),&
                      & i,bondAngleAtoms(2,j,i), bondAngle(j,i)*180.0_double/pi
             enddo
                   
@@ -992,13 +988,13 @@ subroutine computeBond (inSCF)
    deallocate (atomOrbitalCharge)
 #ifndef GAMMA
    deallocate (waveFnSqrd)
-   if (doBond_SCF == 0) then
+   if (inSCF == 0) then
       deallocate (valeVale)
       deallocate (valeValeOL)
    endif
 #else
    deallocate (waveFnSqrdGamma)
-   if (doBond_SCF == 0) then
+   if (inSCF == 0) then
       deallocate (valeValeGamma)
       deallocate (valeValeOLGamma)
    endif

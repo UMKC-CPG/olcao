@@ -207,9 +207,6 @@ subroutine initPSCFIntegralHDF5 (pscf_fid, attribInt_dsid, attribIntDims)
       if (hdferr /= 0) stop 'Failed to create hamiltonian overlap did'
 
       do j = 1, 3
-         write (currentName,fmt="(i7.7)") j
-         currentName = trim (currentName)
-
          call h5dcreate_f (atomDMxyzOL_gid(j),currentName,&
                & H5T_NATIVE_DOUBLE,valeVale_dsid,atomDMOverlap_did(i,j),&
                & hdferr,valeVale_plid)
@@ -220,7 +217,6 @@ subroutine initPSCFIntegralHDF5 (pscf_fid, attribInt_dsid, attribIntDims)
                & hdferr,valeVale_plid)
          if (hdferr /= 0) stop 'Failed to create MM overlap did'
       enddo
-
    enddo
 
    ! Create the attribute that indicates completion of the calculation of

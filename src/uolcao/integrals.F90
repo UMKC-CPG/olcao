@@ -49,7 +49,7 @@ module O_Integrals
    integer :: hsize_t_bitsize ! Used to access any bit in the above array.
    integer :: matrixIndex
    integer :: cellIndex
- 
+   integer :: someIntegralDone
 
    
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -76,6 +76,9 @@ subroutine allocateIntegralsSCF(coreDim,valeDim,numKPoints)
    allocate (coreCoreGamma (coreDim,coreDim))
    allocate (valeValeGamma (valeDim,valeDim,1))
 #endif
+
+   ! Assume that no integrals will be performed.
+   someIntegralDone = 0
 
 end subroutine allocateIntegralsSCF
 
@@ -202,12 +205,15 @@ subroutine gaussOverlapOL
          & attribIntDims,hdferr)
    if (hdferr /= 0) stop 'Failed to read atom overlap status.'
    if (hdf5Status == 1) then
-      write(6,*) "Two-center overlap already exists. Skipping."
+      write(20,*) "Two-center overlap already exists. Skipping."
       call timeStampEnd(8)
       call h5aclose_f(atomOverlap_aid,hdferr)
       if (hdferr /= 0) stop 'Failed to close atom overlap status.'
       return
    endif
+
+   ! At this point, we know that an integral will be performed. Note it.
+   someIntegralDone = 1
 
    ! Allocate space for locally defined allocatable arrays
    allocate (currentBasisFns     (maxNumAtomAlphas,maxNumStates,2))
@@ -628,12 +634,15 @@ subroutine gaussOverlapKE
          & attribIntDims,hdferr)
    if (hdferr /= 0) stop 'Failed to read atom KE overlap status.'
    if (hdf5Status == 1) then
-      write(6,*) "Two-center KE overlap already exists. Skipping."
+      write(20,*) "Two-center KE overlap already exists. Skipping."
       call timeStampEnd(9)
       call h5aclose_f(atomKEOverlap_aid,hdferr)
       if (hdferr /= 0) stop 'Failed to close atom KE overlap status.'
       return
    endif
+
+   ! At this point, we know that an integral will be performed. Note it.
+   someIntegralDone = 1
 
    ! Allocate space for locally defined allocatable arrays
    allocate (currentBasisFns     (maxNumAtomAlphas,maxNumStates,2))
@@ -1058,12 +1067,15 @@ subroutine gaussOverlapMV
          & attribIntDims,hdferr)
    if (hdferr /= 0) stop 'Failed to read atom MV overlap status.'
    if (hdf5Status == 1) then
-      write(6,*) "Two-center MV overlap already exists. Skipping."
+      write(20,*) "Two-center MV overlap already exists. Skipping."
       call timeStampEnd(30)
       call h5aclose_f(atomMVOverlap_aid,hdferr)
       if (hdferr /= 0) stop 'Failed to close atom MV overlap status.'
       return
    endif
+
+   ! At this point, we know that an integral will be performed. Note it.
+   someIntegralDone = 1
 
    ! Allocate space for locally defined allocatable arrays
    allocate (currentBasisFns     (maxNumAtomAlphas,maxNumStates,2))
@@ -1489,12 +1501,15 @@ subroutine gaussOverlapNP
          & attribIntDims,hdferr)
    if (hdferr /= 0) stop 'Failed to read atom nuclear overlap status.'
    if (hdf5Status == 1) then
-      write(6,*) "Three-center nuclear overlap already exists. Skipping."
+      write(20,*) "Three-center nuclear overlap already exists. Skipping."
       call timeStampEnd(10)
       call h5aclose_f(atomNucOverlap_aid,hdferr)
       if (hdferr /= 0) stop 'Failed to close atom Nuc overlap status.'
       return
    endif
+
+   ! At this point, we know that an integral will be performed. Note it.
+   someIntegralDone = 1
 
    ! Allocate space for locally defined allocatable arrays
    allocate (currentBasisFns     (maxNumAtomAlphas,maxNumStates,2))
@@ -1812,12 +1827,14 @@ subroutine gaussOverlapEP
    use O_Kinds
    use O_TimeStamps
    use O_Constants, only: dim3
+#ifndef GAMMA
    use O_KPoints, only: numKPoints
+#endif
    use O_GaussianRelations, only: alphaDist
    use O_Lattice, only: numCellsReal, cellSizesReal, cellDimsReal, &
          & findLatticeVector
-   use O_AtomicSites, only: valeDim, coreDim, numAtomSites, atomSites
-   use O_AtomicTypes, only: maxNumAtomAlphas, maxNumStates, atomTypes
+   use O_AtomicSites, only: valeDim, coreDim, numAtomSites
+   use O_AtomicTypes, only: maxNumAtomAlphas, maxNumStates
    use O_Basis, only: initializeAtomSite
    use O_IntgSaving
    use O_GaussianIntegrals
@@ -2262,20 +2279,6 @@ subroutine elecPotGaussOverlap
 
    do i = 1, numPotSites
 
-      ! Determine if this calculation has already been completed by a previous
-      !   OLCAO execution.
-      hdf5Status = 0
-      attribIntDims(1) = 1
-      call h5aread_f(atomPotTermOL_aid(i),H5T_NATIVE_INTEGER,hdf5Status,&
-            & attribIntDims,hdferr)
-      if (hdferr /= 0) stop 'Failed to read atom pot term OL status.'
-      if (hdf5Status == 1) then
-         write(6,*) "Three-center pot term OL already exists. Skipping: ", i
-         call h5aclose_f(atomPotTermOL_aid(i),hdferr)
-         if (hdferr /= 0) stop 'Failed to close atom pot term OL status.'
-         cycle
-      endif
-
       ! Check if this potential site is the first to have some particular
       !   potential type.  If it is the first site to have a particular
       !   potential type then its "firstPotType" flag is 1.  Other sites with
@@ -2284,6 +2287,21 @@ subroutine elecPotGaussOverlap
 
       currPotTypeNumber = potSites(i)%potTypeAssn
       numAlphas         = potTypes(currPotTypeNumber)%numAlphas
+
+      ! Determine if this calculation has already been completed by a previous
+      !   OLCAO execution.
+      hdf5Status = 0
+      attribIntDims(1) = 1
+      call h5aread_f(atomPotTermOL_aid(currPotTypeNumber),H5T_NATIVE_INTEGER,&
+            & hdf5Status,attribIntDims,hdferr)
+      if (hdferr /= 0) stop 'Failed to read atom pot term OL status.'
+      if (hdf5Status == 1) then
+         write(20,*) "Three-center pot term OL already exists. Skipping: ", &
+               & currPotTypeNumber
+         call h5aclose_f(atomPotTermOL_aid(currPotTypeNumber),hdferr)
+         if (hdferr /= 0) stop 'Failed to close atom pot term OL status.'
+         cycle
+      endif
 
       ! Initialize the anyElecPotInteraction matrix for this set of potential
       !   alphas.  The assumption is that every atom pair will have some
@@ -2808,7 +2826,7 @@ end subroutine electronicPE
 !         & attribIntDims,hdferr)
 !   if (hdferr /= 0) stop 'Failed to read atom overlap status.'
 !   if (ovlpDone == 1) then
-!      write(6,*) "Two-center overlap already exists. Skipping."
+!      write(20,*) "Two-center overlap already exists. Skipping."
 !      call h5aclose_f(atomOverlap_aid,hdferr)
 !      if (hdferr /= 0) stop 'Failed to close atom overlap status.'
 !   endif
@@ -2819,7 +2837,7 @@ end subroutine electronicPE
 !         & attribIntDims,hdferr)
 !   if (hdferr /= 0) stop 'Failed to read atom hamiltonian overlap status.'
 !   if (hamDone == 1) then
-!      write(6,*) "Two- and three-center hamiltonian already exists. Skipping."
+!      write(20,*) "Two- and three-center hamiltonian already exists. Skipping."
 !      call h5aclose_f(atomOverlap_aid,hdferr)
 !      if (hdferr /= 0) stop 'Failed to close atom hamiltonian overlap status.'
 !   endif
@@ -2830,7 +2848,7 @@ end subroutine electronicPE
 !         & attribIntDims,hdferr)
 !   if (hdferr /= 0) stop 'Failed to read atom dipole moment overlap status.'
 !   if (dimoDone == 1) then
-!      write(6,*) "Two-center-ish dipole moment already exists. Skipping."
+!      write(20,*) "Two-center-ish dipole moment already exists. Skipping."
 !      call h5aclose_f(atomDMOverlap_aid,hdferr)
 !      if (hdferr /= 0) stop 'Failed to close dipole moment status.'
 !   endif
@@ -2841,7 +2859,7 @@ end subroutine electronicPE
 !         & attribIntDims,hdferr)
 !   if (hdferr /= 0) stop 'Failed to read momentum matrix status.'
 !   if (MMDone == 1) then
-!      write(6,*) "Two-center-ish momentum matrix already exists. Skipping."
+!      write(20,*) "Two-center-ish momentum matrix already exists. Skipping."
 !      call h5aclose_f(atomMMOverlap_aid,hdferr)
 !      if (hdferr /= 0) stop 'Failed to close momentum matrix status.'
 !   endif
@@ -2850,7 +2868,7 @@ end subroutine electronicPE
 !   if ((ovlpDone == 1) .and. (hamDone == 1) .and. &
 !         & ((dimoDone == 1) .or. (doDIMO_PSCF == 0)) .and. &
 !         & ((MMDone == 1) .or. (doOPTC_PSCF == 0)) then
-!      write (6,*) "All requested integrals are already done. Skipping."
+!      write (20,*) "All requested integrals are already done. Skipping."
 !      return
 !   endif
 !
@@ -3716,7 +3734,6 @@ subroutine ortho (opCode)
          & atomNucOverlap_aid, atomMVOverlap_aid, atomPotTermOL_aid,&
          & atomDims
    use O_Orthogonalization
-   use O_Potential, only: rel
 
    ! Make sure that no funny variables are defined.
    implicit none
@@ -3733,8 +3750,11 @@ subroutine ortho (opCode)
    integer(hsize_t), dimension (1) :: attribIntDims ! Attribute dataspace dim
 
    ! Identify the index number of the current potential term in the list of
-   !   all potential terms (of all types).
-   potTermIdx = potTypes(currPotTypeNumber)%cumulAlphaSum + currAlphaNumber
+   !   all potential terms (of all types). This only needs to be done for
+   !   electron potential integrals.
+   if (opCode == 4) then
+      potTermIdx = potTypes(currPotTypeNumber)%cumulAlphaSum + currAlphaNumber
+   endif
 
    ! Orthogonalizing against the overlap matrix is unnecessary when the core
    !   dimension is zero.  However, we must still allocate some matrices for
@@ -3898,6 +3918,11 @@ end subroutine cleanUpIntegralsSCF
 subroutine secondCleanUpIntegralsSCF
 
    implicit none
+
+   ! If all integrals were skipped, then coreValeOL was never allocated.
+   if (someIntegralDone == 0) then
+      return
+   endif
 
 #ifndef GAMMA
    deallocate (coreValeOL) ! Needed in 3Terms

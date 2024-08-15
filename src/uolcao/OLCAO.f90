@@ -21,10 +21,6 @@ subroutine OLCAO
 
       call mainSCF ! The actual SCF cycle and wave function calculation.
 
-!      if (doDIMO_SCF == 1) then
-!         call dimo 
-!      endif
-
       if (doDOS_SCF == 1) then
          call dos(1)
       endif
@@ -32,6 +28,10 @@ subroutine OLCAO
       if (doBond_SCF >= 1) then
          call bond(1, doBond_SCF)
       endif
+
+!      if (doDIMO_SCF == 1) then
+!         call dimo 
+!      endif
 
       if (doOPTC_SCF >= 1) then
          !call optc(1, do_OPTC_SCF)
@@ -44,6 +44,8 @@ subroutine OLCAO
       if (doPSCF == 1) then
          !call reset
       endif
+
+      call cleanUpSCF
 
       call closeHDF5_SCF
    endif
@@ -239,8 +241,8 @@ subroutine setupSCF
    ! If the dipole moment calculations has been requested, then allocate
    !   the necessary space and do the calculation.
    if (doDIMO_SCF == 1) then
-      ! Note, that this is a three-term matrix (xyz). Consdier in the future
-      !   an option to do the XYZ independently to conserve memoer if that
+      ! Note, that this is a three-term matrix (xyz). Consider in the future
+      !   an option to do the XYZ independently to conserve memory if that
       !   becomes a problem.
       call allocateIntegralsSCF3Terms(coreDim,valeDim,numKPoints)
 
@@ -533,32 +535,66 @@ subroutine mainSCF
 !   call h5close_f (hdferr)
 !   if (hdferr /= 0) stop 'Failed to close the HDF5 interface.'
 
-   ! Close the output files
-   close (7)
-   close (8)
-   close (13)
-   close (14)
-   close (20)
+end subroutine mainSCF
 
-   ! Deallocate all the other as of yet un-deallocated arrays.
-   call cleanUpAtomTypes
-   call cleanUpAtomSites
-   call cleanUpPotTypes
-   call cleanUpPotSites
-   call cleanUpKPoints
-   call cleanUpExchCorr
-   call cleanUpPotential
 
-   ! Because we already deallocated in makeValence Rho we only deallocate
-   !   if necessary.
-   if ((doDIMO_SCF == 0) .and. (doForce_SCF == 0)) then
-      call cleanUpSecularEqn
+subroutine dos(inSCF)
+
+   ! Use necessary modules.
+   use O_TimeStamps
+   use O_Potential,       only: spin
+   use O_DOS,             only: computeDOS
+   use O_KPoints,         only: numKPoints
+   use O_Input,           only: numStates, parseInput
+   use O_Populate,        only: occupiedEnergy, populateStates
+!   use O_PSCFBandHDF5,    only: accessPSCFBandHDF5, closeAccessPSCFBandHDF5
+   use O_SecularEquation, only: energyEigenValues, &
+         & shiftEnergyEigenValues
+!   use O_SecularEquation, only: energyEigenValues, readEnergyEigenValuesBand, &
+!         & shiftEnergyEigenValues
+
+
+   ! Make sure that no funny variables are defined.
+   implicit none
+
+   ! Declare passed parameters.
+   integer, intent(in) :: inSCF
+
+   ! Open the DOS files that will be written to.  If a spin polarized
+   !   calculation is being done, then 60, 70, 80 hold spin up and 61, 71, 81
+   !   hold spin down.  60,61=TDOS; 70,71= PDOS; 80,81=Localization Index
+   open (unit=60,file='fort.60',status='new',form='formatted')
+   open (unit=70,file='fort.70',status='new',form='formatted')
+   open (unit=80,file='fort.80',status='new',form='formatted')
+   if (spin == 2) then
+      open (unit=61,file='fort.61',status='new',form='formatted')
+      open (unit=71,file='fort.71',status='new',form='formatted')
+      open (unit=81,file='fort.81',status='new',form='formatted')
    endif
 
-   ! Open file to signal completion of the program to the calling olcao script.
-   open (unit=2,file='fort.2',status='unknown')
 
-end subroutine mainSCF
+   ! Populate the electron states to find the highest occupied state (Fermi
+   !   energy for metals).
+   call populateStates
+
+   ! Shift the energy eigen values according to the highest occupied state.
+   call shiftEnergyEigenValues(occupiedEnergy,numStates)
+
+   ! Call the DOS subroutine to compute the total and partial density of states
+   !   as well as the localization index.
+   call computeDOS(inSCF)
+
+   ! Close the output files.
+   close(60)
+   close(70)
+   close(80)
+   if (spin == 2) then
+      close(61)
+      close(71)
+      close(81)
+   endif
+
+end subroutine dos
 
 
 subroutine bond (inSCF, doBond)
@@ -587,27 +623,14 @@ subroutine bond (inSCF, doBond)
 
 
    ! Open the bond files that will be written to.
-   if (inSCF == 1) then
-      open (unit=10,file='fort-scf.10',status='new',form='formatted')
+   open (unit=10,file='fort.10',status='new',form='formatted')
+   if (spin == 2) then
+      open (unit=11,file='fort.11',status='new',form='formatted')
+   endif
+   if (doBond == 2) then
+      open (unit=12,file='fort.12',status='new',form='formatted')
       if (spin == 2) then
-         open (unit=11,file='fort-scf.11',status='new',form='formatted')
-      endif
-      if (doBond == 2) then
-         open (unit=12,file='fort-scf.12',status='new',form='formatted')
-         if (spin == 2) then
-            open (unit=13,file='fort-scf.13',status='new',form='formatted')
-         endif
-      endif
-   else
-      open (unit=10,file='fort-pscf.10',status='new',form='formatted')
-      if (spin == 2) then
-         open (unit=11,file='fort-pscf.11',status='new',form='formatted')
-      endif
-      if (doBond == 2) then
-         open (unit=12,file='fort-pscf.12',status='new',form='formatted')
-         if (spin == 2) then
-            open (unit=13,file='fort-pscf.13',status='new',form='formatted')
-         endif
+         open (unit=13,file='fort.13',status='new',form='formatted')
       endif
    endif
 
@@ -641,7 +664,7 @@ subroutine bond (inSCF, doBond)
    if (spin == 2) then
       close (11)
    endif
-   if (doBond == 2) then
+   if (doBond == 2) then ! Close the 3-center files.
       close (12)
       if (spin == 2) then
          close (13)
@@ -649,77 +672,6 @@ subroutine bond (inSCF, doBond)
    endif
 
 end subroutine bond
-
-
-subroutine dos(inSCF)
-
-   ! Use necessary modules.
-   use O_TimeStamps
-   use O_Potential,       only: spin
-   use O_DOS,             only: computeDOS
-   use O_KPoints,         only: numKPoints
-   use O_Input,           only: numStates, parseInput
-   use O_Populate,        only: occupiedEnergy, populateStates
-!   use O_PSCFBandHDF5,    only: accessPSCFBandHDF5, closeAccessPSCFBandHDF5
-   use O_SecularEquation, only: energyEigenValues, &
-         & shiftEnergyEigenValues
-!   use O_SecularEquation, only: energyEigenValues, readEnergyEigenValuesBand, &
-!         & shiftEnergyEigenValues
-
-
-   ! Make sure that no funny variables are defined.
-   implicit none
-
-   ! Declare passed parameters.
-   integer, intent(in) :: inSCF
-
-   ! Open the DOS files that will be written to.  If a spin polarized
-   !   calculation is being done, then 60, 70, 80 hold spin up and 61, 71, 81
-   !   hold spin down.  60,61=TDOS; 70,71= PDOS; 80,81=Localization Index
-   if (inSCF == 1) then
-      open (unit=60,file='fort-scf.60',status='new',form='formatted')
-      open (unit=70,file='fort-scf.70',status='new',form='formatted')
-      open (unit=80,file='fort-scf.80',status='new',form='formatted')
-      if (spin == 2) then
-         open (unit=61,file='fort-scf.61',status='new',form='formatted')
-         open (unit=71,file='fort-scf.71',status='new',form='formatted')
-         open (unit=81,file='fort-scf.81',status='new',form='formatted')
-      endif
-   else
-      open (unit=60,file='fort-pscf.60',status='new',form='formatted')
-      open (unit=70,file='fort-pscf.70',status='new',form='formatted')
-      open (unit=80,file='fort-pscf.80',status='new',form='formatted')
-      if (spin == 2) then
-         open (unit=61,file='fort-pscf.61',status='new',form='formatted')
-         open (unit=71,file='fort-pscf.71',status='new',form='formatted')
-         open (unit=81,file='fort-pscf.81',status='new',form='formatted')
-      endif
-   endif
-
-
-   ! Populate the electron states to find the highest occupied state (Fermi
-   !   energy for metals).
-   call populateStates
-
-   ! Shift the energy eigen values according to the highest occupied state.
-   call shiftEnergyEigenValues(occupiedEnergy,numStates)
-
-   ! Call the DOS subroutine to compute the total and partial density of states
-   !   as well as the localization index.
-   call computeDOS(inSCF)
-
-   ! Close the output files.
-   close(60)
-   close(70)
-   close(80)
-   if (spin == 2) then
-      close(61)
-      close(71)
-      close(81)
-   endif
-
-end subroutine dos
-
 
 
 !subroutine field(inSCF)
@@ -812,28 +764,15 @@ end subroutine dos
 !   !   calculations, we do not need the optical conductivity. Also note, for
 !   !   Sigma(E) calculations the 50,51 units are the Sigma(E) itself, not the
 !   !   imaginary dielectric function (epsilon2).
-!   if (inSCF == 1) then
-!      if (doOPTC /= 2) then
-!         open (unit=40,file='fort-scf.40',status='new',form='formatted')
+!   if (doOPTC /= 2) then
+!      open (unit=40,file='fort.40',status='new',form='formatted')
+!   endif
+!   open (unit=50,file='fort.50',status='new',form='formatted')
+!   if (spin == 2) then
+!      if (doOPTC /= 1) then
+!         open (unit=41,file='fort.41',status='new',form='formatted')
 !      endif
-!      open (unit=50,file='fort-scf.50',status='new',form='formatted')
-!      if (spin == 2) then
-!         if (doOPTC /= 1) then
-!            open (unit=41,file='fort-scf.41',status='new',form='formatted')
-!         endif
-!         open (unit=51,file='fort-scf.51',status='new',form='formatted')
-!      endif
-!   else
-!      if (doOPTC /= 2) then
-!         open (unit=40,file='fort-pscf.40',status='new',form='formatted')
-!      endif
-!      open (unit=50,file='fort-pscf.50',status='new',form='formatted')
-!      if (spin == 2) then
-!         if (doOPTC /= 1) then
-!            open (unit=41,file='fort-pscf.41',status='new',form='formatted')
-!         endif
-!         open (unit=51,file='fort-pscf.51',status='new',form='formatted')
-!      endif
+!      open (unit=51,file='fort.51',status='new',form='formatted')
 !   endif
 !
 !
@@ -912,6 +851,49 @@ end subroutine dos
 !   call closeMOMEPSCFIntgHDF5
 !
 !end subroutine addOnMOME
+
+
+subroutine cleanUpSCF
+
+   ! Use necessary modules.
+   use O_CommandLine, only: doDIMO_SCF, doForce_SCF
+   use O_Potential, only:  cleanUpPotential
+   use O_AtomicSites, only: cleanUpAtomSites
+   use O_AtomicTypes, only: cleanUpAtomTypes
+   use O_PotSites, only: cleanUpPotSites
+   use O_PotTypes, only: cleanUpPotTypes
+   use O_SecularEquation, only: cleanUpSecularEqn
+   use O_KPoints, only: cleanUpKPoints
+   use O_ExchangeCorrelation, only: cleanUpExchCorr
+
+   implicit none
+
+   ! Close the output files
+   close (7)
+   close (8)
+   close (13)
+   close (14)
+   close (20)
+
+   ! Deallocate all the other as of yet un-deallocated arrays.
+   call cleanUpAtomTypes
+   call cleanUpAtomSites
+   call cleanUpPotTypes
+   call cleanUpPotSites
+   call cleanUpKPoints
+   call cleanUpExchCorr
+   call cleanUpPotential
+
+   ! Because we already deallocated in makeValence Rho we only deallocate
+   !   if necessary.
+   if ((doDIMO_SCF == 0) .and. (doForce_SCF == 0)) then
+      call cleanUpSecularEqn
+   endif
+
+   ! Open file to signal completion of the program to the calling olcao script.
+   open (unit=2,file='fort.2',status='unknown')
+
+end subroutine cleanUpSCF
 
 
 end module O_OLCAO

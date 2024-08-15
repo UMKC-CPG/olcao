@@ -168,7 +168,7 @@ subroutine gaussOverlapDM
          & attribIntDims,hdferr)
    if (hdferr /= 0) stop 'Failed to read atom DM overlap status.'
    if (hdf5Status == 1) then
-      write(6,*) "Three-center DM overlap already exists. Skipping."
+      write(20,*) "Three-center DM overlap already exists. Skipping."
       call timeStampEnd(29)
       call h5aclose_f(atomDMOverlap_aid,hdferr)
       if (hdferr /= 0) stop 'Failed to close atom DM overlap status.'
@@ -614,7 +614,7 @@ subroutine gaussOverlapMM
          & attribIntDims,hdferr)
    if (hdferr /= 0) stop 'Failed to read atom MM overlap status.'
    if (hdf5Status == 1) then
-      write(6,*) "Two-center MM overlap already exists. Skipping."
+      write(20,*) "Two-center MM overlap already exists. Skipping."
       call timeStampEnd(12)
       call h5aclose_f(atomMMOverlap_aid,hdferr)
       if (hdferr /= 0) stop 'Failed to close atom MM overlap status.'

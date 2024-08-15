@@ -55,10 +55,10 @@ class ScriptSettings():
 
 def init_environment():
     """Define default values for the integral equations by pulling them from
-    the resource control file $OLCAO_DIR/.olcao/osrecurintgrc_makenum.py."""
+    the resource control file $OLCAO_RC/osrecurintgrc_makenum.py."""
 
     # Read default variables from the resource control file.
-    sys.path.insert(1, os.getenv('OLCAO_DIR') + "/.olcao")
+    sys.path.insert(1, os.getenv('OLCAO_RC'))
     from osrecurintg_makenumrc import parameters_and_defaults
 
     # Create and return an object containing the script settings.

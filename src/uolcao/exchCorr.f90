@@ -446,7 +446,7 @@ subroutine makeECMeshAndOverlap
          & attribIntDims,hdferr)
    if (hdferr /= 0) stop 'Failed to read exch corr group status.'
    if (hdf5Status == 1) then
-      write(6,*) "Exch corr group results already exist. Skipping."
+      write(20,*) "Exch corr group results already exist. Skipping."
       return
    endif
 

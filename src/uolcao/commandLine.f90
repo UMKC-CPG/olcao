@@ -21,37 +21,43 @@ module O_CommandLine
    integer :: doPSCF
 
    ! Choice of basis for SCF and PSCF stages.
-   integer :: basisCode_SCF ! 1=MB; 2=FB; 3=EB
-   integer :: basisCode_PSCF ! 1=MB; 2=FB; 3=EB
+   integer :: basisCode_SCF ! 0=NO; 1=MB; 2=FB; 3=EB
+   integer :: basisCode_PSCF ! 0=NO; 1=MB; 2=FB; 3=EB
 
    ! Core electron excitation control paramters.
    integer :: excitedQN_n ! 1, 2, 3, 4, ...
    integer :: excitedQN_l ! 0=s, 1=p, 2=d, 3=f, ...
 
+   ! Overall job ID.
+   integer :: jobID
+
    ! Properties to compute in the SCF stage.
-   integer :: doDIMO_SCF ! Include dipole moment matrix elements.
    integer :: doDOS_SCF  ! Include DOS/PDOS calculation.
    integer :: doBond_SCF ! Include bond order calculation.
-   integer :: doForce_SCF ! Include computation of the force between atoms.
-   integer :: doField_SCF ! Compute a charge, potential, or wave fn field.
-   integer :: doOPTC_SCF ! Include optical properties. 0=none; 1=valence band
+   integer :: doDIMO_SCF ! Include dipole moment matrix elements.
+   integer :: doOPTC_SCF ! Include optical properties. -1=none; 1=valence band
          ! optical properties; 2=core level XANES/ELNES; 3=sigma(E) electronic
          ! contribution to thermal conductivity; 4=non-linear valence band
          ! optical properties.
+   integer :: doSYKP_SCF ! Shift to using the defined path of high-symmetry
+         ! k-points (1) AND produce a band structure diagram (2), AND include
+         ! partial band structure data (3).
+   integer :: doForce_SCF ! Include computation of the force between atoms.
+   integer :: doField_SCF ! Compute a charge, potential, or wave fn field.
 
    ! Properties to compute in the PSCF stage.
+   integer :: doDOS_PSCF  ! Include DOS/PDOS calculation.
+   integer :: doBond_PSCF ! Include bond order calculation.
+   integer :: doDIMO_PSCF ! Include dipole moment matrix elements.
+   integer :: doOPTC_PSCF ! Include optical properties. -1=none; 1=valence band
+         ! optical properties; 2=core level XANES/ELNES; 3=sigma(E) electronic
+         ! contribution to thermal conductivity; 4=non-linear valence band
+         ! optical properties.
    integer :: doSYKP_PSCF ! Shift to using the defined path of high-symmetry
          ! k-points (1) AND produce a band structure diagram (2), AND include
          ! partial band structure data (3).
-   integer :: doDIMO_PSCF ! Include dipole moment matrix elements.
-   integer :: doDOS_PSCF  ! Include DOS/PDOS calculation.
-   integer :: doBond_PSCF ! Include bond order calculation.
    integer :: doForce_PSCF ! Include computation of the force between atoms.
    integer :: doField_PSCF ! Compute a charge, potential, or wave fn field.
-   integer :: doOPTC_PSCF ! Include optical properties. 0=none; 1=valence band
-         ! optical properties; 2=core level XANES/ELNES; 3=sigma(E) electronic
-         ! contribution to thermal conductivity; 4=non-linear valence band
-         ! optical properties.
 
    ! Properties to compute based only on geometry and not the wave function.
    integer :: doLoEn ! Compute a metric that quantifies the local environment.
@@ -91,96 +97,7 @@ subroutine parseCommandLine
 
    call readExcitedQN
 
-   ! Read a flag indicating that a dipole moment calculation should be tacked
-   !   on to the end of the SCF iterations.
-   call getarg(nextArg,commandBuffer)
-   nextArg = nextArg + 1
-   read (commandBuffer,*) doDIMO_SCF
-   write (20,*) "doDIMO_SCF = ",doDIMO_SCF
-
-   ! Read a flag indicating that a DOS calculation should be tacked on to the
-   !   end of the SCF iterations.
-   call getarg(nextArg,commandBuffer)
-   nextArg = nextArg + 1
-   read (commandBuffer,*) doDOS_SCF
-   write (20,*) "doDOS_SCF = ",doDOS_SCF
-
-   ! Read a flag indicating that a BOND calculation should be tacked on to the
-   !   end of the SCF iterations.
-   call getarg(nextArg,commandBuffer)
-   nextArg = nextArg + 1
-   read (commandBuffer,*) doBond_SCF
-   write (20,*) "doBond_SCF = ",doBond_SCF
-
-   ! Read a flag indicating that a Force calculation should be tacked on to the
-   !   end of the SCF iterations.
-   call getarg(nextArg,commandBuffer)
-   nextArg = nextArg + 1
-   read (commandBuffer,*) doForce_SCF
-   write (20,*) "doForce_SCF = ",doForce_SCF
-
-   ! Read a flag indicating that a field calculation should be tacked on to the
-   !   end of the SCF iterations.
-   call getarg(nextArg,commandBuffer)
-   nextArg = nextArg + 1
-   read (commandBuffer,*) doField_SCF
-   write (20,*) "doField_SCF = ",doField_SCF
-
-   ! Read a flag indicating that an optical properties calculation (of some
-   !   kind) should be tacked on to the end of the SCF iterations. 
-   call getarg(nextArg,commandBuffer)
-   nextArg = nextArg + 1
-   read (commandBuffer,*) doOPTC_SCF
-   write (20,*) "doOPTC_SCF = ",doOPTC_SCF
-
-   ! Read a flag to request a PSCF dipole moment calculation.
-   call getarg(nextArg,commandBuffer)
-   nextArg = nextArg + 1
-   read (commandBuffer,*) doDIMO_PSCF
-   write (20,*) "doDIMO_PSCF = ",doDIMO_PSCF
-
-   ! Read a flag to request a PSCF DOS calculation.
-   call getarg(nextArg,commandBuffer)
-   nextArg = nextArg + 1
-   read (commandBuffer,*) doDOS_PSCF
-   write (20,*) "doDOS_PSCF = ",doDOS_PSCF
-
-   ! Read a flag to request a PSCF bond order and Q* calculation.
-   call getarg(nextArg,commandBuffer)
-   nextArg = nextArg + 1
-   read (commandBuffer,*) doBond_PSCF
-   write (20,*) "doBond_PSCF = ",doBond_PSCF
-
-   ! Read a flag to request a PSCF Force calculation.
-   call getarg(nextArg,commandBuffer)
-   nextArg = nextArg + 1
-   read (commandBuffer,*) doForce_PSCF
-   write (20,*) "doForce_PSCF = ",doForce_PSCF
-
-   ! Read a flag to request a PSCF field calculation.
-   call getarg(nextArg,commandBuffer)
-   nextArg = nextArg + 1
-   read (commandBuffer,*) doField_PSCF
-   write (20,*) "doField_PSCF = ",doField_PSCF
-
-   ! Read a flag to request some kind of PSCF optical properties calculation.
-   call getarg(nextArg,commandBuffer)
-   nextArg = nextArg + 1
-   read (commandBuffer,*) doOPTC_PSCF
-   write (20,*) "doOPTC_PSCF = ",doOPTC_PSCF
-
-   ! Read a flag to request a PSCF symmetric band structure calculation.
-   call getarg(nextArg,commandBuffer)
-   nextArg = nextArg + 1
-   read (commandBuffer,*) doSYKP_PSCF
-   write (20,*) "doSYKP_PSCF = ",doSYKP_PSCF
-
-   ! Read a flag to request a local environment characterization calculation.
-   !   When done by itself, this is neither an SCF nor a PSCF calculation.
-   call getarg(nextArg,commandBuffer)
-   nextArg = nextArg + 1
-   read (commandBuffer,*) doLoEn
-   write (20,*) "doLoEn = ",doLoEn
+   call readJobID
 
    ! Read a flag to request that any XYZ based calculation be done in serial.
    call getarg(nextArg,commandBuffer)
@@ -203,7 +120,7 @@ subroutine readBasisCodes
    character*25 :: commandBuffer
 
    ! Get the command line argument that defines the basis set to use for the
-   !   SCF portion of the calculation.  1=MB; 2=FB; 3=EB
+   !   SCF portion of the calculation.  0=NO; 1=MB; 2=FB; 3=EB
    call getarg(nextArg,commandBuffer)
    nextArg = nextArg + 1
    read (commandBuffer,*) basisCode_SCF
@@ -216,7 +133,7 @@ subroutine readBasisCodes
 
    ! Record the basis code in the output.
    write (20,*) "basisCode_SCF = ",basisCode_SCF
-   write (20,*) "1=MB; 2=FB; 3=EB"
+   write (20,*) "0=NO; 1=MB; 2=FB; 3=EB"
    write (20,*)
 
    ! Get the command line argument that defines the basis set to use for the
@@ -233,7 +150,7 @@ subroutine readBasisCodes
 
    ! Record the basis code in the output.
    write (20,*) "basisCode_PSCF = ",basisCode_PSCF
-   write (20,*) "1=MB; 2=FB; 3=EB"
+   write (20,*) "0=NO; 1=MB; 2=FB; 3=EB"
    write (20,*)
 
 end subroutine readBasisCodes
@@ -276,6 +193,90 @@ subroutine readExcitedQN
 end subroutine readExcitedQN
 
 
+subroutine readJobID
+
+   ! Make sure that nothing funny is declared.
+   implicit none
+
+   ! Define the local variables that will be used to parse the command line.
+   character*25 :: commandBuffer
+
+   ! Read a flag indicating that a dipole moment calculation should be tacked
+   !   on to the end of the SCF iterations.
+   call getarg(nextArg,commandBuffer)
+   nextArg = nextArg + 1
+   read (commandBuffer,*) jobID
+   write (20,*) "jobID = ",jobID
+
+   if (jobID == 0) then
+      write (20,*) "Doing SCF Total Energy Only"
+   elseif (jobID == 101) then
+      doDOS_SCF = 1
+      write (20,*) "Doing SCF Density of States"
+   elseif (jobID == 102) then
+      doBond_SCF = 1
+      write (20,*) "Doing SCF Bond Order and Q*"
+   elseif (jobID == 103) then
+      doDIMO_SCF = 1
+      write (20,*) "Doing SCF Dipole Moment"
+   elseif (jobID == 104) then
+      doOPTC_SCF = 1
+      write (20,*) "Doing SCF Valence Band Optical Properties"
+   elseif (jobID == 105) then
+      doOPTC_SCF = 2
+      write (20,*) "Doing SCF Photo-Absorption Cross Section"
+   elseif (jobID == 106) then
+      doOPTC_SCF = 3
+      write (20,*) "Doing SCF Non-Linear Optical Properties"
+   elseif (jobID == 107) then
+      doOPTC_SCF = 4
+      write (20,*) "Doing SCF Sigma(E)"
+   elseif (jobID == 108) then
+      doSYKP_SCF = 1
+      write (20,*) "Doing SCF Symmetric Band Structure"
+   elseif (jobID == 109) then
+      doForce_SCF = 1
+      write (20,*) "Doing SCF Force"
+   elseif (jobID == 110) then
+      doField_SCF = 1
+      write (20,*) "Doing SCF Field"
+   elseif (jobID == 201) then
+      doDOS_PSCF = 1
+      write (20,*) "Doing PSCF Density of States"
+   elseif (jobID == 202) then
+      doBond_PSCF = 1
+      write (20,*) "Doing PSCF Bond Order and Q*"
+   elseif (jobID == 203) then
+      doDIMO_PSCF = 1
+      write (20,*) "Doing PSCF Dipole Moment"
+   elseif (jobID == 204) then
+      doOPTC_PSCF = 1
+      write (20,*) "Doing PSCF Valence Band Optical Properties"
+   elseif (jobID == 205) then
+      doOPTC_PSCF = 2
+      write (20,*) "Doing PSCF Photo-Absorption Cross Section"
+   elseif (jobID == 206) then
+      doOPTC_PSCF = 3
+      write (20,*) "Doing PSCF Non-Linear Optical Properties"
+   elseif (jobID == 207) then
+      doOPTC_PSCF = 4
+      write (20,*) "Doing PSCF Sigma(E)"
+   elseif (jobID == 208) then
+      doSYKP_PSCF = 1
+      write (20,*) "Doing PSCF Symmetric Band Structure"
+   elseif (jobID == 209) then
+      doForce_PSCF = 1
+      write (20,*) "Doing PSCF Force"
+   elseif (jobID == 210) then
+      doField_PSCF = 1
+      write (20,*) "Doing PSCF Field"
+   elseif (jobID == 301) then
+      doLoEn = 1
+      write (20,*) "Doing Local Environment"
+   endif
+
+end subroutine readJobID
+
 
 subroutine initCLP
 
@@ -292,15 +293,20 @@ subroutine initCLP
    doPSCF          = -1
    excitedQN_n     = -1
    excitedQN_l     = -1
-   doDIMO_SCF      = -1
    doDOS_SCF       = -1
    doBond_SCF      = -1
+   doDIMO_SCF      = -1
    doOptc_SCF      = -1
-   doDIMO_PSCF     = -1
+   doSYKP_SCF      = -1
+   doForce_SCF     = -1
+   doField_SCF     = -1
    doDOS_PSCF      = -1
    doBond_PSCF     = -1
+   doDIMO_PSCF     = -1
    doOptc_PSCF     = -1
    doSYKP_PSCF     = -1
+   doForce_PSCF    = -1
+   doField_PSCF    = -1
    serialXYZ       = -1
    doLoEn          = -1
 

@@ -48,6 +48,7 @@ subroutine initHDF5_SCF (maxNumRayPoints, numStates)
    use O_SCFEigValHDF5
    use O_SCFEigVecHDF5
    use O_SCFPotRhoHDF5
+   use O_CommandLine, only: excitedQN_n, excitedQN_l, basisCode_SCF
 
    ! Make sure that no funny variables are defined.
    implicit none
@@ -59,6 +60,8 @@ subroutine initHDF5_SCF (maxNumRayPoints, numStates)
    ! Declare local variables.
    integer :: hdferr
    logical :: file_exists
+   character*14 :: fileName
+   character*2 :: edge
 
    ! Log the time we start to setup the SCF HDF5 files.
    call timeStampStart(6)
@@ -66,6 +69,31 @@ subroutine initHDF5_SCF (maxNumRayPoints, numStates)
    ! Initialize the Fortran 90 HDF5 interface.
    call h5open_f(hdferr)
    if (hdferr < 0) stop 'Failed to open HDF library'
+
+   ! Identify the file name of the hdf5 file we need to create/open.
+   if (excitedQN_n == 0) then
+      write(edge,fmt="(a)") "gs"
+   else
+      if (excitedQN_l == 0) then
+         write(edge,fmt="(i1,a1)") excitedQN_n, "s"
+      elseif (excitedQN_l == 1) then
+         write(edge,fmt="(i1,a1)") excitedQN_n, "p"
+      elseif (excitedQN_l == 2) then
+         write(edge,fmt="(i1,a1)") excitedQN_n, "d"
+      elseif (excitedQN_l == 3) then
+         write(edge,fmt="(i1,a1)") excitedQN_n, "f"
+      elseif (excitedQN_l == 4) then
+         write(edge,fmt="(i1,a1)") excitedQN_n, "g"
+      endif
+   endif
+   if (basisCode_SCF == 1) then
+      write(fileName,fmt="(a2,a12)") edge,"_scf-mb.hdf5"
+   elseif (basisCode_SCF == 2) then
+      write(fileName,fmt="(a2,a12)") edge,"_scf-fb.hdf5"
+   elseif (basisCode_SCF == 3) then
+      write(fileName,fmt="(a2,a12)") edge,"_scf-eb.hdf5"
+   endif
+
 
    ! Create the property list for the scf hdf5 file and turn off
    !   chunk caching.
@@ -78,16 +106,16 @@ subroutine initHDF5_SCF (maxNumRayPoints, numStates)
    if (hdferr /= 0) stop 'Failed to set scf plid cache settings.'
 
    ! Determine if an HDF5 file already exists for this calculation.
-   inquire (file="scf-temp.hdf5", exist=file_exists)
+   inquire (file=fileName, exist=file_exists)
 
    ! If it does, then access the existing file. If not, then create one.
    if (file_exists .eqv. .true.) then
       ! We are continuing a previous calculation.
 
       ! Open the HDF5 file for reading / writing.
-      call h5fopen_f ("scf-temp.hdf5",H5F_ACC_RDWR_F,scf_fid,hdferr,&
+      call h5fopen_f (fileName,H5F_ACC_RDWR_F,scf_fid,hdferr,&
             & scf_plid)
-      if (hdferr /= 0) stop 'Failed to open scf-temp.hdf5 file.'
+      if (hdferr /= 0) stop 'Failed to open scf hdf5 file.'
 
       ! Access the groups of the HDF5 file.
       call accessSCFIntegralHDF5 (scf_fid)
@@ -102,7 +130,7 @@ subroutine initHDF5_SCF (maxNumRayPoints, numStates)
 
       ! Create the HDF5 file that will hold all the computed results. This
       !   uses the default file creation and file access properties.
-      call h5fcreate_f ("scf-temp.hdf5",H5F_ACC_EXCL_F,scf_fid,hdferr,&
+      call h5fcreate_f (fileName,H5F_ACC_EXCL_F,scf_fid,hdferr,&
             & H5P_DEFAULT_F,scf_plid)
       if (hdferr /= 0) stop 'Failed to create scf-temp.hdf5 file.'
 

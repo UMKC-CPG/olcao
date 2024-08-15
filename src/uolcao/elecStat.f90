@@ -170,7 +170,7 @@ subroutine neutralAndNuclearQPot
          & attribIntDims,hdferr)
    if (hdferr /= 0) stop 'Failed to read pot OL and local Q status.'
    if (hdf5Status == 1) then
-      write(6,*) "Pot OL and local Q electrostatics already exists. Skipping."
+      write(20,*) "Pot OL and local Q electrostatics already exists. Skipping."
       return
    endif
 
@@ -767,7 +767,7 @@ subroutine residualQ
          & attribIntDims,hdferr)
    if (hdferr /= 0) stop 'Failed to read non-local residual Q status.'
    if (hdf5Status == 1) then
-      write(6,*) "Non-local residual Q electrostatics exists. Skipping."
+      write(20,*) "Non-local residual Q electrostatics exists. Skipping."
       call h5aclose_f(nonLocalResidualQ_aid,hdferr)
       if (hdferr /= 0) stop 'Failed to close non-local residual Q status.'
       return
