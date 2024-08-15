@@ -693,13 +693,13 @@ def read_data_headers(settings):
 
 def print_veusz_header(settings):
     with open(settings.outfile, "w") as s:
-        s.write("""#!/usr/bin/env python
+        s.write("""#!/usr/bin/env python3
 """)
 
 
 def print_mpl_header(settings):
     with open(settings.outfile, "w") as s:
-        s.write("""#!/usr/bin/env python
+        s.write("""#!/usr/bin/env python3
 
 import matplotlib.pyplot as plt
 import pandas as pd
