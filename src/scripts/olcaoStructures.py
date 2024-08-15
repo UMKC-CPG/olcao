@@ -368,7 +368,7 @@ class olcaoDS():
   
     # Create the temp directory if it does not already exist
     if (not os.path.exists(self.env.otemp)):
-        systring = self.env.obin + '/mkdirhier ' + self.env.otemp
+        systring = self.env.obin + '/mkdir -p ' + self.env.otemp
         os.system(systring)
   
     # If a link to the temp directory does not yet exist, then create one.

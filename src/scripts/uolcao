@@ -880,7 +880,7 @@ sub initDirectories
 
    # Create the temp directory if it does not already exist.
    if (! -e "$temp")
-      {system ("$bin/mkdirhier $temp");}
+      {system ("mkdir -p $temp");}
 
    # If a link to the temp directory does not yet exist, then create one.  If a
    #   link already exists, but points to the wrong place, then rename the

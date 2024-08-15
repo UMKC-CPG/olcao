@@ -695,7 +695,7 @@ sub projHomeTemp
 
    # create the directory if it doesn't already exist
    if (! -e "$tempprojhome")
-      {system ("$bin/mkdirhier $tempprojhome");}
+      {system ("mkdir -p $tempprojhome");}
 
 }
 
@@ -872,7 +872,7 @@ sub initDirectories
 
    # Create the temp directory if it does not already exist.
    if (! -e "$temp")
-      {system ("$bin/mkdirhier $temp");}
+      {system ("mkdir -p $temp");}
    
 
    # If a link to the temp directory does not yet exist, then create one.  If a

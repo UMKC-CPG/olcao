@@ -5,7 +5,7 @@ message("At the complex uOLCAO application.")
 
 # Library for gaussIntegrals.f90
 add_library(uGaussIntegrals STATIC ../../kinds.f90 ../../constants.f90
-   ../gaussIntegrals.f90 ../gaussIntegrals.vec.f90)
+   ../gaussIntegrals.f90)
 
 #add_executable(uOLCAO ../../kinds.f90 ../../constants.f90
 #   ../../elementData.f90 ../../readData.f90 ../stringSubs.f90 ../mathSubs.f90
