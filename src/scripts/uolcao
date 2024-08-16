@@ -666,7 +666,7 @@ sub parseCLP
 
    # Record the command line used to run this job.
    open (COMMANDLINE,">>command");
-   print COMMANDLINE "olcao ";
+   print COMMANDLINE "uolcao ";
    foreach $argument (0..$#ARGV)
       {print COMMANDLINE "$ARGV[$argument] ";}
    print COMMANDLINE "\n";
