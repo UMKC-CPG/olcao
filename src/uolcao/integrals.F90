@@ -2298,7 +2298,9 @@ subroutine elecPotGaussOverlap
 
       do j = 1, numAlphas
 
-         ! Increment the counter of the number of total iterations.
+         ! Increment the counter of the number of total iterations. I.e.,
+         !   keep track of which potential term we are working on out of all
+         !   potential terms in the system (potDim).
          currentIterCount = currentIterCount + 1
 
          ! Determine if this calculation has already been completed by a

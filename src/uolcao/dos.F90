@@ -794,6 +794,7 @@ integer :: m
       ! Begin recording the results to disk.
 
       ! Record the total system DOS, converting the scale to eV.
+      write (59+h,fmt="(a14,a14)") "    ENERGY(eV)", "          TDOS"
       do i = 1, numEnergyPoints
          write (59+h,fmt="(f14.4,f14.6)") energyScale(i) * hartree,&
                & totalSystemDos(i)
