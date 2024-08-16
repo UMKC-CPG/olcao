@@ -2288,21 +2288,6 @@ subroutine elecPotGaussOverlap
       currPotTypeNumber = potSites(i)%potTypeAssn
       numAlphas         = potTypes(currPotTypeNumber)%numAlphas
 
-      ! Determine if this calculation has already been completed by a previous
-      !   OLCAO execution.
-      hdf5Status = 0
-      attribIntDims(1) = 1
-      call h5aread_f(atomPotTermOL_aid(currPotTypeNumber),H5T_NATIVE_INTEGER,&
-            & hdf5Status,attribIntDims,hdferr)
-      if (hdferr /= 0) stop 'Failed to read atom pot term OL status.'
-      if (hdf5Status == 1) then
-         write(20,*) "Three-center pot term OL already exists. Skipping: ", &
-               & currPotTypeNumber
-         call h5aclose_f(atomPotTermOL_aid(currPotTypeNumber),hdferr)
-         if (hdferr /= 0) stop 'Failed to close atom pot term OL status.'
-         cycle
-      endif
-
       ! Initialize the anyElecPotInteraction matrix for this set of potential
       !   alphas.  The assumption is that every atom pair will have some
       !   potential interaction in every cell.  When a cell/atom/atom set is
@@ -2315,6 +2300,22 @@ subroutine elecPotGaussOverlap
 
          ! Increment the counter of the number of total iterations.
          currentIterCount = currentIterCount + 1
+
+         ! Determine if this calculation has already been completed by a
+         !   previous OLCAO execution.
+         hdf5Status = 0
+         attribIntDims(1) = 1
+         call h5aread_f(atomPotTermOL_aid(currentIterCount),&
+               & H5T_NATIVE_INTEGER,hdf5Status,attribIntDims,hdferr)
+         if (hdferr /= 0) stop 'Failed to read atom pot term OL status.'
+         if (hdf5Status == 1) then
+            write(20,*) &
+                  & "Three-center pot term OL already exists. Skipping: ", &
+                  & currentIterCount
+            call h5aclose_f(atomPotTermOL_aid(currentIterCount),hdferr)
+            if (hdferr /= 0) stop 'Failed to close atom pot term OL status.'
+            cycle
+         endif
 
          ! Record the current parameters for this iteration.
          currPotAlpha   = potTypes(currPotTypeNumber)%alphas(j)
