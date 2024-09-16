@@ -2,12 +2,11 @@ module O_OptcPrint
 
 contains
 
-subroutine printOptcResults
+subroutine printOptcResults(doOPTC)
 
    ! Import necessary data modules.
    use O_Kinds
    use O_Potential,       only: spin
-   use O_CommandLine,     only: stateSet
    use O_Lattice,         only: realCellVolume
    use O_KPoints,         only: numKPoints, kPointWeight
    use O_OptcTransitions, only: maxTransEnergy, energyMin, energyScale,&
@@ -18,6 +17,9 @@ subroutine printOptcResults
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
+
+   ! Define passed parameters.
+   integer, intent(in) :: doOPTC
 
    ! Define local variables
    integer :: i ! Loop index variables
@@ -33,12 +35,12 @@ subroutine printOptcResults
 
 
    ! Initialize variables.
-   if (stateSet == 0) then ! Standard optical properties calculation.
+   if (doOPTC == 1) then ! Standard optical properties calculation.
       sigma           = sigmaOPTC
       energyDelta     = deltaOPTC
       energyMin       = deltaOPTC ! Start as close to 0 as possible.
       numEnergyPoints = int(maxTransEnergy / energyDelta) + 1
-   else ! PACS calculation, Sigma(E) calculations never call this subroutine.
+   elseif (doOPTC == 2) then ! PACS calculation
       sigma           = sigmaPACS
       energyDelta     = deltaPACS
       ! The energyMin was already determined for PACS calculations.
@@ -164,7 +166,7 @@ subroutine printOptcResults
       ! Compute the optical conductivity broadened appropriately
       call getOptcCond (numEnergyPoints,optcCond,kPointFactor,sigma)
 
-      if (stateSet == 1) then ! Doing PACS calculation.
+      if (doOPTC == 2) then ! Doing PACS calculation.
          call printSpectrum(0,numEnergyPoints,optcCond,conversionFactor)
       else ! Do optical conductivity followed by epsilon 2.
          call printSpectrum(1,numEnergyPoints,optcCond,conversionFactor)
@@ -177,7 +179,7 @@ subroutine printOptcResults
       call getOptcCond (numEnergyPoints,optcCond,kPointFactor,sigma)
       call getOptcCondPOPTC (numEnergyPoints,optcCondPOPTC,kPointFactor,sigma)
 
-      if (stateSet == 1) then ! Doing PACS calculation.
+      if (doOPTC == 2) then ! Doing PACS calculation.
          call printSpectrum(0,numEnergyPoints,optcCond,conversionFactor)
          call printSpectrumPOPTC(0,numEnergyPoints,optcCondPOPTC,&
                & conversionFactor)

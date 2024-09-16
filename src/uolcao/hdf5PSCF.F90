@@ -33,7 +33,7 @@ module O_PSCFHDF5
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    contains
 
-subroutine initPSCFHDF5 (numStates)
+subroutine initHDF5_PSCF (numStates)
 
    ! Use necessary modules.
    use O_TimeStamps
@@ -45,6 +45,7 @@ subroutine initPSCFHDF5 (numStates)
    use O_PSCFIntegralsHDF5
    use O_PSCFEigValHDF5
    use O_PSCFEigVecHDF5
+   use O_CommandLine, only: excitedQN_n, excitedQN_l, basisCode_PSCF
 
    ! Make sure that no funny variables are defined.
    implicit none
@@ -55,6 +56,8 @@ subroutine initPSCFHDF5 (numStates)
    ! Declare local variables.
    integer :: hdferr
    logical :: file_exists
+   character*14 :: fileName
+   character*2 :: edge
 
    ! Log the time we start to setup the PSCF HDF5 files.
    call timeStampStart(31)
@@ -62,6 +65,30 @@ subroutine initPSCFHDF5 (numStates)
    ! Initialize the Fortran 90 HDF5 interface.
    call h5open_f(hdferr)
    if (hdferr < 0) stop 'Failed to open HDF library'
+
+   ! Identify the file name of the hdf5 file we need to create/open.
+   if (excitedQN_n == 0) then
+      write(edge,fmt="(a)") "gs"
+   else
+      if (excitedQN_l == 0) then
+         write(edge,fmt="(i1,a1)") excitedQN_n, "s"
+      elseif (excitedQN_l == 1) then
+         write(edge,fmt="(i1,a1)") excitedQN_n, "p"
+      elseif (excitedQN_l == 2) then
+         write(edge,fmt="(i1,a1)") excitedQN_n, "d"
+      elseif (excitedQN_l == 3) then
+         write(edge,fmt="(i1,a1)") excitedQN_n, "f"
+      elseif (excitedQN_l == 4) then
+         write(edge,fmt="(i1,a1)") excitedQN_n, "g"
+      endif
+   endif
+   if (basisCode_PSCF == 1) then
+      write(fileName,fmt="(a2,a12)") edge,"_pscf-mb.hdf5"
+   elseif (basisCode_PSCF == 2) then
+      write(fileName,fmt="(a2,a12)") edge,"_pscf-fb.hdf5"
+   elseif (basisCode_PSCF == 3) then
+      write(fileName,fmt="(a2,a12)") edge,"_pscf-eb.hdf5"
+   endif
 
    ! Create the property list for the pscf hdf5 file and turn off
    !   chunk caching.
@@ -74,20 +101,19 @@ subroutine initPSCFHDF5 (numStates)
    if (hdferr /= 0) stop 'Failed to set pscf plid cache settings.'
 
    ! Determine if an HDF5 file already exists for this calculation.
-   inquire (file="pscf-temp.hdf5", exist=file_exists)
+   inquire (file=fileName, exist=file_exists)
 
    ! If it does, then access the existing file. If not, then create one.
    if (file_exists .eqv. .true.) then
       ! We are continuing a previous calculation.
 
       ! Open the HDF5 file for reading / writing.
-      call h5fopen_f ("pscf-temp.hdf5",H5F_ACC_RDWR_F,pscf_fid,hdferr,&
-            & pscf_plid)
-      if (hdferr /= 0) stop 'Failed to open pscf-temp.hdf5 file.'
+      call h5fopen_f (fileName,H5F_ACC_RDWR_F,pscf_fid,hdferr,pscf_plid)
+      if (hdferr /= 0) stop 'Failed to open pscf hdf5 file.'
 
       ! Access the groups of the HDF5 file.
       call accessPSCFIntegralHDF5 (pscf_fid)
-      call accessPSCFEigVecHDF5 (pscf_fid,numStates)
+      call accessPSCFEigVecHDF5 (pscf_fid,attribInt_dsid,attribIntDims,numStates)
       call accessPSCFEigValHDF5 (pscf_fid,numStates)
 
    else
@@ -95,9 +121,9 @@ subroutine initPSCFHDF5 (numStates)
 
       ! Create the HDF5 file that will hold all the computed results. This
       !   uses the default file creation and file access properties.
-      call h5fcreate_f ("pscf-temp.hdf5",H5F_ACC_EXCL_F,pscf_fid,hdferr,&
+      call h5fcreate_f (fileName,H5F_ACC_EXCL_F,pscf_fid,hdferr,&
             & H5P_DEFAULT_F,pscf_plid)
-      if (hdferr /= 0) stop 'Failed to create pscf-temp.hdf5 file.'
+      if (hdferr /= 0) stop 'Failed to create pscf hdf5 file.'
 
       ! All datasets will have an attached attribute logging that the
       !   calculation has successfully completed. (Checkpointing.) Thus,
@@ -110,17 +136,17 @@ subroutine initPSCFHDF5 (numStates)
       !   order due to dependencies on potPot_dsid and others.
       call initPSCFIntegralHDF5 (pscf_fid,attribInt_dsid,attribIntDims)
       call initPSCFEigVecHDF5 (pscf_fid,attribInt_dsid,attribIntDims,numStates)
-      call initPSCFEigValHDF5 (pscf_fid,attribInt_dsid,attribIntDims,numStates)
+      call initPSCFEigValHDF5 (pscf_fid,numStates)
    endif
 
 
    ! Log the time we finish setting up the PSCF HDF5 files.
    call timeStampEnd(31)
 
-end subroutine initPSCFHDF5
+end subroutine initHDF5_PSCF
 
 
-subroutine closePSCFHDF5
+subroutine closeHDF5_PSCF
 
    ! Use the HDF5 module.
    use HDF5
@@ -149,7 +175,11 @@ subroutine closePSCFHDF5
    call h5fclose_f (pscf_fid,hdferr)
    if (hdferr /= 0) stop 'Failed to close pscf_fid.'
 
-end subroutine closePSCFHDF5
+   ! Close access to the HDF5 interface.
+   call h5close_f (hdferr)
+   if (hdferr /= 0) stop 'Failed to close the HDF5 interface.'
+
+end subroutine closeHDF5_PSCF
 
 
 end module O_PSCFHDF5

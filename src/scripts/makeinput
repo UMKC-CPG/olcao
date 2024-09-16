@@ -14,7 +14,7 @@ sub printHelp
 #                 [-subbasis \$basisSubOut \$basisSubIn [-subbasis ...]]
 #                 [-subpot \$potSubOut \$potSubIn [-subpot ...]]
 #                 [[[-scfkp \$a \$b \$c] [-pscfkp \$a \$b \$c]
-#                   [-altkp \$a \$b \$c]] | [-kp \$a \$b \$c]]
+#                   | [-kp \$a \$b \$c]]
 #                 [-kpshift \$a \$b \$c]
 #                 [-printbz]
 #                 [-compvis]
@@ -158,10 +158,6 @@ sub printHelp
 #  kpoints given by the path associated with the crystalline cell or the -cell
 #  parameter if it was given to request an explicit path.)
 
-#The -altkp is the same as the -scfkp option.  It defines an alternate set of
-#  kpoints that can be requested.  This is sometimes used for the sigma E
-#  calculation where a finer kpoint mesh is desired.
-
 #The -kp option will apply the same kpoint selection to the scf, alt, and
 #  post-scf kpoints.
 
@@ -272,7 +268,6 @@ sub printHelp
 #   -potdb:        The default is \$OLCAO_DATA/atomicPDB
 #   -scfkp:        One general kpoint is used for all scf calculations.
 #   -pscfkp:       One general kpoint is used for all pscf calculations.
-#   -altkp:        No alternate kpoint input file is created.
 #   -kp:           One general kpoint is used for all scf and pscf calculations.
 #   -kpshift:      Use the default shift for each lattice type.
 #   -reduce:       This is off by default.  The default sub parameters are:
@@ -348,7 +343,7 @@ my $olcao_cmi;   # Made by makeinput from $olcao_skl. Explicit cart coords.
 my $olcao_in;    # Primary input file for all OLCAO Fortran90 programs.
 my $potential;   # Initial potential function for SCF.
 my $spinPotential; # Initial spin polarized potential function for SCF.
-my @kpGroupFile; # List of files with all kpoint data for scf, pscf, and alt.
+my @kpGroupFile; # List of files with all kpoint data for scf and pscf.
 my $kpInFile;    # File created for the makekpoints program.
 my $kpOutFile;   # File created by the makekpoints program.
 my $structure;   # File with cell parameters and atomic and potential positions.
@@ -434,9 +429,9 @@ my $thermSmearMAIN; # Term in eV to smear e- population.  1 eV = 11604.505 K
 # K Point variables.
 my $kpWeightSum; # Total number of electrons per band. 1=spinpolarized, 2=not.
 my $kpShift;  # Lattice dependent shift of the regular kpoint mesh.
-my @kpMesh;   # Num. of kpoints in each dim. for Scf, Pscf, and Alt.[SPA][1..3]
-my @kpNum;    # Total number of kpoints after symmetry reduction.
-my @kpNote;   # String for each group indicating general or gamma.  [1..3]
+my @kpMesh;   # Num. of kpoints in each dim. for scf and pscf.[SPA][1..2]
+my @kpNum;    # Total number of scf/pscf kpoints after symmetry reduction.
+my @kpNote;   # String for each group indicating general or gamma.  [1..2]
 my @setKPFlag;# Flag 1=done; 0=not done. Set kpoints on command line.
 my $printBZ;  # Flag 1=do it; 0=do not. Print a file describing the BZ.
 my $compVis;  # Flag 1=do it; 0=do not. Make certain program execution vis.
@@ -768,8 +763,6 @@ sub removeOldInput
       {system("rm -f kp-scf.dat");}
    if (-e "kp-pscf.dat")
       {system("rm -f kp-pscf.dat");}
-   if (-e "kp-alt.dat")
-      {system("rm -f kp-alt.dat");}
 
    $edgeTag[0]  = "";
    $edgeTag[1]  = "1s_";
@@ -825,7 +818,6 @@ sub initNames
    $potential      = "scfV.dat";
    $kpGroupFile[1] = "kp-scf.dat";
    $kpGroupFile[2] = "kp-pscf.dat";
-   $kpGroupFile[3] = "kp-alt.dat";
    $kpInFile       = "kpSpecs.dat";
    $kpOutFile      = "kpSpecs.out";
    $structure      = "structure.dat";
@@ -938,7 +930,7 @@ sub initDefaults
    # Default kpoints
    foreach $axis (1..3)
    {
-      foreach $kpGroup (1..3)
+      foreach $kpGroup (1..2)
          {$kpMesh[$kpGroup][$axis] = 1;}
       $setKPFlag[$axis] = 0;
       $kpNote[$axis] = "(General)";
@@ -1005,7 +997,7 @@ sub parseCommandLine
    my @numberPair; # Used to extract ranges of the form 3..8.
    my $argument;   # Used to record the command line.
    my $pair;       # Used for XANES/ELNES atom group specification.
-   my $kpGroup;    # ID for each kpoint group:  1=scf; 2=pscf; 3=alternate.
+   my $kpGroup;    # ID for each kpoint group:  1=scf; 2=pscf
    my $axis;       # ABC axes.
    my $numPossibleArgs;  # Variable number of sub arguments.
 
@@ -1040,14 +1032,6 @@ sub parseCommandLine
          if (($kpMesh[2][1]==1) && ($kpMesh[2][2]==1) && ($kpMesh[2][3]==1))
             {$kpNote[2] = "(Gamma)";}
       }
-      elsif ($ARGV[$number] eq "-altkp")
-      {
-         $setKPFlag[3] = 1;
-         foreach $axis (1..3)
-            {$kpMesh[3][$axis]=$ARGV[++$number];}
-         if (($kpMesh[3][1]==1) && ($kpMesh[3][2]==1) && ($kpMesh[3][3]==1))
-            {$kpNote[3] = "(Gamma)";}
-      }
       elsif ($ARGV[$number] eq "-kp")
       {
          # Read the first group from the command line.
@@ -1057,18 +1041,14 @@ sub parseCommandLine
          {
             $kpNote[1] = "(Gamma)";
             $kpNote[2] = "(Gamma)";
-            $kpNote[3] = "(Gamma)";
          }
 
-         # Copy this to the other two groups.
-         foreach $kpGroup (2..3)
-         {
-            foreach $axis (1..3)
-               {$kpMesh[$kpGroup][$axis] = $kpMesh[1][$axis];}
-         }
+         # Copy this to the other group.
+         foreach $axis (1..3)
+            {$kpMesh[2][$axis] = $kpMesh[1][$axis];}
 
          # Mark that all kpoints have been set from the command line.
-         foreach $kpGroup (1..3)
+         foreach $kpGroup (1..2)
             {$setKPFlag[$kpGroup] = 1;}
       }
       elsif ($ARGV[$number] eq "-kpshift")
@@ -2935,12 +2915,12 @@ sub makeKP
    print STDOUT "      Generating KPoints.\n";
 
    # Define local variables.
-   my $kpGroup;  # KPoint groups:  SCF, Post-SCF, Alternate.
+   my $kpGroup;  # KPoint groups:  SCF, Post-SCF
    my @values;
 
-   # Print the kpoint set for each of the three groups: SCF, Post-SCF, and alt.
+   # Print the kpoint set for each of the groups: SCF and Post-SCF.
    #   Also, record the number of kpoints generated for each set.
-   foreach $kpGroup (1..3)
+   foreach $kpGroup (1..2)
    {
       &printKPInFile(@{$kpMesh[$kpGroup]}[1..3],$kpGroup);
       system("$makekpoints_exec $printBZ");
@@ -4203,7 +4183,7 @@ sub getKP
    # Define local variables.
    my $kpGroup;
 
-   foreach $kpGroup (1..3)
+   foreach $kpGroup (1..2)
       {&copy("$inputTemp/$kpGroupFile[$kpGroup]","$inputs");}
 }
 
@@ -4282,11 +4262,11 @@ sub computeMemEst
    my $fileSet = $_[1]; # Current file to make memory analysis for. (XANES)
 
    # Note that in the following subroutines each program in the OLCAO suite
-   #   will have a memory estimate computed.  For each program two numbers will
-   #   be computed that are determined by the number of kpoints that the
+   #   will have a memory estimate computed.  For each program two numbers
+   #   will be computed that are determined by the number of kpoints that the
    #   program could be called to use. For the setup and main programs the scf
-   #   and alt kpoint numbers are used while for all other phases the pscf and
-   #   alt kpoint numbers are used.
+   #   kpoint numbers are used while for all other phases the pscf kpoint
+   #   numbers are used.
 
    # Get the memory estimate for the setup program.
    &getSetupMemEst($basisType,$fileSet);
@@ -4329,10 +4309,9 @@ sub getSetupMemEst
    my @primRepsRecip;
    my $numCellsRecip;
 
-   # Initialize the setup memory estimate for the scf kp and alt kp (either or
-   #   both could be gamma kpoints which would change the memory usage too).
-   for ($i=1;$i<=2;$i++)
-      {$memEstSetup[$i][$fileSet][$basisType] = 0.0;}
+   # Initialize the setup memory estimate for the scf kp which could be a
+   #   gamma kpoint which would change the memory usage too.
+   $memEstSetup[$fileSet][$basisType] = 0.0;
 
    # The largest memory allocation will occur in the atomPotOverlap which
    #   is the three center integral.  First we have the valeCoreOL from the
@@ -4349,66 +4328,57 @@ sub getSetupMemEst
    #   packed valeVale.
 
    # Compute the alphaPotDist contribution.
-   for ($i=1;$i<=2;$i++)
-      {$memEstSetup[$i][$fileSet][$basisType] +=
-            $numElements * $numElements * $numElements *
-            $maxNumAtomAlphas * $maxNumAtomAlphas * $maxNumPotAlphas;}
+   $memEstSetup[$fileSet][$basisType] +=
+         $numElements * $numElements * $numElements *
+         $maxNumAtomAlphas * $maxNumAtomAlphas * $maxNumPotAlphas;
 
    # Account for all the matrices.
-   for ($i=1;$i<=2;$i++)
+   # Use SCF kpoints.
+   $currentNumKP = $kpNum[1];
+
+   # coreValeOL
+   $memEstSetup[$fileSet][$basisType]
+         += $numTotalCoreStates[$basisType]
+         * $numTotalValeStates[$basisType] * $currentNumKP;
+   # atomPotOverlap valeVale
+   $memEstSetup[$fileSet][$basisType]
+         += $numTotalValeStates[$basisType]
+         * $numTotalValeStates[$basisType] * $currentNumKP;
+   # atomPotOverlap coreCore
+   $memEstSetup[$fileSet][$basisType]
+         += $numTotalCoreStates[$basisType]
+         * $numTotalCoreStates[$basisType] * $currentNumKP;
+
+   # Determine which is greater, the numTotalCoreStates*numTotalValeStates*
+   #   numKP or the sum of numTotalValeStates*numTotalCoreStates +
+   #   numTotalValeStates*(numTotalValeStates+1)/2.
+   if ($numTotalCoreStates[$basisType]*$numTotalValeStates[$basisType]
+       *$currentNumKP <
+       ($numTotalValeStates[$basisType]*$numTotalCoreStates[$basisType] +
+        $numTotalValeStates[$basisType]*($numTotalValeStates[$basisType]+1)
+        / 2.0))
    {
-      # Determine the number of kpoints for this iteration.
-      if ($i==1)
-         {$currentNumKP = $kpNum[1];}
-      else
-         {$currentNumKP = $kpNum[3];}
-
-      # coreValeOL
-      $memEstSetup[$i][$fileSet][$basisType]
-            += $numTotalCoreStates[$basisType]
-            * $numTotalValeStates[$basisType] * $currentNumKP;
-      # atomPotOverlap valeVale
-      $memEstSetup[$i][$fileSet][$basisType]
+      # atomPotOverlap valeCore
+      $memEstSetup[$fileSet][$basisType]
             += $numTotalValeStates[$basisType]
-            * $numTotalValeStates[$basisType] * $currentNumKP;
-      # atomPotOverlap coreCore
-      $memEstSetup[$i][$fileSet][$basisType]
+            * $numTotalCoreStates[$basisType];
+      # Packed storage of the valeVale array.
+      $memEstSetup[$fileSet][$basisType]
+            += $numTotalValeStates[$basisType]
+            * ($numTotalValeStates[$basisType]+1) / 2.0;
+   }
+   else
+   {
+      # atomPotOverlap coreVale
+      $memEstSetup[$fileSet][$basisType]
             += $numTotalCoreStates[$basisType]
-            * $numTotalCoreStates[$basisType] * $currentNumKP;
-
-      # Determine which is greater, the numTotalCoreStates*numTotalValeStates*
-      #   numKP or the sum of numTotalValeStates*numTotalCoreStates +
-      #   numTotalValeStates*(numTotalValeStates+1)/2.
-      if ($numTotalCoreStates[$basisType]*$numTotalValeStates[$basisType]
-          *$currentNumKP <
-          ($numTotalValeStates[$basisType]*$numTotalCoreStates[$basisType] +
-           $numTotalValeStates[$basisType]*($numTotalValeStates[$basisType]+1)
-           / 2.0))
-      {
-         # atomPotOverlap valeCore
-         $memEstSetup[$i][$fileSet][$basisType]
-               += $numTotalValeStates[$basisType]
-               * $numTotalCoreStates[$basisType];
-         # Packed storage of the valeVale array.
-         $memEstSetup[$i][$fileSet][$basisType]
-               += $numTotalValeStates[$basisType]
-               * ($numTotalValeStates[$basisType]+1) / 2.0;
-      }
-      else
-      {
-         # atomPotOverlap coreVale
-         $memEstSetup[$i][$fileSet][$basisType]
-               += $numTotalCoreStates[$basisType]
-               * $numTotalValeStates[$basisType] * $currentNumKP;
-      }
+            * $numTotalValeStates[$basisType] * $currentNumKP;
    }
 
    # Adjust the result depending on whether or not we used real or imaginary
    #   matrices.
    if ($kpNote[1] eq "(General)")
-      {$memEstSetup[1][$fileSet][$basisType] *= 2.0;}
-   if ($kpNote[3] eq "(General)")
-      {$memEstSetup[2][$fileSet][$basisType] *= 2.0;}
+      {$memEstSetup[$fileSet][$basisType] *= 2.0;}
 
 
    # There is one other place where the memory usage may become very large.
@@ -4452,10 +4422,8 @@ sub getSetupMemEst
 
    # If the alternate $memTemp value for the memory usage is greater than the
    #   already calculated values, then use $memTemp instead.
-   if ($memTemp > $memEstSetup[1][$fileSet][$basisType])
-      {$memEstSetup[1][$fileSet][$basisType] = $memTemp;}
-   if ($memTemp > $memEstSetup[2][$fileSet][$basisType])
-      {$memEstSetup[2][$fileSet][$basisType] = $memTemp;}
+   if ($memTemp > $memEstSetup[$fileSet][$basisType])
+      {$memEstSetup[$fileSet][$basisType] = $memTemp;}
 }
 
 
@@ -4472,12 +4440,10 @@ sub getMainMemEst
    my $fileSet = $_[1]; # Current file to make memory analysis for. (XANES)
 
    # Make a local version of $i.
-   my $i;
    my $memTemp;
 
    # Initialize the main memory estimate.
-   for ($i=1;$i<=2;$i++)
-      {$memEstMain[$i][$fileSet][$basisType] = 0;}
+   $memEstMain[$fileSet][$basisType] = 0;
 
    # There are two different places in the program 'main' where the memory
    #   usage could become a peak.  The first is during the evaluation of the
@@ -4486,37 +4452,30 @@ sub getMainMemEst
    # Hamiltonian evaluation first.
 
    # Include the energy eigen values.
-   $memEstMain[1][$fileSet][$basisType] += $numTotalValeStates[$basisType]
+   $memEstMain[$fileSet][$basisType] += $numTotalValeStates[$basisType]
          * $kpNum[1];
-   $memEstMain[2][$fileSet][$basisType] += $numTotalValeStates[$basisType]
-         * $kpNum[3];
 
    # Computing the Hamiltonian.  These matrices are reallocated for each
    #   iteration of the scf cycle.  They are deallocated in the
    #   makeChargeDensity subroutine.  (valeVale, valeValeOL, packedValeVale,
    #   and tempPackedValeVale)
-   for ($i=1;$i<=2;$i++)
-   {
-      # valeValeOL
-      $memEstMain[$i][$fileSet][$basisType] += $numTotalValeStates[$basisType] *
-            $numTotalValeStates[$basisType];
-      # valeVale
-      $memEstMain[$i][$fileSet][$basisType] += $numTotalValeStates[$basisType] *
-            $numTotalValeStates[$basisType];
-      # packedValeVale
-      $memEstMain[$i][$fileSet][$basisType] += $numTotalValeStates[$basisType] *
-            ($numTotalValeStates[$basisType]+1)/2;
-      # tempPackedValeVale
-      $memEstMain[$i][$fileSet][$basisType] += $numTotalValeStates[$basisType] *
-            ($numTotalValeStates[$basisType]+1)/2;
-   }
+   # valeValeOL
+   $memEstMain[$fileSet][$basisType] += $numTotalValeStates[$basisType] *
+         $numTotalValeStates[$basisType];
+   # valeVale
+   $memEstMain[$fileSet][$basisType] += $numTotalValeStates[$basisType] *
+         $numTotalValeStates[$basisType];
+   # packedValeVale
+   $memEstMain[$fileSet][$basisType] += $numTotalValeStates[$basisType] *
+         ($numTotalValeStates[$basisType]+1)/2;
+   # tempPackedValeVale
+   $memEstMain[$fileSet][$basisType] += $numTotalValeStates[$basisType] *
+         ($numTotalValeStates[$basisType]+1)/2;
 
    # Adjust the result depending on whether or not we used real or imaginary
    #   matrices.
    if ($kpNote[1] eq "(General)")
-      {$memEstMain[1][$fileSet][$basisType] *= 2.0;}
-   if ($kpNote[3] eq "(General)")
-      {$memEstMain[2][$fileSet][$basisType] *= 2.0;}
+      {$memEstMain[$fileSet][$basisType] *= 2.0;}
 
 
    # Now we consider the part where the new scf potential is made.  This can
@@ -4535,16 +4494,12 @@ sub getMainMemEst
    #      used for determining the exchange correlation potential for a given
    #      atom.
    $memTemp = 4 * $potDim[$fileSet] * $potDim[$fileSet] +
-              $potDim[$fileSet] * 28 +
-              ($potDim[$fileSet]+4) * 4000;
+              $potDim[$fileSet] * 28 + ($potDim[$fileSet]+4) * 4000;
 
    # Compare this to the above computed memEstMain to determine what the
    #   highest value is.
-   for ($i=1;$i<=2;$i++)
-   {
-      if ($memTemp > $memEstMain[$i][$fileSet][$basisType])
-         {$memEstMain[$i][$fileSet][$basisType] = $memTemp;}
-   }
+   if ($memTemp > $memEstMain[$fileSet][$basisType])
+      {$memEstMain[$fileSet][$basisType] = $memTemp;}
 }
 
 # getIntgMemEst:  This subroutine will:
@@ -4557,17 +4512,13 @@ sub getIntgMemEst
    my $basisType = $_[0]; # Current basis to check (mb, fb, eb).
    my $fileSet = $_[1]; # Current file to make memory analysis for. (XANES)
 
-   # Make a local version of $i.
-   my $i;
-
    # The amount of memory used by the integral phase will depend significantly
    #   on the dataChunkSize parameter that is computed in the program.  This
    #   value is currently controlled by a hard coded parameter and is set to
    #   10000000.  This is an estimate of the number of floating point numbers
    #   to be held in memory at any one time for a particular computation
    #   component (Hamiltonian, Overlap, Momentum matrix, etc.).
-   for ($i=1;$i<=2;$i++)
-      {$memEstIntg[$i][$fileSet][$basisType] = 10000000*5;}
+   $memEstIntg[$fileSet][$basisType] = 10000000*5;
 }
 
 
@@ -4579,9 +4530,6 @@ sub getBandMemEst
    my $basisType = $_[0]; # Current basis to check (mb, fb, eb).
    my $fileSet = $_[1]; # Current file to make memory analysis for. (XANES)
 
-   # Make a local version of $i.
-   my $i;
-
    # The amount of memory used by the band phase depends on the same parameter
    #   used for the integral phase.  It will also read that data in to various
    #   matrices (primarily the overlap, and hamiltonian).  Further, it must
@@ -4591,24 +4539,18 @@ sub getBandMemEst
    #   hamiltonian coreCore.
    # (Note that in the hamiltonian calculation the valeCore is allocated after
    #   the hamiltonian coreVale is deallocated.)
-   for ($i=1;$i<=2;$i++)
-   {
-      # The *2 for the first two terms are for the hamiltonian and the overlap.
-      $memEstBand[$i][$fileSet][$basisType] =
-            $numTotalValeStates[$basisType]*$numTotalValeStates[$basisType]*2 +
-            $numTotalCoreStates[$basisType]*$numTotalValeStates[$basisType]*2 +
-            $numTotalCoreStates[$basisType]*$numTotalCoreStates[$basisType];
-   }
+   # The *2 for the first two terms are for the hamiltonian and the overlap.
+   $memEstBand[$fileSet][$basisType] =
+         $numTotalValeStates[$basisType]*$numTotalValeStates[$basisType]*2 +
+         $numTotalCoreStates[$basisType]*$numTotalValeStates[$basisType]*2 +
+         $numTotalCoreStates[$basisType]*$numTotalCoreStates[$basisType];
 
    # Correct this result for whether the matrices are complex or not.
    if ($kpNote[2] eq "(General)")
-      {$memEstBand[1][$fileSet][$basisType] *= 2.0;}
-   if ($kpNote[3] eq "(General)")
-      {$memEstBand[2][$fileSet][$basisType] *= 2.0;}
+      {$memEstBand[$fileSet][$basisType] *= 2.0;}
 
    # Add in the 10000000 for reading the intg results.
-   $memEstBand[1][$fileSet][$basisType] += 10000000;
-   $memEstBand[2][$fileSet][$basisType] += 10000000;
+   $memEstBand[$fileSet][$basisType] += 10000000;
 }
 
 sub getPdosMemEst
@@ -4633,16 +4575,10 @@ sub getPdosMemEst
    $memTemp = $numTotalValeStates[$basisType]*$numTotalValeStates[$basisType] +
               $numTotalValeStates[$basisType]*$numStatesUsed[$basisType];
 
-
    if ($kpNote[2] eq "(Gamma)")
-      {$memEstPdos[1][$fileSet][$basisType] = $memTemp;}
+      {$memEstPdos[$fileSet][$basisType] = $memTemp;}
    else
-      {$memEstPdos[1][$fileSet][$basisType] = $memTemp*3;}
-   if ($kpNote[3] eq "(Gamma)")
-      {$memEstPdos[2][$fileSet][$basisType] = $memTemp;}
-   else
-      {$memEstPdos[2][$fileSet][$basisType] = $memTemp*3;}
-
+      {$memEstPdos[$fileSet][$basisType] = $memTemp*3;}
 
    # Compute the memory needed to hold the output PDOS data.  The amount of
    #   memory needed depends on the number of data points that will be saved
@@ -4650,13 +4586,11 @@ sub getPdosMemEst
    #   that will be computed.
    $numEnergyPoints = ($emaxDOS - $eminDOS) / $eDeltaDOS;
    $numSpectra = $totalNumTypes[$fileSet];
-   for ($i=1;$i<=2;$i++)
-      {$memEstPdos[$i][$fileSet][$basisType]+=$numEnergyPoints*(3+$numSpectra);}
+   $memEstPdos[$fileSet][$basisType]+=$numEnergyPoints*(3+$numSpectra);
 
    # Add in the memory usage that tracks the number of electrons in each eigen
    #   state for each atom.
-   for ($i=1;$i<=2;$i++)
-      {$memEstPdos[$i][$fileSet][$basisType] += $maxNumValeStates * $numAtoms;}
+   $memEstPdos[$fileSet][$basisType] += $maxNumValeStates * $numAtoms;
 
 }
 
@@ -4668,7 +4602,6 @@ sub getBondMemEst
    my $fileSet = $_[1]; # Current file to make memory analysis for. (XANES)
 
    # Make a local version of $i.
-   my $i;
    my $memTemp;
    my $numEnergyPoints;
 
@@ -4683,19 +4616,13 @@ sub getBondMemEst
               $numTotalValeStates[$basisType]*$numStatesUsed[$basisType];
 
    if ($kpNote[2] eq "(Gamma)")
-      {$memEstBond[1][$fileSet][$basisType] = $memTemp;}
+      {$memEstBond[$fileSet][$basisType] = $memTemp;}
    else
-      {$memEstBond[1][$fileSet][$basisType] = $memTemp*3;}
-   if ($kpNote[3] eq "(Gamma)")
-      {$memEstBond[2][$fileSet][$basisType] = $memTemp;}
-   else
-      {$memEstBond[2][$fileSet][$basisType] = $memTemp*3;}
-
+      {$memEstBond[$fileSet][$basisType] = $memTemp*3;}
 
    # Include the memory needed to store the bond order and bond length
    #   information for each atom.
-   for ($i=1;$i<=2;$i++)
-      {$memEstBond[$i][$fileSet][$basisType] += $numAtoms * $numAtoms * 2;}
+   $memEstBond[$fileSet][$basisType] += $numAtoms * $numAtoms * 2;
 
    # In the case that an energy dependent bond order calculation is to be done
    #   we must include the memory needed to store that information.  The 31
@@ -4703,10 +4630,7 @@ sub getBondMemEst
    #   the amount needed to store the energy scale.
    $numEnergyPoints = ($emaxDOS - $eminDOS) / $eDeltaDOS;
    if ($fileSet > 0)
-   {
-      for ($i=1;$i<=2;$i++)
-         {$memEstBond[$i][$fileSet][$basisType] += $numEnergyPoints * 31;}
-   }
+      {$memEstBond[$fileSet][$basisType] += $numEnergyPoints * 31;}
 }
 
 
@@ -4744,8 +4668,7 @@ sub getOptcMemEst
    else
       {$estNumPairs = 500 * 500;}
 
-   $memEstOptc[1][$fileSet][$basisType] = $estNumPairs * $kpNum[2] * 4;
-   $memEstOptc[2][$fileSet][$basisType] = $estNumPairs * $kpNum[3] * 4;
+   $memEstOptc[$fileSet][$basisType] = $estNumPairs * $kpNum[2] * 4;
 
 
    # When computing the transitions it is necessary to read and possibly unfold
@@ -4755,33 +4678,23 @@ sub getOptcMemEst
    #   calculations because we must read in the initial and final states
    #   seperately.  The *3 is needed when the actual wave function is complex
    #   as will occur when a kpoint other than gamma is used.
-   for ($i=1;$i<=2;$i++)
-   {
-      $memTemp = $numTotalValeStates[$basisType] * $numStatesUsed[$basisType];
-      if ($kpNote[2] eq "(Gamma)")
-         {$memEstOptc[$i][$fileSet][$basisType] += $memTemp * 2;}
-      else
-         {$memEstOptc[$i][$fileSet][$basisType] += $memTemp * 3;}
-   }
+   $memTemp = $numTotalValeStates[$basisType] * $numStatesUsed[$basisType];
+   if ($kpNote[2] eq "(Gamma)")
+      {$memEstOptc[$fileSet][$basisType] += $memTemp * 2;}
+   else
+      {$memEstOptc[$fileSet][$basisType] += $memTemp * 3;}
 
    # The next addition to the memory usage is the reading of the momentum
    #   matrices.  This will add on three more numTotalValeStates *
    #   numTotalValeStates matrices.
-   for ($i=1;$i<=2;$i++)
-   {
-      $memEstOptc[$i][$fileSet][$basisType] +=
-             $numTotalValeStates[$basisType]*$numTotalValeStates[$basisType]*3;
-   }
+   $memEstOptc[$fileSet][$basisType] +=
+          $numTotalValeStates[$basisType]*$numTotalValeStates[$basisType]*3;
 
    # Then, when the momentum matrices are unfolded the memory usage will jump
    #   again.  The *3 is for the x, y, z direction, and the *2 is because this
    #   matrix is complex.
-   for ($i=1;$i<=2;$i++)
-   {
-      $memEstOptc[$i][$fileSet][$basisType]
-             += $numTotalValeStates[$basisType]
-             * $numTotalValeStates[$basisType] * 3 * 2;
-   }
+   $memEstOptc[$fileSet][$basisType] += $numTotalValeStates[$basisType]
+          * $numTotalValeStates[$basisType] * 3 * 2;
 
    # One final addition to the most likely maximum memory usage is the
    #   matrix that stores the multiplication of the wave function and the
@@ -4789,15 +4702,12 @@ sub getOptcMemEst
    #   and the *2 is because this matrix is complex.  The /2 for the memTemp
    #   is because this matrix only needs the unoccupied states which is about
    #   half of the total number of states.
-   for ($i=1;$i<=2;$i++)
-   {
-      $memTemp = $numTotalValeStates[$basisType]
-            * $numStatesUsed[$basisType] / 2.0;
-      if ($kpNote[2] eq "(Gamma)")
-         {$memEstOptc[$i][$fileSet][$basisType] += $memTemp * 3;}
-      else
-         {$memEstOptc[$i][$fileSet][$basisType] += $memTemp * 3 * 2;}
-   }
+   $memTemp = $numTotalValeStates[$basisType]
+         * $numStatesUsed[$basisType] / 2.0;
+   if ($kpNote[2] eq "(Gamma)")
+      {$memEstOptc[$fileSet][$basisType] += $memTemp * 3;}
+   else
+      {$memEstOptc[$fileSet][$basisType] += $memTemp * 3 * 2;}
 }
 
 
@@ -4808,7 +4718,6 @@ sub adjustMemory
    my $fileSet = $_[1]; # Current file to make memory analysis for. (XANES)
 
    # Make a local version of $i.
-   my $i;
    my $maxMemEst;
    my $memoryFactor;
 
@@ -4817,35 +4726,29 @@ sub adjustMemory
    #   it to 100000000.  If it is bigger, then we use gigabytes otherwise we
    #   use megabytes.
    $maxMemEst = 0;
-   for ($i=1;$i<=2;$i++)
-   {
-      if ($maxMemEst < $memEstSetup[$i][$fileSet][$basisType])
-         {$maxMemEst = $memEstSetup[$i][$fileSet][$basisType];}
-      if ($maxMemEst < $memEstMain[$i][$fileSet][$basisType])
-         {$maxMemEst = $memEstMain[$i][$fileSet][$basisType];}
-      if ($maxMemEst < $memEstIntg[$i][$fileSet][$basisType])
-         {$maxMemEst = $memEstIntg[$i][$fileSet][$basisType];}
-      if ($maxMemEst < $memEstBand[$i][$fileSet][$basisType])
-         {$maxMemEst = $memEstBand[$i][$fileSet][$basisType];}
-      if ($maxMemEst < $memEstPdos[$i][$fileSet][$basisType])
-         {$maxMemEst = $memEstPdos[$i][$fileSet][$basisType];}
-      if ($maxMemEst < $memEstBond[$i][$fileSet][$basisType])
-         {$maxMemEst = $memEstBond[$i][$fileSet][$basisType];}
-      if ($maxMemEst < $memEstOptc[$i][$fileSet][$basisType])
-         {$maxMemEst = $memEstOptc[$i][$fileSet][$basisType];}
-   }
+   if ($maxMemEst < $memEstSetup[$fileSet][$basisType])
+      {$maxMemEst = $memEstSetup[$fileSet][$basisType];}
+   if ($maxMemEst < $memEstMain[$fileSet][$basisType])
+      {$maxMemEst = $memEstMain[$fileSet][$basisType];}
+   if ($maxMemEst < $memEstIntg[$fileSet][$basisType])
+      {$maxMemEst = $memEstIntg[$fileSet][$basisType];}
+   if ($maxMemEst < $memEstBand[$fileSet][$basisType])
+      {$maxMemEst = $memEstBand[$fileSet][$basisType];}
+   if ($maxMemEst < $memEstPdos[$fileSet][$basisType])
+      {$maxMemEst = $memEstPdos[$fileSet][$basisType];}
+   if ($maxMemEst < $memEstBond[$fileSet][$basisType])
+      {$maxMemEst = $memEstBond[$fileSet][$basisType];}
+   if ($maxMemEst < $memEstOptc[$fileSet][$basisType])
+      {$maxMemEst = $memEstOptc[$fileSet][$basisType];}
 
    # Add in an estimate of the memory usage of the executable programs.
-   for ($i=1;$i<=2;$i++)
-   {
-      $memEstSetup[$i][$fileSet][$basisType] += 10000000;
-      $memEstMain[$i][$fileSet][$basisType]  += 10000000;
-      $memEstIntg[$i][$fileSet][$basisType]  += 10000000;
-      $memEstBand[$i][$fileSet][$basisType]  += 10000000;
-      $memEstPdos[$i][$fileSet][$basisType]  += 10000000;
-      $memEstBond[$i][$fileSet][$basisType]  += 10000000;
-      $memEstOptc[$i][$fileSet][$basisType]  += 10000000;
-   }
+   $memEstSetup[$fileSet][$basisType] += 10000000;
+   $memEstMain[$fileSet][$basisType]  += 10000000;
+   $memEstIntg[$fileSet][$basisType]  += 10000000;
+   $memEstBand[$fileSet][$basisType]  += 10000000;
+   $memEstPdos[$fileSet][$basisType]  += 10000000;
+   $memEstBond[$fileSet][$basisType]  += 10000000;
+   $memEstOptc[$fileSet][$basisType]  += 10000000;
 
    # Put the maximum memory estimate into bytes.
    $maxMemEst *= $OLCAO_DOUBLE;
@@ -4866,16 +4769,13 @@ sub adjustMemory
    #   the number of OLCAO_DOUBLE byte floating point numbers to be stored.
    #   Also, divide the estimate by the $memoryFactor to put it in terms
    #   of mega or giga bytes.
-   for ($i=1;$i<=2;$i++)
-   {
-      $memEstSetup[$i][$fileSet][$basisType] *= $OLCAO_DOUBLE / $memoryFactor;
-      $memEstMain[$i][$fileSet][$basisType]  *= $OLCAO_DOUBLE / $memoryFactor;
-      $memEstIntg[$i][$fileSet][$basisType]  *= $OLCAO_DOUBLE / $memoryFactor;
-      $memEstBand[$i][$fileSet][$basisType]  *= $OLCAO_DOUBLE / $memoryFactor;
-      $memEstPdos[$i][$fileSet][$basisType]  *= $OLCAO_DOUBLE / $memoryFactor;
-      $memEstBond[$i][$fileSet][$basisType]  *= $OLCAO_DOUBLE / $memoryFactor;
-      $memEstOptc[$i][$fileSet][$basisType]  *= $OLCAO_DOUBLE / $memoryFactor;
-   }
+   $memEstSetup[$fileSet][$basisType] *= $OLCAO_DOUBLE / $memoryFactor;
+   $memEstMain[$fileSet][$basisType]  *= $OLCAO_DOUBLE / $memoryFactor;
+   $memEstIntg[$fileSet][$basisType]  *= $OLCAO_DOUBLE / $memoryFactor;
+   $memEstBand[$fileSet][$basisType]  *= $OLCAO_DOUBLE / $memoryFactor;
+   $memEstPdos[$fileSet][$basisType]  *= $OLCAO_DOUBLE / $memoryFactor;
+   $memEstBond[$fileSet][$basisType]  *= $OLCAO_DOUBLE / $memoryFactor;
+   $memEstOptc[$fileSet][$basisType]  *= $OLCAO_DOUBLE / $memoryFactor;
 }
 
 
@@ -4885,7 +4785,6 @@ sub printMemNeeds
    my $fileSet = $_[0];
 
    # Define local variables.
-   my $i;
    my $j;
 
    open (MEMNEEDS,">$inputs/$memNeeds")
@@ -4893,31 +4792,23 @@ sub printMemNeeds
 
    print MEMNEEDS "Memory Estimates:  ($memoryNote)\n";
 
-   for ($i=1;$i<=2;$i++)  # Loop over two sets of kpoints (1=scf/olcao 2=alt).
+   # Print a header for which kpoint set the numbers refer to.
+   print MEMNEEDS "    SCF/PSCF KPoints:\n";
+
+   # Print a header so that you know which numbers correspond to which phase.
+   print  MEMNEEDS "     SETUP      MAIN      INTG      BAND      PDOS",
+         "      BOND      OPTC\n";
+
+   for ($j=1;$j<=3;$j++)  # Loop over three basis sets (mb, fb, eb).
    {
-      # Print a header for which kpoint set the numbers refer to.
-      if ($i==1)
-         {print MEMNEEDS "    SCF/OLCAO KPoints:\n";}
-      else
-         {print MEMNEEDS "    Alternate KPoints:\n";}
-
-      # Print a header so that you know which numbers correspond to which phase.
-      print  MEMNEEDS "     SETUP      MAIN      INTG      BAND      PDOS",
-            "      BOND      OPTC\n";
-
-
-      for ($j=1;$j<=3;$j++)  # Loop over three basis sets (mb, fb, eb).
-      {
-         printf MEMNEEDS "   %7.3f    %7.3f   %7.3f   %7.3f   %7.3f   %7.3f   %7.3f\n",
-               $memEstSetup[$i][$fileSet][$j],$memEstMain[$i][$fileSet][$j],
-               $memEstIntg[$i][$fileSet][$j],$memEstBand[$i][$fileSet][$j],
-               $memEstPdos[$i][$fileSet][$j],$memEstBond[$i][$fileSet][$j],
-               $memEstOptc[$i][$fileSet][$j];
-      }
+      printf MEMNEEDS "   %7.3f    %7.3f   %7.3f   %7.3f   %7.3f   " .
+         "%7.3f   %7.3f\n",$memEstSetup[$fileSet][$j],
+         $memEstMain[$fileSet][$j],$memEstIntg[$fileSet][$j],
+         $memEstBand[$fileSet][$j],$memEstPdos[$fileSet][$j],
+         $memEstBond[$fileSet][$j],$memEstOptc[$fileSet][$j];
    }
    close (MEMNEEDS);
 }
-
 
 
 sub makeSubFile
@@ -5071,8 +4962,6 @@ sub printSummary
          {$kpIndexSpace=2;}
       if ($kpMesh[2][$axis] >= 10)
          {$kpIndexSpace=2;}
-      if ($kpMesh[3][$axis] >= 10)
-         {$kpIndexSpace=2;}
    }
 
    # Open the summary file for writing
@@ -5118,9 +5007,6 @@ sub printSummary
    print  SUMMARY "Number of PSCF KPoints =  ";
    printf SUMMARY '%-4i %9s  [%*6$i %*6$i %*6$i]%7$s',$kpNum[2],$kpNote[2],
          $kpMesh[2][1],$kpMesh[2][2],$kpMesh[2][3],$kpIndexSpace,"\n";
-   print  SUMMARY "Number of ALT KPoints  =  ";
-   printf SUMMARY '%-4i %9s  [%*6$i %*6$i %*6$i]%7$s',$kpNum[3],$kpNote[3],
-         $kpMesh[3][1],$kpMesh[3][2],$kpMesh[3][3],$kpIndexSpace,"\n";
 
    # Print execution parameters.
    print  SUMMARY "Convergence Limit       =  $convergMAIN\n";

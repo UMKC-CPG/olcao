@@ -28,6 +28,7 @@ export OLCAO_TEMP="$HOME/data/scratch/$OLCAO_BRANCH"
 #export OLCAO_EXE="srun -n1 --exclusive"
 export OLCAO_EXE=""
 
+#Modifications of the linux environment.
 export PATH=$OLCAO_BIN:$PATH
 export PERL5LIB=$OLCAO_BIN/perl5:$PERL5LIB
 

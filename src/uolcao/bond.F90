@@ -245,7 +245,7 @@ subroutine computeBond (inSCF)
          !   wave function and overlap from different sources.
          if (inSCF == 1) then
             ! Read necessary data from SCF (setup,main) data structures.
-            call readDataSCF(h,i,numStates)
+            call readDataSCF(h,i,numStates,1) ! 1 = Overlap matrixCode
          else
             ! Read necessary data from post SCF (intg,band) data structures.
             !call readDataPSCF(h,i,numStates)

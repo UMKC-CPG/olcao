@@ -630,7 +630,7 @@ class olcaomiFile():
             self.positionList.append([float(tempLine[1])*self.cellVec[0],float(tempLine[2])*self.cellVec[1],float(tempLine[3])*self.cellVec[2]])        
  
 
-print "Beginning Nanotube Creation\n"
+print ("Beginning Nanotube Creation\n")
 
 '''     
 Basic Idea:

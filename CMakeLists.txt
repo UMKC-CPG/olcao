@@ -45,7 +45,7 @@ message("CMAKE_Fortran_COMPILER_ID= ${CMAKE_Fortran_COMPILER_ID}")
 #   stores it here then he/she will have a record. I guess just be careful to
 #   retain that information if you get a new version from github. Or something.
 if (CMAKE_Fortran_COMPILER_ID MATCHES "GNU")
-   set (CMAKE_Fortran_FLAGS_DEBUG "-g -fcheck=all -fimplicit-none -Wall -DDEBUG")
+   set (CMAKE_Fortran_FLAGS_DEBUG "-Og -g -fcheck=all -fimplicit-none -Wall -fbacktrace -DDEBUG")
    #   if (DEFINED ENV{MKLROOT})
    #   set (CMAKE_Fortran_FLAGS_RELEASE "-O3 -fimplicit-none -Wall -fdefault-integer-8 -m64 -I$ENV{MKLROOT}/include")
    #   set (CMAKE_EXE_LINKER_FLAGS " -L$ENV{MKLROOT}/lib -Wl,--no-as-needed -lmkl_gf_ilp64 -lmkl_sequential -lmkl_core -lpthread -lm -ldl")

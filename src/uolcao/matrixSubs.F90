@@ -117,7 +117,7 @@ subroutine readPartialWaveFns (datasetIDs,matrix,tempRealMatrix,&
    integer :: init
    integer :: fin
 
-   ! Define local variables
+! Define local variables
    integer :: hdferr
 
 

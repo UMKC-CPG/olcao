@@ -39,7 +39,7 @@ module O_CommandLine
          ! optical properties; 2=core level XANES/ELNES; 3=sigma(E) electronic
          ! contribution to thermal conductivity; 4=non-linear valence band
          ! optical properties.
-   integer :: doSYKP_SCF ! Shift to using the defined path of high-symmetry
+   integer :: doSYBD_SCF ! Shift to using the defined path of high-symmetry
          ! k-points (1) AND produce a band structure diagram (2), AND include
          ! partial band structure data (3).
    integer :: doForce_SCF ! Include computation of the force between atoms.
@@ -53,7 +53,7 @@ module O_CommandLine
          ! optical properties; 2=core level XANES/ELNES; 3=sigma(E) electronic
          ! contribution to thermal conductivity; 4=non-linear valence band
          ! optical properties.
-   integer :: doSYKP_PSCF ! Shift to using the defined path of high-symmetry
+   integer :: doSYBD_PSCF ! Shift to using the defined path of high-symmetry
          ! k-points (1) AND produce a band structure diagram (2), AND include
          ! partial band structure data (3).
    integer :: doForce_PSCF ! Include computation of the force between atoms.
@@ -224,7 +224,7 @@ subroutine readJobID
       write (20,*) "Doing SCF Valence Band Optical Properties"
    elseif (jobID == 105) then
       doOPTC_SCF = 2
-      write (20,*) "Doing SCF Photo-Absorption Cross Section"
+      write (20,*) "Doing SCF Photo-Absorption Cross Section"  ! XANES/ELNES
    elseif (jobID == 106) then
       doOPTC_SCF = 3
       write (20,*) "Doing SCF Non-Linear Optical Properties"
@@ -232,7 +232,7 @@ subroutine readJobID
       doOPTC_SCF = 4
       write (20,*) "Doing SCF Sigma(E)"
    elseif (jobID == 108) then
-      doSYKP_SCF = 1
+      doSYBD_SCF = 1
       write (20,*) "Doing SCF Symmetric Band Structure"
    elseif (jobID == 109) then
       doForce_SCF = 1
@@ -254,7 +254,7 @@ subroutine readJobID
       write (20,*) "Doing PSCF Valence Band Optical Properties"
    elseif (jobID == 205) then
       doOPTC_PSCF = 2
-      write (20,*) "Doing PSCF Photo-Absorption Cross Section"
+      write (20,*) "Doing PSCF Photo-Absorption Cross Section"  ! XANES/ELNES
    elseif (jobID == 206) then
       doOPTC_PSCF = 3
       write (20,*) "Doing PSCF Non-Linear Optical Properties"
@@ -262,7 +262,7 @@ subroutine readJobID
       doOPTC_PSCF = 4
       write (20,*) "Doing PSCF Sigma(E)"
    elseif (jobID == 208) then
-      doSYKP_PSCF = 1
+      doSYBD_PSCF = 1
       write (20,*) "Doing PSCF Symmetric Band Structure"
    elseif (jobID == 209) then
       doForce_PSCF = 1
@@ -297,14 +297,14 @@ subroutine initCLP
    doBond_SCF      = -1
    doDIMO_SCF      = -1
    doOptc_SCF      = -1
-   doSYKP_SCF      = -1
+   doSYBD_SCF      = -1
    doForce_SCF     = -1
    doField_SCF     = -1
    doDOS_PSCF      = -1
    doBond_PSCF     = -1
    doDIMO_PSCF     = -1
    doOptc_PSCF     = -1
-   doSYKP_PSCF     = -1
+   doSYBD_PSCF     = -1
    doForce_PSCF    = -1
    doField_PSCF    = -1
    serialXYZ       = -1

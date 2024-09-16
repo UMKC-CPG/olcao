@@ -19,9 +19,11 @@ module O_SecularEquation
 #ifndef GAMMA
    complex (kind=double), allocatable, dimension (:,:,:,:) :: valeVale
    complex (kind=double), allocatable, dimension (:,:,:,:) :: valeValeOL
+   complex (kind=double), allocatable, dimension (:,:,:) :: valeValeMM
 #else
-   real    (kind=double), allocatable, dimension (:,:,:) :: valeValeGamma
-   real    (kind=double), allocatable, dimension (:,:,:) :: valeValeOLGamma
+   real (kind=double), allocatable, dimension (:,:,:) :: valeValeGamma
+   real (kind=double), allocatable, dimension (:,:,:) :: valeValeOLGamma
+   real (kind=double), allocatable, dimension (:,:,:) :: valeValeMMGamma
 #endif
 
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -288,79 +290,79 @@ subroutine secularEqnAllKP(spinDirection, numStates)
 end subroutine secularEqnAllKP
 
 
-!subroutine secularEqnOneKP (spinDirection,currKPoint,numStates,doSYBD)
-!
-!   ! Import necessary modules.
-!   use HDF5
-!   use O_Kinds
-!   use O_TimeStamps
-!   use O_Potential, only: numPlusUJAtoms
-!   use O_AtomicSites, only: valeDim
-!   use O_PSCFBandHDF5, only: valeStatesBand, statesBand, eigenVectorsBand_did, &
-!         & eigenValuesBand_did
-!#ifndef GAMMA
-!   use O_LAPACKZHEGV
-!#else
-!   use O_LAPACKDSYGV
-!#endif
-!
-!   ! Make sure that no funny variables are defined.
-!   implicit none
-!
-!   ! Define the passed parameters.
-!   integer :: spinDirection
-!   integer :: currKPoint
-!   integer :: numStates
-!   integer :: doSYBD
-!
-!   ! Define the local variables used in this subroutine.
-!   integer :: hdferr
-!
-!   ! In the event that there are some atoms that have a plusUJ term, perform
-!   !   the final update to the plusUJ term and then apply the plusUJ
-!   !   modification to the Hamiltonian.
-!   if (numPlusUJAtoms > 0) then
-!      call update2AndApplyUJ(currKPoint,spinDirection)
-!   endif
-!
-!   ! Solve the eigen problem with a LAPACK routine.
-!#ifndef GAMMA
-!   call solveZHEGV(valeDim,numStates,valeVale(:,:,1,spinDirection),&
-!         & valeValeOL(:,:,1,1),energyEigenValues(:,currKPoint,spinDirection))
-!#else
-!   call solveDSYGV(valeDim,numStates,valeValeGamma(:,:,spinDirection),&
-!         & valeValeOLGamma(:,:,1),energyEigenValues(:,currKPoint,spinDirection))
-!#endif
-!
-!   if (doSYBD == 0) then
-!#ifndef GAMMA
-!      ! Write the eigenVector results to disk.
-!      call h5dwrite_f (eigenVectorsBand_did(1,currKPoint,spinDirection),&
-!            & H5T_NATIVE_DOUBLE,real(valeVale(:,1:numStates,1,spinDirection),&
-!            & double),valeStatesBand,hdferr)
-!      if (hdferr /= 0) stop 'Cannot write real energy eigen vectors.'
-!      call h5dwrite_f (eigenVectorsBand_did(2,currKPoint,spinDirection),&
-!            & H5T_NATIVE_DOUBLE,aimag(valeVale(:,1:numStates,1,spinDirection)),&
-!            & valeStatesBand,hdferr)
-!      if (hdferr /= 0) stop 'Cannot write imag energy eigen vectors.'
-!#else
-!      ! Write the eigenVector results to disk.
-!      call h5dwrite_f (eigenVectorsBand_did(1,currKPoint,spinDirection),&
-!            & H5T_NATIVE_DOUBLE,valeValeGamma(:,1:numStates,spinDirection),&
-!            & valeStatesBand,hdferr)
-!      if (hdferr /= 0) stop 'Cannot write real energy eigen vectors.'
-!#endif
-!
-!
-!      ! Write the eigenValue results to disk, in a.u.
-!      call h5dwrite_f (eigenValuesBand_did(currKPoint,spinDirection),&
-!            & H5T_NATIVE_DOUBLE,energyEigenValues(:,currKPoint,&
-!            & spinDirection),statesBand,hdferr)
-!      if (hdferr /= 0) stop 'Cannot write energy eigen values.'
-!
-!   endif
-!
-!end subroutine secularEqnOneKP
+subroutine secularEqnOneKP (spinDirection,currKPoint,numStates,doSYBD)
+
+   ! Import necessary modules.
+   use HDF5
+   use O_Kinds
+   use O_TimeStamps
+   use O_Potential, only: numPlusUJAtoms
+   use O_AtomicSites, only: valeDim
+   use O_PSCFBandHDF5, only: valeStatesBand, statesBand, eigenVectorsBand_did, &
+         & eigenValuesBand_did
+#ifndef GAMMA
+   use O_LAPACKZHEGV
+#else
+   use O_LAPACKDSYGV
+#endif
+
+   ! Make sure that no funny variables are defined.
+   implicit none
+
+   ! Define the passed parameters.
+   integer :: spinDirection
+   integer :: currKPoint
+   integer :: numStates
+   integer :: doSYBD
+
+   ! Define the local variables used in this subroutine.
+   integer :: hdferr
+
+   ! In the event that there are some atoms that have a plusUJ term, perform
+   !   the final update to the plusUJ term and then apply the plusUJ
+   !   modification to the Hamiltonian.
+   if (numPlusUJAtoms > 0) then
+      call update2AndApplyUJ(currKPoint,spinDirection)
+   endif
+
+   ! Solve the eigen problem with a LAPACK routine.
+#ifndef GAMMA
+   call solveZHEGV(valeDim,numStates,valeVale(:,:,1,spinDirection),&
+         & valeValeOL(:,:,1,1),energyEigenValues(:,currKPoint,spinDirection))
+#else
+   call solveDSYGV(valeDim,numStates,valeValeGamma(:,:,spinDirection),&
+         & valeValeOLGamma(:,:,1),energyEigenValues(:,currKPoint,spinDirection))
+#endif
+
+   if (doSYBD == 0) then
+#ifndef GAMMA
+      ! Write the eigenVector results to disk.
+      call h5dwrite_f (eigenVectorsBand_did(1,currKPoint,spinDirection),&
+            & H5T_NATIVE_DOUBLE,real(valeVale(:,1:numStates,1,spinDirection),&
+            & double),valeStatesBand,hdferr)
+      if (hdferr /= 0) stop 'Cannot write real energy eigen vectors.'
+      call h5dwrite_f (eigenVectorsBand_did(2,currKPoint,spinDirection),&
+            & H5T_NATIVE_DOUBLE,aimag(valeVale(:,1:numStates,1,spinDirection)),&
+            & valeStatesBand,hdferr)
+      if (hdferr /= 0) stop 'Cannot write imag energy eigen vectors.'
+#else
+      ! Write the eigenVector results to disk.
+      call h5dwrite_f (eigenVectorsBand_did(1,currKPoint,spinDirection),&
+            & H5T_NATIVE_DOUBLE,valeValeGamma(:,1:numStates,spinDirection),&
+            & valeStatesBand,hdferr)
+      if (hdferr /= 0) stop 'Cannot write real energy eigen vectors.'
+#endif
+
+
+      ! Write the eigenValue results to disk, in a.u.
+      call h5dwrite_f (eigenValuesBand_did(currKPoint,spinDirection),&
+            & H5T_NATIVE_DOUBLE,energyEigenValues(:,currKPoint,&
+            & spinDirection),statesBand,hdferr)
+      if (hdferr /= 0) stop 'Cannot write energy eigen values.'
+
+   endif
+
+end subroutine secularEqnOneKP
 
 ! This subroutine will update the plusUJ term values on the basis of the charge
 !   density matrix (obtained from the product of wave function coefficients
@@ -757,12 +759,12 @@ end subroutine restoreValeValeOL
 
 
 
-subroutine readDataSCF(h,i,numStates)
+subroutine readDataSCF(h,i,numStates,matrixCode)
 
    ! Import necessary data modules.
    use O_KPoints, only: numKPoints
    use O_AtomicSites, only: valeDim
-   use O_SCFIntegralsHDF5, only: atomDims, atomOverlap_did
+   use O_SCFIntegralsHDF5, only: atomDims, atomOverlap_did, atomMMOverlap_did
    use O_SCFEigVecHDF5, only: valeStates, eigenVectors_did
 #ifndef GAMMA
    use O_MatrixSubs, only: readMatrix, readPackedMatrix, unpackMatrix
@@ -774,9 +776,11 @@ subroutine readDataSCF(h,i,numStates)
    integer, intent(in) :: h ! Spin variable.
    integer, intent(in) :: i ! KPoint variable
    integer, intent(in) :: numStates
+   integer, intent(in) :: matrixCode
 
    ! Define local variables.
    integer :: dim1
+   integer :: j ! Loop index (usually xyz).
    real (kind=double), allocatable, dimension (:,:) :: packedValeVale
 #ifndef GAMMA
    real (kind=double), allocatable, dimension (:,:) :: tempRealValeVale
@@ -791,26 +795,42 @@ subroutine readDataSCF(h,i,numStates)
    dim1 = 1
 #endif
 
-   ! Allocate space to read the packed overlap matrix.
+   ! Allocate space to read a packed matrix.
    allocate (packedValeVale(dim1,valeDim*(valeDim+1)/2))
 
-   ! Read the overlap matrix.  The tempPackedMatrix is not used.
-   call readPackedMatrix(atomOverlap_did(i),packedValeVale,&
-         & atomDims,dim1,valeDim)
+   if (matrixCode == 1) then
+      ! Read the overlap matrix.  The tempPackedMatrix is not used.
+      call readPackedMatrix(atomOverlap_did(i),packedValeVale,&
+            & atomDims,dim1,valeDim)
 
-   ! Unpack the matrix.
+      ! Unpack the matrix.
 #ifndef GAMMA
-   call unpackMatrix(valeValeOL(:,:,1,1),packedValeVale,valeDim,1)
+      call unpackMatrix(valeValeOL(:,:,1,1),packedValeVale,valeDim,1)
 #else
-   call unpackMatrixGamma(valeValeOLGamma(:,:,1),packedValeVale,valeDim,1)
+      call unpackMatrixGamma(valeValeOLGamma(:,:,1),packedValeVale,valeDim,1)
 #endif
+
+   elseif (matrixCode == 2) then
+      do j = 1, 3
+         ! Read the xyz momentum matrix elements.
+         call readPackedMatrix(atomMMOverlap_did(i,j),packedValeVale,&
+               & atomDims,dim1,valeDim)
+
+         ! Unpack the matrix.
+#ifndef GAMMA
+        call unpackMatrix(valeValeMM(:,:,j),packedValeVale,valeDim,1)
+#else
+        call unpackMatrixGamma(valeValeMMGamma(:,:,j),packedValeVale,valeDim,1)
+#endif
+      enddo
+   endif
    ! Deallocate the packed matrix used to read and unpack the data.
    deallocate (packedValeVale)
 
 #ifndef GAMMA
    ! Read the wave functions for this kpoint from the datasets into
-   !   the valeVale matrix.  If numKPoints==1, the wave functions are
-   !   already in the valeVale(1:valeDim,1:numStates) matrix.
+   !   the valeVale matrix.  If numKPoints==1, the wave functions should
+   !   already be in the valeVale(1:valeDim,1:numStates) matrix.
    if (numKPoints > 1) then
 
       ! Allocate space to read the wave functions.

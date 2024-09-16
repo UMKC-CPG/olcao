@@ -78,12 +78,12 @@ subroutine initSCFEigValHDF5 (scf_fid,numStates)
    allocate (eigenValues_did(numKPoints,spin))
 
    ! Create the datasets for the eigen values.
-   do i = 1, numKPoints
-      do j = 1, spin
-         write (currentName,fmt="(i7.7,i7.7)") i,j
+   do i = 1, spin
+      do j = 1, numKPoints
+         write (currentName,fmt="(i7.7,i7.7)") j,i
          currentName = trim (currentName)
          call h5dcreate_f(eigenValues_gid,currentName,H5T_NATIVE_DOUBLE,&
-               & states_dsid,eigenValues_did(i,j),hdferr,states_plid)
+               & states_dsid,eigenValues_did(j,i),hdferr,states_plid)
       enddo
    enddo
 
@@ -120,15 +120,17 @@ subroutine accessSCFEigValHDF5 (scf_fid,numStates)
    allocate (eigenValues_did(numKPoints,spin))
 
    ! Open the datasets for the eigen vectors.
-   do i = 1, numKPoints
-      do j = 1, spin
-         write (currentName,fmt="(i7.7,i7.7)") i,j
+   do i = 1, spin
+      do j = 1, numKPoints
+         write (currentName,fmt="(i7.7,i7.7)") j,i
          currentName = trim (currentName)
-         call h5dopen_f(eigenValues_gid,currentName,eigenValues_did(i,j),&
+         call h5dopen_f(eigenValues_gid,currentName,eigenValues_did(j,i),&
                & hdferr)
          if (hdferr /= 0) stop 'Failed to open eigenValues dataset.'
       enddo
    enddo
+
+   ! Checkpointing attributes are only used for the eigen vectors.
 
    ! Obtain the property list for the eigenvalues.
    call h5dget_create_plist_f(eigenValues_did(1,1),states_plid,hdferr)

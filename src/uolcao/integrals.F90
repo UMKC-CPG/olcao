@@ -401,8 +401,9 @@ subroutine gaussOverlapOL
 
                   ! Check if this atom alpha pair has any non negligable
                   !   overlap. If it does not, then cycle or exit as needed.
-                  if (alphaDist(alphaIndex(1),alphaIndex(2),currentElements(1),&
-                        & currentElements(2)) < shiftedAtomSiteSep) then
+                  if (alphaDist(alphaIndex(1),alphaIndex(2),&
+                        & currentElements(1),currentElements(2)) < &
+                        & shiftedAtomSiteSep) then
 
                      ! Switch mode to go through atom 2 alphas on the current
                      !   diagonal alpha of atom 1.
@@ -2724,116 +2725,175 @@ subroutine electronicPE(contrib,alphaIndex,currentElements,currentlmAlphaIndex,&
 end subroutine electronicPE
 
 
-!subroutine pscfHamiltonian
-!
-!   ! Import necessary modules.
-!   use O_Kinds
-!   use O_TimeStamps
-!   use O_Constants, only: dim3
-!   use O_CommandLine, only: doDIMO_PSCF, doOPTC_PSCF
-!   use O_KPoints, only: numKPoints
-!   use O_GaussianRelations, only: alphaDist
-!   use O_AtomicSites, only: valeDim, coreDim, numAtomSites, atomSites
-!   use O_AtomicTypes, only: maxNumAtomAlphas, maxNumStates, atomTypes
-!   use O_Lattice, only: numCellsReal, cellSizesReal, cellDimsReal, &
-!         & findLatticeVector
-!   use O_GaussianIntegrals, only: overlap2CIntg
-!   use O_PSCFIntegralsHDF5, only: atomOverlap_aid, atomHamOverlap_aid, &
-!         & atomDMOverlap_gid, atomMMOverlap_gid
-!   use O_Basis, only: initializeAtomSite
-!   use O_IntgSaving
-!
-!   ! Make sure that there are not accidental variable declarations.
-!   implicit none
-!
-!   ! Define local variables for logging and loop control
-!   integer :: i,j,k,l,m ! Loop index variables
-!   integer :: hdf5Status
-!   integer :: hdferr
-!   integer(hsize_t), dimension (1) :: attribIntDims ! Attribute dataspace dim
-!
-!   ! Atom specific variables that change with each atom pair loop iteration.
-!   integer,              dimension (2)    :: currentAtomType
-!   integer,              dimension (2)    :: currentElements
-!   integer,              dimension (2)    :: currentNumAlphas
-!   integer,              dimension (2)    :: currentNumCoreStates
-!   integer,              dimension (2)    :: currentNumValeStates
-!   integer,              dimension (2)    :: currentNumTotalStates
-!   integer, allocatable, dimension (:,:)  :: currentlmIndex
-!   integer, allocatable, dimension (:,:)  :: currentlmAlphaIndex
-!   real (kind=double), dimension (dim3,2) :: currentPosition
-!   real (kind=double), allocatable, dimension (:,:)   :: currentAlphas
-!   real (kind=double), allocatable, dimension (:,:,:) :: currentBasisFns
-!
-!   ! Alpha loop variables.  Once an overlap has been determined to exist for
-!   !   two atoms (including lattice shifting) a loop is initiated that goes
-!   !   over the alphas of those two atoms.  These variables are used there.
-!   integer :: currentMode ! A simple flag indicating weather (1) the alphas
-!         ! from atom 1 are being compared to the smallest untested alpha of
-!         ! atom 2, or (2) the other way around.  Case (0) is just the initial
-!         ! state.
-!   integer :: maxAlpha1Used ! Simply the largest alpha used from the current
-!         ! atom pair.
-!   integer, dimension (2) :: alphaIndex ! This tracks which alphas of the
-!         ! current atom pair are being tested for overlap.
-!   real (kind=double), dimension (16,16) :: oneAlphaPair ! The overlap from
-!         ! one alpha pair.
-!   real (kind=double), allocatable, dimension (:,:,:) :: pairXBasisFn2 ! The
-!         ! above overlap times the basis function from atom 2.  This is
-!         ! accumulated with each iteration of the alpha loop.
-!   logical :: contrib  ! At least one alpha pair contributes.  For the nuc and
-!         ! elec calculations this also requires that the pot term contribute.
-!
-!   ! Variables and data structures that change or are accumulated with each
-!   !   iteration of the lattice loop.
-!#ifndef GAMMA
-!   complex (kind=double), allocatable, dimension (:,:,:) :: currentPair
-!#else
-!   real (kind=double), allocatable, dimension (:,:) :: currentPairGamma
-!#endif
-!   real (kind=double), allocatable, dimension (:,:) :: pairXBasisFn12
-!
-!
-!   ! Local position and direction vectors and radii
-!   real (kind=double), dimension (dim3) :: latticeVector ! Vector to lattice
-!         ! point closest to the difference between the unit cell positions for
-!         ! atom 1 and atom 2.
-!   real (kind=double), dimension (dim3) :: shiftedAtomPos ! The position of
-!         ! atom 2 shifted to each relevant lattice point.
-!   real (kind=double) :: atomSiteSepSqrd ! The square of the minimum distance
-!         ! seperating atom 1 and atom 2 according to their unit cell positions
-!         ! shifted by the lattice point closest to their difference.
-!   real (kind=double) :: shiftedAtomSiteSep ! The seperation distance between
-!         ! atom 1 and the shifted position of atom 2.
-!   real (kind=double) :: currentNegligLimit ! The distance beyond which all
-!         ! alpha pairs are considered to have no overlap.
-!   real (kind=double) :: maxLatticeRadius ! Maximum radius beyond which no
-!         ! lattice points will be considered for integration.
-!
-!   ! Define variables for gauss integrals
-!   integer :: l1l2Switch
-!   integer, dimension(16) :: powerOfTwo = (/0,1,1,1,2,2,2,2,2,3,3,3,3,3,3,3/)
-!   integer :: ovlpDone ! Flag: the overlap was already computed.
+
+subroutine allPSCFIntgCombo
+
+   ! Import necessary modules.
+   use O_Kinds
+   use O_TimeStamps
+   use O_Constants, only: dim3
+   use O_CommandLine, only: doDIMO_PSCF, doOPTC_PSCF
+   use O_KPoints, only: numKPoints
+   use O_GaussianRelations, only: alphaDist, alphaCenter, alphaNucDist
+   use O_AtomicSites, only: valeDim, coreDim, numAtomSites, atomSites
+   use O_AtomicTypes, only: maxNumAtomAlphas, maxNumStates, atomTypes
+   use O_Lattice, only: numCellsReal, cellSizesReal, cellDimsReal, &
+         & findLatticeVector
+   use O_PotTypes, only: potTypes
+   use O_PotSites, only: potSites, numPotSites
+   use O_GaussianIntegrals, only: overlap2CIntg, kinetic2CIntg, &
+         & nuclear3CIntg, electron3CIntg, momentum2CIntg
+   use O_PSCFIntegralsHDF5, only: atomOverlap_aid, atomHamOverlap_aid, &
+         & atomDMOverlap_aid, atomMMOverlap_aid
+   use O_Basis, only: initializeAtomSite
+   use O_Potential, only: rel, spin, potCoeffs
+   use O_IntgSaving
+
+   ! Make sure that there are not accidental variable declarations.
+   implicit none
+
+   ! Define local variables for logging and loop control
+   integer :: i,j,k,l,m,n,o,p,q ! Loop index variables
+   integer :: hdf5Status
+   integer :: hdferr
+   integer(hsize_t), dimension (1) :: attribIntDims ! Attribute dataspace dim
+
+   ! Atom specific variables that change with each atom pair loop iteration.
+   integer,              dimension (2)    :: currentAtomType
+   integer,              dimension (2)    :: currentElements
+   integer,              dimension (2)    :: currentNumAlphas
+   integer,              dimension (2)    :: currentNumCoreStates
+   integer,              dimension (2)    :: currentNumValeStates
+   integer,              dimension (2)    :: currentNumTotalStates
+   integer, allocatable, dimension (:,:)  :: currentlmIndex
+   integer, allocatable, dimension (:,:)  :: currentlmAlphaIndex
+   real (kind=double), dimension (dim3,2) :: currentPosition
+   real (kind=double), allocatable, dimension (:,:)   :: currentAlphas
+   real (kind=double), allocatable, dimension (:,:,:) :: currentBasisFns
+
+   ! Alpha loop variables.  Once an overlap has been determined to exist for
+   !   two atoms (including lattice shifting) a loop is initiated that goes
+   !   over the alphas of those two atoms.  These variables are used there.
+   integer :: currentMode ! A simple flag indicating weather (1) the alphas
+         ! from atom 1 are being compared to the smallest untested alpha of
+         ! atom 2, or (2) the other way around.  Case (0) is just the initial
+         ! state.
+   integer :: maxAlpha1Used ! Simply the largest alpha used from the current
+         ! atom pair.
+   integer, dimension (2) :: alphaIndex ! This tracks which alphas of the
+         ! current atom pair are being tested for overlap.
+   real (kind=double), dimension (16,16) :: oneAlphaSet ! The overlap from
+         ! one alpha pair.
+   real (kind=double), dimension (16,16,3) :: oneAlphaSetXYZ ! The overlap
+         ! from one alpha pair for an XYZ integral.
+   real (kind=double), dimension (16,16,2) :: potAtomOverlap ! The accumulated
+         ! values from all the oneAlphaSet calculations associated with the
+         ! hamiltonian (KE, NP, EP, MV).
+   real (kind=double), allocatable, dimension (:,:,:) :: pairXBasisFn2OL
+   real (kind=double), allocatable, dimension (:,:,:,:) :: pairXBasisFn2Ham
+   real (kind=double), allocatable, dimension (:,:,:,:) :: pairXBasisFn2XYZ
+         ! The pair overlap times the basis function from atom 2.  These
+         ! are accumulated with each iteration of the alpha loop.
+   logical :: contrib  ! At least one alpha pair contributes.  For the nuc and
+         ! elec calculations this also requires that the pot term contribute.
+
+   ! Variables and data structures that change or are accumulated with each
+   !   iteration of the lattice loop.
+   real (kind=double), allocatable, dimension (:,:) :: pairXBasisFn12OL
+   real (kind=double), allocatable, dimension (:,:,:) :: pairXBasisFn12Ham
+   real (kind=double), allocatable, dimension (:,:,:) :: pairXBasisFn12XYZ
+#ifndef GAMMA
+   complex (kind=double), allocatable, dimension (:,:,:) :: currentPairOL
+   complex (kind=double), allocatable, dimension (:,:,:,:) :: currentPairHam
+   complex (kind=double), allocatable, dimension (:,:,:,:) :: currentPairXYZ
+#else
+   real (kind=double), allocatable, dimension (:,:) :: currentPairOLGamma
+   real (kind=double), allocatable, dimension (:,:,:) :: currentPairHamGamma
+   real (kind=double), allocatable, dimension (:,:,:) :: currentPairXYZGamma
+#endif
+
+
+   ! Local position and direction vectors and radii
+   real (kind=double), dimension (dim3) :: latticeVector ! Vector to lattice
+         ! point closest to the difference between the unit cell positions for
+         ! atom 1 and atom 2.
+   real (kind=double), dimension (dim3) :: latticeVector2 ! Vector to lattice
+         ! point closest to the difference between the unit cell positions for
+         ! the center of the alpha1 alpha2 overlap and alpha3 origin.
+   real (kind=double), dimension (dim3) :: shiftedAtomPos ! The position of
+         ! atom 2 shifted to each relevant lattice point.
+   real (kind=double), dimension (dim3) :: shiftedPotPos ! The position of
+         ! the nuclear pot shifted to each relevant lattice point.
+   real (kind=double), dimension (dim3) :: overlapCenter ! The position of the
+         ! center of the overlap between two alphas.  This is used to help get
+         ! the distance to the third center (nuclear potential).
+   real (kind=double), dimension (dim3) :: centerOriginVect ! The seperation
+         ! vector between the center of the two alpha overlaps, and the origin
+         ! to be used for the nuclear potential site.
+   real (kind=double) :: centerOriginSep ! The sum of squares of the above
+         ! vector.
+   real (kind=double) :: shiftedCenterOriginSep ! The above value shifted
+         ! according to the current lattice point loop.
+   real (kind=double) :: atomSiteSepSqrd ! The square of the minimum distance
+         ! seperating atom 1 and atom 2 according to their unit cell positions
+         ! shifted by the lattice point closest to their difference.
+   real (kind=double) :: shiftedAtomSiteSep ! The seperation distance between
+         ! atom 1 and the shifted position of atom 2.
+   real (kind=double) :: currentNegligLimit ! The distance beyond which all
+         ! alpha pairs are considered to have no overlap.
+   real (kind=double) :: maxLatticeRadius ! Maximum radius beyond which no
+         ! lattice points will be considered for integration.
+   real (kind=double) :: maxLatticeRadius2 ! Maximum radius beyond which no
+         ! lattice points will be considered for integration.  This is used
+         ! for the nuclear alpha triple.
+
+   ! Potential specific variables that change with each potential site 
+   !   or potential lattice point iteration.
+   integer :: currentPotType
+   integer :: currentNumPotAlphas
+   integer :: potCoeffIndex
+   real (kind=double), dimension (2) :: currentPotCoeff
+   real (kind=double) :: currentPotAlpha
+
+   ! Nuclear potential specific variables that will change with each potential
+   !   site or potential lattice point iteration.
+   integer :: potElement ! The element ID number of the potential sites.
+   real (kind=double) :: zFactor  ! Charge on the current nucleus.
+   real (kind=double) :: nucAlpha  ! Nuclear potential alpha.
+   real (kind=double) :: threeAlphaDist ! A value like the alphaDist above that
+         ! can be pre-calculated since part of it will not change with the
+         ! actual distance, but only with the choice of alphas (which are known
+         ! at input time.)
+   real (kind=double), dimension (dim3) :: potPosition ! Original cell
+         ! position of the current potential site.
+
+   ! Define variables for gauss integrals
+   integer :: l1l2Switch
+   integer, dimension(16) :: powerOfTwo = (/0,1,1,1,2,2,2,2,2,3,3,3,3,3,3,3/)
+   integer :: intgDone ! Flag: the overlap, hamiltonian already computed.
 !   integer :: hamDone ! Flag: the hamiltonian was already computed.
-!
-!   ! Record the beginning of this phase of the setup calculation.
-!   call timeStampStart(20)
-!
-!   ! We need to understand which integrals were requested and which ones
-!   !   have already been computed.
-!   attribIntDims(1) = 1
-!
-!   ! Check on the overlap.
-!   ovlpDone = 0
-!   call h5aread_f(atomOverlap_aid,H5T_NATIVE_INTEGER,ovlpDone,&
-!         & attribIntDims,hdferr)
-!   if (hdferr /= 0) stop 'Failed to read atom overlap status.'
-!   if (ovlpDone == 1) then
-!      write(20,*) "Two-center overlap already exists. Skipping."
-!      call h5aclose_f(atomOverlap_aid,hdferr)
-!      if (hdferr /= 0) stop 'Failed to close atom overlap status.'
-!   endif
-!
+   integer :: dimoDone ! Flag: the dipole moment was already computed.
+   integer :: mmDone ! Flag: the momentum matrix was already computed.
+
+   ! Record the beginning of this phase of the setup calculation.
+   call timeStampStart(20)
+
+   ! We need to understand which integrals were requested and which ones
+   !   have already been computed.
+   attribIntDims(1) = 1
+
+   ! Check on the overlap and hamiltonian integrals. (If overlap is done, then
+   !   both will be done.)
+   intgDone = 0
+   call h5aread_f(atomOverlap_aid,H5T_NATIVE_INTEGER,intgDone,&
+         & attribIntDims,hdferr)
+   if (hdferr /= 0) stop 'Failed to read atom overlap status.'
+   if (intgDone == 1) then
+      write(20,*) "Overlap, hamiltonian integrals already exist. Skipping."
+      call h5aclose_f(atomOverlap_aid,hdferr)
+      if (hdferr /= 0) stop 'Failed to close atom overlap status.'
+   endif
+
 !   ! Check on the hamiltonian.
 !   hamDone = 0
 !   call h5aread_f(atomHamOverlap_aid,H5T_NATIVE_INTEGER,hamDone,&
@@ -2844,346 +2904,368 @@ end subroutine electronicPE
 !      call h5aclose_f(atomOverlap_aid,hdferr)
 !      if (hdferr /= 0) stop 'Failed to close atom hamiltonian overlap status.'
 !   endif
-!
-!   ! Check on the dipole moment.
-!   dimoDone = 0
-!   call h5aread_f(atomDMOverlap_aid,H5T_NATIVE_INTEGER,dimoDone,&
-!         & attribIntDims,hdferr)
-!   if (hdferr /= 0) stop 'Failed to read atom dipole moment overlap status.'
-!   if (dimoDone == 1) then
-!      write(20,*) "Two-center-ish dipole moment already exists. Skipping."
-!      call h5aclose_f(atomDMOverlap_aid,hdferr)
-!      if (hdferr /= 0) stop 'Failed to close dipole moment status.'
-!   endif
-!
-!   ! Check on the momentum matrix elements.
-!   MMDone = 0
-!   call h5aread_f(atomMMOverlap_aid,H5T_NATIVE_INTEGER,MMDone,&
-!         & attribIntDims,hdferr)
-!   if (hdferr /= 0) stop 'Failed to read momentum matrix status.'
-!   if (MMDone == 1) then
-!      write(20,*) "Two-center-ish momentum matrix already exists. Skipping."
-!      call h5aclose_f(atomMMOverlap_aid,hdferr)
-!      if (hdferr /= 0) stop 'Failed to close momentum matrix status.'
-!   endif
-!
-!   ! If all integrals are done, then just return.
-!   if ((ovlpDone == 1) .and. (hamDone == 1) .and. &
-!         & ((dimoDone == 1) .or. (doDIMO_PSCF == 0)) .and. &
-!         & ((MMDone == 1) .or. (doOPTC_PSCF == 0)) then
-!      write (20,*) "All requested integrals are already done. Skipping."
-!      return
-!   endif
-!
-!   ! Allocate space for locally defined allocatable arrays
-!   allocate (currentBasisFns       (maxNumAtomAlphas,maxNumStates,2))
-!   allocate (currentAlphas         (maxNumAtomAlphas,2))
-!   allocate (currentlmAlphaIndex   (maxNumAtomAlphas,2))
-!   allocate (currentlmIndex        (maxNumStates,2))
+
+   ! Check on the dipole moment.
+   dimoDone = 0
+   call h5aread_f(atomDMOverlap_aid,H5T_NATIVE_INTEGER,dimoDone,&
+         & attribIntDims,hdferr)
+   if (hdferr /= 0) stop 'Failed to read atom dipole moment overlap status.'
+   if (dimoDone == 1) then
+      write(20,*) "Two-center-ish dipole moment already exists. Skipping."
+      call h5aclose_f(atomDMOverlap_aid,hdferr)
+      if (hdferr /= 0) stop 'Failed to close dipole moment status.'
+   endif
+
+   ! Check on the momentum matrix elements.
+   mmDone = 0
+   call h5aread_f(atomMMOverlap_aid,H5T_NATIVE_INTEGER,mmDone,&
+         & attribIntDims,hdferr)
+   if (hdferr /= 0) stop 'Failed to read momentum matrix status.'
+   if (mmDone == 1) then
+      write(20,*) "Two-center-ish momentum matrix already exists. Skipping."
+      call h5aclose_f(atomMMOverlap_aid,hdferr)
+      if (hdferr /= 0) stop 'Failed to close momentum matrix status.'
+   endif
+
+   ! If all integrals are done, then just return.
+   if ((intgDone == 1) .and. &
+         & ((dimoDone == 1) .or. (doDIMO_PSCF == 0)) .and. &
+         & ((mmDone == 1) .or. (doOPTC_PSCF == 0))) then
+      write (20,*) "All requested integrals are already done. Skipping."
+      return
+   endif
+
+   ! Allocate space for locally defined allocatable arrays
+   allocate (currentBasisFns       (maxNumAtomAlphas,maxNumStates,2))
+   allocate (currentAlphas         (maxNumAtomAlphas,2))
+   allocate (currentlmAlphaIndex   (maxNumAtomAlphas,2))
+   allocate (currentlmIndex        (maxNumStates,2))
 !   allocate (alphaDist             (maxNumAtomAlphas,maxNumAtomAlphas))
 !   allocate (alphaCenter           (maxNumAtomAlphas,maxNumAtomAlphas))
-!
-!
-!   if (doINTG == 1) then
-!      allocate (pairXWaveFn2OL     (16,maxNumAtomAlphas,maxNumStates))
-!      allocate (pairXWaveFn2Ham    (16,maxNumAtomAlphas,maxNumStates,spin))
-!      allocate (pairXWaveFn12OL    (maxNumStates,maxNumStates))
-!      allocate (pairXWaveFn12Ham   (maxNumStates,maxNumStates,spin))
-!
-!      ! Initialize overlap and hamiltonian matrices.
-!      pairXWaveFn12OL(:,:)    = 0.0_double
-!      pairXWaveFn12Ham(:,:,:) = 0.0_double
-!   endif
-!
-!   do i = 1, numAtomSites
-!
-!      ! Initialize the HDF5 dataset and dataspace for this atom.
-!      call initAtomHDF (i,doINTG,doMOME)
-!
-!      ! Obtain local copies of key data from larger global data structures for
-!      !   the first looped atom.
-!      call initializeAtomSite(i,1,currentAtomType,currentElements,&
-!            & currentNumTotalStates,currentNumCoreStates,currentNumValeStates,&
-!            & currentNumAlphas,currentlmIndex,currentlmAlphaIndex,&
-!            & currentPosition,currentAlphas,currentBasisFns)
-!
-!      ! Begin a loop over the other atoms in the system
-!      do j = i, numAtomSites
-!
-!         ! Obtain local copies of key data from larger global data structures
-!         !   for the second looped atom.
-!         call initializeAtomSite(j,2,currentAtomType,currentElements,&
-!            & currentNumTotalStates,currentNumCoreStates,currentNumValeStates,&
-!            & currentNumAlphas,currentlmIndex,currentlmAlphaIndex,&
-!            & currentPosition,currentAlphas,currentBasisFns)
-!
-!         ! At this point all the data that defines the nature of the two atoms
-!         !   in this pair have been copied and defined.
-!
-!         ! Find the lattice point closest to the difference between the two
-!         !   atom sites.
-!         call findLatticeVector((currentPosition(:,1)-currentPosition(:,2)),&
-!               & latticeVector)
-!
-!         ! Determine the square of the minimum seperation distance between the
-!         !   two atoms.
-!         atomSiteSepSqrd = sum((currentPosition(:,1) - currentPosition(:,2) - &
-!               & latticeVector(:))**2)
-!
-!         ! Calculate the maximum distance from either atom where the overlap
-!         !   is considered to be non-negligable.
+
+
+   if (intgDone == 0) then
+      allocate (pairXBasisFn2OL (16,maxNumAtomAlphas,maxNumStates))
+      allocate (pairXBasisFn12OL (maxNumStates,maxNumStates))
+      pairXBasisFn12OL(:,:) = 0.0_double
+      allocate (pairXBasisFn2Ham (16,maxNumAtomAlphas,maxNumStates,spin))
+      allocate (pairXBasisFn12Ham (maxNumStates,maxNumStates,spin))
+      pairXBasisFn12Ham(:,:,:) = 0.0_double
+#ifndef GAMMA
+      allocate (currentPairOL (maxNumStates,maxNumStates,numKPoints))
+      allocate (currentPairHam (maxNumStates,maxNumStates,numKPoints,spin))
+#else
+      allocate (currentPairOLGamma (maxNumStates,maxNumStates))
+      allocate (currentPairHamGamma (maxNumStates,maxNumStates,spin))
+#endif
+   endif
+
+   if ((doOPTC_PSCF >= 1) .or. (doDIMO_PSCF == 1)) then
+      allocate (pairXBasisFn2XYZ (16,maxNumAtomAlphas,maxNumStates,3))
+      allocate (pairXBasisFn12XYZ (maxNumStates,maxNumStates,3))
+      pairXBasisFn12XYZ(:,:,:) = 0.0_double
+#ifndef GAMMA
+      allocate (currentPairXYZ (maxNumStates,maxNumStates,numKPoints,3))
+#else
+      allocate (currentPairXYZGamma (maxNumStates,maxNumStates,3))
+#endif
+   endif
+
+   ! Initialize key matrices
+#ifndef GAMMA
+   coreValeOL    (:,:,:)      = 0.0_double
+   valeVale      (:,:,:,:)    = 0.0_double
+   coreCore      (:,:,:)      = 0.0_double
+#else
+   coreValeOLGamma    (:,:)   = 0.0_double
+   valeValeGamma      (:,:,:) = 0.0_double
+   coreCoreGamma      (:,:)   = 0.0_double
+#endif
+
+   do i = 1, numAtomSites
+
+      ! Obtain local copies of key data from larger global data structures for
+      !   the first looped atom.
+      call initializeAtomSite(i,1,currentAtomType,currentElements,&
+            & currentNumTotalStates,currentNumCoreStates,currentNumValeStates,&
+            & currentNumAlphas,currentlmIndex,currentlmAlphaIndex,&
+            & currentPosition,currentAlphas,currentBasisFns)
+
+      ! Begin a loop over the other atoms in the system
+      do j = i, numAtomSites
+
+         ! Obtain local copies of key data from larger global data structures
+         !   for the second looped atom.
+         call initializeAtomSite(j,2,currentAtomType,currentElements,&
+            & currentNumTotalStates,currentNumCoreStates,currentNumValeStates,&
+            & currentNumAlphas,currentlmIndex,currentlmAlphaIndex,&
+            & currentPosition,currentAlphas,currentBasisFns)
+
+         ! At this point all the data that defines the nature of the two atoms
+         !   in this pair have been copied and defined.
+
+         ! Find the lattice point closest to the difference between the two
+         !   atom sites.
+         call findLatticeVector((currentPosition(:,1)-currentPosition(:,2)),&
+               & latticeVector)
+
+         ! Determine the square of the minimum seperation distance between the
+         !   two atoms.
+         atomSiteSepSqrd = sum((currentPosition(:,1) - currentPosition(:,2) - &
+               & latticeVector(:))**2)
+
+         ! Calculate the maximum distance from either atom where the overlap
+         !   is considered to be non-negligable.
+         currentNegligLimit = alphaDist(1,1,currentElements(1),&
+               & currentElements(2))
 !         currentNegligLimit = logBasisFnThresh * (currentAlphas(1,1) + &
 !               & currentAlphas(1,2)) / (currentAlphas(1,1) * &
 !               & currentAlphas(1,2))
-!
-!         ! Determine if there are no alpha terms for this atom pair that fall
-!         !   within the current negligability limit.  Cycle if there are none.
-!         if (atomSiteSepSqrd > currentNegligLimit) cycle
-!
-!         ! Determine the maximum radius beyond which no lattice point will be
-!         !   considered to contribute to the overlap integral for this atom
-!         !   pair.
-!         maxLatticeRadius = atomSiteSepSqrd + currentNegligLimit + 2.0_double*&
-!                          & sqrt(atomSiteSepSqrd * currentNegligLimit)
-!
-!         ! Check if we have to check more lattice points than were determined
-!         !   to be needed by comparing the maxlatticeRadius to the maximum
-!         !   radius of the lattice points defined earlier.
-!         if (maxLatticeRadius > cellSizesReal(numCellsReal)) then
-!            write (20,*) 'More lattice points needed for this atom overlap pair'
-!            write (20,*) 'maxLatticeRadius requested=',maxLatticeRadius
-!            write (20,*) 'max available=',cellSizesReal(numCellsReal)
-!            stop
-!         endif
-!
-!         ! Form an alpha overlap matrix that is later used to determine whether
-!         !   a particular alpha pair needs to be considered in the overlap
-!         !   matrix or if the alpha pair do not have sufficient overlap.
-!         !   NOTE that it may be possible to improve this even more by asking
-!         !   some simple question that will determine quickly if the alphas for
-!         !   these two atoms are the same.  In that case the alphasOverlap
-!         !   matrix is symmetric and can be calculated in about half the time.
-!         !   That is not checked for here, but in the future it could be.
-!         ! At first I thought that this would be a good idea, but it turns out
-!         !   to not be efficient for large cell systems where each atom will
-!         !   have an overlap with another atom only once and even then, not
-!         !   every alpha pair will be used so this might actually perform worse.
-!         !   It may be possible to salvage it in one of two ways.  Save this
-!         !   result for the cases of later overlap integral calculations.  This
-!         !   would require a lot of extra memory usage though.  OR, have a
-!         !   runtime switch that will utilize this method for the case of small
-!         !   systems, and the other method for the case of large systems.  That
-!         !   is probably not worth it though since small systems will be rather
-!         !   fast anyway.  Well, we will see.
-!         ! Another possibility (that can be applied to other similar algorithms
-!         !   in other subroutines) is to calculate these values based on the
-!         !   element as opposed to the current method of calculating them based
-!         !   on every atom pair iteration.  In this way the values would only
-!         !   have to be calculated once for each element pair.
-!         do k = 1,currentNumAlphas(2)
-!            alphaCenter(:currentNumAlphas(1),k) = &
-!                  &  currentAlphas(:currentNumAlphas(1),1) / &
-!                  & (currentAlphas(:currentNumAlphas(1),1) + &
-!                  &  currentAlphas(k,2))
-!            alphaDist(:currentNumAlphas(1),k) = logBasisFnThresh / &
-!                  &  currentAlphas(k,2) / alphaCenter(:currentNumAlphas(1),k)
-!         enddo
-!
-!         ! Begin a loop over all the lattice points to shift the position of
-!         !   atom number 2 to all the replicated cells.
-!         do k = 1, numCellsReal
-!
-!            ! Exit the loop when we have exceeded the necessary number of
-!            !   lattice points based on distance.
-!            if (cellSizesReal(k) > maxLatticeRadius) exit
-!
-!            ! Obtain the position of atom #2 shifted by the current lattice.
-!            shiftedAtomPos(:) = currentPosition(:,2) + latticeVector(:) + &
-!                  & cellDimsReal(:,k)
-!
-!            ! Obtain the seperation vector between atom 1 and the shifted
-!            !   position of atom 2.
-!            shiftedAtomSiteSep = sum ((currentPosition(:,1) - &
-!                  & shiftedAtomPos(:))**2)
-!
-!            ! Determine if this shifted atom position puts it outside of the
-!            !   above determined negligability limit for this atom pair.
-!            if (shiftedAtomSiteSep > currentNegligLimit) cycle
-!
-!
-!            ! Initialize the matrices to hold the product of the integrals
-!            !    times the atom2 wave functions.
-!            if (doINTG == 1) then
-!               pairXWaveFn2OL(:,:currentNumAlphas(1),&
-!                     &:currentNumTotalStates(2)) = 0.0_double
-!               pairXWaveFn2Ham(:,:currentNumAlphas(1),&
-!                     &:currentNumTotalStates(2),:spin) = 0.0_double
-!            endif
-!            if (doMOME == 1) then
-!               pairXWaveFn2MomX(:,:currentNumAlphas(1),&
-!                     &:currentNumTotalStates(2)) = 0.0_double
-!               pairXWaveFn2MomY(:,:currentNumAlphas(1),&
-!                     &:currentNumTotalStates(2)) = 0.0_double
-!               pairXWaveFn2MomZ(:,:currentNumAlphas(1),&
-!                     &:currentNumTotalStates(2)) = 0.0_double
-!            endif
-!
-!            ! Initialize a variable to track the largest atomic alpha used
-!            !   from atom 1.
-!            maxAlpha1Used = 0
-!
-!            ! Now we start loops over the alphas of each atomic type.  For each
-!            !   alpha pair the overlap is tested to determine if it is
-!            !   negligable or not.  The alphas for atom 1 are tested in turn
-!            !   with the first alpha of atom 2.  After all the atom 1 alphas
-!            !   have been tested or the test fails we test all the alphas
-!            !   of atom 2 with the first alpha of atom 1 until all the alphas
-!            !   of atom 2 have been used or the test fails.  Then we increment
-!            !   the loop counter by 1.  The second iteration of the loop
-!            !   obviously works just like the first except that the only
-!            !   difference is that instead of starting with the first alphas
-!            !   of atom 1 and atom 2, we always start with the second alphas
-!            !   of both atoms.
-!
-!            ! The loop must be up to the smaller number of alphas.
-!            do l = 1, min(currentNumAlphas(1),currentNumAlphas(2))
-!
-!               ! Set the mode to zero to say that we are incrementing through
-!               !   neither the atom 1 alpha array nor the atom 2 alpha array.
-!               currentMode = 0
-!
-!               ! Initialize the matrix index values for the two alphas.
-!               alphaIndex(:) = l
-!
-!               ! Check if this alpha pair has any non-negligable contribution.
-!               if (alphaDist(l,l) < shiftedAtomSiteSep) exit
-!
-!               ! Start looping over atomic alphas looking for a negligable
-!               !   contribution for each alpha pair.
-!               do while (.true.)
-!
-!                  ! Check if we are going through atom 1 alphas.
-!                  if (currentMode == 1) then
-!
-!                     ! Go to the next atom 1 alpha
-!                     alphaIndex(1) = alphaIndex(1) + 1
-!
-!                     ! Check if there are no alphas left to do for atom 1
-!                     if (alphaIndex(1) > currentNumAlphas(1)) then
-!
-!                        ! Switch mode to go through atom 2 alphas on the
-!                        !   current diagonal alpha of atom 1.
-!                        currentMode = 2
-!                        alphaIndex(1) = l
-!                        cycle
-!                     endif
-!
-!                  ! Check if we are going through atom 2 alphas.
-!                  elseif (currentMode == 2) then
-!
-!                     ! Go to the next atom 2 alpha
-!                     alphaIndex(2) = alphaIndex(2) + 1
-!
-!                     ! Check if there are no alphas left to do for atom 2
-!                     if (alphaIndex(2) > currentNumAlphas(2)) exit
-!                  endif
-!
-!                  ! Check if this atom alpha pair has any non negligable
-!                  !   overlap.
-!                  if (alphaDist(alphaIndex(1),alphaIndex(2)) < &
-!                        & shiftedAtomSiteSep) then
-!
-!                     ! Switch mode to go through atom 2 alphas on the current
-!                     !   diagonal alpha of atom 1.
-!                     if (currentMode == 1) then
-!                        currentMode = 2
-!                        alphaIndex(1) = l
-!                        cycle
-!                     else
-!                        exit
-!                     endif
-!                  endif
-!
-!                  if (doINTG == 1) then
-!                     ! At this point a sufficient overlap has been found for
-!                     !   the current alpha pair so we start looking through
-!                     !   nuclear potentials.
-!
-!                     ! First we find the center of the overlap between the two
-!                     !   alphas.
-!                     overlapCenter(:) = &
-!                           & alphaCenter(alphaIndex(1),alphaIndex(2)) * &
-!                           & (currentPosition(:,1) - shiftedAtomPos(:)) + &
-!                           & shiftedAtomPos(:)
-!
-!                     ! Initialize the result matrix to zero before starting the
-!                     !   nuclear potential loop.
-!                     potAtomOverlap(:currentlmAlphaIndex(alphaIndex(1),1), &
-!                           & :currentlmAlphaIndex(alphaIndex(2),2),:spin) = &
-!                           & 0.0_double
-!
-!
-!                     ! Initialize a counter to track which potential
-!                     !    coefficient we are currently calculating on.
-!                     potCoeffIndex = 0
-!
-!                     ! Initiate a loop over each potential site for the nuclear
-!                     !   potentials.
-!                     do m = 1, numPotSites
-!
-!                        ! Skip equivalent types now.  THey will be accounted
-!                        !   for later but we want to do some setup stuff only
-!                        !   once for all atoms of the same type.
-!                        if (potSites(m)%firstPotType == 0) cycle
-!
-!                        ! Initialize the parameters for this potential site
-!                        !   related to the type of this site.
-!                        currentPotType = potSites(m)%potTypeAssn
-!                        currentNumPotAlphas = potTypes(currentPotType)%numAlphas
-!
-!                        ! Initiate a loop over all the potential alphas present
-!                        !   for this site including the nuclear contribution.
-!                        do n = 1, currentNumPotAlphas + 1
-!
-!                           ! Assign the potential alpha based on the value of n.
-!                           if (n <= currentNumPotAlphas) then
-!
-!                              ! Apply the case for the atomic potential.
-!
-!                              ! Increment the index value that indicates which
-!                              !   potential coefficient to use of all
-!                              !   coefficients in the system.
-!                              potCoeffIndex = potCoeffIndex + 1
-!
-!                              ! Store the current potential coefficient.
-!                              currentPotCoeff(:spin) = &
-!                                    & potCoeffs(potCoeffIndex,:spin)
-!
-!                              ! Store the current potential alpha. 
-!                              currentPotAlpha = &
-!                                    & potTypes(currentPotType)%alphas(n)
-!                           else
-!
-!                              ! Apply the case for the nuclear potential.
-!
-!                              ! Get nuclear charge associated with this type.
-!                              zFactor = potTypes(currentPotType)%nucCharge
-!
-!                              ! If the zFactor is sufficiently small we
-!                              !   consider the effect of the overlap to be
-!                              !   negligable and we cycle to the next one.
-!                              if (zFactor < smallThresh) cycle
-!
-!                              ! Get the exponential alpha factor for the
-!                              !   nuclear potential.
-!                              currentPotAlpha = &
-!                                    & potTypes(currentPotType)%nucAlpha
-!
-!                           endif
-!
-!                           ! Determine the maximum distance beyond which the
-!                           !   overlap of the three gaussians is considered
-!                           !   negligable.
+
+         ! Determine if there are no alpha terms for this atom pair that fall
+         !   within the current negligability limit.  Cycle if there are none.
+         if (atomSiteSepSqrd > currentNegligLimit) cycle
+
+         ! Determine the maximum radius beyond which no lattice point will be
+         !   considered to contribute to the overlap integral for this atom
+         !   pair.
+         maxLatticeRadius = atomSiteSepSqrd + currentNegligLimit + 2.0_double*&
+                          & sqrt(atomSiteSepSqrd * currentNegligLimit)
+
+         ! Check if we have to check more lattice points than were determined
+         !   to be needed by comparing the maxlatticeRadius to the maximum
+         !   radius of the lattice points defined earlier.
+         if (maxLatticeRadius > cellSizesReal(numCellsReal)) then
+            write (20,*) 'More lattice points needed for this atom overlap pair'
+            write (20,*) 'maxLatticeRadius requested=',maxLatticeRadius
+            write (20,*) 'max available=',cellSizesReal(numCellsReal)
+            stop
+         endif
+
+         ! Initialize the matrices for this atom pair that will record the
+         !   requested integrals with bloch vector (kpoint) phase factors.
+#ifndef GAMMA
+         if (intgDone == 0) then
+            currentPairOL(:,:,:) = 0.0_double
+            currentPairHam(:,:,:,:) = 0.0_double
+         endif
+         if ((doOPTC_PSCF >= 1) .or. (doDIMO_PSCF == 1)) then
+            currentPairXYZ(:,:,:,:) = 0.0_double
+         endif
+#else
+         if (intgDone == 0) then
+            currentPairOLGamma(:,:) = 0.0_double
+            currentPairHamGamma(:,:,:) = 0.0_double
+         endif
+         if ((doOPTC_PSCF >= 1) .or. (doDIMO_PSCF == 1)) then
+            currentPairXYZGamma(:,:,:) = 0.0_double
+         endif
+#endif
+
+
+         ! Begin a loop over all the lattice points to shift the position of
+         !   atom number 2 to all the replicated cells.
+         do k = 1, numCellsReal
+
+            ! Exit the loop when we have exceeded the necessary number of
+            !   lattice points based on distance.
+            if (cellSizesReal(k) > maxLatticeRadius) exit
+
+            ! Obtain the position of atom #2 shifted by the current lattice.
+            shiftedAtomPos(:) = currentPosition(:,2) + latticeVector(:) + &
+                  & cellDimsReal(:,k)
+
+            ! Obtain the seperation vector between atom 1 and the shifted
+            !   position of atom 2.
+            shiftedAtomSiteSep = sum ((currentPosition(:,1) - &
+                  & shiftedAtomPos(:))**2)
+
+            ! Determine if this shifted atom position puts it outside of the
+            !   above determined negligability limit for this atom pair.
+            if (shiftedAtomSiteSep > currentNegligLimit) cycle
+
+
+            ! Initialize the matrices to hold the product of the integrals
+            !    times the atom2 wave functions.
+            if (intgDone == 0) then
+               pairXBasisFn2OL(:,:currentNumAlphas(1),&
+                     &:currentNumTotalStates(2)) = 0.0_double
+               pairXBasisFn2Ham(:,:currentNumAlphas(1),&
+                     &:currentNumTotalStates(2),:spin) = 0.0_double
+            endif
+            if (doOPTC_PSCF >= 1) then
+               pairXBasisFn2XYZ(:,:currentNumAlphas(1),&
+                     &:currentNumTotalStates(2),:) = 0.0_double
+            endif
+
+            ! Initialize a variable to track the largest atomic alpha used
+            !   from atom 1.
+            maxAlpha1Used = 0
+
+            ! Now we start loops over the alphas of each atomic type.  For each
+            !   alpha pair the overlap is tested to determine if it is
+            !   negligable or not.  The alphas for atom 1 are tested in turn
+            !   with the first alpha of atom 2.  After all the atom 1 alphas
+            !   have been tested or the test fails we test all the alphas
+            !   of atom 2 with the first alpha of atom 1 until all the alphas
+            !   of atom 2 have been used or the test fails.  Then we increment
+            !   the loop counter by 1.  The second iteration of the loop
+            !   obviously works just like the first except that the only
+            !   difference is that instead of starting with the first alphas
+            !   of atom 1 and atom 2, we always start with the second alphas
+            !   of both atoms.
+
+            ! The loop must be up to the smaller number of alphas.
+            do l = 1, min(currentNumAlphas(1),currentNumAlphas(2))
+
+               ! Set the mode to zero to say that we are incrementing through
+               !   neither the atom 1 alpha array nor the atom 2 alpha array.
+               currentMode = 0
+
+               ! Initialize the matrix index values for the two alphas.
+               alphaIndex(:) = l
+
+               ! Check if this alpha pair has any non-negligable contribution.
+               if (alphaDist(l,l,currentElements(1),currentElements(2)) < &
+                     & shiftedAtomSiteSep) exit
+
+               ! Start looping over atomic alphas looking for a negligable
+               !   contribution for each alpha pair.
+               do while (.true.)
+
+                  ! Check if we are going through atom 1 alphas.
+                  if (currentMode == 1) then
+
+                     ! Go to the next atom 1 alpha
+                     alphaIndex(1) = alphaIndex(1) + 1
+
+                     ! Check if there are no alphas left to do for atom 1
+                     if (alphaIndex(1) > currentNumAlphas(1)) then
+
+                        ! Switch mode to go through atom 2 alphas on the
+                        !   current diagonal alpha of atom 1.
+                        currentMode = 2
+                        alphaIndex(1) = l
+                        cycle
+                     endif
+
+                  ! Check if we are going through atom 2 alphas.
+                  elseif (currentMode == 2) then
+
+                     ! Go to the next atom 2 alpha
+                     alphaIndex(2) = alphaIndex(2) + 1
+
+                     ! Check if there are no alphas left to do for atom 2
+                     if (alphaIndex(2) > currentNumAlphas(2)) exit
+                  endif
+
+                  ! Check if this atom alpha pair has any non negligable
+                  !   overlap.
+                  if (alphaDist(alphaIndex(1),alphaIndex(2),&
+                        & currentElements(1),currentElements(2)) < &
+                        & shiftedAtomSiteSep) then
+
+                     ! Switch mode to go through atom 2 alphas on the current
+                     !   diagonal alpha of atom 1.
+                     if (currentMode == 1) then
+                        currentMode = 2
+                        alphaIndex(1) = l
+                        cycle
+                     else
+                        exit
+                     endif
+                  endif
+
+                  if (intgDone == 0) then
+                     ! At this point a sufficient overlap has been found for
+                     !   the current alpha pair so we start looking through
+                     !   nuclear potentials.
+
+                     ! First we find the center of the overlap between the two
+                     !   alphas.
+                     overlapCenter(:) = &
+                           & alphaCenter(alphaIndex(1),alphaIndex(2),&
+                           & currentElements(1),currentElements(2)) * &
+                           & (currentPosition(:,1) - shiftedAtomPos(:)) + &
+                           & shiftedAtomPos(:)
+
+                     ! Initialize the result matrix to zero before starting the
+                     !   nuclear+electronic potential loop.
+                     potAtomOverlap(:currentlmAlphaIndex(alphaIndex(1),1), &
+                           & :currentlmAlphaIndex(alphaIndex(2),2),:spin) = &
+                           & 0.0_double
+
+
+                     ! Initialize a counter to track which potential
+                     !    coefficient we are currently calculating on.
+                     potCoeffIndex = 0
+
+                     ! Initiate a loop over each potential site for the nuclear
+                     !   potentials.
+                     do m = 1, numPotSites
+
+                        ! Skip equivalent types now.  They will be accounted
+                        !   for later but we want to do some setup stuff only
+                        !   once for all atoms of the same type.
+                        if (potSites(m)%firstPotType == 0) cycle
+
+                        ! Initialize the current potential site. The nucAlpha
+                        !   and potPosition are a bit kludgy here because this
+                        !   subroutine is used for multiple different purposes
+                        !   and those variables get "correctly" used later.
+                        call initializePotSite (m, currentPotType, potElement,&
+                              & zFactor, nucAlpha, potPosition)
+
+                        ! Initialize the parameters for this potential site
+                        !   related to the type of this site.
+                        currentNumPotAlphas = potTypes(currentPotType)%numAlphas
+
+                        ! Initiate a loop over all the potential alphas present
+                        !   for this site including the nuclear contribution.
+                        do n = 1, currentNumPotAlphas + 1
+
+                           ! Assign the potential alpha based on the value of n.
+                           if (n <= currentNumPotAlphas) then
+
+                              ! Apply the case for the atomic potential.
+
+                              ! Increment the index value that indicates which
+                              !   potential coefficient to use of all
+                              !   coefficients in the system.
+                              potCoeffIndex = potCoeffIndex + 1
+
+                              ! Store the current potential coefficient.
+                              currentPotCoeff(:spin) = &
+                                    & potCoeffs(potCoeffIndex,:spin)
+
+                              ! Store the current potential alpha. 
+                              currentPotAlpha = &
+                                    & potTypes(currentPotType)%alphas(n)
+                           else
+
+                              ! Apply the case for the nuclear potential.
+
+                              ! If the zFactor is sufficiently small we
+                              !   consider the effect of the overlap to be
+                              !   negligable and we cycle to the next one.
+                              if (zFactor < smallThresh) cycle
+
+                              ! Get the exponential alpha factor for the
+                              !   nuclear potential.
+                              currentPotAlpha = nucAlpha
+
+                           endif
+
+                           ! Determine the maximum distance beyond which the
+                           !   overlap of the three gaussians is considered
+                           !   negligable.
+                           threeAlphaDist = (1 - shiftedAtomSiteSep / &
+                                 & alphaDist(alphaIndex(1),alphaIndex(2),&
+                                 & currentElements(1),currentElements(2))) * &
+                                 & alphaNucDist(alphaIndex(1),alphaIndex(2), &
+                                 & potElement,currentElements(1),&
+                                 & currentElements(2))
+
 !                           threeAlphaDist = logBasisFnThresh * (1 - &
 !                                 & shiftedAtomSiteSep / &
 !                                 & alphaDist(alphaIndex(1),alphaIndex(2))) * &
@@ -3193,190 +3275,190 @@ end subroutine electronicPE
 !                                 & (currentAlphas(alphaIndex(1),1) + &
 !                                 &  currentAlphas(alphaIndex(2),2)) / &
 !                                 &  currentPotAlpha
-!
-!                           ! Loop over the remaining potential sites that are
-!                           !   equivalent.
-!                           do o = 0, potTypes(currentPotType)%multiplicity-1
-!
-!                              ! Initialize the parameters for this potential
-!                              !   site related to its position.
-!                              potPosition(:) = potSites(m+o)%cartPos(:)
-!
-!                              ! Locate the origin for the potential lattice sum.
-!                              call findLatticeVector((overlapCenter(:) - &
-!                                    & potPosition(:)), latticeVector2)
-!
-!                              ! Find the seperation vector and distance between
-!                              !   the minimum overlap center, and the origin.
-!                              centerOriginVect(:) = overlapCenter(:) - &
-!                                    & potPosition(:) - latticeVector2(:)
-!                              centerOriginSep = sum(centerOriginVect(:)**2)
-!
-!                              ! Check if largest potential is negligable or not.
-!                              if (centerOriginSep > threeAlphaDist) cycle
-!
-!                              ! At this point it must be the case that at least
-!                              !   one contribution will be calculated.
-!
-!                              ! First, find the cut-off radius for the potential
-!                              !   lattice summation by the triangle inequality.
-!                              maxLatticeRadius2 = centerOriginSep + &
-!                                 & threeAlphaDist + 2.0_double * &
-!                                 & sqrt (centerOriginSep * threeAlphaDist)
-!
-!
-!                              ! Begin loop over lattice points for the site pot.
-!                              do p = 1, numCellsReal
-!
-!                                 ! Check if this lattice point extends beyond
-!                                 !   the range of negligability
-!                                 if (cellSizesReal(p) > maxLatticeRadius2) exit
-!
-!                                 ! Get overlap center shifted by lattice point.
-!                                 shiftedCenterOriginSep = &
-!                                       & sum((centerOriginVect(:) - &
-!                                       & cellDimsReal(:,p))**2)
-!
-!                                 ! Check if shifted seperation between the
-!                                 !   center and the origin extends past the
-!                                 !   negligability limit.  If so, cycle to the
-!                                 !   next cell.
-!                                 if (shiftedCenterOriginSep > &
-!                                       & threeAlphaDist) cycle
-!
-!                                 ! Get seperation shifted by the lattice point.
-!                                 shiftedPotPos(:) = potPosition(:) + &
-!                                       & latticeVector2(:) + cellDimsReal(:,p)
-!
-!                                 if (n <= currentNumPotAlphas) then
-!                                    ! Calculate the opcode to do the correct
-!                                    !   set of integrals for the current alpha
-!                                    !   pair.
-!                                    l1l2Switch = ishft(1,(powerOfTwo(&
-!                                         & currentlmAlphaIndex(&
-!                                         & alphaIndex(1),1))))+ ishft(16,&
-!                                         & (powerOfTwo(currentlmAlphaIndex(&
-!                                         & alphaIndex(2),2))))
-!
-!                                    call electron3CIntg (&
-!                                       & currentAlphas(alphaIndex(1),1),&
-!                                       & currentAlphas(alphaIndex(2),2),&
-!                                       & currentPotAlpha, currentPosition(:,1),&
-!                                       & shiftedAtomPos(:), shiftedPotPos(:),&
-!                                       & l1l2Switch, oneAlphaSet)
-!
-!                                    ! Accumulate results returned for alpha set.
-!                                    do q = 1, spin
-!                                    potAtomOverlap(:currentlmAlphaIndex &
-!                                       & (alphaIndex(1),1),:currentlmAlphaIndex&
-!                                       & (alphaIndex(2),2),q) = &
-!                                       & potAtomOverlap(:currentlmAlphaIndex &
-!                                       & (alphaIndex(1),1),:currentlmAlphaIndex&
-!                                       & (alphaIndex(2),2),q) + &
-!                                       & oneAlphaSet(:currentlmAlphaIndex &
-!                                       & (alphaIndex(1),1),:currentlmAlphaIndex&
-!                                       & (alphaIndex(2),2)) * &
-!                                       & currentPotCoeff(q)
-!                                    enddo
-!                                 else
-!                                   ! Calculate the opcode to do the correct set
-!                                   ! of integrals for the current alpha pair
-!                                   l1l2Switch = ishft(1,&
-!                                     &(powerOfTwo(currentlmAlphaIndex(&
-!                                     &   alphaIndex(1),1)))) &
-!                                     &+ ishft(16,&
-!                                     &(powerOfTwo(currentlmAlphaIndex(&
-!                                     &   alphaIndex(2),2))))
-!                                   
-!                                   call nuclear3CIntg (&
-!                                      & currentAlphas(alphaIndex(1),1),&
-!                                      & currentAlphas(alphaIndex(2),2),&
-!                                      & currentPotAlpha,currentPosition(:,1),&
-!                                      & shiftedAtomPos(:),shiftedPotPos(:),&
-!                                      & l1l2Switch,oneAlphaSet)
-!
-!                                    ! Accumulate results returned for alpha set.
-!                                    do q = 1, spin
-!                                       potAtomOverlap(:currentlmAlphaIndex &
-!                                          & (alphaIndex(1),1),&
-!                                          & :currentlmAlphaIndex &
-!                                          & (alphaIndex(2),2),q) = &
-!                                          & potAtomOverlap(:currentlmAlphaIndex&
-!                                          & (alphaIndex(1),1),&
-!                                          & :currentlmAlphaIndex &
-!                                          & (alphaIndex(2),2),q) - &
-!                                          & oneAlphaSet(:currentlmAlphaIndex &
-!                                          & (alphaIndex(1),1),&
-!                                          & :currentlmAlphaIndex &
-!                                          & (alphaIndex(2),2)) * zFactor
-!                                    enddo
-!                                 endif
-!                              enddo ! (p numCells)
-!                           enddo ! (o multiplicity)
-!                        enddo ! (n numCurrentPotAlphas+1)
-!                     enddo ! (m numPots (inequivalent))
-!
-!
-!                     ! Calculate the opcode to do the correct set of integrals
-!                     ! for the current alpha pair
-!                     l1l2Switch = ishft(1,&
-!                       &(powerOfTwo(currentlmAlphaIndex(alphaIndex(1),1))))&
-!                       &+ ishft(16,&
-!                       &(powerOfTwo(currentlmAlphaIndex(alphaIndex(2),2))))
-!
-!                     ! Determine the kinetic energy contribution.
-!                     call kinetic2CIntg (&
-!                           & currentAlphas(alphaIndex(1),1),&
-!                           & currentAlphas(alphaIndex(2),2),&
-!                           & currentPosition(:,1), shiftedAtomPos(:),&
-!                           & l1l2Switch, oneAlphaSet)
-!
-!                     ! Accumulate the contribution from this alpha pair
-!                     do m = 1, spin
-!                        potAtomOverlap(:currentlmAlphaIndex &
-!                              & (alphaIndex(1),1),:currentlmAlphaIndex &
-!                              & (alphaIndex(2),2),m) = &
-!                              & potAtomOverlap(:currentlmAlphaIndex &
-!                              & (alphaIndex(1),1),:currentlmAlphaIndex &
-!                              & (alphaIndex(2),2),m) + &
-!                              & oneAlphaSet(:currentlmAlphaIndex &
-!                              & (alphaIndex(1),1),:currentlmAlphaIndex &
-!                              & (alphaIndex(2),2))
-!                     enddo
-!
-!                     ! Compute the mass velocity integral if needed for the
-!                     !   scalar relativistic calculation.
-!                     if (rel == 1) then
+
+                           ! Loop over the remaining potential sites that are
+                           !   equivalent.
+                           do o = 0, potTypes(currentPotType)%multiplicity-1
+
+                              ! Initialize the parameters for this potential
+                              !   site related to its position.
+                              potPosition(:) = potSites(m+o)%cartPos(:)
+
+                              ! Locate the origin for the potential lattice sum.
+                              call findLatticeVector((overlapCenter(:) - &
+                                    & potPosition(:)), latticeVector2)
+
+                              ! Find the seperation vector and distance between
+                              !   the minimum overlap center, and the origin.
+                              centerOriginVect(:) = overlapCenter(:) - &
+                                    & potPosition(:) - latticeVector2(:)
+                              centerOriginSep = sum(centerOriginVect(:)**2)
+
+                              ! Check if largest potential is negligable or not.
+                              if (centerOriginSep > threeAlphaDist) cycle
+
+                              ! At this point it must be the case that at least
+                              !   one contribution will be calculated.
+
+                              ! First, find the cut-off radius for the potential
+                              !   lattice summation by the triangle inequality.
+                              maxLatticeRadius2 = centerOriginSep + &
+                                 & threeAlphaDist + 2.0_double * &
+                                 & sqrt (centerOriginSep * threeAlphaDist)
+
+
+                              ! Begin loop over lattice points for the site pot.
+                              do p = 1, numCellsReal
+
+                                 ! Check if this lattice point extends beyond
+                                 !   the range of negligability
+                                 if (cellSizesReal(p) > maxLatticeRadius2) exit
+
+                                 ! Get overlap center shifted by lattice point.
+                                 shiftedCenterOriginSep = &
+                                       & sum((centerOriginVect(:) - &
+                                       & cellDimsReal(:,p))**2)
+
+                                 ! Check if shifted seperation between the
+                                 !   center and the origin extends past the
+                                 !   negligability limit.  If so, cycle to the
+                                 !   next cell.
+                                 if (shiftedCenterOriginSep > &
+                                       & threeAlphaDist) cycle
+
+                                 ! Get seperation shifted by the lattice point.
+                                 shiftedPotPos(:) = potPosition(:) + &
+                                       & latticeVector2(:) + cellDimsReal(:,p)
+
+                                 if (n <= currentNumPotAlphas) then
+                                    ! Calculate the opcode to do the correct
+                                    !   set of integrals for the current alpha
+                                    !   pair.
+                                    l1l2Switch = ishft(1,(powerOfTwo(&
+                                         & currentlmAlphaIndex(&
+                                         & alphaIndex(1),1))))+ ishft(16,&
+                                         & (powerOfTwo(currentlmAlphaIndex(&
+                                         & alphaIndex(2),2))))
+
+                                    call electron3CIntg (&
+                                       & currentAlphas(alphaIndex(1),1),&
+                                       & currentAlphas(alphaIndex(2),2),&
+                                       & currentPotAlpha, currentPosition(:,1),&
+                                       & shiftedAtomPos(:), shiftedPotPos(:),&
+                                       & l1l2Switch, oneAlphaSet)
+
+                                    ! Accumulate results returned for alpha set.
+                                    do q = 1, spin
+                                    potAtomOverlap(:currentlmAlphaIndex &
+                                       & (alphaIndex(1),1),:currentlmAlphaIndex&
+                                       & (alphaIndex(2),2),q) = &
+                                       & potAtomOverlap(:currentlmAlphaIndex &
+                                       & (alphaIndex(1),1),:currentlmAlphaIndex&
+                                       & (alphaIndex(2),2),q) + &
+                                       & oneAlphaSet(:currentlmAlphaIndex &
+                                       & (alphaIndex(1),1),:currentlmAlphaIndex&
+                                       & (alphaIndex(2),2)) * &
+                                       & currentPotCoeff(q)
+                                    enddo
+                                 else
+                                   ! Calculate the opcode to do the correct set
+                                   ! of integrals for the current alpha pair
+                                   l1l2Switch = ishft(1,&
+                                     &(powerOfTwo(currentlmAlphaIndex(&
+                                     &   alphaIndex(1),1)))) &
+                                     &+ ishft(16,&
+                                     &(powerOfTwo(currentlmAlphaIndex(&
+                                     &   alphaIndex(2),2))))
+                                   
+                                   call nuclear3CIntg (&
+                                      & currentAlphas(alphaIndex(1),1),&
+                                      & currentAlphas(alphaIndex(2),2),&
+                                      & currentPotAlpha,currentPosition(:,1),&
+                                      & shiftedAtomPos(:),shiftedPotPos(:),&
+                                      & l1l2Switch,oneAlphaSet)
+
+                                    ! Accumulate results returned for alpha set.
+                                    do q = 1, spin
+                                       potAtomOverlap(:currentlmAlphaIndex &
+                                          & (alphaIndex(1),1),&
+                                          & :currentlmAlphaIndex &
+                                          & (alphaIndex(2),2),q) = &
+                                          & potAtomOverlap(:currentlmAlphaIndex&
+                                          & (alphaIndex(1),1),&
+                                          & :currentlmAlphaIndex &
+                                          & (alphaIndex(2),2),q) - &
+                                          & oneAlphaSet(:currentlmAlphaIndex &
+                                          & (alphaIndex(1),1),&
+                                          & :currentlmAlphaIndex &
+                                          & (alphaIndex(2),2)) * zFactor
+                                    enddo
+                                 endif
+                              enddo ! (p numCells)
+                           enddo ! (o multiplicity)
+                        enddo ! (n numCurrentPotAlphas+1)
+                     enddo ! (m numPots (inequivalent))
+
+
+                     ! Calculate the opcode to do the correct set of integrals
+                     ! for the current alpha pair
+                     l1l2Switch = ishft(1,&
+                       &(powerOfTwo(currentlmAlphaIndex(alphaIndex(1),1))))&
+                       &+ ishft(16,&
+                       &(powerOfTwo(currentlmAlphaIndex(alphaIndex(2),2))))
+
+                     ! Determine the kinetic energy contribution.
+                     call kinetic2CIntg (&
+                           & currentAlphas(alphaIndex(1),1),&
+                           & currentAlphas(alphaIndex(2),2),&
+                           & currentPosition(:,1), shiftedAtomPos(:),&
+                           & l1l2Switch, oneAlphaSet)
+
+                     ! Accumulate the contribution from this alpha pair
+                     do m = 1, spin
+                        potAtomOverlap(:currentlmAlphaIndex &
+                              & (alphaIndex(1),1),:currentlmAlphaIndex &
+                              & (alphaIndex(2),2),m) = &
+                              & potAtomOverlap(:currentlmAlphaIndex &
+                              & (alphaIndex(1),1),:currentlmAlphaIndex &
+                              & (alphaIndex(2),2),m) + &
+                              & oneAlphaSet(:currentlmAlphaIndex &
+                              & (alphaIndex(1),1),:currentlmAlphaIndex &
+                              & (alphaIndex(2),2))
+                     enddo
+
+                     ! Compute the mass velocity integral if needed for the
+                     !   scalar relativistic calculation.
+                     if (rel == 1) then
 !                        ! Calculate the opcode to do the correct set of
 !                        !   integrals for the current alpha pair.
 !                        l1l2Switch = ishft(1,&
 !                        &(powerOfTwo(currentlmAlphaIndex(alphaIndex(1),1))))&
 !                        &+ ishft(16,&
 !                        &(powerOfTwo(currentlmAlphaIndex(alphaIndex(2),2))))
-!
-!                        ! Compute the integral.
-!                        call massVel2CIntg (currentAlphas(alphaIndex(1),1),&
-!                              & currentAlphas(alphaIndex(2),2),&
-!                              & currentPosition(:,1), shiftedAtomPos(:),&
-!                              & l1l2Switch, oneAlphaSet)
-!                           
-!                        ! Accumulate the contribution from this alpha pair.
-!                        !   Note: a minus sign is used in the accumulation
-!                        !   for the mass velocity integral because it has an
-!                        !   overall negative contribution to the Hamiltonian.
-!                        do m = 1, spin
-!                           potAtomOverlap(:currentlmAlphaIndex &
-!                                 & (alphaIndex(1),1),:currentlmAlphaIndex &
-!                                 & (alphaIndex(2),2),m) = &
-!                                 & potAtomOverlap(:currentlmAlphaIndex &
-!                                 & (alphaIndex(1),1),:currentlmAlphaIndex &
-!                                 & (alphaIndex(2),2),m) - &
-!                                 & oneAlphaSet(:currentlmAlphaIndex &
-!                                 & (alphaIndex(1),1),:currentlmAlphaIndex &
-!                                 & (alphaIndex(2),2))
-!                        enddo
-!                     endif
-!
+
+                        ! Compute the integral.
+                        call massVel2CIntg (currentAlphas(alphaIndex(1),1),&
+                              & currentAlphas(alphaIndex(2),2),&
+                              & currentPosition(:,1), shiftedAtomPos(:),&
+                              & l1l2Switch, oneAlphaSet)
+                           
+                        ! Accumulate the contribution from this alpha pair.
+                        !   Note: a minus sign is used in the accumulation
+                        !   for the mass velocity integral because it has an
+                        !   overall negative contribution to the Hamiltonian.
+                        do m = 1, spin
+                           potAtomOverlap(:currentlmAlphaIndex &
+                                 & (alphaIndex(1),1),:currentlmAlphaIndex &
+                                 & (alphaIndex(2),2),m) = &
+                                 & potAtomOverlap(:currentlmAlphaIndex &
+                                 & (alphaIndex(1),1),:currentlmAlphaIndex &
+                                 & (alphaIndex(2),2),m) - &
+                                 & oneAlphaSet(:currentlmAlphaIndex &
+                                 & (alphaIndex(1),1),:currentlmAlphaIndex &
+                                 & (alphaIndex(2),2))
+                        enddo
+                     endif
+
 !                     ! FIX: It seems unnecessary to recompute the l1l2Switch
 !                     !   for OL and MV matrices after it is computed
 !                     !   once for the KE.
@@ -3386,226 +3468,239 @@ end subroutine electronicPE
 !                        &(powerOfTwo(currentlmAlphaIndex(alphaIndex(1),1))))&
 !                        &+ ishft(16,&
 !                        &(powerOfTwo(currentlmAlphaIndex(alphaIndex(2),2))))
-!                
-!                     !print*,l1l2Switch
-!                     ! We can proceed with the next step of the calculation.
-!                     ! This is the actual integral.
-!                     call overlap2CIntg (&
-!                           & currentAlphas(alphaIndex(1),1),&
-!                           & currentAlphas(alphaIndex(2),2), &
-!                           & currentPosition(:,1), shiftedAtomPos(:),&
-!                           & l1l2Switch, oneAlphaSet)
-!                  endif
-!
-!
-!                  ! Compute the momentum matrix values if requested.
-!                  if (doMOME == 1) then
-!                     ! Calculate the opcode to do the correct set
-!                     ! of integrals for the current alpha pair
-!                     l1l2Switch = ishft(1,&
-!                        & (powerOfTwo(currentlmAlphaIndex(alphaIndex(1),1))))&
-!                        & + ishft(16,&
-!                        & (powerOfTwo(currentlmAlphaIndex(alphaIndex(2),2))))
-!
-!                     call momentum2CIntg (&
-!                           & currentAlphas(alphaIndex(1),1),&
-!                           & currentAlphas(alphaIndex(2),2),&
-!                           & currentPosition(:,1), shiftedAtomPos(:),&
-!                           & l1l2Switch, oneAlphaSetMom)
-!                  endif
-!
-!                  ! Collect the results of the overlap of the current alpha
-!                  !   times the wave functions for atom 2.
-!
-!                  if (doINTG == 1) then
-!                     ! Potential overlaps first (if any were found).
-!                     do q = 1, spin
-!                        do m = 1, currentNumTotalStates(2)
-!                           pairXWaveFn2Ham(:currentlmAlphaIndex( &
-!                                 & alphaIndex(1),1),alphaIndex(1),m,q) = &
-!                                 & pairXWaveFn2Ham(:currentlmAlphaIndex &
-!                                 & (alphaIndex(1),1),alphaIndex(1),m,q) + &
-!                                 & potAtomOverlap(:currentlmAlphaIndex &
-!                                 & (alphaIndex(1),1),currentlmIndex(m,2),q) * &
-!                                 & currentBasisFns(alphaIndex(2),m,2)
-!                        enddo
-!                     enddo
-!                     ! Atom pair overlaps second.
-!                     do m = 1, currentNumTotalStates(2)
-!                        pairXWaveFn2OL(:currentlmAlphaIndex(alphaIndex(1),1),&
-!                              & alphaIndex(1),m) = &
-!                              & pairXWaveFn2OL(:currentlmAlphaIndex &
-!                              & (alphaIndex(1),1),alphaIndex(1),m) + &
-!                              & oneAlphaSet(:currentlmAlphaIndex &
-!                              & (alphaIndex(1),1),currentlmIndex(m,2)) * &
-!                              & currentBasisFns(alphaIndex(2),m,2)
-!                     enddo
-!                  endif
-!
-!                  ! Momentum matrix last.  (If requested)
-!                  if (doMOME == 1) then
-!                     do m = 1, currentNumTotalStates(2)
-!                        pairXWaveFn2MomX(:currentlmAlphaIndex(alphaIndex(1),&
+                
+                     !print*,l1l2Switch
+                     ! We can proceed with the next step of the calculation.
+                     ! This is the actual integral.
+                     call overlap2CIntg (&
+                           & currentAlphas(alphaIndex(1),1),&
+                           & currentAlphas(alphaIndex(2),2), &
+                           & currentPosition(:,1), shiftedAtomPos(:),&
+                           & l1l2Switch, oneAlphaSet)
+                  endif
+
+
+                  ! Compute the momentum matrix values if requested.
+                  if (doOPTC_PSCF >= 1) then
+                     ! Calculate the opcode to do the correct set
+                     ! of integrals for the current alpha pair
+                     l1l2Switch = ishft(1,&
+                        & (powerOfTwo(currentlmAlphaIndex(alphaIndex(1),1))))&
+                        & + ishft(16,&
+                        & (powerOfTwo(currentlmAlphaIndex(alphaIndex(2),2))))
+
+                     call momentum2CIntg (&
+                           & currentAlphas(alphaIndex(1),1),&
+                           & currentAlphas(alphaIndex(2),2),&
+                           & currentPosition(:,1), shiftedAtomPos(:),&
+                           & l1l2Switch, oneAlphaSetXYZ)
+                  endif
+
+                  ! Collect the results of the overlap of the current alpha
+                  !   times the wave functions for atom 2.
+
+                  if (intgDone == 0) then
+                     ! Potential overlaps first (if any were found).
+                     do q = 1, spin
+                        do m = 1, currentNumTotalStates(2)
+                           pairXBasisFn2Ham(:currentlmAlphaIndex( &
+                                 & alphaIndex(1),1),alphaIndex(1),m,q) = &
+                                 & pairXBasisFn2Ham(:currentlmAlphaIndex &
+                                 & (alphaIndex(1),1),alphaIndex(1),m,q) + &
+                                 & potAtomOverlap(:currentlmAlphaIndex &
+                                 & (alphaIndex(1),1),currentlmIndex(m,2),q) * &
+                                 & currentBasisFns(alphaIndex(2),m,2)
+                        enddo
+                     enddo
+                     ! Atom pair overlaps second.
+                     do m = 1, currentNumTotalStates(2)
+                        pairXBasisFn2OL(:currentlmAlphaIndex(alphaIndex(1),1),&
+                              & alphaIndex(1),m) = &
+                              & pairXBasisFn2OL(:currentlmAlphaIndex &
+                              & (alphaIndex(1),1),alphaIndex(1),m) + &
+                              & oneAlphaSet(:currentlmAlphaIndex &
+                              & (alphaIndex(1),1),currentlmIndex(m,2)) * &
+                              & currentBasisFns(alphaIndex(2),m,2)
+                     enddo
+                  endif
+
+                  ! Momentum matrix last.  (If requested)
+                  if (doOPTC_PSCF >= 1) then
+                     do m = 1,3
+                        do n = 1, currentNumTotalStates(2)
+                        pairXBasisFn2XYZ(:currentlmAlphaIndex(alphaIndex(1),&
+                              & 1), alphaIndex(1),n,m) = &
+                              & pairXBasisFn2XYZ(:currentlmAlphaIndex &
+                              & (alphaIndex(1),1),alphaIndex(1),n,m) + &
+                              & oneAlphaSetXYZ(:currentlmAlphaIndex &
+                              & (alphaIndex(1),1),currentlmIndex(n,2),m) * &
+                              & currentBasisFns(alphaIndex(2),n,2)
+!                        pairXBasisFn2MomX(:currentlmAlphaIndex(alphaIndex(1),&
 !                              & 1), alphaIndex(1),m) = &
-!                              & pairXWaveFn2MomX(:currentlmAlphaIndex &
+!                              & pairXBasisFn2MomX(:currentlmAlphaIndex &
 !                              & (alphaIndex(1),1),alphaIndex(1),m) + &
 !                              & oneAlphaSetMom(:currentlmAlphaIndex &
 !                              & (alphaIndex(1),1),currentlmIndex(m,2),1) * &
 !                              & currentBasisFns(alphaIndex(2),m,2)
-!                        pairXWaveFn2MomY(:currentlmAlphaIndex(alphaIndex(1),&
+!                        pairXBasisFn2MomY(:currentlmAlphaIndex(alphaIndex(1),&
 !                              & 1), alphaIndex(1),m) = &
-!                              & pairXWaveFn2MomY(:currentlmAlphaIndex &
+!                              & pairXBasisFn2MomY(:currentlmAlphaIndex &
 !                              & (alphaIndex(1),1),alphaIndex(1),m) + &
 !                              & oneAlphaSetMom(:currentlmAlphaIndex &
 !                              & (alphaIndex(1),1),currentlmIndex(m,2),2) * &
 !                              & currentBasisFns(alphaIndex(2),m,2)
-!                        pairXWaveFn2MomZ(:currentlmAlphaIndex(alphaIndex(1),&
+!                        pairXBasisFn2MomZ(:currentlmAlphaIndex(alphaIndex(1),&
 !                              & 1), alphaIndex(1),m) = &
-!                              & pairXWaveFn2MomZ(:currentlmAlphaIndex &
+!                              & pairXBasisFn2MomZ(:currentlmAlphaIndex &
 !                              & (alphaIndex(1),1),alphaIndex(1),m) + &
 !                              & oneAlphaSetMom(:currentlmAlphaIndex &
 !                              & (alphaIndex(1),1),currentlmIndex(m,2),3) * &
 !                              & currentBasisFns(alphaIndex(2),m,2)
-!                     enddo
-!                  endif
-!
-!                  ! Update the maximum alpha used from atom 1.
-!                  maxAlpha1Used = max(alphaIndex(1),maxAlpha1Used)
-!
-!                  ! Switch mode from the initial state of no searching to the
-!                  !   state of searching along alphas from atom 1.
-!                  if (currentMode == 0) then
-!                     currentMode = 1
-!                  endif
-!               enddo
-!            enddo  ! min number of alphas between the two atoms l
-!
-!            if (maxAlpha1Used > 0) then
-!
-!               ! At this point all the alpha loops are complete and we can form
-!               !   a product with the atom 1 basis functions to give the
-!               !   overlap and (spin) hamiltonian integral matrix elements.
-!               if (doINTG == 1) then
-!                  call multWithBasisFn1 (currentBasisFns,pairXBasisFn2OL,&
-!                        & pairXBasisFn12,currentlmIndex,currentNumTotalStates,&
-!                        & maxAlpha1Used)
-!                  do q = 1, spin
-!                     call multWithBasisFn1 (currentBasisFns,&
-!                           & pairXBasisFn2Ham(:,:,:,q),&
-!                           & pairXBasisFn12Ham(:,:,q),currentlmIndex,&
-!                           & currentNumTotalStates,maxAlpha1Used)
-!                  enddo
-!
-!                  ! Collect this atom 1, atom 2 basis function overlap matrix
-!                  !   for all bloch vectors (kpoints) with phase factors
-!                  !   appropriate to the current atom 2 lattice vector. NOTE
-!                  !   that the k index is over the number of cells in the
-!                  !   superlattice.
-!#ifndef GAMMA
-!                  call applyPhaseFactors (currentPair,pairXBasisFn12(1:&
-!                        & currentNumTotalStates(1),1:&
-!                        & currentNumTotalStates(2)),currentNumTotalStates(1),&
-!                        & currentNumTotalStates(2),k,0,0)
-!                  do q = 1, spin
-!                     call applyPhaseFactors (currentPair,pairXBasisFn12Ham(1:&
-!                           & currentNumTotalStates(1),1:&
-!                           & currentNumTotalStates(2),q),&
-!                           & currentNumTotalStates(1),&
-!                           & currentNumTotalStates(2),k,0,0)
-!                  enddo
-!#else
-!                  call applyPhaseFactorsGamma (currentPairGamma,&
-!                        & pairXBasisFn12(1:currentNumTotalStates(1),&
-!                        & 1:currentNumTotalStates(2)),&
-!                        & currentNumTotalStates(1),currentNumTotalStates(2),0)
-!                  do q = 1, spin
-!                     call applyPhaseFactorsGamma (currentPairGamma,&
-!                           & pairXBasisFn12Ham(1:&
-!                           & currentNumTotalStates(1),1:&
-!                           & currentNumTotalStates(2),q),&
-!                           & currentNumTotalStates(1),&
-!                           & currentNumTotalStates(2),0)
-!                  enddo
-!#endif
-!               endif ! doINTG
-!
-!               ! The momentum is summed against the wave function 1 if needed.
-!               if (doOPTC_PSCF >= 1) then
-!                  do q = 1, 3
-!                     call multWithBasisFn1 (currentBasisFns,&
-!                           & pairXBasisFn2Mom(:,:,q),&
-!                           & pairXBasisFn12Mom(:,:,q),&
-!                           & currentlmIndex,currentNumTotalStates,&
-!                           & maxAlpha1Used)
-!                  enddo
-!#ifndef GAMMA
-!                  do q = 1,3
-!                     call applyPhaseFactors (currentPair,pairXBasisFn12Mom(1:&
-!                           & currentNumTotalStates(1),1:&
-!                           & currentNumTotalStates(2),q),&
-!                           & currentNumTotalStates(1),&
-!                           & currentNumTotalStates(2),0)
-!                  enddo
-!#else
-!                  do q = 1,3
-!                     call applyPhaseFactorsGamma (currentPairGamma,&
-!                           & pairXBasisFn12Mom(1:&
-!                           & currentNumTotalStates(1),1:&
-!                           & currentNumTotalStates(2),q),&
-!                           & currentNumTotalStates(1),&
-!                           & currentNumTotalStates(2),0)
-!                  enddo
-!#endif
-!               endif ! doOPTC_PSCF
-!            endif ! maxAlpha1Used > 0
-!
-!         enddo !(k superlattice)
-!
-!      enddo ! (Atom loop #2)
-!
-!
-!      ! Mark the completion of this atom.
-!      if (mod(i,10) .eq. 0) then
-!         write (20,ADVANCE="NO",FMT="(a1)") "|"
-!      else
-!         write (20,ADVANCE="NO",FMT="(a1)") "."
-!      endif
-!      if (mod(i,50) .eq. 0) then
-!         write (20,*) " ",i
-!      endif
-!      call flush (20)
-!
-!   enddo    ! (Atom loop #1)
-!
-!   ! Deallocate all arrays and matrices before exiting.
-!   deallocate (currentBasisFns)
-!   deallocate (currentAlphas)
-!   deallocate (currentlmAlphaIndex)
-!   deallocate (currentlmIndex)
+                        enddo
+                     enddo
+                  endif
+
+                  ! Update the maximum alpha used from atom 1.
+                  maxAlpha1Used = max(alphaIndex(1),maxAlpha1Used)
+
+                  ! Switch mode from the initial state of no searching to the
+                  !   state of searching along alphas from atom 1.
+                  if (currentMode == 0) then
+                     currentMode = 1
+                  endif
+               enddo
+            enddo  ! min number of alphas between the two atoms l
+
+            if (maxAlpha1Used > 0) then
+
+               ! At this point all the alpha loops are complete and we can form
+               !   a product with the atom 1 basis functions to give the
+               !   overlap and (spin) hamiltonian integral matrix elements.
+               if (intgDone == 0) then
+                  call multWithBasisFn1 (currentBasisFns,pairXBasisFn2OL,&
+                        & pairXBasisFn12OL,currentlmIndex,&
+                        & currentNumTotalStates,maxAlpha1Used)
+                  do q = 1, spin
+                     call multWithBasisFn1 (currentBasisFns,&
+                           & pairXBasisFn2Ham(:,:,:,q),&
+                           & pairXBasisFn12Ham(:,:,q),currentlmIndex,&
+                           & currentNumTotalStates,maxAlpha1Used)
+                  enddo
+
+                  ! Collect this atom 1, atom 2 basis function overlap matrix
+                  !   for all bloch vectors (kpoints) with phase factors
+                  !   appropriate to the current atom 2 lattice vector. NOTE
+                  !   that the k index is over the number of cells in the
+                  !   superlattice.
+#ifndef GAMMA
+                  call applyPhaseFactors (currentPairOL,pairXBasisFn12OL(1:&
+                        & currentNumTotalStates(1),1:&
+                        & currentNumTotalStates(2)),currentNumTotalStates(1),&
+                        & currentNumTotalStates(2),k,0,0)
+                  do q = 1, spin
+                     call applyPhaseFactors (currentPairHam,&
+                           & pairXBasisFn12Ham(1:&
+                           & currentNumTotalStates(1),1:&
+                           & currentNumTotalStates(2),q),&
+                           & currentNumTotalStates(1),&
+                           & currentNumTotalStates(2),k,0,0)
+                  enddo
+#else
+                  call applyPhaseFactorsGamma (currentPairOLGamma,&
+                        & pairXBasisFn12OL(1:currentNumTotalStates(1),&
+                        & 1:currentNumTotalStates(2)),&
+                        & currentNumTotalStates(1),currentNumTotalStates(2),0)
+                  do q = 1, spin
+                     call applyPhaseFactorsGamma (currentPairHamGamma,&
+                           & pairXBasisFn12Ham(1:&
+                           & currentNumTotalStates(1),1:&
+                           & currentNumTotalStates(2),q),&
+                           & currentNumTotalStates(1),&
+                           & currentNumTotalStates(2),0)
+                  enddo
+#endif
+               endif ! intgDone
+
+               ! The momentum is summed against the wave function 1 if needed.
+               if (doOPTC_PSCF >= 1) then
+                  do q = 1, 3
+                     call multWithBasisFn1 (currentBasisFns,&
+                           & pairXBasisFn2XYZ(:,:,:,q),&
+                           & pairXBasisFn12XYZ(:,:,q),&
+                           & currentlmIndex,currentNumTotalStates,&
+                           & maxAlpha1Used)
+                  enddo
+#ifndef GAMMA
+                  do q = 1,3
+                     call applyPhaseFactors (currentPairOL,&
+                           & pairXBasisFn12XYZ(1:&
+                           & currentNumTotalStates(1),1:&
+                           & currentNumTotalStates(2),q),&
+                           & currentNumTotalStates(1),&
+                           & currentNumTotalStates(2),0)
+                  enddo
+#else
+                  do q = 1,3
+                     call applyPhaseFactorsGamma (currentPairHamGamma,&
+                           & pairXBasisFn12XYZ(1:&
+                           & currentNumTotalStates(1),1:&
+                           & currentNumTotalStates(2),q),&
+                           & currentNumTotalStates(1),&
+                           & currentNumTotalStates(2),0)
+                  enddo
+#endif
+               endif ! doOPTC_PSCF
+            endif ! maxAlpha1Used > 0
+
+         enddo !(k superlattice)
+
+      enddo ! (Atom loop #2)
+
+
+      ! Mark the completion of this atom.
+      if (mod(i,10) .eq. 0) then
+         write (20,ADVANCE="NO",FMT="(a1)") "|"
+      else
+         write (20,ADVANCE="NO",FMT="(a1)") "."
+      endif
+      if (mod(i,50) .eq. 0) then
+         write (20,*) " ",i
+      endif
+      call flush (20)
+
+   enddo    ! (Atom loop #1)
+
+   ! Deallocate all arrays and matrices before exiting.
+   deallocate (currentBasisFns)
+   deallocate (currentAlphas)
+   deallocate (currentlmAlphaIndex)
+   deallocate (currentlmIndex)
 !   deallocate (alphaDist)   ! Can be saved from before
 !   deallocate (alphaCenter) ! Can be saved for later.
-!
-!   if (doINTG == 1) then
-!      deallocate (pairXWaveFn2OL)
-!      deallocate (pairXWaveFn2Ham)
-!      deallocate (pairXWaveFn12OL)
-!      deallocate (pairXWaveFn12Ham)
-!   endif
-!
-!   if (doMOME == 1) then
-!      deallocate (pairXWaveFn2MomX)
-!      deallocate (pairXWaveFn2MomY)
-!      deallocate (pairXWaveFn2MomZ)
-!      deallocate (pairXWaveFn12MomX)
-!      deallocate (pairXWaveFn12MomY)
-!      deallocate (pairXWaveFn12MomZ)
-!   endif
-!
-!   ! Log the date and time we start.
-!   call timeStampEnd(20)
-!
-!
-!end subroutine allIntgCombo
+
+   if (intgDone == 0) then
+      deallocate (pairXBasisFn2OL)
+      deallocate (pairXBasisFn2Ham)
+      deallocate (pairXBasisFn12OL)
+      deallocate (pairXBasisFn12Ham)
+   endif
+
+   if (doOPTC_PSCF >= 1) then
+      deallocate (pairXBasisFn2XYZ)
+!      deallocate (pairXBasisFn2MomX)
+!      deallocate (pairXBasisFn2MomY)
+!      deallocate (pairXBasisFn2MomZ)
+      deallocate (pairXBasisFn12XYZ)
+!      deallocate (pairXBasisFn12MomX)
+!      deallocate (pairXBasisFn12MomY)
+!      deallocate (pairXBasisFn12MomZ)
+   endif
+
+   ! Log the date and time we start.
+   call timeStampEnd(20)
+
+
+end subroutine allPSCFIntgCombo
 
 
 subroutine orthoOL

@@ -124,14 +124,10 @@ Defaults are given in ./XYZrc.py or $OLCAO_RC/XYZrc.py.
 
 def main():
 
-    # Get script settings from a combination of the resource control file
-    #   and parameters given by the user on the command line.
-    settings = ScriptSettings()
-
-    # Start executing the main activities of the program.
-
-    # Finalize the program activities and quit.
-
+    # Print the methods available in this simulation if the program
+    #   is called directly as opposed to being imported.
+    print(dir(ScriptSettings))
+   
 
 if __name__ == '__main__':
     # Everything before this point was a subroutine definition or a request

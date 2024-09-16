@@ -21,10 +21,9 @@ module O_Integrals3Terms
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
    ! Define matrices for the interaction integrals in terms of the core and
-   !   valence sections and their interaction.  It is necessary to retain the
-   !   overlap valeVale and coreVale separately for the purpose of
-   !   orthogonalization of the nuclear pot, electronic pot, MV, and KE
-   !   matrices.
+   !   valence sections and their coreVale and valeCore interactions. The
+   !   overlap valeVale and coreVale will be pulled from the previous
+   !   integrals calculation for the purpose of orthogonalization.
 #ifndef GAMMA
    complex (kind=double), allocatable, dimension (:,:,:,:) :: coreCore
    complex (kind=double), allocatable, dimension (:,:,:)   :: valeCore

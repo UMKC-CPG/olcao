@@ -8,6 +8,7 @@ subroutine OLCAO
    use O_SCFHDF5
    use O_CommandLine
    use O_TimeStamps, only: initOperationLabels
+   use O_Input, only: parseInput
    use O_LocalEnv
 
    ! Initialize the logging labels.
@@ -16,17 +17,25 @@ subroutine OLCAO
    ! Parse the command line parameters
    call parseCommandLine
 
+   ! Read in the input to initialize all the key data structure variables.
+   call parseInput
+
+   ! Find specific computational parameters not EXPLICITLY given in the input
+   !   file, but which can, however, be easily determined from the input file.
+   call getImplicitInfo
+
+   ! Now, we are ready to do *either* SCF or Post SCF work.
    if (doSCF == 1) then
       call setupSCF ! Preparation for SCF cycle and wave function calculation.
 
       call mainSCF ! The actual SCF cycle and wave function calculation.
 
       if (doDOS_SCF == 1) then
-         call dos(1)
+         call dos(1)  ! Passing inSCF == 1.
       endif
 
       if (doBond_SCF >= 1) then
-         call bond(1, doBond_SCF)
+         call bond(1, doBond_SCF)  ! Passing inSCF == 1
       endif
 
 !      if (doDIMO_SCF == 1) then
@@ -34,7 +43,7 @@ subroutine OLCAO
 !      endif
 
       if (doOPTC_SCF >= 1) then
-         !call optc(1, do_OPTC_SCF)
+         call optc(1, doOPTC_SCF)  ! Passing inSCF == 1
       endif
 
       if (doField_SCF == 1) then
@@ -50,29 +59,29 @@ subroutine OLCAO
       call closeHDF5_SCF
    endif
 
-!   if (doPSCF == 1) then
-!      call intgPSCF ! Preparations for wave function calculation.
-!
-!      call bandPSCF ! Wave function calculation.
-!
-!!      if (doDIMO_PSCF == 1) then
-!!         call dimo
-!!      endif
-!
-!      if (doDOS_PSCF == 1) then
-!         call dos(0)
+   if (doPSCF == 1) then
+      call intgPSCF ! Preparations for wave function calculation.
+
+      call bandPSCF(doSYBD_PSCF) ! Wave function calculation.
+
+!      if (doDIMO_PSCF == 1) then
+!         call dimo
 !      endif
-!
-!      if (doBond_PSCF >= 1) then
-!         call bond(0, doBond_PSCF)
-!      endif
-!
-!      if (doOptc_PSCF >= 1) then
-!         call optc(0, do_OPTC_PSCF)
-!      endif
-!
-!      call closeHDF5_PSCF
-!   endif
+
+      if (doDOS_PSCF == 1) then
+         call dos(0)
+      endif
+
+      if (doBond_PSCF >= 1) then
+         call bond(0, doBond_PSCF)
+      endif
+
+      if (doOptc_PSCF >= 1) then
+         call optc(0, do_OPTC_PSCF)
+      endif
+
+      call closeHDF5_PSCF
+   endif
 
    if (doLoEn == 1) then
       call analyzeLocalEnv
@@ -88,8 +97,8 @@ subroutine setupSCF
 
    ! Import the necessary modules.
    use O_SCFHDF5, only: initHDF5_SCF
-   use O_CommandLine, only: doDIMO_SCF
-   use O_Input, only: numStates, parseInput
+   use O_CommandLine, only: doDIMO_SCF, doOPTC_SCF
+   use O_Input, only: numStates
    use O_Lattice, only: initializeLattice, initializeFindVec, &
          & cleanUpLattice
    use O_KPoints, only: numKPoints, computePhaseFactors, cleanUpKPoints
@@ -104,7 +113,7 @@ subroutine setupSCF
          & elecPotGaussOverlap, cleanUpIntegralsSCF, &
          & secondCleanUpIntegralsSCF
    use O_Integrals3Terms,  only: allocateIntegralsSCF3Terms, &
-         & gaussOverlapDM, cleanUpIntegralsSCF3Terms
+         & gaussOverlapDM, gaussOverlapMM, cleanUpIntegralsSCF3Terms
    use O_AtomicSites, only: coreDim, valeDim, cleanUpAtomSites
    use O_AtomicTypes, only: cleanUpRadialFns, cleanUpAtomTypes
    use O_PotSites, only: cleanUpPotSites
@@ -237,23 +246,28 @@ subroutine setupSCF
    !   the data structures that were used in all the above subroutines but are
    !   not necessary now.
    call cleanUpIntegralsSCF
- 
-   ! If the dipole moment calculations has been requested, then allocate
-   !   the necessary space and do the calculation.
-   if (doDIMO_SCF == 1) then
-      ! Note, that this is a three-term matrix (xyz). Consider in the future
-      !   an option to do the XYZ independently to conserve memory if that
-      !   becomes a problem.
+
+   ! If any supplementary three-term matrices (xyz) were requested for
+   !   computing other properties, then allocate the space that is necessary
+   !   for the integral calculation and do the integral.
+   if ((doDIMO_SCF == 1) .or. (doOPTC_SCF >= 1)) then
+
+      ! Consider in the future an option to do the XYZ independently to
+      !   conserve memory if that becomes a problem.
       call allocateIntegralsSCF3Terms(coreDim,valeDim,numKPoints)
 
-      ! Do the integral.
+      ! Do the relevant integrals.
       if (doDIMO_SCF == 1) then
          call gaussOverlapDM
+      endif
+      if (doOPTC_SCF >= 1) then
+         call gaussOverlapMM
       endif
 
       ! Clean up from the 3Term integrals.
       call cleanUpIntegralsSCF3Terms
    endif
+
 
    call secondCleanupIntegralsSCF ! Overlap matrix parts used for ortho.
    call cleanUpBasis
@@ -359,7 +373,6 @@ subroutine mainSCF
    ! Import necessary modules.
    use HDF5
    use O_Kinds
-   use O_SCFHDF5, only: closeHDF5_SCF
    use O_CommandLine, only: doDOS_SCF, doBond_SCF, doDIMO_SCF, doForce_SCF
    use O_Input, only: numStates, iterFlagTDOS
    use O_Potential, only: converged, currIteration, lastIteration, &
@@ -536,6 +549,331 @@ subroutine mainSCF
 !   if (hdferr /= 0) stop 'Failed to close the HDF5 interface.'
 
 end subroutine mainSCF
+
+
+subroutine intgPSCF
+
+   ! Import the necessary modules.
+   use O_Kinds
+   use O_TimeStamps
+   use O_Potential, only: initPotCoeffs
+   use O_Basis,     only: renormalizeBasis
+   use O_Integrals, only: allPSCFIntgCombo
+   use O_PSCFHDF5,  only: initHDF5_PSCF
+   use O_Lattice,   only: initializeLattice, initializeFindVec
+
+   ! Make sure that there are not accidental variable declarations.
+   implicit none
+
+
+   ! Open the potential file that will be read from in this program.
+   open (unit=8,file='fort.8',status='old',form='formatted')
+
+
+   ! Create real-space super lattice out of the primitive lattice.  These
+   !   "supercells" must be big enough so as to include all the points within
+   !   sphere bounded by the negligability limit.  Points outside the sphere
+   !   are considered negligable and are ignored.
+   call initializeLattice (1)
+
+
+   ! Setup the necessary data structures so that we can easily find the lattice
+   !   vector that is closest to any other arbitrary vector.
+   call initializeFindVec
+
+
+   ! Renormalize the basis functions.
+   call renormalizeBasis
+
+
+   ! Prepare the HDF5 files for the post SCF calculations.
+   call initHDF5_PSCF
+
+
+   ! Read the provided potential coefficients.
+   call initPotCoeffs
+
+   ! Compute the integrals and the momentum matrix elements (MME or MOME) (if
+   !   requested).  The MME request is given on the command line and the
+   !   subroutine gets that flag from that module.  The integrals are also
+   !   optional and are controlled by the intgAndOrMom parameter.  Obviously,
+   !   in this program the whole point is to compute the integrals.  However,
+   !   in other programs (optc) the integrals do not need to be computed and
+   !   only the MME need to be computed.  In that case the same subroutine can
+   !   be used, except that only the MME are computed, not the overlap and
+   !   hamiltonian.
+   call allPSCFIntgCombo
+
+
+end subroutine intgPSCF
+
+
+subroutine bandPSCF
+
+      ! Import the necessary modules.
+   use O_Kinds
+   use O_TimeStamps
+   use O_Input,            only: numStates
+   use O_Potential,        only: spin
+   use O_AtomicSites,      only: valeDim
+   use O_LAPACKParameters, only: setBlockSize
+   use O_Input,            only: numStates, parseInput
+   use O_CommandLine,      only: doSYBD_PSCF
+   use O_Lattice,          only: initializeLattice, initializeFindVec
+   use O_KPoints,          only: makePathKPoints, numKPoints, computePhaseFactors
+!   use O_PSCFBandHDF5,  only: valeValeBand, valeValeBand_did, saveCoreValeOL
+#ifndef GAMMA
+   use O_SecularEquation, only: valeVale, valeValeOL, energyEigenValues, &
+         & preserveValeValeOL, restoreValeValeOL, secularEqnOneKP
+#else
+   use O_SecularEquation, only: valeValeGamma, valeValeOLGamma, &
+         & energyEigenValues, preserveValeValeOL, restoreValeValeOL, &
+         & secularEqnOneKP
+#endif
+   use HDF5 ! Needed to define the kludgeInt hid_t integer.
+
+   ! Define local variables.
+   integer :: i,j
+   integer (hid_t) :: kludgeInt ! Place holder integer to avoid accessing
+         ! unallocated memory.
+
+   ! Make sure that there are no accidental variable declarations.
+   implicit none
+
+
+   ! Set up LAPACK machine parameters.
+   call setBlockSize(valeDim)
+
+
+   ! In the case of a symmetric band structure calculation we must modify the
+   !   kpoints according to the lattice type information given in the
+   !   olcao.dat input file.
+   if (doSYBD == 1) then
+      call makePathKPoints
+   endif
+
+
+!   ! Create real-space super lattice out of the primitive lattice.  These
+!   !   "supercells" must be big enough so as to include all the points within
+!   !   sphere bounded by the negligability limit.  Points outside the sphere
+!   !   are considered negligable and are ignored.
+!   call initializeLattice (0)
+!
+!
+!   ! Setup the necessary data structures so that we can easily find the lattice
+!   !   vector that is closest to any other arbitrary vector.
+!   call initializeFindVec
+!
+!
+!   ! Compute the kpoint phase factors.
+!   call computePhaseFactors
+!   call flush(20)
+!
+!
+!   ! Prepare the HDF5 files for the post SCF band structure calculation.
+!   call initPSCFBandHDF5(numStates)
+
+
+   ! Compute the solid state wave function for each kpoint.
+
+   ! Allocate space to hold the energyEigenValues, coreValeOL, and valeVale
+   !   matrices.
+   allocate (energyEigenValues(numStates,numKPoints,spin))
+#ifndef GAMMA
+   allocate (valeVale(valeDim,valeDim,1,spin))
+   allocate (valeValeOL(valeDim,valeDim,1,spin))
+#else
+   allocate (valeValeGamma(valeDim,valeDim,spin))
+   allocate (valeValeOLGamma(valeDim,valeDim,spin))
+#endif
+
+
+   ! Loop over all kpoints and compute the solid state wave function and
+   !   energy eigen values for each. But first, ...
+   ! Record the fact that we are starting the k-point loop so that when
+   !   someone looks at the output file as the job is running they will
+   !   know that all the little dots represent a count of the number of
+   !   k-points. Then they can figure out the progress and progress rate.
+   write (20,*) "Beginning k-point loop."
+   if (numKPoints > 1) write (20,*) "Expecting ",numKPoints," iterations."
+   call flush (20)
+
+   do i = 1, numKPoints
+
+      ! Read the overlap integral results and apply kpoints effects. Note
+      !   that the doSYBD if statement is a bit of a kludge because we do
+      !   not allocate the valeValeBand_did array in the doSYBD==1 case
+      !   so it is improper to try to access and pass an unallocated data
+      !   value. Hence we send a temporary integer instead. (This is a
+      !   placeholder until the partial SYBD code is implemented.)
+#ifndef GAMMA
+      if (doSYBD == 0) then
+         call getIntgResults(valeValeOL(:,:,:,1),coreValeOL,i,1,&
+               & valeValeBand_did(i),valeValeBand,1,1)
+      else
+         call getIntgResults(valeValeOL(:,:,:,1),coreValeOL,i,1,&
+               & kludgeInt,valeValeBand,0,1)
+      endif
+#else
+      if (doSYBD == 0) then
+         call getIntgResults(valeValeOLGamma(:,:,1),coreValeOLGamma,1,&
+               & valeValeBand_did(i),valeValeBand,1,1)
+      else
+         call getIntgResults(valeValeOLGamma(:,:,1),coreValeOLGamma,1,&
+               & kludgeInt,valeValeBand,0,1)
+      endif
+#endif
+
+      ! Write the coreValeOL for later use by other programs (if needed).
+#ifndef GAMMA
+      call saveCoreValeOL (coreValeOL,i)
+#else
+      call saveCoreValeOL (coreValeOLGamma,i)
+#endif
+
+      ! Preserve the valeValeOL (if needed). It will be destroyed by the
+      !   upcoming call to secularEqnOneKP where the ZHEGV routine is called.
+      !   This should be preserved in the case that a spin polarized
+      !   calculation is being done.
+      call preserveValeValeOL
+
+      do j = 1, spin
+#ifndef GAMMA
+         ! Read the hamiltonian integral results and apply kpoint effects. See
+         !   note above about the doSYBD 'if' statement.
+         if (doSYBD == 0) then
+            call getIntgResults(valeVale(:,:,:,j),coreValeOL,i,2,&
+                  & valeValeBand_did(i),valeValeBand,0,j)
+         else
+            call getIntgResults(valeVale(:,:,:,j),coreValeOL,i,2,&
+                  & kludgeInt,valeValeBand,1,j)
+         endif
+#else
+         ! Read the hamiltonian integral results and apply kpoint effects.
+         if (doSYBD == 0) then
+            call getIntgResults(valeValeGamma(:,:,j),coreValeOLGamma,2,&
+                  & valeValeBand_did(i),valeValeBand,0,j)
+         else
+            call getIntgResults(valeValeGamma(:,:,j),coreValeOLGamma,2,&
+                  & kludgeInt,valeValeBand,1,j)
+         endif
+#endif
+
+         ! Solve the wave equation for this kpoint.
+         call secularEqnOneKP(j,i,numStates,doSYBD)
+
+         ! Restore the valeValeOL (if needed).
+         if (j == 1) then
+            call restoreValeValeOL
+         endif
+      enddo
+
+      ! Record that this kpoint has been finished.
+      if (mod(i,10) .eq. 0) then
+         write (20,ADVANCE="NO",FMT="(a1)") "|"
+      else
+         write (20,ADVANCE="NO",FMT="(a1)") "."
+      endif
+      if (mod(i,50) .eq. 0) then
+         write (20,*) " ",i
+      endif
+      call flush (20)
+
+   enddo
+
+   ! Print the band results if necessary.
+   if (doSYBD == 1) then
+      call printSYBD
+   endif
+
+   ! Record the date and time we end.
+   call timeStampEnd(15)
+   call computeBands
+
+end subroutine bandPSCF
+
+
+subroutine computeBands
+
+   ! Use necessary modules.
+   use O_Kinds
+   use O_TimeStamps
+   use O_Potential,     only: spin
+   use O_CommandLine,   only: doSYBD
+   use O_Input,         only: numStates
+   use O_KPoints,       only: numKPoints
+   use O_IntegralsPSCF, only: getIntgResults
+   use O_AtomicSites,   only: coreDim, valeDim
+   use O_PSCFBandHDF5,  only: valeValeBand, valeValeBand_did, saveCoreValeOL
+#ifndef GAMMA
+   use O_SecularEquation, only: valeVale, valeValeOL, energyEigenValues, &
+         & preserveValeValeOL, restoreValeValeOL, secularEqnOneKP
+#else
+   use O_SecularEquation, only: valeValeGamma, valeValeOLGamma, &
+         & energyEigenValues, preserveValeValeOL, restoreValeValeOL, &
+         & secularEqnOneKP
+#endif
+   use HDF5 ! Needed to define the kludgeInt hid_t integer.
+
+   ! Define local variables.
+   integer :: i,j
+   integer (hid_t) :: kludgeInt ! Place holder integer to avoid accessing
+         ! unallocated memory.
+
+   ! Record the date and time we start.
+   call timeStampStart(15)
+
+
+end subroutine computeBands
+
+
+subroutine printSYBD
+
+   ! Use necessary modules.
+   use O_Potential,       only: spin
+   use O_Constants,       only: hartree
+   use O_Input,           only: numStates
+   use O_KPoints,         only: numPathKP, pathKPointMag
+   use O_Populate,        only: occupiedEnergy, populateStates
+   use O_SecularEquation, only: energyEigenValues, shiftEnergyEigenValues
+
+   ! Define local variables.
+   integer :: i,j
+   character*7 :: filename
+
+   ! Obtain the fermi energy with the populate energy levels subroutine.
+   call populateStates
+
+   ! Adjust the energyEigenValues down by the fermi level determined above.
+   call shiftEnergyEigenValues(occupiedEnergy,numStates)
+
+   do i = 1, spin
+
+      ! Create the filename.
+      write (filename,fmt="(a5,i2)") "fort.",30+i
+
+      ! Open the output file.
+      open (unit=30+i,file=filename,status='new',form='formatted')
+
+      ! Record the number of kpoints and the number of states
+      write (30+i,*) numPathKP, numStates
+
+      ! Record each kpoint's energy values
+      do j = 1, numPathKP
+
+         ! Record the distance of this kpoint from the beginning of the path.
+         write (30+i,*) pathKPointMag(j)
+
+         ! Record the energy values for this KPoint
+         write (30+i,fmt="(11f14.5)") energyEigenValues(:numStates,j,i)*hartree
+      enddo
+
+      ! Close the output file.
+      close (30+i)
+
+   enddo
+
+end subroutine printSYBD
 
 
 subroutine dos(inSCF)
@@ -725,132 +1063,92 @@ end subroutine bond
 !end subroutine field
 
 
-!subroutine optc(inSCF)
-!
-!   ! Use necessary modules.
-!   use O_TimeStamps
-!   use O_Potential,       only: spin
-!   use O_PSCFIntgHDF5,    only: getMOMEStatus
-!   use O_OptcPrint,       only: printOptcResults
-!   use O_CommandLine,     only: parseOptcCommandLine, stateSet
-!   use O_KPoints,         only: numKPoints, computePhaseFactors
-!   use O_Populate,        only: occupiedEnergy, populateStates
-!   use O_Lattice,         only: initializeLattice, initializeFindVec
-!   use O_Input,           only: numStates, lastInitStatePACS, parseInput,&
-!         & detailCodePOPTC
-!!   use O_PSCFBandHDF5,    only: accessPSCFBandHDF5, closeAccessPSCFBandHDF5
-!   use O_OptcTransitions, only: transCounter, energyDiff, transitionProb, &
-!         & transitionProbPOPTC, getEnergyStatistics, computeTransitions
-!   use O_SecularEquation, only: energyEigenValues, &
-!         & shiftEnergyEigenValues
-!!   use O_SecularEquation, only: energyEigenValues, readEnergyEigenValuesBand,&
-!!         & appendExcitedEValsBand, shiftEnergyEigenValues
-!
-!
-!   ! Make sure that no funny variables are defined.
-!   implicit none
-!
-!   ! Define passed parameters.
-!   integer, intent(in) :: inSCF
-!   integer, intent(in) :: doOptc
-!
-!
-!   ! Define local variables.
-!   integer :: doneMOME
-!
-!
-!   ! Open the optc files that will be written to. 40,41=optical conductivity;
-!   !   50,51 = imaginary dielectric function (usually). Note, for XANES/ELNES
-!   !   calculations, we do not need the optical conductivity. Also note, for
-!   !   Sigma(E) calculations the 50,51 units are the Sigma(E) itself, not the
-!   !   imaginary dielectric function (epsilon2).
-!   if (doOPTC /= 2) then
-!      open (unit=40,file='fort.40',status='new',form='formatted')
-!   endif
-!   open (unit=50,file='fort.50',status='new',form='formatted')
-!   if (spin == 2) then
-!      if (doOPTC /= 1) then
-!         open (unit=41,file='fort.41',status='new',form='formatted')
-!      endif
-!      open (unit=51,file='fort.51',status='new',form='formatted')
-!   endif
-!
-!
-!   ! Populate the electron states to find the highest occupied state (Fermi
-!   !   energy for metals).
-!   call populateStates
-!
-!!   if (doOPTC == 2) then ! Doing PACS calculation and we need to modify
-!!      ! the energy eigen values and their position. Now that the occupied
-!!      ! energy is known we can append the unoccupied excited states.
-!!      call appendExcitedEValsBand(lastInitStatePACS+1,numStates)
-!!   endif
-!
-!   ! Shift the energy eigen values according to the highest occupied state.
-!   call shiftEnergyEigenValues(occupiedEnergy,numStates)
-!
-!   ! Compute some statistics and variables concerning the energy values.
-!   call getEnergyStatistics(doOPTC)
-!
-!   ! Compute the transition pairs and energy values of those transitions.
-!   call computeTransitions(doOTPC)
-!
-!   ! Print the output if necessary.
-!   if (doOPTC /= 3) then  ! Not doing a Sigma(E) calculation.
-!      call printOptcResults  ! Internally distinguishes optc from poptc.
-!   endif
-!
-!   ! Deallocate unused matrices
-!   deallocate (energyEigenValues)
-!   deallocate (transCounter)
-!   if (doOPTC /= 3) then  ! Not doing a sigma(E) calculation.
-!      deallocate (energyDiff)
-!      if (detailCodePOPTC == 0) then
-!         deallocate (transitionProb)
-!      else
-!         deallocate (transitionProbPOPTC)
-!      endif
-!   endif
-!
-!end subroutine optc
+subroutine optc(inSCF,doOPTC)
+
+   ! Use necessary modules.
+   use O_TimeStamps
+   use O_Potential,       only: spin
+   use O_OptcPrint,       only: printOptcResults
+   use O_KPoints,         only: numKPoints, computePhaseFactors
+   use O_Populate,        only: occupiedEnergy, populateStates
+   use O_Lattice,         only: initializeLattice, initializeFindVec
+   use O_Input,           only: numStates, lastInitStatePACS, parseInput,&
+         & detailCodePOPTC
+!   use O_PSCFBandHDF5,    only: accessPSCFBandHDF5, closeAccessPSCFBandHDF5
+   use O_OptcTransitions, only: transCounter, energyDiff, transitionProb, &
+         & transitionProbPOPTC, getEnergyStatistics, computeTransitions
+   use O_SecularEquation, only: energyEigenValues, &
+         & shiftEnergyEigenValues
+!   use O_SecularEquation, only: energyEigenValues, readEnergyEigenValuesBand,&
+!         & appendExcitedEValsBand, shiftEnergyEigenValues
 
 
-!subroutine addOnMOME
-!
-!   ! Import the necessary HDF modules
-!   use HDF5
-!   use O_PSCFIntgHDF5
-!   use O_IntegralsPSCF
-!   use O_CommandLine
-!   use O_Lattice
-!   use O_Basis
-!
-!   ! Make sure that no variables are implicitly declared.
-!   implicit none
-!
-!   ! Set the doMOME command line parameter to 1 (even though it was not
-!   !   given on the command line).  This will allow us to use the intgAndOrMom
-!   !   subroutine.
-!   doMOME = 1
-!
-!   ! Prepare the necessary data structures for computing the MOME.
-!   call renormalizeBasis
-!
-!   ! Open up the integral HDF5 file so that we can write the MOME to it.
-!   call openMOMEPSCFIntgHDF5
-!
-!   ! Compute momentum matrix integrals and add them to the integral HDF5 file.
-!   call intgAndOrMom(0,doMOME)
-!
-!   ! Record that the momentum matrix elements were calculated.
-!   call setMOMEStatus(doMOME)
-!
-!   ! Close the integral HDF5 file so that the rest of optc can proceed as if
-!   !   this never happened (except now of course the file has the momentum
-!   !   matrix elements).
-!   call closeMOMEPSCFIntgHDF5
-!
-!end subroutine addOnMOME
+   ! Make sure that no funny variables are defined.
+   implicit none
+
+   ! Define passed parameters.
+   integer, intent(in) :: inSCF
+   integer, intent(in) :: doOPTC
+
+
+   ! Define local variables.
+   integer :: doneMOME
+
+
+   ! Open the optc files that will be written to. 40,41=optical conductivity;
+   !   50,51 = imaginary dielectric function (usually). Note, for XANES/ELNES
+   !   calculations, we do not need the optical conductivity. Also note, for
+   !   Sigma(E) calculations the 50,51 units are the Sigma(E) itself, not the
+   !   imaginary dielectric function (epsilon2).
+   if (doOPTC /= 2) then
+      open (unit=40,file='fort.40',status='new',form='formatted')
+   endif
+   open (unit=50,file='fort.50',status='new',form='formatted')
+   if (spin == 2) then
+      if (doOPTC /= 2) then
+         open (unit=41,file='fort.41',status='new',form='formatted')
+      endif
+      open (unit=51,file='fort.51',status='new',form='formatted')
+   endif
+
+
+   ! Populate the electron states to find the highest occupied state (Fermi
+   !   energy for metals).
+   call populateStates
+
+!   if (doOPTC == 2) then ! Doing PACS calculation and we need to modify
+!      ! the energy eigen values and their position. Now that the occupied
+!      ! energy is known we can append the unoccupied excited states.
+!      call appendExcitedEValsBand(lastInitStatePACS+1,numStates)
+!   endif
+
+   ! Shift the energy eigen values according to the highest occupied state.
+   call shiftEnergyEigenValues(occupiedEnergy,numStates)
+
+   ! Compute some statistics and variables concerning the energy values.
+   call getEnergyStatistics(doOPTC)
+
+   ! Compute the transition pairs and energy values of those transitions.
+   call computeTransitions(inSCF,doOPTC)
+
+   ! Print the output if necessary.
+   if (doOPTC /= 3) then  ! Not doing a Sigma(E) calculation.
+      call printOptcResults(doOPTC) ! Internally distinguishes optc, poptc.
+   endif
+
+   ! Deallocate unused matrices
+   deallocate (energyEigenValues)
+   deallocate (transCounter)
+   if (doOPTC /= 3) then  ! Not doing a sigma(E) calculation.
+      deallocate (energyDiff)
+      if (detailCodePOPTC == 0) then
+         deallocate (transitionProb)
+      else
+         deallocate (transitionProbPOPTC)
+      endif
+   endif
+
+end subroutine optc
 
 
 subroutine cleanUpSCF
