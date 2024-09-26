@@ -151,28 +151,6 @@ my $serialxyz;
 # forcePSCF=209;
 # fieldPSCF=210;
 # loenPSCF=301;
-#
-#my $dosRun;
-#my $bondRun;
-#my $dimoRun;
-#my $optcRun;
-#my $pacsRun;
-#my $nlopRun;
-#my $sigeRun;
-#my $sybdRun;
-#my $forceRun;
-#my $fieldRun;
-#my $dosRunSCF;
-#my $bondRunSCF;
-#my $dimoRunSCF;
-#my $optcRunSCF;
-#my $pacsRunSCF;
-#my $nlopRunSCF;
-#my $sigeRunSCF;
-#my $sybdRunSCF;
-#my $forceRunSCF;
-#my $fieldRunSCF;
-#my $loenRun;
 
 # Basis information.
 my $basis_scf;
@@ -1099,31 +1077,34 @@ sub runOLCAO
 # Check for the input files needed for this job.
 sub manageInput
 {
-   # Check for the primary "olcao" input file, and the system structure.
+   # Check for the primary "olcao" input file and the system structure in the
+   #   home directory and if it isn't there, get it out of the inputs
+   #   directory.
    if (! -e "$proj_home/$olcao$dat")
       {&copy("$inputs/$olcao$dat","$proj_home/$olcao$dat");}
    if (! -e "$proj_home/$structure$dat")
       {&copy("$inputs/$structure$dat","$proj_home/$structure$dat");}
 
-   # Copy in the universally required input into the intermediate dir.
+   # Copy the universally required input files into the intermediate dir.
    &copy("$proj_home/$olcao$dat","fort.5");
    &copy("$proj_home/$structure$dat","fort.4");
 
    # Check for the set of kpoints needed for the job.
-   if (($jobID >= 0) && ($jobID < 200))
+   if (($jobID >= 0) && ($jobID < 200)) # An SCF job.
    {
       # Doing an SCF job only.
       if (! -e "$proj_home/$kp_scf$dat")
          {&copy("$inputs/$kp_scf$dat","$proj_home/$kp_scf$dat");}
       &copy("$proj_home/$kp_scf$dat","fort.15");
-      &getPotCoeffs();
+      &getPotCoeffs($basis_scf);
    }
-   elsif (($jobID >= 200) && ($jobID < 300))
+   elsif (($jobID >= 200) && ($jobID < 300)) # A PSCF job.
    {
       # Doing a postSCF job.
       if (! -e "$proj_home/$kp_pscf$dat")
          {&copy("$inputs/$kp_pscf$dat","$proj_home/$kp_pscf$dat");}
       &copy("$proj_home/$kp_pscf$dat","fort.16");
+      &getPotCoeffs($basis_pscf);
 
       # If the SCF part does not have an explicit "NO" for the basis, then
       #   we should also copy the scf kpoints.
@@ -1132,7 +1113,6 @@ sub manageInput
          if (! -e "$proj_home/$kp_scf$dat")
             {&copy("$inputs/$kp_scf$dat","$proj_home/$kp_scf$dat");}
          &copy("$proj_home/$kp_scf$dat","fort.15");
-         &getPotCoeffs();
       }
    }
 
@@ -1151,14 +1131,15 @@ sub getPotCoeffs
    my $taskBasis = $_[0];
 
    # Define local variables.
-   my $basis;
    my $edge_ = $edge . "_";
    my @altBasisList;
+   my $altBasis;
+   my $basis;
 
-   # Look first for the scf basis.
-   $basis = "-$basis_scf";
+   # Set the string for the requested basis.
+   $basis = "-$taskBasis";
 
-   # Establish the order of alternate basis sets to check for a set of
+   # Establish the order of alternative basis sets to check for a set of
    #   potential coefficients.
    @altBasisList=("-eb","-fb","-mb");
 
@@ -1170,18 +1151,18 @@ sub getPotCoeffs
       return;
    }
 
-   # Check each of the alternate basis sets for the current edge.
-   foreach $basis (@altBasisList)
+   # Check each of the alternative basis sets for the current edge.
+   foreach $altBasis (@altBasisList)
    {
-      if (-e "$proj_home/$edge_$initPot$basis$dat")
+      if (-e "$proj_home/$edge_$initPot$altBasis$dat")
       {
-         &copy("$proj_home/$edge_$initPot$basis$dat","fort.8");
-         print RUNTIME "Using $edge_$initPot$basis$dat\n";
+         &copy("$proj_home/$edge_$initPot$altBasis$dat","fort.8");
+         print RUNTIME "Using $edge_$initPot$altBasis$dat\n";
          return;
       }
    }
 
-   # Check the ground state of the current SCF basis.
+   # Check the ground state of the current basis.
    if (-e "$proj_home/gs_$initPot$basis$dat")
    {
       &copy("$proj_home/gs_$initPot$basis$dat","fort.8");
@@ -1189,13 +1170,13 @@ sub getPotCoeffs
       return;
    }
 
-   # Check each of the alternate basis sets for the ground state.
-   foreach $basis (@altBasisList)
+   # Check each of the alternative basis sets for the ground state.
+   foreach $altBasis (@altBasisList)
    {
-      if (-e "$proj_home/gs_$initPot$basis$dat")
+      if (-e "$proj_home/gs_$initPot$altBasis$dat")
       {
-         &copy("$proj_home/gs_$initPot$basis$dat","fort.8");
-         print RUNTIME "Using gs_$initPot$basis$dat\n";
+         &copy("$proj_home/gs_$initPot$altBasis$dat","fort.8");
+         print RUNTIME "Using gs_$initPot$altBasis$dat\n";
          return;
       }
    }
@@ -1319,7 +1300,7 @@ sub manageOutput
       {$basis = "-fb";}
 
    # Perform these specialized moves and copies for each possible task.
-   if ($jobID < 200) # SCF was done.
+   if (($jobID < 200) || ($basis_scf ne "no")) # SCF was done.
    {
       &copy("fort.7","$edge_$jobName$basis.$iteration.7");
       &move("fort.7","$proj_home/$edge_$iteration$basis$dat");

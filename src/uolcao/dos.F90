@@ -215,10 +215,10 @@ subroutine computeDOS(inSCF)
          & detailCodePDOS
 #ifndef GAMMA
    use O_SecularEquation, only: valeValeOL, valeVale, energyEigenValues, &
-         & readDataSCF!, readDataPSCF
+         & readDataSCF, readDataPSCF
 #else
    use O_SecularEquation, only: valeValeOLGamma, valeValeGamma, &
-         & energyEigenValues, readDataSCF!, readDataPSCF
+         & energyEigenValues, readDataSCF, readDataPSCF
 #endif
 
 
@@ -307,13 +307,13 @@ integer :: m
    endif
 #ifndef GAMMA
    allocate      (waveFnSqrd (valeDim))
-   allocate      (valeValeOL (valeDim,valeDim,1,1))   !Holds overlap.
+   allocate      (valeValeOL (valeDim,valeDim))  !Holds overlap.
    if (inSCF == 0) then
-      allocate   (valeVale(valeDim,numStates,1,1)) !Holds wave functions.
+      allocate   (valeVale(valeDim,numStates,1)) !Holds wave functions.
    endif
 #else
    allocate      (waveFnSqrdGamma (valeDim))
-   allocate      (valeValeOLGamma (valeDim,valeDim,1))   !Holds overlap.
+   allocate      (valeValeOLGamma (valeDim,valeDim))  !Holds overlap.
    if (inSCF == 0) then
       allocate   (valeValeGamma(valeDim,numStates,1)) !Holds wave fns
    endif
@@ -564,7 +564,7 @@ integer :: m
             call readDataSCF(h,i,numStates,1) ! 1 = OL matrixCode
          else
             ! Read necessary data from post SCF (intg,band) data structures.
-            !call readDataPSCF(h,i,numStates)
+            call readDataPSCF(h,i,numStates,1) ! 1 = OL matrixCode
          endif
 
 
@@ -606,16 +606,16 @@ integer :: m
 #ifndef GAMMA
                   ! Compute the square of the wave function for each element.
                   waveFnSqrd(:valeDim) = &
-                        & conjg(valeVale(valeDimIndex,j,1,1)) * &
-                        & valeVale(:valeDim,j,1,1)
+                        & conjg(valeVale(valeDimIndex,j,1)) * &
+                        & valeVale(:valeDim,j,1)
 
                   ! Compute the effects of overlap for the real part only
                   !   (real*real) + (imag*imag).
                   oneValeRealAccum = sum( &
                        & real(waveFnSqrd(:valeDim),double) * &
-                       & real(valeValeOL(:valeDim,valeDimIndex,1,1),double) + &
+                       & real(valeValeOL(:valeDim,valeDimIndex),double) + &
                        & aimag(waveFnSqrd(:valeDim)) * &
-                       & aimag(valeValeOL(:valeDim,valeDimIndex,1,1)))
+                       & aimag(valeValeOL(:valeDim,valeDimIndex)))
 !write (22, *) "h, i, j, k, l"
 !write (22, *) h, i, j, k, l
 !write (22, *) "oneValeRealAccum"
@@ -632,7 +632,7 @@ integer :: m
 
                   ! Compute the effects of overlap.
                   oneValeRealAccum = sum(waveFnSqrdGamma(:valeDim) * &
-                        & valeValeOLGamma(:valeDim,valeDimIndex,1))
+                        & valeValeOLGamma(:valeDim,valeDimIndex))
 #endif
 
                   ! Store the current electron number assignment.
@@ -1141,13 +1141,11 @@ integer :: m
 #ifndef GAMMA
    deallocate (waveFnSqrd)
    if (inSCF == 0) then
-      deallocate (valeVale)
       deallocate (valeValeOL)
    endif
 #else
    deallocate (waveFnSqrdGamma)
    if (inSCF == 0) then
-      deallocate (valeValeGamma)
       deallocate (valeValeOLGamma)
    endif
 #endif

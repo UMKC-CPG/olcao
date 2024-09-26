@@ -6,9 +6,9 @@ subroutine OLCAO
 
    ! Import necessary modules. Note that 
    use O_SCFHDF5
+   use O_PSCFHDF5
    use O_CommandLine
    use O_TimeStamps, only: initOperationLabels
-   use O_Input, only: parseInput
    use O_LocalEnv
 
    ! Initialize the logging labels.
@@ -16,13 +16,6 @@ subroutine OLCAO
 
    ! Parse the command line parameters
    call parseCommandLine
-
-   ! Read in the input to initialize all the key data structure variables.
-   call parseInput
-
-   ! Find specific computational parameters not EXPLICITLY given in the input
-   !   file, but which can, however, be easily determined from the input file.
-   call getImplicitInfo
 
    ! Now, we are ready to do *either* SCF or Post SCF work.
    if (doSCF == 1) then
@@ -62,7 +55,7 @@ subroutine OLCAO
    if (doPSCF == 1) then
       call intgPSCF ! Preparations for wave function calculation.
 
-      call bandPSCF(doSYBD_PSCF) ! Wave function calculation.
+      call bandPSCF ! Wave function calculation.
 
 !      if (doDIMO_PSCF == 1) then
 !         call dimo
@@ -77,8 +70,10 @@ subroutine OLCAO
       endif
 
       if (doOptc_PSCF >= 1) then
-         call optc(0, do_OPTC_PSCF)
+         call optc(0, doOPTC_PSCF)
       endif
+
+      call cleanUpPSCF
 
       call closeHDF5_PSCF
    endif
@@ -97,11 +92,17 @@ subroutine setupSCF
 
    ! Import the necessary modules.
    use O_SCFHDF5, only: initHDF5_SCF
+   use O_SCFIntegralsHDF5, only: atomOverlap_did, atomOverlapCV_did, &
+         & atomKEOverlap_did, atomMVOverlap_did, atomNPOverlap_did, &
+         & atomDMOverlap_did, atomMMOverlap_did, atomPotOverlap_did, &
+         & atomOverlap_aid, atomKEOverlap_aid, atomMVOverlap_aid, &
+         & atomNPOverlap_aid, atomDMOverlap_aid, atomMMOverlap_aid, &
+         & atomPotTermOL_aid, numComponents, fullCVDims, packedVVDims
    use O_CommandLine, only: doDIMO_SCF, doOPTC_SCF
-   use O_Input, only: numStates
+   use O_Input, only: parseInput, numStates
    use O_Lattice, only: initializeLattice, initializeFindVec, &
          & cleanUpLattice
-   use O_KPoints, only: numKPoints, computePhaseFactors, cleanUpKPoints
+   use O_KPoints, only: numKPoints, computePhaseFactors
    use O_Basis, only: renormalizeBasis, cleanUpBasis
    use O_ExchangeCorrelation, only: maxNumRayPoints, getECMeshParameters, &
          & makeECMeshAndOverlap, cleanUpExchCorr
@@ -110,10 +111,10 @@ subroutine setupSCF
          & makeAlphaPotDist, cleanUpGaussRelations
    use O_Integrals,   only: allocateIntegralsSCF, gaussOverlapOL, &
          & gaussOverlapKE, gaussOverlapMV, gaussOverlapNP, &
-         & elecPotGaussOverlap, cleanUpIntegralsSCF, &
-         & secondCleanUpIntegralsSCF
-   use O_Integrals3Terms,  only: allocateIntegralsSCF3Terms, &
-         & gaussOverlapDM, gaussOverlapMM, cleanUpIntegralsSCF3Terms
+         & elecPotGaussOverlap, cleanUpIntegrals, &
+         & secondCleanUpIntegrals
+   use O_Integrals3Terms,  only: allocateIntegrals3Terms, &
+         & gaussOverlapDM, gaussOverlapMM, cleanUpIntegrals3Terms
    use O_AtomicSites, only: coreDim, valeDim, cleanUpAtomSites
    use O_AtomicTypes, only: cleanUpRadialFns, cleanUpAtomTypes
    use O_PotSites, only: cleanUpPotSites
@@ -157,12 +158,11 @@ subroutine setupSCF
 !   call TAU_PROFILE_SET_NODE(0)
 
    ! Read in the input to initialize all the key data structure variables.
-   call parseInput
+   call parseInput(1) ! inSCF=1
 
 
    ! Find specific computational parameters not EXPLICITLY given in the input
-   !   file.  These values can, however, be easily determined from the input
-   !   file.
+   !   file, but which can, however, be easily determined from the input file.
    call getImplicitInfo
 
 
@@ -207,20 +207,20 @@ subroutine setupSCF
    call allocateIntegralsSCF(coreDim,valeDim,numKPoints)
 
 
-   ! Calculate the matrix elements of the overlap between all LCAO Bloch
-   !   wave functions.
-   call gaussOverlapOL
+   ! Calculate the matrix elements of the overlap between all LCAO basis fns.
+   call gaussOverlapOL(numComponents,fullCVDims,packedVVDims,atomOverlap_did,&
+         & atomOverlapCV_did,atomOverlap_aid)
 
 
-   ! Calculate the matrix elements of the kinetic energy between all LCAO Bloch
+   ! Calculate the matrix elements of the kinetic energy between all LCAO
    !   basis functions.
-   call gaussOverlapKE
+   call gaussOverlapKE(packedVVDims,atomKEOverlap_did,atomKEOverlap_aid)
 
 
-   ! Calculate the matrix elements of the mass velocity between all LCAO Bloch
+   ! Calculate the matrix elements of the mass velocity between all LCAO
    !   basis functions if needed for the scalar relativistic calculation.
    if (rel == 1) then
-      call gaussOverlapMV
+      call gaussOverlapMV(packedVVDims,atomMVOverlap_did,atomMVOverlap_aid)
    endif
 
 
@@ -228,24 +228,24 @@ subroutine setupSCF
    call makeAlphaNucDist
 
 
-   ! Calculate the matrix elements of the overlap between all LCAO Bloch
+   ! Calculate the matrix elements of the overlap between all LCAO
    !   wave functions and the nuclear potentials.
-   call gaussOverlapNP
+   call gaussOverlapNP(packedVVDims,atomNPOverlap_did,atomNPOverlap_aid)
 
 
    ! Create the alpha distance matrix with potential alpha factor
    call makeAlphaPotDist
 
 
-   ! Calculate the matrix elements of the overlap between all LCAO Bloch
+   ! Calculate the matrix elements of the overlap between all LCAO
    !   wave functions and the potential site potential alphas.
-   call elecPotGaussOverlap
+   call elecPotGaussOverlap(packedVVDims,atomPotOverlap_did,atomPotTermOL_aid)
 
 
    ! Now that all the single matrices are done being made we can deallocate
    !   the data structures that were used in all the above subroutines but are
    !   not necessary now.
-   call cleanUpIntegralsSCF
+   call cleanUpIntegrals
 
    ! If any supplementary three-term matrices (xyz) were requested for
    !   computing other properties, then allocate the space that is necessary
@@ -254,22 +254,22 @@ subroutine setupSCF
 
       ! Consider in the future an option to do the XYZ independently to
       !   conserve memory if that becomes a problem.
-      call allocateIntegralsSCF3Terms(coreDim,valeDim,numKPoints)
+      call allocateIntegrals3Terms(coreDim,valeDim,numKPoints)
 
       ! Do the relevant integrals.
       if (doDIMO_SCF == 1) then
-         call gaussOverlapDM
+         call gaussOverlapDM(packedVVDims,atomDMOverlap_did,atomDMOverlap_aid)
       endif
       if (doOPTC_SCF >= 1) then
-         call gaussOverlapMM
+         call gaussOverlapMM(packedVVDims,atomMMOverlap_did,atomMMOverlap_aid)
       endif
 
       ! Clean up from the 3Term integrals.
-      call cleanUpIntegralsSCF3Terms
+      call cleanUpIntegrals3Terms
    endif
 
 
-   call secondCleanupIntegralsSCF ! Overlap matrix parts used for ortho.
+   call secondCleanupIntegrals ! Overlap matrix parts used for ortho.
    call cleanUpBasis
    call cleanUpGaussRelations
 
@@ -298,17 +298,6 @@ subroutine setupSCF
    !! Close the HDF5 interface.
    !call h5close_f (hdferr)
    !if (hdferr /= 0) stop 'Failed to close the HDF5 interface.'
-
-   !
-   !! Deallocate all the other as of yet un-deallocated arrays.
-   !call cleanUpAtomTypes
-   !call cleanUpAtomSites
-   !call cleanUpPotTypes
-   !call cleanUpPotSites
-   !call cleanUpKPoints
-   !call cleanUpExchCorr
-   !call cleanUpLattice
-   !call cleanUpPotential
 
    !! End the tau timer
 !  ! call TAU_PROFILE_STOP(profiler)
@@ -382,10 +371,9 @@ subroutine mainSCF
    use O_AtomicTypes, only: cleanUpAtomTypes
    use O_PotSites, only: cleanUpPotSites
    use O_PotTypes, only: cleanUpPotTypes
-   use O_SecularEquation, only: secularEqnAllKP, cleanUpSecularEqn, &
+   use O_SecularEquation, only: secularEqnSCF, cleanUpSecularEqn, &
          & shiftEnergyEigenValues
    use O_ValeCharge, only: makeValenceRho
-   use O_KPoints, only: cleanUpKPoints
    use O_Populate, only: occupiedEnergy, populateStates
    use O_LAPACKParameters, only: setBlockSize
    use O_ExchangeCorrelation, only: cleanUpExchCorr
@@ -445,7 +433,7 @@ subroutine mainSCF
 
       ! Solve the schrodinger equation
       do i = 1, spin
-         call secularEqnAllKP(i,numStates)
+         call secularEqnSCF(i,numStates)
       enddo
 
 
@@ -486,8 +474,10 @@ subroutine mainSCF
    ! Compute the final band structure if convergence was achieved or if the
    !   last iteration was done.  (I.e. we are out of the SCF loop.)
    do i = 1, spin
-      call secularEqnAllKP(i, numStates)
+      call secularEqnSCF(i, numStates)
    enddo
+
+   ! At this point we can clo
 
 !   ! Shift the energy eigen values according to the highest occupied state.
 !   call shiftEnergyEigenValues(occupiedEnergy,numStates)
@@ -556,11 +546,31 @@ subroutine intgPSCF
    ! Import the necessary modules.
    use O_Kinds
    use O_TimeStamps
-   use O_Potential, only: initPotCoeffs
-   use O_Basis,     only: renormalizeBasis
-   use O_Integrals, only: allPSCFIntgCombo
-   use O_PSCFHDF5,  only: initHDF5_PSCF
-   use O_Lattice,   only: initializeLattice, initializeFindVec
+   use O_Input, only: parseInput, numStates
+   use O_CommandLine, only: doDIMO_PSCF, doOPTC_PSCF, doSYBD_PSCF
+   use O_Potential, only: initPotCoeffs, spin
+   use O_Basis, only: renormalizeBasis, cleanUpBasis
+   use O_Integrals, only: allocateIntegralsPSCF, gaussOverlapOL,&
+         & gaussOverlapHamPSCF, cleanUpIntegrals, secondCleanUpIntegrals, &
+         & cleanUpHamIntegrals, reallocateIntegralsPSCF
+   use O_Integrals3Terms, only: gaussOverlapDM, gaussOverlapMM, &
+         & allocateIntegrals3Terms, cleanUpIntegrals3Terms
+   use O_PSCFHDF5, only: initHDF5_PSCF
+   use O_PSCFIntegralsHDF5, only: atomOverlapPSCF_did, atomOverlapCV_PSCF_did,&
+         & atomHamOverlapPSCF_did, atomDMOverlapPSCF_did,&
+         & atomMMOverlapPSCF_did, atomOverlapSYBD_PSCF_did,&
+         & atomOverlapCV_SYBD_PSCF_did, atomHamOverlapSYBD_PSCF_did,&
+         & atomDMOverlapSYBD_PSCF_did,atomMMOverlapSYBD_PSCF_did,&
+         & atomOverlapPSCF_aid,atomHamOverlapPSCF_aid,&
+         & atomDMOverlapPSCF_aid,atomMMOverlapPSCF_aid,&
+         & atomOverlapSYBD_PSCF_aid,atomHamOverlapSYBD_PSCF_aid,&
+         & atomDMOverlapSYBD_PSCF_aid,atomMMOverlapSYBD_PSCF_aid,&
+         & numComponents,fullCVDimsPSCF,packedVVDimsPSCF
+   use O_Lattice, only: initializeLattice, initializeFindVec
+   use O_KPoints, only: numKPoints, makePathKPoints, computePhaseFactors
+   use O_GaussianRelations, only: makeAlphaDist, makeAlphaNucDist,&
+         & makeAlphaPotDist, cleanUpGaussRelations
+   use O_AtomicSites, only: coreDim, valeDim
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
@@ -569,6 +579,22 @@ subroutine intgPSCF
    ! Open the potential file that will be read from in this program.
    open (unit=8,file='fort.8',status='old',form='formatted')
 
+
+   ! Read in the input to initialize all the key data structure variables.
+   call parseInput(0) ! inSCF=0
+
+
+   ! Find specific computational parameters not EXPLICITLY given in the input
+   !   file, but which can, however, be easily determined from the input file.
+   call getImplicitInfo
+
+
+   ! In the case of a symmetric band structure calculation we must modify the
+   !   kpoints according to the lattice type information given in the
+   !   olcao.dat input file.
+   if (doSYBD_PSCF == 1) then
+      call makePathKPoints
+   endif
 
    ! Create real-space super lattice out of the primitive lattice.  These
    !   "supercells" must be big enough so as to include all the points within
@@ -582,27 +608,95 @@ subroutine intgPSCF
    call initializeFindVec
 
 
+   ! Compute the kpoint phase factors.
+   call computePhaseFactors
+
+
    ! Renormalize the basis functions.
    call renormalizeBasis
 
 
    ! Prepare the HDF5 files for the post SCF calculations.
-   call initHDF5_PSCF
+   call initHDF5_PSCF(numStates)
+
+
+   ! Create the alpha distance matrices.
+   call makeAlphaDist
+
+
+   ! Allocate space for the integral results.
+   call allocateIntegralsPSCF(coreDim,ValeDim,numKPoints)
 
 
    ! Read the provided potential coefficients.
    call initPotCoeffs
 
-   ! Compute the integrals and the momentum matrix elements (MME or MOME) (if
-   !   requested).  The MME request is given on the command line and the
-   !   subroutine gets that flag from that module.  The integrals are also
-   !   optional and are controlled by the intgAndOrMom parameter.  Obviously,
-   !   in this program the whole point is to compute the integrals.  However,
-   !   in other programs (optc) the integrals do not need to be computed and
-   !   only the MME need to be computed.  In that case the same subroutine can
-   !   be used, except that only the MME are computed, not the overlap and
-   !   hamiltonian.
-   call allPSCFIntgCombo
+
+   ! Calculate the matrix elements of the overlap between all LCAO basis fns.
+   if (doSYBD_PSCF < 0) then
+      call gaussOverlapOL(numComponents,fullCVDimsPSCF,packedVVDimsPSCF,&
+            & atomOverlapPSCF_did,atomOverlapCV_PSCF_did,atomOverlapPSCF_aid)
+   else
+      call gaussOverlapOL(numComponents,fullCVDimsPSCF,packedVVDimsPSCF,&
+            & atomOverlapSYBD_PSCF_did,atomOverlapCV_SYBD_PSCF_did,&
+            & atomOverlapSYBD_PSCF_aid)
+   endif
+
+
+   ! Create the alpha distance matrix with nuclear alpha factor
+   call makeAlphaNucDist
+
+
+   ! Create the alpha distance matrix with potential alpha factor
+   call makeAlphaPotDist
+
+
+   ! Reallocate integrals from the overlap to the hamiltonian.
+   call reallocateIntegralsPSCF(coreDim,valeDim,numKPoints,spin)
+
+
+   ! Compute the hamiltonian matrix elements.
+   if (doSYBD_PSCF < 0) then
+      call gaussOverlapHamPSCF(atomHamOverlapPSCF_did,atomHamOverlapPSCF_aid)
+   else
+      call gaussOverlapHamPSCF(atomHamOverlapSYBD_PSCF_did,&
+            & atomHamOverlapSYBD_PSCF_aid)
+   endif
+
+
+   ! Now that all the single matrices are done being made we can deallocate
+   !   the data structures that were used in all the above subroutines but are
+   !   not necessary now.
+   call cleanUpHamIntegrals
+
+
+   ! If any supplementary three-term matrices (xyz) were requested for
+   !   computing other properties, then allocate the space that is necessary
+   !   for the integral calculation and do the integral.
+   if ((doDIMO_PSCF == 1) .or. (doOPTC_PSCF >= 1)) then
+
+      ! Consider in the future an option to do the XYZ independently to
+      !   conserve memory if that becomes a problem.
+      call allocateIntegrals3Terms(coreDim,valeDim,numKPoints)
+
+      ! Do the relevant integrals.
+      if (doDIMO_PSCF == 1) then
+         call gaussOverlapDM(packedVVDimsPSCF,atomDMOverlapPSCF_did,&
+               & atomDMOverlapPSCF_aid)
+      endif
+      if (doOPTC_PSCF >= 1) then
+         call gaussOverlapMM(packedVVDimsPSCF,atomMMOverlapPSCF_did,&
+               & atomMMOverlapPSCF_aid)
+      endif
+
+      ! Clean up from the 3Term integrals.
+      call cleanUpIntegrals3Terms
+   endif
+
+
+   call secondCleanupIntegrals ! Overlap matrix parts used for ortho.
+   call cleanUpBasis
+   call cleanUpGaussRelations
 
 
 end subroutine intgPSCF
@@ -617,76 +711,33 @@ subroutine bandPSCF
    use O_Potential,        only: spin
    use O_AtomicSites,      only: valeDim
    use O_LAPACKParameters, only: setBlockSize
-   use O_Input,            only: numStates, parseInput
+   use O_Input,            only: numStates
    use O_CommandLine,      only: doSYBD_PSCF
    use O_Lattice,          only: initializeLattice, initializeFindVec
    use O_KPoints,          only: makePathKPoints, numKPoints, computePhaseFactors
-!   use O_PSCFBandHDF5,  only: valeValeBand, valeValeBand_did, saveCoreValeOL
-#ifndef GAMMA
-   use O_SecularEquation, only: valeVale, valeValeOL, energyEigenValues, &
-         & preserveValeValeOL, restoreValeValeOL, secularEqnOneKP
-#else
-   use O_SecularEquation, only: valeValeGamma, valeValeOLGamma, &
-         & energyEigenValues, preserveValeValeOL, restoreValeValeOL, &
-         & secularEqnOneKP
-#endif
+   use O_PSCFIntegralsHDF5, only: numComponents, atomOverlapPSCF_did,&
+         & atomHamOverlapPSCF_did, atomOverlapSYBD_PSCF_did,&
+         & atomHamOverlapSYBD_PSCF_did
+   use O_PSCFEigVecHDF5, only: eigenVectorsPSCF_did,eigenVectorsSYBD_PSCF_did,&
+         & eigenVectorsPSCF_aid, eigenVectorsSYBD_PSCF_aid
+   use O_PSCFEigValHDF5, only: eigenValuesPSCF_did,eigenValuesSYBD_PSCF_did
+   use O_SecularEquation, only: secularEqnPSCF
    use HDF5 ! Needed to define the kludgeInt hid_t integer.
+
+   ! Make sure that there are no accidental variable declarations.
+   implicit none
+
 
    ! Define local variables.
    integer :: i,j
    integer (hid_t) :: kludgeInt ! Place holder integer to avoid accessing
          ! unallocated memory.
 
-   ! Make sure that there are no accidental variable declarations.
-   implicit none
-
 
    ! Set up LAPACK machine parameters.
    call setBlockSize(valeDim)
 
-
-   ! In the case of a symmetric band structure calculation we must modify the
-   !   kpoints according to the lattice type information given in the
-   !   olcao.dat input file.
-   if (doSYBD == 1) then
-      call makePathKPoints
-   endif
-
-
-!   ! Create real-space super lattice out of the primitive lattice.  These
-!   !   "supercells" must be big enough so as to include all the points within
-!   !   sphere bounded by the negligability limit.  Points outside the sphere
-!   !   are considered negligable and are ignored.
-!   call initializeLattice (0)
-!
-!
-!   ! Setup the necessary data structures so that we can easily find the lattice
-!   !   vector that is closest to any other arbitrary vector.
-!   call initializeFindVec
-!
-!
-!   ! Compute the kpoint phase factors.
-!   call computePhaseFactors
-!   call flush(20)
-!
-!
-!   ! Prepare the HDF5 files for the post SCF band structure calculation.
-!   call initPSCFBandHDF5(numStates)
-
-
    ! Compute the solid state wave function for each kpoint.
-
-   ! Allocate space to hold the energyEigenValues, coreValeOL, and valeVale
-   !   matrices.
-   allocate (energyEigenValues(numStates,numKPoints,spin))
-#ifndef GAMMA
-   allocate (valeVale(valeDim,valeDim,1,spin))
-   allocate (valeValeOL(valeDim,valeDim,1,spin))
-#else
-   allocate (valeValeGamma(valeDim,valeDim,spin))
-   allocate (valeValeOLGamma(valeDim,valeDim,spin))
-#endif
-
 
    ! Loop over all kpoints and compute the solid state wave function and
    !   energy eigen values for each. But first, ...
@@ -695,136 +746,31 @@ subroutine bandPSCF
    !   know that all the little dots represent a count of the number of
    !   k-points. Then they can figure out the progress and progress rate.
    write (20,*) "Beginning k-point loop."
-   if (numKPoints > 1) write (20,*) "Expecting ",numKPoints," iterations."
+   write (20,*) "Expecting ",numKPoints," iterations."
    call flush (20)
 
-   do i = 1, numKPoints
-
-      ! Read the overlap integral results and apply kpoints effects. Note
-      !   that the doSYBD if statement is a bit of a kludge because we do
-      !   not allocate the valeValeBand_did array in the doSYBD==1 case
-      !   so it is improper to try to access and pass an unallocated data
-      !   value. Hence we send a temporary integer instead. (This is a
-      !   placeholder until the partial SYBD code is implemented.)
-#ifndef GAMMA
-      if (doSYBD == 0) then
-         call getIntgResults(valeValeOL(:,:,:,1),coreValeOL,i,1,&
-               & valeValeBand_did(i),valeValeBand,1,1)
+   do j = 1, spin
+      if (doSYBD_PSCF < 0) then
+         call secularEqnPSCF(j,numStates,numComponents,atomOverlapPSCF_did,&
+               & atomHamOverlapPSCF_did,eigenValuesPSCF_did,&
+               & eigenVectorsPSCF_did,eigenVectorsPSCF_aid)
       else
-         call getIntgResults(valeValeOL(:,:,:,1),coreValeOL,i,1,&
-               & kludgeInt,valeValeBand,0,1)
+         call secularEqnPSCF(j,numStates,numComponents,&
+               & atomOverlapSYBD_PSCF_did,&
+               & atomHamOverlapSYBD_PSCF_did,eigenValuesSYBD_PSCF_did,&
+               & eigenVectorsSYBD_PSCF_did,eigenVectorsSYBD_PSCF_aid)
       endif
-#else
-      if (doSYBD == 0) then
-         call getIntgResults(valeValeOLGamma(:,:,1),coreValeOLGamma,1,&
-               & valeValeBand_did(i),valeValeBand,1,1)
-      else
-         call getIntgResults(valeValeOLGamma(:,:,1),coreValeOLGamma,1,&
-               & kludgeInt,valeValeBand,0,1)
-      endif
-#endif
-
-      ! Write the coreValeOL for later use by other programs (if needed).
-#ifndef GAMMA
-      call saveCoreValeOL (coreValeOL,i)
-#else
-      call saveCoreValeOL (coreValeOLGamma,i)
-#endif
-
-      ! Preserve the valeValeOL (if needed). It will be destroyed by the
-      !   upcoming call to secularEqnOneKP where the ZHEGV routine is called.
-      !   This should be preserved in the case that a spin polarized
-      !   calculation is being done.
-      call preserveValeValeOL
-
-      do j = 1, spin
-#ifndef GAMMA
-         ! Read the hamiltonian integral results and apply kpoint effects. See
-         !   note above about the doSYBD 'if' statement.
-         if (doSYBD == 0) then
-            call getIntgResults(valeVale(:,:,:,j),coreValeOL,i,2,&
-                  & valeValeBand_did(i),valeValeBand,0,j)
-         else
-            call getIntgResults(valeVale(:,:,:,j),coreValeOL,i,2,&
-                  & kludgeInt,valeValeBand,1,j)
-         endif
-#else
-         ! Read the hamiltonian integral results and apply kpoint effects.
-         if (doSYBD == 0) then
-            call getIntgResults(valeValeGamma(:,:,j),coreValeOLGamma,2,&
-                  & valeValeBand_did(i),valeValeBand,0,j)
-         else
-            call getIntgResults(valeValeGamma(:,:,j),coreValeOLGamma,2,&
-                  & kludgeInt,valeValeBand,1,j)
-         endif
-#endif
-
-         ! Solve the wave equation for this kpoint.
-         call secularEqnOneKP(j,i,numStates,doSYBD)
-
-         ! Restore the valeValeOL (if needed).
-         if (j == 1) then
-            call restoreValeValeOL
-         endif
-      enddo
-
-      ! Record that this kpoint has been finished.
-      if (mod(i,10) .eq. 0) then
-         write (20,ADVANCE="NO",FMT="(a1)") "|"
-      else
-         write (20,ADVANCE="NO",FMT="(a1)") "."
-      endif
-      if (mod(i,50) .eq. 0) then
-         write (20,*) " ",i
-      endif
-      call flush (20)
-
    enddo
 
    ! Print the band results if necessary.
-   if (doSYBD == 1) then
+   if (doSYBD_PSCF == 1) then
       call printSYBD
    endif
 
    ! Record the date and time we end.
    call timeStampEnd(15)
-   call computeBands
 
 end subroutine bandPSCF
-
-
-subroutine computeBands
-
-   ! Use necessary modules.
-   use O_Kinds
-   use O_TimeStamps
-   use O_Potential,     only: spin
-   use O_CommandLine,   only: doSYBD
-   use O_Input,         only: numStates
-   use O_KPoints,       only: numKPoints
-   use O_IntegralsPSCF, only: getIntgResults
-   use O_AtomicSites,   only: coreDim, valeDim
-   use O_PSCFBandHDF5,  only: valeValeBand, valeValeBand_did, saveCoreValeOL
-#ifndef GAMMA
-   use O_SecularEquation, only: valeVale, valeValeOL, energyEigenValues, &
-         & preserveValeValeOL, restoreValeValeOL, secularEqnOneKP
-#else
-   use O_SecularEquation, only: valeValeGamma, valeValeOLGamma, &
-         & energyEigenValues, preserveValeValeOL, restoreValeValeOL, &
-         & secularEqnOneKP
-#endif
-   use HDF5 ! Needed to define the kludgeInt hid_t integer.
-
-   ! Define local variables.
-   integer :: i,j
-   integer (hid_t) :: kludgeInt ! Place holder integer to avoid accessing
-         ! unallocated memory.
-
-   ! Record the date and time we start.
-   call timeStampStart(15)
-
-
-end subroutine computeBands
 
 
 subroutine printSYBD
@@ -883,12 +829,12 @@ subroutine dos(inSCF)
    use O_Potential,       only: spin
    use O_DOS,             only: computeDOS
    use O_KPoints,         only: numKPoints
-   use O_Input,           only: numStates, parseInput
+   use O_Input,           only: numStates
    use O_Populate,        only: occupiedEnergy, populateStates
 !   use O_PSCFBandHDF5,    only: accessPSCFBandHDF5, closeAccessPSCFBandHDF5
    use O_SecularEquation, only: energyEigenValues, &
          & shiftEnergyEigenValues
-!   use O_SecularEquation, only: energyEigenValues, readEnergyEigenValuesBand, &
+!   use O_SecularEquation, only: energyEigenValues, readEnergyEigenValuesBand,&
 !         & shiftEnergyEigenValues
 
 
@@ -944,7 +890,7 @@ subroutine bond (inSCF, doBond)
    use O_Bond,            only: computeBond
    use O_Bond3C,          only: computeBond3C
    use O_Populate,        only: occupiedEnergy, populateStates
-   use O_Input,           only: thermalSigma, numStates, parseInput
+   use O_Input,           only: thermalSigma, numStates
 !   use O_PSCFBandHDF5,    only: accessPSCFBandHDF5, closeAccessPSCFBandHDF5
    use O_SecularEquation, only: shiftEnergyEigenValues
 
@@ -1069,10 +1015,10 @@ subroutine optc(inSCF,doOPTC)
    use O_TimeStamps
    use O_Potential,       only: spin
    use O_OptcPrint,       only: printOptcResults
-   use O_KPoints,         only: numKPoints, computePhaseFactors
+   use O_KPoints,         only: numKPoints
    use O_Populate,        only: occupiedEnergy, populateStates
    use O_Lattice,         only: initializeLattice, initializeFindVec
-   use O_Input,           only: numStates, lastInitStatePACS, parseInput,&
+   use O_Input,           only: numStates, lastInitStatePACS, &
          & detailCodePOPTC
 !   use O_PSCFBandHDF5,    only: accessPSCFBandHDF5, closeAccessPSCFBandHDF5
    use O_OptcTransitions, only: transCounter, energyDiff, transitionProb, &
@@ -1137,7 +1083,6 @@ subroutine optc(inSCF,doOPTC)
    endif
 
    ! Deallocate unused matrices
-   deallocate (energyEigenValues)
    deallocate (transCounter)
    if (doOPTC /= 3) then  ! Not doing a sigma(E) calculation.
       deallocate (energyDiff)
@@ -1154,7 +1099,8 @@ end subroutine optc
 subroutine cleanUpSCF
 
    ! Use necessary modules.
-   use O_CommandLine, only: doDIMO_SCF, doForce_SCF
+   use O_CommandLine, only: doDIMO_SCF, doForce_SCF, doPSCF
+   use O_Lattice, only: cleanUpLattice
    use O_Potential, only:  cleanUpPotential
    use O_AtomicSites, only: cleanUpAtomSites
    use O_AtomicTypes, only: cleanUpAtomTypes
@@ -1166,12 +1112,14 @@ subroutine cleanUpSCF
 
    implicit none
 
-   ! Close the output files
-   close (7)
-   close (8)
-   close (13)
-   close (14)
-   close (20)
+   ! Close the output files.
+   close (7) ! Iteration data
+   close (8) ! SCF Potential
+   close (13) ! Magnetic moments
+   close (14) ! Energy data per iteration
+   if(doPSCF < 0) then
+      close (20) ! Primary output
+   endif
 
    ! Deallocate all the other as of yet un-deallocated arrays.
    call cleanUpAtomTypes
@@ -1181,10 +1129,11 @@ subroutine cleanUpSCF
    call cleanUpKPoints
    call cleanUpExchCorr
    call cleanUpPotential
+   call cleanUpLattice
 
    ! Because we already deallocated in makeValence Rho we only deallocate
    !   if necessary.
-   if ((doDIMO_SCF == 0) .and. (doForce_SCF == 0)) then
+   if ((doDIMO_SCF < 0) .and. (doForce_SCF < 0)) then
       call cleanUpSecularEqn
    endif
 
@@ -1192,6 +1141,46 @@ subroutine cleanUpSCF
    open (unit=2,file='fort.2',status='unknown')
 
 end subroutine cleanUpSCF
+
+
+subroutine cleanUpPSCF
+
+   ! Use necessary modules.
+   use O_CommandLine, only: doDIMO_PSCF, doForce_PSCF
+   use O_Lattice, only: cleanUpLattice
+   use O_Potential, only:  cleanUpPotential
+   use O_AtomicSites, only: cleanUpAtomSites
+   use O_AtomicTypes, only: cleanUpAtomTypes
+   use O_PotSites, only: cleanUpPotSites
+   use O_PotTypes, only: cleanUpPotTypes
+   use O_SecularEquation, only: cleanUpSecularEqn
+   use O_KPoints, only: cleanUpKPoints
+
+   implicit none
+
+   ! Close any opened files.
+   close (8)
+   close (20)
+
+   ! Deallocate all the other as of yet un-deallocated arrays.
+   call cleanUpAtomTypes
+   call cleanUpAtomSites
+   call cleanUpPotTypes
+   call cleanUpPotSites
+   call cleanUpKPoints
+   call cleanUpPotential
+   call cleanUpLattice
+
+   ! Because we already deallocated in makeValence Rho we only deallocate
+   !   if necessary.
+   if ((doDIMO_PSCF < 0) .and. (doForce_PSCF < 0)) then
+      call cleanUpSecularEqn
+   endif
+
+   ! Open file to signal completion of the program to the calling olcao script.
+   open (unit=2,file='fort.2',status='unknown')
+
+end subroutine cleanUpPSCF
 
 
 end module O_OLCAO

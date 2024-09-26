@@ -136,14 +136,14 @@ subroutine computeBond3C(inSCF)
 #ifndef GAMMA
    allocate (waveFnSqrd (maxNumValeStates))
    if (inSCF == 0) then
-      allocate (valeVale   (valeDim,numStates,1,1))
-      allocate (valeValeOL (valeDim,valeDim,1,1))
+      allocate (valeVale   (valeDim,numStates,1))
+      allocate (valeValeOL (valeDim,valeDim))
    endif
 #else
    allocate (waveFnSqrdGamma (maxNumValeStates))
    if (inSCF == 0) then
       allocate (valeValeGamma   (valeDim,numStates,1))
-      allocate (valeValeOLGamma (valeDim,valeDim,1))
+      allocate (valeValeOLGamma (valeDim,valeDim))
    endif
 #endif
 
@@ -737,17 +737,17 @@ subroutine compute3CBO (kPointWeight,spin,chargeScaleFactor,j,index2Mag,&
 
 #ifndef GAMMA
       ! Compute ^2 of the wave function coefficients for each element.
-      waveFnSqrd(1:index2Mag) = conjg(valeVale(n,j,1,1)) * &
-            & valeVale(index2(1):index2(2),j,1,1)
+      waveFnSqrd(1:index2Mag) = conjg(valeVale(n,j,1)) * &
+            & valeVale(index2(1):index2(2),j,1)
 
       ! Multiply by the overlap to get the electron number associated with
       !   these two sites in this state.  (Note that we only need to look at
       !   the real part: (real*real) + (imag*imag).)
       oneValeRealAccum = sum(&
             & real (waveFnSqrd(1:index2Mag),double) * &
-            & real (valeValeOL(index2(1):index2(2),n,1,1),double) + &
+            & real (valeValeOL(index2(1):index2(2),n),double) + &
             & aimag(waveFnSqrd(1:index2Mag)) * &
-            & aimag(valeValeOL(index2(1):index2(2),n,1,1)))
+            & aimag(valeValeOL(index2(1):index2(2),n)))
 #else
       ! Compute ^2 of the wave function for each element.
       waveFnSqrdGamma(1:index2Mag) = valeValeGamma(n,j,1) * &
@@ -756,7 +756,7 @@ subroutine compute3CBO (kPointWeight,spin,chargeScaleFactor,j,index2Mag,&
       ! Compute the effects of overlap.
       oneValeRealAccum = sum(&
             & waveFnSqrdGamma(1:index2Mag) * &
-            & valeValeOLGamma(index2(1):index2(2),n,1))
+            & valeValeOLGamma(index2(1):index2(2),n))
 #endif
 
       ! Store the contribution to the atom pair bond order and the atom

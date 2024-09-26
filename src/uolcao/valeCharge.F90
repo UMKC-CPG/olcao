@@ -41,27 +41,27 @@ subroutine makeValenceRho
    use O_Input,              only: numStates
    use O_KPoints,            only: numKPoints
    use O_Constants,          only: smallThresh
-   use O_Potential,          only: rel, spin, potDim, potCoeffs,&
+   use O_Potential,          only: rel,spin,potDim,potCoeffs,&
          & numPlusUJAtoms, converged
-   use O_SCFEigVecHDF5,      only: valeStates, eigenVectors_did
-   use O_Populate,           only: electronPopulation, cleanUpPopulation
-   use O_SCFIntegralsHDF5,   only: atomOverlap_did, atomKEOverlap_did, &
-         & atomMVOverlap_did, atomNucOverlap_did, atomDMOverlap_did, &
-         & atomPotOverlap_did, atomDims
+   use O_SCFEigVecHDF5,      only: valeStates,eigenVectors_did
+   use O_Populate,           only: electronPopulation,cleanUpPopulation
+   use O_SCFIntegralsHDF5,   only: atomOverlap_did,atomKEOverlap_did, &
+         & atomMVOverlap_did,atomNPOverlap_did,atomDMOverlap_did, &
+         & atomPotOverlap_did,packedVVDims
 #ifndef GAMMA
    use O_BLASZHER
-   use O_SecularEquation, only: valeVale, cleanUpSecularEqn, energyEigenValues,&
+   use O_SecularEquation, only: valeVale,cleanUpSecularEqn,energyEigenValues,&
          & update1UJ
-   use O_MatrixSubs, only: readMatrix, readPackedMatrix, matrixElementMult, &
+   use O_MatrixSubs, only: readMatrix,readPackedMatrix,matrixElementMult, &
          & packMatrix
-   use O_Force, only: computeForce, valeValeF
+   use O_Force, only: computeForce,valeValeF
 #else
    use O_BLASDSYR
-   use O_SecularEquation, only: valeValeGamma, cleanUpSecularEqn, &
+   use O_SecularEquation, only: valeValeGamma,cleanUpSecularEqn, &
          & energyEigenValues, update1UJ
-   use O_MatrixSubs, only: readMatrixGamma, readPackedMatrix, &
-         & matrixElementMultGamma, packMatrixGamma
-   use O_Force, only: computeForceGamma, valeValeFGamma
+   use O_MatrixSubs, only: readMatrixGamma,readPackedMatrix, &
+         & matrixElementMultGamma,packMatrixGamma
+   use O_Force, only: computeForceGamma,valeValeFGamma
 #endif
 
    ! Make sure that there are not accidental variable declarations.
@@ -207,7 +207,7 @@ subroutine makeValenceRho
          allocate (tempImagValeVale(valeDim,numStates))
          do j = 1, spin
             call readMatrix (eigenVectors_did(:,i,j),&
-                  & valeVale(:,:numStates,1,j),&
+                  & valeVale(:,:numStates,j),&
                   & tempRealValeVale(:,:numStates),&
                   & tempImagValeVale(:,:numStates),&
                   & valeStates,valeDim,numStates)
@@ -237,7 +237,7 @@ subroutine makeValenceRho
                & energyEigenValues(j,i,:)
 
          do k = 1, spin
-            call zher('U',valeDim,currentPopulation(k),valeVale(:,j,1,k),1,&
+            call zher('U',valeDim,currentPopulation(k),valeVale(:,j,k),1,&
                   & valeValeRho(:,:,k),valeDim)
          enddo
       enddo
@@ -302,14 +302,14 @@ subroutine makeValenceRho
 #endif
 
 
-      ! Allocate space to hold the overlap matrix. Later, this will also be used
-      !   to read in the Hamiltonian matrix terms (KE, nuclear, electronic
+      ! Allocate space to hold the overlap matrix. Later, this will also be
+      !   used to read in the Hamiltonian matrix terms (KE, nuclear, electronic
       !   potential, and (if needed) the mass velocity).
       allocate (packedValeVale(dim1,valeDim*(valeDim+1)/2))
 
       ! Read the overlap matrix into the packedValeVale representation.
       call readPackedMatrix (atomOverlap_did(i),packedValeVale,&
-            & atomDims,dim1,valeDim)
+            & packedVVDims,dim1,valeDim)
 
       ! In the case that the calculation is spin polarized (spin=2) then we
       !   need to convert the values in the packedValeValeRho density matrix
@@ -344,8 +344,8 @@ subroutine makeValenceRho
 
 
       ! Compute the nuclear contribution to the fitted potential first.
-      call readPackedMatrix (atomNucOverlap_did(i),packedValeVale,&
-            & atomDims,dim1,valeDim)
+      call readPackedMatrix (atomNPOverlap_did(i),packedValeVale,&
+            & packedVVDims,dim1,valeDim)
       do j = 1, spin ! j=1 -> Total; j=2 -> Difference
 #ifndef GAMMA
          call matrixElementMult (nucPotTrace(j),packedValeVale,&
@@ -358,7 +358,7 @@ subroutine makeValenceRho
 
       ! Now compute the kinetic energy.
       call readPackedMatrix (atomKEOverlap_did(i),packedValeVale,&
-            & atomDims,dim1,valeDim)
+            & packedVVDims,dim1,valeDim)
       do j = 1, spin ! j=1 -> Total; j=2 -> Difference
 #ifndef GAMMA
          call matrixElementMult (kineticEnergyTrace(j),packedValeVale,&
@@ -372,7 +372,7 @@ subroutine makeValenceRho
       ! If needed, compute the mass velocity.
       if (rel == 1) then
          call readPackedMatrix (atomMVOverlap_did(i),packedValeVale,&
-               & atomDims,dim1,valeDim)
+               & packedVVDims,dim1,valeDim)
          do j = 1, spin ! j=1 -> Total; j=2 -> Difference
 #ifndef GAMMA
             call matrixElementMult (massVelocityTrace(j),packedValeVale,&
@@ -387,7 +387,7 @@ subroutine makeValenceRho
       ! Loop over atomic potential terms next.
       do j = 1, potDim
          call readPackedMatrix (atomPotOverlap_did(i,j),packedValeVale,&
-               & atomDims,dim1,valeDim)
+               & packedVVDims,dim1,valeDim)
          do k = 1, spin ! j=1 -> Total; j=2 -> Difference
 #ifndef GAMMA
             call matrixElementMult (potRho(j,k),packedValeVale,&
@@ -404,14 +404,14 @@ subroutine makeValenceRho
          do j = 1, 3 ! xyz directions
 
             call readPackedMatrix (atomDMOverlap_did(i,j),packedValeVale,&
-                      & atomDims,dim1,valeDim)
+                  & packedVVDims,dim1,valeDim)
             do k = 1, spin
 #ifndef GAMMA
                call matrixElementMult (dipoleMomentTrace(j,k),packedValeVale,&
                      & packedValeValeRho(:,:,k),dim1,valeDim)
 #else
-               call matrixElementMultGamma (dipoleMomentTrace(j,k),packedValeVale,&
-                     & packedValeValeRho(:,:,k),dim1,valeDim)
+               call matrixElementMultGamma (dipoleMomentTrace(j,k),&
+                     & packedValeVale,packedValeValeRho(:,:,k),dim1,valeDim)
 #endif
             enddo
          enddo

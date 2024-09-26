@@ -111,7 +111,7 @@ module O_Input
    contains
 
 
-subroutine parseInput
+subroutine parseInput(inSCF)
 
    ! Import necessary modules.
    use O_Kinds
@@ -127,6 +127,9 @@ subroutine parseInput
 
    ! Make sure no funny variables are defined.
    implicit none
+
+   ! Define passed parameters.
+   integer, intent(in) :: inSCF
 
    ! Define the variables that hold the file units for reading and writing.
    integer :: readUnit, writeUnit
@@ -147,7 +150,7 @@ subroutine parseInput
    call readTitle(readUnit,writeUnit)
 
    ! Read the atomic type (basis) information.
-   call readAtomicTypes(readUnit,writeUnit)
+   call readAtomicTypes(readUnit,writeUnit,inSCF)
 
    ! Read the potential type information.
    call readPotTypes(readUnit,writeUnit)
@@ -156,7 +159,7 @@ subroutine parseInput
    call readExchCorrMeshParameters(readUnit,writeUnit)
 
    ! Read shared control parameters:  
-   call readSharedControl(readUnit,writeUnit)
+   call readSharedControl(readUnit,writeUnit,inSCF)
 
    ! Read main input control parameters.
    call readMainControl(readUnit,writeUnit)
@@ -216,14 +219,19 @@ subroutine parseInput
 
 
    ! Open the kpoint mesh input file for reading.
-   open(15,file='fort.15',status='old',form='formatted')
-   readUnit = 15
+   if (inSCF == 1) then
+      readUnit = 15
+      open(readUnit,file='fort.15',status='old',form='formatted')
+   else
+      readUnit = 16
+      open(readUnit,file='fort.16',status='old',form='formatted')
+   endif
 
    ! Read the kpoint mesh information.
    call readKPoints(readUnit,writeUnit)
 
    ! Close the kpoint mesh input file.
-   close(15)
+   close(readUnit)
 
    ! Log the ending of the input reading.
    call timeStampEnd(1)
@@ -265,7 +273,7 @@ end subroutine readTitle
 
 
 
-subroutine readSharedControl(readUnit,writeUnit)
+subroutine readSharedControl(readUnit,writeUnit,inSCF)
 
    ! Import necessary modules.
    use O_Kinds
@@ -279,10 +287,11 @@ subroutine readSharedControl(readUnit,writeUnit)
    implicit none
 
    ! Passed parameters
-   integer, intent(in)    :: readUnit   ! The unit number of the file from which
-                                        ! we are reading.
-   integer, intent(in)    :: writeUnit  ! The unit number of the file to which
-                                        ! we are writing.
+   integer, intent(in) :: readUnit   ! The unit number of the file from which
+                                     ! we are reading.
+   integer, intent(in) :: writeUnit  ! The unit number of the file to which
+                                     ! we are writing.
+   integer, intent(in) :: inSCF
 
    ! Define local variables.
    integer :: basisCode
@@ -292,7 +301,11 @@ subroutine readSharedControl(readUnit,writeUnit)
    real (kind=double), dimension(3) :: tempArray
 
    ! Initialize the basisCode.
-   basisCode = basisCode_SCF
+   if (inSCF == 1) then
+      basisCode = basisCode_SCF
+   else
+      basisCode = basisCode_PSCF
+   endif
 
 
    ! Read the header for this input section.

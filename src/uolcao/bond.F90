@@ -114,13 +114,13 @@ subroutine computeBond (inSCF)
    allocate (numAtomBasisFns  (numAtomSites))
 #ifndef GAMMA
    allocate (waveFnSqrd (valeDim))
-   allocate (valeValeOL (valeDim,valeDim,1,1))
+   allocate (valeValeOL (valeDim,valeDim))
    if (inSCF == 0) then
-      allocate (valeVale   (valeDim,numStates,1,1))
+      allocate (valeVale   (valeDim,numStates,1))
    endif
 #else
    allocate (waveFnSqrdGamma (valeDim))
-   allocate (valeValeOLGamma (valeDim,valeDim,1))
+   allocate (valeValeOLGamma (valeDim,valeDim))
    if (inSCF == 0) then
       allocate (valeValeGamma   (valeDim,numStates,1))
    endif
@@ -261,8 +261,8 @@ subroutine computeBond (inSCF)
 
             ! Begin with the energy dependent computation including all energy
             !   states.  Note that only the chosen excited atom is considered.
-            !   If the excited atom in the bond order input is set to zero, then
-            !   this part of the computation does not proceed.
+            !   If the excited atom in the bond order input is set to zero,
+            !   then this part of the computation does not proceed.
 
             if (excitedAtomPACS .ne. 0) then
 
@@ -367,8 +367,8 @@ subroutine computeBond (inSCF)
 #ifndef GAMMA
                         ! Compute ^2 of the wave function for each element.
                         waveFnSqrd(atom2Index(1):atom2Index(2)) = &
-                              & conjg(valeVale(m,j,1,1)) * &
-                              & valeVale(atom2Index(1):atom2Index(2),j,1,1)
+                              & conjg(valeVale(m,j,1)) * &
+                              & valeVale(atom2Index(1):atom2Index(2),j,1)
 
                         ! Compute the effects of overlap for the real part
                         !   only (real*real) + (imag*imag).
@@ -376,11 +376,11 @@ subroutine computeBond (inSCF)
                               & real (waveFnSqrd(atom2Index(1):&
                               & atom2Index(2)),double) * &
                               & real (valeValeOL(atom2Index(1):&
-                              & atom2Index(2),m,1,1),double) + &
+                              & atom2Index(2),m),double) + &
                               & aimag(waveFnSqrd(atom2Index(1):&
                               & atom2Index(2)))*&
                               & aimag(valeValeOL(atom2Index(1):&
-                              & atom2Index(2),m,1,1)))
+                              & atom2Index(2),m)))
 #else
                         ! Compute ^2 of the wave function for each element.
                         waveFnSqrdGamma(atom2Index(1):atom2Index(2)) = &
@@ -394,7 +394,7 @@ subroutine computeBond (inSCF)
                               & waveFnSqrdGamma(atom2Index(1):&
                               & atom2Index(2)) * &
                               & valeValeOLGamma(atom2Index(1):&
-                              & atom2Index(2),m,1))
+                              & atom2Index(2),m))
 #endif
 
                         ! Store the atom pair bond order contribution for this
@@ -461,16 +461,16 @@ subroutine computeBond (inSCF)
 
 #ifndef GAMMA
                   ! Compute the square of the wave function for each element.
-                  waveFnSqrd(:valeDim) = conjg(valeVale(l,j,1,1)) * &
-                        & valeVale(:valeDim,j,1,1)
+                  waveFnSqrd(:valeDim) = conjg(valeVale(l,j,1)) * &
+                        & valeVale(:valeDim,j,1)
 
                   ! Compute the effects of overlap for the real part only
                   !   (real*real) + (imag*imag).
                   oneValeRealAccum = sum( &
                         & real(waveFnSqrd(:valeDim),double) * &
-                        & real (valeValeOL(:valeDim,l,1,1),double) + &
+                        & real (valeValeOL(:valeDim,l),double) + &
                         & aimag(waveFnSqrd(:valeDim)) * &
-                        & aimag(valeValeOL(:valeDim,l,1,1)))
+                        & aimag(valeValeOL(:valeDim,l)))
 #else
                   ! Compute the square of the wave function for each element.
                   waveFnSqrdGamma(:valeDim) = valeValeGamma(l,j,1) * &
@@ -479,7 +479,7 @@ subroutine computeBond (inSCF)
                   ! Compute the effects of overlap for the real part only
                   !   (real*real) + (imag*imag).
                   oneValeRealAccum = sum(waveFnSqrdGamma(:valeDim) * &
-                        & valeValeOLGamma(:valeDim,l,1))
+                        & valeValeOLGamma(:valeDim,l))
 #endif
 
                   ! Store the atom charge contribution from this band (j) and
@@ -573,8 +573,8 @@ subroutine computeBond (inSCF)
 #ifndef GAMMA
                         ! Compute ^2 of the wave function for each element.
                         waveFnSqrd(atom2Index(1):atom2Index(2)) = &
-                              & conjg(valeVale(m,j,1,1)) * &
-                              & valeVale(atom2Index(1):atom2Index(2),j,1,1)
+                              & conjg(valeVale(m,j,1)) * &
+                              & valeVale(atom2Index(1):atom2Index(2),j,1)
 
                         ! Compute the effects of overlap for the real part
                         !   only (real*real) + (imag*imag).
@@ -582,11 +582,11 @@ subroutine computeBond (inSCF)
                               & real (waveFnSqrd(atom2Index(1):&
                               &   atom2Index(2)),double)*&
                               & real (valeValeOL(atom2Index(1):&
-                              &   atom2Index(2),m,1,1),double) +&
+                              &   atom2Index(2),m),double) +&
                               & aimag(waveFnSqrd(atom2Index(1):&
                               &   atom2Index(2)))*&
                               & aimag(valeValeOL(atom2Index(1):&
-                              &   atom2Index(2),m,1,1)))
+                              &   atom2Index(2),m)))
 #else
                         ! Compute ^2 of the wave function for each element.
                         waveFnSqrdGamma(atom2Index(1):atom2Index(2)) = &
@@ -598,7 +598,7 @@ subroutine computeBond (inSCF)
                               & waveFnSqrdGamma(atom2Index(1):&
                               & atom2Index(2)) * &
                               & valeValeOLGamma(atom2Index(1):&
-                              & atom2Index(2),m,1))
+                              & atom2Index(2),m))
 #endif
 
                         ! Store the atom pair bond order contribution.

@@ -130,7 +130,7 @@ module O_AtomicTypes
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    contains
 
-subroutine readAtomicTypes(readUnit,writeUnit)
+subroutine readAtomicTypes(readUnit,writeUnit,inSCF)
 
    ! Bring in necessary modules.
    use O_Kinds
@@ -148,6 +148,7 @@ subroutine readAtomicTypes(readUnit,writeUnit)
                                         ! we are reading.
    integer, intent(in)    :: writeUnit  ! The unit number of the file to which
                                         ! we are writing.
+   integer, intent(in)    :: inSCF
 
    ! Define local variables.
    integer :: i,j
@@ -156,7 +157,11 @@ subroutine readAtomicTypes(readUnit,writeUnit)
    integer :: basisCode
 
    ! Initialize the basisCode depending on the type of requested calculation.
-   basisCode = basisCode_SCF
+   if (inSCF == 1) then
+      basisCode = basisCode_SCF
+   else
+      basisCode = basisCode_PSCF
+   endif
 
    ! Read the number of atomic types.
    call readData(readUnit,writeUnit,numAtomTypes,len('NUM_ATOM_TYPES'),&
@@ -242,7 +247,7 @@ subroutine readAtomicTypes(readUnit,writeUnit)
                        & atomTypes(i)%coreQN_nList,&
                        & atomTypes(i)%coreQN_lList,&
                        & atomTypes(i)%coreQN_2jList,&
-                       & atomTypes(i)%coreRadialFns)
+                       & atomTypes(i)%coreRadialFns,basisCode)
 
       ! Read in the num of valence radial basis functions for this atomic type.
       call readData(readUnit,writeUnit,3,tempIntArray(1:3),&
@@ -264,19 +269,18 @@ subroutine readAtomicTypes(readUnit,writeUnit)
                        & atomTypes(i)%valeQN_nList,&
                        & atomTypes(i)%valeQN_lList,&
                        & atomTypes(i)%valeQN_2jList,&
-                       & atomTypes(i)%valeRadialFns)
+                       & atomTypes(i)%valeRadialFns,basisCode)
    enddo
 
 end subroutine readAtomicTypes
 
 
 subroutine readRadialFns(readUnit,writeUnit,numRadialFns,numOrbAlphas,&
-            QN_nList,QN_lList,QN_2jList,radialFns)
+            QN_nList,QN_lList,QN_2jList,radialFns,basisCode)
 
    ! Import the necessary modules.
    use O_Kinds
    use O_Constants, only: lAngMomCount
-   use O_CommandLine, only: basisCode_SCF, basisCode_PSCF
 
    ! Import necessary subroutine modules.
    use O_ReadDataSubs
@@ -296,16 +300,13 @@ subroutine readRadialFns(readUnit,writeUnit,numRadialFns,numOrbAlphas,&
                                         ! we are reading.
    integer, intent(in)    :: writeUnit  ! The unit number of the file to which
                                         ! we are writing.
+   integer, intent(in) :: basisCode
 
 
    ! Define the local variables used in this routine
    integer                             :: i,j ! Loop counting integer
-   integer :: basisCode
    integer, dimension(5)               :: tempIntArray
    real (kind=double), allocatable, dimension (:) :: tempRealArray
-
-   ! Intiialize the basisCode.
-   basisCode = basisCode_SCF
 
    ! Allocate space to hold the unused coefficients.
    allocate (tempRealArray(numOrbAlphas(1)))

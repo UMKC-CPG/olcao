@@ -63,13 +63,13 @@ module O_OptcTransitions
 
 
 
-!#ifndef GAMMA
-!   complex (kind=double), allocatable, dimension (:,:,:,:) :: valeValeMom
-!   complex (kind=double), allocatable, dimension (:,:,:)   :: coreValeOL
-!#else
-!   real (kind=double), allocatable, dimension (:,:,:) :: valeValeMomGamma
-!   real (kind=double), allocatable, dimension (:,:)   :: coreValeOLGamma
-!#endif
+#ifndef GAMMA
+   complex (kind=double), allocatable, dimension (:,:,:,:) :: valeValeMom
+   complex (kind=double), allocatable, dimension (:,:,:)   :: coreValeOL
+#else
+   real (kind=double), allocatable, dimension (:,:,:) :: valeValeMomGamma
+   real (kind=double), allocatable, dimension (:,:)   :: coreValeOLGamma
+#endif
 
    real (kind=double), allocatable, dimension (:,:) :: sigmaEAccumulator
 
@@ -549,7 +549,7 @@ end subroutine getEnergyStatistics
 
 
 
-subroutine computeTransitions(inSCF,doOPTC)
+subroutine computeTransitions(doOPTC)
 
    ! Import the necessary modules.
    use HDF5
@@ -560,48 +560,42 @@ subroutine computeTransitions(inSCF,doOPTC)
    use O_AtomicSites,   only: coreDim, valeDim
    use O_CommandLine,   only: serialXYZ
    use O_Input,         only: numStates, totalEnergyDiffPACS, detailCodePOPTC
-!   use O_PSCFBandHDF5,  only: valeValeBand, coreValeBand, valeStatesBand, &
-!         & eigenVectorsBand_did, eigenVectorsBand2_did, coreValeBand_did, &
-!         & valeValeBand_did
+   use O_PSCFBandHDF5,  only: valeValeBand, coreValeBand, valeStatesBand, &
+         & eigenVectorsBand_did, eigenVectorsBand2_did, coreValeBand_did, &
+         & valeValeBand_did
 #ifndef GAMMA
-   use O_SecularEquation, only: valeVale, valeValeMM, readDataSCF
-!   use O_MatrixSubs,      only: readMatrix, readPartialWaveFns
+   use O_SecularEquation, only: valeVale
+   use O_MatrixSubs,      only: readMatrix, readPartialWaveFns
 #else
-   use O_SecularEquation, only: valeValeGamma, valeValeMMGamma, readDataSCF
-!   use O_MatrixSubs,      only: readMatrixGamma, readPartialWaveFnsGamma
+   use O_SecularEquation, only: valeValeGamma
+   use O_MatrixSubs,      only: readMatrixGamma, readPartialWaveFnsGamma
 #endif
 
    ! Make sure that there are no accidental variable declarations.
    implicit none
 
    ! Define passed parameters.
-   integer, intent(in) :: inSCF
    integer, intent(in) :: doOPTC
 
    ! Define local variables.
    integer :: h,i,j ! Loop index variables
    real (kind=double) :: energyShift
-!   real (kind=double), allocatable, dimension (:,:) :: tempRealValeVale
-!#ifndef GAMMA
-!   real (kind=double), allocatable, dimension (:,:) :: tempImagValeVale
-!#endif
+   real (kind=double), allocatable, dimension (:,:) :: tempRealValeVale
+#ifndef GAMMA
+   real (kind=double), allocatable, dimension (:,:) :: tempImagValeVale
+#endif
 
 
    ! Log the date and time we start.
    call timeStampStart (23)
 
-   ! Allocate the matrix to hold the wave function and momentum matrix
-   !   elements and initialize them.
+   ! Allocate the matrix to hold the wave functions and initialize it.
 #ifndef GAMMA
-!   allocate (valeVale (valeDim,numStates,1,1))
-   allocate (valeValeMM (valeDim,valeDim,3))
-!   valeVale(:,:,1,1) = cmplx(0.0_double,0.0_double,double)
-   valeValeMM(:,:,:) = cmplx(0.0_double,0.0_double,double)
+   allocate (valeVale (valeDim,numStates,1,1))
+   valeVale(:,:,1,1) = cmplx(0.0_double,0.0_double,double)
 #else
-!   allocate (valeValeGamma(valeDim,numStates,1))
-   allocate (valeValeMMGamma (valeDim,valeDim,3))
-!   valeValeGamma(:,:,1) = 0.0_double
-   valeValeMMGamma(:,:,:) = cmplx(0.0_double,0.0_double,double)
+   allocate (valeValeGamma(valeDim,numStates,1))
+   valeValeGamma(:,:,1) = 0.0_double
 #endif
 
 
@@ -618,124 +612,109 @@ subroutine computeTransitions(inSCF,doOPTC)
       ! Begin a loop over the number of kpoints
       do i = 1, numKPoints
 
-         ! Determine if we are doing the OPTC in a post-SCF calculation, or
-         !   within an SCF calculation.
-         if (inSCF == 1) then
-            ! Read necessary data from SCF (setup,main) data structures.
-            if (doOPTC /= 2) then ! Not doing a PACS calculation
-               call readDataSCF(h,i,numStates,2) ! 2 = regular MME matrixCode
-            else
-               call readDataSCF(h,i,numStates,3) ! 3 = PACS MME matrixCode
-            endif
+
+         ! Allocate temporary reading matrices.
+#ifndef GAMMA
+         allocate (tempRealValeVale(valeDim,numStates))
+         allocate (tempImagValeVale(valeDim,numStates))
+#else
+         allocate (tempRealValeVale(valeDim,numStates))
+#endif
+
+         if (doOPTC /= 2) then  ! Not doing a PACS calculation.
+
+            ! Read the datasets for this kpoint.
+#ifndef GAMMA
+            call readMatrix(eigenVectorsBand_did(:,i,h),valeVale(:,:,1,1),&
+                  & tempRealValeVale(:,:),tempImagValeVale(:,:),&
+                  & valeStatesBand,valeDim,numStates)
+#else
+            call readMatrixGamma(eigenVectorsBand_did(1,i,h),&
+                  & valeValeGamma(:,:,1),valeStatesBand,valeDim,numStates)
+#endif
          else
-            ! Read necessary data from post SCF data structures.
-            !call readDataPSCF(h,i,numStates,2) ! 2 = regular MME matrixCode
-            !call readDataPSCF(h,i,numStates,3) ! 3 = PACS MME matrixCode
+
+#ifndef GAMMA
+            ! Read the data for the ground state for this kpoint.
+            call readPartialWaveFns(eigenVectorsBand_did(:,i,h),&
+                  & valeVale(:,:,1,1),tempRealValeVale(:,:),&
+                  & tempImagValeVale(:,:),valeStatesBand,&
+                  & firstOccupiedState(i,h),lastOccupiedState(i,h),&
+                  & valeDim,numStates)
+
+            ! Read the data for the excited state for this kpoint.
+            call readPartialWaveFns(eigenVectorsBand2_did(:,i,h),&
+                  & valeVale(:,:,1,1),tempRealValeVale(:,:),&
+                  & tempImagValeVale(:,:),valeStatesBand,&
+                  & lastOccupiedState(i,h)+1,lastUnoccupiedState(i,h),&
+                  & valeDim,numStates)
+#else
+            ! Read the data for the ground state for this kpoint.
+            call readPartialWaveFnsGamma(eigenVectorsBand_did(1,i,h),&
+                  & valeValeGamma(:,:,1),tempRealValeVale(:,:),valeStatesBand,&
+                  & firstOccupiedState(i,h),lastOccupiedState(i,h),&
+                  & valeDim,numStates)
+
+            ! Read the data for the excited state for this kpoint.
+            call readPartialWaveFnsGamma(eigenVectorsBand2_did(1,i,h),&
+                  & valeValeGamma(:,:,1),tempRealValeVale(:,:),valeStatesBand,&
+                  & lastOccupiedState(i,h)+1,lastUnoccupiedState(i,h),&
+                  & valeDim,numStates)
+#endif
          endif
 
 
-!         ! Allocate temporary reading matrices.
-!#ifndef GAMMA
-!         allocate (tempRealValeVale(valeDim,numStates))
-!         allocate (tempImagValeVale(valeDim,numStates))
-!#else
-!         allocate (tempRealValeVale(valeDim,numStates))
-!#endif
-!
-!         if (doOPTC /= 2) then  ! Not doing a PACS calculation.
-!
-!            ! Read the datasets for this kpoint.
-!#ifndef GAMMA
-!            call readMatrix(eigenVectorsBand_did(:,i,h),valeVale(:,:,1,1),&
-!                  & tempRealValeVale(:,:),tempImagValeVale(:,:),&
-!                  & valeStatesBand,valeDim,numStates)
-!#else
-!            call readMatrixGamma(eigenVectorsBand_did(1,i,h),&
-!                  & valeValeGamma(:,:,1),valeStatesBand,valeDim,numStates)
-!#endif
-!         else
-!
-!#ifndef GAMMA
-!            ! Read the data for the ground state for this kpoint.
-!            call readPartialWaveFns(eigenVectorsBand_did(:,i,h),&
-!                  & valeVale(:,:,1,1),tempRealValeVale(:,:),&
-!                  & tempImagValeVale(:,:),valeStatesBand,&
-!                  & firstOccupiedState(i,h),lastOccupiedState(i,h),&
-!                  & valeDim,numStates)
-!
-!            ! Read the data for the excited state for this kpoint.
-!            call readPartialWaveFns(eigenVectorsBand2_did(:,i,h),&
-!                  & valeVale(:,:,1,1),tempRealValeVale(:,:),&
-!                  & tempImagValeVale(:,:),valeStatesBand,&
-!                  & lastOccupiedState(i,h)+1,lastUnoccupiedState(i,h),&
-!                  & valeDim,numStates)
-!#else
-!            ! Read the data for the ground state for this kpoint.
-!            call readPartialWaveFnsGamma(eigenVectorsBand_did(1,i,h),&
-!                  & valeValeGamma(:,:,1),tempRealValeVale(:,:),valeStatesBand,&
-!                  & firstOccupiedState(i,h),lastOccupiedState(i,h),&
-!                  & valeDim,numStates)
-!
-!            ! Read the data for the excited state for this kpoint.
-!            call readPartialWaveFnsGamma(eigenVectorsBand2_did(1,i,h),&
-!                  & valeValeGamma(:,:,1),tempRealValeVale(:,:),valeStatesBand,&
-!                  & lastOccupiedState(i,h)+1,lastUnoccupiedState(i,h),&
-!                  & valeDim,numStates)
-!#endif
-!         endif
-!
-!
-!         ! Read the orthogonalization coefficients after allocating space to
-!         !   hold them (and the temp reading matrix).
-!#ifndef GAMMA
-!         deallocate (tempRealValeVale)
-!         deallocate (tempImagValeVale)
-!         allocate   (tempRealValeVale (coreDim,valeDim))
-!         allocate   (tempImagValeVale (coreDim,valeDim))
-!         allocate   (coreValeOL (coreDim,valeDim,1))
-!         if (coreDim /= 0) then
-!            call readMatrix(coreValeBand_did(:,i),coreValeOL(:,:,1),&
-!                  & tempRealValeVale(:,:),tempImagValeVale(:,:),&
-!                  & coreValeBand,coreDim,valeDim)
-!         endif
-!         deallocate (tempRealValeVale)
-!         deallocate (tempImagValeVale)
-!#else
-!         deallocate (tempRealValeVale)
-!         allocate   (coreValeOLGamma  (coreDim,valeDim))
-!         if (coreDim /= 0) then
-!            call readMatrixGamma(coreValeBand_did(1,i),coreValeOLGamma(:,:),&
-!                  & coreValeBand,coreDim,valeDim)
-!         endif
-!#endif
+         ! Read the orthogonalization coefficients after allocating space to
+         !   hold them (and the temp reading matrix).
+#ifndef GAMMA
+         deallocate (tempRealValeVale)
+         deallocate (tempImagValeVale)
+         allocate   (tempRealValeVale (coreDim,valeDim))
+         allocate   (tempImagValeVale (coreDim,valeDim))
+         allocate   (coreValeOL (coreDim,valeDim,1))
+         if (coreDim /= 0) then
+            call readMatrix(coreValeBand_did(:,i),coreValeOL(:,:,1),&
+                  & tempRealValeVale(:,:),tempImagValeVale(:,:),&
+                  & coreValeBand,coreDim,valeDim)
+         endif
+         deallocate (tempRealValeVale)
+         deallocate (tempImagValeVale)
+#else
+         deallocate (tempRealValeVale)
+         allocate   (coreValeOLGamma  (coreDim,valeDim))
+         if (coreDim /= 0) then
+            call readMatrixGamma(coreValeBand_did(1,i),coreValeOLGamma(:,:),&
+                  & coreValeBand,coreDim,valeDim)
+         endif
+#endif
 
 
          ! Perform the computations in serial or all together.
          if (serialXYZ == 0) then
-!#ifndef GAMMA
-!
-!            allocate   (valeValeMom (valeDim,valeDim,1,3))
-!            ! Get the integral results for the x, y, z momentum matrices.
-!            ! Runcode:  3 = XMom, 4 = YMom, 5 = ZMom; (j+2)
-!            do j = 1, 3
-!               call getIntgResults (valeValeMom(:,:,:,j),coreValeOL,&
-!                     & i,j+2,valeValeBand_did(i),valeValeBand,1,1)
-!            enddo
-!            ! Deallocate matrices that are no longer needed in this iteration to
-!            !   make space for those that are needed.
-!            deallocate (coreValeOL)
-!#else
-!            allocate   (valeValeMomGamma (valeDim,valeDim,3))
-!            ! Get the integral results for the x, y, z momentum matrices.
-!            ! Runcode:  3 = XMom, 4 = YMom, 5 = ZMom; (j+2)
-!            do j = 1, 3
-!               call getIntgResults (valeValeMomGamma(:,:,j),coreValeOLGamma,&
-!                     & j+2,valeValeBand_did(i),valeValeBand,1,1)
-!            enddo
-!            ! Deallocate matrices that are no longer needed in this iteration to
-!            !   make space for those that are needed.
-!            deallocate (coreValeOLGamma)
-!#endif
+#ifndef GAMMA
+
+            allocate   (valeValeMom (valeDim,valeDim,1,3))
+            ! Get the integral results for the x, y, z momentum matrices.
+            ! Runcode:  3 = XMom, 4 = YMom, 5 = ZMom; (j+2)
+            do j = 1, 3
+               call getIntgResults (valeValeMom(:,:,:,j),coreValeOL,&
+                     & i,j+2,valeValeBand_did(i),valeValeBand,1,1)
+            enddo
+            ! Deallocate matrices that are no longer needed in this iteration to
+            !   make space for those that are needed.
+            deallocate (coreValeOL)
+#else
+            allocate   (valeValeMomGamma (valeDim,valeDim,3))
+            ! Get the integral results for the x, y, z momentum matrices.
+            ! Runcode:  3 = XMom, 4 = YMom, 5 = ZMom; (j+2)
+            do j = 1, 3
+               call getIntgResults (valeValeMomGamma(:,:,j),coreValeOLGamma,&
+                     & j+2,valeValeBand_did(i),valeValeBand,1,1)
+            enddo
+            ! Deallocate matrices that are no longer needed in this iteration to
+            !   make space for those that are needed.
+            deallocate (coreValeOLGamma)
+#endif
 
             if (doOPTC /= 3) then  ! Not doing a Sigma(E) calculation.
                if (detailCodePOPTC == 0) then ! Doing standard OPTC calc.
@@ -748,35 +727,35 @@ subroutine computeTransitions(inSCF,doOPTC)
             endif
 
          else
-!            do j = 1, 3
-!#ifndef GAMMA
-!               allocate   (valeValeMom (valeDim,valeDim,1,1))
-!               ! Runcode:  3 = XMom, 4 = YMom, 5 = ZMom; (j+2)
-!               call getIntgResults (valeValeMom(:,:,:,1),coreValeOL,&
-!                     & i,j+2,valeValeBand_did(i),valeValeBand,1,1)
-!#else
-!               allocate   (valeValeMomGamma (valeDim,valeDim,1))
-!               ! Runcode:  3 = XMom, 4 = YMom, 5 = ZMom; (j+2)
-!               call getIntgResults (valeValeMomGamma(:,:,1),coreValeOLGamma,&
-!                     & j+2,valeValeBand_did(i),valeValeBand,1,1)
-!#endif
-!
-!               if (doOPTC /= 3) then  ! Not doing a Sigma(E) calc.
-!                  if (detailCodePOPTC == 0) then ! Doing standard OPTC calc.
-!                     call computePairs (i,j,h,doOPTC)
-!                  else ! Doing pOptc calculation
-!                     call computePOPTCPairs (i,j,h,doOPTC)
-!                  endif
-!               else
-!                  call computeSigmaE (i,j,h)
-!               endif
-!            enddo
-!
-!#ifndef GAMMA
-!            deallocate (coreValeOL)
-!#else
-!            deallocate (coreValeOLGamma)
-!#endif
+            do j = 1, 3
+#ifndef GAMMA
+               allocate   (valeValeMom (valeDim,valeDim,1,1))
+               ! Runcode:  3 = XMom, 4 = YMom, 5 = ZMom; (j+2)
+               call getIntgResults (valeValeMom(:,:,:,1),coreValeOL,&
+                     & i,j+2,valeValeBand_did(i),valeValeBand,1,1)
+#else
+               allocate   (valeValeMomGamma (valeDim,valeDim,1))
+               ! Runcode:  3 = XMom, 4 = YMom, 5 = ZMom; (j+2)
+               call getIntgResults (valeValeMomGamma(:,:,1),coreValeOLGamma,&
+                     & j+2,valeValeBand_did(i),valeValeBand,1,1)
+#endif
+
+               if (doOPTC /= 3) then  ! Not doing a Sigma(E) calc.
+                  if (detailCodePOPTC == 0) then ! Doing standard OPTC calc.
+                     call computePairs (i,j,h,doOPTC)
+                  else ! Doing pOptc calculation
+                     call computePOPTCPairs (i,j,h,doOPTC)
+                  endif
+               else
+                  call computeSigmaE (i,j,h)
+               endif
+            enddo
+
+#ifndef GAMMA
+            deallocate (coreValeOL)
+#else
+            deallocate (coreValeOLGamma)
+#endif
          endif
 
 
@@ -811,11 +790,9 @@ subroutine computeTransitions(inSCF,doOPTC)
 
    ! Deallocate unnecessary matrices and arrays
 #ifndef GAMMA
-!   deallocate (valeVale)
-   deallocate (valeValeMM)
+   deallocate (valeVale)
 #else
-!   deallocate (valeValeGamma)
-   deallocate (valeValeMMGamma)
+   deallocate (valeValeGamma)
 #endif
    deallocate (firstOccupiedState)
    deallocate (lastOccupiedState)
@@ -844,10 +821,9 @@ subroutine computePairs (currentKPoint,xyzComponents,spinDirection,doOPTC)
    use O_KPoints,     only: kPointWeight
    use O_Populate,    only: electronPopulation
 #ifndef GAMMA
-   use O_SecularEquation, only: energyEigenValues, valeVale, valeValeMM
+   use O_SecularEquation, only: energyEigenValues, valeVale
 #else
-   use O_SecularEquation, only: energyEigenValues, valeValeGamma, &
-         & valeValeMMGamma
+   use O_SecularEquation, only: energyEigenValues, valeValeGamma
 #endif
 
    ! Make sure that there are not accidental variable declarations.
@@ -921,10 +897,13 @@ subroutine computePairs (currentKPoint,xyzComponents,spinDirection,doOPTC)
          finalStateIndex = finalStateIndex + 1
          do k = 1, valeDim
             conjWaveMomSum(k,finalStateIndex,i) = &
-                  & sum(conjg(valeVale(:,j,1)) * valeValeMM(:,k,i))
+                  & sum(conjg(valeVale(:,j,1,1)) * valeValeMom(:,k,1,i))
          enddo
       enddo
    enddo
+
+   ! Deallocate the momentum matrix elements.
+   deallocate (valeValeMom)
 
 #else
    ! Documentation similar to the above non-gamma case.
@@ -939,7 +918,7 @@ subroutine computePairs (currentKPoint,xyzComponents,spinDirection,doOPTC)
       !   matrix which was multiplied by a -i and is hence imaginary).
       !   Since it must be Hermitian we need to apply that now.
       do j = 1, valeDim
-         valeValeMMGamma(1:j,j,i) = -valeValeMMGamma(1:j,j,i)
+         valeValeMomGamma(1:j,j,i) = -valeValeMomGamma(1:j,j,i)
       enddo
 
       finalStateIndex = 0
@@ -950,11 +929,13 @@ subroutine computePairs (currentKPoint,xyzComponents,spinDirection,doOPTC)
 
          do k = 1, valeDim
             conjWaveMomSumGamma(k,finalStateIndex,i) = &
-                  & sum(valeValeGamma(:,j,1) * valeValeMMGamma(:,k,i))
+                  & sum(valeValeGamma(:,j,1) * valeValeMomGamma(:,k,i))
          enddo
       enddo
    enddo
 
+   ! Deallocate the momentum matrix elements.
+   deallocate (valeValeMomGamma)
 #endif
 
 
@@ -1041,7 +1022,7 @@ subroutine computePairs (currentKPoint,xyzComponents,spinDirection,doOPTC)
 
          ! Loop to obtain the wave function times the momentum integral.
          do k = initComponent,finComponent
-             valeValeXMom(k) = sum(valeVale(:,i,1) * &
+             valeValeXMom(k) = sum(valeVale(:,i,1,1) * &
                    & conjWaveMomSum(:,finalStateIndex,k))
 
             ! Compute the imaginary component of the square of the valeValeXMom
@@ -1130,10 +1111,9 @@ subroutine computePOPTCPairs(currentKPoint,xyzComponents,spinDirection,doOPTC)
    use O_Input,       only: numStates, detailCodePOPTC
 
 #ifndef GAMMA
-   use O_SecularEquation, only: valeVale, valeValeMM, energyEigenValues
+   use O_SecularEquation, only: valeVale, energyEigenValues
 #else
-   use O_SecularEquation, only: valeValeGamma, valeValeMMGamma, &
-         & energyEigenValues
+   use O_SecularEquation, only: valeValeGamma, energyEigenValues
 #endif
 
 
@@ -1448,9 +1428,9 @@ subroutine computePOPTCPairs(currentKPoint,xyzComponents,spinDirection,doOPTC)
 
                 valeDimIndex = valeDimIndex + 1
                 pOptcIndex(valeDimIndex) = valeDimIndex ! Each QN_nlm is saved.
-                ! Record how many valeDim contribute to this partial for
-                ! OLCAOkkc because this detailCode is decomposed by QN_nlm each
-                ! valeDim will have a value of one.
+                ! Record how many valeDim contribute to this partial for OLCAOkkc
+                ! because this detailCode is decomposed by QN_nlm each valeDim will
+                ! have a value of one.
                 partialsIndex(valeDimIndex) = 1
               enddo
             enddo
@@ -1544,13 +1524,16 @@ subroutine computePOPTCPairs(currentKPoint,xyzComponents,spinDirection,doOPTC)
                   conjWaveMomSum(k,pOptcIndex(indexValeDim),finalStateIndex,i)&
                      & = conjWaveMomSum(k,pOptcIndex(indexValeDim), &
                      & finalStateIndex,i) &
-                     & + (conjg(valeVale(indexValeDim,j,1)) &
-                     & * valeValeMM(indexValeDim,k,i))
+                     & + (conjg(valeVale(indexValeDim,j,1,1)) &
+                     & * valeValeMom(indexValeDim,k,1,i))
                enddo ! m numStatesAtom
             enddo ! l numAtomSites
          enddo ! k valeDim
       enddo ! j firstFin to lastFin
    enddo ! i xyz components
+
+   ! Deallocate the momentum matrix elements.
+   deallocate (valeValeMom)
 
 #else
 
@@ -1569,7 +1552,7 @@ subroutine computePOPTCPairs(currentKPoint,xyzComponents,spinDirection,doOPTC)
       !   matrix which was multiplied by a -i and is hence imaginary).
       !   Since it must be Hermitian we need to apply that now.
       do j = 1, valeDim
-         valeValeMMGamma(1:j,j,i) = -valeValeMMGamma(1:j,j,i)
+         valeValeMomGamma(1:j,j,i) = -valeValeMomGamma(1:j,j,i)
       enddo
 
       finalStateIndex = 0
@@ -1595,13 +1578,15 @@ subroutine computePOPTCPairs(currentKPoint,xyzComponents,spinDirection,doOPTC)
                   conjWaveMomSumGamma(k,pOptcIndex(indexValeDim),&
                       & finalStateIndex,i) = conjWaveMomSumGamma(k,pOptcIndex(&
                       & indexValeDim),finalStateIndex,i) + (valeValeGamma(&
-                      & indexValeDim,j,1) * valeValeMMGamma(indexValeDim,k,i))
+                      & indexValeDim,j,1) * valeValeMomGamma(indexValeDim,k,i))
              enddo
            enddo
          enddo
       enddo
    enddo
 
+   ! Deallocate the momentum matrix elements.
+   deallocate (valeValeMomGamma)
 #endif
 
 
@@ -1708,7 +1693,7 @@ subroutine computePOPTCPairs(currentKPoint,xyzComponents,spinDirection,doOPTC)
                do n = 1,sumNumPartials
                   valeValeXMom(pOptcIndex(initVDBI),n,k) = &
                         & valeValeXMom(pOptcIndex(initVDBI),n,k) &
-                        & + valeVale(initVDBI,i,1) &
+                        & + valeVale(initVDBI,i,1,1) &
                         & * conjWaveMomSum(initVDBI,n,finalStateIndex,k)
                enddo
             enddo
@@ -1843,10 +1828,9 @@ subroutine computeSigmaE (currentKPoint,xyzComponents,spinDirection)
    use O_Potential, only: spin
    use O_AtomicSites, only: valeDim
 #ifndef GAMMA
-   use O_SecularEquation, only: valeVale, valeValeMM, energyEigenValues
+   use O_SecularEquation, only: valeVale, energyEigenValues
 #else
-   use O_SecularEquation, only: valeValeGamma, valeValeMMGamma, &
-         & energyEigenValues
+   use O_SecularEquation, only: valeValeGamma, energyEigenValues
 #endif
 
    ! Make sure that there are not accidental variable declarations.
@@ -1947,10 +1931,13 @@ subroutine computeSigmaE (currentKPoint,xyzComponents,spinDirection)
 
          do k = 1, valeDim
             conjWaveMomSum(k,finalStateIndex,i) = &
-                  & sum(conjg(valeVale(:,j,1) * valeValeMM(:,k,i)))
+                  & sum(conjg(valeVale(:,j,1,1) * valeValeMom(:,k,1,i)))
          enddo
       enddo
    enddo
+
+   ! Deallocate the momentum matrix elements
+   deallocate (valeValeMom)
 
 #else
 
@@ -1971,11 +1958,13 @@ subroutine computeSigmaE (currentKPoint,xyzComponents,spinDirection)
 
          do k = 1, valeDim
             conjWaveMomSumGamma(k,finalStateIndex,i) = &
-                  & sum(valeValeGamma(:,j,1) * valeValeMMGamma(:,k,i))
+                  & sum(valeValeGamma(:,j,1) * valeValeMomGamma(:,k,i))
          enddo
       enddo
    enddo
 
+   ! Deallocate the momentum matrix elements
+   deallocate (valeValeMomGamma)
 #endif
 
 
@@ -2046,7 +2035,7 @@ subroutine computeSigmaE (currentKPoint,xyzComponents,spinDirection)
 #ifndef GAMMA
          ! Loop to obtain the wave function times the momentum integral.
          do k = initComponent,finComponent
-             valeValeXMom = sum(valeVale(:,i,1) * &
+             valeValeXMom = sum(valeVale(:,i,1,1) * &
                    & conjWaveMomSum(:,finalStateIndex,k))
 
             ! Compute the imaginary component of the square of the

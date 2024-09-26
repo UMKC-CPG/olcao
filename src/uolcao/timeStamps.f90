@@ -54,7 +54,7 @@ subroutine initOperationLabels
    opLabels(17) = '*************  Valence Charge Density  ************'
    opLabels(18) = '***************  Make SCF Potential  **************'
    opLabels(19) = '************  PDOS/TDOS/LI Calculation  ***********'
-   opLabels(20) = '*****************  PSCF Integrals  ****************'
+   opLabels(20) = '*************  Hamiltonian Integrals  *************'
    opLabels(21) = '*****  Symmetric Band Structure Path KPoints  *****'
    opLabels(22) = '********  Bond Order and Effective Charge  ********'
    opLabels(23) = '*********  Optical Transition Calculation  ********'

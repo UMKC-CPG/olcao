@@ -812,7 +812,7 @@ subroutine computeForceIntg(totalEnergy)
          do q = 1, spin
             do r = 1, 3
                call kPointLatticeOriginShift (currentNumTotalStates,&
-                     & currentPair(:,:,:,q,r),latticeVector,numKPoints,0)
+                     & currentPair(:,:,:,q,r),latticeVector)
                call saveCurrentPair(i,j,numKPoints,currentPair(:,:,:,q,r),&
                      & valeValeF(:,:,:,q,r),coreValeF(:,:,:,q,r),&
                      & coreCoreF(:,:,:,q,r),1)

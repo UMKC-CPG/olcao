@@ -576,6 +576,19 @@ subroutine cleanUpPotential
       deallocate (potCoeffs)
    endif
 
+   if (allocated(plusUJ)) then
+!#ifndef GAMMA
+      deallocate(plusUJ)
+!#else
+!      deallocate(plusUJGamma)
+!#endif
+      deallocate(plusUJAtomID)
+      deallocate(plusUJAtomSize)
+      deallocate(plusUJAtomValue)
+      deallocate(plusUJAtomValeIndex)
+      deallocate(plusUJAtomGSElectrons)
+   endif
+
 end subroutine cleanUpPotential
 
 

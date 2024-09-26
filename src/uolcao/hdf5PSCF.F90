@@ -56,7 +56,7 @@ subroutine initHDF5_PSCF (numStates)
    ! Declare local variables.
    integer :: hdferr
    logical :: file_exists
-   character*14 :: fileName
+   character*15 :: fileName
    character*2 :: edge
 
    ! Log the time we start to setup the PSCF HDF5 files.
@@ -83,11 +83,11 @@ subroutine initHDF5_PSCF (numStates)
       endif
    endif
    if (basisCode_PSCF == 1) then
-      write(fileName,fmt="(a2,a12)") edge,"_pscf-mb.hdf5"
+      write(fileName,fmt="(a2,a13)") edge,"_pscf-mb.hdf5"
    elseif (basisCode_PSCF == 2) then
-      write(fileName,fmt="(a2,a12)") edge,"_pscf-fb.hdf5"
+      write(fileName,fmt="(a2,a13)") edge,"_pscf-fb.hdf5"
    elseif (basisCode_PSCF == 3) then
-      write(fileName,fmt="(a2,a12)") edge,"_pscf-eb.hdf5"
+      write(fileName,fmt="(a2,a13)") edge,"_pscf-eb.hdf5"
    endif
 
    ! Create the property list for the pscf hdf5 file and turn off

@@ -133,10 +133,10 @@ subroutine readKPoints(readUnit, writeUnit)
       !   initialized these values will be changed into x,y,z cartesian
       !   coordinates.
       do i = 1, numKPoints
-         read (15,*)    counter, kPointWeight(i), kPoints(1:dim3,i)
-         write (20,100) counter, kPointWeight(i), kPoints(1:dim3,i)
+         read (readUnit,*) counter, kPointWeight(i), kPoints(1:dim3,i)
+         write (writeUnit,100) counter, kPointWeight(i), kPoints(1:dim3,i)
       enddo
-      call flush (20)
+      call flush (writeUnit)
 
    elseif (KPointStyleCode == 1) then
       ! Read axial numbers of kpoints and a shift.
@@ -212,10 +212,10 @@ subroutine readSYBDKPoints(readUnit, writeUnit)
    !   of all kpoints are given in Cartesian coordinates or not.
    call readData(readUnit,writeUnit,numPaths,numPathKP,isCartesian,&
                     len('SYBD_INPUT_DATA'),'SYBD_INPUT_DATA')
-   write (20,*) 'Number of discrete paths         = ',numPaths
-   write (20,*) 'Number of path K-Points          = ',numPathKP
-   write (20,*) '1 = cart, 0 = fract:             = ',isCartesian
-   call flush (20)
+   write (writeUnit,*) 'Number of discrete paths         = ',numPaths
+   write (writeUnit,*) 'Number of path K-Points          = ',numPathKP
+   write (writeUnit,*) '1 = cart, 0 = fract:             = ',isCartesian
+   call flush (writeUnit)
 
    ! Allocate space to hold the number of high symmetry kpoints that will
    !   exist for each path. E.g., there may be 6 kpoints that define the first
@@ -229,8 +229,8 @@ subroutine readSYBDKPoints(readUnit, writeUnit)
    ! Compute the total number of high symmetry kpoints over all paths.
    numTotalHighSymKP = sum(numHighSymKP)
 
-   write (20,*) 'Number of high symmetry K-Points = ',numTotalHighSymKP
-   call flush (20)
+   write (writeUnit,*) 'Number of high symmetry K-Points = ',numTotalHighSymKP
+   call flush (writeUnit)
    
    ! Allocate space to hold the high symmetry kpoints.
    allocate (highSymKP(dim3,maxval(numHighSymKP),numPaths))
@@ -576,7 +576,12 @@ subroutine cleanUpKPoints
 
    deallocate (kPointWeight)
    deallocate (kPoints)
+   deallocate (numHighSymKP)
    deallocate (highSymKP)
+
+   if (allocated(pathKPointMag)) then
+      deallocate(pathKPointMag)
+   endif
 
    ! Only allocated in setup.
    if (allocated(phaseFactor)) then

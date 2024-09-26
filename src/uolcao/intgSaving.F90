@@ -148,13 +148,13 @@ end subroutine applyPhaseFactors
 
 
 subroutine kPointLatticeOriginShift (currentNumTotalStates,currentPair,&
-      & latticeVector,kPointCount,kPointIndex)
+      & latticeVector)
 
    ! Import the necessary modules
    use O_Kinds
 
    ! Import the necessary data modules
-   use O_KPoints
+   use O_KPoints, only: numKPoints, kPoints
    use O_AtomicTypes
 
    ! Make sure that there are not accidental variable declarations.
@@ -162,11 +162,9 @@ subroutine kPointLatticeOriginShift (currentNumTotalStates,currentPair,&
 
    ! Define variables passed to this subroutine
    integer, dimension(2) :: currentNumTotalStates
-   integer :: KPointCount
    complex (kind=double), dimension (maxNumStates,maxNumStates,&
-         & kPointCount) :: currentPair
+         & numKPoints) :: currentPair
    real (kind=double), dimension (3) :: latticeVector
-   integer :: kPointIndex
 
    ! Define local variables for loop control.
    integer :: i,j,k
@@ -175,10 +173,10 @@ subroutine kPointLatticeOriginShift (currentNumTotalStates,currentPair,&
    complex (kind=double) :: dotProduct
    real (kind=double) :: kPointShiftDot
 
-   do i = 1, kPointCount
+   do i = 1, numKPoints
 
       ! Find the kpoint, lattice vector dot product   
-      kPointShiftDot = sum(kPoints(:,kPointIndex+i) * latticeVector(:))
+      kPointShiftDot = sum(kPoints(:,i) * latticeVector(:))
 
       ! Check that the vectors are not perpendicular.
       if (kPointShiftDot .ne. 0.0_double) then
@@ -196,6 +194,57 @@ subroutine kPointLatticeOriginShift (currentNumTotalStates,currentPair,&
    enddo
 
 end subroutine kPointLatticeOriginShift
+
+
+!subroutine kPointLatticeOriginShift (currentNumTotalStates,currentPair,&
+!      & latticeVector,kPointCount,kPointIndex)
+!
+!   ! Import the necessary modules
+!   use O_Kinds
+!
+!   ! Import the necessary data modules
+!   use O_KPoints
+!   use O_AtomicTypes
+!
+!   ! Make sure that there are not accidental variable declarations.
+!   implicit none
+!
+!   ! Define variables passed to this subroutine
+!   integer, dimension(2) :: currentNumTotalStates
+!   integer :: KPointCount
+!   complex (kind=double), dimension (maxNumStates,maxNumStates,&
+!         & kPointCount) :: currentPair
+!   real (kind=double), dimension (3) :: latticeVector
+!   integer :: kPointIndex
+!
+!   ! Define local variables for loop control.
+!   integer :: i,j,k
+!
+!   ! Lattice origin shift kpoint effect variables
+!   complex (kind=double) :: dotProduct
+!   real (kind=double) :: kPointShiftDot
+!
+!   do i = 1, kPointCount
+!
+!      ! Find the kpoint, lattice vector dot product   
+!      kPointShiftDot = sum(kPoints(:,kPointIndex+i) * latticeVector(:))
+!
+!      ! Check that the vectors are not perpendicular.
+!      if (kPointShiftDot .ne. 0.0_double) then
+!
+!         ! Get the cosine and sine of the dot product
+!         dotProduct = cmplx(cos(kPointShiftDot),sin(kPointShiftDot),double)
+!
+!         ! Loop over both atom wave functions.
+!         do j = 1, currentNumTotalStates(2)
+!            do k = 1, currentNumTotalStates(1)
+!               currentPair(k,j,i) = dotProduct * currentPair(k,j,i)
+!            enddo
+!         enddo
+!      endif
+!   enddo
+!
+!end subroutine kPointLatticeOriginShift
 
 
 subroutine saveCurrentPair (i,j,kPointCount,currentPair,&

@@ -13,6 +13,10 @@ module O_SCFIntegralsHDF5
    ! Begin list of module data.!
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
+   ! If a gamma k-point calculation is being done, then we only need one
+   !   component. Otherwise, we need two.
+   integer :: numComponents
+
    ! Define the main subgroup from scf_fid that holds the multicenter
    !   Gaussian integral results.
    integer(hid_t) :: atomIntgGroup_gid ! Atom and potential overlap group.
@@ -22,9 +26,10 @@ module O_SCFIntegralsHDF5
    ! Define the group IDs under atomIntgGroup_gid. Each group here will hold
    !   either a dataset for each kpoint, or a group for each kpoint.
    integer(hid_t) :: atomOverlap_gid
+   integer(hid_t) :: atomOverlapCV_gid ! For overlap coreVale
    integer(hid_t) :: atomKEOverlap_gid
    integer(hid_t) :: atomMVOverlap_gid
-   integer(hid_t) :: atomNucOverlap_gid
+   integer(hid_t) :: atomNPOverlap_gid
    integer(hid_t) :: atomDMOverlap_gid
    integer(hid_t) :: atomMMOverlap_gid
    integer(hid_t) :: atomPotOverlap_gid
@@ -40,24 +45,29 @@ module O_SCFIntegralsHDF5
    !   all characteristics (type, dimension, etc.) and therefore can be
    !   given a static ID definition now.
    integer(hid_t) :: valeVale_dsid
+   integer(hid_t) :: coreVale_dsid ! For overlap coreVale only.
 
    ! Each of the below datasets for atomIntgGroup will use the same property
    !   list.
    integer(hid_t) :: valeVale_plid
+   integer(hid_t) :: coreVale_plid ! For overlap coreVale only.
 
    ! Define array that holds the dimensions of the dataset.
-   integer(hsize_t), dimension (2) :: atomDims
+   integer(hsize_t), dimension (2) :: packedVVDims
+   integer(hsize_t), dimension (2) :: fullCVDims
 
    ! Define array that holds the dimensions of the chunk.
-   integer (hsize_t), dimension (2) :: atomDimsChunk
+   integer (hsize_t), dimension (2) :: packedVVDimsChunk
+   integer (hsize_t), dimension (2) :: fullCVDimsChunk
 
    ! The number of datasets under each of the atomIntgGroup groups will
    !   vary depending on the problem.  (# of kpoints, potential dimension,
    !   or xyz terms). Thus, the datasets must be given IDs dynamically.
    integer(hid_t), allocatable, dimension (:)   :: atomOverlap_did
+   integer(hid_t), allocatable, dimension (:,:) :: atomOverlapCV_did !coreVale
    integer(hid_t), allocatable, dimension (:)   :: atomKEOverlap_did
    integer(hid_t), allocatable, dimension (:)   :: atomMVOverlap_did
-   integer(hid_t), allocatable, dimension (:)   :: atomNucOverlap_did
+   integer(hid_t), allocatable, dimension (:)   :: atomNPOverlap_did
    integer(hid_t), allocatable, dimension (:,:) :: atomDMOverlap_did
    integer(hid_t), allocatable, dimension (:,:) :: atomMMOverlap_did
    integer(hid_t), allocatable, dimension (:,:) :: atomPotOverlap_did
@@ -66,10 +76,10 @@ module O_SCFIntegralsHDF5
    !   is sufficient for each integral type except the potential overlap.
    !   For that one, we will need a set of attributes, one for each potential
    !   term.
-   integer(hid_t) :: atomOverlap_aid
+   integer(hid_t) :: atomOverlap_aid ! No CV needed. Regular accounts for both.
    integer(hid_t) :: atomKEOverlap_aid
    integer(hid_t) :: atomMVOverlap_aid
-   integer(hid_t) :: atomNucOverlap_aid
+   integer(hid_t) :: atomNPOverlap_aid
    integer(hid_t) :: atomDMOverlap_aid
    integer(hid_t) :: atomMMOverlap_aid
    integer(hid_t), allocatable, dimension (:) :: atomPotTermOL_aid
@@ -88,7 +98,7 @@ subroutine initSCFIntegralHDF5 (scf_fid, attribInt_dsid, attribIntDims)
    ! Import necessary object modules.
    use O_KPoints     ! For numKPoints
    use O_Potential   ! For potDim
-   use O_AtomicSites ! For valeDim
+   use O_AtomicSites ! For coreDim and valeDim
 
    ! Define the passed parameters.
    integer(hid_t) :: scf_fid
@@ -100,25 +110,49 @@ subroutine initSCFIntegralHDF5 (scf_fid, attribInt_dsid, attribIntDims)
    integer :: hdferr
    character*30 :: currentName
 
-   ! Initialize data structure dimensions.
+   ! Determine the number of components for some data structures.
 #ifndef GAMMA
-   atomDims(1) = 2 ! Real and imaginary are needed.
+   numComponents = 2 ! Real and imaginary are needed.
 #else
-   atomDims(1) = 1 ! Real needed only
+   numComponents = 1 ! Real only is needed.
 #endif
-   atomDims(2) = valeDim*(valeDim+1)/2 ! Linear storage of 1/2 matrix.
+
+   ! Initialize data structure dimensions.
+   packedVVDims(1) = numComponents
+   packedVVDims(2) = valeDim*(valeDim+1)/2 ! Linear storage of 1/2 matrix.
+   fullCVDims(1) = coreDim
+   fullCVDims(2) = valeDim
 
    ! Check that the chunk size is not too large. The assumption here is that
    !   the number being stored are 8 byte reals and that we should not go over
-   !   2 billion bytes. Note that if x*y = >250M and we want a*b = 250M then
-   !   the additional requirement x/y = a/b leads to b = sqrt(250M/>250M)*y.
-   !   Thus a = 250M/b.
-   if (atomDims(1) * atomDims(2) > 250000000) then
-      atomDimsChunk(2) = int(250000000/atomDims(1))
-      atomDimsChunk(1) = atomDims(1)
+   !   2 billion bytes. Note that if x*y = >250M (where x=packedVVDims(1) and
+   !   y=packedVVDims(2)) and we want a*b = 250M (where a=packedVVDimsChunk(1)
+   !   and b=packedVVDimsChunk(2)) and we require x=a, then b = int(250M/a).
+   if (packedVVDims(1) * packedVVDims(2) > 250000000) then
+      packedVVDimsChunk(2) = int(250000000/packedVVDims(1))
+      packedVVDimsChunk(1) = packedVVDims(1)
    else
-      atomDimsChunk(1) = atomDims(1)
-      atomDimsChunk(2) = atomDims(2)
+      packedVVDimsChunk(1) = packedVVDims(1)
+      packedVVDimsChunk(2) = packedVVDims(2)
+   endif
+
+   ! Doing it for fullCV, we now have x*y = >250M and a*b for the CV case. We
+   !   will ignore the "first" index which can be 1 or 2 for real only or real
+   !   plus imaginary because we will always store both separately (if both
+   !   real and imaginary are needed). So a*b = 250M. Here, we want to keep
+   !   the x/y and a/b ratio equal. So: x*y = >250M. We require a*b = 250M so
+   !   we say x*y / q = a*b = 250M. Thus, q = x*y / 250M. To keep the x/y to
+   !   a/b ratio, we use q=p^2 and get: p = sqrt(x*y / 250M). Then we compute
+   !   a=x/p and b=y/p. Written another way: a=x/sqrt(x*y / 250M) and
+   !   b=y/sqrt(x*y / 250M), or a=x/sqrt(x*y/250M) b=y/sqrt(x*y/250M).
+   if (product(fullCVDims(:)) > 250000000) then
+      fullCVDimsChunk(1) = int(fullCVDims(1) / &
+            & sqrt(product(fullCVDims(:)) / 250000000.0d0))
+      fullCVDimsChunk(2) = int(fullCVDims(2) / &
+            & sqrt(product(fullCVDims(:)) / 250000000.0d0))
+   else
+      fullCVDimsChunk(1) = fullCVDims(1)
+      fullCVDimsChunk(2) = fullCVDims(2)
    endif
 
    ! Create the Integral group within the scf HDF5 file.
@@ -142,21 +176,31 @@ subroutine initSCFIntegralHDF5 (scf_fid, attribInt_dsid, attribIntDims)
    !   does request that group, it will already be available to access.
    call h5gcreate_f (atomIntgGroup_gid,"atomOverlap",atomOverlap_gid,hdferr)
    if (hdferr /= 0) stop 'Failed to create atom overlap group'
+
+   call h5gcreate_f (atomIntgGroup_gid,"atomOverlapCV",atomOverlapCV_gid,&
+         & hdferr)
+   if (hdferr /= 0) stop 'Failed to create atom overlapCV group'
+
    call h5gcreate_f (atomIntgGroup_gid,"atomKEOverlap",atomKEOverlap_gid,&
          & hdferr)
    if (hdferr /= 0) stop 'Failed to create kinetic energy overlap group'
+
    call h5gcreate_f (atomIntgGroup_gid,"atomMVOverlap",atomMVOverlap_gid,&
          & hdferr)
    if (hdferr /= 0) stop 'Failed to create mass velocity overlap group'
-   call h5gcreate_f (atomIntgGroup_gid,"atomNucOverlap",atomNucOverlap_gid,&
+
+   call h5gcreate_f (atomIntgGroup_gid,"atomNPOverlap",atomNPOverlap_gid,&
          & hdferr)
    if (hdferr /= 0) stop 'Failed to create atom nuclear overlap group'
+
    call h5gcreate_f (atomIntgGroup_gid,"atomDMOverlap",atomDMOverlap_gid,&
          & hdferr)
    if (hdferr /= 0) stop 'Failed to create dipole moment overlap group'
+
    call h5gcreate_f (atomIntgGroup_gid,"atomMMOverlap",atomMMOverlap_gid,&
          & hdferr)
    if (hdferr /= 0) stop 'Failed to create momentum matrix overlap group'
+
    call h5gcreate_f (atomIntgGroup_gid,"atomPotOverlap",atomPotOverlap_gid,&
          & hdferr)
    if (hdferr /= 0) stop 'Failed to create atom potential overlap group'
@@ -195,35 +239,49 @@ subroutine initSCFIntegralHDF5 (scf_fid, attribInt_dsid, attribIntDims)
 
    ! Sufficient space must be allocated to hold the dataset IDs for all
    !   matrices that need to be computed.
-   allocate (atomOverlap_did     (numKPoints))
-   allocate (atomKEOverlap_did   (numKPoints))
-   allocate (atomMVOverlap_did   (numKPoints))
-   allocate (atomNucOverlap_did  (numKPoints))
-   allocate (atomDMOverlap_did   (numKPoints,3))
-   allocate (atomMMOverlap_did   (numKPoints,3))
-   allocate (atomPotOverlap_did  (numKPoints,potDim))
+   allocate (atomOverlap_did    (numKPoints))
+   allocate (atomOverlapCV_did  (numComponents,numKPoints))
+   allocate (atomKEOverlap_did  (numKPoints))
+   allocate (atomMVOverlap_did  (numKPoints))
+   allocate (atomNPOverlap_did  (numKPoints))
+   allocate (atomDMOverlap_did  (numKPoints,3))
+   allocate (atomMMOverlap_did  (numKPoints,3))
+   allocate (atomPotOverlap_did (numKPoints,potDim))
 
    ! Allocate space to hold the attribute IDs for the potential matrics.
    allocate (atomPotTermOL_aid  (potDim))
 
-   ! Create the dataspace that will be used for each dataset in atomIntgGroup
+   ! Create the dataspaces that will be used for each dataset in atomIntgGroup
    !   and all of its subgroups.  The same dataspace definition works for all
-   !   of the datasets.
-   call h5screate_simple_f(2,atomDims,valeVale_dsid,hdferr)
-   if (hdferr /= 0) stop 'Failed to create vale vale dsid'
+   !   of the VV datasets.
+   call h5screate_simple_f(2,packedVVDims,valeVale_dsid,hdferr)
+   if (hdferr /= 0) stop 'Failed to create packed vale vale dsid'
+   call h5screate_simple_f(2,fullCVDims,coreVale_dsid,hdferr)
+   if (hdferr /= 0) stop 'Failed to create full core vale dsid'
 
    ! Define the properties of the datasets to be made.
 
-   ! Create the property list first.  Then set the properties one at a time.
+   ! Create the VV property list first.  Then set the properties one at a time.
    call h5pcreate_f      (H5P_DATASET_CREATE_F,valeVale_plid,hdferr)
    if (hdferr /= 0) stop 'Failed to create vale vale plid'
    call h5pset_layout_f  (valeVale_plid,H5D_CHUNKED_F,hdferr)
    if (hdferr /= 0) stop 'Failed to set vale vale plid layout'
-   call h5pset_chunk_f   (valeVale_plid,2,atomDimsChunk,hdferr)
+   call h5pset_chunk_f   (valeVale_plid,2,packedVVDimsChunk,hdferr)
    if (hdferr /= 0) stop 'Failed to set vale vale plid chunk size'
 !   call h5pset_shuffle_f (valeVale_plid,hdferr)
    call h5pset_deflate_f (valeVale_plid,1,hdferr)
    if (hdferr /= 0) stop 'Failed to set vale vale for deflation'
+
+   ! Create the CV property list first.  Then set the properties one at a time.
+   call h5pcreate_f      (H5P_DATASET_CREATE_F,coreVale_plid,hdferr)
+   if (hdferr /= 0) stop 'Failed to create core vale plid'
+   call h5pset_layout_f  (coreVale_plid,H5D_CHUNKED_F,hdferr)
+   if (hdferr /= 0) stop 'Failed to set core vale plid layout'
+   call h5pset_chunk_f   (coreVale_plid,2,fullCVDimsChunk,hdferr)
+   if (hdferr /= 0) stop 'Failed to set core vale plid chunk size'
+!   call h5pset_shuffle_f (coreVale_plid,hdferr)
+   call h5pset_deflate_f (coreVale_plid,1,hdferr)
+   if (hdferr /= 0) stop 'Failed to set core vale for deflation'
 
    ! Define the dataspace of the computed "status" attribute that will be used
    !   for each group.
@@ -247,8 +305,8 @@ subroutine initSCFIntegralHDF5 (scf_fid, attribInt_dsid, attribIntDims)
          & valeVale_dsid,atomMVOverlap_did(i),hdferr,valeVale_plid)
       if (hdferr /= 0) stop 'Failed to create MV overlap did'
 
-      call h5dcreate_f (atomNucOverlap_gid,currentName,H5T_NATIVE_DOUBLE,&
-            & valeVale_dsid,atomNucOverlap_did(i),hdferr,valeVale_plid)
+      call h5dcreate_f (atomNPOverlap_gid,currentName,H5T_NATIVE_DOUBLE,&
+            & valeVale_dsid,atomNPOverlap_did(i),hdferr,valeVale_plid)
       if (hdferr /= 0) stop 'Failed to create nuclear overlap did'
 
       do j = 1, 3
@@ -269,6 +327,15 @@ subroutine initSCFIntegralHDF5 (scf_fid, attribInt_dsid, attribIntDims)
                & hdferr,valeVale_plid)
          if (hdferr /= 0) stop 'Failed to create potential overlap did'
       enddo
+
+      do j = 1, numComponents
+         if (j == 1) write (currentName,fmt="(a4,i7.7)") "real",i
+         if (j == 2) write (currentName,fmt="(a4,i7.7)") "imag",i
+         currentName = trim (currentName)
+         call h5dcreate_f (atomOverlapCV_gid,currentName,H5T_NATIVE_DOUBLE,&
+               & coreVale_dsid,atomOverlapCV_did(j,i),hdferr,coreVale_plid)
+         if (hdferr /= 0) stop 'Failed to create atom overlapCV did'
+      enddo
    enddo
 
    ! Create the attribute that indicates completion of the calculation of
@@ -285,8 +352,8 @@ subroutine initSCFIntegralHDF5 (scf_fid, attribInt_dsid, attribIntDims)
          & attribInt_dsid,atomMVOverlap_aid,hdferr)
    if (hdferr /= 0) stop 'Failed to create MV overlap aid'
 
-   call h5acreate_f (atomNucOverlap_gid,"status",H5T_NATIVE_INTEGER,&
-         & attribInt_dsid,atomNucOverlap_aid,hdferr)
+   call h5acreate_f (atomNPOverlap_gid,"status",H5T_NATIVE_INTEGER,&
+         & attribInt_dsid,atomNPOverlap_aid,hdferr)
    if (hdferr /= 0) stop 'Failed to create Nuc overlap aid'
 
    call h5acreate_f (atomDMOverlap_gid,"status",H5T_NATIVE_INTEGER,&
@@ -313,8 +380,8 @@ subroutine initSCFIntegralHDF5 (scf_fid, attribInt_dsid, attribIntDims)
    call h5awrite_f(atomMVOverlap_aid,H5T_NATIVE_INTEGER,0,attribIntDims,hdferr)
    if (hdferr /= 0) stop 'Failed to initialize atomMVOverlap_aid'
 
-   call h5awrite_f(atomNucOverlap_aid,H5T_NATIVE_INTEGER,0,attribIntDims,hdferr)
-   if (hdferr /= 0) stop 'Failed to initialize atomNucOverlap_aid'
+   call h5awrite_f(atomNPOverlap_aid,H5T_NATIVE_INTEGER,0,attribIntDims,hdferr)
+   if (hdferr /= 0) stop 'Failed to initialize atomNPOverlap_aid'
 
    call h5awrite_f(atomDMOverlap_aid,H5T_NATIVE_INTEGER,0,attribIntDims,hdferr)
    if (hdferr /= 0) stop 'Failed to initialize atomDMOverlap_aid'
@@ -343,7 +410,7 @@ subroutine accessSCFIntegralHDF5 (scf_fid)
    ! Import necessary object modules.
    use O_KPoints,     only: numKPoints
    use O_Potential,   only: potDim
-   use O_AtomicSites, only: valeDim
+   use O_AtomicSites, only: coreDim, valeDim
 
    ! Define the passed parameters.
    integer(hid_t) :: scf_fid
@@ -353,13 +420,18 @@ subroutine accessSCFIntegralHDF5 (scf_fid)
    integer :: hdferr
    character*30 :: currentName
 
-   ! Initialize data structure dimensions.
+   ! Determine the number of components for some data structures.
 #ifndef GAMMA
-   atomDims(1) = 2 ! Real and imaginary are needed.
+   numComponents = 2 ! Real and imaginary are needed.
 #else
-   atomDims(1) = 1 ! Real needed only
+   numComponents = 1 ! Real only is needed.
 #endif
-   atomDims(2) = valeDim*(valeDim+1)/2 ! Linear storage of 1/2 matrix.
+
+   ! Initialize data structure dimensions.
+   packedVVDims(1) = numComponents
+   packedVVDims(2) = valeDim*(valeDim+1)/2 ! Linear storage of 1/2 matrix.
+   fullCVDims(1) = coreDim
+   fullCVDims(2) = valeDim
 
    ! Open the Integral group within the scf HDF5 file.
    call h5gopen_f (scf_fid,"/atomIntgGroup",atomIntgGroup_gid,hdferr)
@@ -370,11 +442,13 @@ subroutine accessSCFIntegralHDF5 (scf_fid)
    !   same as the "init" case.
    call h5gopen_f (atomIntgGroup_gid,"atomOverlap",atomOverlap_gid,hdferr)
    if (hdferr /= 0) stop 'Failed to open atom overlap group'
+   call h5gopen_f (atomIntgGroup_gid,"atomOverlapCV",atomOverlapCV_gid,hdferr)
+   if (hdferr /= 0) stop 'Failed to open atom overlapCV group'
    call h5gopen_f (atomIntgGroup_gid,"atomKEOverlap",atomKEOverlap_gid,hdferr)
    if (hdferr /= 0) stop 'Failed to open kinetic energy overlap group'
    call h5gopen_f (atomIntgGroup_gid,"atomMVOverlap",atomMVOverlap_gid,hdferr)
    if (hdferr /= 0) stop 'Failed to open mass velocity overlap group'
-   call h5gopen_f (atomIntgGroup_gid,"atomNucOverlap",atomNucOverlap_gid,hdferr)
+   call h5gopen_f (atomIntgGroup_gid,"atomNPOverlap",atomNPOverlap_gid,hdferr)
    if (hdferr /= 0) stop 'Failed to open atom nuclear overlap group'
    call h5gopen_f (atomIntgGroup_gid,"atomDMOverlap",atomDMOverlap_gid,hdferr)
    if (hdferr /= 0) stop 'Failed to open dipole moment overlap group'
@@ -413,9 +487,10 @@ subroutine accessSCFIntegralHDF5 (scf_fid)
 
    ! Allocate space to hold the dataset IDs.
    allocate (atomOverlap_did (numKPoints))
+   allocate (atomOverlapCV_did (numComponents,numKPoints))
    allocate (atomKEOverlap_did (numKPoints))
    allocate (atomMVOverlap_did (numKPoints))
-   allocate (atomNucOverlap_did (numKPoints))
+   allocate (atomNPOverlap_did (numKPoints))
    allocate (atomDMOverlap_did (numKPoints,3))
    allocate (atomMMOverlap_did (numKPoints,3))
    allocate (atomPotOverlap_did (numKPoints,potDim))
@@ -437,7 +512,7 @@ subroutine accessSCFIntegralHDF5 (scf_fid)
       call h5dopen_f (atomMVOverlap_gid,currentName,atomMVOverlap_did(i),hdferr)
       if (hdferr /= 0) stop 'Failed to open MV overlap did'
 
-      call h5dopen_f (atomNucOverlap_gid,currentName,atomNucOverlap_did(i),&
+      call h5dopen_f (atomNPOverlap_gid,currentName,atomNPOverlap_did(i),&
             & hdferr)
       if (hdferr /= 0) stop 'Failed to open nuclear overlap did'
 
@@ -456,6 +531,15 @@ subroutine accessSCFIntegralHDF5 (scf_fid)
                & atomPotOverlap_did(i,j),hdferr)
          if (hdferr /= 0) stop 'Failed to open potential overlap did'
       enddo
+
+      do j = 1, numComponents
+         if (j == 1) write (currentName,fmt="(a4,i7.7)") "real",i
+         if (j == 2) write (currentName,fmt="(a4,i7.7)") "imag",i
+         currentName = trim (currentName)
+         call h5dopen_f (atomOverlapCV_gid,currentName,&
+               & atomOverlapCV_did(j,i),hdferr)
+         if (hdferr /= 0) stop 'Failed to create atom overlapCV did'
+      enddo
    enddo
 
    ! Open the attributes of each integral group.
@@ -468,7 +552,7 @@ subroutine accessSCFIntegralHDF5 (scf_fid)
    call h5aopen_f (atomMVOverlap_gid,'status',atomMVOverlap_aid,hdferr)
    if (hdferr /= 0) stop 'Failed to open atom MV overlap aid'
 
-   call h5aopen_f (atomNucOverlap_gid,'status',atomNucOverlap_aid,hdferr)
+   call h5aopen_f (atomNPOverlap_gid,'status',atomNPOverlap_aid,hdferr)
    if (hdferr /= 0) stop 'Failed to open nuclear overlap aid'
 
    call h5aopen_f (atomDMOverlap_gid,'status',atomDMOverlap_aid,hdferr)
@@ -478,23 +562,28 @@ subroutine accessSCFIntegralHDF5 (scf_fid)
    if (hdferr /= 0) stop 'Failed to open MM overlap aid'
 
    do i = 1, potDim
-      call h5aopen_f (atomPotTermOL_gid(i),'status',atomPotTermOL_aid(i),hdferr)
+      call h5aopen_f (atomPotTermOL_gid(i),'status',atomPotTermOL_aid(i),&
+            & hdferr)
       if (hdferr /= 0) stop 'Failed to open potential overlap aid'
    enddo
 
-   ! Obtain the properties of the datasets that were just opened.  They are all
+   ! Obtain the properties of the datasets that were just opened.  All VV are
    !   the same and so only one copy is necessary.  (Actually, this value is
    !   not really used, but in the "close" subroutine we close this id so we
    !   should make sure to have it for both the setup and main calls to the
-   !   close routine.)
+   !   close routine.) Also open one for the CV data.
    call h5dget_create_plist_f (atomOverlap_did(1),valeVale_plid,hdferr)
    if (hdferr /= 0) stop 'Failed to obtain vale vale plid'
+   call h5dget_create_plist_f (atomOverlapCV_did(1,1),coreVale_plid,hdferr)
+   if (hdferr /= 0) stop 'Failed to obtain core vale plid'
 
-   ! Obtain the dataspace that is used for each dataset in atomIntgGroup
+   ! Obtain the dataspace that is used for each VV dataset in atomIntgGroup
    !   and all of its subgroups.  The same dataspace definition works for all
    !   of the datasets.  (Same as for the plist above.)
    call h5dget_space_f(atomOverlap_did(1),valeVale_dsid,hdferr)
    if (hdferr /= 0) stop 'Failed to obtain vale vale dsid'
+   call h5dget_space_f(atomOverlapCV_did(1,1),coreVale_dsid,hdferr)
+   if (hdferr /= 0) stop 'Failed to obtain core vale dsid'
 
 end subroutine accessSCFIntegralHDF5
 
@@ -530,8 +619,8 @@ subroutine closeSCFIntegralHDF5
       call h5dclose_f (atomMVOverlap_did(i),hdferr)
       if (hdferr /= 0) stop 'Failed to close atomMVOverlap_did.'
 
-      call h5dclose_f (atomNucOverlap_did(i),hdferr)
-      if (hdferr /= 0) stop 'Failed to close atomNucOverlap_did.'
+      call h5dclose_f (atomNPOverlap_did(i),hdferr)
+      if (hdferr /= 0) stop 'Failed to close atomNPOverlap_did.'
 
       do j = 1, 3
          call h5dclose_f (atomDMOverlap_did(i,j),hdferr)
@@ -547,11 +636,19 @@ subroutine closeSCFIntegralHDF5
          call h5dclose_f (atomPotOverlap_did(i,j),hdferr)
          if (hdferr /= 0) stop 'Failed to close atomPotOverlap_did.'
       enddo
+
+      do j = 1, numComponents
+         call h5dclose_f (atomOverlapCV_did(j,i),hdferr)
+         if (hdferr /= 0) stop 'Failed to close atomOverlapCV_did.'
+      enddo
+
    enddo
 
    ! Close the data spaces next.
    call h5sclose_f (valeVale_dsid,hdferr)
    if (hdferr /= 0) stop 'Failed to close valeVale_dsid.'
+   call h5sclose_f (coreVale_dsid,hdferr)
+   if (hdferr /= 0) stop 'Failed to close coreVale_dsid.'
 
    ! Close the groups.
    do i = 1, potDim
@@ -572,14 +669,17 @@ subroutine closeSCFIntegralHDF5
    call h5gclose_f (atomOverlap_gid,hdferr)
    if (hdferr /= 0) stop 'Failed to close atomOverlap_gid.'
 
+   call h5gclose_f (atomOverlapCV_gid,hdferr)
+   if (hdferr /= 0) stop 'Failed to close atomOverlapCV_gid.'
+
    call h5gclose_f (atomKEOverlap_gid,hdferr)
    if (hdferr /= 0) stop 'Failed to close atomKEOverlap_gid.'
 
    call h5gclose_f (atomMVOverlap_gid,hdferr)
    if (hdferr /= 0) stop 'Failed to close atomMVOverlap_gid.'
 
-   call h5gclose_f (atomNucOverlap_gid,hdferr)
-   if (hdferr /= 0) stop 'Failed to close atomNucOverlap_gid.'
+   call h5gclose_f (atomNPOverlap_gid,hdferr)
+   if (hdferr /= 0) stop 'Failed to close atomNPOverlap_gid.'
 
    call h5gclose_f (atomPotOverlap_gid,hdferr)
    if (hdferr /= 0) stop 'Failed to close atomPotOverlap_gid.'
@@ -596,16 +696,18 @@ subroutine closeSCFIntegralHDF5
    ! The attributes tracking completion are closed when written.
 
    ! Deallocate the arrays that hold the id numbers.
-   deallocate (atomPotTermOL_gid)
-   deallocate (atomDMxyzOL_gid)
-   deallocate (atomMMxyzOL_gid)
    deallocate (atomOverlap_did)
+   deallocate (atomOverlapCV_did)
    deallocate (atomKEOverlap_did)
    deallocate (atomMVOverlap_did)
-   deallocate (atomNucOverlap_did)
+   deallocate (atomNPOverlap_did)
    deallocate (atomDMOverlap_did)
    deallocate (atomMMOverlap_did)
    deallocate (atomPotOverlap_did)
+   deallocate (atomPotTermOL_aid)
+   deallocate (atomPotTermOL_gid)
+   deallocate (atomDMxyzOL_gid)
+   deallocate (atomMMxyzOL_gid)
 
    ! Note that the attributes are closed as soon as they are finished.
    

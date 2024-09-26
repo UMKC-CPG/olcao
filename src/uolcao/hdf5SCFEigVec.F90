@@ -56,6 +56,9 @@ subroutine initSCFEigVecHDF5 (scf_fid,attribInt_dsid,attribIntDims,numStates)
    use O_AtomicSites, only: valeDim
    use O_Potential, only: spin
 
+   ! Make sure that no variables are implicitly declared.
+   implicit none
+
    ! Define the passed parameters.
    integer(hid_t) :: scf_fid
    integer(hid_t) :: attribInt_dsid
@@ -87,22 +90,22 @@ subroutine initSCFEigVecHDF5 (scf_fid,attribInt_dsid,attribIntDims,numStates)
 
    ! Create the eigenVectors group in the scf_fid.
    call h5gcreate_f (scf_fid,"eigenVectors",eigenVectors_gid,hdferr)
-   if (hdferr /= 0) stop 'Failed to create eigenvectors group'
+   if (hdferr /= 0) stop 'Failed to create eigenvectors group SCF'
 
    ! Create the dataspace that will be used for the energy eigen vectors.
    call h5screate_simple_f(2,valeStates,valeStates_dsid,hdferr)
-   if (hdferr /= 0) stop 'Failed to create valeStates dataspace'
+   if (hdferr /= 0) stop 'Failed to create valeStates dataspace SCF'
 
    ! Create the property list first.  Then set the properties one at a time.
    call h5pcreate_f(H5P_DATASET_CREATE_F,valeStates_plid,hdferr)
-   if (hdferr /= 0) stop 'Failed to create valeStates plid'
+   if (hdferr /= 0) stop 'Failed to create valeStates plid SCF'
    call h5pset_layout_f(valeStates_plid,H5D_CHUNKED_F,hdferr)
-   if (hdferr /= 0) stop 'Failed to set valeStates plid layout as chunked'
+   if (hdferr /= 0) stop 'Failed to set valeStates plid layout as chunked SCF'
    call h5pset_chunk_f(valeStates_plid,2,valeStatesChunk,hdferr)
-   if (hdferr /= 0) stop 'Failed to set valeStates plid chunk size'
+   if (hdferr /= 0) stop 'Failed to set valeStates plid chunk size SCF'
 !   call h5pset_shuffle_f(valeStates_plid,hdferr)
    call h5pset_deflate_f   (valeStates_plid,1,hdferr)
-   if (hdferr /= 0) stop 'Failed to set valeStates for deflation'
+   if (hdferr /= 0) stop 'Failed to set valeStates for deflation SCF'
 
    ! Allocate space to hold IDs for the datasets in the eigenvectors group.
 #ifndef GAMMA 
@@ -120,20 +123,20 @@ subroutine initSCFEigVecHDF5 (scf_fid,attribInt_dsid,attribIntDims,numStates)
          call h5dcreate_f(eigenVectors_gid,currentName,H5T_NATIVE_DOUBLE,&
                & valeStates_dsid,eigenVectors_did(1,j,i),hdferr,&
                & valeStates_plid)
-         if (hdferr /= 0) stop 'Failed to create eigenVectors real did'
+         if (hdferr /= 0) stop 'Failed to create eigenVectors real did SCF'
          write (currentName,fmt="(a4,i7.7,i7.7)") "imag",j,i
          currentName = trim (currentName)
          call h5dcreate_f(eigenVectors_gid,currentName,H5T_NATIVE_DOUBLE,&
                & valeStates_dsid,eigenVectors_did(2,j,i),hdferr,&
                & valeStates_plid)
-         if (hdferr /= 0) stop 'Failed to create eigenVectors imaginary did'
+         if (hdferr /= 0) stop 'Failed to create eigenVectors imaginary did SCF'
 #else
          write (currentName,fmt="(i7.7,i7.7)") j,i
          currentName = trim (currentName)
          call h5dcreate_f(eigenVectors_gid,currentName,H5T_NATIVE_DOUBLE,&
                & valeStates_dsid,eigenVectors_did(1,j,i),hdferr,&
                & valeStates_plid)
-         if (hdferr /= 0) stop 'Failed to create eigenVectors real did'
+         if (hdferr /= 0) stop 'Failed to create eigenVectors real did SCF'
 #endif
       enddo
    enddo
@@ -147,7 +150,7 @@ subroutine initSCFEigVecHDF5 (scf_fid,attribInt_dsid,attribIntDims,numStates)
          call h5acreate_f (eigenVectors_did(1,j,i),"status",&
                & H5T_NATIVE_INTEGER,attribInt_dsid,eigenVectors_aid(j,i),&
                & hdferr)
-            if (hdferr /= 0) stop 'Failed to create eigenvectos_aid.'
+            if (hdferr /= 0) stop 'Failed to create eigenvectos_aid SCF.'
       enddo
    enddo
 
@@ -156,7 +159,7 @@ subroutine initSCFEigVecHDF5 (scf_fid,attribInt_dsid,attribIntDims,numStates)
       do j = 1, numKPoints
          call h5awrite_f (eigenVectors_aid(j,i),H5T_NATIVE_INTEGER,0,&
                & attribIntDims,hdferr)
-            if (hdferr /= 0) stop 'Failed to init eigenvectos_aid.'
+            if (hdferr /= 0) stop 'Failed to init eigenvectos_aid SCF.'
       enddo
    enddo
 
@@ -174,6 +177,9 @@ subroutine accessSCFEigVecHDF5 (scf_fid,attribInt_dsid,attribIntDims,&
    use O_KPoints, only: numKPoints
    use O_AtomicSites, only: valeDim
    use O_Potential, only: spin
+
+   ! Make sure that no variables are implicitly declared.
+   implicit none
 
    ! Define the passed parameters.
    integer(hid_t) :: scf_fid
@@ -206,7 +212,7 @@ subroutine accessSCFEigVecHDF5 (scf_fid,attribInt_dsid,attribIntDims,&
 
    ! Open the eigenVectors group in the scf_fid.
    call h5gopen_f (scf_fid,"/eigenVectors",eigenVectors_gid,hdferr)
-   if (hdferr /= 0) stop 'Failed to open eigenvectors group.'
+   if (hdferr /= 0) stop 'Failed to open eigenvectors group SCF.'
 
    ! Allocate space to hold IDs for the datasets in the eigenvectors group.
 #ifndef GAMMA 
@@ -223,18 +229,18 @@ subroutine accessSCFEigVecHDF5 (scf_fid,attribInt_dsid,attribIntDims,&
          currentName = trim (currentName)
          call h5dopen_f(eigenVectors_gid,currentName,&
                & eigenVectors_did(1,j,i),hdferr)
-         if (hdferr /= 0) stop 'Failed to open eigenVectors real did.'
+         if (hdferr /= 0) stop 'Failed to open eigenVectors real did SCF.'
          write (currentName,fmt="(a4,i7.7,i7.7)") "imag",j,i
          currentName = trim (currentName)
          call h5dopen_f(eigenVectors_gid,currentName,&
                & eigenVectors_did(2,j,i),hdferr)
-         if (hdferr /= 0) stop 'Failed to open eigenVectors imaginary did.'
+         if (hdferr /= 0) stop 'Failed to open eigenVectors imaginary did SCF.'
 #else
          write (currentName,fmt="(i7.7,i7.7)") j,i
          currentName = trim (currentName)
          call h5dopen_f(eigenVectors_gid,currentName,&
                & eigenVectors_did(1,j,i),hdferr)
-         if (hdferr /= 0) stop 'Failed to open eigenVectors real did.'
+         if (hdferr /= 0) stop 'Failed to open eigenVectors real did SCF.'
 #endif
       enddo
    enddo
@@ -242,11 +248,11 @@ subroutine accessSCFEigVecHDF5 (scf_fid,attribInt_dsid,attribIntDims,&
    ! Obtain the property list for the energy eigen vectors.
    call h5dget_create_plist_f(eigenVectors_did(1,1,1),valeStates_plid,&
          & hdferr)
-   if (hdferr /= 0) stop 'Failed to obtain valeStates property list.'
+   if (hdferr /= 0) stop 'Failed to obtain valeStates property list SCF.'
 
    ! Obtain the dataspace for the energy eigen vectors.
    call h5dget_space_f(eigenVectors_did(1,1,1),valeStates_dsid,hdferr)
-   if (hdferr /= 0) stop 'Failed to obtain valeStates dataspace.'
+   if (hdferr /= 0) stop 'Failed to obtain valeStates dataspace SCF.'
 
    ! Allocate space to hold the attributes for tracking completion.
    allocate (eigenVectors_aid(numKPoints,spin))
@@ -256,7 +262,7 @@ subroutine accessSCFEigVecHDF5 (scf_fid,attribInt_dsid,attribIntDims,&
       do j = 1, numKPoints
          call h5aopen_f (eigenVectors_did(1,j,i),"status",&
                & eigenVectors_aid(j,i),hdferr)
-            if (hdferr /= 0) stop 'Failed to open eigenvectos_aid.'
+            if (hdferr /= 0) stop 'Failed to open eigenvectos_aid SCF.'
       enddo
    enddo
 
@@ -281,34 +287,41 @@ subroutine closeSCFEigVecHDF5
 
    ! Close the eigenvector dataspace.
    call h5sclose_f (valeStates_dsid,hdferr)
-   if (hdferr /= 0) stop 'Failed to close valeStates_dsid.'
+   if (hdferr /= 0) stop 'Failed to close valeStates_dsid SCF.'
 
    ! Close the eigenvector datasets next.
    do i = 1, spin
       do j = 1, numKPoints
 #ifndef GAMMA
          call h5dclose_f (eigenVectors_did(1,j,i),hdferr)
-         if (hdferr /= 0) stop 'Failed to close eigenVectors_did real'
+         if (hdferr /= 0) stop 'Failed to close eigenVectors_did real SCF'
          call h5dclose_f (eigenVectors_did(2,j,i),hdferr)
-         if (hdferr /= 0) stop 'Failed to close eigenVectors_did imaginary'
+         if (hdferr /= 0) stop 'Failed to close eigenVectors_did imaginary SCF'
 #else
          call h5dclose_f (eigenVectors_did(1,j,i),hdferr)
-         if (hdferr /= 0) stop 'Failed to close eigenVectors_did real'
+         if (hdferr /= 0) stop 'Failed to close eigenVectors_did real SCF'
 #endif
       enddo
    enddo
 
-   ! Attributes are closed when the data is written.
+   ! Closed the eigen vector attributes.
+   do i = 1, spin
+      do j = 1, numKPoints
+         call h5aclose_f(eigenVectors_aid(j,i),hdferr)
+         if (hdferr /= 0) stop 'Failed to close eigenVectors_aid SCF'
+      enddo
+   enddo
 
    ! Close the eigenvector property list.
    call h5pclose_f (valeStates_plid,hdferr)
-   if (hdferr /= 0) stop 'Failed to close valeStates_plid.'
+   if (hdferr /= 0) stop 'Failed to close valeStates_plid SCF.'
 
    ! Close the eigenvector group.
    call h5gclose_f (eigenVectors_gid,hdferr)
 
-   ! Deallocate unnecessary array.
+   ! Deallocate dataset and attribute arrays.
    deallocate (eigenVectors_did)
+   deallocate (eigenVectors_aid)
 
 end subroutine closeSCFEigVecHDF5
 

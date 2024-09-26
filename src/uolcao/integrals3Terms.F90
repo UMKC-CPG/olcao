@@ -4,9 +4,9 @@ module O_Integrals3Terms
    use O_Kinds
    use O_Constants
 #ifndef GAMMA
-   use O_Integrals, only: coreValeOL, valeValeOL
+   use O_Integrals, only: coreValeOL
 #else
-   use O_Integrals, only: coreValeOLGamma, valeValeOLGamma
+   use O_Integrals, only: coreValeOLGamma
 #endif
    use HDF5
 
@@ -24,6 +24,7 @@ module O_Integrals3Terms
    !   valence sections and their coreVale and valeCore interactions. The
    !   overlap valeVale and coreVale will be pulled from the previous
    !   integrals calculation for the purpose of orthogonalization.
+
 #ifndef GAMMA
    complex (kind=double), allocatable, dimension (:,:,:,:) :: coreCore
    complex (kind=double), allocatable, dimension (:,:,:)   :: valeCore
@@ -43,7 +44,7 @@ module O_Integrals3Terms
    contains
 
 
-subroutine allocateIntegralsSCF3Terms(coreDim,valeDim,numKPoints)
+subroutine allocateIntegrals3Terms(coreDim,valeDim,numKPoints)
 
    implicit none
 
@@ -60,12 +61,12 @@ subroutine allocateIntegralsSCF3Terms(coreDim,valeDim,numKPoints)
    allocate (valeValeGamma (valeDim,valeDim,3))
 #endif
 
-end subroutine allocateIntegralsSCF3Terms
+end subroutine allocateIntegrals3Terms
 
 
 
 ! Three term dipole moment integral.
-subroutine gaussOverlapDM
+subroutine gaussOverlapDM(packedVVDims,did,aid)
 
    ! Import necessary modules.
    use O_Kinds
@@ -79,12 +80,16 @@ subroutine gaussOverlapDM
    use O_Lattice, only: numCellsReal, cellSizesReal, cellDimsReal, &
          & findLatticeVector
    use O_GaussianIntegrals, only: dipole3CIntg
-   use O_SCFIntegralsHDF5, only: atomDMOverlap_aid
    use O_Basis, only: initializeAtomSite
    use O_IntgSaving
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
+
+   ! Define passed parameters.
+   integer(hsize_t), dimension(2), intent(in) :: packedVVDims
+   integer(hid_t), dimension(numKPoints,3), intent(in) :: did
+   integer(hid_t), intent(in) :: aid
 
    ! Define local variables for logging and loop control
    integer :: i,j,k,l,m,n ! Loop index variables
@@ -134,8 +139,6 @@ subroutine gaussOverlapDM
    real (kind=double), allocatable, dimension (:,:,:) :: pairXBasisFn12
 
 
-
-
    ! Local position and direction vectors and radii
    real (kind=double), dimension (dim3) :: latticeVector ! Vector to lattice
          ! point closest to the difference between the unit cell positions for
@@ -163,13 +166,12 @@ subroutine gaussOverlapDM
    !   OLCAO execution.
    hdf5Status = 0
    attribIntDims(1) = 1
-   call h5aread_f(atomDMOverlap_aid,H5T_NATIVE_INTEGER,hdf5Status,&
-         & attribIntDims,hdferr)
+   call h5aread_f(aid,H5T_NATIVE_INTEGER,hdf5Status,attribIntDims,hdferr)
    if (hdferr /= 0) stop 'Failed to read atom DM overlap status.'
    if (hdf5Status == 1) then
       write(20,*) "Three-center DM overlap already exists. Skipping."
       call timeStampEnd(29)
-      call h5aclose_f(atomDMOverlap_aid,hdferr)
+      call h5aclose_f(aid,hdferr)
       if (hdferr /= 0) stop 'Failed to close atom DM overlap status.'
       return
    endif
@@ -472,7 +474,7 @@ subroutine gaussOverlapDM
          ! First we must make a correction for the atom 2 lattice origin shift.
          do k = 1, 3
             call kPointLatticeOriginShift (currentNumTotalStates,&
-                  & currentPair(:,:,:,k),latticeVector,numKPoints,0)
+                  & currentPair(:,:,:,k),latticeVector)
             call saveCurrentPair(i,j,numKPoints,currentPair(:,:,:,k),&
                   & valeVale(:,:,:,k),coreVale(:,:,:,k),coreCore(:,:,:,k),0)
          enddo
@@ -504,7 +506,7 @@ subroutine gaussOverlapDM
 #endif
 
    ! Perform orthogonalization and save the results to disk.
-   call ortho(6)
+   call ortho(6,packedVVDims,did,aid)
 
    ! Make a finishing time stamp.
    call timeStampEnd (29)
@@ -513,7 +515,7 @@ end subroutine gaussOverlapDM
 
 
 ! Three term (xyz) momentum matrix integral.
-subroutine gaussOverlapMM
+subroutine gaussOverlapMM(packedVVDims,did,aid)
 
    ! Import necessary modules.
    use O_Kinds
@@ -527,12 +529,16 @@ subroutine gaussOverlapMM
    use O_Lattice, only: numCellsReal, cellSizesReal, cellDimsReal, &
          & findLatticeVector
    use O_GaussianIntegrals, only: momentum2CIntg
-   use O_SCFIntegralsHDF5, only: atomMMOverlap_aid
    use O_Basis, only: initializeAtomSite
    use O_IntgSaving
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
+
+   ! Define passed parameters.
+   integer(hsize_t), dimension(2), intent(in) :: packedVVDims
+   integer(hid_t), dimension(numKPoints,3), intent(in) :: did
+   integer(hid_t), intent(in) :: aid
 
    ! Define local variables for logging and loop control
    integer :: i,j,k,l,m,n ! Loop index variables
@@ -609,13 +615,12 @@ subroutine gaussOverlapMM
    !   OLCAO execution.
    hdf5Status = 0
    attribIntDims(1) = 1
-   call h5aread_f(atomMMOverlap_aid,H5T_NATIVE_INTEGER,hdf5Status,&
-         & attribIntDims,hdferr)
+   call h5aread_f(aid,H5T_NATIVE_INTEGER,hdf5Status,attribIntDims,hdferr)
    if (hdferr /= 0) stop 'Failed to read atom MM overlap status.'
    if (hdf5Status == 1) then
       write(20,*) "Two-center MM overlap already exists. Skipping."
       call timeStampEnd(12)
-      call h5aclose_f(atomMMOverlap_aid,hdferr)
+      call h5aclose_f(aid,hdferr)
       if (hdferr /= 0) stop 'Failed to close atom MM overlap status.'
       return
    endif
@@ -916,7 +921,7 @@ subroutine gaussOverlapMM
          ! First we must make a correction for the atom 2 lattice origin shift.
          do k = 1, 3
             call kPointLatticeOriginShift (currentNumTotalStates,&
-                  & currentPair(:,:,:,k),latticeVector,numKPoints,0)
+                  & currentPair(:,:,:,k),latticeVector)
             call saveCurrentPair(i,j,numKPoints,currentPair(:,:,:,k),&
                   & valeVale(:,:,:,k),coreVale(:,:,:,k),coreCore(:,:,:,k),0)
          enddo
@@ -948,7 +953,7 @@ subroutine gaussOverlapMM
 #endif
 
    ! Perform orthogonalization and save the results to disk.
-   call ortho(7)
+   call ortho(7,packedVVDims,did,aid)
 
    ! Make a finishing time stamp.
    call timeStampEnd (12)
@@ -956,23 +961,24 @@ subroutine gaussOverlapMM
 end subroutine gaussOverlapMM
 
 
-subroutine ortho (opCode)
+subroutine ortho (opCode,packedVVDims,did,aid)
 
    ! Use necessary modules.
    use O_Kinds
    use O_PotTypes, only: potTypes
    use O_KPoints, only: numKPoints
    use O_AtomicSites, only: coreDim, valeDim
-   use O_SCFIntegralsHDF5, only: atomDMOverlap_did,atomMMOverlap_did, &
-         & atomDMOverlap_aid, atomMMOverlap_aid, atomDims
    use O_Orthogonalization
    use O_Potential, only: rel
 
    ! Make sure that no funny variables are defined.
    implicit none
 
-   ! Define passed dummy arguments.
-   integer :: opCode
+   ! Define passed dummy parameters.
+   integer, intent(in) :: opCode
+   integer(hsize_t), dimension(2), intent(in) :: packedVVDims
+   integer(hid_t), dimension(numKPoints,3), intent(in) :: did
+   integer(hid_t), intent(in) :: aid
 
    ! Define local variables.
    integer :: i,j,k,l
@@ -1075,37 +1081,35 @@ subroutine ortho (opCode)
       endif
 
       ! Write the valeVale term onto disk in HDF5 format.
-      select case (opCode)
-      case (6)
-         do j = 1, 3
-            call h5dwrite_f(atomDMoverlap_did(i,j),H5T_NATIVE_DOUBLE,&
-                  & packedValeVale(:,:,j),atomDims,hdferr)
+      do j = 1, 3
+         call h5dwrite_f(did(i,j),H5T_NATIVE_DOUBLE,packedValeVale(:,:,j),&
+               & packedVVDims,hdferr)
+         select case (opCode)
+         case (6)
             if (hdferr /= 0) stop 'failed to write dipole moment vale vale'
-         enddo
-      case (7)
-         do j = 1, 3
-            call h5dwrite_f(atomMMoverlap_did(i,j),H5T_NATIVE_DOUBLE,&
-                  & packedValeVale(:,:,j),atomDims,hdferr)
+         case (7)
             if (hdferr /= 0) stop 'failed to write momentum matrix vale vale'
-         enddo
-      end select
+         end select
+      enddo
    enddo ! KPoints
 
 
-   ! Record that the calculation is complete and close the attribute.
+   ! Record that the calculation is complete.
    attribIntDims(1) = 1
+   call h5awrite_f(aid,H5T_NATIVE_INTEGER,1,attribIntDims,hdferr)
    select case (opCode)
    case (6)
-      call h5awrite_f(atomDMOverlap_aid,H5T_NATIVE_INTEGER,1,&
-            & attribIntDims,hdferr)
       if (hdferr /= 0) stop 'Failed to record atom DM overlap success.'
-      call h5aclose_f(atomDMOverlap_aid,hdferr)
+   case (7)
+      if (hdferr /= 0) stop 'Failed to record atom momentum matrix success.'
+   end select
+
+   ! Close the attribute.
+   call h5aclose_f(aid,hdferr)
+   select case (opCode)
+   case (6)
       if (hdferr /= 0) stop 'Failed to close atom DM overlap attribute.'
    case (7)
-      call h5awrite_f(atomMMOverlap_aid,H5T_NATIVE_INTEGER,1,&
-            & attribIntDims,hdferr)
-      if (hdferr /= 0) stop 'Failed to record atom momentum matrix success.'
-      call h5aclose_f(atomMMOverlap_aid,hdferr)
       if (hdferr /= 0) stop 'Failed to close atom momentum matrix attribute.'
    end select
 
@@ -1122,7 +1126,7 @@ subroutine ortho (opCode)
 end subroutine ortho
 
 
-subroutine cleanUpIntegralsSCF3Terms
+subroutine cleanUpIntegrals3Terms
 
    implicit none
 
@@ -1134,7 +1138,7 @@ subroutine cleanUpIntegralsSCF3Terms
    deallocate (valeValeGamma)
 #endif
 
-end subroutine cleanUpIntegralsSCF3Terms
+end subroutine cleanUpIntegrals3Terms
 
 
 end module O_Integrals3Terms
