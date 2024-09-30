@@ -24,10 +24,10 @@ subroutine computeBond (inSCF)
          & deltaBOND, maxBL, outputCodeBondQ, excitedAtomPACS, maxNumNeighbors
 #ifndef GAMMA
    use O_SecularEquation, only: valeVale, valeValeOL, energyEigenValues, &
-         & readDataSCF!, readDataPSCF
+         & readDataSCF, readDataPSCF
 #else
    use O_SecularEquation, only: valeValeGamma, valeValeOLGamma, &
-         & energyEigenValues, readDataSCF!, readDataPSCF
+         & energyEigenValues, readDataSCF, readDataPSCF
 #endif
 
    ! Make sure that there are not accidental variable declarations.
@@ -248,7 +248,7 @@ subroutine computeBond (inSCF)
             call readDataSCF(h,i,numStates,1) ! 1 = Overlap matrixCode
          else
             ! Read necessary data from post SCF (intg,band) data structures.
-            !call readDataPSCF(h,i,numStates)
+            call readDataPSCF(h,i,numStates,1)
          endif
 
          do j = 1, numStates
@@ -385,8 +385,7 @@ subroutine computeBond (inSCF)
                         ! Compute ^2 of the wave function for each element.
                         waveFnSqrdGamma(atom2Index(1):atom2Index(2)) = &
                               & valeValeGamma(m,j,1) * &
-                              & valeValeGamma(atom2Index(1):atom2Index(2),&
-                              & j,1)
+                              & valeValeGamma(atom2Index(1):atom2Index(2),j,1)
 
                         ! Compute the effects of overlap for the real part
                         !   only (real*real) + (imag*imag).
@@ -989,13 +988,11 @@ subroutine computeBond (inSCF)
 #ifndef GAMMA
    deallocate (waveFnSqrd)
    if (inSCF == 0) then
-      deallocate (valeVale)
       deallocate (valeValeOL)
    endif
 #else
    deallocate (waveFnSqrdGamma)
    if (inSCF == 0) then
-      deallocate (valeValeGamma)
       deallocate (valeValeOLGamma)
    endif
 #endif

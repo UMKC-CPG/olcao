@@ -93,7 +93,7 @@ end subroutine multWithBasisFn1
 
 
 subroutine applyPhaseFactors (currentPair,pairXBasisFn12,statesDim1,statesDim2,&
-      & k,runCode,currentKPoint)
+      & k,runCode)
 
    ! Import the necessary modules
    use O_Kinds
@@ -127,19 +127,13 @@ subroutine applyPhaseFactors (currentPair,pairXBasisFn12,statesDim1,statesDim2,&
             enddo
          enddo
       enddo
-   elseif (runCode <= 2) then
-      do m = 1, statesDim2
-         do n = 1, statesDim1
-            currentPair(n,m,1) = currentPair(n,m,1) + &
-                  & phaseFactor(currentKPoint,k) * pairXBasisFn12(n,m)
-         enddo
-      enddo
-   else  ! Include a -i factor.
-      do m = 1, statesDim2
-         do n = 1, statesDim1
-            currentPair(n,m,1) = currentPair(n,m,1) + cmplx(0.0_double,&
-                  & -1.0_double) * phaseFactor(currentKPoint,k) * &
-                  & pairXBasisFn12(n,m)
+   else ! runCore == 1; Include a -i factor.
+      do l = 1, numKPoints
+         do m = 1, statesDim2
+            do n = 1, statesDim1
+               currentPair(n,m,l) = currentPair(n,m,l) + cmplx(0.0_double,&
+                     & -1.0_double) * phaseFactor(l,k) * pairXBasisFn12(n,m)
+            enddo
          enddo
       enddo
    endif
@@ -619,7 +613,7 @@ subroutine applyPhaseFactorsGamma (currentPairGamma,pairXBasisFn12,statesDim1,&
    real (kind=double), dimension (statesDim1,statesDim2) :: pairXBasisFn12
    integer :: runCode
 
-   if (runCode <= 2) then
+   if (runCode == 0) then
       currentPairGamma(:statesDim1,:statesDim2) = &
             & currentPairGamma(:statesDim1,:statesDim2) + &
             & pairXBasisFn12(:statesDim1,:statesDim2) 

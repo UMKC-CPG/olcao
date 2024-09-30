@@ -1524,8 +1524,10 @@ print STDOUT "Should not be here\n";
          #   the leading spaces and trailing spaces from the tempTag before
          #   we store it in the pdbAtomTag.
          @values = &prepLine("",$tempTag,'\s+');
-         $pdbAtomTag[$numAtoms] = $values[0];
-print STDOUT "PDB Atom Tag: $pdbAtomTag[$numAtoms]\n";
+         if ($values[0] eq "")
+            {$pdbAtomTag[$numAtoms] = $values[1];}
+         else
+            {$pdbAtomTag[$numAtoms] = $values[0];}
 
          # Now, if the element symbol is provided on this ATOM line of the PDB
          #   file, then we get that name and use it to construct the atomTag.
@@ -1541,7 +1543,6 @@ print STDOUT "PDB Atom Tag: $pdbAtomTag[$numAtoms]\n";
          else
             {$element = "";}
          chomp ($element);
-print STDOUT "element = $element\n";
          if ($element ne "")
          {
             @values = &prepLine("",$element,'\s+'); # Get rid of spaces.

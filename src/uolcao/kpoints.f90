@@ -44,6 +44,12 @@ module O_KPoints
    integer :: numPaths ! The number of discontinuous high-sym. KP paths.
    integer :: numPathKP ! Number of kpoints that will be used to create the
          !   path between the high symmetry kpoints.
+   integer :: numKPoints_HDF5 ! Number of kpoints in the given kpoints file or
+         !   obtained via kpoint density, used specifically for the HDF5 file
+         !   to circumvent the issue with "numKPoints" being reassigned.
+   integer :: numPathKP_HDF5 ! Number of kpoints in the olcao.dat input file
+         !   for SYBD calculations, used specifically for the HDF5 to
+         !   circumvent the issue with "numPathKP" being reassigned.
    integer :: isCartesian ! 1 = yes, 0 = no (Are the high symmetry kpoints
          !   given in cartesian coordinates?)
    integer :: numTotalHighSymKP ! Total number of high symmetry kpoints over
@@ -137,6 +143,12 @@ subroutine readKPoints(readUnit, writeUnit)
          write (writeUnit,100) counter, kPointWeight(i), kPoints(1:dim3,i)
       enddo
       call flush (writeUnit)
+
+      ! Copy the given numKPoints to numKPoints_HDF5 so that when the HDF5
+      !   file is initiated it will use the correct number of kpoints. (The
+      !   file needs to be initialized after the SYBD numPathKP->numKPoints
+      !   reassignment has occured.)
+      numKPoints_HDF5 = numKPoints
 
    elseif (KPointStyleCode == 1) then
       ! Read axial numbers of kpoints and a shift.
@@ -243,6 +255,13 @@ subroutine readSYBDKPoints(readUnit, writeUnit)
          call readData(readUnit,writeUnit,3,highSymKP(:,j,i),0,'')
       enddo
    enddo
+
+   ! Copy the given numPathKP to numPathKP_HDF5 so that when the HDF5
+   !   file is initiated it will use the correct number of kpoints. (The
+   !   file needs to be initialized after the SYBD numPathKP->numKPoints
+   !   reassignment has occured.)
+   numPathKP_HDF5 = numPathKP
+
 end subroutine readSYBDKPoints
 
 

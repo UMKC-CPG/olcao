@@ -798,6 +798,7 @@ subroutine intgAndOrMom(doINTG,doMOME)
                            & currentAlphas(alphaIndex(2),2),&
                            & currentPosition(:,1), shiftedAtomPos(:),&
                            & l1l2Switch, oneAlphaSetMom)
+
                      !call MOMF (oneAlphaSetMom,&
                      !      & currentlmAlphaIndex (alphaIndex(1),1),&
                      !      & currentlmAlphaIndex (alphaIndex(2),2),&
@@ -2171,7 +2172,6 @@ subroutine getIntgResults (valeValeGamma,coreValeOLGamma,&
    ! Close the HDF integral file.
    call h5fclose_f (intg_fid,hdferr)
    if (hdferr == -1) stop 'Failed to close intg file'
-
 
    ! Form the valeVale matrix
    ! Determine which matrices are to be made and used.  The overlap matrix is

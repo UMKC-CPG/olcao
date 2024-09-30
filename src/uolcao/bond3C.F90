@@ -71,10 +71,10 @@ subroutine computeBond3C(inSCF)
    use O_AtomicSites, only: valeDim, numAtomSites, atomSites
    use O_AtomicTypes, only: numAtomTypes, atomTypes, maxNumValeStates
 #ifndef GAMMA
-   use O_SecularEquation, only: valeVale, valeValeOL, readDataSCF!, readDataPSCF
+   use O_SecularEquation, only: valeVale, valeValeOL, readDataSCF, readDataPSCF
 #else
    use O_SecularEquation, only: valeValeGamma, valeValeOLGamma, &
-         & readDataSCF!, readDataPSCF
+         & readDataSCF, readDataPSCF
 #endif
 
    ! Make sure that there are not accidental variable declarations.
@@ -426,7 +426,7 @@ subroutine computeBond3C(inSCF)
             call readDataSCF(h,i,numStates,1) ! 1 = Overlap matrixCode
          else
             ! Read necessary data from post SCF (intg,band) data structures.
-            !call readDataPSCF(h,i,numStates)
+            call readDataPSCF(h,i,numStates,1) ! 1 = Overlap matrixCode
          endif
 
          ! Begin collecting the three center bond order.
@@ -603,13 +603,11 @@ endif
 #ifndef GAMMA
    deallocate (waveFnSqrd)
    if (inSCF == 0) then
-      deallocate (valeVale)
       deallocate (valeValeOL)
    endif
 #else
    deallocate (waveFnSqrdGamma)
    if (inSCF == 0) then
-      deallocate (valeValeGamma)
       deallocate (valeValeOLGamma)
    endif
 #endif

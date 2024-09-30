@@ -560,15 +560,12 @@ subroutine computeTransitions(inSCF,doOPTC)
    use O_AtomicSites,   only: coreDim, valeDim
    use O_CommandLine,   only: serialXYZ
    use O_Input,         only: numStates, totalEnergyDiffPACS, detailCodePOPTC
-!   use O_PSCFBandHDF5,  only: valeValeBand, coreValeBand, valeStatesBand, &
-!         & eigenVectorsBand_did, eigenVectorsBand2_did, coreValeBand_did, &
-!         & valeValeBand_did
 #ifndef GAMMA
-   use O_SecularEquation, only: valeVale, valeValeMM, readDataSCF
-!   use O_MatrixSubs,      only: readMatrix, readPartialWaveFns
+   use O_SecularEquation, only: valeVale, valeValeMM, readDataSCF, &
+         & readDataPSCF
 #else
-   use O_SecularEquation, only: valeValeGamma, valeValeMMGamma, readDataSCF
-!   use O_MatrixSubs,      only: readMatrixGamma, readPartialWaveFnsGamma
+   use O_SecularEquation, only: valeValeGamma, valeValeMMGamma, readDataSCF, &
+         & readDataPSCF
 #endif
 
    ! Make sure that there are no accidental variable declarations.
@@ -580,6 +577,7 @@ subroutine computeTransitions(inSCF,doOPTC)
 
    ! Define local variables.
    integer :: h,i,j ! Loop index variables
+integer :: k,l
    real (kind=double) :: energyShift
 !   real (kind=double), allocatable, dimension (:,:) :: tempRealValeVale
 !#ifndef GAMMA
@@ -593,14 +591,18 @@ subroutine computeTransitions(inSCF,doOPTC)
    ! Allocate the matrix to hold the wave function and momentum matrix
    !   elements and initialize them.
 #ifndef GAMMA
-!   allocate (valeVale (valeDim,numStates,1,1))
+   if (inSCF == 0) then
+      allocate (valeVale (valeDim,numStates,1))
+      valeVale(:,:,1) = cmplx(0.0_double,0.0_double,double)
+   endif
    allocate (valeValeMM (valeDim,valeDim,3))
-!   valeVale(:,:,1,1) = cmplx(0.0_double,0.0_double,double)
    valeValeMM(:,:,:) = cmplx(0.0_double,0.0_double,double)
 #else
-!   allocate (valeValeGamma(valeDim,numStates,1))
+   if (inSCF == 0) then
+      allocate (valeValeGamma(valeDim,numStates,1))
+      valeValeGamma(:,:,1) = 0.0_double
+   endif
    allocate (valeValeMMGamma (valeDim,valeDim,3))
-!   valeValeGamma(:,:,1) = 0.0_double
    valeValeMMGamma(:,:,:) = cmplx(0.0_double,0.0_double,double)
 #endif
 
@@ -629,8 +631,11 @@ subroutine computeTransitions(inSCF,doOPTC)
             endif
          else
             ! Read necessary data from post SCF data structures.
-            !call readDataPSCF(h,i,numStates,2) ! 2 = regular MME matrixCode
-            !call readDataPSCF(h,i,numStates,3) ! 3 = PACS MME matrixCode
+            if (doOPTC /= 2) then ! Not doing a PACS calculation
+               call readDataPSCF(h,i,numStates,2) ! 2 = regular MME matrixCode
+            else
+               call readDataPSCF(h,i,numStates,3) ! 3 = PACS MME matrixCode
+            endif
          endif
 
 
@@ -712,6 +717,15 @@ subroutine computeTransitions(inSCF,doOPTC)
 
          ! Perform the computations in serial or all together.
          if (serialXYZ == 0) then
+!#ifndef GAMMA
+!do j = 1, 3
+!do k = 1, valeDim
+!do l = 1, valeDim
+!write(20,*) k,l,valeValeMM(l,k,j)
+!enddo
+!enddo
+!enddo
+!#endif
 !#ifndef GAMMA
 !
 !            allocate   (valeValeMom (valeDim,valeDim,1,3))

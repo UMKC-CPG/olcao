@@ -783,7 +783,7 @@ subroutine computeForceIntg(totalEnergy)
                            & pairXBasisFn12dHam(1:currentNumTotalStates(1),&
                            & 1:currentNumTotalStates(2),q,r),&
                            & currentNumTotalStates(1),&
-                           & currentNumTotalStates(2),k,0,0)
+                           & currentNumTotalStates(2),k,0)
                   enddo
                enddo
 #else

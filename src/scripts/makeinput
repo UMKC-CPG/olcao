@@ -908,8 +908,8 @@ sub initDefaults
    $sigmaOPTC=0.1;
    $sigmaNLOP=0.1;
    $sigmaSIGE=0.1;
-   $eTransOPTC=100;
-   $eTransNLOP=100;
+   $eTransOPTC=50;
+   $eTransNLOP=50;
    $eTransSIGE=0.3;
    $eCutOffOPTC=45;
    $eCutOffNLOP=45;

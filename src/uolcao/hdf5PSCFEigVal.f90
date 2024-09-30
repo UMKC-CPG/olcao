@@ -47,7 +47,7 @@ subroutine initPSCFEigValHDF5 (pscf_fid,numStates)
    use HDF5
 
    ! Import necessary object modules.
-   use O_KPoints, only: numKPoints, numPathKP
+   use O_KPoints, only: numKPoints_HDF5, numPathKP_HDF5
    use O_Potential, only: spin
 
    ! Make sure that there are not accidental variable declarations.
@@ -81,19 +81,19 @@ subroutine initPSCFEigValHDF5 (pscf_fid,numStates)
    call h5pset_deflate_f   (statesPSCF_plid,1,hdferr)
 
    ! Allocate space to hold the IDs for the datasets in the eigenvalues group.
-   allocate (eigenValuesPSCF_did(numKPoints,spin))
-   allocate (eigenValuesSYBD_PSCF_did(numPathKP,spin))
+   allocate (eigenValuesPSCF_did(numKPoints_HDF5,spin))
+   allocate (eigenValuesSYBD_PSCF_did(numPathKP_HDF5,spin))
 
    ! Create the datasets for the eigen values.
    do i = 1, spin
-      do j = 1, numKPoints
+      do j = 1, numKPoints_HDF5
          write (currentName,fmt="(i7.7,i7.7)") j,i
          currentName = trim (currentName)
          call h5dcreate_f(eigenValuesPSCF_gid,currentName,H5T_NATIVE_DOUBLE,&
                & statesPSCF_dsid,eigenValuesPSCF_did(j,i),hdferr,&
                & statesPSCF_plid)
       enddo
-      do j = 1, numPathKP
+      do j = 1, numPathKP_HDF5
          write (currentName,fmt="(i7.7,i7.7)") j,i
          currentName = trim (currentName)
          call h5dcreate_f(eigenValuesSYBD_PSCF_gid,currentName,&
@@ -111,7 +111,7 @@ subroutine accessPSCFEigValHDF5 (pscf_fid, numStates)
    use HDF5
 
    ! Import necessary object modules.
-   use O_KPoints, only: numKPoints, numPathKP
+   use O_KPoints, only: numKPoints_HDF5, numPathKP_HDF5
    use O_Potential, only: spin
 
    ! Make sure that there are not accidental variable declarations.
@@ -136,19 +136,19 @@ subroutine accessPSCFEigValHDF5 (pscf_fid, numStates)
    if (hdferr /= 0) stop 'Failed to open eigenValuesSYBD group.'
 
    ! Allocate space to hold the IDs for the datasets in the eigenvalues group.
-   allocate (eigenValuesPSCF_did(numKPoints,spin))
-   allocate (eigenValuesSYBD_PSCF_did(numPathKP,spin))
+   allocate (eigenValuesPSCF_did(numKPoints_HDF5,spin))
+   allocate (eigenValuesSYBD_PSCF_did(numPathKP_HDF5,spin))
 
    ! Open the datasets for the eigen vectors.
    do i = 1, spin
-      do j = 1, numKPoints
+      do j = 1, numKPoints_HDF5
          write (currentName,fmt="(i7.7,i7.7)") j,i
          currentName = trim (currentName)
          call h5dopen_f(eigenValuesPSCF_gid,currentName,&
                & eigenValuesPSCF_did(j,i),hdferr)
          if (hdferr /= 0) stop 'Failed to open eigenValues dataset.'
       enddo
-      do j = 1, numPathKP
+      do j = 1, numPathKP_HDF5
          write (currentName,fmt="(i7.7,i7.7)") j,i
          currentName = trim (currentName)
          call h5dopen_f(eigenValuesSYBD_PSCF_gid,currentName,&
@@ -178,7 +178,7 @@ subroutine closePSCFEigValHDF5
    use HDF5
 
    ! Import necessary object modules.
-   use O_KPoints, only: numKPoints, numPathKP
+   use O_KPoints, only: numKPoints_HDF5, numPathKP_HDF5
    use O_Potential, only: spin
 
    ! Make sure that no variables are implicitly declared.
@@ -194,11 +194,11 @@ subroutine closePSCFEigValHDF5
 
    ! Close the eigenvalue datasets next.
    do i = 1, spin
-      do j = 1, numKPoints
+      do j = 1, numKPoints_HDF5
          call h5dclose_f (eigenValuesPSCF_did(j,i),hdferr)
          if (hdferr /= 0) stop 'Failed to close eigenValuesPSCF_did'
       enddo
-      do j = 1, numPathKP
+      do j = 1, numPathKP_HDF5
          call h5dclose_f (eigenValuesSYBD_PSCF_did(j,i),hdferr)
          if (hdferr /= 0) stop 'Failed to close eigenValuesSYBD_PSCF_did'
       enddo

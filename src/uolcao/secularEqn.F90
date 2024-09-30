@@ -171,8 +171,8 @@ integer :: k, l, m, n, o, p
 #ifndef GAMMA
       call unpackMatrix(valeVale(:,:,spinDirection),packedValeVale,valeDim,0)
 #else
-      call unpackMatrixGamma(valeValeGamma(:,:,spinDirection),packedValeVale,&
-            & valeDim,0)
+      call unpackMatrixGamma(valeValeGamma(:,:,spinDirection),&
+            & packedValeVale,valeDim,0)
 #endif
 
       ! Read the atomic overlap matrix. 
@@ -283,17 +283,17 @@ integer :: k, l, m, n, o, p
       ! Write the eigenVectors onto disk in HDF5 format for this
       !   kpoint and spin direction.
       call h5dwrite_f(eigenVectors_did(1,i,spinDirection),&
-            & H5T_NATIVE_DOUBLE,real(valeVale(:,:numStates,&
-            & spinDirection),double),valeStates,hdferr)
+            & H5T_NATIVE_DOUBLE,real(valeVale(:,:numStates,spinDirection),&
+            & double),valeStates,hdferr)
       if (hdferr /= 0) stop 'Cannot write real energy eigen vectors.'
       call h5dwrite_f(eigenVectors_did(2,i,spinDirection),&
-            & H5T_NATIVE_DOUBLE,aimag(valeVale(:,:numStates,&
-            & spinDirection)),valeStates,hdferr)
+            & H5T_NATIVE_DOUBLE,aimag(valeVale(:,:numStates,spinDirection)),&
+            & valeStates,hdferr)
       if (hdferr /= 0) stop 'Cannot write imag energy eigen vectors.'
 #else
       call h5dwrite_f(eigenVectors_did(1,i,spinDirection),&
-            & H5T_NATIVE_DOUBLE,valeValeGamma(:,:numStates,&
-            & spinDirection),valeStates,hdferr)
+            & H5T_NATIVE_DOUBLE,valeValeGamma(:,:numStates,spinDirection),&
+            & valeStates,hdferr)
       if (hdferr /= 0) stop 'Cannot write real energy eigen vectors.'
 #endif
 
@@ -386,7 +386,8 @@ integer :: k, l, m, n, o, p
    dim1 = 1
 #endif
 
-   ! Only allocate for first spin to prevent double allocation.  These arrays
+   ! Only allocate for first spin to prevent double allocation because we do
+   !   spin sequentially. All these arrays are deallocated !  . These arrays
    !   will be deallocated in the makeValenceRho subroutine to accomodate the
    !   common case of one kpoint SCF calculations where it is not necessary
    !   (or efficient) to write the energy eigen values and wave function to
@@ -450,8 +451,8 @@ integer :: k, l, m, n, o, p
 #ifndef GAMMA
       call unpackMatrix(valeVale(:,:,spinDirection),packedValeVale,valeDim,0)
 #else
-      call unpackMatrixGamma(valeValeGamma(:,:,spinDirection),packedValeVale,&
-            & valeDim,0)
+      call unpackMatrixGamma(valeValeGamma(:,:,spinDirection),&
+            & packedValeVale,valeDim,0)
 #endif
 
       ! Read the atomic overlap matrix. 
@@ -562,12 +563,12 @@ integer :: k, l, m, n, o, p
       ! Write the eigenVectors onto disk in HDF5 format for this
       !   kpoint and spin direction.
       call h5dwrite_f(eVec_did(1,i,spinDirection),&
-            & H5T_NATIVE_DOUBLE,real(valeVale(:,:numStates,&
-            & spinDirection),double),valeStatesPSCF,hdferr)
+            & H5T_NATIVE_DOUBLE,real(valeVale(:,:numStates,spinDirection),&
+            & double), valeStatesPSCF,hdferr)
       if (hdferr /= 0) stop 'Cannot write real energy eigen vectors.'
       call h5dwrite_f(eVec_did(2,i,spinDirection),&
-            & H5T_NATIVE_DOUBLE,aimag(valeVale(:,:numStates,&
-            & spinDirection)),valeStatesPSCF,hdferr)
+            & H5T_NATIVE_DOUBLE,aimag(valeVale(:,:numStates,spinDirection)),&
+            & valeStatesPSCF,hdferr)
       if (hdferr /= 0) stop 'Cannot write imag energy eigen vectors.'
 #else
       call h5dwrite_f(eVec_did(1,i,spinDirection),&
@@ -1159,7 +1160,7 @@ subroutine readDataSCF(h,i,numStates,matrixCode)
       allocate (tempRealValeVale (valeDim,numStates))
       allocate (tempImagValeVale (valeDim,numStates))
 
-      call readMatrix(eigenVectors_did(:,i,h),valeVale(:,:numStates,1),&
+      call readMatrix(eigenVectors_did(:,i,h),valeVale(:,:numStates,h),&
             & tempRealValeVale(:,:),tempImagValeVale(:,:),&
             & valeStates,valeDim,numStates)
 
@@ -1254,9 +1255,9 @@ subroutine readDataPSCF(h,i,numStates,matrixCode)
       allocate (tempImagValeVale (valeDim,numStates))
 
       ! Read the complex wave function from the datasets.
-      call readMatrix(eigenVectorsPSCF_did(:,i,h),valeVale(:,:numStates,1),&
-         & tempRealValeVale(:,:),tempImagValeVale(:,:),valeStatesPSCF,&
-         & valeDim,numStates)
+      call readMatrix(eigenVectorsPSCF_did(:,i,h),valeVale(:,:numStates,h),&
+         & tempRealValeVale(:,:),tempImagValeVale(:,:),&
+         & valeStatesPSCF,valeDim,numStates)
 
       ! Deallocate the space to read the complex wave function.
       deallocate (tempRealValeVale)
@@ -1265,7 +1266,7 @@ subroutine readDataPSCF(h,i,numStates,matrixCode)
 #else
    ! Read the real wave function from the datasets.
    call readMatrixGamma(eigenVectorsPSCF_did(1,i,h),&
-         & valeValeGamma(:,:numStates,1),valeStatesPSCF,valeDim,numStates)
+         & valeValeGamma(:,:numStates,h),valeStatesPSCF,valeDim,numStates)
 #endif
 
 end subroutine readDataPSCF

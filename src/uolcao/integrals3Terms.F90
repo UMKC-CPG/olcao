@@ -3,11 +3,6 @@ module O_Integrals3Terms
    ! Import necessary modules.
    use O_Kinds
    use O_Constants
-#ifndef GAMMA
-   use O_Integrals, only: coreValeOL
-#else
-   use O_Integrals, only: coreValeOLGamma
-#endif
    use HDF5
 
    ! Make sure that no funny variables are defined.
@@ -442,25 +437,20 @@ subroutine gaussOverlapDM(packedVVDims,did,aid)
             !   all bloch vectors (kpoints) with phase factors appropriate
             !   to the current atom 2 lattice vector.  NOTE that the k
             !   index is over the number of cells in the superlattice.
-#ifndef GAMMA
             do l = 1, 3
+#ifndef GAMMA
                call applyPhaseFactors (currentPair(:,:,:,l),&
                      & pairXBasisFn12(1:currentNumTotalStates(1),&
                      & 1:currentNumTotalStates(2),l),&
                      & currentNumTotalStates(1),currentNumTotalStates(2),&
-                     & k,0,0)
-            enddo
-
+                     & k,0)
 #else
-            do l = 1, 3
                call applyPhaseFactorsGamma (currentPairGamma(:,:,l),&
                      & pairXBasisFn12(1:currentNumTotalStates(1),&
                      & 1:currentNumTotalStates(2),l),&
                      & currentNumTotalStates(1),currentNumTotalStates(2),0)
-            enddo
-
-
 #endif
+            enddo
          enddo !(k superlattice)
 
          ! At this point all the lattice sums for the current atom pair are
@@ -527,7 +517,7 @@ subroutine gaussOverlapMM(packedVVDims,did,aid)
    use O_AtomicSites, only: valeDim, coreDim, numAtomSites, atomSites
    use O_AtomicTypes, only: maxNumAtomAlphas, maxNumStates, atomTypes
    use O_Lattice, only: numCellsReal, cellSizesReal, cellDimsReal, &
-         & findLatticeVector
+         & findLatticeVector, logBasisFnThresh
    use O_GaussianIntegrals, only: momentum2CIntg
    use O_Basis, only: initializeAtomSite
    use O_IntgSaving
@@ -689,8 +679,11 @@ subroutine gaussOverlapMM(packedVVDims,did,aid)
 
          ! Obtain the maximum distance from either atom where the overlap
          !   is considered to be non-negligable.
-         currentNegligLimit = alphaDist(1,1,currentElements(1),&
-               & currentElements(2))
+!         currentNegligLimit = alphaDist(1,1,currentElements(1),&
+!               & currentElements(2))
+         currentNegligLimit = logBasisFnThresh * (currentAlphas(1,1) + &
+               & currentAlphas(1,2)) / (currentAlphas(1,1) * &
+               & currentAlphas(1,2))
 
          ! Determine if there are no alpha terms for this atom pair that fall
          !   within the current negligability limit.  Cycle if there are none.
@@ -747,7 +740,7 @@ subroutine gaussOverlapMM(packedVVDims,did,aid)
             ! Initialize a matrix to hold the product of the overlap integrals
             ! times the atom2 basis functions in the XYZ direction.
             pairXBasisFn2(:,:currentNumAlphas(1),&
-                  &:currentNumTotalStates(2),:) = 0.0_double
+                  & :currentNumTotalStates(2),:) = 0.0_double
 
             ! Initialize a variable to track the largest atomic alpha used
             !   from atom 1.
@@ -849,11 +842,11 @@ subroutine gaussOverlapMM(packedVVDims,did,aid)
 
                   ! We can proceed with the next step of the calculation.
                   !   This is the actual integral from the Obara-Saika papers.
+
                   call momentum2CIntg (currentAlphas(alphaIndex(1),1), &
                         & currentAlphas(alphaIndex(2),2), &
                         & currentPosition(:,1), shiftedAtomPos(:), &
                         & l1l2Switch, oneAlphaSetMM)
-
 
                   ! Collect the results of the overlap of the current alpha
                   !   times the basis functions of atom 2.
@@ -886,28 +879,24 @@ subroutine gaussOverlapMM(packedVVDims,did,aid)
                      & currentNumTotalStates,maxAlpha1Used)
             enddo
 
-
             ! Collect this atom 1, atom 2 basis function overlap matrix for
             !   all bloch vectors (kpoints) with phase factors appropriate
             !   to the current atom 2 lattice vector.  NOTE that the k
             !   index is over the number of cells in the superlattice.
-#ifndef GAMMA
             do l = 1, 3
+#ifndef GAMMA
                call applyPhaseFactors (currentPair(:,:,:,l),&
                      & pairXBasisFn12(1:currentNumTotalStates(1),&
                      & 1:currentNumTotalStates(2),l),&
                      & currentNumTotalStates(1),currentNumTotalStates(2),&
-                     & k,0,0)
-            enddo
-
+                     & k,1)
 #else
-            do l = 1, 3
                call applyPhaseFactorsGamma (currentPairGamma(:,:,l),&
                      & pairXBasisFn12(1:currentNumTotalStates(1),&
                      & 1:currentNumTotalStates(2),l),&
-                     & currentNumTotalStates(1),currentNumTotalStates(2),0)
-            enddo
+                     & currentNumTotalStates(1),currentNumTotalStates(2),1)
 #endif
+            enddo
          enddo !(k superlattice)
 
          ! At this point all the lattice sums for the current atom pair are
@@ -917,21 +906,19 @@ subroutine gaussOverlapMM(packedVVDims,did,aid)
          !   large matrices.  A valence-valence matrix, a core-valence matrix,
          !   and a core-core matrix.
 
-#ifndef GAMMA
-         ! First we must make a correction for the atom 2 lattice origin shift.
          do k = 1, 3
+#ifndef GAMMA
+            ! Make a correction for the atom 2 lattice origin shift.
             call kPointLatticeOriginShift (currentNumTotalStates,&
                   & currentPair(:,:,:,k),latticeVector)
             call saveCurrentPair(i,j,numKPoints,currentPair(:,:,:,k),&
                   & valeVale(:,:,:,k),coreVale(:,:,:,k),coreCore(:,:,:,k),0)
-         enddo
 #else
-         do k = 1, 3
             call saveCurrentPairGamma(i,j,currentPairGamma(:,:,k),&
                   & valeValeGamma(:,:,k),coreValeGamma(:,:,k),&
                   & coreCoreGamma(:,:,k))
-         enddo
 #endif
+         enddo
       enddo ! (Atom loop #2)
    enddo    ! (Atom loop #1)
 
@@ -970,6 +957,11 @@ subroutine ortho (opCode,packedVVDims,did,aid)
    use O_AtomicSites, only: coreDim, valeDim
    use O_Orthogonalization
    use O_Potential, only: rel
+#ifndef GAMMA
+   use O_Integrals, only: coreValeOL
+#else
+   use O_Integrals, only: coreValeOLGamma
+#endif
 
    ! Make sure that no funny variables are defined.
    implicit none

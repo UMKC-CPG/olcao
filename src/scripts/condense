@@ -538,16 +538,17 @@ sub runPackmol
 
    while ($line = <RAW>)
    {
-      @values = StructureControl::prepLine("",$line,'\s+');
-      if ($values[0] eq "ATOM")
-      {
-         print FIXED substr($line,0,54);
-         print FIXED "  1.00  0.00";
-         printf FIXED "%13s", $values[$#values];
-         print FIXED "\n";
-      }
-      else
-         {print FIXED "$line";}
+#      @values = StructureControl::prepLine("",$line,'\s+');
+#      if ($values[0] eq "ATOM")
+#      {
+#         print FIXED substr($line,0,54);
+#         print FIXED "  1.00  0.00";
+#         printf FIXED "%13s", $values[$#values];
+#         print FIXED "\n";
+#      }
+#      else
+#         {print FIXED "$line";}
+      print FIXED "$line";
    }
 
    close (RAW);

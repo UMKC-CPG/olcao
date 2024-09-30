@@ -714,14 +714,15 @@ subroutine bandPSCF
    use O_Input,            only: numStates
    use O_CommandLine,      only: doSYBD_PSCF
    use O_Lattice,          only: initializeLattice, initializeFindVec
-   use O_KPoints,          only: makePathKPoints, numKPoints, computePhaseFactors
+   use O_KPoints,          only: makePathKPoints, numKPoints, &
+         & computePhaseFactors
    use O_PSCFIntegralsHDF5, only: numComponents, atomOverlapPSCF_did,&
          & atomHamOverlapPSCF_did, atomOverlapSYBD_PSCF_did,&
          & atomHamOverlapSYBD_PSCF_did
    use O_PSCFEigVecHDF5, only: eigenVectorsPSCF_did,eigenVectorsSYBD_PSCF_did,&
          & eigenVectorsPSCF_aid, eigenVectorsSYBD_PSCF_aid
    use O_PSCFEigValHDF5, only: eigenValuesPSCF_did,eigenValuesSYBD_PSCF_did
-   use O_SecularEquation, only: secularEqnPSCF
+   use O_SecularEquation, only: secularEqnPSCF, cleanUpSecularEqn
    use HDF5 ! Needed to define the kludgeInt hid_t integer.
 
    ! Make sure that there are no accidental variable declarations.
@@ -750,7 +751,7 @@ subroutine bandPSCF
    call flush (20)
 
    do j = 1, spin
-      if (doSYBD_PSCF < 0) then
+      if (doSYBD_PSCF < 0) then  ! No SYBD
          call secularEqnPSCF(j,numStates,numComponents,atomOverlapPSCF_did,&
                & atomHamOverlapPSCF_did,eigenValuesPSCF_did,&
                & eigenVectorsPSCF_did,eigenVectorsPSCF_aid)
@@ -761,6 +762,8 @@ subroutine bandPSCF
                & eigenVectorsSYBD_PSCF_did,eigenVectorsSYBD_PSCF_aid)
       endif
    enddo
+
+!   call cleanUpSecularEqn
 
    ! Print the band results if necessary.
    if (doSYBD_PSCF == 1) then
@@ -1146,7 +1149,7 @@ end subroutine cleanUpSCF
 subroutine cleanUpPSCF
 
    ! Use necessary modules.
-   use O_CommandLine, only: doDIMO_PSCF, doForce_PSCF
+   use O_CommandLine, only: doSYBD_PSCF
    use O_Lattice, only: cleanUpLattice
    use O_Potential, only:  cleanUpPotential
    use O_AtomicSites, only: cleanUpAtomSites
@@ -1171,9 +1174,9 @@ subroutine cleanUpPSCF
    call cleanUpPotential
    call cleanUpLattice
 
-   ! Because we already deallocated in makeValence Rho we only deallocate
-   !   if necessary.
-   if ((doDIMO_PSCF < 0) .and. (doForce_PSCF < 0)) then
+   ! Gener
+   !   deallocate if necessary.
+   if (doSYBD_PSCF < 0) then
       call cleanUpSecularEqn
    endif
 

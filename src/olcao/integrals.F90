@@ -2734,9 +2734,11 @@ subroutine ortho (opCode)
    real (kind=double), allocatable, dimension (:,:) :: packedValeVale
    integer(hsize_t), dimension (1) :: attribIntDims ! Attribute dataspace dim
 
-   ! Identify the index number of the current potential term in the list of
-   !   all potential terms (of all types).
-   potTermIdx = potTypes(currPotTypeNumber)%cumulAlphaSum + currAlphaNumber
+   if (opCode == 4) then
+      ! Identify the index number of the current potential term in the list of
+      !   all potential terms (of all types).
+      potTermIdx = potTypes(currPotTypeNumber)%cumulAlphaSum + currAlphaNumber
+   endif
 
    ! Orthogonalizing against the overlap matrix is unnecessary when the core
    !   dimension is zero.  However, we must still allocate some matrices for

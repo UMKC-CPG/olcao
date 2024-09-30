@@ -552,7 +552,7 @@ subroutine gaussOverlapOL(numComponents,fullCVDims,packedVVDims,did,CVdid,aid)
 #ifndef GAMMA
                call applyPhaseFactors (currentPair,pairXBasisFn12(1:&
                      & currentNumTotalStates(1),1:currentNumTotalStates(2)),&
-                     & currentNumTotalStates(1),currentNumTotalStates(2),k,0,0)
+                     & currentNumTotalStates(1),currentNumTotalStates(2),k,0)
 #else
                call applyPhaseFactorsGamma (currentPairGamma,pairXBasisFn12(1:&
                      & currentNumTotalStates(1),1:currentNumTotalStates(2)),&
@@ -985,7 +985,7 @@ subroutine gaussOverlapKE(packedVVDims,did,aid)
 #ifndef GAMMA
             call applyPhaseFactors (currentPair,pairXBasisFn12(1:&
                   & currentNumTotalStates(1),1:currentNumTotalStates(2)),&
-                  & currentNumTotalStates(1),currentNumTotalStates(2),k,0,0)
+                  & currentNumTotalStates(1),currentNumTotalStates(2),k,0)
 #else
             call applyPhaseFactorsGamma (currentPairGamma,pairXBasisFn12(1:&
                   & currentNumTotalStates(1),1:currentNumTotalStates(2)),&
@@ -1424,7 +1424,7 @@ subroutine gaussOverlapMV(packedVVDims,did,aid)
 #ifndef GAMMA
                call applyPhaseFactors (currentPair,pairXBasisFn12(1:&
                      & currentNumTotalStates(1),1:currentNumTotalStates(2)),&
-                     & currentNumTotalStates(1),currentNumTotalStates(2),k,0,0)
+                     & currentNumTotalStates(1),currentNumTotalStates(2),k,0)
 #else
                call applyPhaseFactorsGamma (currentPairGamma,pairXBasisFn12(1:&
                      & currentNumTotalStates(1),1:currentNumTotalStates(2)),&
@@ -1840,7 +1840,7 @@ subroutine gaussOverlapNP(packedVVDims,did,aid)
 #ifndef GAMMA
             call applyPhaseFactors (currentPair,pairXBasisFn12(1:&
                   & currentNumTotalStates(1),1:currentNumTotalStates(2)),&
-                  & currentNumTotalStates(1),currentNumTotalStates(2),k,0,0)
+                  & currentNumTotalStates(1),currentNumTotalStates(2),k,0)
 #else
             call applyPhaseFactorsGamma (currentPairGamma,pairXBasisFn12(1:&
                   & currentNumTotalStates(1),1:currentNumTotalStates(2)),&
@@ -2246,7 +2246,7 @@ subroutine gaussOverlapEP(packedVVDims,did,aid)
 #ifndef GAMMA
             call applyPhaseFactors (currentPair,pairXBasisFn12(1:&
                   & currentNumTotalStates(1),1:currentNumTotalStates(2)),&
-                  & currentNumTotalStates(1),currentNumTotalStates(2),k,0,0)
+                  & currentNumTotalStates(1),currentNumTotalStates(2),k,0)
 #else
             call applyPhaseFactorsGamma (currentPairGamma,pairXBasisFn12(1:&
                   & currentNumTotalStates(1),1:currentNumTotalStates(2)),&
@@ -3493,7 +3493,7 @@ subroutine gaussOverlapHamPSCF(did,aid)
                         & currentNumTotalStates(1),1:&
                         & currentNumTotalStates(2),q),&
                         & currentNumTotalStates(1),&
-                        & currentNumTotalStates(2),k,0,0)
+                        & currentNumTotalStates(2),k,0)
 #else
                   call applyPhaseFactorsGamma (currentPairHamGamma,&
                         & pairXBasisFn12Ham(1:&
