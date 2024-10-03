@@ -601,7 +601,7 @@ my $nodes;
 ######################################################################
 # Begin execution of the script here
 ######################################################################
-print STDOUT "\n\nScript Executing.\n\n";
+print STDOUT "\n\nmakeinput script executing.\n\n";
 
 # This will parse the command line, define file names, init defaults, etc.
 $dateTime = `date`;
@@ -676,7 +676,7 @@ print STDOUT "\nStarting to print summary at.................$dateTime.\n";
 # Complete the script.
 $dateTime = `date`;
 chomp($dateTime);
-print STDOUT "\nScript Complete at...........................$dateTime.\n\n";
+print STDOUT "\nmakeinput script complete at.................$dateTime.\n\n";
 
 
 

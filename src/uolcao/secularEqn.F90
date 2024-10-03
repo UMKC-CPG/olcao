@@ -116,7 +116,7 @@ integer :: k, l, m, n, o, p
    ! Begin loop over all kpoints.
    do i = 1,numKPoints
 
-      ! If the eigenvectors for this kpoint and spin direction are already
+      ! If the eigen vectors for this kpoint and spin direction are already
       !   computed, then skip.
       hdf5Status = 0
       attribIntDims(1) = 1
@@ -613,80 +613,6 @@ integer :: k, l, m, n, o, p
 end subroutine secularEqnPSCF
 
 
-!subroutine secularEqnOneKP (spinDirection,currKPoint,numStates,doSYBD)
-!
-!   ! Import necessary modules.
-!   use HDF5
-!   use O_Kinds
-!   use O_TimeStamps
-!   use O_Potential, only: numPlusUJAtoms
-!   use O_AtomicSites, only: valeDim
-!   use O_PSCFBandHDF5, only: valeStatesBand, statesBand, eigenVectorsBand_did, &
-!         & eigenValuesBand_did
-!#ifndef GAMMA
-!   use O_LAPACKZHEGV
-!#else
-!   use O_LAPACKDSYGV
-!#endif
-!
-!   ! Make sure that no funny variables are defined.
-!   implicit none
-!
-!   ! Define the passed parameters.
-!   integer :: spinDirection
-!   integer :: currKPoint
-!   integer :: numStates
-!   integer :: doSYBD
-!
-!   ! Define the local variables used in this subroutine.
-!   integer :: hdferr
-!
-!   ! In the event that there are some atoms that have a plusUJ term, perform
-!   !   the final update to the plusUJ term and then apply the plusUJ
-!   !   modification to the Hamiltonian.
-!   if (numPlusUJAtoms > 0) then
-!      call update2AndApplyUJ(currKPoint,spinDirection)
-!   endif
-!
-!   ! Solve the eigen problem with a LAPACK routine.
-!#ifndef GAMMA
-!   call solveZHEGV(valeDim,numStates,valeVale(:,:,1,spinDirection),&
-!         & valeValeOL(:,:,1,1),energyEigenValues(:,currKPoint,spinDirection))
-!#else
-!   call solveDSYGV(valeDim,numStates,valeValeGamma(:,:,spinDirection),&
-!         & valeValeOLGamma(:,:,1),energyEigenValues(:,currKPoint,spinDirection))
-!#endif
-!
-!   if (doSYBD == 0) then
-!#ifndef GAMMA
-!      ! Write the eigenVector results to disk.
-!      call h5dwrite_f (eigenVectorsBand_did(1,currKPoint,spinDirection),&
-!            & H5T_NATIVE_DOUBLE,real(valeVale(:,1:numStates,1,spinDirection),&
-!            & double),valeStatesBand,hdferr)
-!      if (hdferr /= 0) stop 'Cannot write real energy eigen vectors.'
-!      call h5dwrite_f (eigenVectorsBand_did(2,currKPoint,spinDirection),&
-!            & H5T_NATIVE_DOUBLE,aimag(valeVale(:,1:numStates,1,spinDirection)),&
-!            & valeStatesBand,hdferr)
-!      if (hdferr /= 0) stop 'Cannot write imag energy eigen vectors.'
-!#else
-!      ! Write the eigenVector results to disk.
-!      call h5dwrite_f (eigenVectorsBand_did(1,currKPoint,spinDirection),&
-!            & H5T_NATIVE_DOUBLE,valeValeGamma(:,1:numStates,spinDirection),&
-!            & valeStatesBand,hdferr)
-!      if (hdferr /= 0) stop 'Cannot write real energy eigen vectors.'
-!#endif
-!
-!
-!      ! Write the eigenValue results to disk, in a.u.
-!      call h5dwrite_f (eigenValuesBand_did(currKPoint,spinDirection),&
-!            & H5T_NATIVE_DOUBLE,energyEigenValues(:,currKPoint,&
-!            & spinDirection),statesBand,hdferr)
-!      if (hdferr /= 0) stop 'Cannot write energy eigen values.'
-!
-!   endif
-!
-!end subroutine secularEqnOneKP
-
 ! This subroutine will update the plusUJ term values on the basis of the charge
 !   density matrix (obtained from the product of wave function coefficients
 !   (psi* * psi) but before the overlap matrix elements have been multiplied
@@ -1089,11 +1015,13 @@ subroutine readDataSCF(h,i,numStates,matrixCode)
    use O_AtomicSites, only: valeDim
    use O_SCFIntegralsHDF5, only: packedVVDims,atomOverlap_did,atomMMOverlap_did
    use O_SCFEigVecHDF5, only: valeStates,eigenVectors_did
+   use O_SCFEigValHDF5, only: states,eigenValues_did
 #ifndef GAMMA
    use O_MatrixSubs, only: readMatrix,readPackedMatrix,unpackMatrix
 #else
    use O_MatrixSubs, only: readPackedMatrix,unpackMatrixGamma
 #endif
+   use HDF5
 
    ! Define passed parameters.
    integer, intent(in) :: h ! Spin variable.
@@ -1103,6 +1031,7 @@ subroutine readDataSCF(h,i,numStates,matrixCode)
 
    ! Define local variables.
    integer :: dim1
+   integer :: hdferr
    integer :: j ! Loop index (usually xyz).
    real (kind=double), allocatable, dimension (:,:) :: packedValeVale
 #ifndef GAMMA
@@ -1168,6 +1097,11 @@ subroutine readDataSCF(h,i,numStates,matrixCode)
       deallocate (tempRealValeVale)
       deallocate (tempImagValeVale)
    endif
+
+   ! Read in the eigen values.
+   call h5dread_f(eigenValues_did(i,h),H5T_NATIVE_DOUBLE,&
+         & energyEigenValues(:numStates,i,h),states,hdferr)
+   if (hdferr /= 0) stop 'Failed to read energy eigen values'
 #endif
 
 end subroutine readDataSCF
@@ -1182,12 +1116,14 @@ subroutine readDataPSCF(h,i,numStates,matrixCode)
    use O_PSCFIntegralsHDF5, only: packedVVDimsPSCF,atomOverlapPSCF_did,&
          & atomMMOverlapPSCF_did
    use O_PSCFEigVecHDF5, only: valeStatesPSCF,eigenVectorsPSCF_did
+   use O_PSCFEigValHDF5, only: states,eigenValuesPSCF_did
 #ifndef GAMMA
    use O_MatrixSubs, only: readMatrix, readPackedMatrix, unpackMatrix
 #else
    use O_MatrixSubs, only: readMatrixGamma, readPackedMatrix, &
          & unpackMatrixGamma
 #endif
+   use HDF5
 
    ! Define passed parameters.
    integer, intent(in) :: h ! Spin variable.
@@ -1197,6 +1133,7 @@ subroutine readDataPSCF(h,i,numStates,matrixCode)
 
    ! Define local variables.
    integer :: dim1
+   integer :: hdferr
    integer :: j ! Loop index (usually xyz).
    real (kind=double), allocatable, dimension (:,:) :: packedValeVale
 #ifndef GAMMA
@@ -1247,7 +1184,9 @@ subroutine readDataPSCF(h,i,numStates,matrixCode)
 #ifndef GAMMA
    ! Read the wave functions for this kpoint from the datasets into
    !   the valeVale matrix.  If numKPoints==1, the wave functions should
-   !   already be in the valeVale(1:valeDim,1:numStates) matrix.
+   !   already be in the valeVale(1:valeDim,1:numStates) matrix, unless it
+   !   was already computed once in which case we just have not yet read it
+   !   in (same for the eigen values).
    if (numKPoints > 1) then
 
       ! Allocate space to read the complex wave function.
@@ -1268,6 +1207,11 @@ subroutine readDataPSCF(h,i,numStates,matrixCode)
    call readMatrixGamma(eigenVectorsPSCF_did(1,i,h),&
          & valeValeGamma(:,:numStates,h),valeStatesPSCF,valeDim,numStates)
 #endif
+
+   ! Read in the eigen values.
+   call h5dread_f(eigenValuesPSCF_did(i,h),H5T_NATIVE_DOUBLE,&
+         & energyEigenValues(:numStates,i,h),states,hdferr)
+   if (hdferr /= 0) stop 'Failed to read energy eigen values'
 
 end subroutine readDataPSCF
 

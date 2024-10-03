@@ -477,7 +477,6 @@ subroutine mainSCF
       call secularEqnSCF(i, numStates)
    enddo
 
-   ! At this point we can clo
 
 !   ! Shift the energy eigen values according to the highest occupied state.
 !   call shiftEnergyEigenValues(occupiedEnergy,numStates)
@@ -723,16 +722,12 @@ subroutine bandPSCF
          & eigenVectorsPSCF_aid, eigenVectorsSYBD_PSCF_aid
    use O_PSCFEigValHDF5, only: eigenValuesPSCF_did,eigenValuesSYBD_PSCF_did
    use O_SecularEquation, only: secularEqnPSCF, cleanUpSecularEqn
-   use HDF5 ! Needed to define the kludgeInt hid_t integer.
 
    ! Make sure that there are no accidental variable declarations.
    implicit none
 
-
    ! Define local variables.
-   integer :: i,j
-   integer (hid_t) :: kludgeInt ! Place holder integer to avoid accessing
-         ! unallocated memory.
+   integer :: i
 
 
    ! Set up LAPACK machine parameters.
@@ -750,13 +745,13 @@ subroutine bandPSCF
    write (20,*) "Expecting ",numKPoints," iterations."
    call flush (20)
 
-   do j = 1, spin
+   do i = 1, spin
       if (doSYBD_PSCF < 0) then  ! No SYBD
-         call secularEqnPSCF(j,numStates,numComponents,atomOverlapPSCF_did,&
+         call secularEqnPSCF(i,numStates,numComponents,atomOverlapPSCF_did,&
                & atomHamOverlapPSCF_did,eigenValuesPSCF_did,&
                & eigenVectorsPSCF_did,eigenVectorsPSCF_aid)
       else
-         call secularEqnPSCF(j,numStates,numComponents,&
+         call secularEqnPSCF(i,numStates,numComponents,&
                & atomOverlapSYBD_PSCF_did,&
                & atomHamOverlapSYBD_PSCF_did,eigenValuesSYBD_PSCF_did,&
                & eigenVectorsSYBD_PSCF_did,eigenVectorsSYBD_PSCF_aid)
@@ -834,11 +829,8 @@ subroutine dos(inSCF)
    use O_KPoints,         only: numKPoints
    use O_Input,           only: numStates
    use O_Populate,        only: occupiedEnergy, populateStates
-!   use O_PSCFBandHDF5,    only: accessPSCFBandHDF5, closeAccessPSCFBandHDF5
    use O_SecularEquation, only: energyEigenValues, &
          & shiftEnergyEigenValues
-!   use O_SecularEquation, only: energyEigenValues, readEnergyEigenValuesBand,&
-!         & shiftEnergyEigenValues
 
 
    ! Make sure that no funny variables are defined.
@@ -894,7 +886,6 @@ subroutine bond (inSCF, doBond)
    use O_Bond3C,          only: computeBond3C
    use O_Populate,        only: occupiedEnergy, populateStates
    use O_Input,           only: thermalSigma, numStates
-!   use O_PSCFBandHDF5,    only: accessPSCFBandHDF5, closeAccessPSCFBandHDF5
    use O_SecularEquation, only: shiftEnergyEigenValues
 
 
@@ -1023,13 +1014,10 @@ subroutine optc(inSCF,doOPTC)
    use O_Lattice,         only: initializeLattice, initializeFindVec
    use O_Input,           only: numStates, lastInitStatePACS, &
          & detailCodePOPTC
-!   use O_PSCFBandHDF5,    only: accessPSCFBandHDF5, closeAccessPSCFBandHDF5
    use O_OptcTransitions, only: transCounter, energyDiff, transitionProb, &
          & transitionProbPOPTC, getEnergyStatistics, computeTransitions
    use O_SecularEquation, only: energyEigenValues, &
          & shiftEnergyEigenValues
-!   use O_SecularEquation, only: energyEigenValues, readEnergyEigenValuesBand,&
-!         & appendExcitedEValsBand, shiftEnergyEigenValues
 
 
    ! Make sure that no funny variables are defined.
@@ -1174,8 +1162,7 @@ subroutine cleanUpPSCF
    call cleanUpPotential
    call cleanUpLattice
 
-   ! Gener
-   !   deallocate if necessary.
+   ! Deallocate if necessary.
    if (doSYBD_PSCF < 0) then
       call cleanUpSecularEqn
    endif
