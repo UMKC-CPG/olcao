@@ -333,6 +333,7 @@ subroutine secularEqnPSCF(spinDirection,numStates,numComponents,ol_did,&
    use HDF5
    use O_Kinds
    use O_TimeStamps
+   use O_CommandLine, only: doSYBD_PSCF
    use O_KPoints, only: numKPoints
    use O_Potential, only: rel, spin, potDim, potCoeffs, numPlusUJAtoms, &
          & currIteration
@@ -428,6 +429,12 @@ integer :: k, l, m, n, o, p
          write(20,*) "Wave function for kpoint ",i," already computed."
          call h5aclose_f(eVec_aid(i,spinDirection),hdferr)
          if (hdferr /= 0) stop 'Failed to close eigen vector PSCF status'
+         if (doSYBD_PSCF == 1) then
+            call h5dread_f(eVal_did(i,spinDirection),H5T_NATIVE_DOUBLE,&
+                  & energyEigenValues(:numStates,i,spinDirection),states,&
+                  & hdferr)
+            if (hdferr /= 0) stop 'Failed to read EVals'
+         endif
          cycle
       endif
 
