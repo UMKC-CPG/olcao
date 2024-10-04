@@ -587,7 +587,6 @@ subroutine accessPSCFIntegralHDF5 (pscf_fid)
       enddo
 
       do j = 1, 3
-         write (currentName,fmt="(i7.7)") j
          call h5dopen_f (atomDMxyzOL_PSCF_gid(j),currentName,&
                & atomDMOverlapPSCF_did(i,j),hdferr)
          if (hdferr /= 0) stop 'Failed to open DM overlap did'
@@ -623,9 +622,6 @@ subroutine accessPSCFIntegralHDF5 (pscf_fid)
       enddo
 
       do j = 1, 3
-         write (currentName,fmt="(i7.7)") j
-         currentName = trim (currentName)
-
          call h5dopen_f (atomDMxyzOL_SYBD_PSCF_gid(j),currentName,&
                & atomDMOverlapSYBD_PSCF_did(i,j),hdferr)
          if (hdferr /= 0) stop 'Failed to open DM overlap SYBD did'
