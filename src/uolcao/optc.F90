@@ -605,7 +605,7 @@ integer :: k,l
       valeValeGamma(:,:,1) = 0.0_double
    endif
    allocate (valeValeMMGamma (valeDim,valeDim,3))
-   valeValeMMGamma(:,:,:) = cmplx(0.0_double,0.0_double,double)
+   valeValeMMGamma(:,:,:) = 0.0_double
 #endif
 
 

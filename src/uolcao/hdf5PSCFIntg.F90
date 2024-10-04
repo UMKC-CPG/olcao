@@ -189,13 +189,13 @@ subroutine initPSCFIntegralHDF5 (pscf_fid, attribIntPSCF_dsid,&
          & atomOverlapPSCF_gid,hdferr)
    if (hdferr /= 0) stop 'Failed to create atom overlap group'
 
-   call h5gcreate_f (atomIntgGroupPSCF_gid,"atomOverlapCV",&
-         & atomOverlapCV_PSCF_gid,hdferr)
-   if (hdferr /= 0) stop 'Failed to create atom overlapCV group'
-
    call h5gcreate_f (atomIntgGroupPSCF_gid,"atomHamOverlap",&
          & atomHamOverlapPSCF_gid,hdferr)
    if (hdferr /= 0) stop 'Failed to create atom hamiltonian overlap group'
+
+   call h5gcreate_f (atomIntgGroupPSCF_gid,"atomOverlapCV",&
+         & atomOverlapCV_PSCF_gid,hdferr)
+   if (hdferr /= 0) stop 'Failed to create atom overlapCV group'
 
    call h5gcreate_f (atomIntgGroupPSCF_gid,"atomDMOverlap",&
          & atomDMOverlapPSCF_gid,hdferr)
@@ -203,7 +203,7 @@ subroutine initPSCFIntegralHDF5 (pscf_fid, attribIntPSCF_dsid,&
 
    call h5gcreate_f (atomIntgGroupPSCF_gid,"atomMMOverlap",&
          & atomMMOverlapPSCF_gid,hdferr)
-   if (hdferr /= 0) stop 'Failed to create momentum matrix overlap SYBD group'
+   if (hdferr /= 0) stop 'Failed to create momentum matrix overlap group'
 
    call h5gcreate_f (atomIntgGroupPSCF_gid,"atomOverlapSYBD",&
          & atomOverlapSYBD_PSCF_gid,hdferr)
@@ -278,7 +278,7 @@ subroutine initPSCFIntegralHDF5 (pscf_fid, attribIntPSCF_dsid,&
 
    ! Define the properties of the datasets to be made.
 
-   ! Create the VV property list first.  Then set the properties one at a time.
+   ! Create the VV property list.  Then set the properties one at a time.
    call h5pcreate_f      (H5P_DATASET_CREATE_F,valeValePSCF_plid,hdferr)
    if (hdferr /= 0) stop 'Failed to create vale vale plid'
    call h5pset_layout_f  (valeValePSCF_plid,H5D_CHUNKED_F,hdferr)
@@ -289,7 +289,7 @@ subroutine initPSCFIntegralHDF5 (pscf_fid, attribIntPSCF_dsid,&
    call h5pset_deflate_f (valeValePSCF_plid,1,hdferr)
    if (hdferr /= 0) stop 'Failed to set vale vale for deflation'
 
-   ! Create the CV property list first.  Then set the properties one at a time.
+   ! Create the CV property list.  Then set the properties one at a time.
    call h5pcreate_f      (H5P_DATASET_CREATE_F,coreValePSCF_plid,hdferr)
    if (hdferr /= 0) stop 'Failed to create core vale plid'
    call h5pset_layout_f  (coreValePSCF_plid,H5D_CHUNKED_F,hdferr)
@@ -574,6 +574,8 @@ subroutine accessPSCFIntegralHDF5 (pscf_fid)
    ! Open the datasets that will be used for all subgroups of atomIntgGroup.
    do i = 1, numKPoints_HDF5
       write (currentName,fmt="(i7.7)") i
+      currentName = trim (currentName)
+
       call h5dopen_f (atomOverlapPSCF_gid,currentName,&
             & atomOverlapPSCF_did(i),hdferr)
       if (hdferr /= 0) stop 'Failed to open atom overlap did'

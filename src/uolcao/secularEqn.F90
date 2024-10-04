@@ -1165,8 +1165,12 @@ subroutine readDataPSCF(h,i,numStates,matrixCode)
    elseif (matrixCode == 2) then
       do j = 1, 3
          ! Read the xyz momentum matrix elements.
+!write(20,*) i,j,shape(packedValeVale),packedVVDimsPSCF,dim1,valeDim
          call readPackedMatrix(atomMMOverlapPSCF_did(i,j),packedValeVale,&
                & packedVVDimsPSCF,dim1,valeDim)
+#ifndef GAMMA
+!write(20,*) i,packedValeVale(:,:)
+#endif
 
          ! Unpack the matrix.
 #ifndef GAMMA

@@ -993,15 +993,13 @@ subroutine ortho (opCode,packedVVDims,did,aid)
          enddo
       enddo
 #else
-      do i = 1, numKPoints
-         ! Form a product of (valeCoreOL)(coreVale) and (valeCore)
-         !   (coreValeOL).  Subtract both from the target matrix elements
-         !   (valeValeGamma).
-         do j = 1, 3
-            call valeCoreCoreValeGamma (valeDim,coreDim,&
-                  & valeValeGamma(:,:,j),coreValeGamma(:,:,j),&
-                  & coreValeOLGamma(:,:))
-         enddo
+      ! Form a product of (valeCoreOL)(coreVale) and (valeCore)
+      !   (coreValeOL).  Subtract both from the target matrix elements
+      !   (valeValeGamma).
+      do j = 1, 3
+         call valeCoreCoreValeGamma (valeDim,coreDim,&
+               & valeValeGamma(:,:,j),coreValeGamma(:,:,j),&
+               & coreValeOLGamma(:,:))
       enddo
 #endif
    endif

@@ -1028,10 +1028,6 @@ subroutine optc(inSCF,doOPTC)
    integer, intent(in) :: doOPTC
 
 
-   ! Define local variables.
-   integer :: doneMOME
-
-
    ! Open the optc files that will be written to. 40,41=optical conductivity;
    !   50,51 = imaginary dielectric function (usually). Note, for XANES/ELNES
    !   calculations, we do not need the optical conductivity. Also note, for
