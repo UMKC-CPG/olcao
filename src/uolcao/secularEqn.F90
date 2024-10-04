@@ -429,12 +429,9 @@ integer :: k, l, m, n, o, p
          write(20,*) "Wave function for kpoint ",i," already computed."
          call h5aclose_f(eVec_aid(i,spinDirection),hdferr)
          if (hdferr /= 0) stop 'Failed to close eigen vector PSCF status'
-         if (doSYBD_PSCF == 1) then
-            call h5dread_f(eVal_did(i,spinDirection),H5T_NATIVE_DOUBLE,&
-                  & energyEigenValues(:numStates,i,spinDirection),states,&
-                  & hdferr)
-            if (hdferr /= 0) stop 'Failed to read EVals'
-         endif
+         call h5dread_f(eVal_did(i,spinDirection),H5T_NATIVE_DOUBLE,&
+               & energyEigenValues(:numStates,i,spinDirection),states,hdferr)
+         if (hdferr /= 0) stop 'Failed to read EVals'
          cycle
       endif
 
@@ -1028,7 +1025,6 @@ subroutine readDataSCF(h,i,numStates,matrixCode)
 #else
    use O_MatrixSubs, only: readPackedMatrix,unpackMatrixGamma
 #endif
-   use HDF5
 
    ! Define passed parameters.
    integer, intent(in) :: h ! Spin variable.
@@ -1105,10 +1101,6 @@ subroutine readDataSCF(h,i,numStates,matrixCode)
       deallocate (tempImagValeVale)
    endif
 
-   ! Read in the eigen values.
-   call h5dread_f(eigenValues_did(i,h),H5T_NATIVE_DOUBLE,&
-         & energyEigenValues(:numStates,i,h),states,hdferr)
-   if (hdferr /= 0) stop 'Failed to read energy eigen values'
 #endif
 
 end subroutine readDataSCF
@@ -1130,7 +1122,6 @@ subroutine readDataPSCF(h,i,numStates,matrixCode)
    use O_MatrixSubs, only: readMatrixGamma, readPackedMatrix, &
          & unpackMatrixGamma
 #endif
-   use HDF5
 
    ! Define passed parameters.
    integer, intent(in) :: h ! Spin variable.
@@ -1214,11 +1205,6 @@ subroutine readDataPSCF(h,i,numStates,matrixCode)
    call readMatrixGamma(eigenVectorsPSCF_did(1,i,h),&
          & valeValeGamma(:,:numStates,h),valeStatesPSCF,valeDim,numStates)
 #endif
-
-   ! Read in the eigen values.
-   call h5dread_f(eigenValuesPSCF_did(i,h),H5T_NATIVE_DOUBLE,&
-         & energyEigenValues(:numStates,i,h),states,hdferr)
-   if (hdferr /= 0) stop 'Failed to read energy eigen values'
 
 end subroutine readDataPSCF
 

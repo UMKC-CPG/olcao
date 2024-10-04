@@ -78,6 +78,7 @@ contains
 subroutine getEnergyStatistics(doOPTC)
 
    ! Import necessary modules.
+   use HDF5
    use O_Kinds
    use O_Potential,       only: spin
    use O_SecularEquation, only: energyEigenValues
@@ -215,6 +216,7 @@ subroutine getEnergyStatistics(doOPTC)
    !   However, similar physical principles will apply and the probability of
    !   making a transition will be scaled by two occupation scaling factors,
    !   one for the originating state and one for the final state.
+
 
    do h = 1, spin
 
@@ -621,7 +623,8 @@ integer :: k,l
       do i = 1, numKPoints
 
          ! Determine if we are doing the OPTC in a post-SCF calculation, or
-         !   within an SCF calculation.
+         !   within an SCF calculation. Generally, we will not need to read in
+         !   the energy eigenvalues here because we already did it.
          if (inSCF == 1) then
             ! Read necessary data from SCF (setup,main) data structures.
             if (doOPTC /= 2) then ! Not doing a PACS calculation

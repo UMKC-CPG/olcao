@@ -447,6 +447,9 @@ subroutine makeECMeshAndOverlap
    if (hdferr /= 0) stop 'Failed to read exch corr group status.'
    if (hdf5Status == 1) then
       write(20,*) "Exch corr group results already exist. Skipping."
+      call timeStampEnd(7)
+      call h5aclose_f(exchCorrGroup_aid,hdferr)
+      if (hdferr /= 0) stop 'Failed to close exchCorrGroup attribute'
       return
    endif
 

@@ -248,7 +248,7 @@ subroutine computeBond (inSCF)
             call readDataSCF(h,i,numStates,1) ! 1 = Overlap matrixCode
          else
             ! Read necessary data from post SCF (intg,band) data structures.
-            call readDataPSCF(h,i,numStates,1)
+            call readDataPSCF(h,i,numStates,1) ! 1 = Overlap matrixCode
          endif
 
          do j = 1, numStates
