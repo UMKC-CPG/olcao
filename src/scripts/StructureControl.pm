@@ -6017,7 +6017,7 @@ sub computePoreMap
    my $zPoint;
    my $currCovalRadiusSqrd;
    my @miniCubeSize; # Circumscribes a sphere of size equal to the coval rad.
-#   my @coordDiff; # Used by the Perl implementation of CdistanceSqrd
+   my @coordDiff; # Used by the Perl implementation of CdistanceSqrd
    my $distanceSqrd;
 
    # Determine the number of cells in each direction needed to account for all
@@ -6080,25 +6080,25 @@ sub computePoreMap
          # Compute the square of the exact distance between this mesh
          #   point and the atom.
 # This is the Inline C implementation.
-         $distanceSqrd = CdistanceSqrd($limitDistSqrd,$limitDist,
-            $extDirectXYZList[$atom][1],$extDirectXYZList[$atom][2],
-            $extDirectXYZList[$atom][3],$xPoint*$resolution_ref->[1],
-            $yPoint*$resolution_ref->[2],$zPoint*$resolution_ref->[3]);
+#         $distanceSqrd = CdistanceSqrd($limitDistSqrd,$limitDist,
+#            $extDirectXYZList[$atom][1],$extDirectXYZList[$atom][2],
+#            $extDirectXYZList[$atom][3],$xPoint*$resolution_ref->[1],
+#            $yPoint*$resolution_ref->[2],$zPoint*$resolution_ref->[3]);
 
 # Perl implementation of CdistanceSqrd         
-#         foreach $axis (1..3)
-#         {
-#            $coordDiff[$axis] = $xPoint*$resolution_ref->[$axis]
-#                              - $extDirectXYZList[$atom][$axis];
-#            if ($coordDiff[$axis] > $limitDist)
-#               {$distanceSqrd = $bigReal; last;}
-#         }
-#
-#         # At this point the limit dist criterion has been met so we can
-#         #   compute the square of the distance.
-#         $distanceSqrd = $coordDiff[1]*$coordDiff[1]
-#                       + $coordDiff[2]*$coordDiff[2]
-#                       + $coordDiff[3]*$coordDiff[3];
+         foreach $axis (1..3)
+         {
+            $coordDiff[$axis] = $xPoint*$resolution_ref->[$axis]
+                              - $extDirectXYZList[$atom][$axis];
+            if ($coordDiff[$axis] > $limitDist)
+               {$distanceSqrd = $bigReal; last;}
+         }
+
+         # At this point the limit dist criterion has been met so we can
+         #   compute the square of the distance.
+         $distanceSqrd = $coordDiff[1]*$coordDiff[1]
+                       + $coordDiff[2]*$coordDiff[2]
+                       + $coordDiff[3]*$coordDiff[3];
 
          if ($distanceSqrd < $currCovalRadiusSqrd)
             {$extPoreMap[$xPoint][$yPoint][$zPoint] = 1;}
@@ -7962,33 +7962,33 @@ double Cdistance(double limitDistSqrd, double limitDist,
    }
 }
 
-double CdistanceSqrd(double limitDistSqrd, double limitDist,
-                     double p1x, double p1y, double p1z,
-                     double p2x, double p2y, double p2z)
-{
-   double diff[] = {p2x-p1x, p2y-p1y, p2z-p1z};
-   double r;
-   int i;
-   int tooFar;
-
-   tooFar = 0;
-   for (i=0;i<=2;i++)
-   {
-      if (diff[i] > limitDist)
-      {
-         tooFar = 1;
-         break;
-      }
-   }
-
-   if (tooFar)
-      {return 1000000000.0;}
-   else
-   {
-      r = diff[0]*diff[0] + diff[1]*diff[1] + diff[2]*diff[2];
-      if (r<limitDistSqrd)
-         {return r;}
-      else
-         {return 1000000000.0;}
-   }
-}
+#double CdistanceSqrd(double limitDistSqrd, double limitDist,
+#                     double p1x, double p1y, double p1z,
+#                     double p2x, double p2y, double p2z)
+#{
+#   double diff[] = {p2x-p1x, p2y-p1y, p2z-p1z};
+#   double r;
+#   int i;
+#   int tooFar;
+#
+#   tooFar = 0;
+#   for (i=0;i<=2;i++)
+#   {
+#      if (diff[i] > limitDist)
+#      {
+#         tooFar = 1;
+#         break;
+#      }
+#   }
+#
+#   if (tooFar)
+#      {return 1000000000.0;}
+#   else
+#   {
+#      r = diff[0]*diff[0] + diff[1]*diff[1] + diff[2]*diff[2];
+#      if (r<limitDistSqrd)
+#         {return r;}
+#      else
+#         {return 1000000000.0;}
+#   }
+#}
