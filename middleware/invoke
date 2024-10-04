@@ -1,0 +1,7 @@
+#!/bin/sh
+
+#
+# standard tool
+#
+/usr/bin/invoke_app "$@" -t olcao \
+                         -C rappture
