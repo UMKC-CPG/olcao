@@ -13,8 +13,8 @@ bin/
 /bin
 
 # Ignore directories that will contain compiled object files
-/build
-/build/*
+#/build
+#/build/*
 
 # ignore the olcao config file. Note that this file is checked in,
 # but the changes are ignored so that a user can set the variable
