@@ -1,0 +1,98 @@
+<?xml version="1.0"?>
+<run>
+    <tool>
+        <title>Orthogonalized Linear Combination of Atomic Orbitals</title>
+        <about>Run Simulation</about>
+        <command>python @tool/olcao.py @driver</command>
+    </tool>
+    <input>
+        <choice id="skeleton_dropdown">
+            <about>
+                <label>Input Structure</label>
+                <description>OLCAO skeleton input file.</description>
+            </about>
+            <option>
+                <about>
+                    <label>Diamond</label>
+                    <description>Diamond Structure</description>
+                </about>
+                <value>diamond</value>
+            </option>
+            <option>
+                <about>
+                    <label>Graphite</label>
+                    <description>Graphite Structure</description>
+                </about>
+                <value>graphite</value>
+            </option>
+            <option>
+                <about>
+                    <label>Silicon</label>
+                    <description>Silicon Structure</description>
+                </about>
+                <value>silicon</value>
+            </option>
+            <option>
+                <about>
+                    <label>Silica</label>
+                    <description>Silica (SiO2) Structure</description>
+                </about>
+                <value>silica</value>
+            </option>
+            <option>
+                <about>
+                    <label>Custom</label>
+                    <description>Custom Structure</description>
+                </about>
+                <value>custom</value>
+            </option>
+            <default>Silica</default>
+        </choice>
+        <string id="custom_skeleton">
+            <about>
+                <label>Custom Skeleton File</label>
+                <description>Create a custom skeleton input filee.</description>
+            </about>
+            <size>40x15</size>
+            <default>title
+Crystalline SiO2
+end
+cell
+4.913 4.913 5.404 90.0 90.0 120.0
+fract 2
+si1 0.46500000 0.00000000 0.33333333
+o1  0.41700000 0.27800000 0.22200000
+space 152_a
+supercell 1 1 1
+full</default>
+        </string>
+        <choice id="kpoints">
+           <about>
+                <label>KPoint Density</label>
+                <description>Reciprocal space integration</description>
+            </about>
+            <option>
+                <about>
+                    <label>Small Density</label>
+                    <description>A small number of KPoints</description>
+                </about>
+                <value>3 3 3</value>
+            </option>
+            <option>
+                <about>
+                    <label>Medium Density</label>
+                    <description>A modest number of KPoints</description>
+                </about>
+                <value>5 5 5</value>
+            </option>
+            <option>
+                <about>
+                    <label>High Density</label>
+                    <description>A fair number of KPoints</description>
+                </about>
+                <value>10 10 10</value>
+            </option>
+            <default>5 5 5</default>
+        </choice>
+    </input>
+</run>
