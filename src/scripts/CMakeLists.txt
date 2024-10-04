@@ -27,7 +27,9 @@ unpackOLCAODB uolcao
 vasp2skl
 xcMesh xyz2skl)
 
-set (MODULES AngleData.pm BondData.pm ElementData.pm StructureControl.pm MatrixReal.pm)
+set (MODULES AngleData.pm BondData.pm ElementData.pm StructureControl.pm)
+set (PERLMODULES MatrixReal.pm)
 
 install (PROGRAMS ${SCRIPTS} DESTINATION bin)
 install (PROGRAMS ${MODULES} DESTINATION "bin/perl5")
+install (PROGRAMS ${PERLMODULES} DESTINATION "bin/perl5/Math")

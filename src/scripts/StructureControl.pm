@@ -11,7 +11,7 @@ use lib "$OLCAO_BIN/perl5";
 use ElementData;
 use Math::Complex;
 use Math::Trig;
-use MatrixReal;
+use Math::MatrixReal;
 #use Inline (C => Config => cc => 'gcc',
 #            ld => 'gcc',
 #            inc => '-I/usr/include');
@@ -2741,8 +2741,7 @@ sub defineRotMatrix
    $c = cos($rotAngle);
    $s = sin($rotAngle);
    $t = 1.0-cos($rotAngle);
-#   $rotMatrix = new Math::MatrixReal(3,3);
-   $rotMatrix = new MatrixReal(3,3);
+   $rotMatrix = new Math::MatrixReal(3,3);
    $rotMatrix->assign(1,1,$t*$rot_ref->[1]**2 + $c);
    $rotMatrix->assign(1,2,$t*$rot_ref->[1]*$rot_ref->[2] + $s*$rot_ref->[3]);
    $rotMatrix->assign(1,3,$t*$rot_ref->[1]*$rot_ref->[3] - $s*$rot_ref->[2]);
@@ -2766,8 +2765,7 @@ sub rotateOnePoint
    my $rotPointVector;
 
    # Create a vector from the point position.
-# $pointVector = Math::MatrixReal->new_from_rows(
-   $pointVector = MatrixReal->new_from_rows(
+   $pointVector = Math::MatrixReal->new_from_rows(
          [[$point_ref->[1] - $orig_ref->[1],
            $point_ref->[2] - $orig_ref->[2],
            $point_ref->[3] - $orig_ref->[3]]]);
@@ -4284,8 +4282,7 @@ sub makeLatticeInv
       {$string = $string . "\[ $inLattice_ref->[$axisABC][1] ".
                               "$inLattice_ref->[$axisABC][2] ".
                               "$inLattice_ref->[$axisABC][3] \]\n";}
-#   $matrix = Math::MatrixReal->new_from_string($string);
-   $matrix = MatrixReal->new_from_string($string);
+   $matrix = Math::MatrixReal->new_from_string($string);
 
    # Invert it.
    $matrixInv = $matrix->inverse();
