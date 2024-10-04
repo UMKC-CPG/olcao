@@ -3,9 +3,9 @@
 #
 # standard tool
 #
-#middlewareDirectory=$(readlink -f $(dirname $0))
-#toolDirectory=$(realpath ${middlewareDirectory}/..)
-source ../.olcao/olcaorc
+middlewareDirectory=$(readlink -f $(dirname $0))
+toolDirectory=$(realpath ${middlewareDirectory}/..)
+. ../.olcao/olcaorc
 
 /usr/bin/invoke_app "$@" -t olcao \
                          -C rappture
