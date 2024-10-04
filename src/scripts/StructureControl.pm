@@ -12,11 +12,11 @@ use ElementData;
 use Math::Complex;
 use Math::Trig;
 use Math::MatrixReal;
-#use Inline (C => Config => cc => 'gcc',
-#            ld => 'gcc',
-#            inc => '-I/usr/include');
-use Inline C => 'DATA',
-           NAME => 'StructureControl';
+##use Inline (C => Config => cc => 'gcc',
+##            ld => 'gcc',
+##            inc => '-I/usr/include');
+#use Inline C => 'DATA',
+#           NAME => 'StructureControl';
 
 require Exporter;
 
@@ -1258,6 +1258,7 @@ ENDHELP
    #   be done again later after applying the spacegroup, supercell, and
    #   any reordering of the lattice parameters.
    &makeLatticeInv(\@realLattice,\@realLatticeInv,0);
+#   &makeInvOrRecipLattice(\@realLattice,\@realLatticeInv,0);
 
    # Obtain the sine function of each angle.
    &getAngleSine(\@angle);
@@ -1798,6 +1799,7 @@ sub readStruct
    # Obtain the inverse of the real lattice.  This must be done now so that
    #   we can get the abc coordinates of atoms if we are given xyz.
    &makeLatticeInv(\@realLattice,\@realLatticeInv,0);
+#   &makeInvOrRecipLattice(\@realLattice,\@realLatticeInv,0);
 
    # Obtain the sine function of each angle.
    &getAngleSine(\@angle);
@@ -2741,6 +2743,17 @@ sub defineRotMatrix
    $c = cos($rotAngle);
    $s = sin($rotAngle);
    $t = 1.0-cos($rotAngle);
+
+#   $rotMatrix[0][0] = $t*$rot_ref->[1]**2 + $c;
+#   $rotMatrix[0][1] = $t*$rot_ref->[1]*$rot_ref->[2] + $s*$rot_ref->[3];
+#   $rotMatrix[0][2] = $t*$rot_ref->[1]*$rot_ref->[3] - $s*$rot_ref->[2];
+#   $rotMatrix[1][0] = $t*$rot_ref->[1]*$rot_ref->[2] - $s*$rot_ref->[3];
+#   $rotMatrix[1][1] = $t*$rot_ref->[2]**2 + $c;
+#   $rotMatrix[1][2] = $t*$rot_ref->[2]*$rot_ref->[3] + $s*$rot_ref->[1];
+#   $rotMatrix[2][0] = $t*$rot_ref->[1]*$rot_ref->[3] + $s*$rot_ref->[2];
+#   $rotMatrix[2][1] = $t*$rot_ref->[2]*$rot_ref->[3] - $s*$rot_ref->[1];
+#   $rotMatrix[2][2] = $t*$rot_ref->[3]**2 + $c;
+
    $rotMatrix = new Math::MatrixReal(3,3);
    $rotMatrix->assign(1,1,$t*$rot_ref->[1]**2 + $c);
    $rotMatrix->assign(1,2,$t*$rot_ref->[1]*$rot_ref->[2] + $s*$rot_ref->[3]);
@@ -2765,12 +2778,28 @@ sub rotateOnePoint
    my $rotPointVector;
 
    # Create a vector from the point position.
+#   $pointVector[0] = $point_ref->[1] - $orig_ref->[1];
+#   $pointVector[1] = $point_ref->[2] - $orig_ref->[2];
+#   $pointVector[2] = $point_ref->[3] - $orig_ref->[3];
+
    $pointVector = Math::MatrixReal->new_from_rows(
          [[$point_ref->[1] - $orig_ref->[1],
            $point_ref->[2] - $orig_ref->[2],
            $point_ref->[3] - $orig_ref->[3]]]);
 
    # Apply the rotation matrix.
+#   foreach $xyz in (0..2)
+#   {
+#      $rotPointVector[$xyz] = $pointVector[0] * $rotMatrix[0][$xyz] +
+#                              $pointVector[1] * $rotMatrix[1][$xyz] +
+#                              $pointVector[2] * $rotMatrix[2][$xyz]
+#   }
+##   $rotPointVector[1] = $pointVector[0] * $rotMatrix[0][1] +
+##                        $pointVector[1] * $rotMatrix[1][1] +
+##                        $pointVector[2] * $rotMatrix[2][1]
+##   $rotPointVector[2] = $pointVector[0] * $rotMatrix[0][2] +
+##                        $pointVector[1] * $rotMatrix[1][2] +
+##                        $pointVector[2] * $rotMatrix[2][2]
    $rotPointVector = $pointVector->multiply($rotMatrix);
 
    # Save into the given point position.
@@ -3189,6 +3218,8 @@ sub prepSurface
    #   the process of identifying duplicate atoms in the new cell easier.
    &makeLatticeInv(\@realLattice,\@realLatticeInv,0);
    &makeLatticeInv(\@realLattice,\@recipLattice,1);
+#   &makeInvOrRecipLattice(\@realLattice,\@realLatticeInv,0);
+#   &makeInvOrRecipLattice(\@realLattice,\@recipLattice,1);
    &abcAlphaBetaGamma(\@realLattice,\@mag,\@angle,\@angleDeg,1);
 
    # At this point our new real lattice is defined with its periodic boundary
@@ -3494,6 +3525,8 @@ sub prepSurface
    # Reobtain the inverse lattice and the reciprocal lattice vectors.
    &makeLatticeInv(\@realLattice,\@realLatticeInv,0);
    &makeLatticeInv(\@realLattice,\@recipLattice,1);
+#   &makeInvOrRecipLattice(\@realLattice,\@realLatticeInv,0);
+#   &makeInvOrRecipLattice(\@realLattice,\@recipLattice,1);
    &abcAlphaBetaGamma(\@realLattice,\@mag,\@angle,\@angleDeg,1);
 
    # Obtain the directABC and fractABC coordinates of the atoms in the model
@@ -3729,6 +3762,8 @@ sub applySupercell
    # Reobtain the inverse lattice and the reciprocal lattice vectors.
    &makeLatticeInv(\@realLattice,\@realLatticeInv,0);
    &makeLatticeInv(\@realLattice,\@recipLattice,1);
+#   &makeInvOrRecipLattice(\@realLattice,\@realLatticeInv,0);
+#   &makeInvOrRecipLattice(\@realLattice,\@recipLattice,1);
    &abcAlphaBetaGamma(\@realLattice,\@mag,\@angle,\@angleDeg,1);
    &abcAlphaBetaGamma(\@recipLattice,\@magRecip,\@angleRecip,
                       \@angleDegRecip,0);
@@ -3933,6 +3968,7 @@ sub computeCrystalParameters
 
    # Generate the inverse of the real space lattice.
    &makeLatticeInv(\@realLattice,\@realLatticeInv,0);
+#   &makeInvOrRecipLattice(\@realLattice,\@realLatticeInv,0);
 
    # Demand that there be no atoms with negative positions and that the
    #   system be centered.
@@ -4277,7 +4313,7 @@ sub makeLatticeInv
    # Initialize the matrix string.
    $string = "";
 
-   # Copy the in lattice matrix to $matrix.
+   # Copy in the lattice matrix to $matrix.
    foreach $axisABC (1..3)
       {$string = $string . "\[ $inLattice_ref->[$axisABC][1] ".
                               "$inLattice_ref->[$axisABC][2] ".
@@ -4304,24 +4340,56 @@ sub makeLatticeInv
 }
 
 
-sub computeBZ_WS
-{
-   # Define passed parameters.
-   my $inLattice_ref = $_[0];
-   my $zoneLevel = $_[1];
-   my $zone_ref = $_[2];
-
-   # Define local variables.
-
-   # 
-}
-
 # Given some (real/reciprocal) set of lattice vectors, this subroutine will
 #   produce the lattice volume.
-sub makeLatticeVolume
+#sub makeInvOrRecipLattice
+#{
+#   # Define passed paramenters.
+#   my $inLattice_ref = $_[0];
+#   my $outLattice_ref = $_[0];
+#   my $piFactor = $_[2];
+#
+#   # Define local variables.
+#   my $i;
+#   my $iCycle1;
+#   my $iCycle2;
+#   my $j;
+#   my $jCycle1;
+#   my $jCycle2;
+#   my $cellVolume;
+#
+#   my $inCellVol;
+#   my $outCellVol;
+#
+#   for ($i=1;$i<=3;$i++)
+#   {
+#      $cellVolume = 0;
+#      $iCycle1 = ($i % 3) + 1;
+#      $iCycle2 = (($i+1) % 3) + 1;
+#      for ($j=1;$j<=3;$j++)
+#      {
+#         $jCycle1 = ($j % 3) + 1;
+#         $jCycle2 = (($j+1) % 3) + 1;
+#         $tempLattice[$j][$i] = $inLattice_ref->[$jCycle1][$iCycle1] *
+#                                $inLattice_ref->[$jCycle2][$iCycle2] -
+#                                $inLattice_ref->[$jCycle2][$iCycle1] *
+#                                $inLattice_ref->[$jCycle1][$iCycle2];
+#         $cellVolume = $cellVolume + $inLattice_ref->[$j][$i] *
+#                                     $tempLattice[$j][$i];
+#      }
+#      for ($j=1;$j<=3;$j++)
+#         {$tempLattice[$j][$i] = 2.0 * $pi * $tempLattice[$j][$i] / 
+#                                 $cellVolume;}  # In Angstroms!
+#   }
+#
+#   return $cellVolume;
+#}
+sub makeInvOrRecipLattice
 {
    # Define passed paramenters.
    my $inLattice_ref = $_[0];
+   my $outLattice_ref = $_[1];
+   my $piFactor = $_[2];
 
    # Define local variables.
    my $i;
@@ -4330,31 +4398,45 @@ sub makeLatticeVolume
    my $j;
    my $jCycle1;
    my $jCycle2;
-   my @tempLattice;
    my $cellVolume;
 
-   for ($i=1;$i<=3;$i++)
+   my $inCellVol;
+   my $outCellVol;
+
+   if ($piFactor == 1)
+      {$piFactor = 2.0*$pi;}
+   elsif ($piFactor == -1)
+      {$piFactor = 0.5/$pi;}
+   else
+      {$piFactor = 1;}
+
+   foreach $i (1..3)
    {
-      $cellVolume = 0;
+      $inCellVol = 0;
       $iCycle1 = ($i % 3) + 1;
       $iCycle2 = (($i+1) % 3) + 1;
-      for ($j=1;$j<=3;$j++)
+      foreach $j (1..3)
       {
          $jCycle1 = ($j % 3) + 1;
          $jCycle2 = (($j+1) % 3) + 1;
-         $tempLattice[$j][$i] = $inLattice_ref->[$jCycle1][$iCycle1] *
-                                $inLattice_ref->[$jCycle2][$iCycle2] -
-                                $inLattice_ref->[$jCycle2][$iCycle1] *
-                                $inLattice_ref->[$jCycle1][$iCycle2];
-         $cellVolume = $cellVolume + $inLattice_ref->[$j][$i] *
-                                     $tempLattice[$j][$i];
+         $outLattice_ref->[$j][$i] = $inLattice_ref->[$jCycle1][$iCycle1] *
+                                     $inLattice_ref->[$jCycle2][$iCycle2] -
+                                     $inLattice_ref->[$jCycle2][$iCycle1] *
+                                     $inLattice_ref->[$jCycle1][$iCycle2];
+         $inCellVol = $inCellVol + $outLattice_ref->[$j][$i] *
+                                   $inLattice_ref->[$j][$i];
       }
-      for ($j=1;$j<=3;$j++)
-         {$tempLattice[$j][$i] = 2.0 * $pi * $tempLattice[$j][$i] / 
-                                 $cellVolume;}  # In Angstroms!
+      foreach $j (1..3)
+      {
+         $outLattice_ref->[$j][$i] = $piFactor *
+               $outLattice_ref->[$j][$i] / $inCellVol;  # In Angstroms!
+      }
    }
 
-   return $cellVolume;
+   $inCellVol = abs($inCellVol); # Volume is always positive.
+   $outCellVol = ($piFactor)**3 / $inCellVol;
+
+   return ($inCellVol, $outCellVol);
 }
 
 
@@ -4707,6 +4789,9 @@ sub insertVacuum
    # Reobtain the inverse lattice and the reciprocal lattice vectors.
    &makeLatticeInv(\@realLattice,\@realLatticeInv,0);
    &makeLatticeInv(\@realLattice,\@recipLattice,1);
+#   &makeInvOrRecipLattice(\@realLattice,\@realLatticeInv,0);
+#   &makeInvOrRecipLattice(\@realLattice,\@recipLattice,1);
+
    &abcAlphaBetaGamma(\@realLattice,\@mag,\@angle,\@angleDeg,1);
 
    # Get new fractional ABC atomic positions based on the old direct space
@@ -5010,6 +5095,7 @@ sub makeOrtho
    #   we can get the abc coordinates of atoms if we are given xyz.  It must
    #   be done again later after applying the spacegroup and supercell.
    &makeLatticeInv(\@realLattice,\@realLatticeInv,0);
+#   &makeInvOrRecipLattice(\@realLattice,\@realLatticeInv,0);
 
    # Finally, it is necessary to make sure that all atoms in the model are
    #   within the simulation box.  This is done by first recomputing the
@@ -6525,27 +6611,27 @@ sub obtainAtomicInteraction
 
          # Calculate the direct distance between the two items.
 # This approach uses C Inline.
-         $distance = Cdistance($limitDistSqrd,$limitDist,
-               $item1XYZ_ref->[$item1][1],$item1XYZ_ref->[$item1][2],
-               $item1XYZ_ref->[$item1][3],$item2XYZ_ref->[$item2][1],
-               $item2XYZ_ref->[$item2][2],$item2XYZ_ref->[$item2][3]);
+#         $distance = Cdistance($limitDistSqrd,$limitDist,
+#               $item1XYZ_ref->[$item1][1],$item1XYZ_ref->[$item1][2],
+#               $item1XYZ_ref->[$item1][3],$item2XYZ_ref->[$item2][1],
+#               $item2XYZ_ref->[$item2][2],$item2XYZ_ref->[$item2][3]);
 
 # Perl code version of the Inline C.
-#         # Check that no axis is beyond the limit distance. If one is, then
-#         #   abandon this distance calculation.
-#         foreach $axis (1..3)
-#         {
-#            if ($diff[$axis] > $limitDist)
-#               {$distance = $bigReal; next;}
-#         }
-#
-#         # If we are within the limit distance, then compute the square root of
-#         #    the distance. Otherwise, abort.
-#         $distance = $diff[1]*$diff[1] + $diff[2]*$diff[2] + $diff[3]*$diff[3];
-#         if ($distance < $limitDistSqrd)
-#            {$distance = sqrt($distance);}
-#         else
-#            {$distance = $bigReal; next;}
+         # Check that no axis is beyond the limit distance. If one is, then
+         #   abandon this distance calculation.
+         foreach $axis (1..3)
+         {
+            if ($diff[$axis] > $limitDist)
+               {$distance = $bigReal; next;}
+         }
+
+         # If we are within the limit distance, then compute the square root of
+         #    the distance. Otherwise, abort.
+         $distance = $diff[1]*$diff[1] + $diff[2]*$diff[2] + $diff[3]*$diff[3];
+         if ($distance < $limitDistSqrd)
+            {$distance = sqrt($distance);}
+         else
+            {$distance = $bigReal; next;}
 
 # This check is used when Cdistance is called.
          # In the event that the distance between the two items is judged to
@@ -7929,38 +8015,38 @@ at your option, any later version of Perl 5 you may have available.
 
 =cut
 
-__C__
+#__C__
 
-double Cdistance(double limitDistSqrd, double limitDist,
-                 double p1x, double p1y, double p1z,
-                 double p2x, double p2y, double p2z)
-{
-   double diff[] = {p2x-p1x, p2y-p1y, p2z-p1z};
-   double r;
-   int i;
-   int tooFar;
-
-   tooFar = 0;
-   for (i=0;i<=2;i++)
-   {
-      if (diff[i] > limitDist)
-      {
-         tooFar = 1;
-         break;
-      }
-   }
-
-   if (tooFar)
-      {return 1000000000.0;}
-   else
-   {
-      r = diff[0]*diff[0] + diff[1]*diff[1] + diff[2]*diff[2];
-      if (r<limitDistSqrd)
-         {return sqrt(r);}
-      else
-         {return 1000000000.0;}
-   }
-}
+#double Cdistance(double limitDistSqrd, double limitDist,
+#                 double p1x, double p1y, double p1z,
+#                 double p2x, double p2y, double p2z)
+#{
+#   double diff[] = {p2x-p1x, p2y-p1y, p2z-p1z};
+#   double r;
+#   int i;
+#   int tooFar;
+#
+#   tooFar = 0;
+#   for (i=0;i<=2;i++)
+#   {
+#      if (diff[i] > limitDist)
+#      {
+#         tooFar = 1;
+#         break;
+#      }
+#   }
+#
+#   if (tooFar)
+#      {return 1000000000.0;}
+#   else
+#   {
+#      r = diff[0]*diff[0] + diff[1]*diff[1] + diff[2]*diff[2];
+#      if (r<limitDistSqrd)
+#         {return sqrt(r);}
+#      else
+#         {return 1000000000.0;}
+#   }
+#}
 
 #double CdistanceSqrd(double limitDistSqrd, double limitDist,
 #                     double p1x, double p1y, double p1z,
