@@ -1,0 +1,22 @@
+title
+'Wei, P. H.'
+_publ_section_title              'Die Bindung im Quarz'
+_journal_coden_ASTM              ZEKGAX
+_journal_name_full
+;
+Zeitschrift fuer Kristallographie, Kristallgeometrie, Kristallphysik,
+Kristallchemie (-144,1977)
+;
+_journal_page_first              355
+_journal_page_last               362
+_journal_volume                  92
+_journal_year                    1935
+end
+cell
+4.913 4.913 5.404 90.0 90.0 120.0
+fract 2
+Si1 0.46500000 0.00000000 0.33333333
+O1  0.41700000 0.27800000 0.22200000
+space 152_a
+supercell 1 1 1
+full

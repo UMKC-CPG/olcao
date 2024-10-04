@@ -1,0 +1,20 @@
+title
+'Wyckoff, R. W. G.'
+_publ_section_title
+;
+ Second edition. Interscience Publishers, New York, New York
+;
+_journal_name_full               'Crystal Structures'
+_journal_page_first              7
+_journal_page_last               83
+_journal_volume                  1
+_journal_year                    1963
+end
+cell
+2.456 2.456 6.696 90.0 90.0 120.0
+fract 2
+C1 0.00000 0.00000 0.00000
+C2 0.33333 0.66667 0.00000
+space 186
+supercell 1 1 1
+prim
