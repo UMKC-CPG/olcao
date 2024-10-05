@@ -1,11 +1,17 @@
 #!/bin/sh
 
-#
-# standard tool
-#
+# Get the name and path of this invoke script and replace any link
+#   with the full path name.
 middlewareDirectory=$(readlink -f $(dirname $0))
+
+# Get the name of the directory above the "middleware" directory. This
+#   should be the main tool directory.
 toolDirectory=$(realpath ${middlewareDirectory}/..)
+
+# Source the olcaorc script so that nanoHUB executions will have access to the
+#   olcao environment variables.
 . ${toolDirectory}/.olcao/olcaorc
 
+# Run the invoke_app script for olcao.
 /usr/bin/invoke_app "$@" -t olcao \
                          -C rappture
