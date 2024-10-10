@@ -61,6 +61,7 @@ class ScriptSettings():
         # Supporting display information
         self.title = default_rc["title"]
         self.print_command = default_rc["print_command"]
+        self.print_legend = default_rc["print_legend"]
 
         # Plot formats
         self.fig_format = default_rc["fig_format"]
@@ -165,6 +166,16 @@ class ScriptSettings():
                             dest='print_command', default=self.print_command,
                             help='Flag to print the command line. Default: ' +
                             f'{self.print_command}.')
+    
+        # Define the flag to print a legend into the figure.
+        if (self.print_legend == True):
+            store_action = "store_true"
+        else:
+            store_action = "store_false"
+        parser.add_argument('-pl', '--printlgd', action=store_action,
+                            dest='print_legend', default=self.print_legend,
+                            help='Flag to print a legend. Default: ' +
+                            f'{self.print_legend}.')
 
         # Define the page orientation.
         parser.add_argument('-po', '--pageo', dest='page_orientation',
@@ -445,6 +456,7 @@ class ScriptSettings():
         self.outfile = args.outfile.strip("'")
         self.title = args.title.strip("'")
         self.print_command = args.print_command
+        self.print_legend = args.print_legend
         self.page_orientation = args.page_orientation.strip("'")
         self.fig_format = args.fig_format.strip("'")
         self.fig_height = args.fig_height
@@ -987,6 +999,10 @@ def print_figs_subplots_curves(settings, x_col_headers, y_col_headers):
             if (curr_subplot_curve ==
                     settings.curves_per_subplot[wrap_subplot]):
 
+                # Add a legend to the previous subplot if needed.
+                if (settings.print_legend == True):
+                    s.write(f"plt.legend()\n")
+
                 # Update indices for tracking progress.
                 make_new_subplot = True  # Trigger creation of a new subplot
                 curr_subplot_curve = 1  # Reset count of curves for new subplot
@@ -1073,6 +1089,10 @@ def print_figs_subplots_curves(settings, x_col_headers, y_col_headers):
     if (settings.fig_type == "sybd"):
         draw_sybd_verticals(s)
         modify_sybd_horz_axis(s)
+
+    # Add a legend to the previous subplot if needed.
+    if (settings.print_legend == True):
+        s.write(f"plt.legend()\n")
 
     # Show the plot(s)
     s.write("plt.show()\n")

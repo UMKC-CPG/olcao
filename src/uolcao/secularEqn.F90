@@ -15,6 +15,7 @@ module O_SecularEquation
 
    ! Define module data.
    real (kind=double), allocatable, dimension (:,:,:) :: energyEigenValues
+         ! States, KPoints, Spin
 
 #ifndef GAMMA
    complex (kind=double), allocatable, dimension (:,:,:) :: valeVale
@@ -846,15 +847,26 @@ end subroutine update2AndApplyUJ
 
 subroutine shiftEnergyEigenValues(energyShift,numStates)
 
+!use O_KPoints
    ! Make sure that no funny variables are defined.
    implicit none
 
    ! Define dummy variables passed to this subroutine.
    real (kind=double) :: energyShift
    integer, intent (in) :: numStates
+!integer :: i,j,k
 
    ! Shift the energyEigenValues down by the requested about.
    energyEigenValues(:,:,:) = energyEigenValues(:,:,:) - energyShift
+
+!write(20,*) "energyShift:  ", energyShift
+!do i = 1, 1
+!do j = 1, numKPoints
+!do k = 1, numStates
+!write(20,*) i,j,k, energyEigenValues(k,j,i)
+!enddo
+!enddo
+!enddo
 
 end subroutine shiftEnergyEigenValues
 
@@ -1086,7 +1098,7 @@ subroutine readDataSCF(h,i,numStates,matrixCode)
    ! Read the wave functions for this kpoint from the datasets into
    !   the valeVale matrix.  If numKPoints==1, the wave functions should
    !   already be in the valeVale(1:valeDim,1:numStates) matrix.
-   if (numKPoints > 1) then
+!   if (numKPoints > 1) then
 
       ! Allocate space to read the wave functions.
       allocate (tempRealValeVale (valeDim,numStates))
@@ -1099,7 +1111,7 @@ subroutine readDataSCF(h,i,numStates,matrixCode)
       ! Deallocate the space to read the wave functions.
       deallocate (tempRealValeVale)
       deallocate (tempImagValeVale)
-   endif
+!   endif
 
 #endif
 
@@ -1189,7 +1201,7 @@ subroutine readDataPSCF(h,i,numStates,matrixCode)
    !   already be in the valeVale(1:valeDim,1:numStates) matrix, unless it
    !   was already computed once in which case we just have not yet read it
    !   in (same for the eigen values).
-   if (numKPoints > 1) then
+!   if (numKPoints > 1) then
 
       ! Allocate space to read the complex wave function.
       allocate (tempRealValeVale (valeDim,numStates))
@@ -1203,7 +1215,7 @@ subroutine readDataPSCF(h,i,numStates,matrixCode)
       ! Deallocate the space to read the complex wave function.
       deallocate (tempRealValeVale)
       deallocate (tempImagValeVale)
-   endif
+!   endif
 #else
    ! Read the real wave function from the datasets.
    call readMatrixGamma(eigenVectorsPSCF_did(1,i,h),&

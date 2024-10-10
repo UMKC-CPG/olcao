@@ -780,9 +780,14 @@ subroutine printSYBD
    use O_KPoints,         only: numPathKP, pathKPointMag
    use O_Populate,        only: occupiedEnergy, populateStates
    use O_SecularEquation, only: energyEigenValues, shiftEnergyEigenValues
+   use O_AtomicSites
+   use O_AtomicTypes
+   use O_PotTypes
 
    ! Define local variables.
-   integer :: i,j
+   integer :: i,j,k,l
+   integer :: basisFnCount
+   integer :: currAtomType
    character*7 :: filename
 
    ! Obtain the fermi energy with the populate energy levels subroutine.
@@ -815,6 +820,38 @@ subroutine printSYBD
       ! Close the output file.
       close (30+i)
 
+      ! Create the filename.
+      write (filename,fmt="(a5,i2)") "fort.",32+i
+
+      ! Open a file that will contain the valence dimension meta-data.
+      open(unit=32+i,file=filename,status='new',form='formatted')
+
+      ! Print a metadata string for each n,l,m basis function.
+      basisFnCount = 0
+      do j = 1, numAtomSites
+         currAtomType = atomSites(j)%atomTypeAssn
+         do k = 1, atomTypes(currAtomType)%numValeRadialFns
+            do l = -atomTypes(currAtomType)%valeQN_lList(k), &
+                  & atomTypes(currAtomType)%valeQN_lList(k)
+               basisFnCount = basisFnCount + 1
+               write (32,fmt="(i5)",advance="NO") basisFnCount
+               write (32,fmt="(i5)",advance="NO") j
+               write (32,fmt="(a3)",advance="NO") atomTypes(currAtomType)%elementName
+               write (32,fmt="(i5)",advance="NO") potTypes(currAtomType)%nucCharge
+               write (32,fmt="(i5)",advance="NO") atomTypes(currAtomType)%elementID
+               write (32,fmt="(i5)",advance="NO") atomTypes(currAtomType)%speciesID
+               write (32,fmt="(i5)",advance="NO") atomTypes(currAtomType)%typeID
+               write (32,fmt="(i5)",advance="NO") atomTypes(currAtomType)%valeQN_nList(k)
+               write (32,fmt="(i5)",advance="NO") atomTypes(currAtomType)%valeQN_lList(k)
+               write (32,fmt="(i5)",advance="NO") l
+               write (32,fmt="(3e15.6)",advance="NO") atomSites(i)%cartPos(1:3)
+               
+            enddo
+         enddo
+      enddo
+
+      ! Close the meta data file.
+      close(32+i)
    enddo
 
 end subroutine printSYBD

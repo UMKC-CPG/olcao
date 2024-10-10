@@ -497,6 +497,8 @@ subroutine printSpectrumPOPTC (specType,numEnergyPoints,spectrumPOPTC,&
                      & atomTypes(i)%elementName
                write (unitBase+h,fmt="(a15,a3)") 'ELEMENT_2_NAME ',&
                      & atomTypes(k)%elementName
+               write (unitBase+h,fmt="(a7,i6)") 'TYPE_1 ',i
+               write (unitBase+h,fmt="(a7,i6)") 'TYPE_2 ',k
                write (unitBase+h,fmt="(a12)") 'COL_LABELS 4'
                write (unitBase+h,fmt="(a11)") 'TOTAL x y z'
 
@@ -533,6 +535,8 @@ subroutine printSpectrumPOPTC (specType,numEnergyPoints,spectrumPOPTC,&
                      & atomTypes(currentTypeI)%elementName
                write (unitBase+h,fmt="(a15,a3)") 'ELEMENT_2_NAME ',&
                      & atomTypes(currentTypeF)%elementName
+               write (unitBase+h,fmt="(a7,i6)") 'TYPE_1 ',currentTypeI
+               write (unitBase+h,fmt="(a7,i6)") 'TYPE_2 ',currentTypeF
                write (unitBase+h,fmt="(a12)") 'COL_LABELS 4'
                write (unitBase+h,fmt="(a11)") 'TOTAL x y z'
 
@@ -577,6 +581,8 @@ subroutine printSpectrumPOPTC (specType,numEnergyPoints,spectrumPOPTC,&
                                  & trim(atomTypes(l)%elementName), &
                                  & "_",atomTypes(l)%numQN_lCoreRadialFns(m) &
                                  & + n + m - 1, QN_lLetter(m)
+                           write (unitBase+h,fmt="(a7,i6)") 'TYPE_1 ',i
+                           write (unitBase+h,fmt="(a7,i6)") 'TYPE_2 ',l
                            write (unitBase+h,fmt="(a12)") 'COL_LABELS 4'
                            write (unitBase+h,fmt="(a11)") 'TOTAL x y z'
 
@@ -637,6 +643,10 @@ subroutine printSpectrumPOPTC (specType,numEnergyPoints,spectrumPOPTC,&
                                       & atomTypes(currentTypeF)%&
                                       & numQN_lCoreRadialFns(n)+o+n-1, &
                                       & QN_lLetter(n),"_",QN_mLetter(n,p)
+                                 write (unitBase+h,fmt="(a7,i6)") 'TYPE_1 ',&
+                                       & currentTypeI
+                                 write (unitBase+h,fmt="(a7,i6)") 'TYPE_2 ',&
+                                       & currentTypeF
                                  write (unitBase+h,fmt="(a12)") 'COL_LABELS 4'
                                  write (unitBase+h,fmt="(a11)") 'TOTAL x y z'
 

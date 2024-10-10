@@ -12,6 +12,7 @@ def parameters_and_defaults():
             "outfile" : "Xscript.py",  # -o; If not given, X=display
             "title" : "Plotted by " + os.getenv('USER'),  # -t
             "print_command" : True,  # -pc
+            "print_legend" : True,  # -pl
             "page_orientation" : "portrait",  # -po "portrait"; "landscape"
             "fig_format" : "letter",  # -ff "letter"; "A4"
             "fig_height" : 80,  # -fh

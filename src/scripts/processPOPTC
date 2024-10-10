@@ -67,6 +67,8 @@ my $poptcLines;
 my @energyPoint; # The values of the energy at each point on the energy scale
 my @element1;
 my @element2;
+my @type1;
+my @type2;
 my @pairKKCFactor;
 
 # Globally used temporary variables and loop variables.
@@ -228,13 +230,15 @@ sub getEps2RawMetaData
 
    $element1[0] = "";
    $element2[0] = "";
+   $type1[0] = "";
+   $type2[0] = "";
 
    # Get a list of the element name pairs.
    $j = 1;
    while ($line=<EPS2RAW>)
    {
 
-      # Get the element names for element 1
+      # Get the element names
       if ($line =~ /ELEMENT_1_NAME/)
       {
          #Get element one name
@@ -245,6 +249,17 @@ sub getEps2RawMetaData
          $line=<EPS2RAW>;
          chomp ($line);
          $element2[$j]=$line;
+
+         # Get the type numbers
+         #Get type 1 number
+         $line=<EPS2RAW>;
+         chomp ($line);
+         $type1[$j]=$line;
+
+         # Get type 2 number
+         $line=<EPS2RAW>;
+         chomp ($line);
+         $type2[$j]=$line;
 
          $j = $j + 1;
       }
@@ -393,6 +408,8 @@ sub copyData
    print $fileHandleRaw ("SEQUENCE_NUM ", $i, "\n");
    print $fileHandleRaw ($element1[$i],"\n");
    print $fileHandleRaw ($element2[$i],"\n");
+   print $fileHandleRaw ($type1[$i],"\n");
+   print $fileHandleRaw ($type2[$i],"\n");
    print $fileHandleRaw ("COL_LABELS $numColLabels\n");
    print $fileHandleRaw ("$label\n");
 
