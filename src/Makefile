@@ -3,7 +3,8 @@ all:
 install:
 	cd ../build/release
 	export FC=hdf5
-	cmake3 ../..
+	use -p cmake-3.6.3
+	cmake ../..
 	make install
 	unpackOLCAODB
 
