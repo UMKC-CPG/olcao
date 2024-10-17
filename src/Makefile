@@ -1,11 +1,12 @@
 all:
 
 install:
-	cd ../build/release
-	export FC=hdf5
-	use -p cmake-3.6.3
-	cmake ../..
-	make install
+	. ../.olcao/olcaorc && \
+	cd ../build/release && \
+	export FC=h5fc && \
+	export PATH=/apps/share64/debian7/cmake/cmake-3.6.3/bin:${PATH} && \
+	cmake ../.. && \
+	make install && \
 	unpackOLCAODB
 
 clean:
