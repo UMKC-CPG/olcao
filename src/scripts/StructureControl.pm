@@ -132,7 +132,7 @@ my @bZoneVertices;   # Array holding vertices of each BZ.
 
 # Extra lattice data and replicated cell data.
 my $doFullCell;      # Flag requesting to use the conventional (full) cell.
-my $doCellShift;     # Flag requesting all atoms be forced into central cell.
+my $doNotCellShift;  # Flag requesting no atoms be forced into central cell.
 my $spaceGroup;      # Space group name or number for this system from skel.
 my $spaceGroupNum;   # Space group root number for this system.
 my $spaceGroupSubNum;# Space group root sub number for this system (a=1, etc.).
@@ -293,8 +293,8 @@ sub getSpeciesListRef
 sub getDoFullCell
    {return $doFullCell;}
 
-sub getDoCellShift
-   {return $doCellShift;}
+sub getDoNotCellShift
+   {return $doNotCellShift;}
 
 sub getRealLatticeRef
    {return \@realLattice;}
@@ -715,7 +715,7 @@ sub reset
    undef $realCellVolume;
    undef $recipCellVolume;
    undef $doFullCell;
-   undef $doCellShift;
+   undef $doNotCellShift;
    undef $spaceGroup;
    undef $spaceGroupNum;
    undef $spaceGroupSubNum;
@@ -1286,9 +1286,9 @@ ENDHELP
          # Check if a flag is present indicating that the atoms should be
          #   shifted into the central cell or permitted to remain outside.
          if ($#values > 1)
-            {$doCellShift = $values[2];}
+            {$doNotCellShift = $values[2];}
          else
-            {$doCellShift = 0;}
+            {$doNotCellShift = 0;}
 
          # Read the information for each atom. Note that we have applied here
          #   Thoreau's fourth theory of adaptation which states: That's not a
@@ -3627,9 +3627,9 @@ sub applySpaceGroup
             " @{$fractABC[$atom]}\n");
    }
 
-   # Add a flag indicating whether to force all atoms to be shifted inside
+   # Add a flag indicating whether to prevent all atoms to be shifted inside
    #   the given cell or not.
-   if ($doCellShift == 1)
+   if ($doNotCellShift == 1)
       {push (@applySpaceGroupIn,"1\n");}
    else
       {push (@applySpaceGroupIn,"0\n");}
