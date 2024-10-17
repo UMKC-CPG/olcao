@@ -48,18 +48,31 @@ subroutine printXDMFMetaFile
    ! Write the header for this file opening the XML tags.
    write (78,fmt="(a)") "<?xml version=""1.0"" encoding=""utf-8""?>"
    write (78,fmt="(a)") "<!DOCTYPE Xdmf SYSTEM ""Xdmf.dtd"" []>"
-   write (78,fmt="(a)") "<Xdmf Version=""3.0"" xmlns:xi=""[http://www.w3.org/2001/XInclude]"">"
+   write (78,fmt="(a)") "<Xdmf Version=""3.0"" " // &
+         & "xmlns:xi=""[http://www.w3.org/2001/XInclude]"">"
    write (78,fmt="(a)") "  <Domain>"
    write (78,fmt="(a)") "    <Grid Name=""Grid"" GridType=""Uniform"">"
-   write (78,fmt="(a)") "      <Geometry Name=""Geometry"" GeometryType=""ORIGIN_DXDYDZ"">"
-   write (78,fmt="(a)") "        <DataItem NumberType=""Float"" Dimensions=""3"" Format=""XML"" Precision=""8"">0 0 0</DataItem>"
-   write (78,fmt="(a)") "        <DataItem NumberType=""Float"" Dimensions=""3"" Format=""XML"" Precision=""8"">1 1 1</DataItem>"
+   write (78,fmt="(a)") "      <Geometry Name=""Geometry"" " // &
+         & "GeometryType=""VXVYVZ"">"
+   write (78,fmt="(a)") "        <DataItem NumberType=""Float"" " // &
+         & "Dimensions=""",numMeshPoints(1),""" Format=""HDF""> " // &
+         & "field.hdf5:/mesh/meshX</DataItem>"
+   write (78,fmt="(a)") "        <DataItem NumberType=""Float"" " // &
+         & "Dimensions=""",numMeshPoints(2),""" Format=""HDF""> " // &
+         & "field.hdf5:/mesh/meshY</DataItem>"
+   write (78,fmt="(a)") "        <DataItem NumberType=""Float"" " // &
+         & "Dimensions=""",numMeshPoints(3),""" Format=""HDF""> " // &
+         & "field.hdf5:/mesh/meshZ</DataItem>"
    write (78,fmt="(a)") "      </Geometry>"
-   write (78,fmt="(a,3i10,a)") "      <Topology Dimensions=""",numMeshPoints(:),""" TopologyType=""3DCoRectMesh""/>"
+!   write (78,fmt="(a,3i10,a)") "      <Topology Dimensions=""", &
+!         & numMeshPoints(:),""" TopologyType=""3DCoRectMesh""/>"
    do i = 1, 12
-      write (78,fmt="(a,a,a)") "      <Attribute Center=""Node"" Name=""",dataSetNames(i),""" AttributeType=""Scalar"">"
-      write (78,ADVANCE="NO",fmt="(a,3i10)") "        <DataItem NumberType=""Float"" Dimensions=""",numMeshPoints(:)
-      write (78,fmt="(a,a,a,a)") """ Format=""HDF"">field.hdf5:",groupNames(i),dataSetNames(i),"</DataItem>"
+      write (78,fmt="(a,a,a)") "      <Attribute Center=""Node"" Name=""", &
+            & dataSetNames(i),""" AttributeType=""Scalar"">"
+      write (78,ADVANCE="NO",fmt="(a,3i10)") "        <DataItem " // &
+            & "NumberType=""Float"" Dimensions=""",numMeshPoints(:)
+      write (78,fmt="(a,a,a,a)") """ Format=""HDF"">field.hdf5:", &
+            & groupNames(i),dataSetNames(i),"</DataItem>"
       write (78,fmt="(a)") "      </Attribute>"
    enddo
    write (78,fmt="(a)") "    </Grid>"

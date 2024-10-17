@@ -1127,6 +1127,7 @@ sub manageInput
 
 sub getPotCoeffs
 {
+print STDOUT "Got here 1\n";
    # Define passed parameters.
    my $taskBasis = $_[0];
 
@@ -1570,8 +1571,6 @@ sub manageOutput
    }
    elsif ($jobID % 100 == 10) # Field
    {
-      &move("fort.8","$edge_$field$basis.SCFV.8");
-
       # If the profile files were created, then move them.
       if (-e "fort.30")
       {
@@ -1606,7 +1605,7 @@ sub manageOutput
       if (-e "fort.78")
       {
          &move("fort.78","$proj_home/$edge_$field$basis$xdmf3");
-         &move("$field$basis$hdf","$edge_$field$basis$hdf");
+         # &move("$field$basis$hdf","$edge_$field$basis$hdf");
       }
    }
    elsif ($jobID == 300) # Local environment

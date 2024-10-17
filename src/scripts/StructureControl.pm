@@ -9,9 +9,9 @@ use POSIX qw(ceil floor);
 use Env;
 use lib "$OLCAO_BIN/perl5";
 use ElementData;
-use Math::Complex;
-use Math::Trig;
-use Math::MatrixReal;
+use Math::Complex; # Forgot what used for if anything.
+use Math::Trig; # atan2, acos, 
+#use Math::MatrixReal;
 ##use Inline (C => Config => cc => 'gcc',
 ##            ld => 'gcc',
 ##            inc => '-I/usr/include');
@@ -132,6 +132,7 @@ my @bZoneVertices;   # Array holding vertices of each BZ.
 
 # Extra lattice data and replicated cell data.
 my $doFullCell;      # Flag requesting to use the conventional (full) cell.
+my $doCellShift;     # Flag requesting all atoms be forced into central cell.
 my $spaceGroup;      # Space group name or number for this system from skel.
 my $spaceGroupNum;   # Space group root number for this system.
 my $spaceGroupSubNum;# Space group root sub number for this system (a=1, etc.).
@@ -155,7 +156,7 @@ my $maxNumAtomAlphas;
 my $maxNumValeStates; # Largest number of valence states from any given atom.
 
 # Manipulation data.
-my $rotMatrix;    # Three dimensional rotation matrix.
+my @rotMatrix;    # Three dimensional rotation matrix.
 
 # Control parameters
 my $limitDist;    # Distance threshold for taking some requested action.
@@ -291,6 +292,9 @@ sub getSpeciesListRef
 
 sub getDoFullCell
    {return $doFullCell;}
+
+sub getDoCellShift
+   {return $doCellShift;}
 
 sub getRealLatticeRef
    {return \@realLattice;}
@@ -711,6 +715,7 @@ sub reset
    undef $realCellVolume;
    undef $recipCellVolume;
    undef $doFullCell;
+   undef $doCellShift;
    undef $spaceGroup;
    undef $spaceGroupNum;
    undef $spaceGroupSubNum;
@@ -729,7 +734,7 @@ sub reset
    undef $maxNumPotAlphas;
    undef $maxNumAtomAlphas;
    undef $maxNumValeStates;
-   undef $rotMatrix;
+   undef @rotMatrix;
    undef $limitDist;
    undef $limitDistSqrd;
    $borderZone=0;
@@ -1257,8 +1262,8 @@ ENDHELP
    #   we can get the abc coordinates of atoms if we are given xyz.  It must
    #   be done again later after applying the spacegroup, supercell, and
    #   any reordering of the lattice parameters.
-   &makeLatticeInv(\@realLattice,\@realLatticeInv,0);
-#   &makeInvOrRecipLattice(\@realLattice,\@realLatticeInv,0);
+#   &makeLatticeInv(\@realLattice,\@realLatticeInv,0);
+   &makeInvOrRecipLattice(\@realLattice,\@realLatticeInv,0);
 
    # Obtain the sine function of each angle.
    &getAngleSine(\@angle);
@@ -1277,6 +1282,13 @@ ENDHELP
 
          # Save the number of atoms in the system
          $numAtoms = $values[1];
+
+         # Check if a flag is present indicating that the atoms should be
+         #   shifted into the central cell or permitted to remain outside.
+         if ($#values > 1)
+            {$doCellShift = $values[2];}
+         else
+            {$doCellShift = 0;}
 
          # Read the information for each atom. Note that we have applied here
          #   Thoreau's fourth theory of adaptation which states: That's not a
@@ -1798,8 +1810,8 @@ sub readStruct
 
    # Obtain the inverse of the real lattice.  This must be done now so that
    #   we can get the abc coordinates of atoms if we are given xyz.
-   &makeLatticeInv(\@realLattice,\@realLatticeInv,0);
-#   &makeInvOrRecipLattice(\@realLattice,\@realLatticeInv,0);
+#   &makeLatticeInv(\@realLattice,\@realLatticeInv,0);
+   &makeInvOrRecipLattice(\@realLattice,\@realLatticeInv,0);
 
    # Obtain the sine function of each angle.
    &getAngleSine(\@angle);
@@ -2744,26 +2756,28 @@ sub defineRotMatrix
    $s = sin($rotAngle);
    $t = 1.0-cos($rotAngle);
 
-#   $rotMatrix[0][0] = $t*$rot_ref->[1]**2 + $c;
-#   $rotMatrix[0][1] = $t*$rot_ref->[1]*$rot_ref->[2] + $s*$rot_ref->[3];
-#   $rotMatrix[0][2] = $t*$rot_ref->[1]*$rot_ref->[3] - $s*$rot_ref->[2];
-#   $rotMatrix[1][0] = $t*$rot_ref->[1]*$rot_ref->[2] - $s*$rot_ref->[3];
-#   $rotMatrix[1][1] = $t*$rot_ref->[2]**2 + $c;
-#   $rotMatrix[1][2] = $t*$rot_ref->[2]*$rot_ref->[3] + $s*$rot_ref->[1];
-#   $rotMatrix[2][0] = $t*$rot_ref->[1]*$rot_ref->[3] + $s*$rot_ref->[2];
-#   $rotMatrix[2][1] = $t*$rot_ref->[2]*$rot_ref->[3] - $s*$rot_ref->[1];
-#   $rotMatrix[2][2] = $t*$rot_ref->[3]**2 + $c;
+   $rotMatrix[1][1] = $t*$rot_ref->[1]**2 + $c;
+   $rotMatrix[1][2] = $t*$rot_ref->[1]*$rot_ref->[2] + $s*$rot_ref->[3];
+   $rotMatrix[1][3] = $t*$rot_ref->[1]*$rot_ref->[3] - $s*$rot_ref->[2];
 
-   $rotMatrix = new Math::MatrixReal(3,3);
-   $rotMatrix->assign(1,1,$t*$rot_ref->[1]**2 + $c);
-   $rotMatrix->assign(1,2,$t*$rot_ref->[1]*$rot_ref->[2] + $s*$rot_ref->[3]);
-   $rotMatrix->assign(1,3,$t*$rot_ref->[1]*$rot_ref->[3] - $s*$rot_ref->[2]);
-   $rotMatrix->assign(2,1,$t*$rot_ref->[1]*$rot_ref->[2] - $s*$rot_ref->[3]);
-   $rotMatrix->assign(2,2,$t*$rot_ref->[2]**2 + $c);
-   $rotMatrix->assign(2,3,$t*$rot_ref->[2]*$rot_ref->[3] + $s*$rot_ref->[1]);
-   $rotMatrix->assign(3,1,$t*$rot_ref->[1]*$rot_ref->[3] + $s*$rot_ref->[2]);
-   $rotMatrix->assign(3,2,$t*$rot_ref->[2]*$rot_ref->[3] - $s*$rot_ref->[1]);
-   $rotMatrix->assign(3,3,$t*$rot_ref->[3]**2 + $c);
+   $rotMatrix[2][1] = $t*$rot_ref->[1]*$rot_ref->[2] - $s*$rot_ref->[3];
+   $rotMatrix[2][2] = $t*$rot_ref->[2]**2 + $c;
+   $rotMatrix[2][3] = $t*$rot_ref->[2]*$rot_ref->[3] + $s*$rot_ref->[1];
+
+   $rotMatrix[3][1] = $t*$rot_ref->[1]*$rot_ref->[3] + $s*$rot_ref->[2];
+   $rotMatrix[3][2] = $t*$rot_ref->[2]*$rot_ref->[3] - $s*$rot_ref->[1];
+   $rotMatrix[3][3] = $t*$rot_ref->[3]**2 + $c;
+
+#   $rotMatrix = new Math::MatrixReal(3,3);
+#   $rotMatrix->assign(1,1,$t*$rot_ref->[1]**2 + $c);
+#   $rotMatrix->assign(1,2,$t*$rot_ref->[1]*$rot_ref->[2] + $s*$rot_ref->[3]);
+#   $rotMatrix->assign(1,3,$t*$rot_ref->[1]*$rot_ref->[3] - $s*$rot_ref->[2]);
+#   $rotMatrix->assign(2,1,$t*$rot_ref->[1]*$rot_ref->[2] - $s*$rot_ref->[3]);
+#   $rotMatrix->assign(2,2,$t*$rot_ref->[2]**2 + $c);
+#   $rotMatrix->assign(2,3,$t*$rot_ref->[2]*$rot_ref->[3] + $s*$rot_ref->[1]);
+#   $rotMatrix->assign(3,1,$t*$rot_ref->[1]*$rot_ref->[3] + $s*$rot_ref->[2]);
+#   $rotMatrix->assign(3,2,$t*$rot_ref->[2]*$rot_ref->[3] - $s*$rot_ref->[1]);
+#   $rotMatrix->assign(3,3,$t*$rot_ref->[3]**2 + $c);
 }
 
 
@@ -2774,38 +2788,41 @@ sub rotateOnePoint
    my $orig_ref  = $_[1];
 
    # Define local variables.
-   my $pointVector;
-   my $rotPointVector;
+   my @pointVector;
+   my @rotPointVector;
+   my $xyz;
 
    # Create a vector from the point position.
-#   $pointVector[0] = $point_ref->[1] - $orig_ref->[1];
-#   $pointVector[1] = $point_ref->[2] - $orig_ref->[2];
-#   $pointVector[2] = $point_ref->[3] - $orig_ref->[3];
+   foreach $xyz (1..3)
+      {$pointVector[$xyz] = $point_ref->[$xyz] - $orig_ref->[$xyz];}
 
-   $pointVector = Math::MatrixReal->new_from_rows(
-         [[$point_ref->[1] - $orig_ref->[1],
-           $point_ref->[2] - $orig_ref->[2],
-           $point_ref->[3] - $orig_ref->[3]]]);
+#   $pointVector = Math::MatrixReal->new_from_rows(
+#         [[$point_ref->[1] - $orig_ref->[1],
+#           $point_ref->[2] - $orig_ref->[2],
+#           $point_ref->[3] - $orig_ref->[3]]]);
 
-   # Apply the rotation matrix.
-#   foreach $xyz in (0..2)
-#   {
-#      $rotPointVector[$xyz] = $pointVector[0] * $rotMatrix[0][$xyz] +
-#                              $pointVector[1] * $rotMatrix[1][$xyz] +
-#                              $pointVector[2] * $rotMatrix[2][$xyz]
-#   }
-##   $rotPointVector[1] = $pointVector[0] * $rotMatrix[0][1] +
-##                        $pointVector[1] * $rotMatrix[1][1] +
-##                        $pointVector[2] * $rotMatrix[2][1]
-##   $rotPointVector[2] = $pointVector[0] * $rotMatrix[0][2] +
-##                        $pointVector[1] * $rotMatrix[1][2] +
-##                        $pointVector[2] * $rotMatrix[2][2]
-   $rotPointVector = $pointVector->multiply($rotMatrix);
+   # Apply the rotation matrix. (pV_x, pV_y, pV_z) x rM(3x3)
+   foreach $xyz (1..3)
+   {
+      $rotPointVector[$xyz] = $pointVector[1] * $rotMatrix[1][$xyz] +
+                              $pointVector[2] * $rotMatrix[2][$xyz] +
+                              $pointVector[3] * $rotMatrix[3][$xyz]
+   }
+#   $rotPointVector[1] = $pointVector[0] * $rotMatrix[0][1] +
+#                        $pointVector[1] * $rotMatrix[1][1] +
+#                        $pointVector[2] * $rotMatrix[2][1]
+#   $rotPointVector[2] = $pointVector[0] * $rotMatrix[0][2] +
+#                        $pointVector[1] * $rotMatrix[1][2] +
+#                        $pointVector[2] * $rotMatrix[2][2]
+
+#   $rotPointVector = $pointVector->multiply($rotMatrix);
 
    # Save into the given point position.
-   $point_ref->[1] = $rotPointVector->element(1,1) + $orig_ref->[1];
-   $point_ref->[2] = $rotPointVector->element(1,2) + $orig_ref->[2];
-   $point_ref->[3] = $rotPointVector->element(1,3) + $orig_ref->[3];
+#   $point_ref->[1] = $rotPointVector->element(1,1) + $orig_ref->[1];
+#   $point_ref->[2] = $rotPointVector->element(1,2) + $orig_ref->[2];
+#   $point_ref->[3] = $rotPointVector->element(1,3) + $orig_ref->[3];
+   foreach $xyz (1..3)
+      {$point_ref->[$xyz] = $rotPointVector[$xyz] + $orig_ref->[$xyz];}
 }
 
 sub rotateAllAtoms
@@ -2844,7 +2861,7 @@ sub rotateAllAtoms
    }
 
    # It is almost certain that some atoms will be outside the simulation box
-   #   after the rotation.  These need to be properly addressed since we cannot
+   #   after the rotation. These need to be properly addressed since we cannot
    #   simply shift them to the other side of the box and claim the application
    #   of periodic boundary conditions.  We must instead do the following:
    # (1) Restore the atom to its original position.
@@ -3216,10 +3233,10 @@ sub prepSurface
    #   and that these will need to be re-obtained later after the lattice
    #   goes through a series of rotations later. We do this now though to make
    #   the process of identifying duplicate atoms in the new cell easier.
-   &makeLatticeInv(\@realLattice,\@realLatticeInv,0);
-   &makeLatticeInv(\@realLattice,\@recipLattice,1);
-#   &makeInvOrRecipLattice(\@realLattice,\@realLatticeInv,0);
-#   &makeInvOrRecipLattice(\@realLattice,\@recipLattice,1);
+#   &makeLatticeInv(\@realLattice,\@realLatticeInv,0);
+#   &makeLatticeInv(\@realLattice,\@recipLattice,1);
+   &makeInvOrRecipLattice(\@realLattice,\@realLatticeInv,0);
+   &makeInvOrRecipLattice(\@realLattice,\@recipLattice,1);
    &abcAlphaBetaGamma(\@realLattice,\@mag,\@angle,\@angleDeg,1);
 
    # At this point our new real lattice is defined with its periodic boundary
@@ -3432,13 +3449,29 @@ sub prepSurface
    @xAxis  = (0,1,0,0); # Uses indices 1..3.
    @rotAxis = &getPlaneNormal(\@origin,\@xAxis,\@uvw);
 
-   # Make the rotation vector a unit vector.
-   $normalizer = sqrt($rotAxis[1]**2 + $rotAxis[2]**2 + $rotAxis[3]**2);
-   foreach $xyzAxis (1..3)
-      {$rotAxis[$xyzAxis] /= $normalizer;}
+   # In the event that the xAxis and uvw vector are co-linear, then no
+   #   rotation is needed. We can make that determination by looking at the
+   #   magnitude of the rotation axis (i.e., the normalizer). If it is zero
+   #   then they are co-linear.
 
-   # Compute the angle of rotation between the real space vector and the x-axis.
-   $rotAngle = &getVectorAngle(\@uvw,\@xAxis);
+   # Compute a factor to normalize the rotation axis.
+   $normalizer = sqrt($rotAxis[1]**2 + $rotAxis[2]**2 + $rotAxis[3]**2);
+
+   # If the normalizer is non-zero, then some rotation will be done. If it
+   #   is zero, then just set the rotation angle to zero. (This will cause
+   #   the rotation matrix to be equal to the identity matrix.)
+   if ($normalizer != 0)
+   {
+      # Make the rotation vector a unit vector.
+      foreach $xyzAxis (1..3)
+         {$rotAxis[$xyzAxis] /= $normalizer;}
+
+      # Compute the angle of rotation between the real space vector and the
+      #   x-axis.
+      $rotAngle = &getVectorAngle(\@uvw,\@xAxis);
+   }
+   else
+      {$rotAngle = 0.0;}
 
    # In the event that the uvw vector is pointing into any positive y quadrant
    #   then we need to rotate *back* to the x-axis. In that case we invert the
@@ -3523,10 +3556,10 @@ sub prepSurface
       {&rotateOnePoint(\@{$directXYZ[$atom]},\@origin);}
 
    # Reobtain the inverse lattice and the reciprocal lattice vectors.
-   &makeLatticeInv(\@realLattice,\@realLatticeInv,0);
-   &makeLatticeInv(\@realLattice,\@recipLattice,1);
-#   &makeInvOrRecipLattice(\@realLattice,\@realLatticeInv,0);
-#   &makeInvOrRecipLattice(\@realLattice,\@recipLattice,1);
+#   &makeLatticeInv(\@realLattice,\@realLatticeInv,0);
+#   &makeLatticeInv(\@realLattice,\@recipLattice,1);
+   &makeInvOrRecipLattice(\@realLattice,\@realLatticeInv,0);
+   &makeInvOrRecipLattice(\@realLattice,\@recipLattice,1);
    &abcAlphaBetaGamma(\@realLattice,\@mag,\@angle,\@angleDeg,1);
 
    # Obtain the directABC and fractABC coordinates of the atoms in the model
@@ -3593,6 +3626,13 @@ sub applySpaceGroup
       push (@applySpaceGroupIn,"$atomElementID[$atom] $atomSpeciesID[$atom]" .
             " @{$fractABC[$atom]}\n");
    }
+
+   # Add a flag indicating whether to force all atoms to be shifted inside
+   #   the given cell or not.
+   if ($doCellShift == 1)
+      {push (@applySpaceGroupIn,"1\n");}
+   else
+      {push (@applySpaceGroupIn,"0\n");}
 
    # Create the hidden input file for the applySpaceGroup program.
    open (SGINPUT,">sginput") || die "Cannot open sginput for writing\n";
@@ -3760,10 +3800,10 @@ sub applySupercell
    }
 
    # Reobtain the inverse lattice and the reciprocal lattice vectors.
-   &makeLatticeInv(\@realLattice,\@realLatticeInv,0);
-   &makeLatticeInv(\@realLattice,\@recipLattice,1);
-#   &makeInvOrRecipLattice(\@realLattice,\@realLatticeInv,0);
-#   &makeInvOrRecipLattice(\@realLattice,\@recipLattice,1);
+#   &makeLatticeInv(\@realLattice,\@realLatticeInv,0);
+#   &makeLatticeInv(\@realLattice,\@recipLattice,1);
+   &makeInvOrRecipLattice(\@realLattice,\@realLatticeInv,0);
+   &makeInvOrRecipLattice(\@realLattice,\@recipLattice,1);
    &abcAlphaBetaGamma(\@realLattice,\@mag,\@angle,\@angleDeg,1);
    &abcAlphaBetaGamma(\@recipLattice,\@magRecip,\@angleRecip,
                       \@angleDegRecip,0);
@@ -3967,8 +4007,8 @@ sub computeCrystalParameters
    &getABCVectors;
 
    # Generate the inverse of the real space lattice.
-   &makeLatticeInv(\@realLattice,\@realLatticeInv,0);
-#   &makeInvOrRecipLattice(\@realLattice,\@realLatticeInv,0);
+#   &makeLatticeInv(\@realLattice,\@realLatticeInv,0);
+   &makeInvOrRecipLattice(\@realLattice,\@realLatticeInv,0);
 
    # Demand that there be no atoms with negative positions and that the
    #   system be centered.
@@ -4296,48 +4336,48 @@ sub getABCVectors
 }
 
 
-sub makeLatticeInv
-{
-   # Define passed parameters.
-   my $inLattice_ref = $_[0];
-   my $outLattice_ref = $_[1];
-   my $piFactor = $_[2];
-
-   # Define local variables.
-   my $string;
-   my $matrix;
-   my $matrixInv;
-   my $axisABC;
-   my $axisXYZ;
-
-   # Initialize the matrix string.
-   $string = "";
-
-   # Copy in the lattice matrix to $matrix.
-   foreach $axisABC (1..3)
-      {$string = $string . "\[ $inLattice_ref->[$axisABC][1] ".
-                              "$inLattice_ref->[$axisABC][2] ".
-                              "$inLattice_ref->[$axisABC][3] \]\n";}
-   $matrix = Math::MatrixReal->new_from_string($string);
-
-   # Invert it.
-   $matrixInv = $matrix->inverse();
-
-   # Copy it to the standard form used in the rest of this program and include
-   #   the factor of 2Pi if requested.
-   foreach $axisXYZ (1..3)
-   {
-      foreach $axisABC (1..3)
-      {
-         $outLattice_ref->[$axisXYZ][$axisABC] =
-               $matrixInv->element($axisXYZ,$axisABC);
-         if ($piFactor == 1)
-            {$outLattice_ref->[$axisXYZ][$axisABC] *= (2.0 * $pi);}
-         elsif ($piFactor == -1)
-            {$outLattice_ref->[$axisXYZ][$axisABC] /= (2.0 * $pi);}
-      }
-   }
-}
+#sub makeLatticeInv
+#{
+#   # Define passed parameters.
+#   my $inLattice_ref = $_[0];
+#   my $outLattice_ref = $_[1];
+#   my $piFactor = $_[2];
+#
+#   # Define local variables.
+#   my $string;
+#   my $matrix;
+#   my $matrixInv;
+#   my $axisABC;
+#   my $axisXYZ;
+#
+#   # Initialize the matrix string.
+#   $string = "";
+#
+#   # Copy in the lattice matrix to $matrix.
+#   foreach $axisABC (1..3)
+#      {$string = $string . "\[ $inLattice_ref->[$axisABC][1] ".
+#                              "$inLattice_ref->[$axisABC][2] ".
+#                              "$inLattice_ref->[$axisABC][3] \]\n";}
+#   $matrix = Math::MatrixReal->new_from_string($string);
+#
+#   # Invert it.
+#   $matrixInv = $matrix->inverse();
+#
+#   # Copy it to the standard form used in the rest of this program and include
+#   #   the factor of 2Pi if requested.
+#   foreach $axisXYZ (1..3)
+#   {
+#      foreach $axisABC (1..3)
+#      {
+#         $outLattice_ref->[$axisXYZ][$axisABC] =
+#               $matrixInv->element($axisXYZ,$axisABC);
+#         if ($piFactor == 1)
+#            {$outLattice_ref->[$axisXYZ][$axisABC] *= (2.0 * $pi);}
+#         elsif ($piFactor == -1)
+#            {$outLattice_ref->[$axisXYZ][$axisABC] /= (2.0 * $pi);}
+#      }
+#   }
+#}
 
 
 # Given some (real/reciprocal) set of lattice vectors, this subroutine will
@@ -4787,10 +4827,10 @@ sub insertVacuum
    &getABCVectors;
 
    # Reobtain the inverse lattice and the reciprocal lattice vectors.
-   &makeLatticeInv(\@realLattice,\@realLatticeInv,0);
-   &makeLatticeInv(\@realLattice,\@recipLattice,1);
-#   &makeInvOrRecipLattice(\@realLattice,\@realLatticeInv,0);
-#   &makeInvOrRecipLattice(\@realLattice,\@recipLattice,1);
+#   &makeLatticeInv(\@realLattice,\@realLatticeInv,0);
+#   &makeLatticeInv(\@realLattice,\@recipLattice,1);
+   &makeInvOrRecipLattice(\@realLattice,\@realLatticeInv,0);
+   &makeInvOrRecipLattice(\@realLattice,\@recipLattice,1);
 
    &abcAlphaBetaGamma(\@realLattice,\@mag,\@angle,\@angleDeg,1);
 
@@ -5094,8 +5134,8 @@ sub makeOrtho
    # Obtain the inverse of the real lattice.  This must be done now so that
    #   we can get the abc coordinates of atoms if we are given xyz.  It must
    #   be done again later after applying the spacegroup and supercell.
-   &makeLatticeInv(\@realLattice,\@realLatticeInv,0);
-#   &makeInvOrRecipLattice(\@realLattice,\@realLatticeInv,0);
+#   &makeLatticeInv(\@realLattice,\@realLatticeInv,0);
+   &makeInvOrRecipLattice(\@realLattice,\@realLatticeInv,0);
 
    # Finally, it is necessary to make sure that all atoms in the model are
    #   within the simulation box.  This is done by first recomputing the
@@ -5266,7 +5306,7 @@ sub checkBoundingBox
    my @doMove;
 
    # Check that each direction of the abc fractional representation is inside
-   #   the simulation box.   If it is not, then we will have to move the atom
+   #   the simulation box. If it is not, then we will have to move the atom
    #   and re-propogate the position.  The rotation situation is very ugly
    #   because the directXYZ has already been reset to the original non-rotated
    #   position because it must be re-rotated after certain atoms are shifted
@@ -5293,15 +5333,16 @@ sub checkBoundingBox
       }
 
       # For the shiftStyle of 0 we can simply move the atom along each axis
-      #   directly.  However, for shiftStyle 1 we are not going to shift this
+      #   directly. However, for shiftStyle 1 we are not going to shift this
       #   atom to a periodic cell because the problem was that the atom was
-      #   *rotated* outside the box, not shifted outside the box.  Therefor, we
-      #   will restore all original fractABCs from a saved directXYZ copy and
-      #   **then** shift that original fractABC so that when the rotation is
-      #   reapplied it **will not** become shifted outside the box.  Annoying.
+      #   *rotated* outside the box, not shifted outside the box. Therefore,
+      #   we will restore all original fractABCs from a saved directXYZ copy
+      #   and **then** shift that original fractABC so that when the rotation
+      #   is reapplied it **will not** become shifted outside the box.
+      #   Annoying.
       if ($shiftStyle == 1)
       {
-         &getDirectABC($atom);
+         &getDirectABC($atom); # From (restored original) direct XYZ.
          &getFractABC($atom);
       }
 
@@ -5444,7 +5485,7 @@ sub printOLCAO
       {printf $fileHandle "%13.8f",$mag[$axis];}
    foreach $axis (1..3)
       {printf $fileHandle "%13.8f",$angleDegrees[$axis];}
-   print $fileHandle "\n$style $numAtoms\n";
+   print $fileHandle "\n$style $numAtoms 1\n"; # 1 = force atoms to cell
 
    # Print the atomic positions in the appropriate style.
    if ($style eq "fractional")

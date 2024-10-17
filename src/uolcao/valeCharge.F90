@@ -31,34 +31,34 @@ module O_ValeCharge
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    contains
 
-subroutine makeValenceRho
+subroutine makeValenceRho(inSCF)
 
    ! Import the necessary modules.
    use O_Kinds
    use O_TimeStamps
-   use O_CommandLine,        only: doDIMO_SCF, doForce_SCF
-   use O_AtomicSites,        only: valeDim
-   use O_Input,              only: numStates
-   use O_KPoints,            only: numKPoints
-   use O_Constants,          only: smallThresh
-   use O_Potential,          only: rel,spin,potDim,potCoeffs,&
+   use O_CommandLine, only: doDIMO_SCF, doDIMO_PSCF, doForce_SCF, doForce_PSCF
+   use O_AtomicSites, only: valeDim
+   use O_Input, only: numStates
+   use O_KPoints, only: numKPoints
+   use O_Constants, only: smallThresh
+   use O_Potential, only: rel,spin,potDim,potCoeffs,&
          & numPlusUJAtoms, converged
-   use O_SCFEigVecHDF5,      only: valeStates,eigenVectors_did
-   use O_Populate,           only: electronPopulation,cleanUpPopulation
-   use O_SCFIntegralsHDF5,   only: atomOverlap_did,atomKEOverlap_did, &
+   use O_Populate, only: electronPopulation,cleanUpPopulation
+   use O_SCFIntegralsHDF5, only: atomOverlap_did,atomKEOverlap_did, &
          & atomMVOverlap_did,atomNPOverlap_did,atomDMOverlap_did, &
          & atomPotOverlap_did,packedVVDims
+   use O_PSCFIntegralsHDF5, only: atomDMOverlapPSCF_did
 #ifndef GAMMA
    use O_BLASZHER
    use O_SecularEquation, only: valeVale,cleanUpSecularEqn,energyEigenValues,&
-         & update1UJ
+         & update1UJ, readDataSCF, readDataPSCF
    use O_MatrixSubs, only: readMatrix,readPackedMatrix,matrixElementMult, &
          & packMatrix
    use O_Force, only: computeForce,valeValeF
 #else
    use O_BLASDSYR
-   use O_SecularEquation, only: valeValeGamma,cleanUpSecularEqn, &
-         & energyEigenValues, update1UJ
+   use O_SecularEquation, only: valeValeGamma, cleanUpSecularEqn, &
+         & energyEigenValues, update1UJ, readDataSCF, readDataPSCF
    use O_MatrixSubs, only: readMatrixGamma,readPackedMatrix, &
          & matrixElementMultGamma,packMatrixGamma
    use O_Force, only: computeForceGamma,valeValeFGamma
@@ -67,8 +67,11 @@ subroutine makeValenceRho
    ! Make sure that there are not accidental variable declarations.
    implicit none
 
+   ! Define passed parameters.
+   integer, intent(in) :: inSCF
+
    ! Define the local variables used in this subroutine.
-   integer :: i,j,k,l ! Loop index variables
+   integer :: h,i,j,k,l ! Loop index variables
    integer :: skipKP
    integer :: dim1
    integer :: energyLevelCounter
@@ -121,35 +124,41 @@ subroutine makeValenceRho
 
    ! Allocate space to hold the trace of the charge density, nuclear potential,
    !   kinetic energy, mass velocity, and dipole moment.
-   allocate (chargeDensityTrace(spin))
-   allocate (nucPotTrace(spin))
-   allocate (kineticEnergyTrace(spin))
-   if (rel == 1) then
-      allocate (massVelocityTrace(spin))
+   if (inSCF == 1) then
+      allocate (chargeDensityTrace(spin))
+      allocate (nucPotTrace(spin))
+      allocate (kineticEnergyTrace(spin))
+      if (rel == 1) then
+         allocate (massVelocityTrace(spin))
+      endif
    endif
-   if ((doDIMO_SCF == 1) .and. (converged == 1)) then
+   if (((doDIMO_SCF == 1) .and. (converged == 1)) .or. &
+         & ((doDIMO_PSCF == 1) .and. (inSCF == 0))) then
       allocate (dipoleMomentTrace(3, spin))
    endif
 
    ! Allocate space to hold the currentPopulation based on spin
    allocate (currentPopulation (spin))
-   allocate (electronEnergy    (spin))
+   allocate (electronEnergy (spin))
    allocate (structuredElectronPopulation (numStates,numKPoints,spin))
 
    ! Initialize variables from data modules.
-   potRho(:,:)           = 0.0_double
-   nucPotTrace(:)        = 0.0_double
-   kineticEnergyTrace(:) = 0.0_double
-   chargeDensityTrace(:) = 0.0_double
-   if (rel == 1) then
-      massVelocityTrace(:)  = 0.0_double
+   potRho(:,:) = 0.0_double
+   if (inSCF == 1) then
+      nucPotTrace(:) = 0.0_double
+      kineticEnergyTrace(:) = 0.0_double
+      chargeDensityTrace(:) = 0.0_double
+      if (rel == 1) then
+         massVelocityTrace(:) = 0.0_double
+      endif
    endif
-   if ((doDIMO_SCF == 1) .and. (converged == 1)) then
+   if (((doDIMO_SCF == 1) .and. (converged == 1)) .or. &
+         & ((doDIMO_PSCF == 1) .and. (inSCF == 0))) then
       dipoleMomentTrace(:,:) = 0.0_double
    endif
 
    ! Initialize local variables
-   electronEnergy(:)     = 0.0_double
+   electronEnergy(:) = 0.0_double
 
 
    ! Fill a matrix of electron populations from the electron population that
@@ -181,7 +190,7 @@ subroutine makeValenceRho
       !   matrix was not changed so it can still be used here.  Also note
       !   that the gammaKPoint option will never enter the "if" block.
 #ifndef GAMMA
-      if (numKPoints > 1) then
+!      if (numKPoints > 1) then
 
          ! Skip any kpoints with a negligable contribution for each state.
          skipKP = 0
@@ -195,26 +204,16 @@ subroutine makeValenceRho
             cycle
          endif
 
-         ! Read the computed wave function into the valeVale matrix.  I know
-         !   that the name is misleading, but so far this seems to work out
-         !   the best in terms of not having too many names or too many
-         !   allocate deallocate calls.  (And also we need to do this for the
-         !   case where there is only 1 kpoint because we never write the
-         !   wave function to disk and so the valeVale *still* holds it from
-         !   the diagonalization call.  Therefore we are stuck using the same
-         !   name even in the >1 kpoint case.)
-         allocate (tempRealValeVale(valeDim,numStates))
-         allocate (tempImagValeVale(valeDim,numStates))
-         do j = 1, spin
-            call readMatrix (eigenVectors_did(:,i,j),&
-                  & valeVale(:,:numStates,j),&
-                  & tempRealValeVale(:,:numStates),&
-                  & tempImagValeVale(:,:numStates),&
-                  & valeStates,valeDim,numStates)
+         ! Determine if we are doing the valeCharge in a post-SCF calculation
+         !   or within an SCF calculation.
+         do h = 1, spin
+            if (inSCF == 1) then
+               call readDataSCF(h,i,numStates,0) ! Read wave functions only.
+            else
+               call readDataPSCF(h,i,numStates,0) ! Read wave functions only.
+            endif
          enddo
-         deallocate (tempRealValeVale)
-         deallocate (tempImagValeVale)
-      endif
+!      endif
 
       ! Initialize matrix to receive the valeVale density matrix (square of the
       !   wave function).
@@ -332,79 +331,87 @@ subroutine makeValenceRho
       !   spin polarized case the first index will refer to the total number of
       !   electrons and the second index will refer to the spin difference.
 
-      do j = 1, spin ! j=1 -> Total; j=2 -> Difference
+      if (inSCF == 1) then
+
+         do j = 1, spin ! j=1 -> Total; j=2 -> Difference
 #ifndef GAMMA
-         call matrixElementMult (chargeDensityTrace(j),packedValeVale,&
-               & packedValeValeRho(:,:,j),dim1,valeDim)
+            call matrixElementMult (chargeDensityTrace(j),packedValeVale,&
+                  & packedValeValeRho(:,:,j),dim1,valeDim)
 #else
-         call matrixElementMultGamma (chargeDensityTrace(j),packedValeVale,&
-               & packedValeValeRho(:,:,j),dim1,valeDim)
+            call matrixElementMultGamma (chargeDensityTrace(j),&
+                  & packedValeVale,packedValeValeRho(:,:,j),dim1,valeDim)
 #endif
-      enddo
+         enddo
 
-
-      ! Compute the nuclear contribution to the fitted potential first.
-      call readPackedMatrix (atomNPOverlap_did(i),packedValeVale,&
-            & packedVVDims,dim1,valeDim)
-      do j = 1, spin ! j=1 -> Total; j=2 -> Difference
-#ifndef GAMMA
-         call matrixElementMult (nucPotTrace(j),packedValeVale,&
-               & packedValeValeRho(:,:,j),dim1,valeDim)
-#else
-         call matrixElementMultGamma (nucPotTrace(j),packedValeVale,&
-               & packedValeValeRho(:,:,j),dim1,valeDim)
-#endif
-      enddo
-
-      ! Now compute the kinetic energy.
-      call readPackedMatrix (atomKEOverlap_did(i),packedValeVale,&
-            & packedVVDims,dim1,valeDim)
-      do j = 1, spin ! j=1 -> Total; j=2 -> Difference
-#ifndef GAMMA
-         call matrixElementMult (kineticEnergyTrace(j),packedValeVale,&
-               & packedValeValeRho(:,:,j),dim1,valeDim)
-#else
-         call matrixElementMultGamma (kineticEnergyTrace(j),packedValeVale,&
-               & packedValeValeRho(:,:,j),dim1,valeDim)
-#endif
-      enddo
-
-      ! If needed, compute the mass velocity.
-      if (rel == 1) then
-         call readPackedMatrix (atomMVOverlap_did(i),packedValeVale,&
+         ! Compute the nuclear contribution to the fitted potential first.
+         call readPackedMatrix (atomNPOverlap_did(i),packedValeVale,&
                & packedVVDims,dim1,valeDim)
          do j = 1, spin ! j=1 -> Total; j=2 -> Difference
 #ifndef GAMMA
-            call matrixElementMult (massVelocityTrace(j),packedValeVale,&
+            call matrixElementMult (nucPotTrace(j),packedValeVale,&
                   & packedValeValeRho(:,:,j),dim1,valeDim)
 #else
-            call matrixElementMultGamma (massVelocityTrace(j),packedValeVale,&
+            call matrixElementMultGamma (nucPotTrace(j),packedValeVale,&
                   & packedValeValeRho(:,:,j),dim1,valeDim)
 #endif
          enddo
-      endif
 
-      ! Loop over atomic potential terms next.
-      do j = 1, potDim
-         call readPackedMatrix (atomPotOverlap_did(i,j),packedValeVale,&
+         ! Now compute the kinetic energy.
+         call readPackedMatrix (atomKEOverlap_did(i),packedValeVale,&
                & packedVVDims,dim1,valeDim)
-         do k = 1, spin ! j=1 -> Total; j=2 -> Difference
+         do j = 1, spin ! j=1 -> Total; j=2 -> Difference
 #ifndef GAMMA
-            call matrixElementMult (potRho(j,k),packedValeVale,&
-                  & packedValeValeRho(:,:,k),dim1,valeDim)
+            call matrixElementMult (kineticEnergyTrace(j),packedValeVale,&
+                  & packedValeValeRho(:,:,j),dim1,valeDim)
 #else
-            call matrixElementMultGamma (potRho(j,k),packedValeVale,&
-                  & packedValeValeRho(:,:,k),dim1,valeDim)
+            call matrixElementMultGamma (kineticEnergyTrace(j),packedValeVale,&
+                  & packedValeValeRho(:,:,j),dim1,valeDim)
 #endif
          enddo
-      enddo
+
+         ! If needed, compute the mass velocity.
+         if (rel == 1) then
+            call readPackedMatrix (atomMVOverlap_did(i),packedValeVale,&
+                  & packedVVDims,dim1,valeDim)
+            do j = 1, spin ! j=1 -> Total; j=2 -> Difference
+#ifndef GAMMA
+               call matrixElementMult (massVelocityTrace(j),packedValeVale,&
+                     & packedValeValeRho(:,:,j),dim1,valeDim)
+#else
+               call matrixElementMultGamma (massVelocityTrace(j),packedValeVale,&
+                     & packedValeValeRho(:,:,j),dim1,valeDim)
+#endif
+            enddo
+         endif
+
+         ! Loop over atomic potential terms next.
+         do j = 1, potDim
+            call readPackedMatrix (atomPotOverlap_did(i,j),packedValeVale,&
+                  & packedVVDims,dim1,valeDim)
+            do k = 1, spin ! j=1 -> Total; j=2 -> Difference
+#ifndef GAMMA
+               call matrixElementMult (potRho(j,k),packedValeVale,&
+                     & packedValeValeRho(:,:,k),dim1,valeDim)
+#else
+               call matrixElementMultGamma (potRho(j,k),packedValeVale,&
+                     & packedValeValeRho(:,:,k),dim1,valeDim)
+#endif
+            enddo
+         enddo
+      endif ! inSCF == 1
 
       ! If needed, compute the dipole moment.
-      if ((doDIMO_SCF == 1) .and. (converged == 1)) then
+      if (((doDIMO_SCF == 1) .and. (converged == 1)) .or. &
+            & ((doDIMO_PSCF == 1) .and. (inSCF == 0))) then
          do j = 1, 3 ! xyz directions
 
-            call readPackedMatrix (atomDMOverlap_did(i,j),packedValeVale,&
-                  & packedVVDims,dim1,valeDim)
+            if (inSCF == 0) then
+               call readPackedMatrix (atomDMOverlap_did(i,j),packedValeVale,&
+                     & packedVVDims,dim1,valeDim)
+            else
+               call readPackedMatrix (atomDMOverlapPSCF_did(i,j),&
+                     & packedValeVale,packedVVDims,dim1,valeDim)
+            endif
             do k = 1, spin
 #ifndef GAMMA
                call matrixElementMult (dipoleMomentTrace(j,k),packedValeVale,&
@@ -418,7 +425,8 @@ subroutine makeValenceRho
       endif
 
       ! If needed, compute the forces
-      if ((doForce_SCF == 1) .and. (converged == 1)) then
+      if (((doForce_SCF == 1) .and. (converged == 1)) .or. &
+            & ((doDIMO_PSCF == 1) .and. (inSCF == 0))) then
          do j = 1, 3 ! xyz directions
             do k = 1, spin
 #ifndef GAMMA
@@ -454,74 +462,82 @@ subroutine makeValenceRho
 
    ! Now that all k-points have been accumulated, record the total and spin
    !   difference number of electrons in the system.
-   write (20,*) "Total number of electrons from <psi|psi> = ",&
-         & chargeDensityTrace(1)
-   if (spin == 2) then
-      write (20,*) "Electron spin difference from <psi|psi> = ",&
-            & chargeDensityTrace(2)
-   endif
-
-   if (spin == 1) then
-
-      ! Obtain a summation of the electrons.
-      if (rel == 0) then
-         sumElecEnergy = sum(potCoeffs(:,1) * potRho(:,1)) + &
-               & kineticEnergyTrace(1) + nucPotTrace(1)
-      else
-         sumElecEnergy = sum(potCoeffs(:,1) * potRho(:,1)) + &
-               & kineticEnergyTrace(1) + massVelocityTrace(1) + nucPotTrace(1)
+   if (inSCF == 1) then
+      write (20,*) "Total number of electrons from <psi|psi> = ",&
+            & chargeDensityTrace(1)
+      if (spin == 2) then
+         write (20,*) "Electron spin difference from <psi|psi> = ",&
+               & chargeDensityTrace(2)
       endif
 
+      if (spin == 1) then
 
-      ! Write the two electron numbers (both are energy values, but they
-      !   are computed through different means.)
-      write (20,fmt='(a17,f18.8)') 'Electron Energy = ',electronEnergy(1)
-      write (20,fmt='(a17,f18.8)') 'Electron Sum    = ',sumElecEnergy
-   else
+         ! Obtain a summation of the electrons.
+         if (rel == 0) then
+            sumElecEnergy = sum(potCoeffs(:,1) * potRho(:,1)) + &
+                  & kineticEnergyTrace(1) + nucPotTrace(1)
+         else
+            sumElecEnergy = sum(potCoeffs(:,1) * potRho(:,1)) + &
+                  & kineticEnergyTrace(1) + massVelocityTrace(1) + &
+                  & nucPotTrace(1)
+         endif
 
-      ! Obtain a summation of the electrons for each spin.
 
-      ! Do total plus the spin difference to obtain the spin up.
-      if (rel == 0) then
-         sumElecEnergy = 0.5_double * (sum(potCoeffs(:,1) * &
-               & (potRho(:,1) + potRho(:,2))) + kineticEnergyTrace(1) + &
-               & kineticEnergyTrace(2) + nucPotTrace(1) + nucPotTrace(2))
+         ! Write the two electron numbers (both are energy values, but they
+         !   are computed through different means.)
+         write (20,fmt='(a17,f18.8)') 'Electron Energy = ',electronEnergy(1)
+         write (20,fmt='(a17,f18.8)') 'Electron Sum    = ',sumElecEnergy
       else
-         sumElecEnergy = 0.5_double * (sum(potCoeffs(:,1) * &
-               & (potRho(:,1) + potRho(:,2))) + kineticEnergyTrace(1) + &
-               & kineticEnergyTrace(2) + massVelocityTrace(1) + &
-               & massVelocityTrace(2) + nucPotTrace(1) + nucPotTrace(2))
+
+         ! Obtain a summation of the electrons for each spin.
+
+         ! Do total plus the spin difference to obtain the spin up.
+         if (rel == 0) then
+            sumElecEnergy = 0.5_double * (sum(potCoeffs(:,1) * &
+                  & (potRho(:,1) + potRho(:,2))) + kineticEnergyTrace(1) + &
+                  & kineticEnergyTrace(2) + nucPotTrace(1) + nucPotTrace(2))
+         else
+            sumElecEnergy = 0.5_double * (sum(potCoeffs(:,1) * &
+                  & (potRho(:,1) + potRho(:,2))) + kineticEnergyTrace(1) + &
+                  & kineticEnergyTrace(2) + massVelocityTrace(1) + &
+                  & massVelocityTrace(2) + nucPotTrace(1) + nucPotTrace(2))
+         endif
+         ! Write the two electron numbers. (Both are energy values, but they
+         !   are computed thorugh different means.
+         write (20,fmt='(a24,f18.8)') '(UP)   Electron Energy = ', &
+               & electronEnergy(1)
+         write (20,fmt='(a24,f18.8)') '(UP)   Electron Sum    = ', &
+               & sumElecEnergy
+
+
+         ! Do total minus the spin difference to obtain the spin down.
+         if (rel == 0) then
+            sumElecEnergy = 0.5_double * (sum(potCoeffs(:,2) * &
+                  & (potRho(:,1) - potRho(:,2))) + kineticEnergyTrace(1) - &
+                  & kineticEnergyTrace(2) + nucPotTrace(1) - nucPotTrace(2))
+         else
+            sumElecEnergy = 0.5_double * (sum(potCoeffs(:,2) * &
+                  & (potRho(:,1) - potRho(:,2))) + kineticEnergyTrace(1) - &
+                  & kineticEnergyTrace(2) + massVelocityTrace(1) - &
+                  & massVelocityTrace(2) + nucPotTrace(1) - nucPotTrace(2))
+         endif
+
+         ! Write the spin down electronEnergy???
+         write (20,fmt='(a24,f18.8)') '(DOWN) Electron Energy = ', &
+               & electronEnergy(2)
+         write (20,fmt='(a24,f18.8)') '(DOWN) Electron Sum    = ', &
+               & sumElecEnergy
       endif
-      ! Write the two electron numbers. (Both are energy values, but they are
-      !   computed thorugh different means.
-      write (20,fmt='(a24,f18.8)') '(UP)   Electron Energy = ',electronEnergy(1)
-      write (20,fmt='(a24,f18.8)') '(UP)   Electron Sum    = ',sumElecEnergy
-
-
-      ! Do total minus the spin difference to obtain the spin down.
-      if (rel == 0) then
-         sumElecEnergy = 0.5_double * (sum(potCoeffs(:,2) * &
-               & (potRho(:,1) - potRho(:,2))) + kineticEnergyTrace(1) - &
-               & kineticEnergyTrace(2) + nucPotTrace(1) - nucPotTrace(2))
-      else
-         sumElecEnergy = 0.5_double * (sum(potCoeffs(:,2) * &
-               & (potRho(:,1) - potRho(:,2))) + kineticEnergyTrace(1) - &
-               & kineticEnergyTrace(2) + massVelocityTrace(1) - &
-               & massVelocityTrace(2) + nucPotTrace(1) - nucPotTrace(2))
-      endif
-
-      ! Write the spin down electronEnergy???
-      write (20,fmt='(a24,f18.8)') '(DOWN) Electron Energy = ',electronEnergy(2)
-      write (20,fmt='(a24,f18.8)') '(DOWN) Electron Sum    = ',sumElecEnergy
    endif
 
 
    ! If the dipole moment calculation was requested, then print it. Note that
    !   the units of the dipole moment are e * a_0 where e is the electronic
    !   charge and a_0 is the bohr radius.
-   ! The units of the dipole moment calculation are ea0 where e is the number of 
-   !    valence electrons and a0 is the bohr radius. 
-   if ((doDIMO_SCF == 1) .and. (converged == 1)) then
+   ! The units of the dipole moment calculation are ea0 where e is the number
+   !    of valence electrons and a0 is the bohr radius. 
+   if (((doDIMO_SCF == 1) .and. (converged == 1)) .or. &
+         & ((doDIMO_PSCF == 1) .and. (inSCF == 0))) then
       write (74,*) "Dipole Moment x-direction: ", dipoleMomentTrace(1,1)
       write (74,*) "Dipole Moment y-direction: ", dipoleMomentTrace(2,1)
       write (74,*) "Dipole Moment z-direction: ", dipoleMomentTrace(3,1)

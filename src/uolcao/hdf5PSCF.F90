@@ -45,6 +45,7 @@ subroutine initHDF5_PSCF (numStates)
    use O_PSCFIntegralsHDF5
    use O_PSCFEigValHDF5
    use O_PSCFEigVecHDF5
+   use O_PSCFFieldHDF5
    use O_CommandLine, only: excitedQN_n, excitedQN_l, basisCode_PSCF
 
    ! Make sure that no funny variables are defined.
@@ -113,8 +114,10 @@ subroutine initHDF5_PSCF (numStates)
 
       ! Access the groups of the HDF5 file.
       call accessPSCFIntegralHDF5 (pscf_fid)
-      call accessPSCFEigVecHDF5 (pscf_fid,attribInt_dsid,attribIntDims,numStates)
+      call accessPSCFEigVecHDF5 (pscf_fid,attribInt_dsid,attribIntDims,&
+            & numStates)
       call accessPSCFEigValHDF5 (pscf_fid,numStates)
+      call accessPSCFFieldHDF5 (pscf_fid)
 
    else
       ! We are starting a new calculation.
@@ -137,6 +140,7 @@ subroutine initHDF5_PSCF (numStates)
       call initPSCFIntegralHDF5 (pscf_fid,attribInt_dsid,attribIntDims)
       call initPSCFEigVecHDF5 (pscf_fid,attribInt_dsid,attribIntDims,numStates)
       call initPSCFEigValHDF5 (pscf_fid,numStates)
+      call initPSCFFieldHDF5 (pscf_fid)
    endif
 
 
@@ -155,6 +159,7 @@ subroutine closeHDF5_PSCF
    use O_PSCFIntegralsHDF5, only: closePSCFIntegralHDF5
    use O_PSCFEigVecHDF5,  only: closePSCFEigVecHDF5
    use O_PSCFEigValHDF5,  only: closePSCFEigValHDF5
+   use O_PSCFFieldHDF5, only: closePSCFFieldHDF5
 
    ! Make sure that no funny variables are defined.
    implicit none
@@ -166,6 +171,7 @@ subroutine closeHDF5_PSCF
    call closePSCFIntegralHDF5
    call closePSCFEigVecHDF5
    call closePSCFEigValHDF5
+   call closePSCFFieldHDF5
 
    ! Close the property list.
    call h5pclose_f (pscf_plid,hdferr)

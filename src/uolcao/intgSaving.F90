@@ -106,14 +106,14 @@ subroutine applyPhaseFactors (currentPair,pairXBasisFn12,statesDim1,statesDim2,&
    implicit none
 
    ! Define the variables passed to this subroutine
-   integer :: statesDim1
-   integer :: statesDim2
+   integer, intent(in) :: statesDim1
+   integer, intent(in) :: statesDim2
    complex (kind=double), dimension (maxNumStates,maxNumStates,&
-         & numKPoints) :: currentPair
-   real (kind=double), dimension (statesDim1,statesDim2) :: pairXBasisFn12
-   integer :: k ! Cell loop index
-   integer :: runCode
-   integer :: currentKPoint  ! Only used for runCode>0
+         & numKPoints), intent(inout) :: currentPair
+   real (kind=double), dimension (statesDim1,statesDim2), &
+         & intent(in) :: pairXBasisFn12
+   integer, intent(in) :: k ! Cell loop index
+   integer, intent(in) :: runCode
 
    ! Define the local variables
    integer :: l,m,n

@@ -31,16 +31,16 @@ subroutine OLCAO
          call bond(1, doBond_SCF)  ! Passing inSCF == 1
       endif
 
-!      if (doDIMO_SCF == 1) then
-!         call dimo 
-!      endif
+      if (doDIMO_SCF == 1) then
+         call dimo(1)  ! Passing inSCF == 1
+      endif
 
       if (doOPTC_SCF >= 1) then
          call optc(1, doOPTC_SCF)  ! Passing inSCF == 1
       endif
 
       if (doField_SCF == 1) then
-         !call field(1, doField_SCF)
+         call field(1)  ! Passing inSCF == 1
       endif
 
       if (doPSCF == 1) then
@@ -57,20 +57,24 @@ subroutine OLCAO
 
       call bandPSCF ! Wave function calculation.
 
-!      if (doDIMO_PSCF == 1) then
-!         call dimo
-!      endif
-
       if (doDOS_PSCF == 1) then
-         call dos(0)
+         call dos(0) ! Passing inSCF == 0
       endif
 
       if (doBond_PSCF >= 1) then
-         call bond(0, doBond_PSCF)
+         call bond(0, doBond_PSCF) ! Passing inSCF == 0
+      endif
+
+      if (doDIMO_PSCF == 1) then
+         call dimo(0) ! Passing inSCF == 0
       endif
 
       if (doOptc_PSCF >= 1) then
-         call optc(0, doOPTC_PSCF)
+         call optc(0, doOPTC_PSCF) ! Passing inSCF == 0
+      endif
+
+      if (doField_PSCF == 1) then
+         call field(0)  ! Passing inSCF == 0
       endif
 
       call cleanUpPSCF
@@ -98,7 +102,7 @@ subroutine setupSCF
          & atomOverlap_aid, atomKEOverlap_aid, atomMVOverlap_aid, &
          & atomNPOverlap_aid, atomDMOverlap_aid, atomMMOverlap_aid, &
          & atomPotTermOL_aid, numComponents, fullCVDims, packedVVDims
-   use O_CommandLine, only: doDIMO_SCF, doOPTC_SCF
+      use O_CommandLine, only: doDIMO_SCF, doOPTC_SCF, doField_SCF
    use O_Input, only: parseInput, numStates
    use O_Lattice, only: initializeLattice, initializeFindVec, &
          & cleanUpLattice
@@ -270,8 +274,10 @@ subroutine setupSCF
 
 
    call secondCleanupIntegrals ! Overlap matrix parts used for ortho.
-   call cleanUpBasis
    call cleanUpGaussRelations
+   if (doField_SCF /= 1) then
+      call cleanUpBasis
+   endif
 
 
    ! Construct a vector describing the core charge density since it will not
@@ -449,7 +455,7 @@ subroutine mainSCF
 
 
       ! Calculate the valence charge density
-      call makeValenceRho
+      call makeValenceRho(1) ! inSCF == 1
 
 
       ! Compute the new self consistant potential
@@ -546,7 +552,7 @@ subroutine intgPSCF
    use O_Kinds
    use O_TimeStamps
    use O_Input, only: parseInput, numStates
-   use O_CommandLine, only: doDIMO_PSCF, doOPTC_PSCF, doSYBD_PSCF
+   use O_CommandLine, only: doDIMO_PSCF, doOPTC_PSCF, doSYBD_PSCF, doField_PSCF
    use O_Potential, only: initPotCoeffs, spin
    use O_Basis, only: renormalizeBasis, cleanUpBasis
    use O_Integrals, only: allocateIntegralsPSCF, gaussOverlapOL,&
@@ -694,8 +700,10 @@ subroutine intgPSCF
 
 
    call secondCleanupIntegrals ! Overlap matrix parts used for ortho.
-   call cleanUpBasis
    call cleanUpGaussRelations
+   if (doField_PSCF /= 1) then
+      call cleanUpBasis
+   endif
 
 
 end subroutine intgPSCF
@@ -814,7 +822,8 @@ subroutine printSYBD
          write (30+i,*) pathKPointMag(j)
 
          ! Record the energy values for this KPoint
-         write (30+i,fmt="(11f14.5)") energyEigenValues(:numStates,j,i)*hartree
+         write (30+i,fmt="(11f14.5)") &
+               & energyEigenValues(:numStates,j,i)*hartree
       enddo
 
       ! Close the output file.
@@ -836,15 +845,23 @@ subroutine printSYBD
                basisFnCount = basisFnCount + 1
                write (32,fmt="(i5)",advance="NO") basisFnCount
                write (32,fmt="(i5)",advance="NO") j
-               write (32,fmt="(a3)",advance="NO") atomTypes(currAtomType)%elementName
-               write (32,fmt="(i5)",advance="NO") potTypes(currAtomType)%nucCharge
-               write (32,fmt="(i5)",advance="NO") atomTypes(currAtomType)%elementID
-               write (32,fmt="(i5)",advance="NO") atomTypes(currAtomType)%speciesID
-               write (32,fmt="(i5)",advance="NO") atomTypes(currAtomType)%typeID
-               write (32,fmt="(i5)",advance="NO") atomTypes(currAtomType)%valeQN_nList(k)
-               write (32,fmt="(i5)",advance="NO") atomTypes(currAtomType)%valeQN_lList(k)
+               write (32,fmt="(a3)",advance="NO") &
+                     & atomTypes(currAtomType)%elementName
+               write (32,fmt="(i5)",advance="NO") &
+                     & potTypes(currAtomType)%nucCharge
+               write (32,fmt="(i5)",advance="NO") &
+                     & atomTypes(currAtomType)%elementID
+               write (32,fmt="(i5)",advance="NO") &
+                     & atomTypes(currAtomType)%speciesID
+               write (32,fmt="(i5)",advance="NO") &
+                     & atomTypes(currAtomType)%typeID
+               write (32,fmt="(i5)",advance="NO") &
+                     & atomTypes(currAtomType)%valeQN_nList(k)
+               write (32,fmt="(i5)",advance="NO") &
+                     & atomTypes(currAtomType)%valeQN_lList(k)
                write (32,fmt="(i5)",advance="NO") l
-               write (32,fmt="(3e15.6)",advance="NO") atomSites(i)%cartPos(1:3)
+               write (32,fmt="(3e15.6)",advance="NO") &
+                     & atomSites(i)%cartPos(1:3)
                
             enddo
          enddo
@@ -989,55 +1006,117 @@ subroutine bond (inSCF, doBond)
 end subroutine bond
 
 
-!subroutine field(inSCF)
-!
-!! The goal of this program is to produce plottable data of the solid state
-!   !   wave function, data derived form it (e.g. the charge density), and/or
-!   !   ancillary data such as the potential function. It permits plotting of
-!   !   specific wave function states according to energy level by numerically
-!   !   evaluating the analytical wave functions, wave functions squared, etc.
-!   !   on a defined 3D uniform mesh. The data may be stored in either plain
-!   !   text OpenDX format or in XDMF+HDF5 format for Paraview.
-!
-!   ! Import the necessary modules.
-!   use O_Kinds
-!   use O_TimeStamps
-!   use O_ElementData,     only: initElementData
-!   use O_Populate,        only: populateStates
-!   use O_Potential,       only: spin, initPotCoeffs
-!   use O_Field,           only: computeFieldMesh, cleanUpField
-!   use O_SecularEquation, only: energyEigenValues
-!   use O_Lattice,         only: initialize3DMesh
-!
-!   ! Make sure that there are not accidental variable declarations.
-!   implicit none
-!
-!
-!   ! Open the potential file that will be read from in this program.
-!   open (unit=8,file='fort.8',status='old',form='formatted')
-!
-!   ! Initialize element data from periodic table of the elements.
-!   call initElementData
-!
-!
-!   ! Populate the electron states to find the highest occupied state (Fermi
-!   !   energ for metals).
-!   call populateStates
-!
-!
-!   ! Initialize certain parameters for constructing and traversing the 3D mesh.
-!   call initialize3DMesh
-!
-!
-!   ! Compute the requested field values for each mesh point and store in HDF5.
-!   call computeFieldMesh
-!
-!
-!   ! Clean up any left over arrays that need to be deallocated.
-!   call cleanUpField
-!
-!
-!end subroutine field
+subroutine dimo(inSCF)
+
+   ! Use necessary modules.
+   use O_TimeStamps
+   use O_Potential,       only: spin
+   use O_KPoints,         only: numKPoints
+   use O_Input,           only: numStates
+   use O_Populate,        only: occupiedEnergy, populateStates
+   use O_SecularEquation, only: energyEigenValues, &
+         & shiftEnergyEigenValues
+   use O_ValeCharge, only: makeValenceRho
+
+
+   ! Make sure that no funny variables are defined.
+   implicit none
+
+   ! Declare passed parameters.
+   integer, intent(in) :: inSCF
+
+   ! Open the DOS files that will be written to.  If a spin polarized
+   !   calculation is being done, then 60, 70, 80 hold spin up and 61, 71, 81
+   !   hold spin down.  60,61=TDOS; 70,71= PDOS; 80,81=Localization Index
+   open (unit=74,file='fort.74',status='new',form='formatted')
+   if (spin == 2) then
+      open (unit=75,file='fort.75',status='new',form='formatted')
+   endif
+
+
+   ! Populate the electron states to find the highest occupied state (Fermi
+   !   energy for metals).
+   call populateStates
+
+   ! Shift the energy eigen values according to the highest occupied state.
+   call shiftEnergyEigenValues(occupiedEnergy,numStates)
+
+   ! Call the DOS subroutine to compute the total and partial density of states
+   !   as well as the localization index.
+   call makeValenceRho(inSCF)
+
+   ! Close the output files.
+   close(74)
+   if (spin == 2) then
+      close(75)
+   endif
+
+end subroutine dimo
+
+
+subroutine field(inSCF)
+
+! The goal of this program is to produce plottable data of the solid state
+!   wave function, data derived form it (e.g. the charge density), and/or
+!   ancillary data such as the potential function. It permits plotting of
+!   specific wave function states according to energy level by numerically
+!   evaluating the analytical wave functions, wave functions squared, etc.
+!   on a defined 3D uniform mesh. The data may be stored in either plain
+!   text OpenDX format or in XDMF+HDF5 format for Paraview.
+
+   ! Import the necessary modules.
+   use O_Kinds
+   use O_TimeStamps
+   use O_ElementData,     only: initElementData
+   use O_Populate,        only: populateStates
+   use O_Potential,       only: spin, initPotCoeffs
+   use O_Field,           only: computeFieldMesh, cleanUpField
+   use O_SCFFieldHDF5,    only: wav_did, rho_did, pot_did, triggerAxis, &
+         & abcDimsChunk, fileFieldChunk_dsid
+   use O_PSCFFieldHDF5,    only: wavPSCF_did, rhoPSCF_did, potPSCF_did, &
+         & triggerAxisPSCF, abcDimsChunkPSCF, fileFieldChunkPSCF_dsid
+   use O_SecularEquation, only: energyEigenValues
+   use O_Lattice,         only: initialize3DMesh
+
+   ! Make sure that there are not accidental variable declarations.
+   implicit none
+
+
+   ! Define passed parameters.
+   integer, intent(in) :: inSCF
+
+
+   ! Open the potential file that will be read from in this program.
+   open (unit=8,file='fort.8',status='old',form='formatted')
+
+   ! Initialize element data from periodic table of the elements.
+   call initElementData
+
+
+   ! Populate the electron states to find the highest occupied state (Fermi
+   !   energ for metals).
+   call populateStates
+
+
+   ! Initialize certain parameters for constructing and traversing the 3D mesh.
+   call initialize3DMesh
+
+   if (inSCF == 1) then
+      ! Compute requested field values for each mesh point and store in HDF5.
+      call computeFieldMesh(inSCF, wav_did, rho_did, pot_did, triggerAxis, &
+            & abcDimsChunk, fileFieldChunk_dsid)
+   else
+      ! Compute requested field values for each mesh point and store in HDF5.
+      call computeFieldMesh(inSCF, wavPSCF_did, rhoPSCF_did, potPSCF_did, &
+            & triggerAxisPSCF, abcDimsChunkPSCF, fileFieldChunkPSCF_dsid)
+   endif
+
+
+   ! Clean up any left over arrays that need to be deallocated.
+   call cleanUpField
+
+
+end subroutine field
 
 
 subroutine optc(inSCF,doOPTC)

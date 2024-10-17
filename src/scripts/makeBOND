@@ -2405,13 +2405,13 @@ sub printModelVTK
    my $totalBondPoints;
    my $totalVertPoints;
    
-   #Now we need to collect the bond data since some of the atoms may
-   #  be bonded to atoms outside the current cell.  Consider an atom
-   #  near the far corner of a cubic cell.  It will not bond to an atom
-   #  in the near corner all the way across the cell.  Instead it will
-   #  bond to that same atom in the neighbor cell.  We must determine the
-   #  position of that atom in the neighbor cell, and we must define a bond to
-   #  it.
+   # Now we need to collect the bond data since some of the atoms may
+   #   be bonded to atoms outside the current cell.  Consider an atom
+   #   near the far corner of a cubic cell.  It will not bond to an atom
+   #   in the near corner all the way across the cell.  Instead it will
+   #   bond to that same atom in the neighbor cell.  We must determine the
+   #   position of that atom in the neighbor cell, and we must define a bond
+   #   to it.
    &getExtendedPositions;
 
 

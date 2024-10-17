@@ -4217,9 +4217,9 @@ sub makeOLCAOMI
 
    # Print the header for the atom positions.
    if ("$file" eq "$olcao_fmi")
-      {print OLCAOMI "fract $numAtoms\n";}
+      {print OLCAOMI "fract $numAtoms 1\n";} # 1 = force atoms into cell
    else
-      {print OLCAOMI "cart $numAtoms\n";}
+      {print OLCAOMI "cart $numAtoms 1\n";} # 1 = force atoms into cell
 
    # Loop to print out the atom positions.
    foreach $atom (1..$numAtoms)

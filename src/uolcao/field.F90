@@ -29,7 +29,8 @@ real (kind=double) :: accumChargeKP
 
 contains
 
-subroutine computeFieldMesh
+subroutine computeFieldMesh(inSCF, wav_did, rho_did, pot_did, triggerAxis, &
+      & abcDimsChunk, fileFieldChunk_dsid)
 
    ! The goal of this subroutine
 
@@ -43,9 +44,6 @@ subroutine computeFieldMesh
    use O_Constants,    only: smallThresh, hartree
    use O_PotTypes,     only: maxNumPotAlphas, potTypes
    use O_AtomicSites,  only: valeDim, numAtomSites, atomSites
-   use O_PSCFBandHDF5, only: eigenVectorsBand_did, valeStatesBand
-   use O_FieldHDF5,    only: wav_did, rho_did, pot_did, triggerAxis, &
-         & abcDimsChunk, fileFieldChunk_dsid
    use O_Kpoints,      only: numKPoints, kPointWeight, phaseFactor
    use O_Input,        only: numStates, doODXField, doXDMFField, &
          & doProfileField, eminFIELD, emaxFIELD, doRho, numElectrons
@@ -59,14 +57,25 @@ subroutine computeFieldMesh
          & findLatticeVector
 #ifndef GAMMA
    use O_MatrixSubs,      only: readMatrix
-   use O_SecularEquation, only: valeVale, energyEigenValues
+   use O_SecularEquation, only: valeVale, energyEigenValues, readDataSCF, &
+         & readDataPSCF
 #else
    use O_MatrixSubs,      only: readMatrixGamma
-   use O_SecularEquation, only: valeValeGamma, energyEigenValues
+   use O_SecularEquation, only: valeValeGamma, energyEigenValues, &
+         & readDataSCF, readDataPSCF
 #endif
 
    ! Make sure that no variables are accidentally defined.
    implicit none
+
+   ! Define passed parameters.
+   integer, intent(in) :: inSCF
+   integer(hid_t), dimension(4), intent(in) :: wav_did
+   integer(hid_t), dimension(4), intent(in) :: rho_did
+   integer(hid_t), dimension(4), intent(in) :: pot_did
+   integer, intent(in) :: triggerAxis
+   integer(hsize_t), dimension(3), intent(in) :: abcDimsChunk
+   integer(hid_t), intent(in) :: fileFieldChunk_dsid
 
    ! Define local variables.
    integer :: hdferr
@@ -88,10 +97,10 @@ subroutine computeFieldMesh
    real (kind=double), allocatable, dimension (:) :: negligLimit
    real (kind=double), allocatable, dimension (:,:,:) :: &
          & structuredElectronPopulation
-#ifndef GAMMA
-   real (kind=double), allocatable, dimension (:,:) :: tempRealValeVale
-   real (kind=double), allocatable, dimension (:,:) :: tempImagValeVale
-#endif
+!#ifndef GAMMA
+!   real (kind=double), allocatable, dimension (:,:) :: tempRealValeVale
+!   real (kind=double), allocatable, dimension (:,:) :: tempImagValeVale
+!#endif
 
 
    ! Data for each mesh point.  For spin non-polarized calculations, we have
@@ -212,7 +221,7 @@ allocate (currNumElec (numKPoints,spin))
    profile (:,:,:) = 0.0_double
 
    ! Fill a matrix of electron populations from the electron population that
-   !   was computed in populateLevels.  Note that electronPopulation is a one
+   !   was computed in populateLevels. Note that electronPopulation is a one
    !   dimensional array that has some order, but is not sorted in the way
    !   that the energy eigen values were sorted.  Please read the comments in
    !   the populateLevels subroutine to understand the order.
@@ -239,10 +248,10 @@ allocate (currNumElec (numKPoints,spin))
    ! Allocate space to read the wave functions and accumulate the coeffs.  Also
    !   initialize the coefficient accumulators.
 #ifndef GAMMA
-!   allocate (valeVale(valeDim,valeDim,1,spin))
-   allocate (valeVale(valeDim,numStates,1,spin))
-   allocate (tempRealValeVale(valeDim,numStates))
-   allocate (tempImagValeVale(valeDim,numStates))
+!   allocate (valeVale(valeDim,valeDim,spin))
+   allocate (valeVale(valeDim,numStates,spin))
+!   allocate (tempRealValeVale(valeDim,numStates))
+!   allocate (tempImagValeVale(valeDim,numStates))
    allocate (accumWaveFnCoeffs(valeDim,numCols-spin,numKPoints)) ! No coeffs
          ! are needed for the total or (spin-up, spin-down) potential.
    accumWaveFnCoeffs(:,:,:) = cmplx(0.0_double,0.0_double)
@@ -255,13 +264,13 @@ allocate (currNumElec (numKPoints,spin))
 #endif
 
 
-   ! For each atomic type in the system compute the negligability limit.  If
+   ! For each atomic type in the system compute the negligability limit. If
    !   the square of the separation between an atomic site and a mesh point is
    !   greater than this computed value then the contribution of this atom is
-   !   considered to be negligable.  This negligability limit is computed based
+   !   considered to be negligable. This negligability limit is computed based
    !   on the basis function negligability limit for gaussian integration
    !   which is derived from the olcao.dat input value of the BASISFUNCTION
-   !   CUTOFF (typically 0.1e-15).  The difference is that this calculation
+   !   CUTOFF (typically 0.1e-15). The difference is that this calculation
    !   will use a cutoff that is significantly reduced (0.5 * exponent value)
    !   (typcially 0.1e-7.5).
    allocate (negligLimit(numAtomTypes))  ! Many values may be the same.
@@ -300,15 +309,20 @@ accumChargeKP = 0.0_double
 !write (20,*) "valeDim, numStates=",valeDim,numStates
       do j = 1, spin
 #ifndef GAMMA
-         call readMatrix (eigenVectorsBand_did(:,i,j),&
-               & valeVale(:,:numStates,1,j),&
-               & tempRealValeVale(:,:numStates),&
-               & tempImagValeVale(:,:numStates),&
-               & valeStatesBand,valeDim,numStates)
+         if (inSCF == 1) then
+            call readDataSCF(j,i,numStates,0) ! 0 = Read wave functions only.
+         else
+            call readDataPSCF(j,i,numStates,0) ! 0 = Read wave functions only.
+         endif
+!         call readMatrix (eigenVectorsBand_did(:,i,j),&
+!               & valeVale(:,:numStates,j),&
+!               & tempRealValeVale(:,:numStates),&
+!               & tempImagValeVale(:,:numStates),&
+!               & valeStatesBand,valeDim,numStates)
 #else
-         call readMatrixGamma (eigenVectorsBand_did(1,i,j),&
-               & valeValeGamma(:,:numStates,j),&
-               & valeStatesBand,valeDim,numStates)
+!         call readMatrixGamma (eigenVectorsBand_did(1,i,j),&
+!               & valeValeGamma(:,:numStates,j),&
+!               & valeStatesBand,valeDim,numStates)
 #endif
       enddo
 
@@ -350,7 +364,7 @@ currNumElec(i,j) = sum(structuredElectronPopulation(&
 !do l = 1, valeDim
 !!do m = 1, valeDim
 !tempPointValue(1) = tempPointValue(1) + &
-!   & conjg(valeVale(l,k,1,j))*valeVale(l,k,1,j)
+!   & conjg(valeVale(l,k,j))*valeVale(l,k,j)
 !!enddo
 !enddo
 !write (20,*) "k,valeVale state squared=",k,tempPointValue(1)
@@ -367,9 +381,9 @@ currNumElec(i,j) = sum(structuredElectronPopulation(&
                accumCharge(j,i) = accumCharge(j,i) + currentPopulation
             endif
 !write (20,*) "before aWFC=",accumWaveFnCoeffs(:,j,i)
-!write (20,*) "vV=",valeVale(:,k,1,j)
+!write (20,*) "vV=",valeVale(:,k,j)
             accumWaveFnCoeffs(:,j,i) = accumWaveFnCoeffs(:,j,i) + &
-                  & currentPopulation * valeVale(:,k,1,j)
+                  & currentPopulation * valeVale(:,k,j)
          enddo
 !write (20,*) "accumCharge=",accumCharge(j,i)
 accumChargeKP = accumChargeKP + accumCharge(j,i)
@@ -486,13 +500,14 @@ accumChargeKP = accumChargeKP + accumCharge(j,i)
 !call flush (20)
 
          ! Obtain further key information about this atom.
-         currentValeStateIndex  = atomSites(i)%cumulValeStates
-         currentMaxValeQN_l     = atomTypes(currentAtomType(2))%maxValeQN_l
-         currentValeQN_lList(:) = atomTypes(currentAtomType(2))%valeQN_lList(:)
-         currentNumOrbAlphas(:) = &
-               & atomTypes(currentAtomType(2))%numOrbAlphas(:)
          currentNumValeRadialFns = &
                atomTypes(currentAtomType(2))%numValeRadialFns
+         currentValeStateIndex = atomSites(i)%cumulValeStates
+         currentMaxValeQN_l = atomTypes(currentAtomType(2))%maxValeQN_l
+         currentValeQN_lList(1:currentNumValeRadialFns) = atomTypes(&
+               & currentAtomType(2))%valeQN_lList(1:currentNumValeRadialFns)
+         currentNumOrbAlphas(:) = &
+               & atomTypes(currentAtomType(2))%numOrbAlphas(:)
 
          ! Obtain information about this potential site.  Carefully note that
          !   I assumed the current atom type = the current pot type.  Bad. Bad.
@@ -925,6 +940,14 @@ accumChargeKP = accumChargeKP + accumCharge(j,i)
 
    enddo ! c-axis loop
 
+   ! Create and then record the mesh specification.
+!   do i = 1, numMeshPoints(1)
+!      meshValues(i) = 0.0_double + (i-1)
+!   enddo
+!   call h5dwrite_f (mesh_did(1),H5T_NATIVE_DOUBLE, &
+!         & meshValues(1:numMeshPoints(1)),abcDimsChunk(1),hdferr,&
+!         & fileFieldChunk_dsid,fileFieldChunk_dsid)
+
    ! Finalize printing of the OpenDX field data.
    if (doODXField == 1) then
 
@@ -958,15 +981,13 @@ accumChargeKP = accumChargeKP + accumCharge(j,i)
    deallocate (waveFnEval)
    deallocate (atomicOrbital)
    deallocate (modifiedBasisFns)
-   deallocate (valeVale)
    deallocate (accumWaveFnCoeffs)
-   deallocate (tempRealValeVale)
-   deallocate (tempImagValeVale)
+!   deallocate (tempRealValeVale)
+!   deallocate (tempImagValeVale)
 #else
    deallocate (waveFnEvalGamma)
    deallocate (atomicOrbitalGamma)
    deallocate (modifiedBasisFnsGamma)
-   deallocate (valeValeGamma)
    deallocate (accumWaveFnCoeffsGamma)
 #endif
 

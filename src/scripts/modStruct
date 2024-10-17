@@ -45,7 +45,7 @@ sub printHelp
 #   degrees. The default origin for the normal vector is the origin, but that
 #   can be changed with the -orig subopiton.  If -orig is given, then the
 #   origin of the normal vector is given by its parameters in directXYZ
-#   coordinates. Regarding periodic boundary conditions we view the simulation
+#   coordinates. Regarding periodic boundary conditions, we view the simulation
 #   cell as a constant so that atoms which are rotated out of the cell must be
 #   *effectively* rotated back into the cell as if they came from a neighboring
 #   replicated cell. This is mainly used for simulation boxes that contain

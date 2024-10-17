@@ -88,6 +88,7 @@ module O_CrystalSystem
 
    ! Begin list of module data.
    integer :: makeFull     ! Flag to make non-primitive cell 1=full;0=primitive
+   integer :: doCellShift  ! Flag to force atoms into the central cell
    integer :: numAtoms     ! Initial number of atoms before symmetry.
    integer :: numSymmAtoms ! Number of atoms after symmetry operations applied.
    integer, allocatable, dimension (:) :: atomElementID
@@ -145,6 +146,11 @@ module O_CrystalSystem
       do i = 1, numAtoms
          read (fileUnit,*) atomElementID(i),atomSpeciesID(i),atomFractABC(:,i)
       enddo
+
+      ! Read the flag that requests atoms to be shifted into the cell. (I.e.,
+      !   all fractional coordinates x should follow 0 <= x < 1.)
+      read (fileUnit,*) doCellShift
+
    end subroutine readAtomicData
 
 
@@ -425,13 +431,15 @@ module O_CrystalSystem
 
       ! Then the remaining atoms that exist beyond any border line will be
       !   shifted inside the cell.
-      do i = 1,3
-         if (newPosition(i) < 0.0_double) then
-            newPosition(i) = newPosition(i) + 1.0_double
-         elseif (newPosition(i) > 1.0_double) then
-            newPosition(i) = newPosition(i) - 1.0_double
-         endif
-      enddo
+      if (doCellShift == 1) then
+         do i = 1,3
+            if (newPosition(i) < 0.0_double) then
+               newPosition(i) = newPosition(i) + 1.0_double
+            elseif (newPosition(i) >= 1.0_double) then
+               newPosition(i) = newPosition(i) - 1.0_double
+            endif
+         enddo
+      endif
 
    end subroutine shiftToCell
 
