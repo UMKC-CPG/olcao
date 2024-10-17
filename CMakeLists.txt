@@ -51,7 +51,7 @@ if (CMAKE_Fortran_COMPILER_ID MATCHES "GNU")
    #   set (CMAKE_EXE_LINKER_FLAGS " -L$ENV{MKLROOT}/lib -Wl,--no-as-needed -lmkl_gf_ilp64 -lmkl_sequential -lmkl_core -lpthread -lm -ldl")
    #else()
       set (CMAKE_Fortran_FLAGS_RELEASE "-O3 -fimplicit-none -Wall")
-      set (CMAKE_EXE_LINKER_FLAGS "-L/usr/lib -llapack -lblas") # -L for nanoHUB
+      set (CMAKE_EXE_LINKER_FLAGS "-L/usr/lib -I/usr/include -llapack -lblas") # -L,-I for nanoHUB
       #endif (DEFINED ENV{MKLROOT})
 elseif (CMAKE_Fortran_COMPILER_ID MATCHES "Intel")
    set (CMAKE_Fortran_FLAGS_RELEASE "-ipo -O3 -heap-arrays")

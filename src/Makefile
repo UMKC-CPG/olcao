@@ -1,7 +1,7 @@
 all:
 
 install:
-	cd ../../build/release
+	cd ../build/release
 	export FC=hdf5
 	cmake3 ../..
 	make install
