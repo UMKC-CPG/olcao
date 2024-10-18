@@ -10,7 +10,10 @@ install:
 	unpackOLCAODB
 
 clean:
+	rm -rf ../build/release/*
 
 distclean: clean
+	rm -rf ../bin
+	rm -rf ../share
 
 .PHONY: all install clean distclean
