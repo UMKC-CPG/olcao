@@ -1071,12 +1071,13 @@ subroutine field(inSCF)
    use O_Populate,        only: populateStates
    use O_Potential,       only: spin, initPotCoeffs
    use O_Field,           only: computeFieldMesh, cleanUpField
-   use O_SCFFieldHDF5,    only: wav_did, rho_did, pot_did, triggerAxis, &
-         & abcDimsChunk, fileFieldChunk_dsid
-   use O_PSCFFieldHDF5,    only: wavPSCF_did, rhoPSCF_did, potPSCF_did, &
-         & triggerAxisPSCF, abcDimsChunkPSCF, fileFieldChunkPSCF_dsid
+!   use O_SCFFieldHDF5,    only: wav_did, rho_did, pot_did, triggerAxis, &
+!         & abcDimsChunk, fileFieldChunk_dsid
+!   use O_PSCFFieldHDF5,    only: wavPSCF_did, rhoPSCF_did, potPSCF_did, &
+!         & triggerAxisPSCF, abcDimsChunkPSCF, fileFieldChunkPSCF_dsid
    use O_SecularEquation, only: energyEigenValues
    use O_Lattice,         only: initialize3DMesh
+   use O_FieldHDF5,       only: prepFieldHDF5, closeFieldHDF5
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
@@ -1086,8 +1087,13 @@ subroutine field(inSCF)
    integer, intent(in) :: inSCF
 
 
+   ! Initialize (or access) the HDF field file.
+   call prepFieldHDF5(inSCF)
+
+
    ! Open the potential file that will be read from in this program.
    open (unit=8,file='fort.8',status='old',form='formatted')
+
 
    ! Initialize element data from periodic table of the elements.
    call initElementData
@@ -1101,19 +1107,17 @@ subroutine field(inSCF)
    ! Initialize certain parameters for constructing and traversing the 3D mesh.
    call initialize3DMesh
 
-   if (inSCF == 1) then
-      ! Compute requested field values for each mesh point and store in HDF5.
-      call computeFieldMesh(inSCF, wav_did, rho_did, pot_did, triggerAxis, &
-            & abcDimsChunk, fileFieldChunk_dsid)
-   else
-      ! Compute requested field values for each mesh point and store in HDF5.
-      call computeFieldMesh(inSCF, wavPSCF_did, rhoPSCF_did, potPSCF_did, &
-            & triggerAxisPSCF, abcDimsChunkPSCF, fileFieldChunkPSCF_dsid)
-   endif
+
+   ! Compute requested field values for each mesh point and store in HDF5.
+   call computeFieldMesh(inSCF)
 
 
    ! Clean up any left over arrays that need to be deallocated.
    call cleanUpField
+
+
+   ! Close the field HDF5 file.
+   call closeFieldHDF5
 
 
 end subroutine field

@@ -29,8 +29,7 @@ real (kind=double) :: accumChargeKP
 
 contains
 
-subroutine computeFieldMesh(inSCF, wav_did, rho_did, pot_did, triggerAxis, &
-      & abcDimsChunk, fileFieldChunk_dsid)
+subroutine computeFieldMesh(inSCF)
 
    ! The goal of this subroutine
 
@@ -55,6 +54,8 @@ subroutine computeFieldMesh(inSCF, wav_did, rho_did, pot_did, triggerAxis, &
    use O_Lattice,      only: logBasisFnThresh, numCellsReal, cellSizesReal, &
          & cellDimsReal, numMeshPoints, realVectors, realFractStrideLength, &
          & findLatticeVector
+   use O_FieldHDF5,    only: wav_did, rho_did, pot_did, triggerAxis, &
+         & abcDimsChunk, fileFieldChunk_dsid
 #ifndef GAMMA
    use O_MatrixSubs,      only: readMatrix
    use O_SecularEquation, only: valeVale, energyEigenValues, readDataSCF, &
@@ -70,12 +71,6 @@ subroutine computeFieldMesh(inSCF, wav_did, rho_did, pot_did, triggerAxis, &
 
    ! Define passed parameters.
    integer, intent(in) :: inSCF
-   integer(hid_t), dimension(4), intent(in) :: wav_did
-   integer(hid_t), dimension(4), intent(in) :: rho_did
-   integer(hid_t), dimension(4), intent(in) :: pot_did
-   integer, intent(in) :: triggerAxis
-   integer(hsize_t), dimension(3), intent(in) :: abcDimsChunk
-   integer(hid_t), intent(in) :: fileFieldChunk_dsid
 
    ! Define local variables.
    integer :: hdferr

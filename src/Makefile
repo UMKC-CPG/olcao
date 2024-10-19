@@ -4,7 +4,7 @@ install:
 	. ../.olcao/olcaorc && \
 	cd ../build/release && \
 	export FC=h5fc && \
-	export PATH=/apps/share64/debian7/cmake/cmake-3.6.3/bin:${PATH} && \
+	/etc/environ.sh && use -r -r cmake-3.6.3 && \
 	cmake ../.. && \
 	make install && \
 	unpackOLCAODB

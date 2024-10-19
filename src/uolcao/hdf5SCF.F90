@@ -48,7 +48,6 @@ subroutine initHDF5_SCF (maxNumRayPoints, numStates)
    use O_SCFEigValHDF5
    use O_SCFEigVecHDF5
    use O_SCFPotRhoHDF5
-   use O_SCFFieldHDF5
    use O_CommandLine, only: excitedQN_n, excitedQN_l, basisCode_SCF
 
    ! Make sure that no funny variables are defined.
@@ -125,7 +124,6 @@ subroutine initHDF5_SCF (maxNumRayPoints, numStates)
       call accessSCFEigVecHDF5 (scf_fid,attribInt_dsid,attribIntDims,numStates)
       call accessSCFEigValHDF5 (scf_fid,numStates)
       call accessSCFPotRhoHDF5 (scf_fid)
-      call accessSCFFieldHDF5 (scf_fid)
 
    else
       ! We are starting a new calculation.
@@ -134,7 +132,7 @@ subroutine initHDF5_SCF (maxNumRayPoints, numStates)
       !   uses the default file creation and file access properties.
       call h5fcreate_f (fileName,H5F_ACC_EXCL_F,scf_fid,hdferr,&
             & H5P_DEFAULT_F,scf_plid)
-      if (hdferr /= 0) stop 'Failed to create scf-temp.hdf5 file.'
+      if (hdferr /= 0) stop 'Failed to create scf hdf5 file.'
 
       ! All datasets will have an attached attribute logging that the
       !   calculation has successfully completed. (Checkpointing.) Thus,
@@ -152,7 +150,6 @@ subroutine initHDF5_SCF (maxNumRayPoints, numStates)
       call initSCFEigVecHDF5 (scf_fid,attribInt_dsid,attribIntDims,numStates)
       call initSCFEigValHDF5 (scf_fid,numStates)
       call initSCFPotRhoHDF5 (scf_fid)
-      call initSCFFieldHDF5 (scf_fid)
    endif
 
 
@@ -174,7 +171,6 @@ subroutine closeHDF5_SCF
    use O_SCFEigVecHDF5,  only: closeSCFEigVecHDF5
    use O_SCFEigValHDF5,  only: closeSCFEigValHDF5
    use O_SCFPotRhoHDF5,  only: closeSCFPotRhoHDF5
-   use O_SCFFieldHDF5, only: closeSCFFieldHDF5
 
    ! Make sure that no funny variables are defined.
    implicit none
@@ -189,7 +185,6 @@ subroutine closeHDF5_SCF
    call closeSCFEigVecHDF5
    call closeSCFEigValHDF5
    call closeSCFPotRhoHDF5
-   call closeSCFFieldHDF5
 
    ! Close the property list.
    call h5pclose_f (scf_plid,hdferr)
@@ -198,6 +193,10 @@ subroutine closeHDF5_SCF
    ! Close the file.
    call h5fclose_f (scf_fid,hdferr)
    if (hdferr /= 0) stop 'Failed to close scf_fid.'
+
+   ! Close access to the HDF5 interface.
+   call h5close_f (hdferr)
+   if (hdferr /= 0) stop 'Failed to close the HDF5 interface.'
 
 end subroutine closeHDF5_SCF
 
