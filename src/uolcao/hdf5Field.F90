@@ -29,33 +29,44 @@ module O_FieldHDF5
    integer(hsize_t), dimension (1) :: attribIntDims ! Dataspace dimensionality
 
    ! Define the group IDs of the subgroups for the wave function, charge
-   !   density, and potential function data.
+   !   density, potential function data, and the mesh.
    integer(hid_t) :: wav_gid
    integer(hid_t) :: rho_gid
    integer(hid_t) :: pot_gid
+   integer(hid_t) :: mesh_gid
 
-   ! The dataspaces of the wav, rho, and pot datasets are all the same in all
-   !   key respects (type, dimension, etc.) and therefore can be given a static
-   !   shared dsid definition now for abc dimensional axes.
+   ! The dataspaces of the wav, rho, and pot, datasets are all the same
+   !   in all key respects (type, dimension, etc.) and therefore can be given
+   !   a static shared dsid definition now for abc dimensional axes. The
+   !   mesh is similar.
    integer(hid_t) :: abc_dsid
+   integer(hid_t) :: mesh_dsid
 
-   ! Similarly, each of the datasets uses the same property list.
+   ! Similarly, each of the wav, rho, and pot, datasets uses the same
+   !   property list.
    integer(hid_t) :: abc_plid
+   integer(hid_t) :: mesh_plid
 
-   ! Define the array that holds the dimensions of the dataset.
+   ! Define the array that holds the dimensions of the wav, rho, and pot
+   !   datasets, which are all the same. The mesh dataset has slightly
+   !   different dimensions
    integer(hsize_t), dimension (3) :: abcDims
+   integer(hsize_t), dimension (4) :: meshDims
 
-   ! Define the array that holds the dimensions of the data chunk.
+   ! Define the array that holds the dimensions of the wav, rho, and pot
+   !   data chunk, which are all the same. The mesh array is similar.
    integer(hsize_t), dimension (3) :: abcDimsChunk
+   integer(hsize_t), dimension (4) :: meshDimsChunk
 
    ! Presently, the number of datasets under each group is fixed, but as always
    !   it might be a good idea to make it flexible for potential unforseen
    !   future uses. Note: "sum" = spin sum (up+dn) and "diff" = spin
    !   difference (up-dn). Also: "live" = from interacting system and "N" =
-   !   from neutral atoms.
+   !   from neutral atoms. There is only one dataset for the mesh.
    integer(hid_t), dimension (4) :: wav_did ! (sum,diff,live-N sum,live-N diff)
    integer(hid_t), dimension (4) :: rho_did ! (sum,diff,live-N sum,live-N diff)
    integer(hid_t), dimension (4) :: pot_did ! (sum,diff,live-N sum,live-N diff)
+   integer(hid_t) :: mesh_did
 
    ! Integer to identify which axis is the one that needs to be tracked for the
    !   determination of when to write data chunks.
@@ -63,8 +74,9 @@ module O_FieldHDF5
 
    ! Because the data may be large we don't store it all in memory at the same
    !   time. Thus, we need to write only portions to disk at a time. Therefore,
-   !   we need to define a chunk dataspace for the file.
+   !   we need to define a chunk dataspace for the file (Field and Mesh).
    integer (hid_t) :: fileFieldChunk_dsid
+   integer (hid_t) :: fileMeshChunk_dsid
 
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    ! Begin list of module subroutines.!
@@ -219,9 +231,13 @@ subroutine initFieldHDF5 (field_fid)
    if (hdferr /= 0) stop 'Failed to create field charge density (rho) group'
    call h5gcreate_f (field_fid,"/potGroup",pot_gid,hdferr)
    if (hdferr /= 0) stop 'Failed to create field potential group'
+   call h5gcreate_f (field_fid,"/meshGroup",mesh_gid,hdferr)
+   if (hdferr /= 0) stop 'Failed to create field mesh group'
 
    ! Initialize data structure dimensions.
    abcDims(:) = numMeshPoints(:)
+   meshDims(1) = 3
+   meshDims(2:4) = abcDims(1:3)
 
    ! Establish the upper limit for data chunk size. We start with an assumption
    !   that the numbers being stored are 8 byte reals and that we should not go
@@ -258,21 +274,28 @@ subroutine initFieldHDF5 (field_fid)
             triggerAxis = 3
          endif
       endif
+
+      meshDimsChunk(1) = 3
+      meshDimsChunk(2:4) = abcDims(1:3)
    endif
 
    ! Create the dataspace that will be used for each dataset within the file.
    !   The same dataspace definition works for all of the datasets.
    call h5screate_simple_f(3,abcDims,abc_dsid,hdferr)
    if (hdferr /= 0) stop 'Failed to create field abc_dsid'
+   call h5screate_simple_f(4,meshDims,mesh_dsid,hdferr)
+   if (hdferr /= 0) stop 'Failed to create field mesh_dsid'
 
    ! Create the dataspace that will be used to describe the data in memory
    !   before being written to a file.
    call h5screate_simple_f(3,abcDimsChunk,fileFieldChunk_dsid,hdferr)
    if (hdferr /= 0) stop 'Failed to create field fileFieldChunk_dsid'
+   call h5screate_simple_f(4,meshDimsChunk,fileMeshChunk_dsid,hdferr)
+   if (hdferr /= 0) stop 'Failed to create field fileMeshChunk_dsid'
 
    ! Define the properties of the datasets to be made.
 
-   ! Create the property list, then set the properties one at a time.
+   ! Create the abc property list, then set the properties one at a time.
    call h5pcreate_f      (H5P_DATASET_CREATE_F,abc_plid,hdferr)
    if (hdferr /= 0) stop 'Failed to create field abc_plid'
    call h5pset_layout_f  (abc_plid,H5D_CHUNKED_F,hdferr)
@@ -281,6 +304,16 @@ subroutine initFieldHDF5 (field_fid)
    if (hdferr /= 0) stop 'Failed to set field abc chunk size'
    call h5pset_deflate_f (abc_plid,1,hdferr)
    if (hdferr /= 0) stop 'Failed to set field abc plid for deflation'
+
+   ! Create the mesh property list, then set the properties one at a time.
+   call h5pcreate_f      (H5P_DATASET_CREATE_F,mesh_plid,hdferr)
+   if (hdferr /= 0) stop 'Failed to create field mesh_plid'
+   call h5pset_layout_f  (mesh_plid,H5D_CHUNKED_F,hdferr)
+   if (hdferr /= 0) stop 'Failed to set field mesh_plid layout'
+   call h5pset_chunk_f   (mesh_plid,3,abcDimsChunk,hdferr)
+   if (hdferr /= 0) stop 'Failed to set field mesh chunk size'
+   call h5pset_deflate_f (mesh_plid,1,hdferr)
+   if (hdferr /= 0) stop 'Failed to set field mesh plid for deflation'
 
    ! Create the datasets that will be used.
 
@@ -339,7 +372,7 @@ subroutine initFieldHDF5 (field_fid)
    if (hdferr /= 0) stop 'Failed to create field interacting-isolated ' // &
          & 'spin diff rho difference did'
 
-   ! Finally, we make the potential datasets. As with the charge density, the
+   ! Then, we make the potential datasets. As with the charge density, the
    !   sum, diff, interacting (live), and interacting-isolated difference
    !   atomic potential function is obtained.
    call h5dcreate_f (pot_gid,"pot_live_up+dn",H5T_NATIVE_DOUBLE,abc_dsid,&
@@ -358,6 +391,11 @@ subroutine initFieldHDF5 (field_fid)
          & pot_did(4),hdferr,abc_plid)
    if (hdferr /= 0) stop 'Failed to create field interacting-isolated ' // &
          & 'spin diff pot difference did'
+
+   ! Finally, we make the mesh dataset.
+   call h5dcreate_f (mesh_gid,"mesh",H5T_NATIVE_DOUBLE,mesh_dsid,mesh_did,&
+         & hdferr,mesh_plid)
+   if (hdferr /= 0) stop 'Failed to create the mesh did'
 
 end subroutine initFieldHDF5
 
@@ -378,6 +416,7 @@ subroutine accessFieldHDF5(field_fid)
 
    ! Declare local variables.
    integer :: hdferr
+   integer :: maxNumDataPoints
 
 !   ! Create the property list for the field hdf5 file and turn off
 !   !   chunk caching.
@@ -398,6 +437,48 @@ subroutine accessFieldHDF5(field_fid)
 
    ! Initialize data structure dimensions.
    abcDims(:) = numMeshPoints(:)
+   meshDims(1) = 3
+   meshDims(2:4) = abcDims(1:3)
+
+   ! Establish the upper limit for data chunk size. We start with an assumption
+   !   that the numbers being stored are 8 byte reals and that we should not go
+   !   over 2 billion bytes in a given chunk. Thus, for the three dimensional
+   !   data array we require a*b*c < 250M. (From 2e9 / 8.) Without thinking
+   !   anything through we will just demand dimensions that meet that
+   !   requirement through a simple scale factor. Note that this may not work
+   !   correctly for sufficiently large abcDims(:) values because of integer
+   !   overflow. Need to write this is a way that is immune to integer overflow
+   !   problems.
+   ! Compute the largest chunk size that contains fewer than the hard-coded
+   !   maximum number of datapoints yet that still retains the largest extent
+   !   along the a, b, and c axes as possible in that priority order.
+   maxNumDataPoints = 250000000
+
+   ! Check that the minimum space requirement is met to store data easily
+   if (abcDims(1) > maxNumDataPoints) then  ! Note the greater-than sign.
+      stop 'Increase maxNumDataPoints'
+   else
+      ! Assume that the chunk dimensions will be limited by the a-axis.
+      abcDimsChunk(1) = abcDims(1)
+      abcDimsChunk(2:3) = 1
+      triggerAxis = 1
+
+      ! Check if we can store two dimensions at a time.
+      if (abcDims(1)*abcDims(2) < maxNumDataPoints) then ! Note less-than.
+         abcDimsChunk(1:2) = abcDims(1:2)
+         abcDimsChunk(3) = 1
+         triggerAxis = 2
+
+         ! Check if we can store all three dimensions.
+         if (abcDims(1)*abcDims(2)*abcDims(3) < maxNumDataPoints) then ! Note <
+            abcDimsChunk(1:3) = abcDims(1:3)
+            triggerAxis = 3
+         endif
+      endif
+
+      meshDimsChunk(1) = 3
+      meshDimsChunk(2:4) = abcDims(1:3)
+   endif
 
    ! Open the groups of the hdf5 field file.
    call h5gopen_f (field_fid,"/wavGroup",wav_gid,hdferr)
@@ -406,38 +487,44 @@ subroutine accessFieldHDF5(field_fid)
    if (hdferr /= 0) stop 'Failed to open field rhoGroup'
    call h5gopen_f (field_fid,"/potGroup",pot_gid,hdferr)
    if (hdferr /= 0) stop 'Failed to open field potGroup'
+   call h5gopen_f (field_fid,"/meshGroup",mesh_gid,hdferr)
+   if (hdferr /= 0) stop 'Failed to open field mesh'
 
    ! Open the datasets.
 
    ! Wave function |psi|^2 datasets first.
    call h5dopen_f (wav_gid,"wav_live_up+dn",wav_did(1),hdferr)
-   if (hdferr /= 0) stop 'Failed to open  live spin sum wav did'
+   if (hdferr /= 0) stop 'Failed to open live spin sum wav did'
    call h5dopen_f (wav_gid,"wav_live_up-dn",wav_did(2),hdferr)
-   if (hdferr /= 0) stop 'Failed to open  live spin diff wav did'
+   if (hdferr /= 0) stop 'Failed to open live spin diff wav did'
    call h5dopen_f (wav_gid,"wav_diff_up+dn",wav_did(3),hdferr)
-   if (hdferr /= 0) stop 'Failed to open  live-iso spin sum wav did'
+   if (hdferr /= 0) stop 'Failed to open live-iso spin sum wav did'
    call h5dopen_f (wav_gid,"wav_diff_up-dn",wav_did(4),hdferr)
-   if (hdferr /= 0) stop 'Failed to open  live-iso spin diff wav did'
+   if (hdferr /= 0) stop 'Failed to open live-iso spin diff wav did'
 
    ! Charge density (rho) datasets second.
    call h5dopen_f (rho_gid,"rho_live_up+dn",rho_did(1),hdferr)
-   if (hdferr /= 0) stop 'Failed to open  live spin sum rho did'
+   if (hdferr /= 0) stop 'Failed to open live spin sum rho did'
    call h5dopen_f (rho_gid,"rho_live_up-dn",rho_did(2),hdferr)
-   if (hdferr /= 0) stop 'Failed to open  live spin diff rho did'
+   if (hdferr /= 0) stop 'Failed to open live spin diff rho did'
    call h5dopen_f (rho_gid,"rho_diff_up+dn",rho_did(3),hdferr)
-   if (hdferr /= 0) stop 'Failed to open  live-iso spin sum rho did'
+   if (hdferr /= 0) stop 'Failed to open live-iso spin sum rho did'
    call h5dopen_f (rho_gid,"rho_diff_up-dn",rho_did(4),hdferr)
-   if (hdferr /= 0) stop 'Failed to open  live-iso spin diff rho did'
+   if (hdferr /= 0) stop 'Failed to open live-iso spin diff rho did'
 
-   ! Potential function datasets last.
+   ! Potential function datasets third.
    call h5dopen_f (pot_gid,"pot_live_up+dn",pot_did(1),hdferr)
-   if (hdferr /= 0) stop 'Failed to open  live spin sum pot did'
+   if (hdferr /= 0) stop 'Failed to open live spin sum pot did'
    call h5dopen_f (pot_gid,"pot_live_up-dn",pot_did(2),hdferr)
-   if (hdferr /= 0) stop 'Failed to open  live spin diff pot did'
+   if (hdferr /= 0) stop 'Failed to open live spin diff pot did'
    call h5dopen_f (pot_gid,"pot_diff_up+dn",pot_did(3),hdferr)
-   if (hdferr /= 0) stop 'Failed to open  live-iso spin sum pot did'
+   if (hdferr /= 0) stop 'Failed to open live-iso spin sum pot did'
    call h5dopen_f (pot_gid,"pot_diff_up-dn",pot_did(4),hdferr)
-   if (hdferr /= 0) stop 'Failed to open  live-iso spin diff pot did'
+   if (hdferr /= 0) stop 'Failed to open live-iso spin diff pot did'
+
+   ! Mesh dataset last.
+   call h5dopen_f (mesh_gid,"mesh",mesh_did,hdferr)
+   if (hdferr /= 0) stop 'Failed to open mesh did'
 
    ! Obtain the properties of the datasets that were just opened. They are all
    !   the same and so only one copy is necessary. (Actually, this value is
@@ -445,11 +532,13 @@ subroutine accessFieldHDF5(field_fid)
    !   should make sure to have it open before attempting to close it.
    call h5dget_create_plist_f (wav_did(1),abc_plid,hdferr)
    if (hdferr /= 0) stop 'Failed to obtain field abc_plid'
+   call h5dget_create_plist_f (mesh_did,mesh_plid,hdferr)
+   if (hdferr /= 0) stop 'Failed to obtain field mesh_plid'
 
    ! Obtain the dataspace that is used for each dataset. The same dataspace
    !   definition works for all of the datasets.
-   call h5dget_space_f (wav_did(1),abc_dsid,hdferr)
-   if (hdferr /= 0) stop 'Failed to obtain field abc_dsid'
+   call h5dget_space_f (mesh_did,mesh_dsid,hdferr)
+   if (hdferr /= 0) stop 'Failed to obtain field mesh_dsid'
 
 end subroutine accessFieldHDF5
 
@@ -468,6 +557,8 @@ subroutine closeFieldHDF5
    ! Close the property list.
    call h5pclose_f (abc_plid,hdferr)
    if (hdferr /= 0) stop 'Failed to close field abc_plid'
+   call h5pclose_f (mesh_plid,hdferr)
+   if (hdferr /= 0) stop 'Failed to close field mesh_plid'
 
    ! Close the datasets next.
 
@@ -491,7 +582,7 @@ subroutine closeFieldHDF5
    call h5dclose_f (rho_did(4),hdferr)
    if (hdferr /= 0) stop 'Failed to close field rho_did(4)'
 
-   ! Close the potential function datasets first.
+   ! Close the potential function datasets third.
    call h5dclose_f (pot_did(1),hdferr)
    if (hdferr /= 0) stop 'Failed to close field pot_did(1)'
    call h5dclose_f (pot_did(2),hdferr)
@@ -501,9 +592,15 @@ subroutine closeFieldHDF5
    call h5dclose_f (pot_did(4),hdferr)
    if (hdferr /= 0) stop 'Failed to close field pot_did(4)'
 
+   ! Close the mesh dataset last.
+   call h5dclose_f (mesh_did,hdferr)
+   if (hdferr /= 0) stop 'Failed to close mesh_did'
+
    ! Close the dataspace next.
    call h5sclose_f (abc_dsid,hdferr)
    if (hdferr /= 0) stop 'Failed to close field abc_dsid'
+   call h5sclose_f (mesh_dsid,hdferr)
+   if (hdferr /= 0) stop 'Failed to close field mesh_dsid'
 
    ! Close the groups.
    call h5gclose_f (wav_gid,hdferr)
@@ -512,6 +609,8 @@ subroutine closeFieldHDF5
    if (hdferr /= 0) stop 'Failed to close field rho_gid'
    call h5gclose_f (pot_gid,hdferr)
    if (hdferr /= 0) stop 'Failed to close field pot_gid'
+   call h5gclose_f (mesh_gid,hdferr)
+   if (hdferr /= 0) stop 'Failed to close field mesh_gid'
 
    ! Close the field property list.
    call h5pclose_f (field_plid,hdferr)

@@ -4,7 +4,7 @@ install:
 	. ../.olcao/olcaorc && \
 	cd ../build/release && \
 	export FC=h5fc && \
-	/etc/environ.sh && use -r -r cmake-3.6.3 && \
+	. /etc/environ.sh && use -e -r cmake-3.6.3 && \
 	cmake ../.. && \
 	make install && \
 	unpackOLCAODB

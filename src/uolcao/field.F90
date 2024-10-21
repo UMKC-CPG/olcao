@@ -18,6 +18,10 @@ real (kind=double) :: accumChargeKP
          !          potentials.  This is important because they have different
          !          units that the other charge columns.
          ! Index3 = 1..max(numMeshPoints(a,b,c))
+   real (kind=double), allocatable, dimension (:,:,:,:) :: meshValues ! The
+         ! Mesh points all collected into a single array. The first index is
+         ! for xyz, the remaining three indices are for the abc lattice
+         ! vectors.
 #ifndef GAMMA
    complex (kind=double), allocatable, dimension (:,:,:) :: accumWaveFnCoeffs
 #else
@@ -54,8 +58,9 @@ subroutine computeFieldMesh(inSCF)
    use O_Lattice,      only: logBasisFnThresh, numCellsReal, cellSizesReal, &
          & cellDimsReal, numMeshPoints, realVectors, realFractStrideLength, &
          & findLatticeVector
-   use O_FieldHDF5,    only: wav_did, rho_did, pot_did, triggerAxis, &
-         & abcDimsChunk, fileFieldChunk_dsid
+   use O_FieldHDF5,    only: wav_did, rho_did, pot_did, mesh_did, &
+         & triggerAxis, abcDimsChunk, meshDimsChunk, fileFieldChunk_dsid, &
+         & fileMeshChunk_dsid
 #ifndef GAMMA
    use O_MatrixSubs,      only: readMatrix
    use O_SecularEquation, only: valeVale, energyEigenValues, readDataSCF, &
@@ -858,7 +863,7 @@ accumChargeKP = accumChargeKP + accumCharge(j,i)
       endif
 
       if ((doXDMFField == 1) .and. (triggerAxis == 1) .and. &
-        & (a == numMeshPoints(1))) then
+            & (a == numMeshPoints(1))) then
 
 !         ! Write all of the requested data.
 !         call hdf5WriteFieldData
@@ -898,7 +903,7 @@ accumChargeKP = accumChargeKP + accumCharge(j,i)
    enddo ! a-axis loop
 
       if ((doXDMFField == 1) .and. (triggerAxis == 2) .and. &
-        & (b == numMeshPoints(2))) then
+            & (b == numMeshPoints(2))) then
 
          ! Select the hyperslab to write to for all data sets.
          call h5sselect_hyperslab_f (fileFieldChunk_dsid,H5S_SELECT_SET_F,&
@@ -920,7 +925,7 @@ accumChargeKP = accumChargeKP + accumCharge(j,i)
 
       ! Store the current chunks on disk as HDF5 data if necessary.
       if ((doXDMFField == 1) .and. (triggerAxis == 3) .and. &
-        & (c == numMeshPoints(3))) then
+            & (c == numMeshPoints(3))) then
 
          ! Select the hyperslab to write to for all data sets.
          call h5sselect_hyperslab_f (fileFieldChunk_dsid,H5S_SELECT_SET_F,&
@@ -934,14 +939,6 @@ accumChargeKP = accumChargeKP + accumCharge(j,i)
       endif
 
    enddo ! c-axis loop
-
-   ! Create and then record the mesh specification.
-!   do i = 1, numMeshPoints(1)
-!      meshValues(i) = 0.0_double + (i-1)
-!   enddo
-!   call h5dwrite_f (mesh_did(1),H5T_NATIVE_DOUBLE, &
-!         & meshValues(1:numMeshPoints(1)),abcDimsChunk(1),hdferr,&
-!         & fileFieldChunk_dsid,fileFieldChunk_dsid)
 
    ! Finalize printing of the OpenDX field data.
    if (doODXField == 1) then
@@ -985,6 +982,80 @@ accumChargeKP = accumChargeKP + accumCharge(j,i)
    deallocate (modifiedBasisFnsGamma)
    deallocate (accumWaveFnCoeffsGamma)
 #endif
+
+   allocate (meshValues(3,abcDimsChunk(1),abcDimsChunk(2),&
+         & abcDimsChunk(3)))
+
+   ! Create and then record the mesh specification.
+   do c = 0, numMeshPoints(3)-1
+   do b = 0, numMeshPoints(2)-1
+   do a = 0, numMeshPoints(1)-1
+      do l = 1,3
+         meshValues(l,k,j,i) = realVectors(l,1)*k + &
+               & realVectors(l,2)*j + realVectors(l,3)*i
+      enddo
+
+      if ((doXDMFField == 1) .and. (triggerAxis == 1) .and. &
+            & (a == numMeshPoints(1))) then
+         call h5sselect_hyperslab_f (fileMeshChunk_dsid,H5S_SELECT_SET_F,&
+               & currentStartIndices,meshDimsChunk,hdferr)
+         if (hdferr /= 0) stop 'Failed to select fileMeshChunk h-slab a'
+
+         ! Now, record the data.
+         call h5dwrite_f (mesh_did,H5T_NATIVE_DOUBLE,dataChunk(:,:,:,:),&
+               & meshDimsChunk,hdferr,fileMeshChunk_dsid,fileMeshChunk_dsid)
+         if (hdferr /= 0) stop 'Failed to write mesh_did a'
+
+
+         ! Shift the initial points of the hyperslab.
+         currentStartIndices(1) = 0
+         if (b == numMeshPoints(2)) then
+            currentStartIndices(2) = 0
+            currentStartIndices(3) = c+1
+         else
+            currentStartIndices(2) = b+1
+            currentStartIndices(3) = c
+         endif
+      endif
+   enddo
+
+      if ((doXDMFField == 1) .and. (triggerAxis == 2) .and. &
+            & (b == numMeshPoints(2))) then
+
+         ! Select the hyperslab to write to for all data sets.
+         call h5sselect_hyperslab_f (fileMeshChunk_dsid,H5S_SELECT_SET_F,&
+               & currentStartIndices,meshDimsChunk,hdferr)
+         if (hdferr /= 0) stop 'Failed to select hyperslab for fileMeshChunk b'
+
+         ! Now, record the data.
+         call h5dwrite_f (wav_did(1),H5T_NATIVE_DOUBLE,dataChunk(1,:,:,:),&
+               & abcDimsChunk,hdferr,fileFieldChunk_dsid,fileFieldChunk_dsid)
+         if (hdferr /= 0) stop 'Failed to write wav_did(1) b'
+
+         ! Shift the initial points of the hyperslab.
+         currentStartIndices(1) = 0
+         currentStartIndices(2) = 0
+         currentStartIndices(3) = c+1
+      endif
+   enddo
+
+      ! Store the current chunks on disk as HDF5 data if necessary.
+      if ((doXDMFField == 1) .and. (triggerAxis == 3) .and. &
+            & (c == numMeshPoints(3))) then
+
+         ! Select the hyperslab to write to for all data sets.
+         call h5sselect_hyperslab_f (fileMeshChunk_dsid,H5S_SELECT_SET_F,&
+               & currentStartIndices,meshDimsChunk,hdferr)
+         if (hdferr /= 0) stop 'Failed to select hyperslab for fileMeshChunk c'
+
+         ! Now, record the data.
+         call h5dwrite_f (mesh_did,H5T_NATIVE_DOUBLE,dataChunk(1,:,:,:),&
+               & meshDimsChunk,hdferr,fileMeshChunk_dsid,fileMeshChunk_dsid)
+         if (hdferr /= 0) stop 'Failed to write mesh_did c'
+      endif
+   enddo
+
+   deallocate (meshValues)
 
    ! Log the end of the wave function evaluation.
    call timeStampEnd(25)
