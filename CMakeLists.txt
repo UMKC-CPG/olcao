@@ -14,7 +14,9 @@ endif (NOT CMAKE_BUILD_TYPE)
 # Establish the installation location on the basis of the $OLCAO_DIR
 #   environment variable that is defined in the .olcao file. Make sure that you
 #   source this file (source .olcao) before you try to build.
-set (CMAKE_INSTALL_PREFIX $ENV{OLCAO_DIR})
+if (CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+   set (CMAKE_INSTALL_PREFIX $ENV{OLCAO_DIR})
+endif (CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
 message("CMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}")
 
 # Get the full path of the compiler from the FC environment variable and

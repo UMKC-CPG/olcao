@@ -5,7 +5,7 @@ install:
 	. ../.olcao/olcaorc && \
 	cd ../build/release && \
 	export FC=h5fc && \
-	cmake ../.. && \
+	cmake ../.. -DCMAKE_BUILD_TYPE=RELEASE -DCMAKE_INSTALL_PREFIX="../.." && \
 	make install && \
 	unpackOLCAODB
 
