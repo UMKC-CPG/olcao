@@ -11,7 +11,7 @@ export OLCAO_BRANCH="olcao"
 if [ -z ${1+foo} ]; then
    export OLCAO_DIR="$HOME/$OLCAO_BRANCH"
 else
-   export OLCAO_DIR="$1/$OLCAO_BRANCH"
+   export OLCAO_DIR="$1"
 fi
 export GRASP2K_DIR="$OLCAO_DIR/src/grasp2k/grasp2Kdev"
 

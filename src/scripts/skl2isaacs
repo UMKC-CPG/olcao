@@ -1,0 +1,93 @@
+#!/usr/bin/env perl
+sub printHelp
+{
+   print STDOUT <<ENDHELP;
+###############################################################################
+#Program:  skl2isaacs
+#Purpose:  This program will convert a olcao skeleton .skl file into a set of
+#          ISAACS input files (an ISAACS XML and a Chem3D file).
+#          are sorted according to their elements.  This will also produce a
+#          mapping between the pdb file atoms and the skl atoms.
+#
+#USAGE:  skl2pdb [-i \$sklInputFile] [-o \$isaacsOutputRoot] [-help]
+#
+#The -i option is used to request that a specific input file be used for the
+#   conversion.  If this option is not given, then the default value for the
+#   input file is olcao.skl.
+#The -o option is used to request that a specific set of output files be
+#   written to for the conversion.  If this option is not given, then the
+#   default value for the root of output files is "olcao".
+#   
+###############################################################################
+ENDHELP
+   exit;
+}
+
+# BEGIN PROGRAM EXECUTION #################
+
+# Use necessary modules.
+use strict;
+use warnings;
+use Env;
+use lib "$OLCAO_BIN/perl5";
+use ElementData;
+use StructureControl;
+
+# Declare global variables.
+my $isaacsOutputRoot;
+my $isaacsIPF;
+my $isaacsChem3D;
+my $sklFile;
+
+# Initialize the environment.
+&initEnvironment;
+
+# Read the command line for requested options.
+&parseCommandLine;
+
+# Read the skeleton input file and store/calculate all important information.
+StructureControl::readInputFile($sklFile,0);
+
+# Print the isaacs input files.
+StructureControl::printISAACS($isaacsIPF,$isaacsChem3D);
+
+
+# END PROGRAM EXECUTION ###################
+
+sub initEnvironment
+{
+   # Define the default file names.
+   $isaacsIPF = "$isaacsOutputRoot.ipf";
+   $isaacsChem3D = "$isaacsOutputRoot.chem3d";
+   $sklFile = "olcao.skl";
+}
+
+sub parseCommandLine
+{
+   # Define local variables.
+   my $number=0;
+   my $argument;
+   my $commandLine = "command";
+
+   while ($number < scalar(@ARGV))
+   {
+      if ($ARGV[$number] eq "-i")
+         {$sklFile = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-o")
+         {$isaacsOutputRoot = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-help")
+         {&printHelp;}
+      else
+         {die "Unknown command line parameter: $ARGV[$number].  Aborting\n";}
+
+      $number++;
+   }
+
+   #Record the command line used to create this set of input files.
+   open (COMMANDLINE,">>$commandLine");
+   print COMMANDLINE "skl2isaacs ";
+   foreach $argument (0..$#ARGV)
+      {print COMMANDLINE "$ARGV[$argument] ";}
+   print COMMANDLINE "\n";
+   close (COMMANDLINE);
+}
