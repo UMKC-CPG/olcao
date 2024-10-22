@@ -9,8 +9,8 @@ middlewareDirectory=$(readlink -f $(dirname $0))
 toolDirectory=$(realpath ${middlewareDirectory}/..)
 
 # Source the olcaorc script so that nanoHUB executions will have access to the
-#   olcao environment variables.
-. ${toolDirectory}/.olcao/olcaorc
+#   olcao environment variables and force the OLCAO_DIR to be in.
+. ${toolDirectory}/.olcao/olcaorc "${toolDirectory}/.."
 
 # Run the invoke_app script for olcao.
 /usr/bin/invoke_app "$@" -t olcao \
