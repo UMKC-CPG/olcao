@@ -20,7 +20,7 @@ def get_proj_dir(skeleton, custom, kpoints):
     if (skeleton == "custom"):
         temp_string = custom
     else:
-        skeleton_source = os.getenv('OLCAO_DIR') + "/skl/" + skeleton
+        skeleton_source = os.getenv('TOOLDIR') + "/skl/" + skeleton
         temp_string = open(skeleton_source, "r").read()
 
     temp_string += kpoints
@@ -49,7 +49,7 @@ def make_input(skeleton, custom, kpoints):
         with open("olcao.skl", "w") as o:
             o.write(custom)
     else:
-        skeleton_source = os.getenv('OLCAO_DIR') + "/skl/" + skeleton
+        skeleton_source = os.getenv('TOOLDIR') + "/skl/" + skeleton
         os.system("cp " + skeleton_source + "  ./olcao.skl")
 
     os.system("makeinput -kp " + kpoints)
