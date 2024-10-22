@@ -57,8 +57,8 @@ my $modelpdb = "model.pdb"; # Default pdb input file name.
 my $modelhin = "model.hin"; # Default hin input file name.
 my @systemTitle = "empty";  # Name for the project under consideration.
 my $spaceGroupDB = "$OLCAO_DATA/spaceDB"; # Space group data location.
-my $atomicBDB    = "$OLCAO_DATA/atomicBDB"; # Basis set data location.
-my $atomicPDB    = "$OLCAO_DATA/atomicPDB"; # Potential Fn data location.
+my $atomicBDB = "$OLCAO_DATA/atomicBDB"; # Basis set data location.
+my $atomicPDB = "$OLCAO_DATA/atomicPDB"; # Potential Fn data location.
 my $title;
 
 # Atomic positions and attributes
@@ -5992,6 +5992,108 @@ sub printLMP
    # Close the lammps file.
    close (LMP);
 }
+
+
+#sub printISAACS
+#{
+#   # Define passed parameters.
+#   my $isaacsIPF = $_[0];
+#   my $isaacsChem3D = $_[1];
+#
+#   # Define local variables.
+#   my $i;
+#   my $element;
+#   my $species;
+#   my $type;
+#   my $fileName;
+#   my @magAngstroms;  # Cell lattice parameter magnitudes in angstroms.
+#
+#   # Compute the magnitude of the lattice parameters in angstroms.
+#   $magAngstroms[1] = $mag[1]*$bohrRad;
+#   $magAngstroms[2] = $mag[2]*$bohrRad;
+#   $magAngstroms[3] = $mag[3]*$bohrRad;
+#
+#   # Open the IPF file for writing.
+#   open (IPF,">$isaacsIPF") || die "Cannot open $isaacsIPF for writing.\n";
+#
+#   #Prepare the header for the file.
+#   print IPF "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
+#   print IPF "<!-- I.S.A.A.C.S. v1.1 XML file -->\n";
+#   print IPF "<isaacs-xml>\n";
+#   print IPF " <!-- Data format and file containing the configurations(s) -->\n";
+#   print IPF " <data>\n";
+#   print IPF "  <type>Chem3D file</type>\n";
+#   print IPF "  <file>./$isaacsChem3D</file>\n";
+#   print IPF " </data>\n";
+#   print IPF " <-- Chemistry information -->\n";
+#   print IPF " <chemistry>\n";
+#   print IPF "  <atoms>$numAtoms</atoms>\n";
+#   print IPF "  <species number=\"$num\">\n";
+#   foreach $element ($numElements)
+#   {
+#      foreach $species (@numSpecies[$element])
+#      {
+#         print IPF "    <label id=\"$speciesCount\">$speciesList[$element][$species]</label>\n";
+#      }
+#   }
+#   print IPF "  </species>\n";
+#   foreach $element ($numElements)
+#   {
+#      print IPF "  <element symbol=\"$elementName[$element]\">\n";
+#      print IPF "   <name>$elementFullName[$element]</name>\n";
+#      print IPF "   <z>$zNumber[$element]</z>\z";
+#      print IPF "   <mass>$elementMass</mass>\n"
+#   }
+#   print IPF "\n";
+#   print IPF "\n";
+#   print IPF "\n";
+#   print IPF "\n";
+#
+#
+#
+#
+#
+#
+#   print CIF "_symmetry_cell_setting $cellName\n";
+#   print CIF "_symmetry_space_group_name_H-M 'P 1'\n";
+#   print CIF "loop_\n";
+#   print CIF "   _symmetry_equiv_pos_as_xyz\n";
+#   print CIF "              X,Y,Z\n";
+#
+#   #Print the crystal lattice information.
+#   print CIF "_cell_length_a $magAngstroms[1]\n";
+#   print CIF "_cell_length_b $magAngstroms[2]\n";
+#   print CIF "_cell_length_c $magAngstroms[3]\n";
+#   print CIF "_cell_angle_alpha $angleDeg[1]\n";
+#   print CIF "_cell_angle_beta $angleDeg[2]\n";
+#   print CIF "_cell_angle_gamma $angleDeg[3]\n";
+#
+#
+#   #Prepare to print the atoms
+#   print CIF "loop_\n";
+#   print CIF "   _atom_site_label\n";
+#   print CIF "   _atom_site_type_symbol\n";
+#   print CIF "   _atom_site_fract_x\n";
+#   print CIF "   _atom_site_fract_y\n";
+#   print CIF "   _atom_site_fract_z\n";
+#
+#   #Loop to print all the atoms in the cell.
+#   for ($i=1;$i<=$numAtoms;$i++)
+#   {
+#      # Determine the element name and species ID number.
+#      $element = $elementList[$sortedAtomElementID_ref->[$i]];
+#      $species = $sortedAtomSpeciesID_ref->[$i];
+#      $type    = $sortedAtomTypeID_ref->[$i];
+#
+#      printf CIF "   %2s%-s%1s%-3s %2s %12.6f %12.6f %12.6f\n",$element,
+#            $species,"_",$type,ucfirst($element),
+#            $sortedFractABC_ref->[$i][1],
+#            $sortedFractABC_ref->[$i][2],$sortedFractABC_ref->[$i][3];
+#   }
+#
+#   #Close it.
+#   close (CIF);
+#}
 
 
 

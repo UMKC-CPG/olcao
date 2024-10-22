@@ -8,7 +8,11 @@
 export OLCAO_BRANCH="olcao"
 
 #Root directories of the OLCAO program suite and any additional codes.
-export OLCAO_DIR="$HOME/$OLCAO_BRANCH"
+if [ -z ${1+foo} ]; then
+   export OLCAO_DIR="$HOME/$OLCAO_BRANCH"
+else
+   export OLCAO_DIR="$1/$OLCAO_BRANCH"
+fi
 export GRASP2K_DIR="$OLCAO_DIR/src/grasp2k/grasp2Kdev"
 
 #Default location of all script resource control files.
