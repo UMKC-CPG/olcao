@@ -57,21 +57,17 @@ def make_input(skeleton, custom, kpoints):
 
 def execute_jobs():
 
-    print ("Starting Optical Properties")
-    os.system("uolcao -optc")
-    print ("Finished Optical Properties")
-
-    print ("Starting Density of States")
+    os.system("echo Starting Density of States")
     os.system("uolcao -dos")
-    print ("Finished Density of States")
 
-    print ("Starting Bond Order and Q*")
-    os.system("uolcao -bond")
-    print ("Finished Bond Order and Q*")
+    #print ("Starting Bond Order and Q*")
+    #os.system("uolcao -bond")
 
-    print ("Starting Symmetric Band Structure")
+    os.system("echo Starting Symmetric Band Structure")
     os.system("uolcao -sybd")
-    print ("Finished Symmetric Band Structure")
+
+    os.system("echo Starting Optical Properties")
+    os.system("uolcao -optc")
 
 
 def gather_tdos_data():
@@ -166,7 +162,7 @@ def gather_sybd_data():
         sybd[band]['about.group'] = "Symmetric Band Structure"
         sybd[band]['xaxis.label'] = "Wave Vector"
         sybd[band]['yaxis.label'] = "Energy"
-        sybd[band]['xaxis.units'] = "1/cm"
+        sybd[band]['xaxis.units'] = "Path between high symmetry points"
         sybd[band]['yaxis.units'] = "eV"
         sybd[band]['yaxis.min'] = "-20"
         sybd[band]['yaxis.max'] = "20"

@@ -51,7 +51,7 @@
         <string id="custom_skeleton">
             <about>
                 <label>Custom Skeleton File</label>
-                <description>Create a custom skeleton input filee.</description>
+                <description>Create a custom skeleton input file.</description>
             </about>
             <size>40x15</size>
             <default>title
