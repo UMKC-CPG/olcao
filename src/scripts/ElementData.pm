@@ -36,6 +36,7 @@ my @ljPairCoeffs;    # LJ pair coefficients for LAMMPS MD simulations.
 my @coreCharge;      # Number of core electrons in each s,p,d,f.
 my @valeCharge;      # Number of valence electrons in each s,p,d,f.
 my @elementNames;    # Abbreviation of element names from the periodic table.
+my @elementFullNames;# Full names of elements from the periodic table.
 my @numTermsWF;      # Num gaussians to represent orbital wavefns.
 my @minTermWF;       # The minimum exponential gaussian coefficient (wavefn).
 my @maxTermWF;       # The maximal exponential gaussian coefficient (wavefn).
@@ -96,6 +97,16 @@ sub initElementData
    {
       @values = &prepLine(\*EDATA,$line,'\s+');
       $elementNames[$element] = $values[0];
+   }
+
+   # Read the element full names.
+   @values = &prepLine(\*EDATA,$line,'\s+');
+   if ($values[0] ne "ELEMENT_FULL_NAMES")
+      {die "Expecting ELEMENT_FULL_NAMES tag in $OLCAO_DATA/elements.dat";}
+   foreach $element (1..$numElements)
+   {
+      @values = &prepLine(\*EDATA,$line,'\s+');
+      $elementFullNames[$element] = $values[0];
    }
 
    # Read the atomic masses.
@@ -389,6 +400,9 @@ sub getLJPairCoeffs
 
 sub getElementNamesRef
    {return \@elementNames;}
+
+sub getElementFullNamesRef
+   {return \@elementFullNames;}
 
 sub getValeCharge
    {return @{$valeCharge[$_[0]]};}

@@ -7,23 +7,25 @@ module O_ElementData
    implicit none
 
    ! Define module data.
-   character*3, allocatable, dimension (:)          :: elementNames ! The
+   character*3, allocatable, dimension (:) :: elementNames ! The
          ! abbreviated names of the elements from the periodic table.
-   integer, allocatable, dimension (:)              :: numUJElectrons ! Number
+   character*12, allocatable, dimension (:) :: elementFullNames ! The full
+         ! unabbreviated names of the elements from the periodic table.
+   integer, allocatable, dimension (:) :: numUJElectrons ! Number
          ! of electrons in the highest occupied d or f orbital. This data was
          ! taken from a periodic table of the elements and should be improved
          ! upon in some way for more complicated scenarios.
-   real (kind=double), allocatable, dimension (:)   :: atomicMass ! Atomic mass
+   real (kind=double), allocatable, dimension (:) :: atomicMass ! Atomic mass
          ! of each unique element.
-   real (kind=double), allocatable, dimension (:)   :: covalRadii ! Covalent
+   real (kind=double), allocatable, dimension (:) :: covalRadii ! Covalent
          ! radius of each unique element.
    real (kind=double), allocatable, dimension (:,:) :: coreCharge ! Number of
          ! core electrons in each s,p,d,f orbital of each unique element.
    real (kind=double), allocatable, dimension (:,:) :: valeCharge ! Number of
          ! valence electrons in each s,p,d,f orbital of each unique element.
-   real (kind=double), allocatable, dimension (:)   :: colorDX ! Default color
+   real (kind=double), allocatable, dimension (:) :: colorDX ! Default color
          ! values to use in OpenDX on a scale of 1-100 for each unique element.
-   real (kind=double), allocatable, dimension (:)   :: greyDX ! Default grey
+   real (kind=double), allocatable, dimension (:) :: greyDX ! Default grey
          ! scale values to use in OpenDX on a scale of 1-100 for each unique
          ! element.
    integer :: numUniqueElements ! Number of elements with some physical data
@@ -88,6 +90,7 @@ subroutine initElementData
 
    ! Allocate arrays for holding data.
    allocate (elementNames(numUniqueElements))
+   allocate (elementFullNames(numUniqueElements))
    allocate (atomicMass(numUniqueElements))
    allocate (covalRadii(numUniqueElements))
    allocate (numUJElectrons(numUniqueElements))
@@ -100,6 +103,12 @@ subroutine initElementData
    read (313,*)
    do i = 1, numUniqueElements
       read (313,*) elementNames(i)
+   enddo
+
+   ! Assign data values for the full element names.
+   read (313,*)
+   do i = 1, numUniqueElements
+      read (313,*) elementFullNames(i)
    enddo
 
    ! Atomic mass of each element.

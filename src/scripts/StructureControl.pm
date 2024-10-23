@@ -148,6 +148,7 @@ my $buffer=10;       # Buffer space between the system and the simulation box
 # References to elemental data from the database and implicit data about the
 #   current system under study that is extracted from the elemental database.
 my $elementNames_ref;
+my $elementFullNames_ref;
 my $covalRadii_ref;
 my $valenceCharge_ref;
 my $minPotAlpha;
@@ -728,6 +729,7 @@ sub reset
    undef @posBit;
    $buffer=10;
    undef $elementNames_ref;
+   undef $elementFullNames_ref;
    undef $covalRadii_ref;
    undef $valenceCharge_ref;
    undef $minPotAlpha;
@@ -895,8 +897,9 @@ sub setupDataBaseRef
    ElementData::initElementData;
 
    # Obtain references to the database.
-   $elementNames_ref  = ElementData::getElementNamesRef;
-   $covalRadii_ref    = ElementData::getCovalRadiiRef;
+   $elementNames_ref = ElementData::getElementNamesRef;
+   $elementFullNames_ref  = ElementData::getElementFullNamesRef;
+   $covalRadii_ref = ElementData::getCovalRadiiRef;
 #   $valenceCharge_ref = ElementData::getValenceChargeRef;
 }
 
@@ -6001,6 +6004,8 @@ sub printLMP
 #   my $isaacsChem3D = $_[1];
 #
 #   # Define local variables.
+#   my @zNumber;
+#   #
 #   my $i;
 #   my $element;
 #   my $species;
@@ -6012,6 +6017,10 @@ sub printLMP
 #   $magAngstroms[1] = $mag[1]*$bohrRad;
 #   $magAngstroms[2] = $mag[2]*$bohrRad;
 #   $magAngstroms[3] = $mag[3]*$bohrRad;
+#
+#   # Compute the zNumber of each element in the model.
+#   foreach $element ($numElements)
+#      {$zNumber[$element] = &getElementNumber($elementList[$element]);}
 #
 #   # Open the IPF file for writing.
 #   open (IPF,">$isaacsIPF") || die "Cannot open $isaacsIPF for writing.\n";
@@ -6028,21 +6037,16 @@ sub printLMP
 #   print IPF " <-- Chemistry information -->\n";
 #   print IPF " <chemistry>\n";
 #   print IPF "  <atoms>$numAtoms</atoms>\n";
-#   print IPF "  <species number=\"$num\">\n";
+#   print IPF "  <species number=\"$numElements\">\n";
 #   foreach $element ($numElements)
-#   {
-#      foreach $species (@numSpecies[$element])
-#      {
-#         print IPF "    <label id=\"$speciesCount\">$speciesList[$element][$species]</label>\n";
-#      }
-#   }
+#      {print IPF "   <label id=\"$element\">$elementList[$element]</label>\n";}
 #   print IPF "  </species>\n";
 #   foreach $element ($numElements)
 #   {
-#      print IPF "  <element symbol=\"$elementName[$element]\">\n";
+#      print IPF "  <element symbol=\"$elementList[$element]\">\n";
 #      print IPF "   <name>$elementFullName[$element]</name>\n";
-#      print IPF "   <z>$zNumber[$element]</z>\z";
-#      print IPF "   <mass>$elementMass</mass>\n"
+#      print IPF "   <z>$zNumber[$element]</z>\n";
+#      print IPF "   <mass>$elementMass</mass>\n";
 #   }
 #   print IPF "\n";
 #   print IPF "\n";

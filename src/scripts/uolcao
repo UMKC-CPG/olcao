@@ -178,17 +178,11 @@ my $olcao;
 my $atomPos;
 my $lattice;
 
-# File nature components.
-# Unnecessary in theory.
-#my $setup;
-#my $main;
-#my $intg;
-#my $band;
-
 # Replacements.
 my $scf;
 my $pscf;
 
+# File nature components.
 my $dos;
 my $bond;
 my $dimo;
@@ -200,6 +194,7 @@ my $sybd;
 my $force;
 my $field;
 my $loen;
+my $vdim;
 
 # Auxiliary suffix components.
 my $loci;
@@ -796,6 +791,7 @@ sub initFileNames
    $force = "force";
    $field = "field";
    $loen  = "loen";
+   $vdim  = "vdim";
 
    #DEFINE AUXILIARY SUFFIX COMPONENTS
    $loci      = ".loci";
@@ -1223,7 +1219,7 @@ sub executeProgram
 
 
    # In certain cases secondary jobs needs to be run immediately afterwards.
-   if (($jobID == 108) || ($jobID == 208))
+   if ($jobID % 100 == 8) # SYBD
    {
       system("$OLCAO_BIN/makeSYBD -dat fort.5 -out fort.20 ".
              "-raw fort.31 -plot fort.41");
@@ -1231,8 +1227,7 @@ sub executeProgram
          {system("$OLCAO_BIN/makeSYBD -dat fort.5 -out fort.20 ".
                  "-raw fort.32 -plot fort.42");}
    }
-   elsif (($jobID == 104) || ($jobID == 204) || ($jobID == 106) ||
-         ($jobID == 206))
+   elsif (($jobID % 100 == 4) || ($jobID % 100 == 6)) # OPTC or NLOP
    {
       # Define local variables.
       my $lineCount;
@@ -1543,13 +1538,19 @@ sub manageOutput
       if ($spinPol == 2)
       {
          &move("fort.31","$edge_$sybd$basis$raw.31");
+         &copy("fort.33","$proj_home/$vdim$basis$raw");
+         &move("fort.33","$edge_$sybd$basis$raw.33");
          &move("fort.41","$proj_home/$edge_$sybd$basis$up$plot");
          &move("fort.32","$edge_$sybd$basis$raw.32");
+         &copy("fort.34","$proj_home/$vdim$basis$raw");
+         &move("fort.34","$edge_$sybd$basis$raw.34");
          &move("fort.42","$proj_home/$edge_$sybd$basis$dn$plot");
       }
       else
       {
          &move("fort.31","$edge_$sybd$basis$raw.31");
+         &copy("fort.33","$proj_home/$vdim$basis$raw");
+         &move("fort.33","$edge_$sybd$basis$raw.33");
          &move("fort.41","$proj_home/$edge_$sybd$basis$plot");
       }
    }

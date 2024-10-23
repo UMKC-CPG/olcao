@@ -843,25 +843,25 @@ subroutine printSYBD
             do l = -atomTypes(currAtomType)%valeQN_lList(k), &
                   & atomTypes(currAtomType)%valeQN_lList(k)
                basisFnCount = basisFnCount + 1
-               write (32,fmt="(i5)",advance="NO") basisFnCount
-               write (32,fmt="(i5)",advance="NO") j
-               write (32,fmt="(a3)",advance="NO") &
+               write (32+i,fmt="(i5)",advance="NO") basisFnCount
+               write (32+i,fmt="(i5)",advance="NO") j
+               write (32+i,fmt="(a,a3)",advance="NO") " ", &
                      & atomTypes(currAtomType)%elementName
-               write (32,fmt="(i5)",advance="NO") &
+               write (32+i,fmt="(1e10.3)",advance="NO") &
                      & potTypes(currAtomType)%nucCharge
-               write (32,fmt="(i5)",advance="NO") &
+               write (32+i,fmt="(i5)",advance="NO") &
                      & atomTypes(currAtomType)%elementID
-               write (32,fmt="(i5)",advance="NO") &
+               write (32+i,fmt="(i5)",advance="NO") &
                      & atomTypes(currAtomType)%speciesID
-               write (32,fmt="(i5)",advance="NO") &
+               write (32+i,fmt="(i5)",advance="NO") &
                      & atomTypes(currAtomType)%typeID
-               write (32,fmt="(i5)",advance="NO") &
+               write (32+i,fmt="(i5)",advance="NO") &
                      & atomTypes(currAtomType)%valeQN_nList(k)
-               write (32,fmt="(i5)",advance="NO") &
+               write (32+i,fmt="(i5)",advance="NO") &
                      & atomTypes(currAtomType)%valeQN_lList(k)
-               write (32,fmt="(i5)",advance="NO") l
-               write (32,fmt="(3e15.6)",advance="NO") &
-                     & atomSites(i)%cartPos(1:3)
+               write (32+i,fmt="(i5)",advance="NO") l
+               write (32+i,fmt="(3e15.6)") &
+                     & atomSites(j)%cartPos(1:3)
                
             enddo
          enddo
