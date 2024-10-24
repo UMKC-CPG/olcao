@@ -26,11 +26,11 @@ export GRASP2K_BIN="$GRASP2K_DIR/bin"
 export OLCAO_DATA="$OLCAO_DIR/share"
 
 #Location for all intermediate directories.
-if [ -z ${1+foo} ]; then
-   export OLCAO_TEMP="$HOME/data/scratch/$OLCAO_BRANCH" # Default
-else
-   export OLCAO_TEMP="$1/scratch" # Command line provided (used by nanoHUB)
-fi
+#if [ -z ${1+foo} ]; then
+export OLCAO_TEMP="$HOME/data/scratch/$OLCAO_BRANCH" # Default
+#else
+#   export OLCAO_TEMP="$1/scratch" # Command line provided (used by nanoHUB)
+#fi
 
 #Execution mechanism for Fortran programs within the olcao script.
 #export OLCAO_EXE="srun -n1 --exclusive"
