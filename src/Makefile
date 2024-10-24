@@ -3,7 +3,7 @@ SHELL := /bin/bash
 all:
 
 install:
-	. /etc/environ.sh && use -e -r cmake-3.6.3 && \
+	. /etc/environ.sh && use -e -r cmake-3.6.3
 	. ../.olcao/olcaorc $$(pwd)/.. && \
 	cd ../build/release && \
 	export FC=h5fc && \
