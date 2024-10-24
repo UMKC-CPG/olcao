@@ -2950,9 +2950,9 @@ sub prepSurface
    my $xyzAxis;            # An axis iterator over xyz axes.
    my $abcAxis;            # An axis iterator over abc axes.
    my $uvwMag;
-   my @uvw;                # Real space vector associated with hkl.
+   my @uvwNormal;          # Real space vector associated with hkl.
    my @uvwNormalLattice;
-   my @uvwRealLattice;     # Lattice of a real cell defining @uvw vector.
+   my @uvwRealLattice;     # Lattice of a real cell defining @uvwNormal vector.
    my @newRealLattice;     # Actual new lattice for simulation.
    my @newRealLatticeCenter;
    my @maxXYZ;
@@ -2982,20 +2982,23 @@ sub prepSurface
 
    # We are given a reciprocal space hkl. This defines a plane in real space
    #   that intercepts the primitive real space cell at a1/h a2/k a3/l.
-   #   However, we need to find the real space lattice vector uvw that defines
-   #   a plane with the same orientation but for which the normal vector is
-   #   longer. In fact, the length must be such that it points to a specific
-   #   real space lattice site. (I.e. the vector components are integral
-   #   multiples of the real space lattice vector components.)
+   #   However, we also need to find the real space lattice vector uvw that
+   #   defines a plane with the same orientation but for which the normal
+   #   vector is longer. In fact, the length must be such that it points to
+   #   a specific real space lattice site. (I.e. the vector components are
+   #   integral multiples of the real space lattice vector components.)
    # Therefore, we first compute the least common multiple of the hkl values
    #   with the caveat that an hkl value of zero will not be used to compute
-   #   the least common multiple.
+   #   the least common multiple. An hkl value of zero indicates that the
+   #   real space plane will not intersect that axis. (E.g., if hkl=010, then
+   #   the real space plane will be parallel to the x-z plane and will
+   #   intersect neither the x nor the z axis.)
    $leastCommonMult = 0;
    $product = 1;
-   foreach $abcAxis (1..3)
+   foreach $hklIndex (1..3)
    {
-      if ($hkl_ref->[$abcAxis] != 0)
-         {$product *= $hkl_ref->[$abcAxis];}
+      if ($hkl_ref->[$hklIndex] != 0)
+         {$product *= $hkl_ref->[$hklIndex];}
    }
    foreach $i (1..$product)
    {
@@ -3032,7 +3035,7 @@ sub prepSurface
    #   vector is set to zero as well. Essentially, the resultant uvw vector
    #   (R = ua_1 + va_2 + wa_3) will be the normal to the plane defined by the
    #   hkl vector: K = hb_1 + kb_2 + lb_3 where b_1,2,3 are reciprocal lattice
-   #   primitive vectors (expressed in xyz coordinates).
+   #   vectors (expressed in xyz coordinates).
    # Second, create a uvwRealLattice (abc vectors expressed in xyz coordinates)
    #   that is the exact same as the uvwNormalLattice except for the cases
    #   where the hkl value is zero. In this case the uvwRealLattice will have
@@ -3059,17 +3062,17 @@ sub prepSurface
       }
    }
 
-   # The accumulated sum of the uvwNormal vectors (in xyz coordinates) is
-   #   the normal vector for the plane defined by the hkl reciprocal lattice
-   #   vector.
-   @uvw = (0,0,0,0);
+   # The accumulated sum of the uvwNormalLattice vectors (in xyz coordinates)
+   #   is the normal vector for the plane defined by the hkl reciprocal
+   #   lattice vector. This vector will define the new c-axis.
+   @uvwNormal = (0,0,0,0);
    foreach $xyzAxis (1..3)
    {
-      $uvw[$xyzAxis] = 0.0;
+      $uvwNormal[$xyzAxis] = 0.0;
       foreach $abcAxis (1..3)
-         {$uvw[$xyzAxis] += $uvwNormalLattice[$abcAxis][$xyzAxis];}
+         {$uvwNormal[$xyzAxis] += $uvwNormalLattice[$abcAxis][$xyzAxis];}
    }
-   $uvwMag = sqrt($uvw[1]**2 + $uvw[2]**2 + $uvw[3]**2);
+   $uvwMag = sqrt($uvwNormal[1]**2 + $uvwNormal[2]**2 + $uvwNormal[3]**2);
 
    # However, the new a and b axes are a bit trickier. The essential question
    #   is the following: Given a lattice point defined by the uvwRealLattice,
@@ -3086,11 +3089,13 @@ sub prepSurface
    #   Thus, if we make the old z-axis become the new a-axis, then the a-axis
    #   will have a value of (|old z mag| 0 0). After that, we need to find
    #   the magnitude of the b-axis in a similar way as will be described below.
+   #   NOTE: it helps a lot to draw a picture of the above description for a
+   #   cubic cell.
    # If we don't have the easy case, then we need to look for two other lattice
-   #   points that are not all co-linear with the uvw vector point but which
-   #   are positioned on the plane defined by the uvw vector. (In the easy
-   #   case we just need one and can ignore searching in the direction of the
-   #   easy lattice vector.)
+   #   points that are not all co-linear with the uvwNormal vector point but
+   #   which are positioned on the plane defined by the uvwNormal vector. (In
+   #   the easy case we just need one and can ignore searching in the direction
+   #   of the easy lattice vector.)
    # We will find the lattice points by executing a spiral search out from the
    #   origin in steps of uvwRealLattice. This follows the same algorithm as
    #   the makeLattice subroutine in lattice.f90 of the olcao code. Note that
@@ -3171,21 +3176,21 @@ sub prepSurface
 
    # Now we can finally establish the newRealLattice and newMag. We do this by
    #   checking each of the lattice points in cellDims to determine if the
-   #   vector defined by that lattice point is perpendicular to the uvw vector.
-   #   (Obviously we skip the trivial (0,0,0) case.)  When we find the first
-   #   cellDims vector that is perpendicular to uvw we can identify the
-   #   distance to this lattice point as newMag[2] and the vector as the new
-   #   b-axis vector for newRealLattice. Any future lattice point that is found
-   #   must be perpendicular to uvw *and* non-colinear with the first
-   #   discovered lattice point. The second vector that is found that satisfies
-   #   the criteria will be the new c-axis and the distance to it will be the
-   #   newMag[3] value.
+   #   vector defined by that lattice point is perpendicular to the uvwNormal
+   #   vector. (Obviously we skip the trivial (0,0,0) case.)  When we find the
+   #   first cellDims vector that is perpendicular to uvwNormal we can identify
+   #   the distance to this lattice point as newMag[2] and the vector as the
+   #   new b-axis vector for newRealLattice. Any future lattice point that is
+   #   found must be perpendicular to uvwNormal *and* non-colinear with the
+   #   first discovered lattice point. The second vector that is found that
+   #   satisfies the criteria will be the new c-axis and the distance to it
+   #   will be the newMag[3] value.
    @newMag = (0,0,0,0);
    foreach $cell (2..$numCells) # Start at 2 to skip (0,0,0).
    {
       @tempVector = (0,$cellDims[1][$cell],$cellDims[2][$cell],
                        $cellDims[3][$cell]);
-      if (abs(&dotProduct(\@tempVector,\@uvw)) < $epsilon)
+      if (abs(&dotProduct(\@tempVector,\@uvwNormal)) < $epsilon)
       {
          if ($newMag[2] == 0)
          {
@@ -3210,9 +3215,9 @@ sub prepSurface
    #   surface. Later, the cell will be rotated so that this axis is co-linear
    #   with the Cartesean x-axis.
    $newMag[1] = $uvwMag;
-   $newRealLattice[1][1] = $uvw[1];
-   $newRealLattice[1][2] = $uvw[2];
-   $newRealLattice[1][3] = $uvw[3];
+   $newRealLattice[1][1] = $uvwNormal[1];
+   $newRealLattice[1][2] = $uvwNormal[2];
+   $newRealLattice[1][3] = $uvwNormal[3];
 
 
    # At this point we can put the newRealLattice parameters into realLattice,
@@ -3447,12 +3452,12 @@ sub prepSurface
    #   to the plane of the surface and co-linear with the Cartesean x-axis.
 
    # Compute a vector that is perpendicular to the plane formed by the new real
-   #   space vector (@uvw) and the cartesian x-axis. This will be the axis of
-   #   rotation.
+   #   space vector (@uvwNormal) and the cartesian x-axis. This will be the
+   #   axis of rotation.
    @xAxis  = (0,1,0,0); # Uses indices 1..3.
-   @rotAxis = &getPlaneNormal(\@origin,\@xAxis,\@uvw);
+   @rotAxis = &getPlaneNormal(\@origin,\@xAxis,\@uvwNormal);
 
-   # In the event that the xAxis and uvw vector are co-linear, then no
+   # In the event that the xAxis and uvwNormal vector are co-linear, then no
    #   rotation is needed. We can make that determination by looking at the
    #   magnitude of the rotation axis (i.e., the normalizer). If it is zero
    #   then they are co-linear.
@@ -3471,15 +3476,15 @@ sub prepSurface
 
       # Compute the angle of rotation between the real space vector and the
       #   x-axis.
-      $rotAngle = &getVectorAngle(\@uvw,\@xAxis);
+      $rotAngle = &getVectorAngle(\@uvwNormal,\@xAxis);
    }
    else
       {$rotAngle = 0.0;}
 
-   # In the event that the uvw vector is pointing into any positive y quadrant
-   #   then we need to rotate *back* to the x-axis. In that case we invert the
-   #   rotation axis.
-   if ($uvw[2] > 0.0)
+   # In the event that the uvwNormal vector is pointing into any positive y
+   #   quadrant then we need to rotate *back* to the x-axis. In that case we
+   #   invert the rotation axis.
+   if ($uvwNormal[2] > 0.0)
    {
       foreach $xyzAxis (1..3)
          {$rotAxis[$xyzAxis] = -1.0*$rotAxis[$xyzAxis];}
