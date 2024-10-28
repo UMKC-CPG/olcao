@@ -2981,7 +2981,7 @@ sub prepSurface
    $diagonalMag = sqrt($diagonal[1]**2 + $diagonal[2]**2 + $diagonal[3]**2);
 
    # We are given a reciprocal space hkl. This defines a plane in real space
-   #   that intercepts the primitive real space cell at a1/h a2/k a3/l.
+   #   that intercepts the primitive real space cell at a/h b/k c/l.
    #   However, we also need to find the real space lattice vector uvw that
    #   defines a plane with the same orientation but for which the normal
    #   vector is longer. In fact, the length must be such that it points to
@@ -3122,9 +3122,9 @@ sub prepSurface
          {
             $currentRep[3] = $k - int((1+$maxRep[3])/2);
 
-            # Create a lattice point for the current set of lattice repititions
+            # Create a lattice point for the current set of lattice repetitions
             #   by summing the xyz contributions of the uvwRealLattice times
-            #   the appropriate repitiiion number.
+            #   the appropriate repetition number.
             @lattPointTemp = (0,0,0,0);
             foreach $l (1..3) # $abcAxis
             {

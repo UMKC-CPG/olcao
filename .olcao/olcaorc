@@ -29,7 +29,7 @@ export OLCAO_DATA="$OLCAO_DIR/share"
 if [ -z ${1+foo} ]; then
    export OLCAO_TEMP="$HOME/data/scratch/$OLCAO_BRANCH" # Default
 else
-   export OLCAO_TEMP="/tmp" # Command line provided (used by nanoHUB)
+   export OLCAO_TEMP="/tmp" #  Used by nanoHUB
 fi
 
 #Execution mechanism for Fortran programs within the olcao script.
