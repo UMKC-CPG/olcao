@@ -57,8 +57,7 @@ StructureControl::printISAACS($isaacsIPF,$isaacsChem3D);
 sub initEnvironment
 {
    # Define the default file names.
-   $isaacsIPF = "$isaacsOutputRoot.ipf";
-   $isaacsChem3D = "$isaacsOutputRoot.chem3d";
+   $isaacsOutputRoot = "olcao";
    $sklFile = "olcao.skl";
 }
 
@@ -82,6 +81,10 @@ sub parseCommandLine
 
       $number++;
    }
+
+   # Use the output root to create the IPF and Chem3D filenames.
+   $isaacsIPF = $isaacsOutputRoot . ".ipf";
+   $isaacsChem3D = $isaacsOutputRoot . ".chem3d";
 
    #Record the command line used to create this set of input files.
    open (COMMANDLINE,">>$commandLine");

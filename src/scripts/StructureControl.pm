@@ -149,7 +149,10 @@ my $buffer=10;       # Buffer space between the system and the simulation box
 #   current system under study that is extracted from the elemental database.
 my $elementNames_ref;
 my $elementFullNames_ref;
+my $elementMasses_ref;
 my $covalRadii_ref;
+my $atomicRadii_ref;
+my $neutScatt_ref;
 my $valenceCharge_ref;
 my $minPotAlpha;
 my $maxNumPotAlphas;
@@ -730,7 +733,10 @@ sub reset
    $buffer=10;
    undef $elementNames_ref;
    undef $elementFullNames_ref;
+   undef $elementMasses_ref;
    undef $covalRadii_ref;
+   undef $atomicRadii_ref;
+   undef $neutScatt_ref;
    undef $valenceCharge_ref;
    undef $minPotAlpha;
    undef $maxNumPotAlphas;
@@ -899,7 +905,10 @@ sub setupDataBaseRef
    # Obtain references to the database.
    $elementNames_ref = ElementData::getElementNamesRef;
    $elementFullNames_ref  = ElementData::getElementFullNamesRef;
+   $elementMasses_ref  = ElementData::getAtomicMassesRef;
    $covalRadii_ref = ElementData::getCovalRadiiRef;
+   $atomicRadii_ref = ElementData::getAtomicRadiiRef;
+   $neutScatt_ref = ElementData::getNeutScattRef;
 #   $valenceCharge_ref = ElementData::getValenceChargeRef;
 }
 
@@ -1182,9 +1191,9 @@ ENDHELP
             # Read a,b,c magnitudes and alpha, beta, gamma angles.
             @values   = &prepLine("",$skeleton[$lineNum],'\s+');
 
-            $mag[1]   = $values[0];
-            $mag[2]   = $values[1];
-            $mag[3]   = $values[2];
+            $mag[1]   = $values[0];  # Angstroms
+            $mag[2]   = $values[1];  # Angstroms
+            $mag[3]   = $values[2];  # Angstroms
             $angleDeg[1] = $values[3];  # Degrees.
             $angleDeg[2] = $values[4];  # Degrees.
             $angleDeg[3] = $values[5];  # Degrees.
@@ -6002,107 +6011,150 @@ sub printLMP
 }
 
 
-#sub printISAACS
-#{
-#   # Define passed parameters.
-#   my $isaacsIPF = $_[0];
-#   my $isaacsChem3D = $_[1];
-#
-#   # Define local variables.
-#   my @zNumber;
-#   #
-#   my $i;
-#   my $element;
-#   my $species;
-#   my $type;
-#   my $fileName;
-#   my @magAngstroms;  # Cell lattice parameter magnitudes in angstroms.
-#
-#   # Compute the magnitude of the lattice parameters in angstroms.
-#   $magAngstroms[1] = $mag[1]*$bohrRad;
-#   $magAngstroms[2] = $mag[2]*$bohrRad;
-#   $magAngstroms[3] = $mag[3]*$bohrRad;
-#
-#   # Compute the zNumber of each element in the model.
-#   foreach $element ($numElements)
-#      {$zNumber[$element] = &getElementNumber($elementList[$element]);}
-#
-#   # Open the IPF file for writing.
-#   open (IPF,">$isaacsIPF") || die "Cannot open $isaacsIPF for writing.\n";
-#
-#   #Prepare the header for the file.
-#   print IPF "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
-#   print IPF "<!-- I.S.A.A.C.S. v1.1 XML file -->\n";
-#   print IPF "<isaacs-xml>\n";
-#   print IPF " <!-- Data format and file containing the configurations(s) -->\n";
-#   print IPF " <data>\n";
-#   print IPF "  <type>Chem3D file</type>\n";
-#   print IPF "  <file>./$isaacsChem3D</file>\n";
-#   print IPF " </data>\n";
-#   print IPF " <-- Chemistry information -->\n";
-#   print IPF " <chemistry>\n";
-#   print IPF "  <atoms>$numAtoms</atoms>\n";
-#   print IPF "  <species number=\"$numElements\">\n";
-#   foreach $element ($numElements)
-#      {print IPF "   <label id=\"$element\">$elementList[$element]</label>\n";}
-#   print IPF "  </species>\n";
-#   foreach $element ($numElements)
-#   {
-#      print IPF "  <element symbol=\"$elementList[$element]\">\n";
-#      print IPF "   <name>$elementFullName[$element]</name>\n";
-#      print IPF "   <z>$zNumber[$element]</z>\n";
-#      print IPF "   <mass>$elementMass</mass>\n";
-#   }
-#   print IPF "\n";
-#   print IPF "\n";
-#   print IPF "\n";
-#   print IPF "\n";
-#
-#
-#
-#
-#
-#
-#   print CIF "_symmetry_cell_setting $cellName\n";
-#   print CIF "_symmetry_space_group_name_H-M 'P 1'\n";
-#   print CIF "loop_\n";
-#   print CIF "   _symmetry_equiv_pos_as_xyz\n";
-#   print CIF "              X,Y,Z\n";
-#
-#   #Print the crystal lattice information.
-#   print CIF "_cell_length_a $magAngstroms[1]\n";
-#   print CIF "_cell_length_b $magAngstroms[2]\n";
-#   print CIF "_cell_length_c $magAngstroms[3]\n";
-#   print CIF "_cell_angle_alpha $angleDeg[1]\n";
-#   print CIF "_cell_angle_beta $angleDeg[2]\n";
-#   print CIF "_cell_angle_gamma $angleDeg[3]\n";
-#
-#
-#   #Prepare to print the atoms
-#   print CIF "loop_\n";
-#   print CIF "   _atom_site_label\n";
-#   print CIF "   _atom_site_type_symbol\n";
-#   print CIF "   _atom_site_fract_x\n";
-#   print CIF "   _atom_site_fract_y\n";
-#   print CIF "   _atom_site_fract_z\n";
-#
-#   #Loop to print all the atoms in the cell.
-#   for ($i=1;$i<=$numAtoms;$i++)
-#   {
-#      # Determine the element name and species ID number.
-#      $element = $elementList[$sortedAtomElementID_ref->[$i]];
-#      $species = $sortedAtomSpeciesID_ref->[$i];
-#      $type    = $sortedAtomTypeID_ref->[$i];
-#
-#      printf CIF "   %2s%-s%1s%-3s %2s %12.6f %12.6f %12.6f\n",$element,
-#            $species,"_",$type,ucfirst($element),
-#            $sortedFractABC_ref->[$i][1],
-#            $sortedFractABC_ref->[$i][2],$sortedFractABC_ref->[$i][3];
-#   }
-#
-#   #Close it.
-#   close (CIF);
-#}
+sub printISAACS
+{
+   # Define passed parameters.
+   my $isaacsIPF = $_[0];
+   my $isaacsC3D = $_[1]; # Chem3d
+
+   # Define local variables.
+   my @zNumber;
+   my $atom;
+   my $xyz;
+   my $pwd;
+   my $element;
+   my $element1;
+   my $element2;
+
+   # Compute the zNumber of each element in the model.
+   foreach $element (1..$numElements)
+      {$zNumber[$element] = &getElementNumber($elementList[$element]);}
+
+   # Open the IPF file for writing.
+   open (IPF,">$isaacsIPF") || die "Cannot open $isaacsIPF for writing.\n";
+
+   #Prepare the header for the file.
+   print IPF "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
+   print IPF "<!-- I.S.A.A.C.S. v1.1 XML file -->\n";
+   print IPF "<isaacs-xml>\n";
+   print IPF " <!-- Data format and file containing the configurations(s) -->\n";
+   print IPF " <data>\n";
+   print IPF "  <type>Chem3D file</type>\n";
+   $pwd = `pwd`;
+   chomp($pwd);
+   print IPF "  <file>$pwd/$isaacsC3D</file>\n";
+   print IPF " </data>\n";
+   print IPF " <!-- Chemistry information -->\n";
+   print IPF " <chemistry>\n";
+   print IPF "  <atoms>$numAtoms</atoms>\n";
+   print IPF "  <species number=\"$numElements\">\n";
+   foreach $element (1..$numElements)
+   {
+      my $elementName = ucfirst($elementList[$element]);
+      my $elementID = $element - 1;
+      print IPF sprintf("%s%-2s%s","   <label id=\"$elementID\">",
+            $elementName,"</label>\n");
+   }
+   print IPF "  </species>\n";
+   foreach $element (1..$numElements)
+   {
+      my $elementName = ucfirst($elementList[$element]);
+      my $elementFullName = 
+            ucfirst($elementFullNames_ref->[$zNumber[$element]]);
+      print IPF sprintf("%s%-2s%s","  <element symbol=\"",$elementName,"\">\n");
+      print IPF sprintf("%s%-15s%s","   <name>",$elementFullName,"</name>\n");
+      print IPF "   <z>$zNumber[$element]</z>\n";
+      print IPF "   <mass>$elementMasses_ref->[$zNumber[$element]]</mass>\n";
+      print IPF "   <rad>0</rad>\n";
+      print IPF "   <radius>$atomicRadii_ref->[$zNumber[$element]]";
+      print IPF "</radius>\n";
+      print IPF "   <nscatt>$neutScatt_ref->[$zNumber[$element]]";
+      print IPF "</nscatt>\n";
+      print IPF "   <xscatt>$zNumber[$element]</xscatt>\n";
+      print IPF "  </element>\n";
+   }
+   print IPF " </chemistry>\n";
+   print IPF " <!-- Box information -->\n";
+   print IPF " <box>\n";
+   print IPF "  <edges>\n";
+   print IPF "   <a>$mag[1]</a>\n";
+   print IPF "   <b>$mag[2]</b>\n";
+   print IPF "   <c>$mag[3]</c>\n";
+   print IPF "  </edges>\n";
+   print IPF "  <angles>\n";
+   print IPF "   <alpha>$angleDeg[1]</alpha>\n";
+   print IPF "   <beta>$angleDeg[2]</beta>\n";
+   print IPF "   <gamma>$angleDeg[3]</gamma>\n";
+   print IPF "  </angles>\n";
+   print IPF "  <vectors>\n";
+   print IPF "   <a.x>$realLattice[1][1]</a.x>\n";
+   print IPF "   <a.y>$realLattice[1][2]</a.y>\n";
+   print IPF "   <a.z>$realLattice[1][3]</a.z>\n";
+   print IPF "   <b.x>$realLattice[2][1]</b.x>\n";
+   print IPF "   <b.y>$realLattice[2][2]</b.y>\n";
+   print IPF "   <b.z>$realLattice[2][3]</b.z>\n";
+   print IPF "   <c.x>$realLattice[3][1]</c.x>\n";
+   print IPF "   <c.y>$realLattice[3][2]</c.y>\n";
+   print IPF "   <c.z>$realLattice[3][3]</c.z>\n";
+   print IPF "  </vectors>\n";
+   print IPF " </box>\n";
+   print IPF " <!-- PBC information -->\n";
+   print IPF " <pbc>\n";
+   print IPF "  <apply>TRUE</apply>\n";
+   print IPF "  <fractional>FALSE</fractional>\n";
+   print IPF "  <fractype>0</fractype>\n";
+   print IPF " </pbc>\n";
+   print IPF " <!-- Cutoffs information -->\n";
+   print IPF " <cutoffs>\n";
+   my $minCutoff = 100000000.0;
+   my $currCutoff;
+   foreach $element1 (1..$numElements)
+   {
+      foreach $element2 (1..$numElements)
+      {
+         $currCutoff = ($covalRadii_ref->[$zNumber[$element1]] + 
+                    $covalRadii_ref->[$zNumber[$element2]])*2.0;
+         if ($currCutoff < $minCutoff)
+            {$minCutoff = $currCutoff;}
+      }
+   }
+   print IPF "  <total>$minCutoff</total>\n";
+   print IPF "  <partials>\n";
+   foreach $element1 (1..$numElements)
+   {
+      my $elementName1 = ucfirst($elementList[$element1]);
+      foreach $element2 (1..$numElements)
+      {
+         my $elementName2 = ucfirst($elementList[$element2]);
+         print IPF "   <$elementName1-$elementName2>";
+         print IPF sprintf("%f",($covalRadii_ref->[$zNumber[$element1]] + 
+                    $covalRadii_ref->[$zNumber[$element2]])*2.0);
+         print IPF "</$elementName1-$elementName2>\n";
+      }
+   }
+   print IPF "  </partials>\n";
+   print IPF " </cutoffs>\n";
+   print IPF " <!-- Apply project -->\n";
+   print IPF " <project>TRUE</project>\n";
+   print IPF "</isaacs-xml>\n";
+
+   close (IPF);
+
+   # Open the Chem3d file for writing.
+   open (C3D,">$isaacsC3D") || die "Cannot open $isaacsC3D for writing.\n";
+
+   print C3D "$numAtoms\n";
+   foreach $atom (1..$numAtoms)
+   {
+      my $atomElementName = ucfirst($atomElementName[$atom]);
+      print C3D "$atomElementName $atom ";
+      foreach $xyz (1..3)
+         {print C3D" $directXYZ[$atom][$xyz]";}
+      print C3D "\n";
+   }
+
+   close (C3D);
+}
 
 
 

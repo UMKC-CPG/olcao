@@ -19,6 +19,10 @@ module O_ElementData
          ! of each unique element.
    real (kind=double), allocatable, dimension (:) :: covalRadii ! Covalent
          ! radius of each unique element.
+   real (kind=double), allocatable, dimension (:) :: atomicRadii ! Atomic
+         ! radius of each unique element.
+   real (kind=double), allocatable, dimension (:) :: neutScatt ! Neutron
+         ! scattering factor of each unique element.
    real (kind=double), allocatable, dimension (:,:) :: coreCharge ! Number of
          ! core electrons in each s,p,d,f orbital of each unique element.
    real (kind=double), allocatable, dimension (:,:) :: valeCharge ! Number of
@@ -93,6 +97,8 @@ subroutine initElementData
    allocate (elementFullNames(numUniqueElements))
    allocate (atomicMass(numUniqueElements))
    allocate (covalRadii(numUniqueElements))
+   allocate (atomicRadii(numUniqueElements))
+   allocate (neutScatt(numUniqueElements))
    allocate (numUJElectrons(numUniqueElements))
    allocate (coreCharge(lAngMomCount,numUniqueElements))
    allocate (valeCharge(lAngMomCount,numUniqueElements))
@@ -121,6 +127,18 @@ subroutine initElementData
    read (313,*)
    do i = 1, numUniqueElements
       read (313,*) covalRadii(i)
+   enddo
+
+   ! Atomic Radii of each element.
+   read (313,*)
+   do i = 1, numUniqueElements
+      read (313,*) atomicRadii(i)
+   enddo
+
+   ! Neutron scattering factor of each element.
+   read (313,*)
+   do i = 1, numUniqueElements
+      read (313,*) neutScatt(i)
    enddo
 
    ! Number of UJ electrons (highest d or f orbital).
@@ -253,6 +271,8 @@ subroutine deallocateElementData
    deallocate (elementNames)
    deallocate (atomicMass)
    deallocate (covalRadii)
+   deallocate (atomicRadii)
+   deallocate (neutScatt)
    deallocate (numUJElectrons)
    deallocate (coreCharge)
    deallocate (valeCharge)

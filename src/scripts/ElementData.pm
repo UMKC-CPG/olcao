@@ -31,6 +31,8 @@ our $VERSION = '0.01';
 # Define the arrays that hold elemental data.
 my @atomicMasses;    # Atomic mass of each element in atomic mass units.
 my @covalRadii;      # Covalent radii of each element in Angstroms.
+my @atomicRadii;     # Atomic radii of each element in Angstroms.
+my @neutScatt;       # N scat: Neutron News, Vol. 3, No. 3, 1992, pp. 29-37
 my @numUJElectrons;  # Number of electrons in the highest d or f orbital.
 my @ljPairCoeffs;    # LJ pair coefficients for LAMMPS MD simulations.
 my @coreCharge;      # Number of core electrons in each s,p,d,f.
@@ -127,6 +129,26 @@ sub initElementData
    {
       @values = &prepLine(\*EDATA,$line,'\s+');
       $covalRadii[$element] = $values[0];
+   }
+
+   # Read the atomic radii.
+   @values = &prepLine(\*EDATA,$line,'\s+');
+   if ($values[0] ne "ATOMIC_RADII")
+      {die "Expecting ATOMIC_RADII tag in $OLCAO_DATA/elements.dat";}
+   foreach $element (1..$numElements)
+   {
+      @values = &prepLine(\*EDATA,$line,'\s+');
+      $atomicRadii[$element] = $values[0];
+   }
+
+   # Read the neutron scattering factor radii.
+   @values = &prepLine(\*EDATA,$line,'\s+');
+   if ($values[0] ne "NEUT_SCATT")
+      {die "Expecting NEUT_SCATT tag in $OLCAO_DATA/elements.dat";}
+   foreach $element (1..$numElements)
+   {
+      @values = &prepLine(\*EDATA,$line,'\s+');
+      $neutScatt[$element] = $values[0];
    }
 
    # Read the number of electrons in the highest d or f orbital in the ground
@@ -391,6 +413,12 @@ sub getAtomicMassesRef
 
 sub getCovalRadiiRef
    {return \@covalRadii;}
+
+sub getAtomicRadiiRef
+   {return \@atomicRadii;}
+
+sub getNeutScattRef
+   {return \@neutScatt;}
 
 sub getNumUJElectrons
    {return \@numUJElectrons;}
