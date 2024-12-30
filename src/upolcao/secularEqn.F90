@@ -80,8 +80,8 @@ integer :: k, l, m, n, o, p
 
    ! Record the date and time that we start.
    call timeStampStart (15)
-write (20+mpiRank,*) "Got here 1 ", mpiRank
-call flush(20+mpiRank)
+!write (20+mpiRank,*) "Got here 1 ", mpiRank
+!call flush(20+mpiRank)
 
    ! Initialize the dimension of the packed matrices to include two components
    !   (real,imaginary) or just a real component.
@@ -126,8 +126,8 @@ call flush(20+mpiRank)
       call checkAttributeHDF5(eigenVectors_aid(i,spinDirection),&
             & "Eigen vector SCF",hdf5Status)
       if (hdf5Status == 1) cycle
-write (20+mpiRank,*) "Got here 2 ", mpiRank
-call flush(20+mpiRank)
+!write (20+mpiRank,*) "Got here 2 ", mpiRank
+!call flush(20+mpiRank)
 
       !hdf5Status = 0
       !attribIntDims(1) = 1
