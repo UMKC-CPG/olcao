@@ -50,6 +50,7 @@ my @valeOrbitals;    # Num of s,p,d,f valence orbitals [1..3][1..numElements]
                      #   1=MB; 2=FB beyond MB only; 3=EB beyond FB only.
 my @orbitalTerms;    # Strings identifying which terms to use for each orbital
                      #   l QN of each atom.
+my @colorVTK;        # Color in VTK based on CPK chemistry color scheme.
 my @colorDX;         # Color in openDX on scale of 1-100.
 my @greyDX;          # Greyscale value in openDX on scale of 1-100.
 
@@ -308,6 +309,19 @@ sub initElementData
       }
    }
 
+   # Read the VTK color+alpha assignment for each element.
+   @values = &prepLine(\*EDATA,$line,'\s+');
+   if ($values[0] ne "VTK_COLOR")
+      {die "Expecting VTK_COLOR tag in $OLCAO_DATA/elements.dat";}
+   foreach $element (1..$numElements)
+   {
+      @values = &prepLine(\*EDATA,$line,'\s+');
+      $colorVTK[$element][0] = $values[0];
+      $colorVTK[$element][1] = $values[1];
+      $colorVTK[$element][2] = $values[2];
+      $colorVTK[$element][3] = $values[3];
+   }
+
    # Read the openDX color assignment for each element.
    @values = &prepLine(\*EDATA,$line,'\s+');
    if ($values[0] ne "ODX_COLOR")
@@ -443,6 +457,9 @@ sub getMinTermRef
 
 sub getMaxTermRef
    {return \@maxTermWF;}
+
+sub getColorVTKRef
+   {return \@colorVTK;}
 
 sub getColorDXRef
    {return \@colorDX;}

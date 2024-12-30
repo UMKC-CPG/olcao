@@ -32,7 +32,7 @@ class ScriptSettings():
         self.assign_rc_defaults(default_rc)
 
         # Parse the command line.
-        args = self.parse_command_line(default_rc)
+        args = self.parse_command_line()
 
         # Reconcile default settings in the resource control file with
         #   any command line arguments that were given.
@@ -112,17 +112,14 @@ class ScriptSettings():
         self.curve_mark_step = default_rc["curve_mark_step"]
         self.curve_mark_size = default_rc["curve_mark_size"]
 
-        #    global dos = default_rc[24]
-        #    global points = default_rc[25]
 
-
-    def parse_command_line(self, default_rc):
+    def parse_command_line(self):
     
         # Create the parser tool.
         parser = ap.ArgumentParser(description='Control parameters')
     
         # Add arguments to the parser.
-        self.add_parser_arguments(parser, default_rc)
+        self.add_parser_arguments(parser)
 
         # Parse the arguments.
         args = parser.parse_args()
@@ -135,7 +132,7 @@ class ScriptSettings():
         return argument.split(',')
 
 
-    def add_parser_arguments(self, parser, default_rc):
+    def add_parser_arguments(self, parser):
 
         # Define the selected display library to use.
         parser.add_argument('-d', '--display', dest='display',

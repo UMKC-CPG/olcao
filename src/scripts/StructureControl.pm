@@ -87,6 +87,11 @@ my @atomTag;         # Name for the atom usually from an HIN or PDB file.
 my @connectionTag;   # List of atoms connected in undetermined way to each atom.
 my @coordination;    # Elemental coordination of each atom.
 my @coordinationSummary; # Elemental coordination summary for each element.
+my @atomQn;          # Q^n value for each atom. (Q^n = #of non-bridging O).
+my @absoluteSysQn;   # Sum of each Q^n over all atoms in the system.
+my @fractionalSysQn; # Above sum of each Q^n / numAtoms.
+my $numQnAtoms;      # Number of atoms in the system that are Q^n targets.
+my $netConnQn;       # Sum (i=1,n_max) {i * fractionalSysQn[i]}
 my @fractABC;        # Fractional coords. of each atom in a,b,c.
 my @directABC;       # Direct space coords. of each atom in a,b,c.
 my @directXYZ;       # Direct space coords. of each atom in x,y,z.
@@ -98,6 +103,8 @@ my @extFractABCList; # Fractional coords. of each atom in a,b,c of each
                      #   relevant atom in the periodic system in a flat list.
 my @maxPos;          # Maximum x,y,z value of all atoms in the system.
 my @minPos;          # Minimum x,y,z value of all atoms in the system.
+my @covalRadii;      # The covalent radius of each atom.
+my @colorVTK;        # The RGB+alpha color of each atom.
 
 # General item attributes
 my @skipItem1;       # Skip this item in a pair search. [1..#1]
@@ -151,6 +158,7 @@ my $elementNames_ref;
 my $elementFullNames_ref;
 my $elementMasses_ref;
 my $covalRadii_ref;
+my $colorVTK_ref;
 my $atomicRadii_ref;
 my $neutScatt_ref;
 my $valenceCharge_ref;
@@ -192,7 +200,6 @@ my @minDist;      # Minimal distance between atom pairs accounting for PBC.
 my @selfMinDist;  # Minimal distance between an atom and its replicated self.
 
 # Bonding data structures and results.
-my @covalRadii;   # The covalent radius of each atom.
 my @numBonds;     # Number of bonds for each atom.
 my @bonded;       # List of central cell atom numbers each atom is bonded to.
 my @bondedExt;    # List of extended cell atom numbers each atom is bonded to.
@@ -276,6 +283,9 @@ sub getAtomicZRef
 sub getCovalRadiiRef
    {return \@covalRadii;}
 
+sub getColorVTKRef
+   {return \@colorVTK;}
+
 sub getAtomElementNameRef
    {return \@atomElementName;}
 
@@ -326,6 +336,21 @@ sub getCoordinationRef
 
 sub getCoordinationSummaryRef
    {return \@coordinationSummary;}
+
+sub getAtomQnRef
+   {return \@atomQn;}
+
+sub getAbsoluteSysQnRef
+   {return \@absoluteSysQn;}
+
+sub getFractionalSysQnRef
+   {return \@fractionalSysQn;}
+
+sub getNumQnAtoms
+   {return $numQnAtoms;}
+
+sub getNetworkConnectivityQn
+   {return $netConnQn;}
 
 sub getMaxXYZRef
    {return \@maxPos;}
@@ -694,6 +719,11 @@ sub reset
    undef @connectionTag;
    undef @coordination;
    undef @coordinationSummary;
+   undef @atomQn;
+   undef @absoluteSysQn;
+   undef @fractionalSysQn;
+   $numQnAtoms = 0;
+   $netConnQn = 0;
    undef @fractABC;
    undef @directABC;
    undef @directXYZ;
@@ -735,6 +765,7 @@ sub reset
    undef $elementFullNames_ref;
    undef $elementMasses_ref;
    undef $covalRadii_ref;
+   undef $colorVTK_ref;
    undef $atomicRadii_ref;
    undef $neutScatt_ref;
    undef $valenceCharge_ref;
@@ -756,6 +787,7 @@ sub reset
    undef @minDist;
    undef @selfMinDist;
    undef @covalRadii;
+   undef @colorVTK;
    undef @numBonds;
    undef @bonded;
    undef @bondedExt;
@@ -909,6 +941,7 @@ sub setupDataBaseRef
    $covalRadii_ref = ElementData::getCovalRadiiRef;
    $atomicRadii_ref = ElementData::getAtomicRadiiRef;
    $neutScatt_ref = ElementData::getNeutScattRef;
+   $colorVTK_ref = ElementData::getColorVTKRef;
 #   $valenceCharge_ref = ElementData::getValenceChargeRef;
 }
 
@@ -1519,7 +1552,6 @@ sub readPDB
          $angle[3] = $pi/180.0 * substr($line,47,7,"1234567");
 
          # Convert the values to a,b,c into x,y,z vector lattice format.
-print STDOUT "Should not be here\n";
          &getABCVectors;
 
          # Compute the sine of the angles.
@@ -5222,6 +5254,7 @@ sub applyFilter
    my $newNumAtoms;
    my $numRejected;
    my @rejectedAtoms;
+
    # Local collection of data for forming the new atom list.
    my @fractABCLocal;
    my @atomElementNameLocal;
@@ -6214,6 +6247,21 @@ sub assignCovalRadii
 }
 
 
+sub assignColorVTK
+{
+   # Declare local variables.
+   my $atom;
+
+   foreach $atom (1..$numAtoms)
+   {
+      $colorVTK[$atom][0] = $colorVTK_ref->[$atomicZ[$atom]][0];
+      $colorVTK[$atom][1] = $colorVTK_ref->[$atomicZ[$atom]][1];
+      $colorVTK[$atom][2] = $colorVTK_ref->[$atomicZ[$atom]][2];
+      $colorVTK[$atom][3] = $colorVTK_ref->[$atomicZ[$atom]][3];
+   }
+}
+
+
 sub createMinDistMatrix
 {
    # Define passed parameters.
@@ -6281,6 +6329,9 @@ sub createBondingList
 
    # Assign the covalent radius of each atom from the database.
    &assignCovalRadii;
+
+   # Create a color map in case the model needs to be plotted.
+   &assignColorVTK;
 
    # Compute and record which atoms are bonded to which other atoms.  Flag #2
    #   is used to record extended bonding information from the general purpose
@@ -6413,6 +6464,9 @@ sub createExtBondingList
    # Assign the covalent radius of each atom from the database.
    &assignCovalRadii;
 
+   # Create a color map in case the model needs to be plotted.
+   &assignColorVTK;
+
    # Compute and record which atoms are bonded to which other atoms.  Flag #2
    #   is used to record extended bonding information from the general purpose
    #   "obtainAtomicInteraction" subroutine.
@@ -6453,6 +6507,9 @@ sub createQList
 
    # Assign the covalent radius of each atom from the database.
    &assignCovalRadii;
+
+   # Create a color map in case the model needs to be plotted.
+   &assignColorVTK;
 
    # Compute and record the BOO.  Flag #4 is used to record BOO specific 
    #   information for this general purpose subroutine.
@@ -7291,6 +7348,140 @@ sub createCoordinationSummary
                "$uniqueCoord_ref->[$coordType]  ";
       }
    }
+}
+
+
+sub computeQn
+{
+   # Give local names to passed parameters.
+   my $bridges_ref = $_[0];
+   my $ions_ref = $_[1];
+
+   # Declare local variables.
+   my $n; # The "n" in Q^n.
+   my $atom;
+   my $bond;
+   my $found;
+   my $element;
+   my $currBondedAtom;
+
+   # If the length of the numBonds array equals zero, then we have not yet
+   #   computed the bonds between atoms and so we should do that.  If however,
+   #   the array length is finite, then we have to check to be sure that the
+   #   extended calculation is mapped back to the central cell.
+   if (scalar(@numBonds) == 0)
+      {&createBondingList;}
+   elsif (scalar(@bonded) == 0)
+      {&mapExtToCentral;}
+
+   # Compute Q^n for each atom.
+   foreach $atom (1..$numAtoms)
+   {
+      # If the atom is not in the list of allowed ions, then we skip it.
+      $found = 0;
+      foreach $element (@{$ions_ref})
+      {
+         if (lc($atomElementName[$atom]) eq $element)
+            {$found = 1; last;}
+      }
+      if ($found == 0)
+      {
+         $atomQn[$atom] = -1;
+         next;
+      }
+
+      # Compare the position of this atom with the box the user defined (or the
+      #   default).  This also considers if the user wanted only atoms inside
+      #   the box or only outside.  The return value is 1 if the atom is out
+      #   of the desired region and it is 0 if the atom is inside the desired
+      #   region.
+      if (&itemOutOfBounds($atom,$borderCoords_ref))
+      {
+         $atomQn[$atom] = -1;
+         next;
+      }
+
+      # Initialize the Q^n for this atom.
+      $atomQn[$atom] = 0;
+
+      # Perform a direct and simple observation of the number of non-bridging
+      #   atoms bonded to the current atom.
+      foreach $bond (1..$numBonds[$atom])
+      {
+         # Get the atom id number of the bonded atom.
+         $currBondedAtom = $bonded[$atom][$bond];
+
+         # Compare this to the list of bridge elements.
+         $found = 0;
+         foreach $element (@{$bridges_ref})
+         {
+            if ($element eq lc($atomElementName[$currBondedAtom]))
+               {$found = 1;last;}
+         }
+         if ($found == 1)
+         {
+            # Check if this bridge atom has more than one bond. (I.e., it
+            #   bridges from the current $atom to _any_ other atom(s).) If it
+            #   does, then we increment the count of the Q^n for $atom.
+            if ($numBonds[$currBondedAtom] > 1)
+               {$atomQn[$atom]++;}
+         }
+      }
+   }
+
+   # Now that the Q^n for each atom has been determined, we can compute the
+   #   absolute and fractional Q^n for the whole system. (Obviously, we
+   #   consider the targeted ions only.)
+
+   # We assume that the Q^n value is zero for n in the range 0..8. (We expect
+   #   that overbonding to n=5 will be rare, n=6 will be practically unheard
+   #   of, and n=7,8 virtually impossible. But, we permit values for them in
+   #   any case.
+   foreach $n (0..8)
+      {$absoluteSysQn[$n] = 0;}
+
+   # Now, accumulate Q^n from each atom and count the total number of
+   #   participating ions.
+   $numQnAtoms = 0;
+   foreach $atom (1..$numAtoms)
+   {
+      if ($atomQn[$atom] == -1) # Ignore non-target atoms.
+         {next;}
+      $numQnAtoms++;
+      $absoluteSysQn[$atomQn[$atom]]++;
+   }
+
+   # Once the absolute Q^n has been computed, we can easily obtain the
+   #    fractional Q^n.
+   foreach $n (0..8)
+      {$fractionalSysQn[$n] = $absoluteSysQn[$n] / $numQnAtoms;}
+
+   # From the fractional Q^n, we can compute the overall network connectivity.
+   $netConnQn = 0;
+   foreach $n (0..8)
+      {$netConnQn += $n * $fractionalSysQn[$n];}
+}
+
+
+sub computeRingDistribution
+{
+   # Give local names to passed parameters.
+   my $maxRingLen = $_[0];
+
+
+   # Declare local variables.
+
+
+   # Make sure that the bond list has been created.
+   # Select an atom (A).
+   # Perform a breadth first search from atom (A).
+   # When (if) we return to the original atom (and not a periodic copy of it),
+   #   we record that ring length (L) as the minimal ring length for atom (A).
+   #   The ring found is recorded as a valid ring for atom (A).
+   #   The BFS is continued, but only considering other paths of length (L).
+   #   (Once a ring path of length (L) is found in a BFS, then no shorter path
+   #   will be found. If we exclude _longer_ paths
+
 }
 
 

@@ -4,13 +4,15 @@ module O_Field
    use O_Kinds
 
    ! Define the module data used by multiple subroutines.
-   integer :: numCols
-   character*13, allocatable, dimension(:) :: colLabel ! Labels for the
-         ! columns of data in the profile output files.
 real (kind=double), allocatable, dimension (:,:) :: accumCharge  ! Accumulated
          ! charge for each spin,kPoint combination.
 real (kind=double) :: accumChargeKP
-   real (kind=double), allocatable, dimension (:,:,:) :: profile ! Index1=a,b,c
+   real (kind=double), allocatable, dimension (:,:,:) :: profilePsiReal
+   real (kind=double), allocatable, dimension (:,:,:) :: profilePsiImag
+   real (kind=double), allocatable, dimension (:,:,:) :: profileWav
+   real (kind=double), allocatable, dimension (:,:,:) :: profileRho
+   real (kind=double), allocatable, dimension (:,:,:) :: profilePot
+         ! Index1=a,b,c
          ! Index2 = As identified in subroutine initEnv.  The important thing
          !          is that in the non spin polarized case the last Index2 is
          !          always the potential while in the spin polarized case the
@@ -18,24 +20,61 @@ real (kind=double) :: accumChargeKP
          !          potentials.  This is important because they have different
          !          units that the other charge columns.
          ! Index3 = 1..max(numMeshPoints(a,b,c))
-   real (kind=double), allocatable, dimension (:,:,:,:) :: meshValues ! The
+   real (kind=double), allocatable, dimension (:,:,:,:) :: meshChunk ! The
          ! Mesh points all collected into a single array. The first index is
          ! for xyz, the remaining three indices are for the abc lattice
          ! vectors.
 #ifndef GAMMA
-   complex (kind=double), allocatable, dimension (:,:,:) :: accumWaveFnCoeffs
+   complex (kind=double), allocatable, dimension (:,:,:) :: &
+         & accumWaveFnCoeffsPsi ! Ultimately complex, not squared
+   complex (kind=double), allocatable, dimension (:,:,:,:) :: &
+         & accumWaveFnCoeffsWav ! Squared
+   complex (kind=double), allocatable, dimension (:,:,:,:) :: &
+         & accumWaveFnCoeffsRho
+   real    (kind=double), allocatable, dimension (:,:) :: &
+         & accumWaveFnCoeffsNeut
 #else
    real    (kind=double), allocatable, dimension (:,:) :: &
-         & accumWaveFnCoeffsGamma
+         & accumWaveFnCoeffsPsiGamma ! Ultimately, not squared
+   real    (kind=double), allocatable, dimension (:,:,:) :: &
+         & accumWaveFnCoeffsWavGamma ! Squared
+   real    (kind=double), allocatable, dimension (:,:,:) :: &
+         & accumWaveFnCoeffsRhoGamma
+   real    (kind=double), allocatable, dimension (:) :: &
+         & accumWaveFnCoeffsNeutGamma
 #endif
 
    ! Begin listing module subroutines.
 
 contains
 
+
+
 subroutine computeFieldMesh(inSCF)
 
-   ! The goal of this subroutine
+   ! The goal of this subroutine is to evaluate the complex wave function,
+   !   the square of the complex wave function, the charge density, and the
+   !   fitted potential function along with the same functions minus similar
+   !   functions defined for a non-interacting system, and also projections
+   !   of all the above functions along the a, b, and c crystal axes as one-
+   !   dimensional curves.
+   ! The user has the ability to be selective with respect to the energy
+   !   ranges included in the olcao.dat file.
+   ! The basic algorithm follows:
+
+   ! A real-space mesh is defined according to a request from the user about
+   !   the number of points along each of the a,b,c axes in the olcao.dat
+   !   input file.
+   ! The (complex) wave function is read in from disk. It is a set of column
+   !   vectors that represent single particle (or spin degenerate) states.
+   !   There is one wave function matrix for each k-point and spin (up, dn).
+   !   Each matrix is independently operated on.
+   ! The value of the (complex) system wave function at any given mesh point
+   !   (i) is equal to the sum of the contributions from all basis functions
+   !   from all energy states.
+   ! Once we have a numerical representation of the wave function, we can get
+   !   the square of the wave function just by squaring the numerical values
+   !   at each mesh point.
 
    ! Import the necessary modules.
    use HDF5
@@ -48,27 +87,29 @@ subroutine computeFieldMesh(inSCF)
    use O_PotTypes,     only: maxNumPotAlphas, potTypes
    use O_AtomicSites,  only: valeDim, numAtomSites, atomSites
    use O_Kpoints,      only: numKPoints, kPointWeight, phaseFactor
-   use O_Input,        only: numStates, doODXField, doXDMFField, &
-         & doProfileField, eminFIELD, emaxFIELD, doRho, numElectrons
-   use O_OpenDX,       only: printODXFieldHead, printODXFieldTail, &
-         & printODXAtomPos, printODXLattice
+   use O_Input,        only: numStates, numElectrons, doProfileField, &
+         & eminFIELD, emaxFIELD, doPsiFIELD, doWavFIELD, doRhoFIELD, &
+         & doPotFIELD, doXDMFField
+!   use O_OpenDX,       only: printODXFieldHead, printODXFieldTail, &
+!         & printODXAtomPos, printODXLattice
    use O_XDMF_VTK,     only: printXDMFMetaFile
    use O_AtomicTypes,  only: numAtomTypes, atomTypes, maxNumAtomAlphas, &
          & maxNumStates, maxNumValeRadialFns
    use O_Lattice,      only: logBasisFnThresh, numCellsReal, cellSizesReal, &
          & cellDimsReal, numMeshPoints, realVectors, realFractStrideLength, &
-         & findLatticeVector
-   use O_FieldHDF5,    only: wav_did, rho_did, pot_did, mesh_did, &
-         & triggerAxis, abcDimsChunk, meshDimsChunk, fileFieldChunk_dsid, &
-         & fileMeshChunk_dsid
+         & findLatticeVector, realCellVolume
+   use O_FieldHDF5,    only: psiR_did, psiI_did, wav_did, rho_did, pot_did, &
+         & mesh_did, triggerAxis, meshTriggerAxis, fieldDimsChunk, &
+         & meshDimsChunk, memFieldChunk_dsid, memMeshChunk_dsid, field_dsid, &
+         & mesh_dsid, numDataSets
 #ifndef GAMMA
    use O_MatrixSubs,      only: readMatrix
    use O_SecularEquation, only: valeVale, energyEigenValues, readDataSCF, &
-         & readDataPSCF
+         & readDataPSCF, valeValeOL
 #else
    use O_MatrixSubs,      only: readMatrixGamma
    use O_SecularEquation, only: valeValeGamma, energyEigenValues, &
-         & readDataSCF, readDataPSCF
+         & readDataSCF, readDataPSCF, valeValeOLGamma
 #endif
 
    ! Make sure that no variables are accidentally defined.
@@ -80,16 +121,16 @@ subroutine computeFieldMesh(inSCF)
    ! Define local variables.
    integer :: hdferr
    integer :: a,b,c
-   integer :: i,j,k,l,m,n  ! Loop index variables.
-   integer :: dim1
+   integer :: i,j,k,l,m,n,u,v,w  ! Loop index variables.
+   integer :: dimOne
    integer :: skipKP
    integer :: currentPointCount
    integer :: energyLevelCounter
-   integer :: minStateIndex
-   integer :: maxStateIndex
    integer (hsize_t), dimension (3) :: currentStartIndices
+   integer (hsize_t), dimension (4) :: currentMeshStartIndices
+   integer, allocatable, dimension(:,:) :: minStateIndex
+   integer, allocatable, dimension(:,:) :: maxStateIndex
    real (kind=double) :: cutoff
-   real (kind=double) :: currentPopulation
    real (kind=double) :: shiftedSepSqrd  ! Separation (r) between atom & mesh.
    real (kind=double), dimension(3) :: shiftedVec ! Vector between atom & mesh.
    real (kind=double), dimension(3) :: latticeVector
@@ -111,16 +152,30 @@ subroutine computeFieldMesh(inSCF)
    !   the data listed in the initEnv subroutine. (They may not currently be
    !   combined. Seems to be just interacting and just non-interacting, not the
    !   difference.)
-   real (kind=double), allocatable, dimension (:,:,:,:) :: dataChunk
-real (kind=double), allocatable, dimension (:,:) :: currNumElec
-!complex (kind=double), allocatable, dimension (:) :: tempPointValue
+   real (kind=double), allocatable, dimension (:,:,:,:) :: dataChunkPsiReal
 #ifndef GAMMA
-   complex (kind=double), allocatable, dimension (:,:) :: waveFnEval
+   real (kind=double), allocatable, dimension (:,:,:,:) :: dataChunkPsiImag
+#endif
+   real (kind=double), allocatable, dimension (:,:,:,:) :: dataChunkWav
+   real (kind=double), allocatable, dimension (:,:,:,:) :: dataChunkRho
+   real (kind=double), allocatable, dimension (:,:,:,:) :: dataChunkPot
+real (kind=double), allocatable, dimension (:,:) :: currNumElec
+complex (kind=double), allocatable, dimension (:) :: tempPointValue
+#ifndef GAMMA
+   complex (kind=double), allocatable, dimension (:,:) :: waveFnEvalPsi
+   complex (kind=double), allocatable, dimension (:,:,:) :: waveFnEvalWav
+   complex (kind=double), allocatable, dimension (:,:,:) :: waveFnEvalRho
+   complex (kind=double), dimension (2) :: tempTerm
 #else
-   real (kind=double), allocatable, dimension (:) :: waveFnEvalGamma
+   real (kind=double), allocatable, dimension (:) :: waveFnEvalPsiGamma
+   real (kind=double), allocatable, dimension (:,:) :: waveFnEvalWavGamma
+   real (kind=double), allocatable, dimension (:,:) :: waveFnEvalRhoGamma
+   real (kind=double), dimension (2) :: tempTerm
 #endif
 
    ! Atom specific variables that change with each atom loop iteration.
+   integer                               :: currB
+   integer                               :: currC
    integer                               :: currentCumulAlphaSum
    integer                               :: currentNumPotAlphas
    integer                               :: currentValeStateIndex
@@ -136,6 +191,7 @@ real (kind=double), allocatable, dimension (:,:) :: currNumElec
    integer, allocatable, dimension (:)   :: currentValeQN_lList
    integer, allocatable, dimension (:,:) :: currentlmIndex
    integer, allocatable, dimension (:,:) :: currentlmAlphaIndex
+   real (kind=double) :: aStepSize, bStepSize, cStepSize
    real (kind=double)                    :: atomMeshSepSqrd
    real (kind=double)                    :: maxLatticeRadius
    real (kind=double), dimension (3,2)   :: currentPosition
@@ -144,28 +200,43 @@ real (kind=double), allocatable, dimension (:,:) :: currNumElec
    real (kind=double), allocatable, dimension (:,:)    :: currentAlphas
    real (kind=double), allocatable, dimension (:,:,:)  :: currentBasisFns
 #ifndef GAMMA
-   complex (kind=double), allocatable, dimension (:,:,:,:) :: modifiedBasisFns
+   complex (kind=double), allocatable, dimension (:,:,:,:) :: &
+         & modifiedBasisFnsPsi
+   complex (kind=double), allocatable, dimension (:,:,:,:,:) :: &
+         & modifiedBasisFnsWav
+   complex (kind=double), allocatable, dimension (:,:,:,:,:) :: &
+         & modifiedBasisFnsRho
 #else
-   real (kind=double), allocatable, dimension (:,:,:)  :: modifiedBasisFnsGamma
+   real (kind=double), allocatable, dimension (:,:,:)  :: &
+         & modifiedBasisFnsPsiGamma
+   real (kind=double), allocatable, dimension (:,:,:,:)  :: &
+         & modifiedBasisFnsWavGamma
+   real (kind=double), allocatable, dimension (:,:,:,:)  :: &
+         & modifiedBasisFnsRhoGamma
 #endif
 
    ! Atom specific variables that will change with each real space cell loop.
-   integer                                           :: orbitalCount
-   integer                                           :: currentOrbType
-   integer                                           :: lastContribAlphaIndex
-   integer                                           :: lastContribPotAlphaIndex
-   integer                                           :: tempNumAlphas
-   real (kind=double)                                :: x,y,z,rSqrd
-   real (kind=double), dimension (16)                :: angularFactor
-   real (kind=double), allocatable, dimension (:)    :: potAlphaDist
-   real (kind=double), allocatable, dimension (:)    :: alphaDist
-   real (kind=double), allocatable, dimension (:)    :: expPotAlphaDist
-   real (kind=double), allocatable, dimension (:)    :: expAlphaDist
+   integer                                        :: orbitalCount
+   integer                                        :: currentOrbType
+   integer                                        :: lastContribAlphaIndex
+   integer                                        :: lastContribPotAlphaIndex
+   integer                                        :: tempNumAlphas
+   real (kind=double)                             :: x,y,z,rSqrd
+   real (kind=double), dimension (16)             :: angularFactor
+   real (kind=double), allocatable, dimension (:) :: potAlphaDist
+   real (kind=double), allocatable, dimension (:) :: alphaDist
+   real (kind=double), allocatable, dimension (:) :: expPotAlphaDist
+   real (kind=double), allocatable, dimension (:) :: expAlphaDist
 #ifndef GAMMA
-   complex (kind=double), allocatable, dimension (:,:,:) :: atomicOrbital
+   complex (kind=double), allocatable, dimension (:,:,:) :: atomicOrbitalPsi
+   complex (kind=double), allocatable, dimension (:,:,:,:) :: atomicOrbitalWav
+   complex (kind=double), allocatable, dimension (:,:,:,:) :: atomicOrbitalRho
 #else
-   real (kind=double), allocatable, dimension (:,:)  :: atomicOrbitalGamma
+   real (kind=double), allocatable, dimension (:,:) :: atomicOrbitalPsiGamma
+   real (kind=double), allocatable, dimension (:,:,:) :: atomicOrbitalWavGamma
+   real (kind=double), allocatable, dimension (:,:,:) :: atomicOrbitalRhoGamma
 #endif
+!complex (kind=double), allocatable, dimension(:,:) :: identity
 
    ! Log the beginning of the wave function evaluation.
    call timeStampStart(25)
@@ -173,52 +244,140 @@ real (kind=double), allocatable, dimension (:,:) :: currNumElec
    ! Initialize the module environment
    call initEnv
 
-   ! Allocate space for locally defined allocatable arrays
-   allocate (dataChunk (numCols,abcDimsChunk(1),abcDimsChunk(2),&
-         & abcDimsChunk(3)))
+   ! Allocate space for locally defined allocatable arrays.
+
+   ! Allocate space to hold records of the state indices to include.
+   allocate (minStateIndex(spin,numKPoints))
+   allocate (maxStateIndex(spin,numKPoints))
+
+   ! Make the data chunks for each type of field first.
+   if (doPsiFIELD == 1) then
+      allocate (dataChunkPsiReal(spin+2,fieldDimsChunk(1),fieldDimsChunk(2),&
+            & fieldDimsChunk(3)))
 #ifndef GAMMA
-   allocate (waveFnEval            (numKPoints,numCols-spin))
-   allocate (modifiedBasisFns      (maxNumAtomAlphas,maxNumStates,&
-                                  & numCols-spin,numKPoints))
-   allocate (atomicOrbital         (maxNumStates,numKPoints,numCols-spin))
-#else
-   allocate (waveFnEvalGamma       (numCols-spin))
-   allocate (modifiedBasisFnsGamma (maxNumAtomAlphas,maxNumStates,numCols-spin))
-   allocate (atomicOrbitalGamma    (maxNumStates,numCols-spin))
+      allocate (dataChunkPsiImag(spin+2,fieldDimsChunk(1),fieldDimsChunk(2),&
+            & fieldDimsChunk(3)))
 #endif
-   allocate (profile               (3,numCols,maxVal(numMeshPoints(:))))
+   endif
+
+   if (doWavFIELD == 1) then
+      allocate (dataChunkWav(spin+2,fieldDimsChunk(1),fieldDimsChunk(2),&
+            & fieldDimsChunk(3)))
+   endif
+
+   if (doRhoFIELD == 1) then
+      allocate (dataChunkRho(spin+2,fieldDimsChunk(1),fieldDimsChunk(2),&
+            & fieldDimsChunk(3)))
+   endif
+
+   if (doPotFIELD == 1) then
+      allocate (dataChunkPot(spin+2,fieldDimsChunk(1),fieldDimsChunk(2),&
+            & fieldDimsChunk(3)))
+   endif
+
+
+#ifndef GAMMA
+   if (doPsiFIELD == 1) then
+      allocate (waveFnEvalPsi(spin+2,numKPoints))
+      allocate (modifiedBasisFnsPsi(maxNumAtomAlphas,maxNumStates,&
+            & spin+2,numKPoints))
+      allocate (atomicOrbitalPsi(maxNumStates,spin+2,numKPoints))
+   endif
+   if (doWavFIELD == 1) then
+      allocate (waveFnEvalWav(numStates,spin+2,numKPoints))
+      allocate (modifiedBasisFnsWav(maxNumAtomAlphas,maxNumStates,&
+            & numStates,spin+2,numKPoints))
+      allocate (atomicOrbitalWav(maxNumStates,numStates,spin+2,numKPoints))
+   endif
+   if (doRhoFIELD == 1) then
+      allocate (waveFnEvalRho(numStates,spin+2,numKPoints))
+      allocate (modifiedBasisFnsRho(maxNumAtomAlphas,maxNumStates,&
+            & numStates,spin+2,numKPoints))
+      allocate (atomicOrbitalRho(maxNumStates,numStates,spin+2,numKPoints))
+   endif
+#else
+   if (doPsiFIELD == 1) then
+      allocate (waveFnEvalPsiGamma(spin+2))
+      allocate (modifiedBasisFnsPsiGamma(maxNumAtomAlphas,maxNumStates,&
+            & spin+2))
+      allocate (atomicOrbitalPsiGamma(maxNumStates,spin+2))
+   endif
+   if (doWavFIELD == 1) then
+      allocate (waveFnEvalWavGamma(numStates,spin+2))
+      allocate (modifiedBasisFnsWavGamma(maxNumAtomAlphas,maxNumStates,&
+            & numStates,spin+2))
+      allocate (atomicOrbitalWavGamma(maxNumStates,numStates,spin+2))
+   endif
+   if (doRhoFIELD == 1) then
+      allocate (waveFnEvalRhoGamma(numStates,spin+2))
+      allocate (modifiedBasisFnsRhoGamma(maxNumAtomAlphas,maxNumStates,&
+            & numStates,spin+2))
+      allocate (atomicOrbitalRhoGamma(maxNumStates,numStates,spin+2))
+   endif
+#endif
+
+   if (doPsiFIELD == 1) then
+      allocate (profilePsiReal(3,spin+2,maxVal(numMeshPoints(:))))
+#ifndef GAMMA
+      allocate (profilePsiImag(3,spin+2,maxVal(numMeshPoints(:))))
+#endif
+   endif
+   if (doWavFIELD == 1) then
+      allocate (profileWav(3,spin+2,maxVal(numMeshPoints(:))))
+   endif
+   if (doRhoFIELD == 1) then
+      allocate (profileRho(3,spin+2,maxVal(numMeshPoints(:))))
+   endif
+   if (doPotFIELD == 1) then
+      allocate (profilePot(3,spin+2,maxVal(numMeshPoints(:))))
+   endif
    allocate (structuredElectronPopulation (numStates,numKPoints,spin))
-allocate (accumCharge           (spin,numKPoints))
-!allocate (tempPointValue        (numCols-spin))
-   allocate (currentBasisFns       (maxNumAtomAlphas,maxNumStates,2))
-   allocate (currentPotCoeffs      (maxNumPotAlphas,spin))
-   allocate (currentPotAlphas      (maxNumPotAlphas))
-   allocate (currentAlphas         (maxNumAtomAlphas,2))
-   allocate (currentlmAlphaIndex   (maxNumAtomAlphas,2))
-   allocate (currentlmIndex        (maxNumStates,2))
-   allocate (currentValeQN_lList   (maxNumValeRadialFns))
-   allocate (potAlphaDist          (maxNumPotAlphas))
-   allocate (alphaDist             (maxNumAtomAlphas))
-   allocate (expPotAlphaDist       (maxNumPotAlphas))
-   allocate (expAlphaDist          (maxNumAtomAlphas))
+allocate (accumCharge(spin,numKPoints))
+allocate (tempPointValue(10))
+   allocate (currentBasisFns(maxNumAtomAlphas,maxNumStates,2))
+   allocate (currentPotCoeffs(maxNumPotAlphas,spin+2))
+   allocate (currentPotAlphas(maxNumPotAlphas))
+   allocate (currentAlphas(maxNumAtomAlphas,2))
+   allocate (currentlmAlphaIndex(maxNumAtomAlphas,2))
+   allocate (currentlmIndex(maxNumStates,2))
+   allocate (currentValeQN_lList(maxNumValeRadialFns))
+   allocate (potAlphaDist(maxNumPotAlphas))
+   allocate (alphaDist(maxNumAtomAlphas))
+   allocate (expPotAlphaDist(maxNumPotAlphas))
+   allocate (expAlphaDist(maxNumAtomAlphas))
 
 allocate (currNumElec (numKPoints,spin))
 
-   ! If we will create an OpenDX file, then we will print the header for the
-   !   field data, the lattice information, and the atomic positions now.
-   if (doODXField == 1) then
-!write (20,*) "numCols =",numCols
-      call printODXFieldHead (numCols)
-      call printODXAtomPos
-      call printODXLattice
-   endif
+!   ! If we will create an OpenDX file, then we will print the header for the
+!   !   field data, the lattice information, and the atomic positions now.
+!   if (doODXField == 1) then
+!!write (20,*) "numActiveDataSets =",numActiveDataSets
+!      call printODXFieldHead (numActiveDataSets)
+!      call printODXAtomPos
+!      call printODXLattice
+!   endif
 
    if (doXDMFField == 1) then
       call printXDMFMetaFile
    endif
 
    ! Initialize the profile data structure.
-   profile (:,:,:) = 0.0_double
+   if (doPsiFIELD == 1) then
+      profilePsiReal (:,:,:) = 0.0_double
+#ifndef GAMMA
+      profilePsiImag (:,:,:) = 0.0_double
+#endif
+   endif
+   if (doWavFIELD == 1) then
+      profileWav (:,:,:) = 0.0_double
+   endif
+   if (doRhoFIELD == 1) then
+      profileRho (:,:,:) = 0.0_double
+   endif
+   if (doPotFIELD == 1) then
+      profilePot (:,:,:) = 0.0_double
+   endif
+
 
    ! Fill a matrix of electron populations from the electron population that
    !   was computed in populateLevels. Note that electronPopulation is a one
@@ -239,28 +398,77 @@ allocate (currNumElec (numKPoints,spin))
 
    ! Define whether the packed arrays have two rows (complex) or one (real).
 #ifndef GAMMA
-   dim1 = 2
+   dimOne = 2
 #else
-   dim1 = 1
+   dimOne = 1
 #endif
 
+   ! Determine the range of states to evaluate for each kpoint and spin.
+   do i = 1, numKPoints
+      do j = 1, spin
+
+         ! Assume that the first state index will be the min state index.
+         !   This will be fixed to a higher state if any are found that are
+         !   below the requested lowest energy state.
+         minStateIndex(j,i) = 1
+         do k = 1, numStates
+            if (energyEigenValues(k,i,j)*hartree >= eminFIELD) then
+               minStateIndex(j,i) = k
+               exit
+            endif
+         enddo
+
+         ! Assume that the last state will be the max state index.  This will
+         !   be fixed to a lower state if one is found that exceeds the
+         !   requested highest energy state.
+         maxStateIndex(j,i) = numStates
+         do k = 2, numStates
+            if (energyEigenValues(k,i,j)*hartree > emaxFIELD) then
+               maxStateIndex(j,i) = k-1
+               exit
+            endif
+         enddo
+      enddo
+   enddo
 
    ! Allocate space to read the wave functions and accumulate the coeffs.  Also
-   !   initialize the coefficient accumulators.
+   !   initialize the coefficient accumulators. No coeffs needed for total or
+   !   (up, down) potential.
 #ifndef GAMMA
-!   allocate (valeVale(valeDim,valeDim,spin))
    allocate (valeVale(valeDim,numStates,spin))
-!   allocate (tempRealValeVale(valeDim,numStates))
-!   allocate (tempImagValeVale(valeDim,numStates))
-   allocate (accumWaveFnCoeffs(valeDim,numCols-spin,numKPoints)) ! No coeffs
-         ! are needed for the total or (spin-up, spin-down) potential.
-   accumWaveFnCoeffs(:,:,:) = cmplx(0.0_double,0.0_double)
+!allocate (valeValeOL(valeDim,valeDim))
+!allocate (identity(numStates,numStates))
+   if (doPsiFIELD == 1) then
+      allocate (accumWaveFnCoeffsPsi(valeDim,spin+2,numKPoints))
+      accumWaveFnCoeffsPsi(:,:,:) = cmplx(0.0_double,0.0_double)
+   endif
+   if (doWavFIELD == 1) then
+      allocate (accumWaveFnCoeffsWav(valeDim,numStates,spin+2,numKPoints))
+      accumWaveFnCoeffsWav(:,:,:,:) = cmplx(0.0_double,0.0_double)
+   endif
+   if (doRhoFIELD == 1) then
+      allocate (accumWaveFnCoeffsRho(valeDim,numStates,spin+2,numKPoints))
+      accumWaveFnCoeffsRho(:,:,:,:) = cmplx(0.0_double,0.0_double)
+   endif
+   allocate (accumWaveFnCoeffsNeut(valeDim,numKPoints))
+   accumWaveFnCoeffsNeut(:,:) = 0.0_double
 #else
-!   allocate (valeValeGamma(valeDim,valeDim,spin))
    allocate (valeValeGamma(valeDim,numStates,spin))
-   allocate (accumWaveFnCoeffsGamma(valeDim,numCols-spin)) ! No coeffs are
-         ! for the total or (spin-up, spin-down) potential.  (Only 1 kp.)
-   accumWaveFnCoeffsGamma(:,:) = 0.0_double
+!allocate (valeValeOLGamma(valeDim,valeDim))
+   if (doPsiFIELD == 1) then
+      allocate (accumWaveFnCoeffsPsiGamma(valeDim,spin+2))
+      accumWaveFnCoeffsPsiGamma(:,:) = 0.0_double
+   endif
+   if (doWavFIELD == 1) then
+      allocate (accumWaveFnCoeffsWavGamma(valeDim,numStates,spin+2))
+      accumWaveFnCoeffsWavGamma(:,:,:) = 0.0_double
+   endif
+   if (doRhoFIELD == 1) then
+      allocate (accumWaveFnCoeffsRhoGamma(valeDim,numStates,spin+2))
+      accumWaveFnCoeffsRhoGamma(:,:,:) = 0.0_double
+   endif
+   allocate (accumWaveFnCoeffsNeutGamma(valeDim))
+   accumWaveFnCoeffsNeutGamma(:) = 0.0_double
 #endif
 
 
@@ -283,6 +491,10 @@ allocate (currNumElec (numKPoints,spin))
 !call flush (20)
    enddo
 
+   ! Save special coefficients to represent the neutral non-interacting
+   !   electronic distribution for each atom.
+   call makeNeutralCoeffs
+
 accumCharge(:,:) = 0.0_double
 accumChargeKP = 0.0_double
    do i = 1, numKPoints
@@ -296,34 +508,16 @@ accumChargeKP = 0.0_double
          endif
       enddo
       if (skipKP == 0) then
-!write (20,*) "Skipping kpoint ",i
-!call flush (20)
          cycle
       endif
 
-      ! Read the computed wave function into the valeVale matrix.  I know
-      !   that the name is misleading, but so far this seems to work out
-      !   the best in terms of not having too many names or too many
-      !   allocate deallocate calls.
-!write (20,*) "valeStatesBand = ",valeStatesBand
-!write (20,*) "valeDim, numStates=",valeDim,numStates
+      ! Read the computed wave function into the valeVale matrix.
       do j = 1, spin
-#ifndef GAMMA
          if (inSCF == 1) then
             call readDataSCF(j,i,numStates,0) ! 0 = Read wave functions only.
          else
             call readDataPSCF(j,i,numStates,0) ! 0 = Read wave functions only.
          endif
-!         call readMatrix (eigenVectorsBand_did(:,i,j),&
-!               & valeVale(:,:numStates,j),&
-!               & tempRealValeVale(:,:numStates),&
-!               & tempImagValeVale(:,:numStates),&
-!               & valeStatesBand,valeDim,numStates)
-#else
-!         call readMatrixGamma (eigenVectorsBand_did(1,i,j),&
-!               & valeValeGamma(:,:numStates,j),&
-!               & valeStatesBand,valeDim,numStates)
-#endif
       enddo
 
       ! Accumulate the wave function coefficients including either the kpoint
@@ -331,61 +525,88 @@ accumChargeKP = 0.0_double
       !   value of doRho.
       do j = 1, spin
 
-         ! Find the minimum and maximum state indices to include in the wave
-         !   function summation for this kpoint and spin.
-         minStateIndex = 0
-         do k = 1, numStates
-            if (energyEigenValues(k,i,j)*hartree >= eminFIELD) then
-               minStateIndex = k
-               exit
-            endif
-         enddo
-
-         ! Assume that the last state will be the max state index.  This will
-         !   be fixed to a lower state if one is found that exceeds the
-         !   requested highest energy state.
-         maxStateIndex = numStates
-         do k = 2, numStates
-            if (energyEigenValues(k,i,j)*hartree > emaxFIELD) then
-               maxStateIndex = k-1
-               exit
-            endif
-         enddo
-
 currNumElec(i,j) = sum(structuredElectronPopulation(&
-      & minStateIndex:maxStateIndex,i,j))
-!write (20,*) "i,j,currNumElec(i,j) = ",i,j,currNumElec(i,j)
+      & minStateIndex(j,i):maxStateIndex(j,i),i,j))
+write (20,*) "i,j,currNumElec(i,j) = ",i,j,currNumElec(i,j)
 !write (20,*) "minStateIndex=",minStateIndex
 !write (20,*) "maxStateIndex=",maxStateIndex
+
+         ! Accumulate the wave function coefficients from every energy state
+         !   into a single vector. Note that the kPointWeight or electron
+         !   population needs to be square-rooted because this quantity
+         !   will be squared later on.
 #ifndef GAMMA
-         accumCharge(j,i) = 0.0_double
-         do k = minStateIndex, maxStateIndex
-!tempPointValue(1)=cmplx(0.0_double,0.0_double)
+!identity(:,:) = cmplx(0.0d0,0.0d0)
+!identity = matmul(transpose(conjg(valeVale(:,:numStates,j))), &
+!      & matmul(valeValeOL(:,:),valeVale(:,:numStates,j)))
+!do l = 1, numStates
+!write (20,*) identity(:,l)
+!enddo
+!accumCharge(j,i) = 0.0_double
+
+!minStateIndex = 1
+!maxStateIndex = 1
+write(20,*) "min,max=",minStateIndex,maxStateIndex
+         do k = minStateIndex(j,i), maxStateIndex(j,i)
+
+!tempPointValue(:)=cmplx(0.0_double,0.0_double)
 !do l = 1, valeDim
-!!do m = 1, valeDim
+!do m = 1, valeDim
 !tempPointValue(1) = tempPointValue(1) + &
 !   & conjg(valeVale(l,k,j))*valeVale(l,k,j)
-!!enddo
+!enddo
 !enddo
 !write (20,*) "k,valeVale state squared=",k,tempPointValue(1)
 
-            if (doRho == 0) then ! Wave function
-!write (20,*) "kPointWeight(i),spin=",kPointWeight(i),spin
-!call flush (20)
-               currentPopulation = kPointWeight(i)/real(spin,double)
-            else ! Charge density
-!write (20,*) "k,i,j structEPop(k,i,j)=",&
-! & k,i,j,structuredElectronPopulation(k,i,j)
-!call flush (20)
-               currentPopulation = structuredElectronPopulation(k,i,j)
-               accumCharge(j,i) = accumCharge(j,i) + currentPopulation
+            ! Accumulate the wave function coefficients
+            if (doPsiFIELD == 1) then
+               accumWaveFnCoeffsPsi(:,j,i) = &
+                     & accumWaveFnCoeffsPsi(:,j,i) + &
+                     & kPointWeight(i)/real(spin,double) * &
+                     & valeVale(:,k,j)
+!!write (20,*) "kPointWeight(i),spin=",kPointWeight(i),spin
+!!call flush (20)
             endif
-!write (20,*) "before aWFC=",accumWaveFnCoeffs(:,j,i)
-!write (20,*) "vV=",valeVale(:,k,j)
-            accumWaveFnCoeffs(:,j,i) = accumWaveFnCoeffs(:,j,i) + &
-                  & currentPopulation * valeVale(:,k,j)
-         enddo
-!write (20,*) "accumCharge=",accumCharge(j,i)
+            if (doWavFIELD == 1) then
+               accumWaveFnCoeffsWav(:,k,j,i) = &
+                     & accumWaveFnCoeffsWav(:,k,j,i) + &
+                     & sqrt(kPointWeight(i)/real(spin,double)) * &
+                     & valeVale(:,k,j)
+!!write (20,*) "kPointWeight(i),spin=",kPointWeight(i),spin
+!!call flush (20)
+            endif
+
+            if (doRhoFIELD == 1) then
+               accumWaveFnCoeffsRho(:,k,j,i) = &
+                     & accumWaveFnCoeffsRho(:,k,j,i) + &
+                     & sqrt(structuredElectronPopulation(k,i,j)) * &
+                     & valeVale(:,k,j)
+accumCharge(j,i) = accumCharge(j,i) + structuredElectronPopulation(k,i,j)
+!write(20,*) "dot",dot_product(accumWaveFnCoeffsRho(:,j,i),&
+!                  & accumWaveFnCoeffsRho(:,j,i))
+!write(20,*) "sqrt dot",sqrt(dot_product(accumWaveFnCoeffsRho(:,j,i),&
+!                  & accumWaveFnCoeffsRho(:,j,i)))
+!            accumWaveFnCoeffsRho(:,j,i) = accumWaveFnCoeffsRho(:,j,i) / &
+!                  & sqrt(dot_product(accumWaveFnCoeffsRho(:,j,i),&
+!                  & accumWaveFnCoeffsRho(:,j,i)))
+write (20,*) "k,i,j structEPop(k,i,j)=",&
+ & k,i,j,structuredElectronPopulation(k,i,j)
+call flush (20)
+            endif
+
+!!write (20,*) "before aWFC=",accumWaveFnCoeffs(:,j,i)
+!!write (20,*) "vV=",valeVale(:,k,j)
+         enddo ! k min->max state
+
+!         ! Remove cross terms.
+!         do k = minStateIndex, maxStateIndex
+!            do l = k+1, maxStateIndex
+!write(20,*) "cross ", 2.0_double * valeVale(:,k,j) * valeVale(:,l,j)
+!               accumWaveFnCoeffsRho(:,j,i) = accumWaveFnCoeffsRho(:,j,i) - &
+!                     & 2.0_double * valeVale(:,k,j) * valeVale(:,l,j)
+!            enddo
+!         enddo
+write (20,*) "accumCharge=",accumCharge(j,i)
 accumChargeKP = accumChargeKP + accumCharge(j,i)
 !write (20,*) "before divide aWFC=",accumWaveFnCoeffs(:,j,i)
 !tempPointValue(1)=cmplx(0.0_double,0.0_double)
@@ -397,11 +618,14 @@ accumChargeKP = accumChargeKP + accumCharge(j,i)
 !enddo
 !write (20,*) "accum state squared=",tempPointValue(1)
 
-         if (doRho == 1) then
-            accumWaveFnCoeffs(:,j,i) = accumWaveFnCoeffs(:,j,i) / &
-                  & sqrt(dot_product(accumWaveFnCoeffs(:,j,i),&
-                  & accumWaveFnCoeffs(:,j,i)))
-         endif
+!         ! The accumulated wave function coefficients across all energy levels
+!         !   (for this spin (j) and k-point (i)) need to be normalized if we
+!         !   want to look at the charge density. Why? FIX?
+!         if (doRhoFIELD == 1) then
+!            accumWaveFnCoeffs(:,j,i) = accumWaveFnCoeffs(:,j,i) / &
+!                  & sqrt(dot_product(accumWaveFnCoeffs(:,j,i),&
+!                  & accumWaveFnCoeffs(:,j,i)))
+!         endif
 !currNumElec(i,j) = sqrt(dot_product(accumWaveFnCoeffs(:,j,i),&
 !& accumWaveFnCoeffs(:,j,i)))
 
@@ -415,26 +639,159 @@ accumChargeKP = accumChargeKP + accumCharge(j,i)
 !enddo
 !write (20,*) "accum state squared after divide=",tempPointValue(1)
 #else
-         do k = minStateIndex, maxStateIndex
-
-            if (doRho == 0) then ! Wave function
-               currentPopulation = kPointWeight(i)/real(spin,double)
-            else ! Charge density
-               currentPopulation = structuredElectronPopulation(k,i,j)
+!minStateIndex(:,:) = 1
+!maxStateIndex(:,:) = 4
+write(20,*) "min,max=",minStateIndex,maxStateIndex
+         do k = minStateIndex(j,i), maxStateIndex(j,i)
+            if (doPsiFIELD == 1) then
+               accumWaveFnCoeffsPsiGamma(:,j) = &
+                     & accumWaveFnCoeffsPsiGamma(:,j) + &
+                     & kPointWeight(i)/real(spin,double) * &
+                     & valeValeGamma(:,k,j)
+                  ! FIX, pull kPointWeight mult out of k,j loop.
+            endif
+            if (doWavFIELD == 1) then
+               accumWaveFnCoeffsWavGamma(:,k,j) = &
+                     & accumWaveFnCoeffsWavGamma(:,k,j) + &
+                     & sqrt(kPointWeight(i)/real(spin,double)) * &
+                     & valeValeGamma(:,k,j)
+                  ! FIX, pull kPointWeight mult out of k,j loop.
             endif
 
-            accumWaveFnCoeffsGamma(:,j) = accumWaveFnCoeffsGamma(:,j) + &
-                  & currentPopulation * valeValeGamma(:,k,j)
-         enddo
+            if (doRhoFIELD == 1) then
+               accumWaveFnCoeffsRhoGamma(:,k,j) = &
+                     & accumWaveFnCoeffsRhoGamma(:,k,j) + &
+                     & sqrt(structuredElectronPopulation(k,i,j)) * &
+                     & valeValeGamma(:,k,j)
+accumCharge(j,i) = accumCharge(j,i) + structuredElectronPopulation(k,i,j)
+write (20,*) "k,i,j structEPop(k,i,j)=",&
+ & k,i,j,structuredElectronPopulation(k,i,j)
+call flush (20)
+            endif
+         enddo ! k: state
+
+         ! For some reason we don't do the normalization here? I think it
+         !   should be done here if it was done there. Or it should not be
+         !   done at all.
 #endif
-      enddo
-   enddo
+      enddo ! j: spin
+
+#ifndef GAMMA
+      if (doPsiFIELD == 1) then
+         if (spin == 1) then
+            accumWaveFnCoeffsPsi(:,2,i) = &
+                  & accumWaveFnCoeffsPsi(:,1,i) - &
+                  & accumWaveFnCoeffsNeut(:,i)
+            accumWaveFnCoeffsPsi(:,3,i) = &
+                  & accumWaveFnCoeffsNeut(:,i)
+         else
+            accumWaveFnCoeffsPsi(:,3,i) = &
+                  & accumWaveFnCoeffsPsi(:,1,i) + &
+                  & accumWaveFnCoeffsPsi(:,2,i) - &
+                  & accumWaveFnCoeffsNeut(:,i)
+            accumWaveFnCoeffsPsi(:,4,i) = &
+                  & accumWaveFnCoeffsNeut(:,i)
+         endif
+      endif
+      if (doWavFIELD == 1) then
+         if (spin == 1) then
+            do j = minStateIndex(1,i), maxStateIndex(1,i)
+               accumWaveFnCoeffsWav(:,j,2,i) = &
+                     & accumWaveFnCoeffsWav(:,j,1,i) - &
+                     & accumWaveFnCoeffsNeut(:,i)
+               accumWaveFnCoeffsWav(:,j,3,i) = &
+                     & accumWaveFnCoeffsNeut(:,i)
+            enddo
+         else
+            do j = minStateIndex(1,i), maxStateIndex(1,i)
+               accumWaveFnCoeffsWav(:,j,3,i) = &
+                     & accumWaveFnCoeffsWav(:,j,1,i) + &
+                     & accumWaveFnCoeffsWav(:,j,2,i) - &
+                     & accumWaveFnCoeffsNeut(:,i)
+               accumWaveFnCoeffsWav(:,j,4,i) = &
+                     & accumWaveFnCoeffsNeut(:,i)
+            enddo
+         endif
+      endif
+      if (doRhoFIELD == 1) then
+         if (spin == 1) then
+            do j = minStateIndex(1,i), maxStateIndex(1,i)
+               accumWaveFnCoeffsRho(:,j,2,i) = &
+                     & accumWaveFnCoeffsRho(:,j,1,i) - &
+                     & accumWaveFnCoeffsNeut(:,i)
+               accumWaveFnCoeffsRho(:,j,3,i) = accumWaveFnCoeffsNeut(:,i)
+            enddo
+         else
+            do j = minStateIndex(1,i), maxStateIndex(1,i)
+               accumWaveFnCoeffsRho(:,j,3,i) = &
+                     & accumWaveFnCoeffsRho(:,j,1,i) + &
+                     & accumWaveFnCoeffsRho(:,j,2,i) - &
+                     & accumWaveFnCoeffsNeut(:,i)
+               accumWaveFnCoeffsRho(:,j,4,i) = accumWaveFnCoeffsNeut(:,i)
+            enddo
+         endif
+      endif
+#else
+      if (doPsiFIELD == 1) then
+         if (spin == 1) then
+            accumWaveFnCoeffsPsiGamma(:,2) = &
+                  & accumWaveFnCoeffsPsiGamma(:,1) - &
+                  & accumWaveFnCoeffsNeutGamma(:)
+            accumWaveFnCoeffsPsiGamma(:,3) = &
+                  & accumWaveFnCoeffsNeutGamma(:)
+         else
+            accumWaveFnCoeffsPsiGamma(:,3) = &
+                  & accumWaveFnCoeffsPsiGamma(:,1) + &
+                  & accumWaveFnCoeffsPsiGamma(:,2) - &
+                  & accumWaveFnCoeffsNeutGamma(:)
+            accumWaveFnCoeffsPsiGamma(:,4) = &
+                  & accumWaveFnCoeffsNeutGamma(:)
+         endif
+      endif
+      if (doWavFIELD == 1) then
+         if (spin == 1) then
+            do j = minStateIndex(1,i), maxStateIndex(1,i)
+               accumWaveFnCoeffsWavGamma(:,j,2) = &
+                     & accumWaveFnCoeffsWavGamma(:,j,1) - &
+                     & accumWaveFnCoeffsNeutGamma(:)
+               accumWaveFnCoeffsWavGamma(:,j,3) = &
+                     & accumWaveFnCoeffsNeutGamma(:)
+            enddo
+         else
+            do j = minStateIndex(1,i), maxStateIndex(1,i)
+               accumWaveFnCoeffsWavGamma(:,j,3) = &
+                     & accumWaveFnCoeffsWavGamma(:,j,1) + &
+                     & accumWaveFnCoeffsWavGamma(:,j,2) - &
+                     & accumWaveFnCoeffsNeutGamma(:)
+               accumWaveFnCoeffsWavGamma(:,j,4) = &
+                     & accumWaveFnCoeffsNeutGamma(:)
+            enddo
+         endif
+      endif
+      if (doRhoFIELD == 1) then
+         if (spin == 1) then
+            do j = minStateIndex(1,i), maxStateIndex(1,i)
+               accumWaveFnCoeffsRhoGamma(:,j,2) = &
+                     & accumWaveFnCoeffsRhoGamma(:,j,1) - &
+                     & accumWaveFnCoeffsNeutGamma(:)
+               accumWaveFnCoeffsRhoGamma(:,j,3) = &
+                     & accumWaveFnCoeffsNeutGamma(:)
+            enddo
+         else
+            do j = minStateIndex(1,i), maxStateIndex(1,i) ! FIX for spin
+               accumWaveFnCoeffsRhoGamma(:,j,3) = &
+                     & accumWaveFnCoeffsRhoGamma(:,j,1) + &
+                     & accumWaveFnCoeffsRhoGamma(:,j,2) - &
+                     & accumWaveFnCoeffsNeutGamma(:)
+               accumWaveFnCoeffsRhoGamma(:,j,4) = &
+                     & accumWaveFnCoeffsNeutGamma(:)
+            enddo
+         endif
+      endif
+#endif
+   enddo ! i kpoint
 
 !write (20,*) "accumChargeKP=",accumChargeKP
-
-   ! Save special coefficients to represent the neutral non-interacting
-   !   electronic distribution for each atom.
-   call makeNeutralCoeffs
 
    ! There is a lot of calculation that needs to be done here.  We need to
    !   consider each mesh point in turn.  We calculate the accumulated
@@ -450,23 +807,71 @@ accumChargeKP = accumChargeKP + accumCharge(j,i)
    currentPointCount = 0
 
    ! Initialize the data chunk that will hold each of the resultant data types.
-   dataChunk(:,:,:,:) = 0.0_double
+   if (doPsiFIELD == 1) then
+      dataChunkPsiReal(:,:,:,:) = 0.0_double
+#ifndef GAMMA
+      dataChunkPsiImag(:,:,:,:) = 0.0_double
+#endif
+   endif
+   if (doWavFIELD == 1) then
+      dataChunkWav(:,:,:,:) = 0.0_double
+   endif
+   if (doRhoFIELD == 1) then
+      dataChunkRho(:,:,:,:) = 0.0_double
+   endif
+   if (doPotFIELD == 1) then
+      dataChunkPot(:,:,:,:) = 0.0_double
+   endif
 
    ! Define the initial points of the hyperslab if XDMF HDF5 output is needed.
    if (doXDMFField == 1) then
       currentStartIndices(:) = 0
    endif
 
+   ! Start triple loop on mesh points for evaluating functions. Because the
+   !   dataChunk only holds a portion of the whole of each data set, we need
+   !   to use memory index variables (currB, currC, a) to index dataChunk.
+   ! Each data kind (psi, wav, rho, etc) of the dataChunk will eventually be
+   !   put into the correct part of its respective whole data set in the
+   !   on-disk file.
    do c = 1, numMeshPoints(3)
+      if (triggerAxis < 3) then
+         currC = 1
+      else
+         currC = c
+      endif
    do b = 1, numMeshPoints(2)
-   do a = 1, numMeshPoints(1)
+      if (triggerAxis < 2) then
+         currB = 1
+      else
+         currB = b
+      endif
+   do a = 1, numMeshPoints(1) ! a is always a valid memory index.
+!write (20,*) "a,b,c=",a,b,c
+!call flush (20)
 
-      ! Initialize the evaluation of this mesh point.
+      ! Initialize the evaluation of the wave function on this mesh point.
+      if (doPsiFIELD == 1) then
 #ifndef GAMMA
-      waveFnEval(1:numKPoints,1:numCols-spin) = cmplx(0.0_double,0.0_double)
+         waveFnEvalPsi(:,:) = cmplx(0.0_double,0.0_double)
 #else
-      waveFnEvalGamma(1:numCols-spin) = 0.0_double
+         waveFnEvalPsiGamma(:) = 0.0_double
 #endif
+      endif
+      if (doWavFIELD == 1) then
+#ifndef GAMMA
+         waveFnEvalWav(:,:,:) = cmplx(0.0_double,0.0_double)
+#else
+         waveFnEvalWavGamma(:,:) = 0.0_double
+#endif
+      endif
+      if (doRhoFIELD == 1) then
+#ifndef GAMMA
+         waveFnEvalRho(:,:,:) = cmplx(0.0_double,0.0_double)
+#else
+         waveFnEvalRhoGamma(:,:) = 0.0_double
+#endif
+      endif
 
 
       ! Increment the counter of the number of mesh points computed so far.
@@ -481,7 +886,6 @@ accumChargeKP = accumChargeKP + accumCharge(j,i)
                & ((b-1)*realFractStrideLength(2)) * realVectors(i,2) + &
                & ((c-1)*realFractStrideLength(3)) * realVectors(i,3)
       enddo
-!write (20,*) "a,b,c=",a,b,c
 !write (20,*) "currentMeshPos=",currentPosition(:,1)
 !call flush (20)
 
@@ -545,23 +949,81 @@ accumChargeKP = accumChargeKP + accumCharge(j,i)
          !   basis function coefficients for this atom by the accumulated wave
          !   function coefficients.
 #ifndef GAMMA
-         do j = 1, numKPoints
-            do k = 1, numCols-spin  ! -spin because pot is not treated this way
-               do l = 1,currentNumValeStates(2)
-                  modifiedBasisFns(1:currentNumAlphas(2),l,k,j) = &
-                        & currentBasisFns(1:currentNumAlphas(2),l,2) * &
-                        & accumWaveFnCoeffs(currentValeStateIndex+l,k,j)
+         if (doPsiFIELD == 1) then
+            do j = 1,numKPoints
+               do k = 1,spin+2
+                  do l = 1,currentNumValeStates(2)
+                     modifiedBasisFnsPsi(1:currentNumAlphas(2),l,k,j) = &
+                           & currentBasisFns(1:currentNumAlphas(2),l,2) * &
+                           & accumWaveFnCoeffsPsi( &
+                           & currentValeStateIndex+l,k,j)
+                  enddo
                enddo
             enddo
-         enddo
-#else
-         do k = 1, numCols-spin  ! -spin because pot is not treated this way
-            do l = 1,currentNumValeStates(2)
-               modifiedBasisFnsGamma(1:currentNumAlphas(2),l,k) = &
-                     & currentBasisFns(1:currentNumAlphas(2),l,2) * &
-                     & accumWaveFnCoeffsGamma(currentValeStateIndex+l,k)
+         endif
+         if (doWavFIELD == 1) then
+            do j = 1,numKPoints
+               do k = 1,spin+2
+                  do l = minStateIndex(1,1), maxStateIndex(1,1)
+                     do m = 1,currentNumValeStates(2)
+                        modifiedBasisFnsWav(1:currentNumAlphas(2),m,l,k,j) = &
+                              & currentBasisFns(1:currentNumAlphas(2),m,2) * &
+                              & accumWaveFnCoeffsWav( &
+                              & currentValeStateIndex+m,l,k,j)
+                     enddo
+                  enddo
+               enddo
             enddo
-         enddo
+         endif
+         if (doRhoFIELD == 1) then
+            do j = 1,numKPoints
+               do k = 1,spin+2
+                  do l = minStateIndex(1,1), maxStateIndex(1,1)
+                     do m = 1,currentNumValeStates(2)
+                        modifiedBasisFnsRho(1:currentNumAlphas(2),m,l,k,j) = &
+                              & currentBasisFns(1:currentNumAlphas(2),m,2) * &
+                              & accumWaveFnCoeffsRho(&
+                              & currentValeStateIndex+m,l,k,j)
+                     enddo
+                  enddo
+               enddo
+            enddo
+         endif
+#else
+         if (doPsiFIELD == 1) then
+            do k = 1,spin+2
+               do l = 1,currentNumValeStates(2)
+                  modifiedBasisFnsPsiGamma(1:currentNumAlphas(2),l,k) = &
+                        & currentBasisFns(1:currentNumAlphas(2),l,2) * &
+                        & accumWaveFnCoeffsPsiGamma( &
+                        & currentValeStateIndex+l,k)
+               enddo
+            enddo
+         endif
+         if (doWavFIELD == 1) then
+            do k = 1,spin+2
+               do l = minStateIndex(1,1), maxStateIndex(1,1)
+                  do m = 1,currentNumValeStates(2)
+                     modifiedBasisFnsWavGamma(1:currentNumAlphas(2),m,l,k)=&
+                           & currentBasisFns(1:currentNumAlphas(2),m,2) * &
+                           & accumWaveFnCoeffsWavGamma( &
+                           & currentValeStateIndex+m,l,k)
+                  enddo
+               enddo
+            enddo
+         endif
+         if (doRhoFIELD == 1) then
+            do k = 1,spin+2
+               do l = minStateIndex(1,1), maxStateIndex(1,1)
+                  do m = 1,currentNumValeStates(2)
+                     modifiedBasisFnsRhoGamma(1:currentNumAlphas(2),m,l,k) = &
+                           & currentBasisFns(1:currentNumAlphas(2),m,2) * &
+                           & accumWaveFnCoeffsRhoGamma(&
+                           & currentValeStateIndex+m,l,k)
+                  enddo
+               enddo
+            enddo
+         endif
 #endif
 
          ! Determine the maximum radius beyond which no lattice point will be
@@ -592,9 +1054,10 @@ accumChargeKP = accumChargeKP + accumCharge(j,i)
                   & cellDimsReal(:,j)
 
             ! Obtain the relative separation x,y,z vector.  This is the vector
-            !   between the atomic site in some periodic cell and the mesh
+            !   from the atomic site in some periodic cell to the mesh
             !   point in the origin cell.
-            shiftedVec(:) =  shiftedAtomPos(:) - currentPosition(:,1)
+            shiftedVec(:) =  currentPosition(:,1) - shiftedAtomPos(:) 
+!            shiftedVec(:) =  shiftedAtomPos(:) - currentPosition(:,1)
 
             ! Obtain the squared seperation magnitude between the mesh point
             !   and the shifted position of the atom.
@@ -618,42 +1081,51 @@ accumChargeKP = accumChargeKP + accumCharge(j,i)
             !   the contribution is *less* than the minimum necessary to be
             !   non-negligable.  (Tricky!)
             ! Assume that the last alpha will be the last alpha to contribute.
-            lastContribAlphaIndex = currentNumAlphas(2)
-            do k = 1, currentNumAlphas(2)
-               alphaDist(k) = currentAlphas(k,2)*shiftedSepSqrd
+            if ((doPsiFIELD == 1) .or. (doWavFIELD == 1) .or. &
+                  & (doRhoFIELD == 1)) then
+               lastContribAlphaIndex = currentNumAlphas(2)
+               do k = 1, currentNumAlphas(2)
+                  alphaDist(k) = currentAlphas(k,2)*shiftedSepSqrd
 !write (20,*) "alphaDist(k),k,cutoff,currentAlphas(k,2)=",alphaDist(k),k,&
 !& cutoff,currentAlphas(k,2)
 !call flush(20)
-               if (alphaDist(k) > cutoff) then
-                  lastContribAlphaIndex = k
-                  exit
-               endif
-            enddo
+                  if (alphaDist(k) > cutoff) then
+                     lastContribAlphaIndex = k
+                     exit
+                  endif
+               enddo
+
+               ! Compute the exponential for each of the alphas needed.  This
+               !   will complete all the distance sensitive parts of the
+               !   calculation. The rest is simply applying the appropriate
+               !   coefficients and angular factors to evaulate the
+               !   contribution of each type of orbital (e.g. s,px,py,pz,...).
+               expAlphaDist(1:lastContribAlphaIndex) = &
+                     & exp(-alphaDist(1:lastContribAlphaIndex))
+            endif
 !write (20,*) "lastContribAlphaIndex=",lastContribAlphaIndex
 !call flush (20)
 
-            lastContribPotAlphaIndex = currentNumPotAlphas
-            do k = 1, currentNumPotAlphas
-               potAlphaDist(k) = currentPotAlphas(k)*shiftedSepSqrd
+            if (doPotFIELD == 1) then
+               lastContribPotAlphaIndex = currentNumPotAlphas
+               do k = 1, currentNumPotAlphas
+                  potAlphaDist(k) = currentPotAlphas(k)*shiftedSepSqrd
 
-               if (potAlphaDist(k) > cutoff) then
-                  lastContribPotAlphaIndex = k
-                  exit
-               endif
-            enddo
+                  if (potAlphaDist(k) > cutoff) then
+                     lastContribPotAlphaIndex = k
+                     exit
+                  endif
+               enddo
 
-            ! Compute the exponential for each of the alphas needed.  This will
-            !   complete all the distance sensitive parts of the calculation.
-            !   The rest is simply applying the appropriate coefficients and
-            !   angular factors to evaulate the contribution of each type of
-            !   orbital (e.g. s, px, py, pz, ...).
-            expAlphaDist(1:lastContribAlphaIndex) = &
-                  & exp(-alphaDist(1:lastContribAlphaIndex))
+               ! Compute the exponential for each potential alpha needed. As
+               !   above, this will complete all the distance sensitive parts
+               !   of the calculation. Potential Gaussians are all s-type.
+               expPotAlphaDist(1:lastContribPotAlphaIndex) = &
+                     & exp(-potAlphaDist(1:lastContribPotAlphaIndex))
+            endif
 !write (20,*) "expAlphaDist(1),currentAlphas(1,2)=",&
 !&expAlphaDist(1),currentAlphas(1,2)
 !call flush (20)
-            expPotAlphaDist(1:lastContribPotAlphaIndex) = &
-                  & exp(-potAlphaDist(1:lastContribPotAlphaIndex))
 
             ! Note that the general expression for a Gaussian type orbital
             !   (GTO) is A * r^l * exp(-ar^2).  In OLCAO an atomic orbital is
@@ -666,217 +1138,422 @@ accumChargeKP = accumChargeKP + accumCharge(j,i)
             !   regular GTO coefficients and the Ylm angular normalization
             !   coefficients.
 
-
             ! Compute the angular factors for all the necessary orbital types.
             !   Note that the order of the angular factors computed here must
             !   match the order of the coefficients computation in the
             !   renormalizeBasis subroutine in the basis.f90 file.
-            angularFactor(1) = 1.0_double
-            if (currentMaxValeQN_l > 0) then
-               x=shiftedVec(1)
-               y=shiftedVec(2)
-               z=shiftedVec(3)
+            if ((doPsiFIELD == 1) .or. (doWavFIELD == 1) .or. &
+                  & (doRhoFIELD == 1)) then
+               angularFactor(1) = 1.0_double
+               if (currentMaxValeQN_l > 0) then
+                  x=shiftedVec(1)
+                  y=shiftedVec(2)
+                  z=shiftedVec(3)
 
-               angularFactor(2) = x
-               angularFactor(3) = y
-               angularFactor(4) = z
-               if (currentMaxValeQN_l > 1) then
-                  rSqrd = x*x + y*y + z*z
+                  angularFactor(2) = x
+                  angularFactor(3) = y
+                  angularFactor(4) = z
+                  if (currentMaxValeQN_l > 1) then
+                     rSqrd = x*x + y*y + z*z
 
-                  angularFactor(5) = x*y
-                  angularFactor(6) = x*z
-                  angularFactor(7) = y*z
-                  angularFactor(8) = x**2 - y**2
-                  angularFactor(9) = 3.0_double*z**2 - rSqrd
-                  if (currentMaxValeQN_l > 2) then
-                     angularFactor(10) = x*y*z
-                     angularFactor(11) = z*(x**2 - y**2)
-                     angularFactor(12) = x*(x**2 - 3.0_double*y**2)
-                     angularFactor(13) = y*(y**2 - 3.0_double*x**2)
-                     angularFactor(14) = z*(5.0_double*z**2 - 3.0_double*rSqrd)
-                     angularFactor(15) = x*(5.0_double*z**2 - rSqrd)
-                     angularFactor(16) = y*(5.0_double*z**2 - rSqrd)
+                     angularFactor(5) = x*y
+                     angularFactor(6) = x*z
+                     angularFactor(7) = y*z
+                     angularFactor(8) = x**2 - y**2
+                     angularFactor(9) = 3.0_double*z**2 - rSqrd
+                     if (currentMaxValeQN_l > 2) then
+                        angularFactor(10) = x*y*z
+                        angularFactor(11) = z*(x**2 - y**2)
+                        angularFactor(12) = x*(x**2 - 3.0_double*y**2)
+                        angularFactor(13) = y*(y**2 - 3.0_double*x**2)
+                        angularFactor(14) = z*(5.0_double*z**2 - &
+                              & 3.0_double*rSqrd)
+                        angularFactor(15) = x*(5.0_double*z**2 - rSqrd)
+                        angularFactor(16) = y*(5.0_double*z**2 - rSqrd)
+                     endif
                   endif
                endif
-            endif
 
+               do u = 1, numKPoints
+                  do v = 1, spin+2
+                     do w = minStateIndex(1,u), maxStateIndex(1,u)
 
-            ! For each orbital of this atom, at this position, accumulate the
-            !   Gaussian coefficients of the contributing alphas.
-            orbitalCount=0
-            do k = 1, currentNumValeRadialFns
+                     ! For each orbital of this atom, at this position,
+                     !   accumulate the Gaussian coefficients of the
+                     !   contributing alphas.
+                     orbitalCount=0
+                     do k = 1, currentNumValeRadialFns
 
-               ! Get the current orbital type (l quantum number)
-               currentOrbType = currentValeQN_lList(k)
+                        ! Get the current orbital type (l quantum number)
+                        currentOrbType = currentValeQN_lList(k)
 
-               ! Get a temporary number of alphas needed for the present k
-               !   indexed valence radial function (derived from the QN_l of
-               !   the radial function).
-               tempNumAlphas = currentNumOrbAlphas(currentOrbType + 1)
+                        ! Get a temporary number of alphas needed for the
+                        !   present k indexed valence radial function
+                        !   (derived from the QN_l of the radial function).
+                        tempNumAlphas = currentNumOrbAlphas(currentOrbType + 1)
 
-               ! Use all the alphas for this radial function or only up to the
-               !   last contributing one.
-               tempNumAlphas = min(lastContribAlphaIndex,tempNumAlphas)
+                        ! Use all the alphas for this radial function or only
+                        !   up to the last contributing one.
+                        tempNumAlphas = min(lastContribAlphaIndex,&
+                              & tempNumAlphas)
 
-               ! Loop over the possible QN_m values for the current QN_l type
-               !   of orbital.
-               do l = 1, 2 * currentOrbType + 1
+                        ! Loop over the possible QN_m values for the current
+                        !   QN_l type of orbital.
+                        do l = 1, 2 * currentOrbType + 1
 
-                  ! Increment the orbital counter to the next state.
-                  orbitalCount = orbitalCount + 1
+                           ! Increment the orbital counter to the next state.
+                           orbitalCount = orbitalCount + 1
 
-                  do m = 1, numKPoints
-
-                     do n = 1, numCols-spin ! -spin b/c pot is done differently
-                        ! Accumulate the product of the Gaussian coefficients
-                        !   for this atomic orbital with the contributing
-                        !   exponential factors (computed above).  This
-                        !   accumulation will be the atomic orbital radial
-                        !   function evaluated at the current mesh point for
-                        !   each kpoint.
-                        ! Then, multiply the atomic orbital radial function by
-                        !   the appropriate angular coefficient to make the
-                        !   actual atomic orbital evaluated at the current
-                        !   mesh point.
+                           ! Accumulate the product of the Gaussian coefficients
+                           !   for this atomic orbital with the contributing
+                           !   exponential factors (computed above).  This
+                           !   accumulation will be the atomic orbital radial
+                           !   function evaluated at the current mesh point for
+                           !   each kpoint.
+                           ! Then, multiply the atomic orbital radial function
+                           !   by the appropriate angular coefficient to make
+                           !   the actual atomic orbital evaluated at the
+                           !   current mesh point.
 #ifndef GAMMA
-                        atomicOrbital(orbitalCount,m,n) = sum( &
-                              & modifiedBasisFns(1:tempNumAlphas, &
-                              & orbitalCount,n,m) * &
-                              & expAlphaDist(1:tempNumAlphas)) * &
-                              & abs(angularFactor(currentlmIndex( &
-                              & orbitalCount,2)))
+                           if ((doPsiFIELD == 1) .and. &
+                                 & (w == minStateIndex(1,u))) then
+                              atomicOrbitalPsi(orbitalCount,v,u) = sum( &
+                                    & modifiedBasisFnsPsi(1:tempNumAlphas, &
+                                    & orbitalCount,v,u) * &
+                                    & expAlphaDist(1:tempNumAlphas)) * &
+                                    & abs(angularFactor(currentlmIndex( &
+                                    & orbitalCount,2)))
+                           endif
+                           if (doWavFIELD == 1) then
+                              atomicOrbitalWav(orbitalCount,w,v,u) = sum( &
+                                    & modifiedBasisFnsWav(1:tempNumAlphas, &
+                                    & orbitalCount,w,v,u) * &
+                                    & expAlphaDist(1:tempNumAlphas)) * &
+                                    & abs(angularFactor(currentlmIndex( &
+                                    & orbitalCount,2)))
+                           endif
+                           if (doRhoFIELD == 1) then
+                              atomicOrbitalRho(orbitalCount,w,v,u) = sum( &
+                                    & modifiedBasisFnsRho(1:tempNumAlphas, &
+                                    & orbitalCount,w,v,u) * &
+                                    & expAlphaDist(1:tempNumAlphas)) * &
+                                    & abs(angularFactor(currentlmIndex( &
+                                    & orbitalCount,2)))
+                           endif
 #else
-                        atomicOrbitalGamma(orbitalCount,n) = sum( &
-                              & modifiedBasisFnsGamma(1:tempNumAlphas,&
-                              & orbitalCount,n) * &
-                              & expAlphaDist(1:tempNumAlphas)) * &
-                              & abs(angularFactor(currentlmIndex( &
-                              & orbitalCount,2)))
+                           if ((doPsiFIELD == 1) .and. &
+                                 & (w == minStateIndex(1,u))) then
+                              atomicOrbitalPsiGamma(orbitalCount,v) = sum( &
+                                    & modifiedBasisFnsPsiGamma( &
+                                    & 1:tempNumAlphas,orbitalCount,v) * &
+                                    & expAlphaDist(1:tempNumAlphas)) * &
+                                    & abs(angularFactor(currentlmIndex( &
+                                    & orbitalCount,2)))
+                           endif
+                           if (doWavFIELD == 1) then
+                              atomicOrbitalWavGamma(orbitalCount,w,v) = sum( &
+                                    & modifiedBasisFnsWavGamma( &
+                                    & 1:tempNumAlphas,orbitalCount,w,v) * &
+                                    & expAlphaDist(1:tempNumAlphas)) * &
+                                    & abs(angularFactor(currentlmIndex( &
+                                    & orbitalCount,2)))
+                           endif
+                           if (doRhoFIELD == 1) then
+                              atomicOrbitalRhoGamma(orbitalCount,w,v) = sum( &
+                                    & modifiedBasisFnsRhoGamma( &
+                                    & 1:tempNumAlphas,orbitalCount,w,v) * &
+                                    & expAlphaDist(1:tempNumAlphas)) * &
+                                    & (angularFactor(currentlmIndex( &
+                                    & orbitalCount,2)))
+!if ((a==50).and.(b==50).and.(c==50)) then
+!write(20,*) "i,j,w,k,l",i,j,w,k,l
+!write(20,*) "ang Fact", angularFactor(currentlmIndex(orbitalCount,2)), &
+!      & shiftedVec(:)
+!endif
+                           endif
 #endif
-                     enddo ! n   numCols-spin
-                  enddo ! m   numKPoints
-
-!write (20,*) "j oC aO(oC)",j,orbitalCount,&
-!& atomicOrbital(orbitalCount,1)
-!write (20,*) "currlmI aF(currlmI)",&
-!& currentlmIndex(orbitalCount,2),&
-!& angularFactor(currentlmIndex(orbitalCount,2))
-!call flush (20)
-               enddo ! l   Num of QN_m for this QN_l
-            enddo ! k   numValeRadialWaveFns
+                        enddo ! l: m_QN
+                     enddo ! k: num vale radial fns (no m_QN)
+                     enddo ! w: numStates
+                  enddo ! v: spin
+               enddo ! u : kpoints
+            endif ! Psi, Wav, Rho only.
 
             ! Accumulate the contribution of this replicated atom's orbitals
             !  onto the current mesh point.
 #ifndef GAMMA
-            do k = 1, numCols-spin ! -spin b/c pot is not treated this way
-               do l = 1, numKPoints
-                  waveFnEval(l,k) = waveFnEval(l,k) + &
-                        & sum(atomicOrbital(1:orbitalCount,l,k)) * &
-                        & phaseFactor(l,j)
+            if (doPsiFIELD == 1) then
+               do k = 1, numKPoints
+                  do l = 1, spin+2
+                     waveFnEvalPsi(l,k) = waveFnEvalPsi(l,k) + &
+                           & sum(atomicOrbitalPsi(1:orbitalCount,l,k)) * &
+                           & phaseFactor(k,j)
+                  enddo
                enddo
-            enddo
-!if (j==2) then
-!write (20,*) "wFE11,wFE21=",waveFnEval(1,1),waveFnEval(2,1)
-!endif
+            endif
+            if (doWavFIELD == 1) then
+               do k = 1, numKPoints
+                  do l = 1, spin+2
+                     do m = minStateIndex(1,1), maxStateIndex(1,1)
+                        waveFnEvalWav(m,l,k) = waveFnEvalWav(m,l,k) + &
+                              & sum(atomicOrbitalWav(1:orbitalCount,m,l,k)) * &
+                              & phaseFactor(k,j)
+                     enddo
+                  enddo
+               enddo
+            endif
+            if (doRhoFIELD == 1) then
+               do k = 1, numKPoints
+                  do l = 1, spin+2
+                     do m = minStateIndex(1,1), maxStateIndex(1,1)
+                        waveFnEvalRho(m,l,k) = waveFnEvalRho(m,l,k) + &
+                              & sum(atomicOrbitalRho(1:orbitalCount,m,l,k)) * &
+                              & phaseFactor(k,j)
+                     enddo
+                  enddo
+               enddo
+            endif
 #else
-            do k = 1, numCols-spin ! -spin b/c pot is not treated this way
-               waveFnEvalGamma(k) = waveFnEvalGamma(k) + &
-                     & sum(atomicOrbitalGamma(1:orbitalCount,k))
-            enddo
+            if (doPsiFIELD == 1) then
+               do k = 1, spin+2
+                  waveFnEvalPsiGamma(k) = waveFnEvalPsiGamma(k) + &
+                        & sum(atomicOrbitalPsiGamma(1:orbitalCount,k))
+               enddo
+            endif
+            if (doWavFIELD == 1) then
+               do k = 1, spin+2
+                  do l = minStateIndex(1,1), maxStateIndex(1,1)
+                     waveFnEvalWavGamma(l,k) = waveFnEvalWavGamma(l,k) + &
+                           & sum(atomicOrbitalWavGamma(1:orbitalCount,l,k))
+                  enddo
+               enddo
+            endif
+            if (doRhoFIELD == 1) then
+               do k = 1, spin+2
+                  do l = minStateIndex(1,1), maxStateIndex(1,1)
+                     waveFnEvalRhoGamma(l,k) = waveFnEvalRhoGamma(l,k) + &
+                           & sum(atomicOrbitalRhoGamma(1:orbitalCount,l,k))
+                  enddo
+               enddo
+            endif
 #endif
 
             ! Accumulate the contribution of this replicated potential site's
             !   Gaussian set for the current mesh point.
-            do k = 1, spin
-               dataChunk(spin+1+k,a,b,c) = dataChunk(spin+1+k,a,b,c) + &
-                     & sum(currentPotCoeffs(1:lastContribPotAlphaIndex,k) * &
-                     & expPotAlphaDist(1:lastContribPotAlphaIndex))
-            enddo
+            if (doPotFIELD == 1) then
+               do k = 1, spin+2
+                  dataChunkPot(k,a,b,c) = dataChunkPot(k,a,b,c) + &
+                        & sum(currentPotCoeffs(1:lastContribPotAlphaIndex,k) * &
+                        & expPotAlphaDist(1:lastContribPotAlphaIndex))
+               enddo
+            endif
 
          enddo ! j=numCellsReal
-!write (20,*) "Did j-1 cells, j-1=",j-1
       enddo ! i=numAtomSites
 
-!write (20,*) "waveFnEval",waveFnEval(:)
 
-      ! Obtain the square of the evaluated function.
 #ifndef GAMMA
-!write (20,*) "waveFnEval(:,1)=",waveFnEval(:,1)
-!write (20,*) "currNumElec(:,1)=",currNumElec(:,1)
-      if (spin == 1) then
-         waveFnEval(:,1) = conjg(waveFnEval(:,1)) * waveFnEval(:,1)
-         dataChunk(1,a,b,c) = sum(waveFnEval(:,1) * currNumElec(:,1))
-         waveFnEval(:,2) = conjg(waveFnEval(:,2)) * waveFnEval(:,2)
-         dataChunk(2,a,b,c) = sum(waveFnEval(:,2) * &
-               & 0.5_double * kPointWeight(:))
-      else
-         waveFnEval(:,1) = conjg(waveFnEval(:,1)) * waveFnEval(:,1)
-         dataChunk(1,a,b,c) = sum(waveFnEval(:,1) * currNumElec(:,1))
-         waveFnEval(:,2) = conjg(waveFnEval(:,2)) * waveFnEval(:,2)
-         dataChunk(2,a,b,c) = sum(waveFnEval(:,2) * currNumElec(:,2))
-         waveFnEval(:,3) = conjg(waveFnEval(:,3)) * waveFnEval(:,3)
-         dataChunk(3,a,b,c) = sum(waveFnEval(:,3) * &
-               & numElectrons * 0.5_double * kPointWeight(:))
+      ! Obtain the square of the evaluated function.
+      if (doPsiFIELD == 1) then
+         if (spin == 1) then
+            ! For the spin degenerate state, sum the psi evaluation over
+            !   the set of kpoints and store the real and imaginary psi.
+            tempTerm(1) = sum(waveFnEvalPsi(1,:))
+            dataChunkPsiReal(1,a,b,c) = real(tempTerm(1),double)
+            dataChunkPsiImag(1,a,b,c) = aimag(tempTerm(1))
 
-         ! Compute the total charge as the sum of the up and down.
-         dataChunk(1,a,b,c) = dataChunk(1,a,b,c) + dataChunk(2,a,b,c)
+            ! For the spin degenerate state of the neutral, non-interacting
+            !   system, sum the psi evaluation over the set of kpoints.
+            ! Store the interacting minus the non-interacting real and
+            !   imaginary parts.
+            tempTerm(2) = sum(waveFnEvalPsi(2,:))
+            dataChunkPsiReal(2,a,b,c) = real(tempTerm(1),double) -  &
+                  & real(tempTerm(2),double)
+            dataChunkPsiImag(2,a,b,c) = aimag(tempTerm(1)) - &
+                  & aimag(tempTerm(2))
 
-         ! Compute the spin difference charge as the difference between the
-         !   up and down.  Note that this computation *must* be done *after*
-         !   the computation of the total charge.
-         dataChunk(2,a,b,c) = dataChunk(1,a,b,c) - &
-               & 2.0_double * dataChunk(2,a,b,c)
+            ! Similarly, now store just the non-interacting real and
+            !   imaginary parts.
+            tempTerm(1) = sum(waveFnEvalPsi(3,:))
+            dataChunkPsiReal(3,a,b,c) = real(tempTerm(1),double)
+            dataChunkPsiImag(3,a,b,c) = aimag(tempTerm(1))
+         else
+            ! Sum the psi evaluation over the set of kpoints for each spin.
+            do i = 1,spin
+               tempTerm(i) = sum(waveFnEvalPsi(i,:))
+            enddo
+
+            ! Store the real and imaginary spin sum.
+            dataChunkPsiReal(1,a,b,c) = sum(real(tempTerm(:),double))
+            dataChunkPsiImag(1,a,b,c) = sum(aimag(tempTerm(:)))
+
+            ! Store the real and imaginary spin difference.
+            dataChunkPsiReal(2,a,b,c) = real(tempTerm(1),double) - &
+                  & real(tempTerm(2),double)
+            dataChunkPsiImag(2,a,b,c) = aimag(tempTerm(1)) - aimag(tempTerm(2))
+
+            ! Store the interactive minus the non-interacting spin sum.
+            dataChunkPsiReal(3,a,b,c) = sum(real(tempTerm(:),double))
+            dataChunkPsiImag(3,a,b,c) = sum(aimag(tempTerm(:)))
+
+         endif
       endif
-
-      ! Compute (the charge density for this point) - (the charge density for
-      !   this point assuming non-interacting neutral atoms).
-      dataChunk(spin+1,a,b,c) = dataChunk(1,a,b,c) - &
-            & dataChunk(spin+1,a,b,c)
+      if (doWavFIELD == 1) then
+         if (spin == 1) then
+            do i = 1, numKPoints
+               do j = minStateIndex(1,i), maxStateIndex(1,i)
+                  dataChunkWav(1,a,b,c) = dataChunkWav(1,a,b,c) + &
+                        & real(conjg(waveFnEvalWav(j,1,i)) * &
+                        & waveFnEvalWav(j,1,i),double)
+               enddo
+            enddo
+         else
+            do i = 1, numKPoints
+               do j = 1, spin
+                  do k = minStateIndex(1,i), maxStateIndex(1,i)
+                     tempTerm(j) = tempTerm(j) + real(conjg( &
+                           & waveFnEvalWav(k,j,i)) * waveFnEvalWav(k,j,i))
+                  enddo
+               enddo
+            enddo
+            dataChunkWav(1,a,b,c) = real(tempTerm(1) + tempTerm(2),double)
+            dataChunkWav(2,a,b,c) = real(tempTerm(1) - tempTerm(2),double)
+         endif
+      endif
+      if (doRhoFIELD == 1) then
+         if (spin == 1) then
+            do i = 1, numKPoints
+               do j = minStateIndex(1,i), maxStateIndex(1,i)
+                  dataChunkRho(1,a,b,c) = dataChunkRho(1,a,b,c) + &
+                        & real(conjg(waveFnEvalRho(j,1,i)) * &
+                        & waveFnEvalRho(j,1,i),double)
+               enddo
+            enddo
+         else
+            tempTerm(:) = 0.0_double
+            do i = 1, numKPoints
+               do j = 1, spin
+                  do k = minStateIndex(1,i), maxStateIndex(1,i)
+                     tempTerm(j) = tempTerm(j) + real(conjg(&
+                           & waveFnEvalRho(k,j,i)) * waveFnEvalRho(k,j,i))
+                  enddo
+               enddo
+            enddo
+            dataChunkRho(1,a,b,c) = real(tempTerm(1) + tempTerm(2),double)
+            dataChunkRho(2,a,b,c) = real(tempTerm(1) - tempTerm(2),double)
+         endif
+      endif
 
 !write (20,*) "waveFnEval(:,1)=",waveFnEval(:,1)
 !write (20,*) "cPV(1)=",dataChunk(1,a,b,c)
 
 #else
-      dataChunk(1:numCols-spin,a,b,c) = &
-            & waveFnEvalGamma(1:numCols-spin) * waveFnEvalGamma(1:numCols-spin)
-#endif
-
-      ! If openDX Files are being created, then print to them.
-      if (doODXField == 1) then
-         do i = 1, numCols
-            write (57+i,ADVANCE="NO",fmt="(1x,e13.5)") dataChunk(i,a,b,c)
-
-            ! Move to the next line if we are at the end of this one.
-            if (mod(currentPointCount,5) .eq. 0) then
-               write (57+i,*)
-            endif
-         enddo
+      if (doPsiFIELD == 1) then
+         if (spin == 1) then
+            dataChunkPsiReal(1,a,b,c) = waveFnEvalPsiGamma(1)
+         else
+            dataChunkPsiReal(1,a,b,c) = waveFnEvalPsiGamma(1) + &
+                  & waveFnEvalPsiGamma(2) ! Total up+dn
+            dataChunkPsiReal(2,a,b,c) = waveFnEvalPsiGamma(1) - &
+                  & waveFnEvalPsiGamma(2) ! Diff up-dn
+         endif
       endif
+      if (doWavFIELD == 1) then
+         if (spin == 1) then
+            do i = minStateIndex(1,1), maxStateIndex(1,1)
+               dataChunkWav(1,a,b,c) = dataChunkWav(1,a,b,c) + &
+                     & waveFnEvalWavGamma(i,1) * waveFnEvalWavGamma(i,1)
+            enddo
+         else
+            do i = minStateIndex(1,1), maxStateIndex(1,1)
+               tempTerm(:) = waveFnEvalWavGamma(i,:)**2
+               dataChunkWav(1,a,b,c) = dataChunkWav(1,a,b,c) + &
+                     & tempTerm(1) + tempTerm(2)
+               dataChunkWav(2,a,b,c) = dataChunkWav(1,a,b,c) + &
+                     & tempTerm(1) - tempTerm(2)
+            enddo
+         endif
+      endif
+      if (doRhoFIELD == 1) then
+         if (spin == 1) then
+            do i = minStateIndex(1,1), maxStateIndex(1,1)
+               dataChunkRho(1,a,b,c) = dataChunkRho(1,a,b,c) + &
+                     & waveFnEvalRhoGamma(i,1) * waveFnEvalRhoGamma(i,1)
+            enddo
+         else
+            do i = minStateIndex(1,1), maxStateIndex(1,1)
+               tempTerm(:) = waveFnEvalRhoGamma(i,:)**2
+               dataChunkRho(1,a,b,c) = dataChunkRho(1,a,b,c) + &
+                     & tempTerm(1) + tempTerm(2)
+               dataChunkRho(2,a,b,c) = dataChunkRho(2,a,b,c) + &
+                     & tempTerm(1) - tempTerm(2)
+            enddo
+         endif
+      endif
+#endif
 
       ! Accumulate the data for the profiles.
       if (doProfileField == 1) then
-         do i = 1,numCols
-            profile(1,i,a) = profile(1,i,a) + dataChunk(i,a,b,c)  ! 1=a axis
-            profile(2,i,b) = profile(2,i,b) + dataChunk(i,a,b,c)  ! 2=b axis
-            profile(3,i,c) = profile(3,i,c) + dataChunk(i,a,b,c)  ! 3=c axis
-         enddo
+         if (doPsiFIELD == 1) then
+            call accumulateProfile(profilePsiReal,dataChunkPsiReal,a,b,c)
+#ifndef GAMMA
+            call accumulateProfile(profilePsiImag,dataChunkPsiImag,a,b,c)
+#endif
+         endif
+         if (doWavFIELD == 1) then
+            call accumulateProfile(profileWav,dataChunkWav,a,b,c)
+         endif
+         if (doRhoFIELD == 1) then
+            call accumulateProfile(profileRho,dataChunkRho,a,b,c)
+         endif
+         if (doPotFIELD == 1) then
+            call accumulateProfile(profilePot,dataChunkPot,a,b,c)
+         endif
       endif
 
       if ((doXDMFField == 1) .and. (triggerAxis == 1) .and. &
             & (a == numMeshPoints(1))) then
 
-!         ! Write all of the requested data.
-!         call hdf5WriteFieldData
-            
          ! Select the hyperslab to write to for all data sets.
-         call h5sselect_hyperslab_f (fileFieldChunk_dsid,H5S_SELECT_SET_F,&
-               & currentStartIndices,abcDimsChunk,hdferr)
-         if (hdferr /= 0) stop 'Failed to select fileFieldChunk hyperslab. a'
+         call h5sselect_hyperslab_f (field_dsid,H5S_SELECT_SET_F,&
+               & currentStartIndices,fieldDimsChunk,hdferr)
+         if (hdferr /= 0) stop 'Failed to select field hyperslab chunk. a'
 
          ! Now, record the data.
-         call h5dwrite_f (wav_did(1),H5T_NATIVE_DOUBLE,dataChunk(1,:,:,:),&
-               & abcDimsChunk,hdferr,fileFieldChunk_dsid,fileFieldChunk_dsid)
-         if (hdferr /= 0) stop 'Failed to write wav_did(1) a'
+         if (doPsiFIELD == 1) then
+            call writeFieldHDF5(psiR_did(1),1,dataChunkPsiReal,"psiR_did(1)",&
+                  & "a")
+#ifndef GAMMA
+            call writeFieldHDF5(psiI_did(1),1,dataChunkPsiImag,"psiI_did(1)",&
+                  & "a")
+#endif
+            if (spin == 2) then
+               call writeFieldHDF5(psiR_did(2),2,dataChunkPsiReal,&
+                     & "psiR_did(2)","a")
+#ifndef GAMMA
+               call writeFieldHDF5(psiI_did(2),2,dataChunkPsiImag,&
+                     & "psiI_did(2)","a")
+#endif
+            endif
+         endif
+         if (doWavFIELD == 1) then
+            call writeFieldHDF5(wav_did(1),1,dataChunkWav,"wav_did(1) ","a")
+            if (spin == 2) then
+               call writeFieldHDF5(wav_did(2),2,dataChunkWav,"wav_did(2) ","a")
+            endif
+         endif
+         if (doRhoFIELD == 1) then
+            call writeFieldHDF5(rho_did(1),1,dataChunkRho,"rho_did(1) ","a")
+            if (spin == 2) then
+               call writeFieldHDF5(rho_did(2),2,dataChunkRho,"rho_did(2) ","a")
+            endif
+         endif
+         if (doPotFIELD == 1) then
+            call writeFieldHDF5(pot_did(1),1,dataChunkPot,"pot_did(1) ","a")
+            if (spin == 2) then
+               call writeFieldHDF5(pot_did(2),2,dataChunkPot,"pot_did(2) ","a")
+            endif
+         endif
 
          ! Shift the initial points of the hyperslab.
          currentStartIndices(1) = 0
@@ -889,31 +1566,51 @@ accumChargeKP = accumChargeKP + accumCharge(j,i)
          endif
       endif
 
-      ! Record that this loop has finished.
-      if (mod(currentPointCount,10) .eq. 0) then
-            write (20,ADVANCE="NO",FMT="(a1)") "|"
-      else
-         write (20,ADVANCE="NO",FMT="(a1)") "."
-      endif
-      if (mod(currentPointCount,50) .eq. 0) then
-         write (20,*) " ",currentPointCount
-      endif
-      call flush (20)
-
    enddo ! a-axis loop
 
       if ((doXDMFField == 1) .and. (triggerAxis == 2) .and. &
             & (b == numMeshPoints(2))) then
 
          ! Select the hyperslab to write to for all data sets.
-         call h5sselect_hyperslab_f (fileFieldChunk_dsid,H5S_SELECT_SET_F,&
-               & currentStartIndices,abcDimsChunk,hdferr)
-         if (hdferr /= 0) stop 'Failed to select hyperslab for fileFieldChunk b'
+         call h5sselect_hyperslab_f (field_dsid,H5S_SELECT_SET_F,&
+               & currentStartIndices,fieldDimsChunk,hdferr)
+         if (hdferr /= 0) stop 'Failed to select field hyperslab chunk b'
 
          ! Now, record the data.
-         call h5dwrite_f (wav_did(1),H5T_NATIVE_DOUBLE,dataChunk(1,:,:,:),&
-               & abcDimsChunk,hdferr,fileFieldChunk_dsid,fileFieldChunk_dsid)
-         if (hdferr /= 0) stop 'Failed to write wav_did(1) b'
+         if (doPsiFIELD == 1) then
+            call writeFieldHDF5(psiR_did(1),1,dataChunkPsiReal,&
+                  & "psiR_did(1)","b")
+#ifndef GAMMA
+            call writeFieldHDF5(psiI_did(1),1,dataChunkPsiImag,&
+                  & "psiI_did(1)","b")
+#endif
+            if (spin == 2) then
+               call writeFieldHDF5(psiR_did(2),2,dataChunkPsiReal,&
+                     & "psiR_did(2)","b")
+#ifndef GAMMA
+               call writeFieldHDF5(psiI_did(2),2,dataChunkPsiImag,&
+                     & "psiI_did(2)","b")
+#endif
+            endif
+         endif
+         if (doWavFIELD == 1) then
+            call writeFieldHDF5(wav_did(1),1,dataChunkWav,"wav_did(1) ","b")
+            if (spin == 2) then
+               call writeFieldHDF5(wav_did(2),2,dataChunkWav,"wav_did(2) ","b")
+            endif
+         endif
+         if (doRhoFIELD == 1) then
+            call writeFieldHDF5(rho_did(1),1,dataChunkRho,"rho_did(1) ","b")
+            if (spin == 2) then
+               call writeFieldHDF5(rho_did(2),2,dataChunkRho,"rho_did(2) ","b")
+            endif
+         endif
+         if (doPotFIELD == 1) then
+            call writeFieldHDF5(pot_did(1),1,dataChunkPot,"pot_did(1) ","b")
+            if (spin == 2) then
+               call writeFieldHDF5(pot_did(2),2,dataChunkPot,"pot_did(2) ","b")
+            endif
+         endif
 
          ! Shift the initial points of the hyperslab.
          currentStartIndices(1) = 0
@@ -928,31 +1625,76 @@ accumChargeKP = accumChargeKP + accumCharge(j,i)
             & (c == numMeshPoints(3))) then
 
          ! Select the hyperslab to write to for all data sets.
-         call h5sselect_hyperslab_f (fileFieldChunk_dsid,H5S_SELECT_SET_F,&
-               & currentStartIndices,abcDimsChunk,hdferr)
-         if (hdferr /= 0) stop 'Failed to select hyperslab for fileFieldChunk c'
+         call h5sselect_hyperslab_f (field_dsid,H5S_SELECT_SET_F,&
+               & currentStartIndices,fieldDimsChunk,hdferr)
+         if (hdferr /= 0) stop 'Failed to select field hyperslab chunk c'
 
          ! Now, record the data.
-         call h5dwrite_f (wav_did(1),H5T_NATIVE_DOUBLE,dataChunk(1,:,:,:),&
-               & abcDimsChunk,hdferr,fileFieldChunk_dsid,fileFieldChunk_dsid)
-         if (hdferr /= 0) stop 'Failed to write wav_did(1) c'
+         if (doPsiFIELD == 1) then
+            call writeFieldHDF5(psiR_did(1),1,dataChunkPsiReal,&
+                  & "psiR_did(1)","c")
+#ifndef GAMMA
+            call writeFieldHDF5(psiI_did(1),1,dataChunkPsiImag,&
+                  & "psiI_did(1)","c")
+#endif
+            if (spin == 2) then
+               call writeFieldHDF5(psiR_did(2),2,dataChunkPsiReal,&
+                     & "psiR_did(2)","c")
+#ifndef GAMMA
+               call writeFieldHDF5(psiI_did(2),2,dataChunkPsiImag,&
+                     & "psiI_did(2)","c")
+#endif
+            endif
+         endif
+         if (doWavFIELD == 1) then
+            call writeFieldHDF5(wav_did(1),1,dataChunkWav,"wav_did(1) ","c")
+            if (spin == 2) then
+               call writeFieldHDF5(wav_did(2),2,dataChunkWav,"wav_did(2) ","c")
+            endif
+         endif
+         if (doRhoFIELD == 1) then
+            call writeFieldHDF5(rho_did(1),1,dataChunkRho,"rho_did(1) ","c")
+            if (spin == 2) then
+               call writeFieldHDF5(rho_did(2),2,dataChunkRho,"rho_did(2) ","c")
+            endif
+         endif
+         if (doPotFIELD == 1) then
+            call writeFieldHDF5(pot_did(1),1,dataChunkPot,"pot_did(1) ","c")
+            if (spin == 2) then
+               call writeFieldHDF5(pot_did(2),2,dataChunkPot,"pot_did(2) ","c")
+            endif
+         endif
+if (doRhoFIELD == 1) then
+write (20,*) "rho=",sum(dataChunkRho(1,:,:,:)) * realCellVolume / &
+      & (product(numMeshPoints(:)))
+endif
       endif
 
+      ! Record that this loop has finished.
+      if (mod(c,10) .eq. 0) then
+         write (20,ADVANCE="NO",FMT="(a1)") "|"
+      else
+         write (20,ADVANCE="NO",FMT="(a1)") "."
+      endif
+      if (mod(c,50) .eq. 0) then
+         write (20,*) " ",c
+      endif
+      call flush (20)
    enddo ! c-axis loop
 
    ! Finalize printing of the OpenDX field data.
-   if (doODXField == 1) then
-
-      ! Write a newline to finish out any uneven (incomplete) lines if needed.
-      if (mod(currentPointCount,5) /= 0) then
-         do i = 1,numCols
-            write (57+i,*)
-         enddo
-      endif
-
-      ! Print the tail for the field data.
-      call printODXFieldTail (numCols)
-   endif
+!   if (doODXField == 1) then
+!
+!      ! Write a newline to finish out any uneven (incomplete) lines if needed.
+!      if (mod(currentPointCount,5) /= 0) then
+!         do i = 1,numCols
+!            write (57+i,*)
+!         enddo
+!      endif
+!
+!      ! Print the tail for the field data.
+!      call printODXFieldTail (numCols)
+!   endif
 
 
    ! Print the profile data.
@@ -962,6 +1704,8 @@ accumChargeKP = accumChargeKP + accumCharge(j,i)
 
 
    ! Deallocate unnecessary arrays and matrices.
+   deallocate (minStateIndex)
+   deallocate (maxStateIndex)
    deallocate (structuredElectronPopulation)
    deallocate (currentBasisFns)
    deallocate (currentAlphas)
@@ -969,93 +1713,153 @@ accumChargeKP = accumChargeKP + accumCharge(j,i)
    deallocate (currentlmIndex)
    deallocate (currentValeQN_lList)
    deallocate (accumCharge)
+   if (doPsiFIELD == 1) then
+      deallocate (dataChunkPsiReal)
+      deallocate (profilePsiReal)
 #ifndef GAMMA
-   deallocate (waveFnEval)
-   deallocate (atomicOrbital)
-   deallocate (modifiedBasisFns)
-   deallocate (accumWaveFnCoeffs)
+      deallocate (dataChunkPsiImag)
+      deallocate (profilePsiImag)
+#endif
+   endif
+   if (doWavFIELD == 1) then
+      deallocate (dataChunkWav)
+      deallocate (profileWav)
+   endif
+   if (doRhoFIELD == 1) then
+      deallocate (dataChunkRho)
+      deallocate (profileRho)
+   endif
+   if (doPotFIELD == 1) then
+      deallocate (dataChunkPot)
+      deallocate (profilePot)
+   endif
+#ifndef GAMMA
+   if (doPsiFIELD == 1) then
+      deallocate (waveFnEvalPsi)
+      deallocate (atomicOrbitalPsi)
+      deallocate (modifiedBasisFnsPsi)
+      deallocate (accumWaveFnCoeffsPsi)
+   endif
+   if (doWavFIELD == 1) then
+      deallocate (waveFnEvalWav)
+      deallocate (atomicOrbitalWav)
+      deallocate (modifiedBasisFnsWav)
+      deallocate (accumWaveFnCoeffsWav)
+   endif
+   if (doRhoFIELD == 1) then
+      deallocate (waveFnEvalRho)
+      deallocate (atomicOrbitalRho)
+      deallocate (modifiedBasisFnsRho)
+      deallocate (accumWaveFnCoeffsRho)
+   endif
 !   deallocate (tempRealValeVale)
 !   deallocate (tempImagValeVale)
 #else
-   deallocate (waveFnEvalGamma)
-   deallocate (atomicOrbitalGamma)
-   deallocate (modifiedBasisFnsGamma)
-   deallocate (accumWaveFnCoeffsGamma)
+   if (doPsiFIELD == 1) then
+      deallocate (waveFnEvalPsiGamma)
+      deallocate (atomicOrbitalPsiGamma)
+      deallocate (modifiedBasisFnsPsiGamma)
+      deallocate (accumWaveFnCoeffsPsiGamma)
+   endif
+   if (doWavFIELD == 1) then
+      deallocate (waveFnEvalWavGamma)
+      deallocate (atomicOrbitalWavGamma)
+      deallocate (modifiedBasisFnsWavGamma)
+      deallocate (accumWaveFnCoeffsWavGamma)
+   endif
+   if (doRhoFIELD == 1) then
+      deallocate (waveFnEvalRhoGamma)
+      deallocate (atomicOrbitalRhoGamma)
+      deallocate (modifiedBasisFnsRhoGamma)
+      deallocate (accumWaveFnCoeffsRhoGamma)
+   endif
 #endif
 
-   allocate (meshValues(3,abcDimsChunk(1),abcDimsChunk(2),&
-         & abcDimsChunk(3)))
+   allocate (meshChunk(3,meshDimsChunk(2),meshDimsChunk(3),&
+         & meshDimsChunk(4)))
+
+   ! Define the initial points of the hyperslab if XDMF HDF5 output is needed.
+   if (doXDMFField == 1) then
+      currentMeshStartIndices(:) = 0
+   endif
 
    ! Create and then record the mesh specification.
-   do c = 0, numMeshPoints(3)-1
-   do b = 0, numMeshPoints(2)-1
-   do a = 0, numMeshPoints(1)-1
+   do c = 1, numMeshPoints(3)
+      cStepSize = real(c-1,double)/real(numMeshPoints(3),double)
+   do b = 1, numMeshPoints(2)
+      bStepSize = real(b-1,double)/real(numMeshPoints(2),double)
+   do a = 1, numMeshPoints(1)
+      aStepSize = real(a-1,double)/real(numMeshPoints(1),double)
       do l = 1,3
-         meshValues(l,k,j,i) = realVectors(l,1)*k + &
-               & realVectors(l,2)*j + realVectors(l,3)*i
+         meshChunk(l,a,b,c) = realVectors(l,1)*aStepSize + &
+               & realVectors(l,2)*bStepSize + realVectors(l,3)*cStepSize
       enddo
 
-      if ((doXDMFField == 1) .and. (triggerAxis == 1) .and. &
+      if ((doXDMFField == 1) .and. (meshTriggerAxis == 1) .and. &
             & (a == numMeshPoints(1))) then
-         call h5sselect_hyperslab_f (fileMeshChunk_dsid,H5S_SELECT_SET_F,&
-               & currentStartIndices,meshDimsChunk,hdferr)
-         if (hdferr /= 0) stop 'Failed to select fileMeshChunk h-slab a'
+
+         ! Select the hyperslab to write to for the mesh.
+         call h5sselect_hyperslab_f (mesh_dsid,H5S_SELECT_SET_F,&
+               & currentMeshStartIndices,meshDimsChunk,hdferr)
+         if (hdferr /= 0) stop 'Failed to select mesh h-slab chunk a'
 
          ! Now, record the data.
-         call h5dwrite_f (mesh_did,H5T_NATIVE_DOUBLE,dataChunk(:,:,:,:),&
-               & meshDimsChunk,hdferr,fileMeshChunk_dsid,fileMeshChunk_dsid)
-         if (hdferr /= 0) stop 'Failed to write mesh_did a'
+         call h5dwrite_f (mesh_did,H5T_NATIVE_DOUBLE,meshChunk(:,:,:,:),&
+               & meshDimsChunk,hdferr,memMeshChunk_dsid,mesh_dsid)
+         if (hdferr /= 0) stop 'Failed to write mesh_did chunk a'
 
 
          ! Shift the initial points of the hyperslab.
-         currentStartIndices(1) = 0
+         currentMeshStartIndices(2) = 0
          if (b == numMeshPoints(2)) then
-            currentStartIndices(2) = 0
-            currentStartIndices(3) = c+1
+            currentMeshStartIndices(3) = 0
+            currentMeshStartIndices(4) = c+1
          else
-            currentStartIndices(2) = b+1
-            currentStartIndices(3) = c
+            currentMeshStartIndices(3) = b+1
+            currentMeshStartIndices(4) = c
          endif
       endif
-   enddo
+   enddo ! a-axis loop
 
-      if ((doXDMFField == 1) .and. (triggerAxis == 2) .and. &
+      if ((doXDMFField == 1) .and. (meshTriggerAxis == 2) .and. &
             & (b == numMeshPoints(2))) then
 
-         ! Select the hyperslab to write to for all data sets.
-         call h5sselect_hyperslab_f (fileMeshChunk_dsid,H5S_SELECT_SET_F,&
-               & currentStartIndices,meshDimsChunk,hdferr)
-         if (hdferr /= 0) stop 'Failed to select hyperslab for fileMeshChunk b'
+         ! Select the hyperslab to write to for the mesh.
+         call h5sselect_hyperslab_f (mesh_dsid,H5S_SELECT_SET_F,&
+               & currentMeshStartIndices,meshDimsChunk,hdferr)
+         if (hdferr /= 0) stop 'Failed to select hyperslab for mesh b'
 
          ! Now, record the data.
-         call h5dwrite_f (wav_did(1),H5T_NATIVE_DOUBLE,dataChunk(1,:,:,:),&
-               & abcDimsChunk,hdferr,fileFieldChunk_dsid,fileFieldChunk_dsid)
-         if (hdferr /= 0) stop 'Failed to write wav_did(1) b'
+         call h5dwrite_f (mesh_did,H5T_NATIVE_DOUBLE,meshChunk(:,:,:,:),&
+               & meshDimsChunk,hdferr,memMeshChunk_dsid,mesh_dsid)
+         if (hdferr /= 0) stop 'Failed to write mesh_did chunk b'
 
          ! Shift the initial points of the hyperslab.
-         currentStartIndices(1) = 0
-         currentStartIndices(2) = 0
-         currentStartIndices(3) = c+1
+         currentMeshStartIndices(2) = 0
+         currentMeshStartIndices(3) = 0
+         currentMeshStartIndices(4) = c+1
       endif
-   enddo
+   enddo ! b-axis loop
 
       ! Store the current chunks on disk as HDF5 data if necessary.
-      if ((doXDMFField == 1) .and. (triggerAxis == 3) .and. &
+      if ((doXDMFField == 1) .and. (meshTriggerAxis == 3) .and. &
             & (c == numMeshPoints(3))) then
+!write (6,*) "cMSI: ", currentMeshStartIndices(:)
+!write (6,*) "mDC: ", meshDimsChunk(:)
 
-         ! Select the hyperslab to write to for all data sets.
-         call h5sselect_hyperslab_f (fileMeshChunk_dsid,H5S_SELECT_SET_F,&
-               & currentStartIndices,meshDimsChunk,hdferr)
-         if (hdferr /= 0) stop 'Failed to select hyperslab for fileMeshChunk c'
+         ! Select the hyperslab to write to for the mesh.
+         call h5sselect_hyperslab_f (mesh_dsid,H5S_SELECT_SET_F,&
+               & currentMeshStartIndices,meshDimsChunk,hdferr)
+         if (hdferr /= 0) stop 'Failed to select hyperslab for mesh c'
 
          ! Now, record the data.
-         call h5dwrite_f (mesh_did,H5T_NATIVE_DOUBLE,dataChunk(1,:,:,:),&
-               & meshDimsChunk,hdferr,fileMeshChunk_dsid,fileMeshChunk_dsid)
-         if (hdferr /= 0) stop 'Failed to write mesh_did c'
+         call h5dwrite_f (mesh_did,H5T_NATIVE_DOUBLE,meshChunk(:,:,:,:),&
+               & meshDimsChunk,hdferr,memMeshChunk_dsid,mesh_dsid)
+         if (hdferr /= 0) stop 'Failed to write mesh_did chunk c'
       endif
-   enddo
+   enddo ! c-axis loop
 
-   deallocate (meshValues)
+   deallocate (meshChunk)
 
    ! Log the end of the wave function evaluation.
    call timeStampEnd(25)
@@ -1070,24 +1874,11 @@ subroutine initEnv
 
    ! Use necessary modules
    use O_Potential, only: spin
+   use O_Input, only: doProfileField, doPsiFIELD, doWavFIELD, doRhoFIELD, &
+         & doPotFIELD, doXDMFField
 
    ! Make sure that no variables are accidentally defined.
    implicit none
-
-   numCols = spin*2+1
-
-   allocate (colLabel(numCols))
-   if (spin == 1) then
-      colLabel(1) = '         rhoV'   ! Valence charge density (rho).
-      colLabel(2) = '       rhoV-N'   ! Valence rho - Neutral atom rho.
-      colLabel(3) = '          pot'   ! Electronic potential.
-   else
-      colLabel(1) = '   rhoV_up+dn'   ! Valence rho, spin up + spin down.
-      colLabel(2) = '   rhoV_up-dn'   ! Valence rho, spin up - spin down.
-      colLabel(3) = ' rhoV_up+dn-N'   ! Valence rho, up+dn - Neutral atom rho.
-      colLabel(4) = '       pot-up'   ! Electronic potential for spin up.
-      colLabel(5) = '       pot-dn'   ! Electronic potential for spin down.
-   endif
 
 end subroutine initEnv
 
@@ -1100,14 +1891,20 @@ subroutine printProfileData
    use O_Constants, only: hartree, bohrRad
    use O_Lattice,   only: realMag, realFractCrossArea, realFractStrideLength, &
          & realPlaneAngles, numMeshPoints
+   use O_FieldHDF5, only: dataSetNames
+   use O_Input, only: doPsiFIELD, doWavFIELD, doRhoFIELD, doPotFIELD
 
    ! Make sure that no variables are accidentally defined.
    implicit none
 
    ! Declare local variables.
    integer :: i,j
-   integer :: index1,index2
-   real (kind=double), dimension(numCols) :: integral
+!   real (kind=double), dimension(numCols) :: integral
+   character*1, dimension(3) :: axis
+
+   axis(1) = "a"
+   axis(2) = "b"
+   axis(3) = "c"
 
    ! Open the profile data files.
    open (unit=30,file='fort.30',form='formatted')
@@ -1115,26 +1912,77 @@ subroutine printProfileData
    open (unit=32,file='fort.32',form='formatted')
 
    ! Print the header.
-   write (30,fmt="(6a13)") "aPos",colLabel(:)
-   write (31,fmt="(6a13)") "bPos",colLabel(:)
-   write (32,fmt="(6a13)") "cPos",colLabel(:)
+   do i = 1,3
+      write(29+i,fmt="(a1,a3)",advance="NO") axis(i),"Pos"
+      if (doPsiFIELD == 1) then
+         write(29+i,fmt="(a1,a)",advance="NO") " ",dataSetNames(1)
+#ifndef GAMMA
+         write(29+i,fmt="(a1,a)",advance="NO") " ",dataSetNames(5)
+#endif
+         if (spin == 2) then
+            write(29+i,fmt="(a1,a)",advance="NO") " ",dataSetNames(2)
+#ifndef GAMMA
+            write(29+i,fmt="(a1,a)",advance="NO") " ",dataSetNames(6)
+#endif
+         endif
+      endif
+      if (doWavFIELD == 1) then
+         write(29+i,fmt="(a1,a)",advance="NO") " ",dataSetNames(9)
+         if (spin == 2) then
+            write(29+i,fmt="(a1,a)",advance="NO") " ",dataSetNames(10)
+         endif
+      endif
+      if (doRhoFIELD == 1) then
+         write(29+i,fmt="(a1,a)",advance="NO") " ",dataSetNames(13)
+         if (spin == 2) then
+            write(29+i,fmt="(a1,a)",advance="NO") " ",dataSetNames(14)
+         endif
+      endif
+      if (doPotFIELD == 1) then
+         write(29+i,fmt="(a1,a)",advance="NO") " ",dataSetNames(17)
+         if (spin == 2) then
+            write(29+i,fmt="(a1,a)",advance="NO") " ",dataSetNames(18)
+         endif
+      endif
+      write (29+i,*)
+   enddo
+!   write (30,fmt="(6a13)") "aPos",colLabel(:)
+!   write (31,fmt="(6a13)") "bPos",colLabel(:)
+!   write (32,fmt="(6a13)") "cPos",colLabel(:)
 
    ! Adjust the charge profiles to average out the cross sectional area effect
    !   and the fact that the profiles are simple accumulations of the other
-   !   axes.  For the case of the potential we simply obtain the average over
-   !   the plane.
+   !   axes.  For the case of the potential we multiply by hartree to get the
+   !   results in the correct units of energy.
    do i = 1, 3
 !write (20,*) "i,realFractCrossArea(i)=",i,realFractCrossArea(i)
 !write (20,*) "i,realFractStrideLength(i)=",i,realFractStrideLength(i)
 !call flush (20)
-      index1 = mod(i,3)+1
-      index2 = mod(i+1,3)+1
-      profile(i,1:numCols-spin,1:numMeshPoints(i)) = &
-            & profile(i,1:numCols-spin,1:numMeshPoints(i)) * &
-            & realFractCrossArea(i)
-      profile(i,numCols-spin+1:numCols,1:numMeshPoints(i)) = &
-            & profile(i,numCols-spin+1:numCols,1:numMeshPoints(i)) * hartree / &
-            & numMeshPoints(index1) / numMeshPoints(index1)
+      if (doPsiFIELD == 1) then
+         profilePsiReal(i,1:spin,1:numMeshPoints(i)) = &
+               & profilePsiReal(i,1:spin,1:numMeshPoints(i)) * &
+               & realFractCrossArea(i)
+#ifndef GAMMA
+         profilePsiImag(i,1:spin,1:numMeshPoints(i)) = &
+               & profilePsiImag(i,1:spin,1:numMeshPoints(i)) * &
+               & realFractCrossArea(i)
+#endif
+      endif
+      if (doWavFIELD == 1) then
+         profileWav(i,1:spin,1:numMeshPoints(i)) = &
+               & profileWav(i,1:spin,1:numMeshPoints(i)) * &
+               & realFractCrossArea(i)
+      endif
+      if (doRhoFIELD == 1) then
+         profileRho(i,1:spin,1:numMeshPoints(i)) = &
+               & profileRho(i,1:spin,1:numMeshPoints(i)) * &
+               & realFractCrossArea(i)
+      endif
+      if (doPotFIELD == 1) then
+         profilePot(i,1:spin,1:numMeshPoints(i)) = &
+               & profilePot(i,1:spin,1:numMeshPoints(i)) * hartree * &
+               & realFractCrossArea(i)
+      endif
    enddo
 
    ! Print the profiles.
@@ -1142,9 +1990,42 @@ subroutine printProfileData
 !write (20,*) "i,realMag(i)=",i,realMag(i)
 !call flush (20)
       do j = 1, numMeshPoints(i)
-         write (29+i,fmt="(6e13.4)") (j-1) * realFractStrideLength(i) * &
-               & realMag(i) * bohrRad, profile(i,1:numCols-spin,j) / bohrRad, &
-               & profile(i,numCols-spin+1:numCols,j)
+         write (29+i,fmt="(e13.4)",advance="NO") (j-1) * &
+               & realFractStrideLength(i) * realMag(i) * bohrRad
+         if (doPsiFIELD == 1) then
+            write (29+i,fmt="(x,e13.4)",advance="NO") profilePsiReal(i,1,j)
+#ifndef GAMMA
+            write (29+i,fmt="(x,e13.4)",advance="NO") profilePsiImag(i,1,j)
+#endif
+            if (spin == 2) then
+               write (29+i,fmt="(x,e13.4)",advance="NO") profilePsiReal(i,2,j)
+#ifndef GAMMA
+               write (29+i,fmt="(x,e13.4)",advance="NO") profilePsiImag(i,2,j)
+#endif
+            endif
+         endif
+         if (doWavFIELD == 1) then
+            write (29+i,fmt="(x,e13.4)",advance="NO") profileWav(i,1,j)
+            if (spin == 2) then
+               write (29+i,fmt="(x,e13.4)",advance="NO") profileWav(i,2,j)
+            endif
+         endif
+         if (doRhoFIELD == 1) then
+            write (29+i,fmt="(x,e13.4)",advance="NO") profileRho(i,1,j)
+            if (spin == 2) then
+               write (29+i,fmt="(x,e13.4)",advance="NO") profileRho(i,2,j)
+            endif
+         endif
+         if (doPotFIELD == 1) then
+            write (29+i,fmt="(x,e13.4)",advance="NO") profilePot(i,1,j)
+            if (spin == 2) then
+               write (29+i,fmt="(x,e13.4)",advance="NO") profilePot(i,2,j)
+            endif
+         endif
+         write (29+i,*)
+!         write (29+i,fmt="(6e13.4)") (j-1) * realFractStrideLength(i) * &
+!               & realMag(i) * bohrRad, profile(i,1:numCols-spin,j) / bohrRad,&
+!               & profile(i,numCols-spin+1:numCols,j)
       enddo
    enddo
 
@@ -1155,31 +2036,31 @@ subroutine printProfileData
 
    ! Integrate the charge and print the result to the primary output file.  For
    !   the case of the potential we simply obtain the average along each axis.
-   do i = 1, 3
-!write (20,*) "fSL(:)=",realFractStrideLength(:)
-!write (20,*) "lM(:)=",realMag(:)
-!write (20,*) "s(pA(:))=",sin(realPlaneAngles(:))
-!call flush (20)
-      integral(:) = 0.0_double
-
-      ! Accumulate across all mesh points.
-      do j = 1, numMeshPoints(i)
-         integral(1:numCols-spin) = integral(1:numCols-spin) + &
-               & profile(i,1:numCols-spin,j)
-         integral(numCols-spin+1:numCols) = integral(numCols-spin+1:numCols) + &
-               & profile(i,numCols-spin+1:numCols,j)
-      enddo
-
-      ! Factor in the spacing for charge, and average the potential.
-      integral(1:numCols-spin) = integral(1:numCols-spin) * &
-            & realFractStrideLength(i) * realMag(i) * sin(realPlaneAngles(i))
-      integral(numCols-spin+1:numCols) = integral(numCols-spin+1:numCols) / &
-            numMeshPoints(i)
-
-      ! Print the results.
-      write (20,fmt="(6a13)") colLabel(:),"Integrated"
-      write (20,fmt="(5e13.4)") integral(:)
-   enddo
+!   do i = 1, 3
+!!write (20,*) "fSL(:)=",realFractStrideLength(:)
+!!write (20,*) "lM(:)=",realMag(:)
+!!write (20,*) "s(pA(:))=",sin(realPlaneAngles(:))
+!!call flush (20)
+!      integral(:) = 0.0_double
+!
+!      ! Accumulate across all mesh points.
+!      do j = 1, numMeshPoints(i)
+!         integral(1:numCols-spin) = integral(1:numCols-spin) + &
+!               & profile(i,1:numCols-spin,j)
+!         integral(numCols-spin+1:numCols) = integral(numCols-spin+1:numCols) + &
+!               & profile(i,numCols-spin+1:numCols,j)
+!      enddo
+!
+!      ! Factor in the spacing for charge, and average the potential.
+!      integral(1:numCols-spin) = integral(1:numCols-spin) * &
+!            & realFractStrideLength(i) * realMag(i) * sin(realPlaneAngles(i))
+!      integral(numCols-spin+1:numCols) = integral(numCols-spin+1:numCols) / &
+!            numMeshPoints(i)
+!
+!      ! Print the results.
+!      write (20,fmt="(6a13)") colLabel(:),"Integrated"
+!      write (20,fmt="(5e13.4)") integral(:)
+!   enddo
 
 end subroutine printProfileData
 
@@ -1190,7 +2071,7 @@ subroutine makeNeutralCoeffs
    use O_Kinds
    use O_Constants,   only: lAngMomCount
    use O_ElementData, only: coreCharge, valeCharge
-   use O_KPoints,     only: numKPoints
+   use O_KPoints,     only: numKPoints, kPointWeight
    use O_AtomicSites, only: valeDim, numAtomSites, atomSites
    use O_AtomicTypes, only: atomTypes
    use O_PotTypes,    only: potTypes
@@ -1278,7 +2159,7 @@ subroutine makeNeutralCoeffs
          !   QN_l.)
          if (localValeCharge(currQN_l+1) >= 0) then
 
-            ! We have some electrons to spread.
+            ! We have some electrons to spread for this spdf orbital type.
 
             ! Check if we can fill this QN_l orbital.  (2 electrons per QN_m)
             if (localValeCharge(currQN_l+1) - 2*(2*currQN_l+1) >= 0) then
@@ -1327,19 +2208,24 @@ subroutine makeNeutralCoeffs
    !   the calculation is spin non-polarized or spin polarized.  Note that the
    !   non-neutral coefficients must also be a unit vector for evaluation
    !   on the mesh and then later scaled by the charge that this kpoint
-   !   represents.
+   !   represents. (Note sure about that last sentence. FIX)
    ! Note that at this point we cannot get the neutral charge over a specific
    !   energy range because we do not have the energy values for each of the
    !   neutral atom electron states available here.  That would require a
    !   separate calculation for a neutral atom.  All we have available here is
    !   the total charge over all occupied atomic states.
    do i = 1, numKPoints
-      accumWaveFnCoeffs(:,spin+1,i) = cmplx(neutralCoeffs(:),0.0_double) / &
-            & sqrt(dot_product(neutralCoeffs(:),neutralCoeffs(:)))
+      accumWaveFnCoeffsNeut(:,i) = &
+         & sqrt(cmplx(neutralCoeffs(:),0.0_double) / 2.0_double * &
+         & kPointWeight(i)/real(spin,double))
+!         accumWaveFnCoeffsPsiWav(:,j+2,i) = &
+!               & cmplx(neutralCoeffs(:),0.0_double) / &
+!               & sqrt(dot_product(neutralCoeffs(:),neutralCoeffs(:)))
    enddo
 #else
-   accumWaveFnCoeffsGamma(:,spin+1) = neutralCoeffs(:) / &
-            & sqrt(dot_product(neutralCoeffs(:),neutralCoeffs(:)))
+   accumWaveFnCoeffsNeutGamma(:) = sqrt(neutralCoeffs(:) / real(spin,double))
+!      accumWaveFnCoeffsGamma(:,spin+1) = neutralCoeffs(:) / &
+!            & sqrt(dot_product(neutralCoeffs(:),neutralCoeffs(:)))
 #endif
 
    ! All done.
@@ -1348,14 +2234,63 @@ subroutine makeNeutralCoeffs
 end subroutine makeNeutralCoeffs
 
 
+subroutine accumulateProfile(profile,dataChunk,a,b,c)
+
+   use O_Potential, only: spin
+
+   implicit none
+
+   ! Define passed parameters.
+   real (kind=double), dimension (:,:,:), intent(inout) :: profile
+   real (kind=double), dimension (:,:,:,:), intent(in) :: dataChunk
+   integer, intent(in) :: a, b, c
+
+   ! Define local variables
+   integer :: i
+
+   do i = 1,spin
+      profile(1,i,a) = profile(1,i,a) + dataChunk(i,a,b,c)
+      profile(2,i,b) = profile(2,i,b) + dataChunk(i,a,b,c)
+      profile(3,i,c) = profile(3,i,c) + dataChunk(i,a,b,c)
+   enddo
+
+end subroutine accumulateProfile
+
+
+subroutine writeFieldHDF5(did,idx,dataChunk,didName,axis)
+
+   use HDF5
+   use O_FieldHDF5, only: fieldDimsChunk, memFieldChunk_dsid, field_dsid
+
+   implicit none
+
+   ! Define passed parameters.
+   integer(hid_t) :: did
+   integer, intent(in) :: idx
+   real(kind=double), dimension(:,:,:,:) :: dataChunk
+   character*11, intent(in) :: didName
+   character*1, intent(in) :: axis
+
+   ! Define local variables.
+   integer :: hdferr
+
+   call h5dwrite_f (did,H5T_NATIVE_DOUBLE,dataChunk(idx,:,:,:),&
+         & fieldDimsChunk,hdferr,memFieldChunk_dsid,field_dsid)
+   if (hdferr /= 0) then
+      write(*,fmt="(4a)") 'Failed to write ',trim(didName),' chunk ',axis
+      stop
+   endif
+
+end subroutine writeFieldHDF5
+
+
 subroutine cleanUpField
 
    ! Make sure that no variables are accidentally defined.
    implicit none
 
    ! Deallocate everything that was not previously deallocated.
-   deallocate (colLabel)
-   deallocate (profile)
+!   deallocate (profile)
 
 end subroutine cleanUpField
 

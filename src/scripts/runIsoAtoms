@@ -148,7 +148,7 @@ prim
 ENDSKL
 
       system("makeinput$nocore");
-      system("$OLCAO_BIN/olcao");
+      system("$OLCAO_BIN/uolcao");
       chdir "..";
    }
 }

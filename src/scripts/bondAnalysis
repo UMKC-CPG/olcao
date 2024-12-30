@@ -40,6 +40,8 @@ sub printHelp
 #   the species number, the atomic coordinates in either x,y,z direct, a,b,c
 #   direct, or a,b,c fractional, and the list of the atom numbers to which
 #   each atom bonds.
+#The -vtk option will print a file in legacy VTK format that shows a ball and
+#   stick model. This file can be easily read in by Paraview.
 #The -ba option is a list of the bond angles for each pair of atoms bonded to
 #   each atom.  The output is divided into groups, one group for each atom.
 #   The first line of a group is the number of bond angles in that group.  The
@@ -70,6 +72,15 @@ sub printHelp
 #   angle standard deviation.
 #The -co option will compute (and print) the coordination for each atom and
 #   will also produce and print a summary of the coordinations for each element.
+#The -qn option will compute the Q^n distribution for a crystal. By default,
+#   the assumption is that the "bridging" atom is oxygen. However, the -b
+#   \$bridges parameter can be used to define a different bridging element. The
+#   element(s) must be specified as lower case names from the periodic table.
+#   If there is more than one name, then enclose in quotes and separate by
+#   spaces. Similarly, by default, silicon is assumed to be the coordinated
+#   cation but the -i \$ions option can be used to change that. Again, if more
+#   than one cation should be considered, then enclose a space separated list
+#   in quotes.
 #The -3dfull option will produce a single OpenScad model file that can be used
 #   to produce data for a 3D printer. This model will contain all atoms and
 #   bonds of the complete system unioned together so that the whole model prints
@@ -134,7 +145,9 @@ sub printHelp
 # The -help option will print this description and usage information.
 #
 #USAGE:  bondAnalysis [-o \$outFile] [-i \$inFile] [-s] [-dist \$limitDist]
-#                     [-bs | -ba | -bl | -boo [-Ylm_l \$Ylm_l] | -dx | -st | -co
+#                     [-bs | -ba | -bl | -boo [-Ylm_l \$Ylm_l] | -dx | -st
+#                     | -co | -qn [-b \$bridges ] [-i \$ions] | -vtk
+#                     | -rn
 #                     |-3dfull  [-a \$aScale -b \$bScale -c \$cScale
 #                                -r \$bondRadiusScale]
 #                     |-3dparts [-a \$aScale -b \$bScale -c \$cScale -f \$fScale
@@ -190,6 +203,8 @@ my $fontSize;
 my $histDelta; # Histogram spacing in appropriate units.
 my $useOLCAOBO;
 my $doHist;
+my @bridges; # Name of elements to consider as a bridge for Q^n.
+my @ions; # Name of elements to consider as ions for Q^n.
 #my $chainLength;
 #my $doFrag;
 
@@ -206,6 +221,11 @@ my $numSpecies_ref;   # Number of species for each element.
 my $speciesList_ref;  # Species tag for each species of each element.
 my $coordination_ref; # String giving the coordination of each atom.
 my $coordinationSummary_ref; # The coordination summary of each element.
+my $atomQn_ref;       # The Q^n of each atom.
+my $absoluteSysQn_ref; # The absolute number of atoms with Q^n of n.
+my $fractionalSysQn_ref; # The fractional number of atoms with Q^n of n.
+my $numQnAtoms;       # Number of atoms participating in the Q^n calc.
+my $netConnQn;        # The Q^n network connectivity.
 my $bondedList_ref;   # List of bonded central cell atom numbers.
 my $bondedExtList_ref; # List of bonded extended cell atom numbers.
 my $bondLengthExt_ref; # Bond lengths of each bond.
@@ -216,6 +236,7 @@ my $atomSpeciesID_ref; # Species ID number of each atom.
 my $atomElementID_ref; # Element ID number of each atom.
 my $atomElementName_ref; # Element name of each atom.
 my $atomCovalRadii_ref;  # Covalent radius each atom.
+my $atomColorVTK_ref;  # Color for VTK for each atom (based on CPK chem.)
 my $ext2CentralItemMap_ref; # Mapping between extended and central cell.
                             #   Index # is extended cell, stored # is central.
 my $central2ExtItemMap_ref; # Mapping between central cell and extended cell.
@@ -312,6 +333,9 @@ $numElements = StructureControl::getNumElements;
 # Obtain a reference to the covalent radii of each atom.
 $atomCovalRadii_ref = StructureControl::getCovalRadiiRef;
 
+# Obtain a reference to the color of each atom.
+$atomColorVTK_ref = StructureControl::getColorVTKRef;
+
 # Obtain a reference to the atom names.
 $atomElementName_ref = StructureControl::getAtomElementNameRef;
 
@@ -379,6 +403,25 @@ elsif ($operation == 7) # Create the coordination data.
    # Obtain a reference to the coordination summary of each element.
    $coordinationSummary_ref = StructureControl::getCoordinationSummaryRef;
 }
+elsif ($operation == 12) # Create the Q^n data.
+{
+   # Create the Q^n lists (atomic, absolute, and fractional). Also compute
+   #   the Q^n network connectivity.
+   StructureControl::computeQn(\@bridges,\@ions);
+
+   # Obtain a reference to the Q^n of each atom.
+   $atomQn_ref = StructureControl::getAtomQnRef;
+
+   # Obtain a reference to the absolute and fractional system Q^n.
+   $absoluteSysQn_ref = StructureControl::getAbsoluteSysQnRef;
+   $fractionalSysQn_ref = StructureControl::getFractionalSysQnRef;
+
+   # Obtain the number of atoms participating in the Q^n calc.
+   $numQnAtoms = StructureControl::getNumQnAtoms;
+
+   # Obtain the Q^n network connectivity.
+   $netConnQn = StructureControl::getNetworkConnectivityQn;
+}
 #elsif ($operation == 10) # Generate fragments.
 #   {&generateFragments;}
 
@@ -407,8 +450,15 @@ elsif ($operation == 8)
    {&printOpenScad(0);}
 elsif ($operation == 9)
    {&printOpenScad(1);}
+elsif ($operation == 11)
+   {&printVTKBallAndStick;}
+elsif ($operation == 12)
+   {&printQnDistribution;}
+#elsif ($operation == 13)
+#   {&printRingDistribution;}
 #elsif ($operation == 10)
 #   {&printFragments;}
+
 
 ###############################################
 # End program execution #######################
@@ -478,6 +528,11 @@ sub initEnv
    # Assume that a histogram will not be created.
    $doHist = 0;
 
+   # Assume for the Q^n analysis that the bridging atom is oxygen and that the
+   #   main cation is silicon.
+   $bridges[0] = "o";
+   $ions[0] = "si";
+
    # Assume that our bond analysis is purely geometric and does not use OLCAO
    #   bond order data.
    $useOLCAOBO = 0;
@@ -514,6 +569,8 @@ sub parseCommandLine
          {$limitDist = $ARGV[++$number];}
       elsif ($ARGV[$number] eq "-bs")  #Ball and stick.
          {$operation = 1;}
+      elsif ($ARGV[$number] eq "-vtk")  #VTK ball and stick.
+         {$operation = 11;}
       elsif ($ARGV[$number] eq "-ba")  #Bond angles.
          {$operation = 2;}
       elsif ($ARGV[$number] eq "-bl")  #Bond lengths.
@@ -530,6 +587,28 @@ sub parseCommandLine
          {$operation = 6;}
       elsif ($ARGV[$number] eq "-co")  #Coordination
          {$operation = 7;}
+      elsif ($ARGV[$number] eq "-qn")  #Q^n distribution
+      {
+         $operation = 12;
+         foreach $index (1..2)
+         {
+            if ($number+1 > $#ARGV)
+               {last;}
+
+            $nextTag = $ARGV[++$number];
+
+            if ($nextTag eq "-b")
+               {@bridges = StructureControl::prepLine("",
+                     lc($ARGV[++$number]),'\s+');}
+            elsif ($nextTag eq "-i")
+               {@ions = StructureControl::prepLine("",
+                     lc($ARGV[++$number]),'\s+');}
+            else
+               {$number--;last;}
+         }
+      }
+      elsif ($ARGV[$number] eq "-rn")  # Ring distribution
+         {$operation = 13;}
       elsif ($ARGV[$number] eq "-3dfull")  #Full OpenScad Model
       {
          $operation = 8;
@@ -710,6 +789,12 @@ sub openOutput
          {$outFile = $outFile . ".co";}
       elsif ($operation == 8)
          {$outFile = $outFile . ".scad";}
+      elsif ($operation == 11)
+         {$outFile = $outFile . ".vtk";}
+      elsif ($operation == 12)
+         {$outFile = $outFile . ".qn";}
+      elsif ($operation == 13)
+         {$outFile = $outFile . ".rn";}
    }
 
    # Only open the outFile if we will not make a different set later.
@@ -754,6 +839,147 @@ sub printBallAndStick
       print OUT "\n";
    }
 }
+
+
+sub printVTKBallAndStick
+{
+   # Declare local variables.
+   my $atom;
+   my $bond;
+   my @angstCoords;
+   my @vtkBondList;
+   my $totalNumBonds;
+   my $totalBondPoints;
+   my $totalVertPoints;
+   my $atomCIndex;
+   my $firstBondAtom;
+   my $secondBondAtom;
+   my @colorRGB;
+   my $bohrRad;
+   
+   $bohrRad = StructureControl::getBohrRad;
+
+   # Print the header.
+   print OUT <<HEADER;
+# vtk DataFile Version 4.2
+This is a model produced by the OLCAO program suite: bondAnalysis program
+ASCII
+DATASET POLYDATA
+
+HEADER
+
+   # Print the positions of all atoms in the cell.
+   print OUT "POINTS $numAtoms float\n";
+   foreach $atom (1..$numAtoms)
+   {
+      @angstCoords[1] = $coords_ref->[$atom][1] / $bohrRad;
+      @angstCoords[2] = $coords_ref->[$atom][2] / $bohrRad;
+      @angstCoords[3] = $coords_ref->[$atom][3] / $bohrRad;
+      print OUT "@angstCoords[1..3]\n";
+   }
+   print OUT "\n";
+
+   # Now, list the connections bewtween the data points (POINTS) as LINES
+   #   in the vtk file. The header of this section must include the number
+   #   of lines, followed by the total number of data points in the section
+   #   used to express those lines. So, if we are only using the number of
+   #   points per line, and the start and end points, then we have 3x the
+   #   number of bonds for the total number.
+   
+   $totalNumBonds = 0;
+   foreach $atom (1..$numAtoms)
+   {
+      foreach $bond (1..$numBonds_ref->[$atom])
+      {
+         # Avoid double listing bonds by only printing those where the index
+         #    number for atom one is less than the index number for atom 2.
+         if ($atom < $bondedList_ref->[$atom][$bond])
+         {
+            # Store the line and increment the total count of bonds.
+            $firstBondAtom = $atom - 1; # -1 because VTK arrays start at 0.
+            $secondBondAtom = $bondedList_ref->[$atom][$bond] - 1; # -1 same.
+            $vtkBondList[$totalNumBonds] =
+                  "2 $firstBondAtom $secondBondAtom\n";
+            $totalNumBonds++;
+         }
+      }
+   }
+
+   $totalBondPoints = $totalNumBonds * 3;
+   print OUT "LINES $totalNumBonds $totalBondPoints\n";
+   foreach $bond (0..$totalNumBonds-1)
+      {print OUT "$vtkBondList[$bond]";}
+   print OUT "\n";
+
+   # Now here is where we need to include the additional information to
+   #   display the model in legacy vtk format. This next section marks 
+   #   the atom positions from the POINTS section as vertices in vtk. 
+   #   Marking them as vertices allows programs like Paraview or just VTK
+   #   to apply glyphs to them, and for the purposes of this program, we
+   #   will need to apply spherical glyphs using a filter made for Paraview
+   #   once this program has run. The VERTICES header must include, the
+   #   number of vertices and the number of data points used to express
+   #   them, which is only the number of vertices followed by the index
+   #   number of each atom on every line, so 2x the number of vertices.
+
+   $totalVertPoints = 2 * $numAtoms;
+   print OUT "VERTICES $numAtoms $totalVertPoints\n";
+   foreach $atom (1..$numAtoms)
+   {
+      # For our purposes, we will treat "cells" and "points" as the same
+      #   thing. For now, we do not need to specify "CELL_DATA" in this
+      #   calculation, so treating them as such saves time. But this should
+      #   be fixed later, for more advanced and accurate visualization.
+      # We need to attach a vertex to each point/atom we have. To do this,
+      #   we need to specify the number of points, and the index number of
+      #   that point. Since C arrays start at zero, we must start from
+      #   there. Attempts to use in Paraview can sometimes be "hit or
+      #   miss" when applying glyphs to vertices. If spherical glyphs are
+      #   not applying to one or more of your vertices, change this next
+      #   print line to a number higher than "1" as a quick fix. This note
+      #   should be added as a printed suggestion whenever this subroutine
+      #   is run, in the future.
+      $atomCIndex = $atom - 1; # Again, -1 because of C arrays.
+      print OUT "1 $atomCIndex\n";
+   }
+   print OUT "\n";
+
+   # This final section adds the specified color table to the bonds and
+   #   atoms. The color tables for VTK may be left as default, or you may
+   #   construct a color table and specify how its used. Each entry in the
+   #   lookup table is a rgba array (red green blue alpha) where alpha is
+   #   tranparency. To save time, I will be using the default color table
+   #   just to finish the VTK file. But in the future a color table should
+   #   be generated in each file, specifying what color is associated with
+   #   what type of atom or what strength of bond. Someone with more time
+   #   on their hands should be able to peruse the legacy file
+   #   specifications and add this function to the subroutine later on.
+   print OUT "POINT_DATA $numAtoms\n";
+   #print OUT "SCALARS sample_scalars float\n";
+   #print OUT "LOOKUP_TABLE default\n";
+
+   # This section will attempt to apply a scaling factor to spherical glyphs
+   #   applied to the vertices, based on the atomic radii.
+   print OUT "SCALARS atomic_radius float\n";
+   print OUT "LOOKUP_TABLE default\n";
+   foreach $atom (1..$numAtoms)
+      {print OUT "$atomCovalRadii_ref->[$atom]\n";}
+   print OUT "\n";
+   #print OUT "LOOKUP_TABLE default\n";
+   
+   # This section will, for now, store the charge transfer data as point
+   #   data.
+   print OUT "COLOR_SCALARS atom_colors 3\n";
+   foreach $atom (1..$numAtoms)
+   {
+      $colorRGB[0] = $atomColorVTK_ref->[$atom][0] / 255.0;
+      $colorRGB[1] = $atomColorVTK_ref->[$atom][1] / 255.0;
+      $colorRGB[2] = $atomColorVTK_ref->[$atom][2] / 255.0;
+      print OUT "@colorRGB[0..2]\n";
+   }
+   #print OUT "LOOKUP_TABLE default\n";
+}
+
 
 sub printBondAngles
 {
@@ -897,6 +1123,60 @@ sub printCoordinationData
             $coordinationSummary_ref->[$element];
    }
 }
+
+sub printQnDistribution
+{
+   # Declare local variables.
+   my $n;
+   my $atom;
+
+   print OUT "ATOM Q^n $numQnAtoms\n";
+   foreach $atom (1..$numAtoms)
+   {
+      if ($atomQn_ref->[$atom] != -1)
+      {
+         print OUT "$atom $atomElementName_ref->[$atom] ";
+         print OUT "$atomQn_ref->[$atom]\n";
+      }
+   }
+
+   print OUT "\nAbsolute Q^n\n";
+   foreach $n (0..8)
+      {print OUT "Q^$n $absoluteSysQn_ref->[$n]\n";}
+
+   print OUT "\nFractional Q^n\n";
+   foreach $n (0..8)
+      {print OUT "Q^$n $fractionalSysQn_ref->[$n]\n";}
+
+   print OUT "\nNetwork Connectivity\n";
+   print OUT "$netConnQn\n";
+}
+
+#sub printRingDistribution
+#{
+#   # Declare local variables.
+#   my $n;
+#   my $atom;
+#
+#   print OUT " $numQnAtoms\n";
+#   foreach $atom (1..$numAtoms)
+#   {
+#
+#      print OUT "$atom $atomElementName_ref->[$atom] ";
+#      print OUT "$atomQn_ref->[$atom]\n";
+#   }
+#
+#   print OUT "\nAbsolute Q^n\n";
+#   foreach $n (0..8)
+#      {print OUT "Q^$n $absoluteSysQn_ref->[$n]\n";}
+#
+#   print OUT "\nFractional Q^n\n";
+#   foreach $n (0..8)
+#      {print OUT "Q^$n $fractionalSysQn_ref->[$n]\n";}
+#
+#   print OUT "\nNetwork Connectivity\n";
+#   print OUT "$netConnQn\n";
+#}
 
 sub printBondOO
 {

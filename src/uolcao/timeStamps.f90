@@ -59,7 +59,7 @@ subroutine initOperationLabels
    opLabels(22) = '********  Bond Order and Effective Charge  ********'
    opLabels(23) = '*********  Optical Transition Calculation  ********'
    opLabels(24) = '*************  Parse The Command Line  ************'
-   opLabels(25) = '************  Evaluate WaveFn on Mesh  ************'
+   opLabels(25) = '*************  Evaluate Data on Mesh  *************'
    opLabels(26) = '************  Three Center Bond Order  ************'
    opLabels(27) = '***********  Initialize Field HDF5 File  **********'
    opLabels(28) = '**********  Compute Bispectrum Component  *********'

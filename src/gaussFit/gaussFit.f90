@@ -35,18 +35,24 @@ program gaussfit
    open(20,file='gaussFit.out',status='new',form='formatted')
    writeUnit = 20
    ! Read input parameters and numerical data.
-   call readData(readUnit,writeUnit,fitByAlphas,len('COEFFS0_ALPHAS1'),'COEFFS0_ALPHAS1')
-   call readData(readUnit,writeUnit,numTerms,len('NUM_GAUSSIAN_TERMS'),'NUM_GAUSSIAN_TERMS')
-   call readData(readUnit,writeUnit,minTerm,len('MIN_GAUSSIAN_ALPHA'),'MIN_GAUSSIAN_ALPHA')
-   call readData(readUnit,writeUnit,maxTerm,len('MAX_GAUSSIAN_ALPHA'),'MAX_GAUSSIAN_ALPHA')
-   call readData(readUnit,writeUnit,numPoints,len('NUM_NUMERICAL_POINTS'),'NUM_NUMERICAL_POINTS')
-   call readData(readUnit,writeUnit,radialWeight,len('RMS_RADIAL_WEIGHT'),'RMS_RADIAL_WEIGHT')
+   call readData(0,readUnit,writeUnit,fitByAlphas,len('COEFFS0_ALPHAS1'),&
+         & 'COEFFS0_ALPHAS1')
+   call readData(0,readUnit,writeUnit,numTerms,len('NUM_GAUSSIAN_TERMS'),&
+         & 'NUM_GAUSSIAN_TERMS')
+   call readData(0,readUnit,writeUnit,minTerm,len('MIN_GAUSSIAN_ALPHA'),&
+         & 'MIN_GAUSSIAN_ALPHA')
+   call readData(0,readUnit,writeUnit,maxTerm,len('MAX_GAUSSIAN_ALPHA'),&
+         & 'MAX_GAUSSIAN_ALPHA')
+   call readData(0,readUnit,writeUnit,numPoints,len('NUM_NUMERICAL_POINTS'),&
+         & 'NUM_NUMERICAL_POINTS')
+   call readData(0,readUnit,writeUnit,radialWeight,len('RMS_RADIAL_WEIGHT'),&
+         & 'RMS_RADIAL_WEIGHT')
    ! Read the exponent for the division of the radial wave function.  The
    !   wave function must be in the form 1/r^-l * f(r),g(r) where l is the
    !   angular quantum number.  Note that although the minor component has a
    !   different angular character from the major component they will be
    !   treated the same here.
-   call readData(readUnit,writeUnit,lQN,len('RADIAL_COEFF'),'RADIAL_COEFF')
+   call readData(0,readUnit,writeUnit,lQN,len('RADIAL_COEFF'),'RADIAL_COEFF')
 
 
    ! Initialize parameters based on read in data.

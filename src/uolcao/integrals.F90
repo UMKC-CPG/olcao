@@ -272,17 +272,21 @@ subroutine gaussOverlapOL(numComponents,fullCVDims,packedVVDims,did,CVdid,aid)
 
       write(20,*) "Reading in overlap CV results."
 #ifndef GAMMA
-      allocate(tempRealCoreVale(coreDim,valeDim))
-      allocate(tempImagCoreVale(coreDim,valeDim))
-      do i = 1, numKPoints
-         call readMatrix (CVdid(:,i),coreValeOL(:,:,i),tempRealCoreVale,&
-               & tempImagCoreVale,fullCVDims,coreDim,valeDim)
-      enddo
-      deallocate(tempRealCoreVale)
-      deallocate(tempImagCoreVale)
+      if (coreDim > 0) then
+         allocate(tempRealCoreVale(coreDim,valeDim))
+         allocate(tempImagCoreVale(coreDim,valeDim))
+         do i = 1, numKPoints
+            call readMatrix (CVdid(:,i),coreValeOL(:,:,i),tempRealCoreVale,&
+                  & tempImagCoreVale,fullCVDims,coreDim,valeDim)
+         enddo
+         deallocate(tempRealCoreVale)
+         deallocate(tempImagCoreVale)
+      endif
 #else
-      call readMatrixGamma (CVdid(1,i),coreValeOLGamma(:,:),fullCVDims,&
-            & coreDim,valeDim) 
+      if (coreDim > 0) then
+         call readMatrixGamma (CVdid(1,1),coreValeOLGamma(:,:),fullCVDims,&
+               & coreDim,valeDim) 
+      endif
 #endif
       return
    endif
@@ -2957,7 +2961,7 @@ subroutine gaussOverlapHamPSCF(did,aid)
    if (hdferr /= 0) stop 'Failed to read atom Hamiltonian overlap status.'
    if (hdf5Status == 1) then
       write(20,*) "Hamiltonian overlap itegrals already exists. Skipping."
-      call timeStampEnd(10)
+      call timeStampEnd(20)
       call h5aclose_f(aid,hdferr)
       if (hdferr /= 0) stop 'Failed to close atom Ham. overlap status.'
       return

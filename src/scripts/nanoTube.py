@@ -28,9 +28,9 @@ Calculations: The program will then calculate all of the plausible
               perimeter of the polygon. Further, dividing by two
               creates a right triangle. Therefore,
 
-                 ( pi     )   r 
-              tan| --(n-2)| = --
-                 ( 2n     }   l/2
+                  ( pi      )   r 
+              tan | --(n-2) | = --
+                  ( 2n      )   l/2
 
               For the angle of rotation, since we have a right
               triangle:

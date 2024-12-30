@@ -11,6 +11,8 @@ if (NOT CMAKE_BUILD_TYPE)
       "Choose the type of build, options are: None Debug Release." FORCE)
 endif (NOT CMAKE_BUILD_TYPE)
 
+#option(BUILD_SHARED_LIBS "Build using shared libraries" ON)
+
 # Establish the installation location on the basis of the $OLCAO_DIR
 #   environment variable that is defined in the .olcao file. Make sure that you
 #   source this file (source .olcao) before you try to build.
@@ -55,6 +57,7 @@ if (CMAKE_Fortran_COMPILER_ID MATCHES "GNU")
    #else()
       set (CMAKE_Fortran_FLAGS_RELEASE "-O3 -fimplicit-none -Wall")
       set (CMAKE_EXE_LINKER_FLAGS "-L/usr/lib -I/usr/include -llapack -lblas") # -L,-I for nanoHUB
+      #set (CMAKE_EXE_LINKER_FLAGS "-L/usr/lib -I/usr/include") # -L,-I for nanoHUB
       #endif (DEFINED ENV{MKLROOT})
 elseif (CMAKE_Fortran_COMPILER_ID MATCHES "Intel")
    set (CMAKE_Fortran_FLAGS_RELEASE "-ipo -O3 -heap-arrays")

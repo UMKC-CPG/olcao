@@ -3576,8 +3576,7 @@ sub printOLCAOInput
    print OLCAO "FIELD_INPUT_DATA\n";
    print OLCAO "10 10 10                      ! a,b,c # of mesh points\n";
    print OLCAO "-100000.0 100000.0            ! min,max range of energy\n";
-   print OLCAO "0                             ! 0=Psi^2; 1=Rho\n";
-   print OLCAO "0                             ! 1=Produce OpenDX output\n";
+   print OLCAO "1 1 1 1                       ! 0/1 for psi, psi^2, rho, pot\n";
    print OLCAO "1                             ! 1=Produce XDMF+HDF5 output\n";
    print OLCAO "1                             ! 1=Produce 1D profile output\n";
 

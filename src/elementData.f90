@@ -27,6 +27,8 @@ module O_ElementData
          ! core electrons in each s,p,d,f orbital of each unique element.
    real (kind=double), allocatable, dimension (:,:) :: valeCharge ! Number of
          ! valence electrons in each s,p,d,f orbital of each unique element.
+   real (kind=double), allocatable, dimension (:,:) :: colorVTK ! Default
+         ! color values to use in VTK, based on CPK chemistry color scheme.
    real (kind=double), allocatable, dimension (:) :: colorDX ! Default color
          ! values to use in OpenDX on a scale of 1-100 for each unique element.
    real (kind=double), allocatable, dimension (:) :: greyDX ! Default grey
@@ -102,6 +104,7 @@ subroutine initElementData
    allocate (numUJElectrons(numUniqueElements))
    allocate (coreCharge(lAngMomCount,numUniqueElements))
    allocate (valeCharge(lAngMomCount,numUniqueElements))
+   allocate (colorVTK(4,numUniqueElements)) ! RGB + alpha
    allocate (colorDX(numUniqueElements))
    allocate (greyDX(numUniqueElements))
 
@@ -243,6 +246,12 @@ subroutine initElementData
       read (313,*)
    enddo
 
+   ! Read the definition of the VTK color+alpha values for each element.
+   read (313,*)
+   do i = 1, numUniqueElements
+      read (313,*) colorVTK(:,i)
+   enddo
+
    ! Read the definition of openDX color values for each element.
    read (313,*)
    do i = 1, numUniqueElements
@@ -276,6 +285,7 @@ subroutine deallocateElementData
    deallocate (numUJElectrons)
    deallocate (coreCharge)
    deallocate (valeCharge)
+   deallocate (colorVTK)
    deallocate (colorDX)
    deallocate (greyDX)
 

@@ -2474,6 +2474,28 @@ HEADER
        #  in the section used to express those lines, so if we're only
        #  using the number of points per line, and the start and endpoints,
        #  then we have 3x the number of bonds for the total number. 
+
+       $totalVertPoints = 2 * $numAtomsExtDX;
+       print VTK "VERTICES $numAtomsExtDX $totalVertPoints\n";
+       for ($j=1;$j<=$numAtomsExtDX;$j++)
+       {
+          #For our purposes, we will treat "cells" and "points" as the same
+          #  thing. For now, we do not need to specify "CELL_DATA" in this
+          #  calculation, so treating them as such saves time. But this should
+          #  be fixed later, for more advanced and accurate visualization.
+          #We need to attach a vertex to each point/atom we have. To do this,
+          #  we need to specify the number of points, and the index number of
+          #  that point. Since C arrays start at zero, we must start from
+          #  there. Attempts to use in Paraview can sometimes be "hit or
+          #  miss" when applying glyphs to vertices. If spherical glyphs are
+          #  not applying to one or more of your vertices, change this next
+          #  print line to a number higher than "1" as a quick fix. This note
+          #  should be added as a printed suggestion whenever this subroutine
+          #  is run, in the future.
+          $k = $j - 1;
+          print VTK "1 $k\n";
+       }
+       print VTK "\n";
        
        $totalBondPoints = 3 * $numBondsDX;
        print VTK "LINES $numBondsDX $totalBondPoints\n";
@@ -2502,28 +2524,6 @@ HEADER
        #  number of vertices and the number of data points used to express
        #  them, which is only the number of vertices followed by the index
        #  number of each atom on every line, so 2x the number of vertices.
-
-       $totalVertPoints = 2 * $numAtomsExtDX;
-       print VTK "VERTICES $numAtomsExtDX $totalVertPoints\n";
-       for ($j=1;$j<=$numAtomsExtDX;$j++)
-       {
-          #For our purposes, we will treat "cells" and "points" as the same
-          #  thing. For now, we do not need to specify "CELL_DATA" in this
-          #  calculation, so treating them as such saves time. But this should
-          #  be fixed later, for more advanced and accurate visualization.
-          #We need to attach a vertex to each point/atom we have. To do this,
-          #  we need to specify the number of points, and the index number of
-          #  that point. Since C arrays start at zero, we must start from
-          #  there. Attempts to use in Paraview can sometimes be "hit or
-          #  miss" when applying glyphs to vertices. If spherical glyphs are
-          #  not applying to one or more of your vertices, change this next
-          #  print line to a number higher than "1" as a quick fix. This note
-          #  should be added as a printed suggestion whenever this subroutine
-          #  is run, in the future.
-          $k = $j - 1;
-          print VTK "1 $k\n";
-       }
-       print VTK "\n";
 
 
        # This final section adds the specified color table to the bonds and

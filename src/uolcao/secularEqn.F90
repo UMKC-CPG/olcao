@@ -1062,37 +1062,41 @@ subroutine readDataSCF(h,i,numStates,matrixCode)
    dim1 = 1
 #endif
 
-   ! Allocate space to read a packed matrix.
-   allocate (packedValeVale(dim1,valeDim*(valeDim+1)/2))
+   if (matrixCode > 0) then
 
-   if (matrixCode == 1) then
-      ! Read the overlap matrix.  The tempPackedMatrix is not used.
-      call readPackedMatrix(atomOverlap_did(i),packedValeVale,&
-            & packedVVDims,dim1,valeDim)
+      ! Allocate space to read a packed matrix.
+      allocate (packedValeVale(dim1,valeDim*(valeDim+1)/2))
 
-      ! Unpack the matrix.
-#ifndef GAMMA
-      call unpackMatrix(valeValeOL(:,:),packedValeVale,valeDim,1)
-#else
-      call unpackMatrixGamma(valeValeOLGamma(:,:),packedValeVale,valeDim,1)
-#endif
-
-   elseif (matrixCode == 2) then
-      do j = 1, 3
-         ! Read the xyz momentum matrix elements.
-         call readPackedMatrix(atomMMOverlap_did(i,j),packedValeVale,&
+      if (matrixCode == 1) then
+         ! Read the overlap matrix.  The tempPackedMatrix is not used.
+         call readPackedMatrix(atomOverlap_did(i),packedValeVale,&
                & packedVVDims,dim1,valeDim)
 
          ! Unpack the matrix.
 #ifndef GAMMA
-        call unpackMatrix(valeValeMM(:,:,j),packedValeVale,valeDim,1)
+         call unpackMatrix(valeValeOL(:,:),packedValeVale,valeDim,1)
 #else
-        call unpackMatrixGamma(valeValeMMGamma(:,:,j),packedValeVale,valeDim,1)
+         call unpackMatrixGamma(valeValeOLGamma(:,:),packedValeVale,valeDim,1)
 #endif
-      enddo
+      elseif (matrixCode == 2) then
+         do j = 1, 3
+            ! Read the xyz momentum matrix elements.
+            call readPackedMatrix(atomMMOverlap_did(i,j),packedValeVale,&
+                  & packedVVDims,dim1,valeDim)
+
+            ! Unpack the matrix.
+#ifndef GAMMA
+           call unpackMatrix(valeValeMM(:,:,j),packedValeVale,valeDim,1)
+#else
+           call unpackMatrixGamma(valeValeMMGamma(:,:,j),packedValeVale,valeDim,1)
+#endif
+         enddo
+      endif
+
+      ! Deallocate the packed matrix used to read and unpack the data.
+      deallocate (packedValeVale)
+
    endif
-   ! Deallocate the packed matrix used to read and unpack the data.
-   deallocate (packedValeVale)
 
 #ifndef GAMMA
    ! Read the wave functions for this kpoint from the datasets into

@@ -2508,7 +2508,6 @@ def print_production_dipole(conversion, triads, matrix_dm, matrix_ol,
    
    real (kind=double), dimension (3) :: P, PA, PB, PC_3C, d, preFactorDM
    real (kind=double) :: zeta, inv_2zeta, xi, preFactorOL, mu
-   real (kind=double), dimension (3,3) :: dip_mom
 
 
    ! Initialize local variables.
@@ -3726,7 +3725,6 @@ def print_test_dipole_ana(conversion, triads, matrix_dm, matrix_ol, f):
            
    real (kind=double), dimension (3) :: P, PA, PB, PC_3C, d, preFactorDM
    real (kind=double) :: zeta, inv_2zeta, xi, preFactorOL, mu
-   real (kind=double), dimension (3,3) :: dip_mom
 
 
    ! Initialize local variables.

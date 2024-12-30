@@ -773,9 +773,6 @@ subroutine bandPSCF
       call printSYBD
    endif
 
-   ! Record the date and time we end.
-   call timeStampEnd(15)
-
 end subroutine bandPSCF
 
 

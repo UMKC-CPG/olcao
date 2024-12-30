@@ -959,11 +959,26 @@ sub checkGammaKP
 
    open (KP,"<$inputs/$kpointFile") ||
          die "Cannot open $inputs/$kpointFile for reading.\n";
-   @values = StructureControl::prepLine(\*KP,$line,'\s+');
+
+   # Read past the kpoint style code tag and value, the integration code tag
+   #   and value, and the number of kpoints tag.
+   <KP>;
+   <KP>;
+   <KP>;
+   <KP>;
+   <KP>;
+
+   # Read in the number of kpoints. (1 for Gamma).
    @values = StructureControl::prepLine(\*KP,$line,'\s+');
    $numKP  = $values[0];
+
+   # Read past the explicit kpoint list header tag and then read the specific
+   #   coordinates for the first kpoint.
+   <KP>;
    @values = StructureControl::prepLine(\*KP,$line,'\s+');
-   @values = StructureControl::prepLine(\*KP,$line,'\s+');
+
+   # If the number of kpoints equals 1 and the only kpoint is at 0,0,0, then
+   #   we are doing a Gamma kpoint calculation.
    if (($numKP==1) && ($values[2]==0) && ($values[3]==0) && ($values[4]==0))
       {return 1;}
    else

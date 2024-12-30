@@ -38,15 +38,16 @@ module O_AtomicTypes
       integer :: speciesID
       integer :: typeID
 
-      ! Basis wave function information
-      integer :: numCoreRadialFns ! The number of core radial wave functions.
-      integer :: numValeRadialFns ! The number of valence radial wave functions.
+      ! Basis function information. These are nl_QN fns from olcao.dat that
+      !   will be expanded upon with the m_QN into the full basis function.
+      integer :: numCoreRadialFns ! # of core radial fns given in olcao.dat.
+      integer :: numValeRadialFns ! # of vale radial fns given in olcao.dat.
       real (kind=double), pointer, dimension (:,:) :: coreRadialFns ! The radial
-            !   wave functions of the core orbitals.  The first dimension holds
+            !   basis functions of the core orbitals.  The first dimension holds
             !   the radial function coefficients while the second dimension
             !   indexes the number of core radial functions.
       real (kind=double), pointer, dimension (:,:) :: valeRadialFns ! The radial
-            !   wave functions of the valence orbitals.  The first dimension
+            !   basis functions of the valence orbitals.  The first dimension
             !   holds the radial function coefficients while the second
             !   dimension indexes the number of valence radial functions.
 
@@ -78,11 +79,9 @@ module O_AtomicTypes
       integer, pointer, dimension (:) :: valeQN_2jList ! A list of the 2*j
             !   QN for each valence radial function.
       integer, dimension(lAngMomCount) :: numQN_lCoreRadialFns ! This holds the
-            !   number of s, p, d, and f radial functions in the core
-            !   part of the wave function description.
+            !   number of s, p, d, and f core radial functions (no m_QN).
       integer, dimension(lAngMomCount) :: numQN_lValeRadialFns ! This holds the
-            !   number of s, p, d, and f radial functions in the valence
-            !   part of the basis description.
+            !   number of s, p, d, and f vale radial functions (no m_QN).
 
 
       ! State information
@@ -475,7 +474,7 @@ subroutine countStatesAndFns(numQN_lRadialFns,maxQN_l,numStates,numRadialFns,&
    ! Loop over the radial functions for this given type (core or valence).
    do i = 1, numRadialFns
 
-      ! Increment the valence s,p,d,f function counter.
+      ! Increment the s,p,d,f function counter.
       numQN_lRadialFns(QN_lList(i)+1) = numQN_lRadialFns(QN_lList(i)+1) + 1
 
       ! Increment the total state counter.

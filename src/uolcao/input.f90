@@ -90,9 +90,10 @@ module O_Input
    real (kind=double) :: totalEnergyDiffPACS  ! Given in eV, stored in a.u.
 
    ! Define control variables that apply only to the field program.
-   integer :: doRho ! Flag indicating whether or not to include state
-         ! occupancy when making the plot.
-   integer :: doODXFIELD ! Flag requesting a set of OpenDX output files.
+   integer :: doPsiFIELD ! Flag to include complex wave function.
+   integer :: doWavFIELD ! Flag to include Psi^2.
+   integer :: doRhoFIELD ! Flag to include charge density.
+   integer :: doPotFIELD ! Flag to include potential function.
    integer :: doXDMFFIELD ! Flag requesting HDF5 and XDMF output files.
    integer :: doProfileFIELD ! Flag requesting a set of 1D profile files.
    real (kind=double) :: eminFIELD ! Given in eV, stored in a.u.
@@ -847,11 +848,14 @@ subroutine readFieldControl(readUnit,writeUnit)
 
    implicit none
 
-   ! passed parameters
+   ! Passed parameters
    integer, intent(in)    :: readUnit   ! The unit number of the file from which
                                         ! we are reading.
    integer, intent(in)    :: writeUnit  ! The unit number of the file to which
                                         ! we are writing.
+
+   ! Define local variables.
+   integer, dimension(4) :: tempArray
 
    ! Read the input wave function / charge density / potential function
    !   plotting control variables.
@@ -859,10 +863,14 @@ subroutine readFieldControl(readUnit,writeUnit)
          & 'FIELD_INPUT_DATA')
    call readNumMeshPoints(readUnit,writeUnit)
    call readData(readUnit,writeUnit,eminFIELD,emaxFIELD,0,'')
-   call readData(readUnit,writeUnit,doRho,0,'')
-   call readData(readUnit,writeUnit,doODXField,0,'')
+   call readData(readUnit,writeUnit,4,tempArray,0,'')
    call readData(readUnit,writeUnit,doXDMFField,0,'')
    call readData(readUnit,writeUnit,doProfileField,0,'')
+
+   doPsiFIELD = tempArray(1)
+   doWavFIELD = tempArray(2)
+   doRhoFIELD = tempArray(3)
+   doPotFIELD = tempArray(4)
 
    ! Apply the necessary conversions of the data to atomic units.
    eminFIELD = eminFIELD / hartree
