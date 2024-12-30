@@ -11,7 +11,7 @@ use lib "$OLCAO_BIN/perl5";
 use ElementData;
 use Math::Complex; # Forgot what used for if anything.
 use Math::Trig; # atan2, acos, 
-#use Math::MatrixReal;
+use Math::MatrixReal;
 ##use Inline (C => Config => cc => 'gcc',
 ##            ld => 'gcc',
 ##            inc => '-I/usr/include');
@@ -1307,7 +1307,7 @@ ENDHELP
    #   we can get the abc coordinates of atoms if we are given xyz.  It must
    #   be done again later after applying the spacegroup, supercell, and
    #   any reordering of the lattice parameters.
-#   &makeLatticeInv(\@realLattice,\@realLatticeInv,0);
+   #&makeLatticeInv(\@realLattice,\@realLatticeInv,0);
    &makeInvOrRecipLattice(\@realLattice,\@realLatticeInv,0);
 
    # Obtain the sine function of each angle.
@@ -4399,6 +4399,8 @@ sub getABCVectors
 #   my $axisABC;
 #   my $axisXYZ;
 #
+#   my @outLattice;
+#
 #   # Initialize the matrix string.
 #   $string = "";
 #
@@ -4418,12 +4420,12 @@ sub getABCVectors
 #   {
 #      foreach $axisABC (1..3)
 #      {
-#         $outLattice_ref->[$axisXYZ][$axisABC] =
+#         $outLattice[$axisXYZ][$axisABC] =
 #               $matrixInv->element($axisXYZ,$axisABC);
 #         if ($piFactor == 1)
-#            {$outLattice_ref->[$axisXYZ][$axisABC] *= (2.0 * $pi);}
+#            {$outLattice[$axisXYZ][$axisABC] *= (2.0 * $pi);}
 #         elsif ($piFactor == -1)
-#            {$outLattice_ref->[$axisXYZ][$axisABC] /= (2.0 * $pi);}
+#            {$outLattice[$axisXYZ][$axisABC] /= (2.0 * $pi);}
 #      }
 #   }
 #}
@@ -4508,17 +4510,17 @@ sub makeInvOrRecipLattice
       {
          $jCycle1 = ($j % 3) + 1;
          $jCycle2 = (($j+1) % 3) + 1;
-         $outLattice_ref->[$j][$i] = $inLattice_ref->[$jCycle1][$iCycle1] *
+         $outLattice_ref->[$i][$j] = $inLattice_ref->[$jCycle1][$iCycle1] *
                                      $inLattice_ref->[$jCycle2][$iCycle2] -
                                      $inLattice_ref->[$jCycle2][$iCycle1] *
                                      $inLattice_ref->[$jCycle1][$iCycle2];
-         $inCellVol = $inCellVol + $outLattice_ref->[$j][$i] *
+         $inCellVol = $inCellVol + $outLattice_ref->[$i][$j] *
                                    $inLattice_ref->[$j][$i];
       }
       foreach $j (1..3)
       {
-         $outLattice_ref->[$j][$i] = $piFactor *
-               $outLattice_ref->[$j][$i] / $inCellVol;  # In Angstroms!
+         $outLattice_ref->[$i][$j] = $piFactor *
+               $outLattice_ref->[$i][$j] / $inCellVol;  # In Angstroms!
       }
    }
 
@@ -6720,8 +6722,9 @@ sub computeExtendedPos
                        $tempFractABC[2]*$realLattice[2][3] +
                        $tempFractABC[3]*$realLattice[3][3];
 
-         # Compute the x, y, z coordinates of the tempFract a, b, c position
-         #   coordinates.
+         # Store the x, y, z coordinates of the tempFract a, b, c position
+         #   in a 5-d array. Index 1 = x,y,z; Index 2,3,4 = a,b,c indices
+         #   of replicated cells; Index 5 = item number.
          $extDirectXYZItem->[1][$cellBitA+$negBit->[$item][1]]
                                [$cellBitB+$negBit->[$item][2]]
                                [$cellBitC+$negBit->[$item][3]][$item] =

@@ -488,7 +488,7 @@ sub initEnv
 
    # Assume that we will use x,y,z direct space coordinates for the atomic
    #   positions.
-   $coordType = 1;
+   $coordType = 3;
 
    # Assume that the Ylm for the bond orientational order is l=6.
    $Ylm_l = 6;
