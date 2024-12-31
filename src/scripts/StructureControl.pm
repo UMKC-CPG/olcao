@@ -11,7 +11,7 @@ use lib "$OLCAO_BIN/perl5";
 use ElementData;
 use Math::Complex; # Forgot what used for if anything.
 use Math::Trig; # atan2, acos, 
-use Math::MatrixReal;
+#use Math::MatrixReal;
 ##use Inline (C => Config => cc => 'gcc',
 ##            ld => 'gcc',
 ##            inc => '-I/usr/include');
