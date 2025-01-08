@@ -8,18 +8,17 @@ distrib/
 #   git config --global core.excludesfile '~/.gitignore_global'
 bin/
 
-# Ignore directories that will contain install databases and binaries
+# Ignore directories that will contain install databases, binaries, and jobs
 /share
 /bin
+/jobs
 
 # Ignore directories that will contain compiled object files
 /build/debug/*
 /build/release/*
 
-# ignore the olcao config file. Note that this file is checked in,
-# but the changes are ignored so that a user can set the variable
-# to the things that make sense for their installation.
-#.olcao
+# Ignore any __pycache__ files (in the .olcao directory).
+__pycache__
 
 # ignore the external folder. This is a uniform place to put all the
 # things external to OLCAO but are meant to be used with olcao.
