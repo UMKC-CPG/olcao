@@ -470,6 +470,13 @@ subroutine makePathKPoints
 
       do i = 1, numPaths
          do j = 1, numHighSymKP(i)
+
+            ! Initialize segmentDelta to avoid a compiler warning about a
+            !   variable being used before it was initialized. Useless because
+            !   segmentDelta will always be initialized. It just happens in
+            !   an _if_ statement.
+            segmentDelta(:) = 0.0_double
+
             if (j /= 1) then
 
                ! Determine the number of k points to use for the current

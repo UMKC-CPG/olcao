@@ -98,7 +98,7 @@ end subroutine matrixElementMultGamma
 #ifndef GAMMA
 
 subroutine readMatrix (datasetIDs,matrix,tempRealMatrix,tempImagMatrix,&
-         & matrixDims,dim1,dim2)
+         & matrixDims,dim1,dim2,immediateBroadcast)
 
    ! Import the precision variables and the type definitions.
    use O_Kinds
@@ -110,13 +110,14 @@ subroutine readMatrix (datasetIDs,matrix,tempRealMatrix,tempImagMatrix,&
    implicit none
 
    ! Define the passed parameters.
-   integer :: dim1
-   integer :: dim2
-   integer (hid_t), dimension (2) :: datasetIDs
-   complex (kind=double), dimension (dim1,dim2) :: matrix
-   real (kind=double), dimension (dim1,dim2) :: tempRealMatrix
-   real (kind=double), dimension (dim1,dim2) :: tempImagMatrix
-   integer (hsize_t), dimension (2) :: matrixDims
+   integer, intent(in) :: dim1
+   integer, intent(in) :: dim2
+   integer (hid_t), intent(in), dimension (2) :: datasetIDs
+   complex (kind=double), intent(out), dimension (dim1,dim2) :: matrix
+   real (kind=double), intent(out), dimension (dim1,dim2) :: tempRealMatrix
+   real (kind=double), intent(out), dimension (dim1,dim2) :: tempImagMatrix
+   integer (hsize_t), intent(in), dimension (2) :: matrixDims
+   integer, intent(in) :: immediateBroadcast
 
    ! Define local variables
    integer :: hdferr
@@ -126,9 +127,11 @@ subroutine readMatrix (datasetIDs,matrix,tempRealMatrix,tempImagMatrix,&
       call h5dread_f (datasetIDs(1),H5T_NATIVE_DOUBLE,tempRealMatrix(:,:),&
             & matrixDims,hdferr)
    endif
-   call MPI_BCAST(hdferr,1,MPI_INTEGER,0,MPI_COMM_WORLD,mpierr)
-   if (hdferr /= 0) then
-      call stopMPI("Failed to read temp real matrix.")
+   if (immediateBroadcast == 1) then
+      call MPI_BCAST(hdferr,1,MPI_INTEGER,0,MPI_COMM_WORLD,mpierr)
+      if (hdferr /= 0) then
+         call stopMPI("Failed to read temp real matrix.")
+      endif
    endif
 
    ! Read the imaginary part.
@@ -136,21 +139,26 @@ subroutine readMatrix (datasetIDs,matrix,tempRealMatrix,tempImagMatrix,&
       call h5dread_f (datasetIDs(2),H5T_NATIVE_DOUBLE,tempImagMatrix(:,:),&
             & matrixDims,hdferr)
    endif
-   call MPI_BCAST(hdferr,1,MPI_INTEGER,0,MPI_COMM_WORLD,mpierr)
-   if (hdferr /= 0) then
-      call stopMPI("Failed to read temp imag matrix.")
+   if (immediateBroadcast == 1) then
+      call MPI_BCAST(hdferr,1,MPI_INTEGER,0,MPI_COMM_WORLD,mpierr)
+      if (hdferr /= 0) then
+         call stopMPI("Failed to read temp imag matrix.")
+      endif
    endif
 
    ! Assign the wave function values.
    matrix(:,:) = cmplx(tempRealMatrix(:,:),tempImagMatrix(:,:),double)
-   call MPI_BCAST(matrix(:,:),dim1*dim2,MPI_DOUBLE_COMPLEX,0,&
-         & MPI_COMM_WORLD,mpierr)
+   if (immediateBroadcast == 1) then
+      call MPI_BCAST(matrix(:,:),dim1*dim2,MPI_DOUBLE_COMPLEX,0,&
+            & MPI_COMM_WORLD,mpierr)
+   endif
 
 end subroutine readMatrix
 
 #else
 
-subroutine readMatrixGamma (datasetID,matrix,matrixDims,dim1,dim2)
+subroutine readMatrixGamma (datasetID,matrix,matrixDims,dim1,dim2,&
+      & immediateBroadcast)
 
    ! Import the precision variables and the type definitions.
    use O_Kinds
@@ -162,11 +170,12 @@ subroutine readMatrixGamma (datasetID,matrix,matrixDims,dim1,dim2)
    implicit none
 
    ! Define the passed parameters.
-   integer :: dim1
-   integer :: dim2
-   integer (hid_t) :: datasetID
-   real (kind=double), dimension (dim1,dim2) :: matrix
-   integer (hsize_t), dimension (2) :: matrixDims
+   integer, intent(in) :: dim1
+   integer, intent(in) :: dim2
+   integer (hid_t), intent(in) :: datasetID
+   real (kind=double), intent(out), dimension (dim1,dim2) :: matrix
+   integer (hsize_t), intent(in), dimension (2) :: matrixDims
+   integer, intent(in) :: immediateBroadcast
 
    ! Define local variables
    integer :: hdferr
@@ -175,12 +184,14 @@ subroutine readMatrixGamma (datasetID,matrix,matrixDims,dim1,dim2)
    if (mpiRank == 0) then
       call h5dread_f (datasetID,H5T_NATIVE_DOUBLE,matrix(:,:),matrixDims,hdferr)
    endif
-   call MPI_BCAST(hdferr,1,MPI_INTEGER,0,MPI_COMM_WORLD,mpierr)
-   if (hdferr /= 0) then
-      call stopMPI("Failed to read real matrix.")
+   if (immediateBroadcast == 1) then
+      call MPI_BCAST(hdferr,1,MPI_INTEGER,0,MPI_COMM_WORLD,mpierr)
+      if (hdferr /= 0) then
+         call stopMPI("Failed to read real matrix.")
+      endif
+      call MPI_BCAST(matrix(:,:),dim1*dim2,MPI_DOUBLE_PRECISION,0,&
+            & MPI_COMM_WORLD,mpierr)
    endif
-   call MPI_BCAST(matrix(:,:),dim1*dim2,MPI_DOUBLE_PRECISION,0,&
-         & MPI_COMM_WORLD,mpierr)
 
 end subroutine readMatrixGamma
 
@@ -189,7 +200,7 @@ end subroutine readMatrixGamma
 ! This subroutine does not need two versions for the GAMMA and non-GAMMA cases,
 !   but it does need two versions for the accumulate and non-accumulate cases.
 subroutine readPackedMatrixAccum (datasetID,packedMatrix,tempPackedMatrix,&
-      & matrixDims,multFactor,dim1,dim2)
+      & matrixDims,multFactor,dim1,dim2,immediateBroadcast)
 
    ! Import the precision variables and the type definitions.
    use O_Kinds
@@ -201,13 +212,16 @@ subroutine readPackedMatrixAccum (datasetID,packedMatrix,tempPackedMatrix,&
    implicit none
 
    ! Define the passed parameters.
-   integer :: dim1
-   integer :: dim2
-   integer (hid_t) :: datasetID
-   real (kind=double), dimension (dim1,dim2*(dim2+1)/2) :: packedMatrix
-   real (kind=double), dimension (dim1,dim2*(dim2+1)/2) :: tempPackedMatrix
-   integer (hsize_t), dimension (2) :: matrixDims
-   real (kind=double) :: multFactor
+   integer, intent(in) :: dim1
+   integer, intent(in) :: dim2
+   integer (hid_t), intent(in) :: datasetID
+   real (kind=double), intent(inout), dimension (dim1,dim2*(dim2+1)/2) &
+         & :: packedMatrix
+   real (kind=double), intent(inout), dimension (dim1,dim2*(dim2+1)/2) &
+         & :: tempPackedMatrix
+   integer (hsize_t), intent(in), dimension (2) :: matrixDims
+   real (kind=double), intent(in) :: multFactor
+   integer, intent(in) :: immediateBroadcast
 
    ! Define local variables
    integer :: hdferr
@@ -217,9 +231,11 @@ subroutine readPackedMatrixAccum (datasetID,packedMatrix,tempPackedMatrix,&
       call h5dread_f (datasetID,H5T_NATIVE_DOUBLE,tempPackedMatrix,matrixDims,&
             & hdferr)
    endif
-   call MPI_BCAST(hdferr,1,MPI_INTEGER,0,MPI_COMM_WORLD,mpierr)
-   if (hdferr /= 0) then
-      call stopMPI("Failed to read packed matrix into a temp matrix.")
+   if (immediateBroadcast == 1) then
+      call MPI_BCAST(hdferr,1,MPI_INTEGER,0,MPI_COMM_WORLD,mpierr)
+      if (hdferr /= 0) then
+         call stopMPI("Failed to read packed matrix into a temp matrix.")
+      endif
    endif
 
    ! When reading the hamiltonian terms for the scf iterations, it is
@@ -230,13 +246,16 @@ subroutine readPackedMatrixAccum (datasetID,packedMatrix,tempPackedMatrix,&
    else
       packedMatrix = packedMatrix + tempPackedMatrix * multFactor
    endif
-   call MPI_BCAST(packedMatrix(:,:),dim1*dim2,MPI_DOUBLE_PRECISION,0,&
-         & MPI_COMM_WORLD,mpierr)
+   if (immediateBroadcast == 1) then
+      call MPI_BCAST(packedMatrix(:,:),dim1*dim2,MPI_DOUBLE_PRECISION,0,&
+            & MPI_COMM_WORLD,mpierr)
+   endif
 
 end subroutine readPackedMatrixAccum
 
 
-subroutine readPackedMatrix (datasetID,packedMatrix,matrixDims,dim1,dim2)
+subroutine readPackedMatrix (datasetID,packedMatrix,matrixDims,dim1,dim2,&
+      & immediateBroadcast)
 
    ! Import the precision variables and the type definitions.
    use O_Kinds
@@ -248,11 +267,13 @@ subroutine readPackedMatrix (datasetID,packedMatrix,matrixDims,dim1,dim2)
    implicit none
 
    ! Define the passed parameters.
-   integer :: dim1
-   integer :: dim2
-   integer (hid_t) :: datasetID
-   real (kind=double), dimension (dim1,dim2*(dim2+1)/2) :: packedMatrix
-   integer (hsize_t), dimension (2) :: matrixDims
+   integer, intent(in) :: dim1
+   integer, intent(in) :: dim2
+   integer (hid_t), intent(in) :: datasetID
+   real (kind=double), intent(out), dimension (dim1,dim2*(dim2+1)/2) &
+         & :: packedMatrix
+   integer (hsize_t), intent(in), dimension (2) :: matrixDims
+   integer, intent(in) :: immediateBroadcast
 
    ! Define local variables
    integer :: hdferr
@@ -261,12 +282,14 @@ subroutine readPackedMatrix (datasetID,packedMatrix,matrixDims,dim1,dim2)
    if (mpiRank == 0) then
       call h5dread_f (datasetID,H5T_NATIVE_DOUBLE,packedMatrix,matrixDims,hdferr)
    endif
-   call MPI_BCAST(hdferr,1,MPI_INTEGER,0,MPI_COMM_WORLD,mpierr)
-   if (hdferr /= 0) then
-      call stopMPI("Failed to read packed matrix.")
+   if (immediateBroadcast == 1) then
+      call MPI_BCAST(hdferr,1,MPI_INTEGER,0,MPI_COMM_WORLD,mpierr)
+      if (hdferr /= 0) then
+         call stopMPI("Failed to read packed matrix.")
+      endif
+      call MPI_BCAST(packedMatrix(:,:),dim1*dim2*(dim2+1)/2,&
+            & MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,mpierr)
    endif
-   call MPI_BCAST(packedMatrix(:,:),dim1*dim2*(dim2+1)/2,&
-         & MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,mpierr)
 
 end subroutine readPackedMatrix
 

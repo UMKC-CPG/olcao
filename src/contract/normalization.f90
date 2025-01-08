@@ -121,6 +121,7 @@ subroutine renormWaveFns
                   case default
                      write(6,*) "normalization.f90 subroutine: renormWaveFns"
                      write(6,*) "Only cases 1,2,3,4 for s,p,d,f are implemented"
+                     stop
                end select
 
                ! Accumulate the final renormalization coefficient.

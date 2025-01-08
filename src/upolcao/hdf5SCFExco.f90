@@ -67,6 +67,7 @@ subroutine initSCFExchCorrHDF5 (scf_fid,attribInt_dsid,attribIntDims,&
 
    ! Import any necessary definition modules.
    use HDF5
+   use O_MPI
    use O_SCFElecStatHDF5, only: potPot_plid, potPot_dsid
 
    ! Import necessary object modules.
@@ -99,6 +100,14 @@ subroutine initSCFExchCorrHDF5 (scf_fid,attribInt_dsid,attribIntDims,&
    potPot(2)       = potDim
    points(1)       = maxNumRayPoints
    numPoints(1)    = 1
+
+   ! Allocate space to hold the IDs for the datasets in the exchCorrGroup.
+   allocate (numPoints_did(numPotSites))
+   allocate (exchRhoOp_did(numPotSites))
+   allocate (radialWeight_did(numPotSites))
+
+   ! Only process 0 opens the HDF5 structure.
+   if (mpiRank /= 0) return
 
    ! Create the exchange correlation group within the scf_fid.
    call h5gcreate_f (scf_fid,"/exchCorrGroup",exchCorrGroup_gid,hdferr)
@@ -134,11 +143,6 @@ subroutine initSCFExchCorrHDF5 (scf_fid,attribInt_dsid,attribIntDims,&
    if (hdferr /= 0) stop 'Failed to set potPoints deflate property.'
    call h5pset_deflate_f   (points_plid,1,hdferr)
    if (hdferr /= 0) stop 'Failed to set points deflate property.'
-
-   ! Allocate space to hold the IDs for the datasets in the exchCorrGroup.
-   allocate (numPoints_did(numPotSites))
-   allocate (exchRhoOp_did(numPotSites))
-   allocate (radialWeight_did(numPotSites))
 
    ! Create the datasets that will be used for the exchCorrGroup.
    call h5dcreate_f(exchCorrGroup_gid,"exchCorrOverlap",H5T_NATIVE_DOUBLE,&
@@ -182,6 +186,7 @@ subroutine accessSCFExchCorrHDF5 (scf_fid)
 
    ! Import any necessary definition modules.
    use HDF5
+   use O_MPI
 
    ! Import necessary object modules.
    use O_PotSites, only: numPotSites
@@ -209,63 +214,67 @@ subroutine accessSCFExchCorrHDF5 (scf_fid)
    !   something isn't there.)
    numPoints(1) = 1
 
-   ! Open the exchange correlation group within the scf_fid.
-   call h5gopen_f (scf_fid,"/exchCorrGroup",exchCorrGroup_gid,hdferr)
-   if (hdferr /= 0) stop 'Failed to open exchange correlation group'
-
-
    ! Allocate space to hold the IDs for the datasets in the exchCorrGroup.
    allocate (numPoints_did(numPotSites))
    allocate (exchRhoOp_did(numPotSites))
    allocate (radialWeight_did(numPotSites))
 
-   ! Open the datasets that will be used for the exchCorrGroup.
-   call h5dopen_f(exchCorrGroup_gid,"exchCorrOverlap",exchCorrOverlap_did,&
-         & hdferr)
-   if (hdferr /= 0) stop 'Failed to open the exchCorrOverlap did.'
-   do i = 1, numPotSites
-      write (currentName,*) i,"nP"
-      currentName = trim (currentName)
-      call h5dopen_f(exchCorrGroup_gid,currentName,numPoints_did(i),hdferr)
-      if (hdferr /= 0) stop 'Failed to open the numPoints did.'
-      write (currentName,*) i,"rW"
-      currentName = trim (currentName)
-      call h5dopen_f(exchCorrGroup_gid,currentName,radialWeight_did(i),hdferr)
-      if (hdferr /= 0) stop 'Failed to open the radialWeight did.'
-      write (currentName,*) i,"eRO"
-      currentName = trim (currentName)
-      call h5dopen_f(exchCorrGroup_gid,currentName,exchRhoOp_did(i),hdferr)
-      if (hdferr /= 0) stop 'Failed to open the exchRhoOp did.'
-   enddo
+   if (mpiRank == 0) then
 
-   ! Obtain the property lists.  Read note for integrals and plid numbers in
-   !   accessSetupIntegralHDF5.
-   call h5dget_create_plist_f (exchRhoOp_did(1),potPoints_plid,hdferr)
-   if (hdferr /= 0) stop 'Failed to obtain pot points plid'
-   call h5dget_create_plist_f (radialWeight_did(1),points_plid,hdferr)
-   if (hdferr /= 0) stop 'Failed to obtain points plid'
+      ! Open the exchange correlation group within the scf_fid.
+      call h5gopen_f (scf_fid,"/exchCorrGroup",exchCorrGroup_gid,hdferr)
+      if (hdferr /= 0) stop 'Failed to open exchange correlation group'
 
-   ! Obtain the dataspaces that will be used for each dataset in the
-   !   exchCorrGroup.  Read note for integrals and dsid numbers in
-   !   accessSetupIntegralHDF5.
-   call h5dget_space_f(numPoints_did(1),numPoints_dsid,hdferr)
-   if (hdferr /= 0) stop 'Failed to obtain numPoints dsid.'
-   call h5dget_space_f(exchRhoOp_did(1),potPoints_dsid,hdferr)
-   if (hdferr /= 0) stop 'Failed to obtain potPoints dsid.'
-   call h5dget_space_f(radialWeight_did(1),points_dsid,hdferr)
-   if (hdferr /= 0) stop 'Failed to obtain points dsid.'
+      ! Open the datasets that will be used for the exchCorrGroup.
+      call h5dopen_f(exchCorrGroup_gid,"exchCorrOverlap",exchCorrOverlap_did,&
+            & hdferr)
+      if (hdferr /= 0) stop 'Failed to open the exchCorrOverlap did.'
+      do i = 1, numPotSites
+         write (currentName,*) i,"nP"
+         currentName = trim (currentName)
+         call h5dopen_f(exchCorrGroup_gid,currentName,numPoints_did(i),hdferr)
+         if (hdferr /= 0) stop 'Failed to open the numPoints did.'
+         write (currentName,*) i,"rW"
+         currentName = trim (currentName)
+         call h5dopen_f(exchCorrGroup_gid,currentName,radialWeight_did(i),&
+               & hdferr)
+         if (hdferr /= 0) stop 'Failed to open the radialWeight did.'
+         write (currentName,*) i,"eRO"
+         currentName = trim (currentName)
+         call h5dopen_f(exchCorrGroup_gid,currentName,exchRhoOp_did(i),hdferr)
+         if (hdferr /= 0) stop 'Failed to open the exchRhoOp did.'
+      enddo
 
-   ! Obtain the maximum number of ray points of all potential sites in the
-   !   system in order to define the size of the stored matrices.
-   do i = 1, numPotSites
+      ! Obtain the property lists.  Read note for integrals and plid numbers in
+      !   accessSetupIntegralHDF5.
+      call h5dget_create_plist_f (exchRhoOp_did(1),potPoints_plid,hdferr)
+      if (hdferr /= 0) stop 'Failed to obtain pot points plid'
+      call h5dget_create_plist_f (radialWeight_did(1),points_plid,hdferr)
+      if (hdferr /= 0) stop 'Failed to obtain points plid'
 
-      ! Num ray points for this potSite.
-      call h5dread_f (numPoints_did(i),H5T_NATIVE_INTEGER,&
-            & tempNumRayPoints,numPoints,hdferr)
+      ! Obtain the dataspaces that will be used for each dataset in the
+      !   exchCorrGroup.  Read note for integrals and dsid numbers in
+      !   accessSetupIntegralHDF5.
+      call h5dget_space_f(numPoints_did(1),numPoints_dsid,hdferr)
+      if (hdferr /= 0) stop 'Failed to obtain numPoints dsid.'
+      call h5dget_space_f(exchRhoOp_did(1),potPoints_dsid,hdferr)
+      if (hdferr /= 0) stop 'Failed to obtain potPoints dsid.'
+      call h5dget_space_f(radialWeight_did(1),points_dsid,hdferr)
+      if (hdferr /= 0) stop 'Failed to obtain points dsid.'
 
-      ! Max of all read in.
-      tempMaxNumRayPoints = max(tempMaxNumRayPoints,tempNumRayPoints)
-   enddo
+      ! Obtain the maximum number of ray points of all potential sites in the
+      !   system in order to define the size of the stored matrices.
+      do i = 1, numPotSites
+
+         ! Num ray points for this potSite.
+         call h5dread_f (numPoints_did(i),H5T_NATIVE_INTEGER,&
+               & tempNumRayPoints,numPoints,hdferr)
+
+         ! Max of all read in.
+         tempMaxNumRayPoints = max(tempMaxNumRayPoints,tempNumRayPoints)
+      enddo
+   endif
+   call MPI_BCAST(tempMaxNumRayPoints,1,MPI_INTEGER,0,MPI_COMM_WORLD,mpierr)
 
    ! Define the dimensions of the remaining HDF5 stored matrices.
    potPoints(1) = potDim
@@ -275,11 +284,13 @@ subroutine accessSCFExchCorrHDF5 (scf_fid)
    else
       potPoints(3) = 10
    endif
-   points(1)    = tempMaxNumRayPoints
+   points(1) = tempMaxNumRayPoints
 
    ! Open the attribute that records the completion status.
-   call h5aopen_f(exchCorrGroup_gid,"status",exchCorrGroup_aid,hdferr)
-   if (hdferr /= 0) stop 'Failed to open exchCorrGroup_aid'
+   if (mpiRank == 0) then
+      call h5aopen_f(exchCorrGroup_gid,"status",exchCorrGroup_aid,hdferr)
+      if (hdferr /= 0) stop 'Failed to open exchCorrGroup_aid'
+   endif
 
 end subroutine accessSCFExchCorrHDF5
 
@@ -289,6 +300,7 @@ subroutine closeSCFExchCorrHDF5
 
    ! Import any necessary definition modules.
    use HDF5
+   use O_MPI
 
    ! Import necessary object modules.
    use O_PotSites, only: numPotSites
@@ -302,34 +314,36 @@ subroutine closeSCFExchCorrHDF5
 
    ! Close all access to the exchange correlation parts of the HDF file
    !   for setup.
+   if (mpiRank == 0) then
 
-   ! Close the property lists first.
-   call h5pclose_f (potPoints_plid,hdferr)
-   if (hdferr /= 0) stop 'Failed to close potPoints_plid.'
-   call h5pclose_f (points_plid,hdferr)
-   if (hdferr /= 0) stop 'Failed to close points_plid.'
+      ! Close the property lists first.
+      call h5pclose_f (potPoints_plid,hdferr)
+      if (hdferr /= 0) stop 'Failed to close potPoints_plid.'
+      call h5pclose_f (points_plid,hdferr)
+      if (hdferr /= 0) stop 'Failed to close points_plid.'
 
-   ! Close the datasets next.
-   do i = 1, numPotSites
-      call h5dclose_f (numPoints_did(i),hdferr)
-      if (hdferr /= 0) stop 'Failed to close numPoints_did.'
-      call h5dclose_f (exchRhoOp_did(i),hdferr)
-      if (hdferr /= 0) stop 'Failed to close exchRhoOp_did.'
-      call h5dclose_f (radialWeight_did(i),hdferr)
-      if (hdferr /= 0) stop 'Failed to close radialWeight_did.'
-   enddo
+      ! Close the datasets next.
+      do i = 1, numPotSites
+         call h5dclose_f (numPoints_did(i),hdferr)
+         if (hdferr /= 0) stop 'Failed to close numPoints_did.'
+         call h5dclose_f (exchRhoOp_did(i),hdferr)
+         if (hdferr /= 0) stop 'Failed to close exchRhoOp_did.'
+         call h5dclose_f (radialWeight_did(i),hdferr)
+         if (hdferr /= 0) stop 'Failed to close radialWeight_did.'
+      enddo
 
-   ! Attributes are closed when checked or written.
+      ! Attributes are closed when checked or written.
 
-   ! Close the data spaces next.
-   call h5sclose_f (potPoints_dsid,hdferr)
-   if (hdferr /= 0) stop 'Failed to close potPoints_dsid.'
-   call h5sclose_f (points_dsid,hdferr)
-   if (hdferr /= 0) stop 'Failed to close points_dsid.'
+      ! Close the data spaces next.
+      call h5sclose_f (potPoints_dsid,hdferr)
+      if (hdferr /= 0) stop 'Failed to close potPoints_dsid.'
+      call h5sclose_f (points_dsid,hdferr)
+      if (hdferr /= 0) stop 'Failed to close points_dsid.'
 
-   ! Close the groups.
-   call h5gclose_f (exchCorrGroup_gid,hdferr)
-   if (hdferr /= 0) stop 'Failed to close exchCorrGroup_gid.'
+      ! Close the groups.
+      call h5gclose_f (exchCorrGroup_gid,hdferr)
+      if (hdferr /= 0) stop 'Failed to close exchCorrGroup_gid.'
+   endif
 
    ! Deallocate space that holds the IDs for the datasets in the exchCorrGroup.
    deallocate (numPoints_did)

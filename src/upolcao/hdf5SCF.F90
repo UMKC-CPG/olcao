@@ -40,6 +40,7 @@ subroutine initHDF5_SCF (maxNumRayPoints, numStates)
 
    ! Use the HDF5 module.
    use HDF5
+   use O_MPI
 
    ! Use the subsection object modules for scf.
    use O_SCFIntegralsHDF5
@@ -66,62 +67,71 @@ subroutine initHDF5_SCF (maxNumRayPoints, numStates)
    ! Log the time we start to setup the SCF HDF5 files.
    call timeStampStart(6)
 
-   ! Initialize the Fortran 90 HDF5 interface.
-   call h5open_f(hdferr)
-   if (hdferr < 0) stop 'Failed to open HDF library'
+   if (mpiRank == 0) then
 
-   ! Identify the file name of the hdf5 file we need to create/open.
-   if (excitedQN_n == 0) then
-      write(edge,fmt="(a)") "gs"
-   else
-      if (excitedQN_l == 0) then
-         write(edge,fmt="(i1,a1)") excitedQN_n, "s"
-      elseif (excitedQN_l == 1) then
-         write(edge,fmt="(i1,a1)") excitedQN_n, "p"
-      elseif (excitedQN_l == 2) then
-         write(edge,fmt="(i1,a1)") excitedQN_n, "d"
-      elseif (excitedQN_l == 3) then
-         write(edge,fmt="(i1,a1)") excitedQN_n, "f"
-      elseif (excitedQN_l == 4) then
-         write(edge,fmt="(i1,a1)") excitedQN_n, "g"
+      ! Initialize the Fortran 90 HDF5 interface.
+      call h5open_f(hdferr)
+      if (hdferr < 0) stop 'Failed to open HDF library'
+
+      ! Identify the file name of the hdf5 file we need to create/open.
+      if (excitedQN_n == 0) then
+         write(edge,fmt="(a)") "gs"
+      else
+         if (excitedQN_l == 0) then
+            write(edge,fmt="(i1,a1)") excitedQN_n, "s"
+         elseif (excitedQN_l == 1) then
+            write(edge,fmt="(i1,a1)") excitedQN_n, "p"
+         elseif (excitedQN_l == 2) then
+            write(edge,fmt="(i1,a1)") excitedQN_n, "d"
+         elseif (excitedQN_l == 3) then
+            write(edge,fmt="(i1,a1)") excitedQN_n, "f"
+         elseif (excitedQN_l == 4) then
+            write(edge,fmt="(i1,a1)") excitedQN_n, "g"
+         endif
       endif
-   endif
-   if (basisCode_SCF == 1) then
-      write(fileName,fmt="(a2,a12)") edge,"_scf-mb.hdf5"
-   elseif (basisCode_SCF == 2) then
-      write(fileName,fmt="(a2,a12)") edge,"_scf-fb.hdf5"
-   elseif (basisCode_SCF == 3) then
-      write(fileName,fmt="(a2,a12)") edge,"_scf-eb.hdf5"
-   endif
+      if (basisCode_SCF == 1) then
+         write(fileName,fmt="(a2,a12)") edge,"_scf-mb.hdf5"
+      elseif (basisCode_SCF == 2) then
+         write(fileName,fmt="(a2,a12)") edge,"_scf-fb.hdf5"
+      elseif (basisCode_SCF == 3) then
+         write(fileName,fmt="(a2,a12)") edge,"_scf-eb.hdf5"
+      endif
 
 
-   ! Create the property list for the scf hdf5 file and turn off
-   !   chunk caching.
-   call h5pcreate_f (H5P_FILE_ACCESS_F,scf_plid,hdferr)
-   if (hdferr /= 0) stop 'Failed to create scf plid.'
-   call h5pget_cache_f (scf_plid,mdc_nelmts,rdcc_nelmts,rdcc_nbytes,rdcc_w0,&
-         & hdferr)
-   if (hdferr /= 0) stop 'Failed to get scf plid cache settings.'
-   call h5pset_cache_f (scf_plid,mdc_nelmts,0_size_t,0_size_t,rdcc_w0,hdferr)
-   if (hdferr /= 0) stop 'Failed to set scf plid cache settings.'
+      ! Create the property list for the scf hdf5 file and turn off
+      !   chunk caching.
+      call h5pcreate_f (H5P_FILE_ACCESS_F,scf_plid,hdferr)
+      if (hdferr /= 0) stop 'Failed to create scf plid.'
+      call h5pget_cache_f (scf_plid,mdc_nelmts,rdcc_nelmts,rdcc_nbytes,&
+            & rdcc_w0,hdferr)
+      if (hdferr /= 0) stop 'Failed to get scf plid cache settings.'
+      call h5pset_cache_f (scf_plid,mdc_nelmts,0_size_t,0_size_t,rdcc_w0,&
+            & hdferr)
+      if (hdferr /= 0) stop 'Failed to set scf plid cache settings.'
+   endif
 
    ! Determine if an HDF5 file already exists for this calculation.
-   inquire (file=fileName, exist=file_exists)
+   if (mpiRank == 0) then
+      inquire (file=fileName, exist=file_exists)
+   endif
+   call MPI_BCAST(file_exists,1,MPI_LOGICAL,0,MPI_COMM_WORLD,mpierr)
 
    ! If it does, then access the existing file. If not, then create one.
    if (file_exists .eqv. .true.) then
       ! We are continuing a previous calculation.
 
       ! Open the HDF5 file for reading / writing.
-      call h5fopen_f (fileName,H5F_ACC_RDWR_F,scf_fid,hdferr,&
-            & scf_plid)
-      if (hdferr /= 0) stop 'Failed to open scf hdf5 file.'
+      if (mpiRank == 0) then
+         call h5fopen_f (fileName,H5F_ACC_RDWR_F,scf_fid,hdferr,&
+               & scf_plid)
+         if (hdferr /= 0) stop 'Failed to open scf hdf5 file.'
+      endif
 
       ! Access the groups of the HDF5 file.
       call accessSCFIntegralHDF5 (scf_fid)
       call accessSCFElecStatHDF5 (scf_fid)
       call accessSCFExchCorrHDF5 (scf_fid)
-      call accessSCFEigVecHDF5 (scf_fid,attribInt_dsid,attribIntDims,numStates)
+      call accessSCFEigVecHDF5 (scf_fid,numStates)
       call accessSCFEigValHDF5 (scf_fid,numStates)
       call accessSCFPotRhoHDF5 (scf_fid)
 
@@ -130,21 +140,25 @@ subroutine initHDF5_SCF (maxNumRayPoints, numStates)
 
       ! Create the HDF5 file that will hold all the computed results. This
       !   uses the default file creation and file access properties.
-      call h5fcreate_f (fileName,H5F_ACC_EXCL_F,scf_fid,hdferr,&
-            & H5P_DEFAULT_F,scf_plid)
-      if (hdferr /= 0) stop 'Failed to create scf hdf5 file.'
+      if (mpiRank == 0) then
+         call h5fcreate_f (fileName,H5F_ACC_EXCL_F,scf_fid,hdferr,&
+               & H5P_DEFAULT_F,scf_plid)
+         if (hdferr /= 0) stop 'Failed to create scf hdf5 file.'
+      endif
 
       ! All datasets will have an attached attribute logging that the
       !   calculation has successfully completed. (Checkpointing.) Thus,
       !   we need to create the shared attribute dataspace.
       attribIntDims(1) = 1
-      call h5screate_simple_f (1,attribIntDims(1),attribInt_dsid,hdferr)
-      if (hdferr /= 0) stop 'Failed to create the attribInt_dsid'
+      if (mpiRank == 0) then
+         call h5screate_simple_f (1,attribIntDims(1),attribInt_dsid,hdferr)
+         if (hdferr /= 0) stop 'Failed to create the attribInt_dsid'
+      endif
 
       ! Create the subgroups of the scf hdf5 file. This must be done in this
       !   order due to dependencies on potPot_dsid and others.
       call initSCFIntegralHDF5 (scf_fid,attribInt_dsid,attribIntDims)
-      call initSCFElecStatHDF5 (scf_fid,attribInt_dsid,attribIntDims)
+      call initSCFElecStatHDF5 (scf_fid,attribInt_dsid)
       call initSCFExchCorrHDF5 (scf_fid,attribInt_dsid,attribIntDims,&
             & maxNumRayPoints)
       call initSCFEigVecHDF5 (scf_fid,attribInt_dsid,attribIntDims,numStates)
@@ -163,6 +177,7 @@ subroutine closeHDF5_SCF
 
    ! Use the HDF5 module.
    use HDF5
+   use O_MPI
 
    ! Use the subsection object modules for scf.
    use O_SCFIntegralsHDF5, only: closeSCFIntegralHDF5
@@ -186,17 +201,20 @@ subroutine closeHDF5_SCF
    call closeSCFEigValHDF5
    call closeSCFPotRhoHDF5
 
-   ! Close the property list.
-   call h5pclose_f (scf_plid,hdferr)
-   if (hdferr /= 0) stop 'Failed to close scf_plid.'
+   if (mpiRank == 0) then
 
-   ! Close the file.
-   call h5fclose_f (scf_fid,hdferr)
-   if (hdferr /= 0) stop 'Failed to close scf_fid.'
+      ! Close the property list.
+      call h5pclose_f (scf_plid,hdferr)
+      if (hdferr /= 0) stop 'Failed to close scf_plid.'
 
-   ! Close access to the HDF5 interface.
-   call h5close_f (hdferr)
-   if (hdferr /= 0) stop 'Failed to close the HDF5 interface.'
+      ! Close the file.
+      call h5fclose_f (scf_fid,hdferr)
+      if (hdferr /= 0) stop 'Failed to close scf_fid.'
+
+      ! Close access to the HDF5 interface.
+      call h5close_f (hdferr)
+      if (hdferr /= 0) stop 'Failed to close the HDF5 interface.'
+   endif
 
 end subroutine closeHDF5_SCF
 

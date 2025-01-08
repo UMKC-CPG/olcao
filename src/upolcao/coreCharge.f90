@@ -514,8 +514,10 @@ subroutine makeCoreRho
             & currNumPotAlphas,coreBasisOverlap(:currNumPotAlphas,:),info)
 
       if (info /= 0) then
-         write (20, *) 'Core charge dposvx failed. INFO= ', info
-         stop
+         if (mpiRank == 0) then
+            write (20, *) 'Core charge dposvx failed. INFO= ', info
+         endif
+         call stopMPI("")
       endif
 
       ! Copy the solution to a better named array.  (This is (G).)  Note that
@@ -531,8 +533,10 @@ subroutine makeCoreRho
 
       ! Report the integrated core charge density as represented by Gaussian
       !   functions before normalization.
-      write (20,*) "Core rho before correction for type       ",currType, " = ", &
-            & currFittedCharge
+      if (mpiRank == 0) then
+         write (20,*) "Core rho before correction for type       ", &
+               & currType, " = ", currFittedCharge
+      endif
 
       ! Compute the number of core electrons for the atom at the current
       !   potential site (index i).
@@ -544,10 +548,12 @@ subroutine makeCoreRho
             & coreCoeffs(:currNumPotAlphas) * &
             & currNumCoreElectrons / currFittedCharge
 
-      write (20,*) "Fitted core rho after correction for type ",currType, &
-            & " = ", dot_product( &
-            & coreCoeffsCorrected(:currNumPotAlphas), &
-            & coreIntegrals(:currNumPotAlphas))
+      if (mpiRank == 0) then
+         write (20,*) "Fitted core rho after correction for type ",currType, &
+               & " = ", dot_product( &
+               & coreCoeffsCorrected(:currNumPotAlphas), &
+               & coreIntegrals(:currNumPotAlphas))
+      endif
 
       ! Find the lagrange multiplier for exact charge
       delta = (currNumCoreElectrons - &

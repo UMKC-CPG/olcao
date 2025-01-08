@@ -22,7 +22,7 @@ subroutine computeBond (inSCF)
    use O_AtomicSites, only: valeDim, numAtomSites, atomSites
    use O_Constants,   only: pi, hartree, bigThresh, smallThresh
    use O_Input,       only: numStates, sigmaBOND, eminBOND, emaxBOND, &
-         & deltaBOND, maxBL, outputCodeBondQ, excitedAtomPACS, maxNumNeighbors
+         & deltaBOND, maxBL, outputCodeBondQ, maxNumNeighbors!, excitedAtomPACS
 #ifndef GAMMA
    use O_SecularEquation, only: valeVale, valeValeOL, energyEigenValues, &
          & readDataSCF, readDataPSCF
@@ -45,8 +45,8 @@ subroutine computeBond (inSCF)
    integer, allocatable, dimension (:) :: chargeIndex
    integer, allocatable, dimension (:) :: numAtomBasisFns
    integer, allocatable, dimension (:) :: numAtomsBonded
-   integer, allocatable, dimension (:) :: bondedAtomID
-   integer, allocatable, dimension (:) :: bondedTypeID
+   !integer, allocatable, dimension (:) :: bondedAtomID
+   !integer, allocatable, dimension (:) :: bondedTypeID
    integer, allocatable, dimension (:) :: currentBonds
    integer, allocatable, dimension (:) :: numBondAngles
    integer, allocatable, dimension (:,:,:) :: bondAngleAtoms
@@ -68,7 +68,7 @@ subroutine computeBond (inSCF)
    integer :: valeDimIndex
    integer :: numSystemBonds
    integer :: minDistCount
-   integer :: bondedAtomCounter
+   !integer :: bondedAtomCounter
    integer :: numEnergyPoints
    integer :: stateSpinKPointIndex
    real (kind=double) :: oneValeRealAccum
@@ -76,26 +76,26 @@ subroutine computeBond (inSCF)
    real (kind=double) :: systemBondOrder
    real (kind=double) :: minDistMag
    real (kind=double) :: currentDistMag
-   real (kind=double) :: expAlpha
-   real (kind=double) :: expFactor
+   !real (kind=double) :: expAlpha
+   !real (kind=double) :: expFactor
    real (kind=double) :: sigmaSqrtPi
    real (kind=double), dimension (3) :: currentDistance
    real (kind=double), allocatable, dimension (:)      :: atomCharge
    real (kind=double), allocatable, dimension (:)      :: atomChargeTotal
    real (kind=double), allocatable, dimension (:)      :: bondOrderTotal
    real (kind=double), allocatable, dimension (:)      :: bondLengthTotal
-   real (kind=double), allocatable, dimension (:)      :: energyScale
+   !real (kind=double), allocatable, dimension (:)      :: energyScale
    real (kind=double), allocatable, dimension (:)      :: bondOrderEnergyDep !
          ! Energy dep. bond order for the *target atom* in a PACS calculations.
          ! Index range is maxNumNeighbors.
-   real (kind=double), allocatable, dimension (:)      :: bondOrderAllEnergy
-   real (kind=double), allocatable, dimension (:)      :: totalCalcBondOrder
+   !real (kind=double), allocatable, dimension (:)      :: bondOrderAllEnergy
+   !real (kind=double), allocatable, dimension (:)      :: totalCalcBondOrder
    real (kind=double), allocatable, dimension (:,:)    :: atomOrbitalCharge
    real (kind=double), allocatable, dimension (:,:)    :: bondLength
    real (kind=double), allocatable, dimension (:,:)    :: bondOrder
    real (kind=double), allocatable, dimension (:,:)    :: bondAngle
    real (kind=double), allocatable, dimension (:,:)    :: bondedDist
-   real (kind=double), allocatable, dimension (:,:)    :: bondCompleteAtom
+   !real (kind=double), allocatable, dimension (:,:)    :: bondCompleteAtom
 #ifndef GAMMA
    complex (kind=double), allocatable, dimension (:) :: waveFnSqrd
 #else
@@ -207,21 +207,21 @@ subroutine computeBond (inSCF)
    allocate (bondLength         (numAtomSites,numAtomSites))
    allocate (atomCharge         (numAtomSites))
    allocate (atomOrbitalCharge  (numAtomSites,maxNumStates))
-   if (excitedAtomPACS .ne. 0) then
-      allocate (energyScale         (numEnergyPoints))
-      allocate (bondCompleteAtom    (numEnergyPoints,maxNumNeighbors))
-      allocate (bondOrderAllEnergy  (maxNumNeighbors))
-      allocate (bondedAtomID        (maxNumNeighbors))
-      allocate (bondedTypeID        (maxNumNeighbors))
-      allocate (totalCalcBondOrder  (maxNumNeighbors))
-   endif
-
-   ! Assign values to the energy scale if necessary.
-   if (excitedAtomPACS .ne. 0) then
-      do i = 1, numEnergyPoints
-         energyScale(i) = eminBOND + (i-1) * deltaBOND
-      enddo
-   endif
+!   if (excitedAtomPACS .ne. 0) then
+!      allocate (energyScale         (numEnergyPoints))
+!      allocate (bondCompleteAtom    (numEnergyPoints,maxNumNeighbors))
+!      allocate (bondOrderAllEnergy  (maxNumNeighbors))
+!      allocate (bondedAtomID        (maxNumNeighbors))
+!      allocate (bondedTypeID        (maxNumNeighbors))
+!      allocate (totalCalcBondOrder  (maxNumNeighbors))
+!   endif
+!
+!   ! Assign values to the energy scale if necessary.
+!   if (excitedAtomPACS .ne. 0) then
+!      do i = 1, numEnergyPoints
+!         energyScale(i) = eminBOND + (i-1) * deltaBOND
+!      enddo
+!   endif
 
    do h = 1, spin
 
@@ -230,13 +230,6 @@ subroutine computeBond (inSCF)
       bondLength         (:,:) = 0.0_double
       atomCharge         (:)   = 0.0_double
       atomOrbitalCharge  (:,:) = 0.0_double
-      if (excitedAtomPACS .ne. 0) then
-         bondCompleteAtom    (:,:) = 0.0_double
-         bondOrderAllEnergy  (:)   = 0.0_double
-         bondedAtomCounter       = 0
-         bondedAtomID        (:) = 0
-         bondedTypeID        (:) = 0
-      endif
 
       ! Begin accumulating the BOND values over each kpoint
       do i = 1, numKPoints
@@ -260,186 +253,186 @@ subroutine computeBond (inSCF)
             ! Initialize the bond order for energy dependency.
             bondOrderEnergyDep (:) = 0.0_double
 
-            ! Begin with the energy dependent computation including all energy
-            !   states.  Note that only the chosen excited atom is considered.
-            !   If the excited atom in the bond order input is set to zero,
-            !   then this part of the computation does not proceed.
-
-            if (excitedAtomPACS .ne. 0) then
-
-               ! Initialize the indices of the first atom. (1) = init, (2) = fin
-               atom1Index(1) = 0
-               atom1Index(2) = 0
-
-               ! Loop over all atoms up to the excited atom to determine the
-               !   atom1Index of the excited atom.
-               do k = 1, excitedAtomPACS
-
-                  ! Identify the indices of the current atom from loop (k).
-                  atom1Index(1) = atom1Index(2) + 1
-                  atom1Index(2) = atom1Index(1) + numAtomBasisFns(k) - 1
-               enddo
-
-               ! Initialize the indices of the second atom. 1 = init, 2 = fin
-               atom2Index(1) = 0
-               atom2Index(2) = 0
-
-               ! Initialize the index for the number of bonded atoms.
-               bondedAtomCounter = 0
-
-               ! Begin a loop over all the other atoms.
-               do l = 1, numAtomSites
-
-                  ! Identify the indices of the current atom from loop (l).
-                  atom2Index(1) = atom2Index(2) + 1
-                  atom2Index(2) = atom2Index(1) + numAtomBasisFns(l) - 1
-
-
-                  ! Determine the smallest distance between the atoms of the
-                  !   two loops (k) and (l).
-
-                  ! Initialize the min distance to an impossibly large number.
-                  minDistMag = bigThresh
-
-                  ! Initialize a counter for the number of atoms that are
-                  !   within the max bond length parameter.
-                  minDistCount = 0
-
-                  ! Search the original cell and neighboring 124 cells to find
-                  !   the minimum distance between atom (k) and atom (l).
-                  do m = -2,2
-                  do n = -2,2
-                  do o = -2,2
-
-                     ! Compute seperation vector for the atoms in this combo.
-                     currentDistance(:) = &
-                           & atomSites(excitedAtomPACS)%cartPos(:) - &
-                           & atomSites(l)%cartPos(:) - &
-                           & m * realVectors(:,1) - &
-                           & n * realVectors(:,2) - &
-                           & o * realVectors(:,3)
-
-                     ! Compute the distance for the atoms of this cell combo.
-                     currentDistMag = sqrt(sum(currentDistance(:)**2))
-
-                     ! Compare the current magnitude to the current minimum.
-                     if (currentDistMag < minDistMag .and. &
-                           & abs(currentDistMag) > smallThresh) then
-                        minDistMag = currentDistMag
-                     endif
-
-                     ! Check if this currentDistMag is less than the cut-off
-                     !   radius.  If so, then increment the counter for this
-                     !   atom pair.  This is done in case a replicated atom has
-                     !   more than one configuration where it is sufficiently
-                     !   close to the current target atom that it regesters an
-                     !   overlap.  This effect is not really implemented yet
-                     !   because the minDistMag will have to track all the
-                     !   nearest atoms, not just the closest one.
-                     if (currentDistMag < maxBL .and. &
-                           & abs(currentDistMag) > smallThresh) then
-                        minDistCount = minDistCount + 1
-                     endif
-                  enddo
-                  enddo
-                  enddo
-
-                  ! Determine if any image atoms are within the cut-off radius.
-                  if (minDistCount > 0) then
-
-                     ! Track indices and IDs for the atoms that bond to the
-                     !    excited atom.
-
-                     ! Increment the number of atoms that are bonded with the
-                     !   excited atom.
-                     bondedAtomCounter = bondedAtomCounter + 1
-
-                     ! Record the atom ID number for this atom that bonds with
-                     !   the excited atom.
-                     bondedAtomID(bondedAtomCounter) = l
-
-                     ! Store the determined minimum bond length for this pair.
-                     bondLength(excitedAtomPACS,l) = minDistMag
-
-                     ! Loop over the atom 1 states against the atom 2 states
-                     !   for this band.
-                     do m = atom1Index(1),atom1Index(2)
-
-#ifndef GAMMA
-                        ! Compute ^2 of the wave function for each element.
-                        waveFnSqrd(atom2Index(1):atom2Index(2)) = &
-                              & conjg(valeVale(m,j,1)) * &
-                              & valeVale(atom2Index(1):atom2Index(2),j,1)
-
-                        ! Compute the effects of overlap for the real part
-                        !   only (real*real) + (imag*imag).
-                        oneValeRealAccum = sum(&
-                              & real (waveFnSqrd(atom2Index(1):&
-                              & atom2Index(2)),double) * &
-                              & real (valeValeOL(atom2Index(1):&
-                              & atom2Index(2),m),double) + &
-                              & aimag(waveFnSqrd(atom2Index(1):&
-                              & atom2Index(2)))*&
-                              & aimag(valeValeOL(atom2Index(1):&
-                              & atom2Index(2),m)))
-#else
-                        ! Compute ^2 of the wave function for each element.
-                        waveFnSqrdGamma(atom2Index(1):atom2Index(2)) = &
-                              & valeValeGamma(m,j,1) * &
-                              & valeValeGamma(atom2Index(1):atom2Index(2),j,1)
-
-                        ! Compute the effects of overlap for the real part
-                        !   only (real*real) + (imag*imag).
-                        oneValeRealAccum = sum(&
-                              & waveFnSqrdGamma(atom2Index(1):&
-                              & atom2Index(2)) * &
-                              & valeValeOLGamma(atom2Index(1):&
-                              & atom2Index(2),m))
-#endif
-
-                        ! Store the atom pair bond order contribution for this
-                        !   energy level.
+!            ! Begin with the energy dependent computation including all energy
+!            !   states.  Note that only the chosen excited atom is considered.
+!            !   If the excited atom in the bond order input is set to zero,
+!            !   then this part of the computation does not proceed.
+!
+!            if (excitedAtomPACS .ne. 0) then
+!
+!               ! Initialize the indices of the first atom. (1) = init, (2) = fin
+!               atom1Index(1) = 0
+!               atom1Index(2) = 0
+!
+!               ! Loop over all atoms up to the excited atom to determine the
+!               !   atom1Index of the excited atom.
+!               do k = 1, excitedAtomPACS
+!
+!                  ! Identify the indices of the current atom from loop (k).
+!                  atom1Index(1) = atom1Index(2) + 1
+!                  atom1Index(2) = atom1Index(1) + numAtomBasisFns(k) - 1
+!               enddo
+!
+!               ! Initialize the indices of the second atom. 1 = init, 2 = fin
+!               atom2Index(1) = 0
+!               atom2Index(2) = 0
+!
+!               ! Initialize the index for the number of bonded atoms.
+!               bondedAtomCounter = 0
+!
+!               ! Begin a loop over all the other atoms.
+!               do l = 1, numAtomSites
+!
+!                  ! Identify the indices of the current atom from loop (l).
+!                  atom2Index(1) = atom2Index(2) + 1
+!                  atom2Index(2) = atom2Index(1) + numAtomBasisFns(l) - 1
+!
+!
+!                  ! Determine the smallest distance between the atoms of the
+!                  !   two loops (k) and (l).
+!
+!                  ! Initialize the min distance to an impossibly large number.
+!                  minDistMag = bigThresh
+!
+!                  ! Initialize a counter for the number of atoms that are
+!                  !   within the max bond length parameter.
+!                  minDistCount = 0
+!
+!                  ! Search the original cell and neighboring 124 cells to find
+!                  !   the minimum distance between atom (k) and atom (l).
+!                  do m = -2,2
+!                  do n = -2,2
+!                  do o = -2,2
+!
+!                     ! Compute seperation vector for the atoms in this combo.
+!                     currentDistance(:) = &
+!                           & atomSites(excitedAtomPACS)%cartPos(:) - &
+!                           & atomSites(l)%cartPos(:) - &
+!                           & m * realVectors(:,1) - &
+!                           & n * realVectors(:,2) - &
+!                           & o * realVectors(:,3)
+!
+!                     ! Compute the distance for the atoms of this cell combo.
+!                     currentDistMag = sqrt(sum(currentDistance(:)**2))
+!
+!                     ! Compare the current magnitude to the current minimum.
+!                     if (currentDistMag < minDistMag .and. &
+!                           & abs(currentDistMag) > smallThresh) then
+!                        minDistMag = currentDistMag
+!                     endif
+!
+!                     ! Check if this currentDistMag is less than the cut-off
+!                     !   radius.  If so, then increment the counter for this
+!                     !   atom pair.  This is done in case a replicated atom has
+!                     !   more than one configuration where it is sufficiently
+!                     !   close to the current target atom that it regesters an
+!                     !   overlap.  This effect is not really implemented yet
+!                     !   because the minDistMag will have to track all the
+!                     !   nearest atoms, not just the closest one.
+!                     if (currentDistMag < maxBL .and. &
+!                           & abs(currentDistMag) > smallThresh) then
+!                        minDistCount = minDistCount + 1
+!                     endif
+!                  enddo
+!                  enddo
+!                  enddo
+!
+!                  ! Determine if any image atoms are within the cut-off radius.
+!                  if (minDistCount > 0) then
+!
+!                     ! Track indices and IDs for the atoms that bond to the
+!                     !    excited atom.
+!
+!                     ! Increment the number of atoms that are bonded with the
+!                     !   excited atom.
+!                     bondedAtomCounter = bondedAtomCounter + 1
+!
+!                     ! Record the atom ID number for this atom that bonds with
+!                     !   the excited atom.
+!                     bondedAtomID(bondedAtomCounter) = l
+!
+!                     ! Store the determined minimum bond length for this pair.
+!                     bondLength(excitedAtomPACS,l) = minDistMag
+!
+!                     ! Loop over the atom 1 states against the atom 2 states
+!                     !   for this band.
+!                     do m = atom1Index(1),atom1Index(2)
+!
+!#ifndef GAMMA
+!                        ! Compute ^2 of the wave function for each element.
+!                        waveFnSqrd(atom2Index(1):atom2Index(2)) = &
+!                              & conjg(valeVale(m,j,1)) * &
+!                              & valeVale(atom2Index(1):atom2Index(2),j,1)
+!
+!                        ! Compute the effects of overlap for the real part
+!                        !   only (real*real) + (imag*imag).
+!                        oneValeRealAccum = sum(&
+!                              & real (waveFnSqrd(atom2Index(1):&
+!                              & atom2Index(2)),double) * &
+!                              & real (valeValeOL(atom2Index(1):&
+!                              & atom2Index(2),m),double) + &
+!                              & aimag(waveFnSqrd(atom2Index(1):&
+!                              & atom2Index(2)))*&
+!                              & aimag(valeValeOL(atom2Index(1):&
+!                              & atom2Index(2),m)))
+!#else
+!                        ! Compute ^2 of the wave function for each element.
+!                        waveFnSqrdGamma(atom2Index(1):atom2Index(2)) = &
+!                              & valeValeGamma(m,j,1) * &
+!                              & valeValeGamma(atom2Index(1):atom2Index(2),j,1)
+!
+!                        ! Compute the effects of overlap for the real part
+!                        !   only (real*real) + (imag*imag).
+!                        oneValeRealAccum = sum(&
+!                              & waveFnSqrdGamma(atom2Index(1):&
+!                              & atom2Index(2)) * &
+!                              & valeValeOLGamma(atom2Index(1):&
+!                              & atom2Index(2),m))
+!#endif
+!
+!                        ! Store the atom pair bond order contribution for this
+!                        !   energy level.
+!!                        bondOrderEnergyDep(bondedAtomCounter) = &
+!!                              & bondOrderEnergyDep(bondedAtomCounter) + &
+!!                              & oneValeRealAccum * kPointWeight(i) / &
+!!                              & real(spin,double)
 !                        bondOrderEnergyDep(bondedAtomCounter) = &
 !                              & bondOrderEnergyDep(bondedAtomCounter) + &
-!                              & oneValeRealAccum * kPointWeight(i) / &
-!                              & real(spin,double)
-                        bondOrderEnergyDep(bondedAtomCounter) = &
-                              & bondOrderEnergyDep(bondedAtomCounter) + &
-                              & oneValeRealAccum * &
-                              & electronPopulation(stateSpinKPointIndex)
-
-                        ! Store the atom pair bond order contribution.
+!                              & oneValeRealAccum * &
+!                              & electronPopulation(stateSpinKPointIndex)
+!
+!                        ! Store the atom pair bond order contribution.
+!!                        bondOrderAllEnergy(bondedAtomCounter) = &
+!!                              & bondOrderAllEnergy(bondedAtomCounter) + &
+!!                              & oneValeRealAccum * kPointWeight(i) / &
+!!                              & real(spin,double)
 !                        bondOrderAllEnergy(bondedAtomCounter) = &
 !                              & bondOrderAllEnergy(bondedAtomCounter) + &
-!                              & oneValeRealAccum * kPointWeight(i) / &
-!                              & real(spin,double)
-                        bondOrderAllEnergy(bondedAtomCounter) = &
-                              & bondOrderAllEnergy(bondedAtomCounter) + &
-                              & oneValeRealAccum * &
-                              & electronPopulation(stateSpinKPointIndex)
-
-                     enddo
-                  endif
-               enddo ! (l atom2)
-               do l = 1, numEnergyPoints
-
-                  ! Compute the exponential alpha for broadening this point.
-                  expAlpha = ((energyEigenValues(j,i,h) - &
-                        & energyScale(l)) / sigmaBOND)**2
-
-                  ! If the exponential alpha is less than 50 apply broadening.
-                  if (expAlpha < 50) then
-
-                     ! Compute the exponential factor.
-                     expFactor = exp(-expAlpha) / sigmaSqrtPi
-
-                     ! Broaden and store the complete energy dep. bond order.
-                     bondCompleteAtom(l,:bondedAtomCounter) = &
-                           & bondCompleteAtom(l,:bondedAtomCounter) + &
-                           & bondOrderEnergyDep(:bondedAtomCounter) * expFactor
-                  endif
-               enddo
-            endif ! (excited atom .ne. 0)
+!                              & oneValeRealAccum * &
+!                              & electronPopulation(stateSpinKPointIndex)
+!
+!                     enddo
+!                  endif
+!               enddo ! (l atom2)
+!               do l = 1, numEnergyPoints
+!
+!                  ! Compute the exponential alpha for broadening this point.
+!                  expAlpha = ((energyEigenValues(j,i,h) - &
+!                        & energyScale(l)) / sigmaBOND)**2
+!
+!                  ! If the exponential alpha is less than 50 apply broadening.
+!                  if (expAlpha < 50) then
+!
+!                     ! Compute the exponential factor.
+!                     expFactor = exp(-expAlpha) / sigmaSqrtPi
+!
+!                     ! Broaden and store the complete energy dep. bond order.
+!                     bondCompleteAtom(l,:bondedAtomCounter) = &
+!                           & bondCompleteAtom(l,:bondedAtomCounter) + &
+!                           & bondOrderEnergyDep(:bondedAtomCounter) * expFactor
+!                  endif
+!               enddo
+!            endif ! (excited atom .ne. 0)
 
             ! Skip energy states that are not occupied.
             if (energyEigenValues(j,i,h) > 0.0_double) exit
@@ -755,26 +748,26 @@ subroutine computeBond (inSCF)
       enddo
 
 
-      ! Compute the total bond order for the excited atom as an energy
-      !   dependent function for each species it is bonded to.
-      if (excitedAtomPACS .ne. 0) then
-
-         ! First the total bond order is computed for each bonded atom as an
-         !   integration of the bond energy dependent bond order.  Simply
-         !   accumulate the area under the curve by the areas of rectangles.
-         do i = 1, bondedAtomCounter
-            totalCalcBondOrder(i) = sum(&
-                  & bondCompleteAtom(1:numEnergyPoints-1,i) + &
-                  & bondCompleteAtom(2:numEnergyPoints,i)) * deltaBOND * &
-                  & 0.5_double
-         enddo
-
-         ! Then the complete bond order for each bonded atom is normalized.
-         do i = 1, bondedAtomCounter
-            bondCompleteAtom(:,i) = bondCompleteAtom(:,i) * &
-                  & bondOrderAllEnergy(i) / totalCalcBondOrder(i)
-         enddo
-      endif
+!      ! Compute the total bond order for the excited atom as an energy
+!      !   dependent function for each species it is bonded to.
+!      if (excitedAtomPACS .ne. 0) then
+!
+!         ! First the total bond order is computed for each bonded atom as an
+!         !   integration of the bond energy dependent bond order.  Simply
+!         !   accumulate the area under the curve by the areas of rectangles.
+!         do i = 1, bondedAtomCounter
+!            totalCalcBondOrder(i) = sum(&
+!                  & bondCompleteAtom(1:numEnergyPoints-1,i) + &
+!                  & bondCompleteAtom(2:numEnergyPoints,i)) * deltaBOND * &
+!                  & 0.5_double
+!         enddo
+!
+!         ! Then the complete bond order for each bonded atom is normalized.
+!         do i = 1, bondedAtomCounter
+!            bondCompleteAtom(:,i) = bondCompleteAtom(:,i) * &
+!                  & bondOrderAllEnergy(i) / totalCalcBondOrder(i)
+!         enddo
+!      endif
 
 
       ! Initialize counters for totals.
@@ -836,20 +829,20 @@ subroutine computeBond (inSCF)
       if (mpiRank == 0) then
          ! Begin recording the energy dependent bond order results to disk,
          !   making sure to convert the energy scale to eV.
-         if (excitedAtomPACS .ne. 0) then
-            write (16,ADVANCE="NO",FMT="(a12,a12)") "Energy      ",&
-                  & "Total       "
-            do i = 1, bondedAtomCounter
-               write (16,ADVANCE="NO",FMT="(a2,a10)") "  ",&
-                     & atomTypes(i)%typeLabel
-            enddo
-            write (16,*)
-            do i = 1, numEnergyPoints
-               write (16,fmt="(30f12.8)") energyScale(i)*hartree,&
-                     & sum(bondCompleteAtom(i,:bondedAtomCounter)),&
-                     & bondCompleteAtom(i,:bondedAtomCounter)
-            enddo
-         endif
+!         if (excitedAtomPACS .ne. 0) then
+!            write (16,ADVANCE="NO",FMT="(a12,a12)") "Energy      ",&
+!                  & "Total       "
+!            do i = 1, bondedAtomCounter
+!               write (16,ADVANCE="NO",FMT="(a2,a10)") "  ",&
+!                     & atomTypes(i)%typeLabel
+!            enddo
+!            write (16,*)
+!            do i = 1, numEnergyPoints
+!               write (16,fmt="(30f12.8)") energyScale(i)*hartree,&
+!                     & sum(bondCompleteAtom(i,:bondedAtomCounter)),&
+!                     & bondCompleteAtom(i,:bondedAtomCounter)
+!            enddo
+!         endif
 
          ! Begin recording general bond order results to disk.
          if (outputCodeBondQ == 1) then ! Old style output.
@@ -1005,14 +998,14 @@ subroutine computeBond (inSCF)
       deallocate (valeValeOLGamma)
    endif
 #endif
-   if (excitedAtomPACS /= 0) then
-      deallocate (energyScale)
-      deallocate (bondCompleteAtom)
-      deallocate (bondOrderAllEnergy)
-      deallocate (bondedAtomID)
-      deallocate (bondedTypeID)
-      deallocate (totalCalcBondOrder)
-   endif
+!   if (excitedAtomPACS /= 0) then
+!      deallocate (energyScale)
+!      deallocate (bondCompleteAtom)
+!      deallocate (bondOrderAllEnergy)
+!      deallocate (bondedAtomID)
+!      deallocate (bondedTypeID)
+!      deallocate (totalCalcBondOrder)
+!   endif
 
 
    ! Log the date and time we end.

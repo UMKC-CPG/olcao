@@ -61,8 +61,8 @@ module O_Potential
          !   list of the potential coefficients for each spin orientation.
          !   Index1=coeff; Index2=spin(1=up,2=dn)
 !#ifndef GAMMA
-!   complex (kind=double), allocatable, dimension (:,:,:,:) :: plusUJ
-   real (kind=double), allocatable, dimension (:,:,:,:) :: plusUJ
+   complex (kind=double), allocatable, dimension (:,:,:,:) :: plusUJ
+!   real (kind=double), allocatable, dimension (:,:,:,:) :: plusUJ
 !#else
 !   real (kind=double), allocatable, dimension (:,:,:) :: plusUJGamma
 !#endif
@@ -436,6 +436,7 @@ end subroutine setPotControlParameters
 subroutine initPotCoeffs
 
    ! Include the necessary modules
+   use MPI_F08
    use O_Kinds
    use O_MPI
    use O_PotTypes, only: numPotTypes, potTypes
@@ -461,58 +462,63 @@ subroutine initPotCoeffs
    !   number of potential types and the spin). We will ignore those quantities
    !   from the file and keep the ones from the olcao.dat input file. (Although
    !   we do make a consistency check.)
-   read (8,*) ! File header that says number of types.
-   do i = 1, spin
+   if (mpiRank == 0) then
+      read (8,*) ! File header that says number of types.
+      do i = 1, spin
 
-      ! Initialize the counter of potential terms.
-      potTermCount = 0
+         ! Initialize the counter of potential terms.
+         potTermCount = 0
 
-      read (8,*)  ! Read tag indicating spin up or spin down.
-      do j = 1, numPotTypes
-         read (8,*) tempInt ! The number of terms for this type.
+         read (8,*)  ! Read tag indicating spin up or spin down.
+         do j = 1, numPotTypes
+            read (8,*) tempInt ! The number of terms for this type.
 
-         if (tempInt /= potTypes(j)%numAlphas) then
-            if (mpiRank == 0) then
+            if (tempInt /= potTypes(j)%numAlphas) then
                write (20,*) "Mismatch between scfV and olcao.dat:"
                write (20,*) "scfV claims type ",j," has ",tempInt," terms"
                write (20,*) "olcao.dat claims type ",j," has ",&
                      & potTypes(j)%numAlphas," terms"
+               stop
             endif
-            call stopMPI("")
-         endif
 
-         do k = 1, potTypes(j)%numAlphas
+            do k = 1, potTypes(j)%numAlphas
 
-            ! Increment the counter.
-            potTermCount = potTermCount + 1
+               ! Increment the counter.
+               potTermCount = potTermCount + 1
 
-            read (8,*) potCoeffs(potTermCount,i), spaceHolder1, spaceHolder2, &
-                  & spaceHolder3, spaceHolder4
+               read (8,*) potCoeffs(potTermCount,i), spaceHolder1, spaceHolder2, &
+                     & spaceHolder3, spaceHolder4
+            enddo
          enddo
       enddo
-   enddo
+   endif
+   call MPI_BCAST(potCoeffs(:,:),potDim*spin,MPI_DOUBLE_PRECISION,0,&
+         & MPI_COMM_WORLD,mpierr)
 
    ! In the event that spin==1 then we need to read past the duplication of
    !   potential information to get to the +UJ terms. If spin==2, then the
    !   loop above already read in the spin down potential terms.
-   if (spin == 1) then
-      read (8,*) ! SPIN_DN tag
-      do j = 1, numPotTypes
-         read (8,*) spaceHolder1 ! Num terms data
-         do k = 1, potTypes(j)%numAlphas
-            read (8,*) spaceHolder0, spaceHolder1, spaceHolder2, spaceHolder3,&
-                  & spaceHolder4 ! Duplicate data that we can ignore
+   if (mpiRank == 0) then
+      if (spin == 1) then
+         read (8,*) ! SPIN_DN tag
+         do j = 1, numPotTypes
+            read (8,*) spaceHolder1 ! Num terms data
+            do k = 1, potTypes(j)%numAlphas
+               read (8,*) spaceHolder0, spaceHolder1, spaceHolder2, spaceHolder3,&
+                     & spaceHolder4 ! Duplicate data that we can ignore
+            enddo
          enddo
-      enddo
+      endif
    endif
 
    ! At this point we have reached the section that contains +UJ data (if any).
 
    ! Allocate space for the +UJ terms. We allocate a 1:7 space for each atom
    !   and spin even though some atoms will only fill 1:5 of the available
-   !   spaces.
+   !   spaces. Initialize so that all imaginary values are 0.
 !#ifndef GAMMA
    allocate (plusUJ(7,numPlusUJAtoms,spin,numKPoints))
+   plusUJ(:,:,:,:) = cmplx(0.0_double,0.0_double,double)
 !#else
 !   allocate (plusUJGamma(7,numPlusUJAtoms,spin))
 !#endif
@@ -520,15 +526,15 @@ subroutine initPotCoeffs
    ! Read past the number of atoms that have +UJ terms. (We already know at
    !   this point how many there are anyway.) There is a tag line and an
    !   actual number line.
-   read (8,*) ! Line with a "NUM_PLUSUJ_TERMS" tag on it.
-   read (8,*) tempInt ! Number of atoms with a +UJ term.
-   if (tempInt /= numPlusUJAtoms) then
-      if (mpiRank == 0) then
+   if (mpiRank == 0) then
+      read (8,*) ! Line with a "NUM_PLUSUJ_TERMS" tag on it.
+      read (8,*) tempInt ! Number of atoms with a +UJ term.
+      if (tempInt /= numPlusUJAtoms) then
          write (20,*) "Mismatch between scfV and olcao.dat:"
          write (20,*) "scfV claims that there are ",tempInt," PlusUJ terms"
          write (20,*) "olcao.dat claims that there are ",numPlusUJAtoms,"."
+         stop
       endif
-      call stopMPI("")
    endif
 
    ! As discussed in the potentialUpdate.f90 file, this loop must go from 1 to
@@ -536,30 +542,29 @@ subroutine initPotCoeffs
    !   structure of the data file for all calculations. As a consequence, if
    !   the value of spin==1 then the second set of data is redundent and it will
    !   be read in, but ignored.
-   do j = 1, 2
-      read (8,*) ! Line with a "TOTAL__OR__SPIN_UP" tag on it for i==1 or a
-                 !   "SPIN_DN" tag on it for i==2.
+   if (mpiRank == 0) then
+      do j = 1, 2
+         read (8,*) ! Line with a "TOTAL__OR__SPIN_UP" tag on it for i==1 or a
+                    !   "SPIN_DN" tag on it for i==2.
 
-      ! Read the 1:7 +UJ array for each atom. Note that for d-type orbitals the
-      !   array elements that are "outside" the 1:5 array will all be zero.
-      do k = 1, numPlusUJAtoms
-         read (8,*) tempInt ! Atom ID number
-         if (tempInt /= plusUJAtomID(k)) then
-            if (mpiRank == 0) then
+         ! Read the 1:7 +UJ array for each atom. Note that for d-type orbitals the
+         !   array elements that are "outside" the 1:5 array will all be zero.
+         do k = 1, numPlusUJAtoms
+            read (8,*) tempInt ! Atom ID number
+            if (tempInt /= plusUJAtomID(k)) then
                write (20,*) "Mismatch between scfV and olcao.dat:"
                write (20,*) "scfV claims atom ",tempInt," is atom number ",j
                write (20,*) "olcao.dat claims that it is ", plusUJAtomID(k)
+               stop
             endif
-            call stopMPI("")
-         endif
-         do i = 1, numKPoints
+            do i = 1, numKPoints
 !#ifndef GAMMA
-         if (spin == 1) then
-            read (8,*) plusUJ(:,k,1,i) ! See above docs about spin index.
-         else
-            read (8,*) plusUJ(:,k,j,i)
-         endif
-         enddo
+               if (spin == 1) then
+                  read (8,*) plusUJ(:,k,1,i) ! See above docs about spin index.
+               else
+                  read (8,*) plusUJ(:,k,j,i)
+               endif
+            enddo
 !#else
 !         if (spin == 1) then
 !            read (8,*) plusUJGamma(:,k,1) ! See above docs about spin index.
@@ -567,8 +572,11 @@ subroutine initPotCoeffs
 !            read (8,*) plusUJGamma(:,k,j)
 !         endif
 !#endif
+         enddo
       enddo
-   enddo
+   endif
+   call MPI_BCAST(plusUJ(:,:,:,:),7*numPlusUJAtoms*spin*numKPoints,&
+         & MPI_DOUBLE_COMPLEX,0,MPI_COMM_WORLD,mpierr)
 
 end subroutine initPotCoeffs
 

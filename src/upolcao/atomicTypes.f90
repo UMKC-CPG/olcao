@@ -135,7 +135,7 @@ subroutine readAtomicTypes(readUnit,writeUnit,inSCF)
    use O_Kinds
    use O_MPI
    use O_Constants, only: lAngMomCount
-   use O_CommandLine, only: basisCode_SCF, basisCode_PSCF, doSCF, doPSCF
+   use O_CommandLine, only: basisCode_SCF, basisCode_PSCF
    use O_ReadDataSubs
 
    ! Make sure that no funny variables are defined.
@@ -209,10 +209,7 @@ subroutine readAtomicTypes(readUnit,writeUnit,inSCF)
       do j=1,lAngMomCount-1
          if (atomTypes(i)%numOrbAlphas(j) < &
                & atomTypes(i)%numOrbAlphas(j+1)) then
-            if (mpiRank == 0) then
-               write (20,*) 'Num of alphas not monotonically decreasing.'
-            endif
-            call stopMPI("")
+            call stopMPI("Num of alphas not monotonically decreasing.")
          endif
       enddo
 

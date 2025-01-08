@@ -53,16 +53,15 @@ subroutine makeValenceRho(inSCF)
    use O_BLASZHER
    use O_SecularEquation, only: valeVale,cleanUpSecularEqn,energyEigenValues,&
          & update1UJ, readDataSCF, readDataPSCF
-   use O_MatrixSubs, only: readMatrix,readPackedMatrix,matrixElementMult, &
-         & packMatrix
-   use O_Force, only: computeForce,valeValeF
+   use O_MatrixSubs, only: readPackedMatrix,matrixElementMult,packMatrix
+   use O_Force, only: computeForce
 #else
    use O_BLASDSYR
    use O_SecularEquation, only: valeValeGamma, cleanUpSecularEqn, &
          & energyEigenValues, update1UJ, readDataSCF, readDataPSCF
-   use O_MatrixSubs, only: readMatrixGamma,readPackedMatrix, &
-         & matrixElementMultGamma,packMatrixGamma
-   use O_Force, only: computeForceGamma,valeValeFGamma
+   use O_MatrixSubs, only: readPackedMatrix,matrixElementMultGamma,&
+         & packMatrixGamma
+   use O_Force, only: computeForceGamma
 #endif
 
    ! Make sure that there are not accidental variable declarations.
@@ -72,7 +71,7 @@ subroutine makeValenceRho(inSCF)
    integer, intent(in) :: inSCF
 
    ! Define the local variables used in this subroutine.
-   integer :: h,i,j,k,l ! Loop index variables
+   integer :: i,j,k ! Loop index variables
    integer :: skipKP
    integer :: dim1
    integer :: energyLevelCounter
@@ -80,8 +79,6 @@ subroutine makeValenceRho(inSCF)
    real (kind=double), allocatable, dimension (:)     :: tempDensity
    real (kind=double), allocatable, dimension (:)     :: electronEnergy
    real (kind=double), allocatable, dimension (:)     :: currentPopulation
-   real (kind=double), allocatable, dimension (:,:)   :: tempRealValeVale
-   real (kind=double), allocatable, dimension (:,:)   :: tempImagValeVale
    real (kind=double), allocatable, dimension (:,:,:) :: &
          & structuredElectronPopulation
 #ifndef GAMMA
@@ -193,33 +190,34 @@ subroutine makeValenceRho(inSCF)
 #ifndef GAMMA
 !      if (numKPoints > 1) then
 
-         ! Skip any kpoints with a negligable contribution for each state.
-         skipKP = 0
-         do j = 1, numStates
-            if (sum(abs(structuredElectronPopulation(j,i,:)))>smallThresh) then
-               skipKP = 1
-               exit
-            endif
-         enddo
-         if (skipKP == 0) then
-            cycle
+      ! Skip any kpoints with a negligable contribution for each state.
+      skipKP = 0
+      do j = 1, numStates
+         if (sum(abs(structuredElectronPopulation(j,i,:)))>smallThresh) then
+            skipKP = 1
+            exit
          endif
+      enddo
+      if (skipKP == 0) then
+         cycle
+      endif
 
-         ! Determine if we are doing the valeCharge in a post-SCF calculation
-         !   or within an SCF calculation.
-         do h = 1, spin
-            if (inSCF == 1) then
-               call readDataSCF(h,i,numStates,0) ! Read wave functions only.
-            else
-               call readDataPSCF(h,i,numStates,0) ! Read wave functions only.
-            endif
-         enddo
+      ! Determine if we are doing the valeCharge in a post-SCF calculation
+      !   or within an SCF calculation.
+      do j = 1, spin
+         if (inSCF == 1) then
+            call readDataSCF(j,i,numStates,0) ! Read wave functions only.
+         else
+            call readDataPSCF(j,i,numStates,0) ! Read wave functions only.
+         endif
+      enddo
 !      endif
 
       ! Initialize matrix to receive the valeVale density matrix (square of the
       !   wave function).
       valeValeRho(:,:,:) = cmplx(0.0_double,0.0_double,double)
 #else
+      skipKP = 0 ! Avoid compiler warning about unused variable.
       ! All of the information we need is already available in system memory.
       !   The only thing we need to do is initialize this matrix to zero.
       valeValeRhoGamma(:,:,:) = 0.0_double
@@ -309,7 +307,7 @@ subroutine makeValenceRho(inSCF)
 
       ! Read the overlap matrix into the packedValeVale representation.
       call readPackedMatrix (atomOverlap_did(i),packedValeVale,&
-            & packedVVDims,dim1,valeDim)
+            & packedVVDims,dim1,valeDim,1)
 
       ! In the case that the calculation is spin polarized (spin=2) then we
       !   need to convert the values in the packedValeValeRho density matrix
@@ -346,7 +344,7 @@ subroutine makeValenceRho(inSCF)
 
          ! Compute the nuclear contribution to the fitted potential first.
          call readPackedMatrix (atomNPOverlap_did(i),packedValeVale,&
-               & packedVVDims,dim1,valeDim)
+               & packedVVDims,dim1,valeDim,1)
          do j = 1, spin ! j=1 -> Total; j=2 -> Difference
 #ifndef GAMMA
             call matrixElementMult (nucPotTrace(j),packedValeVale,&
@@ -359,7 +357,7 @@ subroutine makeValenceRho(inSCF)
 
          ! Now compute the kinetic energy.
          call readPackedMatrix (atomKEOverlap_did(i),packedValeVale,&
-               & packedVVDims,dim1,valeDim)
+               & packedVVDims,dim1,valeDim,1)
          do j = 1, spin ! j=1 -> Total; j=2 -> Difference
 #ifndef GAMMA
             call matrixElementMult (kineticEnergyTrace(j),packedValeVale,&
@@ -373,7 +371,7 @@ subroutine makeValenceRho(inSCF)
          ! If needed, compute the mass velocity.
          if (rel == 1) then
             call readPackedMatrix (atomMVOverlap_did(i),packedValeVale,&
-                  & packedVVDims,dim1,valeDim)
+                  & packedVVDims,dim1,valeDim,1)
             do j = 1, spin ! j=1 -> Total; j=2 -> Difference
 #ifndef GAMMA
                call matrixElementMult (massVelocityTrace(j),packedValeVale,&
@@ -388,7 +386,7 @@ subroutine makeValenceRho(inSCF)
          ! Loop over atomic potential terms next.
          do j = 1, potDim
             call readPackedMatrix (atomPotOverlap_did(i,j),packedValeVale,&
-                  & packedVVDims,dim1,valeDim)
+                  & packedVVDims,dim1,valeDim,1)
             do k = 1, spin ! j=1 -> Total; j=2 -> Difference
 #ifndef GAMMA
                call matrixElementMult (potRho(j,k),packedValeVale,&
@@ -408,10 +406,10 @@ subroutine makeValenceRho(inSCF)
 
             if (inSCF == 0) then
                call readPackedMatrix (atomDMOverlap_did(i,j),packedValeVale,&
-                     & packedVVDims,dim1,valeDim)
+                     & packedVVDims,dim1,valeDim,1)
             else
                call readPackedMatrix (atomDMOverlapPSCF_did(i,j),&
-                     & packedValeVale,packedVVDims,dim1,valeDim)
+                     & packedValeVale,packedVVDims,dim1,valeDim,1)
             endif
             do k = 1, spin
 #ifndef GAMMA
@@ -427,29 +425,12 @@ subroutine makeValenceRho(inSCF)
 
       ! If needed, compute the forces
       if (((doForce_SCF == 1) .and. (converged == 1)) .or. &
-            & ((doDIMO_PSCF == 1) .and. (inSCF == 0))) then
+            & ((doForce_PSCF == 1) .and. (inSCF == 0))) then
          do j = 1, 3 ! xyz directions
             do k = 1, spin
 #ifndef GAMMA
-!               call packMatrix(valeValeF(:,:,i,k,j),packedValeVale(:,:),&
-!                     & valeDim)
-!               valeValeRho(:,:,k) = valeValeRho(:,:,k) + transpose(valeValeRho(:,:,k))
-!               do l = 1, valeDim
-!                  valeValeRho(l,l,k) = valeValeRho(l,l,k) / 2.0_double
-!               enddo
-!               valeValeF(:,:,i,k,j) = valeValeF(:,:,i,k,j) * valeValeRho(:,:,k)
-!   packedValeVale(1,:) = packedValeVale(1,:)*packedValeValeRho(1,:,spin) + &
-!         & packedValeVale(2,:)*packedValeValeRho(2,:,spin)
                call computeForce(valeValeRho,i,k,j)
 #else
-!               valeValeRhoGamma(:,:,k) = valeValeRhoGamma(:,:,k) + &
-!                     & transpose(valeValeRhoGamma(:,:,k))
-!               do l = 1, valeDim
-!                  valeValeRhoGamma(l,l,k) = valeValeRhoGamma(l,l,k) / 2.0_double
-!               enddo
-!               valeValeFGamma(:,:,i,k,j) = valeValeFGamma(:,:,i,k,j) * valeValeRhoGamma(:,:,k)
-!               call packMatrixGamma(valeValeFGamma(:,:,k,j),&
-!                     & packedValeVale(:,:),valeDim)
                call computeForceGamma(valeValeRhoGamma,k,j)
 #endif
             enddo

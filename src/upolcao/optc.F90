@@ -564,7 +564,7 @@ subroutine computeTransitions(inSCF,doOPTC)
    use O_TimeStamps
    use O_Potential,     only: spin
    use O_KPoints,       only: numKPoints
-   use O_AtomicSites,   only: coreDim, valeDim
+   use O_AtomicSites,   only: valeDim
    use O_CommandLine,   only: serialXYZ
    use O_Input,         only: numStates, totalEnergyDiffPACS, detailCodePOPTC
 #ifndef GAMMA
@@ -583,13 +583,9 @@ subroutine computeTransitions(inSCF,doOPTC)
    integer, intent(in) :: doOPTC
 
    ! Define local variables.
-   integer :: h,i,j ! Loop index variables
-integer :: k,l
+   integer :: h,i ! Loop index variables
+!integer :: k,l
    real (kind=double) :: energyShift
-!   real (kind=double), allocatable, dimension (:,:) :: tempRealValeVale
-!#ifndef GAMMA
-!   real (kind=double), allocatable, dimension (:,:) :: tempImagValeVale
-!#endif
 
 
    ! Log the date and time we start.
@@ -647,83 +643,6 @@ integer :: k,l
                call readDataPSCF(h,i,numStates,3) ! 3 = PACS MME matrixCode
             endif
          endif
-
-
-!         ! Allocate temporary reading matrices.
-!#ifndef GAMMA
-!         allocate (tempRealValeVale(valeDim,numStates))
-!         allocate (tempImagValeVale(valeDim,numStates))
-!#else
-!         allocate (tempRealValeVale(valeDim,numStates))
-!#endif
-!
-!         if (doOPTC /= 2) then  ! Not doing a PACS calculation.
-!
-!            ! Read the datasets for this kpoint.
-!#ifndef GAMMA
-!            call readMatrix(eigenVectorsBand_did(:,i,h),valeVale(:,:,1,1),&
-!                  & tempRealValeVale(:,:),tempImagValeVale(:,:),&
-!                  & valeStatesBand,valeDim,numStates)
-!#else
-!            call readMatrixGamma(eigenVectorsBand_did(1,i,h),&
-!                  & valeValeGamma(:,:,1),valeStatesBand,valeDim,numStates)
-!#endif
-!         else
-!
-!#ifndef GAMMA
-!            ! Read the data for the ground state for this kpoint.
-!            call readPartialWaveFns(eigenVectorsBand_did(:,i,h),&
-!                  & valeVale(:,:,1,1),tempRealValeVale(:,:),&
-!                  & tempImagValeVale(:,:),valeStatesBand,&
-!                  & firstOccupiedState(i,h),lastOccupiedState(i,h),&
-!                  & valeDim,numStates)
-!
-!            ! Read the data for the excited state for this kpoint.
-!            call readPartialWaveFns(eigenVectorsBand2_did(:,i,h),&
-!                  & valeVale(:,:,1,1),tempRealValeVale(:,:),&
-!                  & tempImagValeVale(:,:),valeStatesBand,&
-!                  & lastOccupiedState(i,h)+1,lastUnoccupiedState(i,h),&
-!                  & valeDim,numStates)
-!#else
-!            ! Read the data for the ground state for this kpoint.
-!            call readPartialWaveFnsGamma(eigenVectorsBand_did(1,i,h),&
-!                  & valeValeGamma(:,:,1),tempRealValeVale(:,:),valeStatesBand,&
-!                  & firstOccupiedState(i,h),lastOccupiedState(i,h),&
-!                  & valeDim,numStates)
-!
-!            ! Read the data for the excited state for this kpoint.
-!            call readPartialWaveFnsGamma(eigenVectorsBand2_did(1,i,h),&
-!                  & valeValeGamma(:,:,1),tempRealValeVale(:,:),valeStatesBand,&
-!                  & lastOccupiedState(i,h)+1,lastUnoccupiedState(i,h),&
-!                  & valeDim,numStates)
-!#endif
-!         endif
-!
-!
-!         ! Read the orthogonalization coefficients after allocating space to
-!         !   hold them (and the temp reading matrix).
-!#ifndef GAMMA
-!         deallocate (tempRealValeVale)
-!         deallocate (tempImagValeVale)
-!         allocate   (tempRealValeVale (coreDim,valeDim))
-!         allocate   (tempImagValeVale (coreDim,valeDim))
-!         allocate   (coreValeOL (coreDim,valeDim,1))
-!         if (coreDim /= 0) then
-!            call readMatrix(coreValeBand_did(:,i),coreValeOL(:,:,1),&
-!                  & tempRealValeVale(:,:),tempImagValeVale(:,:),&
-!                  & coreValeBand,coreDim,valeDim)
-!         endif
-!         deallocate (tempRealValeVale)
-!         deallocate (tempImagValeVale)
-!#else
-!         deallocate (tempRealValeVale)
-!         allocate   (coreValeOLGamma  (coreDim,valeDim))
-!         if (coreDim /= 0) then
-!            call readMatrixGamma(coreValeBand_did(1,i),coreValeOLGamma(:,:),&
-!                  & coreValeBand,coreDim,valeDim)
-!         endif
-!#endif
-
 
          ! Perform the computations in serial or all together.
          if (serialXYZ == 0) then
@@ -837,10 +756,8 @@ integer :: k,l
 
    ! Deallocate unnecessary matrices and arrays
 #ifndef GAMMA
-!   deallocate (valeVale)
    deallocate (valeValeMM)
 #else
-!   deallocate (valeValeGamma)
    deallocate (valeValeMMGamma)
 #endif
    deallocate (firstOccupiedState)

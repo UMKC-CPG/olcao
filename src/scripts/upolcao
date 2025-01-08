@@ -916,7 +916,9 @@ sub initExes
 
    # Determine the mechanism for submitting a serial OLCAO job.
    #$subMechanism = $OLCAO_EXE;
-   $subMechanism = "mpirun -np $SLURM_NTASKS"
+   #$subMechanism = "mpirun -np $SLURM_NTASKS valgrind --leak-check=full --gen-suppressions=all --track-origins=yes --log-file=nc.vg.%p";
+   #$subMechanism = "mpirun -np $SLURM_NTASKS valgrind --track-origins=yes --log-file=nc.vg.%p";
+   $subMechanism = "mpirun -np $SLURM_NTASKS";
 }
 
 

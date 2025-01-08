@@ -69,14 +69,14 @@ subroutine makeSCFPot (totalEnergy)
    use O_PotTypes, only: numPotTypes, potTypes
    use O_ExchangeCorrelation, only: maxNumRayPoints, radialWeight, exchRhoOp, &
          & exchCorrOverlap, numRayPoints
-   use O_ElectroStatics, only: nonLocalNeutQPot, localNeutQPot, localNucQPot, &
-         & nonLocalNucQPot, nonLocalResidualQ, potAlphaOverlap
+   use O_ElectroStatics, only: nonLocalNeutQPot, localNeutQPot, &
+         & nonLocalResidualQ, potAlphaOverlap
    use O_SCFExchCorrHDF5, only: numPoints_did, radialWeight_did, &
          & exchRhoOp_did, exchCorrOverlap_did, numPoints, points, potPoints
    use O_Potential, only: rel, spin, potDim, intgConsts, spinSplitFactor, &
-         & potAlphas, potCoeffs, currIteration, lastIteration, feedbackLevel, &
-         & relaxFactor, xcCode, converged, convgTest, GGA, numPlusUJAtoms, &
-         & plusUJAtomID, plusUJ
+         & potAlphas, potCoeffs, currIteration, feedbackLevel, relaxFactor, &
+         & xcCode, converged, convgTest, GGA, numPlusUJAtoms, plusUJAtomID, &
+         & plusUJ
    use O_SCFElecStatHDF5, only: potAlphaOverlap_did, coreChargeDensity_did, &
          & nonLocalNeutQPot_did, localNeutQPot_did, localNucQPot_did, &
          & nonLocalNucQPot_did, nonLocalResidualQ_did, pot, potPot, potTypesPot
@@ -105,9 +105,7 @@ subroutine makeSCFPot (totalEnergy)
    integer :: potTypeFinIndex
    integer :: siteIndex
    integer :: potTermCount
-   integer :: currNumAlphas
-   integer :: maxFeedback
-   integer :: totalEnergyImprovement
+!   integer :: totalEnergyImprovement
    real (kind=double) :: fittedCharge
    real (kind=double) :: fittedSpinDiffCharge
    real (kind=double) :: spinDiffDifference
@@ -145,7 +143,6 @@ subroutine makeSCFPot (totalEnergy)
    real (kind=double) :: SYS
    real (kind=double) :: SZS
 
-   real (kind=double) :: blendingFactor
    real (kind=double) :: testableDelta
    real (kind=double) :: radialWeightSum
    real (kind=double) :: weightedPotDiff
@@ -169,9 +166,9 @@ subroutine makeSCFPot (totalEnergy)
    real (kind=double), allocatable, dimension (:)   :: averageDelta
    real (kind=double), allocatable, dimension (:)   :: maxDelta
    real (kind=double), allocatable, dimension (:)   :: typesMagneticMoment
-   real (kind=double), allocatable, dimension (:,:) :: potDifference ! Holds
-         ! the difference between the currently used potential coefficients and
-         ! the current guess for the next set of potential coefficients.
+!   real (kind=double), allocatable, dimension (:,:) :: potDifference ! Holds
+!         ! the difference between the currently used potential coefficients
+!         ! and the current guess for the next set of potential coefficients.
 
    real (kind=double) :: th1
    real (kind=double) :: th2
@@ -704,7 +701,7 @@ subroutine makeSCFPot (totalEnergy)
    if (hdferr /= 0) then
       call stopMPI("Failed to read local residual q pot.")
    endif
-   call MPI_BCAST(nonLocalResidualQ(:,:),potDim*potDim,&
+   call MPI_BCAST(nonLocalResidualQ(:,:),numPotTypes*potDim,&
          & MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,mpierr)
 
 
@@ -878,8 +875,10 @@ subroutine makeSCFPot (totalEnergy)
    ! Begin the exchange-correlation potential fitting
 
    ! The maxNumRayPoints was determined already in the access to the setup HDF5
-   !   data.  Here we just copy the value from points(1).
-   maxNumRayPoints = points(1)
+   !   data.  Here we just copy the value from points(1). Note that we are
+   !   converting from int(8) to int(4), but because points will always be <
+   !   say 10,000 this will not be a problem. The int(8) was needed by hdf5.
+   maxNumRayPoints = int(points(1))
 
    ! Allocate space to hold the charge used for computing the exchange
    !   correlation energy and potential (total and core), exchange
@@ -909,6 +908,14 @@ subroutine makeSCFPot (totalEnergy)
    else
       allocate (exchCorrRhoSpin (4,maxNumRayPoints))
    endif
+
+   ! Initialize quantities that depend on maxNumRayPoints to avoid compiler
+   !   warnings about uninitialized values.
+   exchCorrRho(:,:) = 0.0_double
+   exchCorrRhoCore(:,:) = 0.0_double
+   radialWeight(:) = 0.0_double
+   exchRhoOp(:,:,:) = 0.0_double
+   exchCorrRhoSpin(:,:) = 0.0_double
 
 
 
@@ -944,14 +951,14 @@ subroutine makeSCFPot (totalEnergy)
       call MPI_BCAST(radialWeight(:numRayPoints),numRayPoints,&
             & MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,mpierr)
 
-      if (mpiRank == 0) then
-         call h5dread_f (exchRhoOp_did(i),H5T_NATIVE_DOUBLE,&
-               & exchRhoOp(:,:,:),potPoints,hdferr)
-      endif
-      call MPI_BCAST(hdferr,1,MPI_INTEGER,0,MPI_COMM_WORLD,mpierr)
-      if (hdferr /= 0) then
-         call stopMPI("Failed to read exch rho operator.")
-      endif
+!      if (mpiRank == 0) then
+!         call h5dread_f (exchRhoOp_did(i),H5T_NATIVE_DOUBLE,&
+!               & exchRhoOp(:,:,:),potPoints,hdferr)
+!      endif
+!      call MPI_BCAST(hdferr,1,MPI_INTEGER,0,MPI_COMM_WORLD,mpierr)
+!      if (hdferr /= 0) then
+!         call stopMPI("Failed to read exch rho operator.")
+!      endif
       call MPI_BCAST(exchRhoOp(:,:,:),potDim*maxNumRayPoints*numOpValues,&
             & MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,mpierr)
 
@@ -1034,17 +1041,7 @@ subroutine makeSCFPot (totalEnergy)
                   &- 2.0_double * exchRhoOp(:potDim,j,1) * &
                   & generalRho(:potDim,3))
 
-            if (spin == 2) then
-               SXS = -1.0_double * sum(2.0_double * exchRhoOp(:potDim,j,2) * &
-                     & generalRho(:potDim,8))
-               SYS = -1.0_double * sum(2.0_double * exchRhoOp(:potDim,j,3) * &
-                     & generalRho(:potDim,8))
-               SZS = -1.0_double * sum(2.0_double * exchRhoOp(:potDim,j,4) * &
-                     & generalRho(:potDim,8))
-            endif
-         endif
-
-         if (GGA == 1) then
+            ! Make sure these are not zero or negative.
             if (SXC < smallThresh) then
                SXC = smallThresh
             endif
@@ -1054,20 +1051,10 @@ subroutine makeSCFPot (totalEnergy)
             if (SZC < smallThresh) then
                SZC = smallThresh
             endif
-             if (SXS < smallThresh) then
-               SXS = smallThresh
-            endif
-            if (SYS < smallThresh) then
-               SYS = smallThresh
-            endif
-            if (SZS < smallThresh) then
-               SZS = smallThresh
-            endif
-         endif
 
-         ! Note that the indexing scheme has changed from the one used
-         ! in exchRhoOp(:,:,10) in order to incorporate coreSum and spinDiffSum
-         if (GGA == 1) then
+            ! Note that the indexing scheme has changed from the one used
+            !   in exchRhoOp(:,:,10) in order to incorporate coreSum and
+            !   spinDiffSum
             exchCorrRho (2,j) = SX
             exchCorrRho (3,j) = SY
             exchCorrRho (4,j) = SZ
@@ -1087,7 +1074,29 @@ subroutine makeSCFPot (totalEnergy)
             exchCorrRhoCore (8,j) = SYYC
             exchCorrRhoCore (9,j) = SYZC
             exchCorrRhoCore (10,j) = SZZC
+
             if (spin == 2) then
+               SXS = -1.0_double * sum(2.0_double * exchRhoOp(:potDim,j,2) * &
+                     & generalRho(:potDim,8))
+               SYS = -1.0_double * sum(2.0_double * exchRhoOp(:potDim,j,3) * &
+                     & generalRho(:potDim,8))
+               SZS = -1.0_double * sum(2.0_double * exchRhoOp(:potDim,j,4) * &
+                     & generalRho(:potDim,8))
+
+               ! Make sure these are not zero or negative.
+               if (SXS < smallThresh) then
+                  SXS = smallThresh
+               endif
+               if (SYS < smallThresh) then
+                  SYS = smallThresh
+               endif
+               if (SZS < smallThresh) then
+                  SZS = smallThresh
+               endif
+
+               ! Note that the indexing scheme has changed from the one used
+               !   in exchRhoOp(:,:,10) in order to incorporate coreSum and
+               !   spinDiffSum
                exchCorrRhoSpin (2,j) = SXS
                exchCorrRhoSpin (3,j) = SYS
                exchCorrRhoSpin (4,j) = SZS
@@ -1248,8 +1257,6 @@ subroutine makeSCFPot (totalEnergy)
 !                 & exchRhoOp(:potDim,j,1)
 !           enddo
       endif
-!write (20,*) "i,error count=",i,errorCount
-!call flush (20)
    enddo ! i = 1, numPotSites
 
    ! Allocate space to hold the exchCorrOverlap
@@ -2161,11 +2168,11 @@ end subroutine makeSCFPot
 !   Further, if a 2 were there, that would be understood as x^l-1. A 3 index
 !   would be for x^l-2 etc.
 subroutine blendPotentialsSCF(firstTerm, numTerms, outCoeffs, inGuessedCoeffs,&
-      & inUsedCoeffs, totalEnergyRecord)
+      & inUsedCoeffs)!, totalEnergyRecord)
 
    use O_Kinds
    use O_MPI
-   use O_Potential, only: spin,potDim,currIteration,feedbackLevel,relaxFactor
+   use O_Potential, only: currIteration,feedbackLevel,relaxFactor!,spin,potDim
    use O_ElectroStatics, only: potAlphaOverlap
    use O_LAPACKDPOSVX
 
@@ -2177,14 +2184,14 @@ subroutine blendPotentialsSCF(firstTerm, numTerms, outCoeffs, inGuessedCoeffs,&
    real (kind=double), dimension(:), intent(out) :: outCoeffs
    real (kind=double), dimension(:,:), intent(inout) :: inGuessedCoeffs
    real (kind=double), dimension(:,:), intent(inout) :: inUsedCoeffs
-   real (kind=double), dimension(:), intent(inout) :: totalEnergyRecord
+!   real (kind=double), dimension(:), intent(inout) :: totalEnergyRecord
 !   real (kind=double), dimension(:), intent(inout) :: convergenceRecord
 
    ! Define the local variables.
    integer :: info
    integer :: i,j,k
    integer :: maxFeedback
-   integer, dimension(1) :: worstEnergyIndex
+!   integer, dimension(1) :: worstEnergyIndex
    real (kind=double), allocatable, dimension(:) :: theta ! The x from Ax=B.
    real (kind=double), allocatable, dimension(:) :: tempArray ! An intermediate
          ! array for constructing the final set of potential coefficients.
@@ -2452,8 +2459,8 @@ subroutine blendPotentialsTE(firstTerm, numTerms, outCoeffs, inGuessedCoeffs, &
 
    use O_Kinds
    use O_MPI
-   use O_Potential, only: spin, currIteration, feedbackLevel, relaxFactor
-   use O_ElectroStatics, only: potAlphaOverlap
+   use O_Potential, only: currIteration, feedbackLevel, relaxFactor
+!   use O_ElectroStatics, only: potAlphaOverlap
    use O_LAPACKDPOSVX
 
    implicit none
@@ -2468,7 +2475,7 @@ subroutine blendPotentialsTE(firstTerm, numTerms, outCoeffs, inGuessedCoeffs, &
 
    ! Define the local variables.
    integer :: info
-   integer :: i,j,k
+   integer :: i,j!,k
    integer :: maxFeedback
    real (kind=double) :: SCF_TE_weight
    real (kind=double), allocatable, dimension(:) :: theta ! The x from Ax=B.
@@ -2507,6 +2514,9 @@ subroutine blendPotentialsTE(firstTerm, numTerms, outCoeffs, inGuessedCoeffs, &
 !   none, or all of that potential. A value of 1 eliminates all of it and uses
 !   only the TE.
    SCF_TE_weight = 1.0_double
+
+! Avoid compiler warning about unused variable.
+if (firstTerm > 0) continue
 
    ! Determine the maximum amount of feedback that is possible (a function of
    !   the currIteration number) or desired (a function of feedbackLevel). A
@@ -2737,7 +2747,7 @@ subroutine blendJointPotentials(firstTerm, numJointTerms, outCoeffs,&
 
    use O_Kinds
    use O_MPI
-   use O_Potential, only: spin, currIteration, feedbackLevel, relaxFactor
+   use O_Potential, only: currIteration, feedbackLevel, relaxFactor
    use O_ElectroStatics, only: potAlphaOverlap
    use O_LAPACKDPOSVX
 
@@ -2753,7 +2763,7 @@ subroutine blendJointPotentials(firstTerm, numJointTerms, outCoeffs,&
 
    ! Define the local variables.
    integer :: info
-   integer :: i,j,k,l
+   integer :: j,k,l
    integer :: maxFeedback
    real (kind=double), allocatable, dimension(:) :: theta ! The x from Ax=B.
    real (kind=double), allocatable, dimension(:) :: tempArray ! An intermediate
@@ -2802,6 +2812,8 @@ subroutine blendJointPotentials(firstTerm, numJointTerms, outCoeffs,&
    allocate (rl(numJointTerms,maxFeedback+1)) ! +1 to hold current iteration.
    if (maxFeedback > 0) then
       allocate (drl(numJointTerms,maxFeedback)) ! No +1 needed.
+   else
+      allocate (drl(1,1)) ! Avoid compiler warning about uninitialized stride.
    endif
 
    ! Initialize all of the operating parameters that are needed for the
@@ -3873,9 +3885,10 @@ subroutine pbe96(rho,rhox,rhoy,rhoz,rhoxx,rhoxy,rhoxz,rhoyy,rhoyz,rhozz,answer)
 
    ! Referenced papers
 
-   ! PhysRevLett 77.3865 "Generalized Gradient Approximation Made Simple"
+   ! PhysRevLett v77 p3865 y1996 "Generalized Gradient Approximation Made
+   !   Simple"
 
-   ! PhysRevB 75.195108 "Functional form of the generalized gradient 
+   ! PhysRevB v75 p195108 y2007 "Functional form of the generalized gradient
    ! approximation for exchange: The PBEalpha functional"
 
 
@@ -3899,12 +3912,16 @@ subroutine pbe96(rho,rhox,rhoy,rhoz,rhoxx,rhoxy,rhoxz,rhoyy,rhoyz,rhozz,answer)
    real (kind=double) :: VCDN,DVCUP,DVCDN,G,PON,B,Q4,Q5,H,T
    real (kind=double) :: Beta,Gamm,DELT,ETA,GAM
    real (kind=double) :: correlationEnergy,correlationPotential
-   real (kind=double) :: Q0,Q2,Q3,BG,BEC,FAC,FACT2,Q9
+   real (kind=double) :: BG,BEC,FAC,FACT2,Q9
    real (kind=double) :: FACT1,FACT0,FACT5,FACT3,HRST,GZ
    real (kind=double) :: HB,HBT,HRS,HT,HZT,HTT,HZ,Q8,PREF
    real (kind=double) :: VV, UU, WW
    ! GCOR2 inputs and outputs
    real (kind=double) :: EU,EURS,RTRS,EP,EPRS,ALFM,ALFRSM
+
+   ! FIX !!!! Eta is undefined and the documentation in this subroutine is
+   !   terrible. Needs someone to untangle and make clear.
+   eta = 0 ! Avoid a compiler warning for now.
 
 
    ! The local Seitz radius.
@@ -3922,7 +3939,7 @@ subroutine pbe96(rho,rhox,rhoy,rhoz,rhoxx,rhoxy,rhoxz,rhoyy,rhoyz,rhozz,answer)
    ! The Thomas-Fermi screening wave number.
    ks = sqrt(4D0*kf/pi)
 
-   gradN = sqrt(rhox*rhox+rhoy*rhoy+rhoz*rhoz)
+   gradN = sqrt(rhox*rhox + rhoy*rhoy + rhoz*rhoz)
    
    ! Dimensionless density gradient.
    s = gradN/(2D0*kf*rho)
@@ -4069,7 +4086,11 @@ subroutine GCOR2(A,A1,B1,B2,B3,B4,RTRS,GG,GGRS)
    
    implicit none
 
-   real (kind=double) :: A,A1,B1,B2,B3,B4,RTRS,GG,GGRS,Q0,Q1,Q2,Q3
+   ! Declare passed parameters.
+   real (kind=double) :: A,A1,B1,B2,B3,B4,RTRS,GG,GGRS
+
+   ! Declare local variables.
+   real (kind=double) :: Q0,Q1,Q2,Q3
  
    Q0=-2*A*(1+A1*(RTRS**2))
    Q1=2*A*RTRS*(B1+RTRS*(B2+RTRS*(B3+B4*RTRS)))
@@ -4143,7 +4164,7 @@ subroutine darwinCorrection(generalRho,exchCorrPot,currentPot,darwinPot)
 
    ! Use necessary modules.
    use O_PotTypes, only: numPotTypes, potTypes
-   use O_Potential, only: spin, potDim, numAlphas, potAlphas
+   use O_Potential, only: spin, potDim, potAlphas
 
    ! Make sure that no funny variables are defined.
    implicit none
@@ -4198,8 +4219,8 @@ subroutine darwinCorrectionOnePotType(currentType,currentNumTerms,&
    use O_Kinds
    use O_MPI
    use O_Constants, only: pi, fineStructure
-   use O_PotTypes, only: numPotTypes, potTypes
-   use O_Potential, only: numAlphas, potAlphas, spin
+   use O_PotTypes, only: potTypes
+   use O_Potential, only: spin
 
    ! Make sure that no funny variables are defined.
    implicit none
@@ -4573,8 +4594,6 @@ subroutine gaussFit(darwinPot,rGrid,rGridSqrd,currentNumTerms,&
 
    ! Import necessary definitions.
    use O_Kinds
-   use O_Potential,only:  potAlphas, numAlphas
-   use O_PotTypes, only: numPotTypes, potTypes
 
    !  Make sure that no funny variables are defined
    implicit none 
@@ -4624,7 +4643,7 @@ subroutine gaussFit(darwinPot,rGrid,rGridSqrd,currentNumTerms,&
    ! Computing the coefficients that will best fit the numerical darwinPot
    !   data. The resulting coefficients are stored in the fittedPot array.
    call gaussCalc(currentType,currentNumTerms,rGridSqrd,&
-         & weightSqrd,darwinPot,numPoints,fittedPot,weight)
+         & weightSqrd,darwinPot,numPoints,fittedPot)
 
    ! Deallocate unnecessary arrays.
    deallocate(weight)
@@ -4634,12 +4653,11 @@ end subroutine gaussFit
 
 
 subroutine gaussCalc(currentType,currentNumTerms,rGridSqrd,&
-      & weightSqrd,darwinPot,numPoints,fittedPot,weight)
+      & weightSqrd,darwinPot,numPoints,fittedPot)
 
    ! Import necessary definitions.
    use O_Kinds
-   use O_Potential, only:  potAlphas, numAlphas
-   use O_PotTypes, only: numPotTypes, potTypes
+   use O_PotTypes, only: potTypes
    
    ! Make sure that no funny variables are defined.
    implicit none
@@ -4656,8 +4674,6 @@ subroutine gaussCalc(currentType,currentNumTerms,rGridSqrd,&
    integer :: numPoints
    real (kind=double), dimension (currentNumTerms) :: fittedPot ! List of the
         ! coefficients to the gaussian functions.  Dim=currentNumTerms
-   real (kind=double), dimension (numPoints) :: weight ! Weighting
-        ! factors for integration.  Dim=numPoints
 
    ! Define local variables 
    real (kind=double), allocatable, dimension (:,:) :: gaussFn ! Numerical

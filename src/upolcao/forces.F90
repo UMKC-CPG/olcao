@@ -48,6 +48,7 @@ subroutine allocateIntegralsForce(coreDim,valeDim,numKPoints,spin)
    allocate (coreCoreF (coreDim,coreDim,numKPoints,spin,3))
    allocate (coreValeF (coreDim,valeDim,numKPoints,spin,3))
 #else
+   if (numKPoints > 1) stop ! Avoids compiler complaints about unused var.
    allocate (valeValeFGamma (valeDim,valeDim,spin,3))
    allocate (coreCoreFGamma (coreDim,coreDim,spin,3))
    allocate (coreValeFGamma (coreDim,valeDim,spin,3))
@@ -60,14 +61,14 @@ end subroutine allocateIntegralsForce
 subroutine computeForceIntg(totalEnergy)
 
    ! Import necessary modules.
+   use HDF5
    use O_Kinds
    use O_MPI
    use O_TimeStamps
    use O_Constants,    only: dim3
-   use O_KPoints, only: numKPoints
    use O_PotTypes,     only: potTypes
    use O_AtomicSites,  only: numAtomSites, valeDim, coreDim
-   use O_Potential,    only: rel, spin, potCoeffs
+   use O_Potential,    only: spin, potCoeffs!, rel
    use O_Basis,        only: initializeAtomSite
    use O_PotSites,     only: numPotSites, potSites
    use O_AtomicTypes,  only: maxNumAtomAlphas, maxNumStates
@@ -76,7 +77,9 @@ subroutine computeForceIntg(totalEnergy)
    use O_Lattice, only: logBasisFnThresh, numCellsReal, cellSizesReal, &
          & cellDimsReal, findLatticeVector
    use O_IntgSaving
-   use HDF5
+#ifndef GAMMA
+   use O_KPoints, only: numKPoints
+#endif
 
    ! Make sure that there are no accidental variable declarations.
    implicit none
@@ -243,6 +246,9 @@ subroutine computeForceIntg(totalEnergy)
    coreCoreFGamma(:,:,:,:) = 0.0_double
    coreValeFGamma(:,:,:,:) = 0.0_double
 #endif
+
+   ! Initialize zFactor to avoid compiler complaints.
+   zFactor = 0
 
 
    ! Start the outer atom loop.
@@ -619,6 +625,7 @@ subroutine computeForceIntg(totalEnergy)
                                    & l1l2Switch,oneAlphaSet)
 
                                  ! Accumulate results returned for alpha set.
+                                 !   Note, zFactor is always defined here.
                                  do q = 1, spin
                                     potAtomOverlap(:currentlmAlphaIndex &
                                        & (alphaIndex(1),1),&
@@ -868,7 +875,7 @@ subroutine computeForceIntg(totalEnergy)
             write (97+j,*) "i(x,y,z)=",i
             write (97+j,*) "j(spin)=",j
             do l = 1, valeDim
-               write (97+j,*) valeValeFGamma(:,l,q,r)
+               write (97+j,*) valeValeFGamma(:,l,j,i)
             enddo
          enddo
       enddo
@@ -920,9 +927,9 @@ subroutine computeForce(valeValeRho, kPoint, currSpin, currAxis)
          & intent(inout) :: valeValeRho
    integer, intent(in) :: kPoint, currSpin, currAxis
 
-   integer :: i,j,k,l,m
+   integer :: i,j,k,l
    integer :: counter1, counter2
-   real (kind=double), allocatable, dimension(:,:) :: atomSum
+   complex (kind=double), allocatable, dimension(:,:) :: atomSum
    real (kind=double) :: theta
    real (kind=double) :: phi
    real (kind=double) :: sepDist
@@ -961,7 +968,9 @@ subroutine computeForce(valeValeRho, kPoint, currSpin, currAxis)
       write (6,*)
    endif
 
-   atomSum(:,:) = 0.0_double
+   ! Accumulate the force on each atom pair by summing over both valence
+   !   dimensions. CHECK/FIX if valeValeF is already real valued here or not.
+   atomSum(:,:) = cmplx(0.0_double, 0.0_double, double)
    counter1 = 0
    do i = 1, numAtomSites
       do j = 1, atomTypes(atomSites(i)%atomTypeAssn)%numValeStates
@@ -977,6 +986,7 @@ subroutine computeForce(valeValeRho, kPoint, currSpin, currAxis)
       enddo
    enddo
 
+   ! Compute the equal and opposite Newton #3 force.
    do i = 1, numAtomSites
       do j = i+1, numAtomSites
          atomSum(j,i) = atomSum(i,j) * (-1.0_double)
@@ -1036,7 +1046,7 @@ subroutine computeForceGamma(valeValeRhoGamma, currSpin, currAxis)
    integer, intent(in) :: currSpin, currAxis
 
    ! Define local variables.
-   integer :: i,j,k,l,m
+   integer :: i,j,k,l
    integer :: counter1, counter2
    real (kind=double), allocatable, dimension(:,:) :: atomSum
    real (kind=double) :: theta
@@ -1077,7 +1087,7 @@ subroutine computeForceGamma(valeValeRhoGamma, currSpin, currAxis)
 
    do i = 1, numAtomSites
       do j = i+1, numAtomSites
-         atomSum(j,i) = atomSum(i,j) * -1.0_double
+         atomSum(j,i) = atomSum(i,j) * (-1.0_double)
       enddo
    enddo
 

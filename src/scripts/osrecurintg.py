@@ -509,8 +509,7 @@ def print_head(settings, f, num_sh_intg, num_pc_intg, max_lam):
    ! Open the control file.
    open (10, file="intgcontrol", status='old')
 
-   ! The first bits of information in the control file will control the
-   !   numerical integration. The
+   ! Read the cell size and the grid step size for numerical integration.
    read (10,*) cell_size, step_size
 
    ! Read the number of segments.
@@ -847,7 +846,7 @@ def print_head(settings, f, num_sh_intg, num_pc_intg, max_lam):
          ! Compute the pc and sh integral results for the current parameters
          !   using numerical integration.
          call delectron3CIntgNumBB(alphas(1),alphas(2),alphas(3),pos(:,1),&
-               & pos(:,2),pos(:,3),pc(:,:,:,2),sh(:,:,:,2),cell_size,&
+               & pos(:,2),pc(:,:,:,2),sh(:,:,:,2),cell_size,&
                & step_size)
 
          ! Print the pc and sh integral result differences.

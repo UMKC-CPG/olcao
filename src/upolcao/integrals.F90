@@ -90,6 +90,7 @@ subroutine allocateIntegralsSCF(coreDim,valeDim,numKPoints)
    allocate (coreValeOL (coreDim,valeDim,numKPoints)) ! Used for all ortho
    allocate (valeVale   (valeDim,valeDim,numKPoints))
 #else
+   if (numKPoints > 1) stop "Cannot be here" ! Avoid compiler warning.
    allocate (coreCoreGamma   (coreDim,coreDim))
    allocate (coreValeOLGamma (coreDim,valeDim)) ! Used for all ortho
    allocate (valeValeGamma   (valeDim,valeDim))
@@ -112,6 +113,7 @@ subroutine allocateIntegralsPSCF(coreDim,valeDim,numKPoints)
    allocate (coreValeOL (coreDim,valeDim,numKPoints))
    allocate (valeVale   (valeDim,valeDim,numKPoints))
 #else
+   if (numKPoints > 1) stop "Cannot be here" ! Avoid compiler warning
    allocate (coreCoreGamma   (coreDim,coreDim))
    allocate (coreValeOLGamma (coreDim,valeDim))
    allocate (valeValeGamma   (valeDim,valeDim))
@@ -139,6 +141,7 @@ subroutine reallocateIntegralsPSCF(coreDim,valeDim,numKPoints,spin)
 #else
    deallocate(coreCoreGamma)
    deallocate(valeValeGamma)
+   if (numKPoints > 1) stop "Cannot be here" ! Avoid compiler warning.
    allocate (coreCoreHamGamma (coreDim,coreDim,spin))
    allocate (coreValeHamGamma (coreDim,valeDim,spin))
    allocate (valeValeHamGamma (valeDim,valeDim,spin))
@@ -158,8 +161,8 @@ subroutine gaussOverlapOL(numComponents,fullCVDims,packedVVDims,did,CVdid,aid)
    use O_Constants, only: dim3
    use O_KPoints, only: numKPoints
    use O_GaussianRelations, only: alphaDist
-   use O_AtomicSites, only: valeDim, coreDim, numAtomSites, atomSites
-   use O_AtomicTypes, only: maxNumAtomAlphas, maxNumStates, atomTypes
+   use O_AtomicSites, only: valeDim, coreDim, numAtomSites
+   use O_AtomicTypes, only: maxNumAtomAlphas, maxNumStates
    use O_Lattice, only: numCellsReal, cellSizesReal, cellDimsReal, &
          & findLatticeVector
    use O_GaussianIntegrals, only: overlap2CIntg
@@ -185,7 +188,6 @@ subroutine gaussOverlapOL(numComponents,fullCVDims,packedVVDims,did,CVdid,aid)
    ! Define local variables for logging and loop control
    integer :: i,j,k,l,m ! Loop index variables
    integer :: hdf5Status
-   integer(hsize_t), dimension (1) :: attribIntDims ! Attribute dataspace dim
 
    ! Atom specific variables that change with each atom pair loop iteration.
    integer,              dimension (2)    :: currentAtomType
@@ -216,9 +218,6 @@ subroutine gaussOverlapOL(numComponents,fullCVDims,packedVVDims,did,CVdid,aid)
    real (kind=double), allocatable, dimension (:,:,:) :: pairXBasisFn2 ! The
          ! above overlap times the basis function from atom 2.  This is
          ! accumulated with each iteration of the alpha loop.
-   logical :: contrib  ! At least one alpha pair contributes.  For the nuc and
-         ! elec calculations this also requires that the pot term contribute.
-
 
    ! Variables and data structures that change or are accumulated with each
    !   iteration of the lattice loop.
@@ -246,11 +245,13 @@ subroutine gaussOverlapOL(numComponents,fullCVDims,packedVVDims,did,CVdid,aid)
    real (kind=double) :: maxLatticeRadius ! Maximum radius beyond which no
          ! lattice points will be considered for integration.
 
+#ifndef GAMMA
    ! Define variables used only if the overlap was already done and now we
    !   just need to read in the coreValeOL result to help with
    !   orthogonalization of other integral matrices in the future.
    real (kind=double), allocatable, dimension(:,:) :: tempRealCoreVale
    real (kind=double), allocatable, dimension(:,:) :: tempImagCoreVale
+#endif
 
    ! Define variables for gauss integrals
    integer :: l1l2Switch
@@ -275,7 +276,7 @@ subroutine gaussOverlapOL(numComponents,fullCVDims,packedVVDims,did,CVdid,aid)
          do i = 1, numKPoints
             if (mpiRank == 0) then
                call readMatrix (CVdid(:,i),coreValeOL(:,:,i),tempRealCoreVale,&
-                     & tempImagCoreVale,fullCVDims,coreDim,valeDim)
+                     & tempImagCoreVale,fullCVDims,coreDim,valeDim,0)! No BCast
             endif
          enddo
          call MPI_BCAST(coreValeOL(:,:,:),coreDim*valeDim*numKPoints,&
@@ -287,7 +288,7 @@ subroutine gaussOverlapOL(numComponents,fullCVDims,packedVVDims,did,CVdid,aid)
       if (coreDim > 0) then
          if (mpiRank == 0) then
             call readMatrixGamma (CVdid(1,1),coreValeOLGamma(:,:),fullCVDims,&
-                  & coreDim,valeDim) 
+                  & coreDim,valeDim,0) ! No immediate broadcast 
          endif
          call MPI_BCAST(coreValeOLGamma(:,:),coreDim*valeDim,&
                & MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,mpierr)
@@ -504,12 +505,6 @@ subroutine gaussOverlapOL(numComponents,fullCVDims,packedVVDims,did,CVdid,aid)
                      currentMode = 1
                   endif
 
-                  ! At this point a sufficient overlap between atomic Gaussians
-                  !   has been shown to exist. FIX: This appears to be a
-                  !   useless term. Similarly, the .eqv. test below becomes
-                  !   useless.
-                  contrib = .true.
-
                   ! Calculate the opcode to do the correct set of integrals
                   !   for the current alpha pair
                   l1l2Switch = ishft(1,&
@@ -526,20 +521,18 @@ subroutine gaussOverlapOL(numComponents,fullCVDims,packedVVDims,did,CVdid,aid)
 
                   ! Collect the results of the overlap of the current alpha
                   !   times the basis functions of atom 2.
-                  if (contrib .eqv. .true.) then
-                     do m = 1, currentNumTotalStates(2)
-                        pairXBasisFn2(:currentlmAlphaIndex(alphaIndex(1),1),&
-                              & alphaIndex(1),m) = &
-                              & pairXBasisFn2(:currentlmAlphaIndex &
-                              & (alphaIndex(1),1),alphaIndex(1),m) + &
-                              & oneAlphaPair(:currentlmAlphaIndex &
-                              & (alphaIndex(1),1),currentlmIndex(m,2)) * &
-                              & currentBasisFns(alphaIndex(2),m,2)
-                     enddo
+                  do m = 1, currentNumTotalStates(2)
+                     pairXBasisFn2(:currentlmAlphaIndex(alphaIndex(1),1),&
+                           & alphaIndex(1),m) = &
+                           & pairXBasisFn2(:currentlmAlphaIndex &
+                           & (alphaIndex(1),1),alphaIndex(1),m) + &
+                           & oneAlphaPair(:currentlmAlphaIndex &
+                           & (alphaIndex(1),1),currentlmIndex(m,2)) * &
+                           & currentBasisFns(alphaIndex(2),m,2)
+                  enddo
 
-                     ! Update the maximum alpha used from atom 1.
-                     maxAlpha1Used = max(alphaIndex(1),maxAlpha1Used)
-                  endif
+                  ! Update the maximum alpha used from atom 1.
+                  maxAlpha1Used = max(alphaIndex(1),maxAlpha1Used)
                enddo
             enddo  ! min number of alphas between the two atoms l
 
@@ -624,8 +617,8 @@ subroutine gaussOverlapKE(packedVVDims,did,aid)
    use O_Constants, only: dim3
    use O_KPoints, only: numKPoints
    use O_GaussianRelations, only: alphaDist
-   use O_AtomicSites, only: valeDim, coreDim, numAtomSites, atomSites
-   use O_AtomicTypes, only: maxNumAtomAlphas, maxNumStates, atomTypes
+   use O_AtomicSites, only: valeDim, coreDim, numAtomSites
+   use O_AtomicTypes, only: maxNumAtomAlphas, maxNumStates
    use O_Lattice, only: numCellsReal, cellSizesReal, cellDimsReal, &
          & findLatticeVector
    use O_GaussianIntegrals, only: kinetic2CIntg
@@ -643,7 +636,6 @@ subroutine gaussOverlapKE(packedVVDims,did,aid)
    ! Define local variables for logging and loop control
    integer :: i,j,k,l,m ! Loop index variables
    integer :: hdf5Status
-   integer(hsize_t), dimension (1) :: attribIntDims ! Attribute dataspace dim
 
    ! Atom specific variables that change with each atom pair loop iteration.
    integer,              dimension (2)    :: currentAtomType
@@ -674,9 +666,6 @@ subroutine gaussOverlapKE(packedVVDims,did,aid)
    real (kind=double), allocatable, dimension (:,:,:) :: pairXBasisFn2 ! The
          ! above overlap times the basis function from atom 2.  This is
          ! accumulated with each iteration of the alpha loop.
-   logical :: contrib  ! At least one alpha pair contributes.  For the nuc and
-         ! elec calculations this also requires that the pot term contribute.
-
 
    ! Variables and data structures that change or are accumulated with each
    !   iteration of the lattice loop.
@@ -718,19 +707,6 @@ subroutine gaussOverlapKE(packedVVDims,did,aid)
       call timeStampEnd(9)
       return
    endif
-
-   !hdf5Status = 0
-   !attribIntDims(1) = 1
-   !call h5aread_f(aid,H5T_NATIVE_INTEGER,hdf5Status,&
-   !      & attribIntDims,hdferr)
-   !if (hdferr /= 0) stop 'Failed to read atom KE overlap status.'
-   !if (hdf5Status == 1) then
-   !   write(20,*) "Two-center KE overlap already exists. Skipping."
-   !   call timeStampEnd(9)
-   !   call h5aclose_f(aid,hdferr)
-   !   if (hdferr /= 0) stop 'Failed to close atom KE overlap status.'
-   !   return
-   !endif
 
    ! Allocate space for locally defined allocatable arrays
    allocate (currentBasisFns     (maxNumAtomAlphas,maxNumStates,2))
@@ -932,12 +908,6 @@ subroutine gaussOverlapKE(packedVVDims,did,aid)
                      endif
                   endif
 
-                  ! At this point a sufficient overlap between atomic Gaussians
-                  !   has been shown to exist. FIX: This appears to be a
-                  !   useless term. Similarly, the .eqv. test below becomes
-                  !   useless.
-                  contrib = .true.
-
                   ! Calculate the opcode to do the correct set of integrals
                   ! for the current alpha pair
                   l1l2Switch = ishft(1,&
@@ -963,20 +933,18 @@ subroutine gaussOverlapKE(packedVVDims,did,aid)
 
                   ! Collect the results of the overlap of the current alpha
                   !   times the basis functions of atom 2.
-                  if (contrib .eqv. .true.) then
-                     do m = 1, currentNumTotalStates(2)
-                        pairXBasisFn2(:currentlmAlphaIndex(alphaIndex(1),1),&
-                              & alphaIndex(1),m) = &
-                              & pairXBasisFn2(:currentlmAlphaIndex &
-                              & (alphaIndex(1),1),alphaIndex(1),m) + &
-                              & oneAlphaPair(:currentlmAlphaIndex &
-                              & (alphaIndex(1),1),currentlmIndex(m,2)) * &
-                              & currentBasisFns(alphaIndex(2),m,2)
-                     enddo
+                  do m = 1, currentNumTotalStates(2)
+                     pairXBasisFn2(:currentlmAlphaIndex(alphaIndex(1),1),&
+                           & alphaIndex(1),m) = &
+                           & pairXBasisFn2(:currentlmAlphaIndex &
+                           & (alphaIndex(1),1),alphaIndex(1),m) + &
+                           & oneAlphaPair(:currentlmAlphaIndex &
+                           & (alphaIndex(1),1),currentlmIndex(m,2)) * &
+                           & currentBasisFns(alphaIndex(2),m,2)
+                  enddo
 
-                     ! Update the maximum alpha used from atom 1.
-                     maxAlpha1Used = max(alphaIndex(1),maxAlpha1Used)
-                  endif
+                  ! Update the maximum alpha used from atom 1.
+                  maxAlpha1Used = max(alphaIndex(1),maxAlpha1Used)
 
                   ! Switch mode from the initial state of no searching to the
                   !   state of searching along alphas from atom 1.
@@ -1065,8 +1033,8 @@ subroutine gaussOverlapMV(packedVVDims,did,aid)
    use O_Constants, only: dim3
    use O_KPoints, only: numKPoints
    use O_GaussianRelations, only: alphaDist
-   use O_AtomicSites, only: valeDim, coreDim, numAtomSites, atomSites
-   use O_AtomicTypes, only: maxNumAtomAlphas, maxNumStates, atomTypes
+   use O_AtomicSites, only: valeDim, coreDim, numAtomSites
+   use O_AtomicTypes, only: maxNumAtomAlphas, maxNumStates
    use O_Lattice, only: numCellsReal, cellSizesReal, cellDimsReal, &
          & findLatticeVector
    use O_GaussianIntegrals, only: massVel2CIntg
@@ -1084,7 +1052,6 @@ subroutine gaussOverlapMV(packedVVDims,did,aid)
    ! Define local variables for logging and loop control
    integer :: i,j,k,l,m ! Loop index variables
    integer :: hdf5Status
-   integer(hsize_t), dimension (1) :: attribIntDims ! Attribute dataspace dim
 
    ! Atom specific variables that change with each atom pair loop iteration.
    integer,              dimension (2)    :: currentAtomType
@@ -1114,9 +1081,6 @@ subroutine gaussOverlapMV(packedVVDims,did,aid)
    real (kind=double), allocatable, dimension (:,:,:) :: pairXBasisFn2 ! The
          ! above overlap times the basis function from atom 2.  This is
          ! accumulated with each iteration of the alpha loop.
-   logical :: contrib  ! At least one alpha pair contributes.  For the nuc and
-         ! elec calculations this also requires that the pot term contribute.
-
 
    ! Variables and data structures that change or are accumulated with each
    !   iteration of the lattice loop.
@@ -1158,18 +1122,6 @@ subroutine gaussOverlapMV(packedVVDims,did,aid)
       call timeStampEnd(30)
       return
    endif
-   !hdf5Status = 0
-   !attribIntDims(1) = 1
-   !call h5aread_f(aid,H5T_NATIVE_INTEGER,hdf5Status,&
-   !      & attribIntDims,hdferr)
-   !if (hdferr /= 0) stop 'Failed to read atom MV overlap status.'
-   !if (hdf5Status == 1) then
-   !   write(20,*) "Two-center MV overlap already exists. Skipping."
-   !   call timeStampEnd(30)
-   !   call h5aclose_f(aid,hdferr)
-   !   if (hdferr /= 0) stop 'Failed to close atom MV overlap status.'
-   !   return
-   !endif
 
    ! Allocate space for locally defined allocatable arrays
    allocate (currentBasisFns     (maxNumAtomAlphas,maxNumStates,2))
@@ -1384,12 +1336,6 @@ subroutine gaussOverlapMV(packedVVDims,did,aid)
                      currentMode = 1
                   endif
 
-                  ! At this point a sufficient overlap between atomic Gaussians
-                  !   has been shown to exist. FIX: This appears to be a
-                  !   useless term. Similarly, the .eqv. test below becomes
-                  !   useless.
-                  contrib = .true.
-
                   ! Calculate the opcode to do the correct set of integrals
                   ! for the current alpha pair
                   l1l2Switch = ishft(1,&
@@ -1409,20 +1355,18 @@ subroutine gaussOverlapMV(packedVVDims,did,aid)
                   !   sign is used in the accumulation because the mass
                   !   velocity term has an overall negative contribution to
                   !   the Hamiltonian.
-                  if (contrib .eqv. .true.) then
-                     do m = 1, currentNumTotalStates(2)
-                        pairXBasisFn2(:currentlmAlphaIndex(alphaIndex(1),1),&
-                              & alphaIndex(1),m) = &
-                              & pairXBasisFn2(:currentlmAlphaIndex &
-                              & (alphaIndex(1),1),alphaIndex(1),m) - &
-                              & oneAlphaPair(:currentlmAlphaIndex &
-                              & (alphaIndex(1),1),currentlmIndex(m,2)) * &
-                              & currentBasisFns(alphaIndex(2),m,2)
-                     enddo
+                  do m = 1, currentNumTotalStates(2)
+                     pairXBasisFn2(:currentlmAlphaIndex(alphaIndex(1),1),&
+                           & alphaIndex(1),m) = &
+                           & pairXBasisFn2(:currentlmAlphaIndex &
+                           & (alphaIndex(1),1),alphaIndex(1),m) - &
+                           & oneAlphaPair(:currentlmAlphaIndex &
+                           & (alphaIndex(1),1),currentlmIndex(m,2)) * &
+                           & currentBasisFns(alphaIndex(2),m,2)
+                  enddo
 
-                     ! Update the maximum alpha used from atom 1.
-                     maxAlpha1Used = max(alphaIndex(1),maxAlpha1Used)
-                  endif
+                  ! Update the maximum alpha used from atom 1.
+                  maxAlpha1Used = max(alphaIndex(1),maxAlpha1Used)
                enddo
             enddo  ! min number of alphas between the two atoms l
 
@@ -1510,8 +1454,8 @@ subroutine gaussOverlapNP(packedVVDims,did,aid)
    use O_Constants, only: dim3
    use O_KPoints, only: numKPoints
    use O_GaussianRelations, only: alphaDist
-   use O_AtomicSites, only: valeDim, coreDim, numAtomSites, atomSites
-   use O_AtomicTypes, only: maxNumAtomAlphas, maxNumStates, atomTypes
+   use O_AtomicSites, only: valeDim, coreDim, numAtomSites
+   use O_AtomicTypes, only: maxNumAtomAlphas, maxNumStates
    use O_Lattice, only: numCellsReal, cellSizesReal, cellDimsReal, &
          & findLatticeVector
    use O_Basis, only: initializeAtomSite
@@ -1528,7 +1472,6 @@ subroutine gaussOverlapNP(packedVVDims,did,aid)
    ! Define local variables for logging and loop control
    integer :: i,j,k,l,m ! Loop index variables
    integer :: hdf5Status
-   integer(hsize_t), dimension (1) :: attribIntDims ! Attribute dataspace dim
 
    ! Atom specific variables that change with each atom pair loop iteration.
    integer,              dimension (2)    :: currentAtomType
@@ -1598,18 +1541,6 @@ subroutine gaussOverlapNP(packedVVDims,did,aid)
       call timeStampEnd(10)
       return
    endif
-   !hdf5Status = 0
-   !attribIntDims(1) = 1
-   !call h5aread_f(aid,H5T_NATIVE_INTEGER,hdf5Status,&
-   !      & attribIntDims,hdferr)
-   !if (hdferr /= 0) stop 'Failed to read atom nuclear overlap status.'
-   !if (hdf5Status == 1) then
-   !   write(20,*) "Three-center nuclear overlap already exists. Skipping."
-   !   call timeStampEnd(10)
-   !   call h5aclose_f(aid,hdferr)
-   !   if (hdferr /= 0) stop 'Failed to close atom Nuc overlap status.'
-   !   return
-   !endif
 
    ! Allocate space for locally defined allocatable arrays
    allocate (currentBasisFns     (maxNumAtomAlphas,maxNumStates,2))
@@ -1812,11 +1743,7 @@ subroutine gaussOverlapNP(packedVVDims,did,aid)
                   endif
 
                   ! At this point a sufficient overlap between atomic Gaussians
-                  !   has been shown to exist. FIX: Setting to .true. here is
-                  !   useless because it is reset to .false. in nuclearPE.
-                  !   Unlike in earlier subroutines, the .eqv. test below is
-                  !   not useless.
-                  contrib = .true.
+                  !   has been shown to exist.
 
                   ! We can proceed with the next step of the calculation. In
                   !   this case there will be a further loop over the nuclear
@@ -2218,11 +2145,7 @@ subroutine gaussOverlapEP(packedVVDims,did,aid)
                   endif
 
                   ! At this point a sufficient overlap between atomic Gaussians
-                  !   has been shown to exist. FIX: Setting to .true. here is
-                  !   useless because it is reset to .false. in electronicPE.
-                  !   Unlike in earlier subroutines, the .eqv. test below is
-                  !   not useless.
-                  contrib = .true.
+                  !   has been shown to exist.
 
                   ! We can proceed with the next step of the calculation. In
                   !   this case a further loop over all the sites for the
@@ -2363,7 +2286,6 @@ subroutine elecPotGaussOverlap(packedVVDims,did,aid)
    integer (hsize_t) :: matrixSize ! Used to define the size of the
          ! anyElecPotInteraction matrix and the number of bits in hsize_t.
    integer :: hdf5Status
-   integer(hsize_t), dimension (1) :: attribIntDims ! Attribute dataspace dim
    character*80 :: message
 
    ! Make a time stamp.
@@ -2418,19 +2340,6 @@ subroutine elecPotGaussOverlap(packedVVDims,did,aid)
          write(message,*) "Three-center EP overlap ", currentIterCount
          call checkAttributeHDF5(aid(currentIterCount),message,hdf5Status)
          if (hdf5Status == 1) cycle
-         !hdf5Status = 0
-         !attribIntDims(1) = 1
-         !call h5aread_f(aid(currentIterCount),&
-         !      & H5T_NATIVE_INTEGER,hdf5Status,attribIntDims,hdferr)
-         !if (hdferr /= 0) stop 'Failed to read atom pot term OL status.'
-         !if (hdf5Status == 1) then
-         !   write(20,*) &
-         !         & "Three-center pot term OL already exists. Skipping: ", &
-         !         & currentIterCount
-         !   call h5aclose_f(aid(currentIterCount),hdferr)
-         !   if (hdferr /= 0) stop 'Failed to close atom pot term OL status.'
-         !   cycle
-         !endif
 
          ! Record the current parameters for this iteration.
          currPotAlpha   = potTypes(currPotTypeNumber)%alphas(j)
@@ -2445,15 +2354,17 @@ subroutine elecPotGaussOverlap(packedVVDims,did,aid)
                & aid(currentIterCount))
 
          ! Record that this loop has finished
-         if (mod(currentIterCount,10) .eq. 0) then
-            write (20,ADVANCE="NO",FMT="(a1)") "|"
-         else
-            write (20,ADVANCE="NO",FMT="(a1)") "."
+         if (mpiRank == 0) then
+            if (mod(currentIterCount,10) .eq. 0) then
+               write (20,ADVANCE="NO",FMT="(a1)") "|"
+            else
+               write (20,ADVANCE="NO",FMT="(a1)") "."
+            endif
+            if (mod(currentIterCount,50) .eq. 0) then
+               write (20,*) " ",currentIterCount
+            endif
+            call flush (20)
          endif
-         if (mod(currentIterCount,50) .eq. 0) then
-            write (20,*) " ",currentIterCount
-         endif
-         call flush (20)
       enddo
    enddo
 
@@ -2847,9 +2758,9 @@ subroutine gaussOverlapHamPSCF(did,aid)
    use O_TimeStamps
    use O_Constants, only: dim3
    use O_KPoints, only: numKPoints
-   use O_GaussianRelations, only: alphaDist, alphaCenter, alphaNucDist
-   use O_AtomicSites, only: valeDim, coreDim, numAtomSites, atomSites
-   use O_AtomicTypes, only: maxNumAtomAlphas, maxNumStates, atomTypes
+   use O_GaussianRelations, only: alphaDist, alphaCenter!, alphaNucDist
+   use O_AtomicSites, only: numAtomSites
+   use O_AtomicTypes, only: maxNumAtomAlphas, maxNumStates
    use O_Lattice, only: numCellsReal, cellSizesReal, cellDimsReal, &
          & findLatticeVector, logBasisFnThresh
    use O_PotTypes, only: potTypes
@@ -2870,7 +2781,6 @@ subroutine gaussOverlapHamPSCF(did,aid)
    ! Define local variables for logging and loop control
    integer :: i,j,k,l,m,n,o,p,q ! Loop index variables
    integer :: hdf5Status
-   integer(hsize_t), dimension (1) :: attribIntDims ! Attribute dataspace dim
 
    ! Atom specific variables that change with each atom pair loop iteration.
    integer,              dimension (2)    :: currentAtomType
@@ -2904,8 +2814,6 @@ subroutine gaussOverlapHamPSCF(did,aid)
    real (kind=double), allocatable, dimension (:,:,:,:) :: pairXBasisFn2Ham
          ! The pair overlap times the basis function from atom 2.  These
          ! are accumulated with each iteration of the alpha loop.
-   logical :: contrib  ! At least one alpha pair contributes.  For the nuc and
-         ! elec calculations this also requires that the pot term contribute.
 
    ! Variables and data structures that change or are accumulated with each
    !   iteration of the lattice loop.
@@ -2985,21 +2893,6 @@ subroutine gaussOverlapHamPSCF(did,aid)
       call timeStampEnd(20)
       return
    endif
-   !hdf5Status = 0
-   !attribIntDims(1) = 1
-   !call h5aread_f(aid,H5T_NATIVE_INTEGER,hdf5Status,attribIntDims,hdferr)
-   !if (hdferr /= 0) stop 'Failed to read atom Hamiltonian overlap status.'
-   !if (hdf5Status == 1) then
-   !   write(20,*) "Hamiltonian overlap itegrals already exists. Skipping."
-   !   call timeStampEnd(20)
-   !   call h5aclose_f(aid,hdferr)
-   !   if (hdferr /= 0) stop 'Failed to close atom Ham. overlap status.'
-   !   return
-   !endif
-
-   ! We need to understand which integrals were requested and which ones
-   !   have already been computed.
-   attribIntDims(1) = 1
 
    ! Allocate space for locally defined allocatable arrays
    allocate (currentBasisFns     (maxNumAtomAlphas,maxNumStates,2))
@@ -3080,10 +2973,12 @@ subroutine gaussOverlapHamPSCF(did,aid)
          !   to be needed by comparing the maxlatticeRadius to the maximum
          !   radius of the lattice points defined earlier.
          if (maxLatticeRadius > cellSizesReal(numCellsReal)) then
-            write (20,*) 'More lattice points needed for this atom overlap pair'
-            write (20,*) 'maxLatticeRadius requested=',maxLatticeRadius
-            write (20,*) 'max available=',cellSizesReal(numCellsReal)
-            stop
+            if (mpiRank == 0) then
+               write (20,*) 'More lattice points needed for this overlap pair'
+               write (20,*) 'maxLatticeRadius requested=',maxLatticeRadius
+               write (20,*) 'max available=',cellSizesReal(numCellsReal)
+            endif
+            call stopMPI("")
          endif
 
          ! Initialize the matrices for this atom pair that will record the
@@ -3557,15 +3452,17 @@ subroutine gaussOverlapHamPSCF(did,aid)
       enddo ! (Atom loop #2)
 
       ! Mark the completion of this atom.
-      if (mod(i,10) .eq. 0) then
-         write (20,ADVANCE="NO",FMT="(a1)") "|"
-      else
-         write (20,ADVANCE="NO",FMT="(a1)") "."
+      if (mpiRank == 0) then
+         if (mod(i,10) .eq. 0) then
+            write (20,ADVANCE="NO",FMT="(a1)") "|"
+         else
+            write (20,ADVANCE="NO",FMT="(a1)") "."
+         endif
+         if (mod(i,50) .eq. 0) then
+            write (20,*) " ",i
+         endif
+         call flush (20)
       endif
-      if (mod(i,50) .eq. 0) then
-         write (20,*) " ",i
-      endif
-      call flush (20)
 
    enddo    ! (Atom loop #1)
 
@@ -3973,7 +3870,6 @@ subroutine orthoHamPSCF(spin,did,aid)
    use MPI_F08
    use O_MPI
    use O_Kinds
-   use O_PotTypes, only: potTypes
    use O_KPoints, only: numKPoints
    use O_AtomicSites, only: coreDim, valeDim
    use O_PSCFIntegralsHDF5, only: packedVVDimsPSCF

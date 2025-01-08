@@ -12,14 +12,6 @@ real (kind=double) :: accumChargeKP
    real (kind=double), allocatable, dimension (:,:,:) :: profileWav
    real (kind=double), allocatable, dimension (:,:,:) :: profileRho
    real (kind=double), allocatable, dimension (:,:,:) :: profilePot
-         ! Index1=a,b,c
-         ! Index2 = As identified in subroutine initEnv.  The important thing
-         !          is that in the non spin polarized case the last Index2 is
-         !          always the potential while in the spin polarized case the
-         !          last two Index2 values are the spin-up and spin-down
-         !          potentials.  This is important because they have different
-         !          units that the other charge columns.
-         ! Index3 = 1..max(numMeshPoints(a,b,c))
    real (kind=double), allocatable, dimension (:,:,:,:) :: meshChunk ! The
          ! Mesh points all collected into a single array. The first index is
          ! for xyz, the remaining three indices are for the abc lattice
@@ -88,8 +80,7 @@ subroutine computeFieldMesh(inSCF)
    use O_Constants,    only: smallThresh, hartree
    use O_PotTypes,     only: maxNumPotAlphas, potTypes
    use O_AtomicSites,  only: valeDim, numAtomSites, atomSites
-   use O_Kpoints,      only: numKPoints, kPointWeight, phaseFactor
-   use O_Input,        only: numStates, numElectrons, doProfileField, &
+   use O_Input,        only: numStates, doProfileField, &
          & eminFIELD, emaxFIELD, doPsiFIELD, doWavFIELD, doRhoFIELD, &
          & doPotFIELD, doXDMFField
 !   use O_OpenDX,       only: printODXFieldHead, printODXFieldTail, &
@@ -100,18 +91,22 @@ subroutine computeFieldMesh(inSCF)
    use O_Lattice,      only: logBasisFnThresh, numCellsReal, cellSizesReal, &
          & cellDimsReal, numMeshPoints, realVectors, realFractStrideLength, &
          & findLatticeVector, realCellVolume
+#ifndef GAMMA
+   use O_Kpoints,      only: numKPoints, kPointWeight, phaseFactor
    use O_FieldHDF5,    only: psiR_did, psiI_did, wav_did, rho_did, pot_did, &
          & mesh_did, triggerAxis, meshTriggerAxis, fieldDimsChunk, &
-         & meshDimsChunk, memFieldChunk_dsid, memMeshChunk_dsid, field_dsid, &
-         & mesh_dsid, numDataSets
-#ifndef GAMMA
-   use O_MatrixSubs,      only: readMatrix
+         & meshDimsChunk, memMeshChunk_dsid, field_dsid, &
+         & mesh_dsid
    use O_SecularEquation, only: valeVale, energyEigenValues, readDataSCF, &
-         & readDataPSCF, valeValeOL
+         & readDataPSCF
 #else
-   use O_MatrixSubs,      only: readMatrixGamma
+   use O_Kpoints,      only: numKPoints, kPointWeight
+   use O_FieldHDF5,    only: psiR_did, wav_did, rho_did, pot_did, &
+         & mesh_did, triggerAxis, meshTriggerAxis, fieldDimsChunk, &
+         & meshDimsChunk, memMeshChunk_dsid, field_dsid, &
+         & mesh_dsid
    use O_SecularEquation, only: valeValeGamma, energyEigenValues, &
-         & readDataSCF, readDataPSCF, valeValeOLGamma
+         & readDataSCF, readDataPSCF
 #endif
 
    ! Make sure that no variables are accidentally defined.
@@ -123,7 +118,7 @@ subroutine computeFieldMesh(inSCF)
    ! Define local variables.
    integer :: hdferr
    integer :: a,b,c
-   integer :: i,j,k,l,m,n,u,v,w  ! Loop index variables.
+   integer :: i,j,k,l,m,u,v,w  ! Loop index variables.
    integer :: dimOne
    integer :: skipKP
    integer :: currentPointCount
@@ -150,10 +145,7 @@ subroutine computeFieldMesh(inSCF)
    !   for the last array dimension: Index1 = Total, Index2 = Neutral, Index3 =
    !   Potential.  For spin polarized calculations we have for the last array
    !   dimension:  Index1 = Spin up, Index2 = spin down, Index3 = Neutral,
-   !   Index4 = Neutral.  These values will be appropriately combined to form
-   !   the data listed in the initEnv subroutine. (They may not currently be
-   !   combined. Seems to be just interacting and just non-interacting, not the
-   !   difference.)
+   !   Index4 = Neutral.  
    real (kind=double), allocatable, dimension (:,:,:,:) :: dataChunkPsiReal
 #ifndef GAMMA
    real (kind=double), allocatable, dimension (:,:,:,:) :: dataChunkPsiImag
@@ -242,9 +234,6 @@ complex (kind=double), allocatable, dimension (:) :: tempPointValue
 
    ! Log the beginning of the wave function evaluation.
    call timeStampStart(25)
-
-   ! Initialize the module environment
-   call initEnv
 
    ! Allocate space for locally defined allocatable arrays.
 
@@ -444,15 +433,15 @@ allocate (currNumElec (numKPoints,spin))
 !allocate (identity(numStates,numStates))
    if (doPsiFIELD == 1) then
       allocate (accumWaveFnCoeffsPsi(valeDim,spin+2,numKPoints))
-      accumWaveFnCoeffsPsi(:,:,:) = cmplx(0.0_double,0.0_double)
+      accumWaveFnCoeffsPsi(:,:,:) = cmplx(0.0_double,0.0_double,double)
    endif
    if (doWavFIELD == 1) then
       allocate (accumWaveFnCoeffsWav(valeDim,numStates,spin+2,numKPoints))
-      accumWaveFnCoeffsWav(:,:,:,:) = cmplx(0.0_double,0.0_double)
+      accumWaveFnCoeffsWav(:,:,:,:) = cmplx(0.0_double,0.0_double,double)
    endif
    if (doRhoFIELD == 1) then
       allocate (accumWaveFnCoeffsRho(valeDim,numStates,spin+2,numKPoints))
-      accumWaveFnCoeffsRho(:,:,:,:) = cmplx(0.0_double,0.0_double)
+      accumWaveFnCoeffsRho(:,:,:,:) = cmplx(0.0_double,0.0_double,double)
    endif
    allocate (accumWaveFnCoeffsNeut(valeDim,numKPoints))
    accumWaveFnCoeffsNeut(:,:) = 0.0_double
@@ -857,21 +846,21 @@ accumCharge(j,i) = accumCharge(j,i) + structuredElectronPopulation(k,i,j)
       ! Initialize the evaluation of the wave function on this mesh point.
       if (doPsiFIELD == 1) then
 #ifndef GAMMA
-         waveFnEvalPsi(:,:) = cmplx(0.0_double,0.0_double)
+         waveFnEvalPsi(:,:) = cmplx(0.0_double,0.0_double,double)
 #else
          waveFnEvalPsiGamma(:) = 0.0_double
 #endif
       endif
       if (doWavFIELD == 1) then
 #ifndef GAMMA
-         waveFnEvalWav(:,:,:) = cmplx(0.0_double,0.0_double)
+         waveFnEvalWav(:,:,:) = cmplx(0.0_double,0.0_double,double)
 #else
          waveFnEvalWavGamma(:,:) = 0.0_double
 #endif
       endif
       if (doRhoFIELD == 1) then
 #ifndef GAMMA
-         waveFnEvalRho(:,:,:) = cmplx(0.0_double,0.0_double)
+         waveFnEvalRho(:,:,:) = cmplx(0.0_double,0.0_double,double)
 #else
          waveFnEvalRhoGamma(:,:) = 0.0_double
 #endif
@@ -1085,28 +1074,8 @@ accumCharge(j,i) = accumCharge(j,i) + structuredElectronPopulation(k,i,j)
             !   the contribution is *less* than the minimum necessary to be
             !   non-negligable.  (Tricky!)
             ! Assume that the last alpha will be the last alpha to contribute.
-            if ((doPsiFIELD == 1) .or. (doWavFIELD == 1) .or. &
-                  & (doRhoFIELD == 1)) then
-               lastContribAlphaIndex = currentNumAlphas(2)
-               do k = 1, currentNumAlphas(2)
-                  alphaDist(k) = currentAlphas(k,2)*shiftedSepSqrd
-!write (20,*) "alphaDist(k),k,cutoff,currentAlphas(k,2)=",alphaDist(k),k,&
-!& cutoff,currentAlphas(k,2)
-!call flush(20)
-                  if (alphaDist(k) > cutoff) then
-                     lastContribAlphaIndex = k
-                     exit
-                  endif
-               enddo
 
-               ! Compute the exponential for each of the alphas needed.  This
-               !   will complete all the distance sensitive parts of the
-               !   calculation. The rest is simply applying the appropriate
-               !   coefficients and angular factors to evaulate the
-               !   contribution of each type of orbital (e.g. s,px,py,pz,...).
-               expAlphaDist(1:lastContribAlphaIndex) = &
-                     & exp(-alphaDist(1:lastContribAlphaIndex))
-            endif
+            ! We do the potential version first and then the atomic one.
 !write (20,*) "lastContribAlphaIndex=",lastContribAlphaIndex
 !call flush (20)
 
@@ -1126,6 +1095,15 @@ accumCharge(j,i) = accumCharge(j,i) + structuredElectronPopulation(k,i,j)
                !   of the calculation. Potential Gaussians are all s-type.
                expPotAlphaDist(1:lastContribPotAlphaIndex) = &
                      & exp(-potAlphaDist(1:lastContribPotAlphaIndex))
+
+               ! Accumulate the contribution of this replicated potential
+               !   site's Gaussian set for the current mesh point.
+               do k = 1, spin+2
+                  dataChunkPot(k,a,b,c) = dataChunkPot(k,a,b,c) + &
+                        & sum(currentPotCoeffs(1:lastContribPotAlphaIndex,k)*&
+                        & expPotAlphaDist(1:lastContribPotAlphaIndex))
+               enddo
+
             endif
 !write (20,*) "expAlphaDist(1),currentAlphas(1,2)=",&
 !&expAlphaDist(1),currentAlphas(1,2)
@@ -1148,6 +1126,33 @@ accumCharge(j,i) = accumCharge(j,i) + structuredElectronPopulation(k,i,j)
             !   renormalizeBasis subroutine in the basis.f90 file.
             if ((doPsiFIELD == 1) .or. (doWavFIELD == 1) .or. &
                   & (doRhoFIELD == 1)) then
+
+               lastContribAlphaIndex = currentNumAlphas(2)
+               do k = 1, currentNumAlphas(2)
+                  alphaDist(k) = currentAlphas(k,2)*shiftedSepSqrd
+!write (20,*) "alphaDist(k),k,cutoff,currentAlphas(k,2)=",alphaDist(k),k,&
+!& cutoff,currentAlphas(k,2)
+!call flush(20)
+                  if (alphaDist(k) > cutoff) then
+                     lastContribAlphaIndex = k
+                     exit
+                  endif
+               enddo
+
+               ! Initialize the orbital count to 0. The compiler complains
+               !   that if it isn't initialized here, then later in the GAMMA
+               !   doRhoField accumulation it may be used uninitialized.
+               !   That is odd, because it would be true for the other cases
+               !   too, but the compiler does not complain about them.
+               orbitalCount = 0
+
+               ! Compute the exponential for each of the alphas needed.  This
+               !   will complete all the distance sensitive parts of the
+               !   calculation. The rest is simply applying the appropriate
+               !   coefficients and angular factors to evaulate the
+               !   contribution of each type of orbital (e.g. s,px,py,pz,...).
+               expAlphaDist(1:lastContribAlphaIndex) = &
+                     & exp(-alphaDist(1:lastContribAlphaIndex))
                angularFactor(1) = 1.0_double
                if (currentMaxValeQN_l > 0) then
                   x=shiftedVec(1)
@@ -1281,77 +1286,66 @@ accumCharge(j,i) = accumCharge(j,i) + structuredElectronPopulation(k,i,j)
                      enddo ! w: numStates
                   enddo ! v: spin
                enddo ! u : kpoints
-            endif ! Psi, Wav, Rho only.
 
-            ! Accumulate the contribution of this replicated atom's orbitals
-            !  onto the current mesh point.
+               ! Accumulate the contribution of this replicated atom's orbitals
+               !  onto the current mesh point.
 #ifndef GAMMA
-            if (doPsiFIELD == 1) then
-               do k = 1, numKPoints
-                  do l = 1, spin+2
-                     waveFnEvalPsi(l,k) = waveFnEvalPsi(l,k) + &
-                           & sum(atomicOrbitalPsi(1:orbitalCount,l,k)) * &
-                           & phaseFactor(k,j)
-                  enddo
-               enddo
-            endif
-            if (doWavFIELD == 1) then
-               do k = 1, numKPoints
-                  do l = 1, spin+2
-                     do m = minStateIndex(1,1), maxStateIndex(1,1)
-                        waveFnEvalWav(m,l,k) = waveFnEvalWav(m,l,k) + &
-                              & sum(atomicOrbitalWav(1:orbitalCount,m,l,k)) * &
+               if (doPsiFIELD == 1) then
+                  do k = 1, numKPoints
+                     do l = 1, spin+2
+                        waveFnEvalPsi(l,k) = waveFnEvalPsi(l,k) + &
+                              & sum(atomicOrbitalPsi(1:orbitalCount,l,k)) * &
                               & phaseFactor(k,j)
                      enddo
                   enddo
-               enddo
-            endif
-            if (doRhoFIELD == 1) then
-               do k = 1, numKPoints
-                  do l = 1, spin+2
-                     do m = minStateIndex(1,1), maxStateIndex(1,1)
-                        waveFnEvalRho(m,l,k) = waveFnEvalRho(m,l,k) + &
-                              & sum(atomicOrbitalRho(1:orbitalCount,m,l,k)) * &
-                              & phaseFactor(k,j)
+               endif
+               if (doWavFIELD == 1) then
+                  do k = 1, numKPoints
+                     do l = 1, spin+2
+                        do m = minStateIndex(1,1), maxStateIndex(1,1)
+                           waveFnEvalWav(m,l,k) = waveFnEvalWav(m,l,k) + &
+                                 & sum(atomicOrbitalWav(1:orbitalCount,m,l,k))*&
+                                 & phaseFactor(k,j)
+                        enddo
                      enddo
                   enddo
-               enddo
-            endif
+               endif
+               if (doRhoFIELD == 1) then
+                  do k = 1, numKPoints
+                     do l = 1, spin+2
+                        do m = minStateIndex(1,1), maxStateIndex(1,1)
+                           waveFnEvalRho(m,l,k) = waveFnEvalRho(m,l,k) + &
+                                 & sum(atomicOrbitalRho(1:orbitalCount,m,l,k))*&
+                                 & phaseFactor(k,j)
+                        enddo
+                     enddo
+                  enddo
+               endif
 #else
-            if (doPsiFIELD == 1) then
-               do k = 1, spin+2
-                  waveFnEvalPsiGamma(k) = waveFnEvalPsiGamma(k) + &
-                        & sum(atomicOrbitalPsiGamma(1:orbitalCount,k))
-               enddo
-            endif
-            if (doWavFIELD == 1) then
-               do k = 1, spin+2
-                  do l = minStateIndex(1,1), maxStateIndex(1,1)
-                     waveFnEvalWavGamma(l,k) = waveFnEvalWavGamma(l,k) + &
-                           & sum(atomicOrbitalWavGamma(1:orbitalCount,l,k))
+               if (doPsiFIELD == 1) then
+                  do k = 1, spin+2
+                     waveFnEvalPsiGamma(k) = waveFnEvalPsiGamma(k) + &
+                           & sum(atomicOrbitalPsiGamma(1:orbitalCount,k))
                   enddo
-               enddo
-            endif
-            if (doRhoFIELD == 1) then
-               do k = 1, spin+2
-                  do l = minStateIndex(1,1), maxStateIndex(1,1)
-                     waveFnEvalRhoGamma(l,k) = waveFnEvalRhoGamma(l,k) + &
-                           & sum(atomicOrbitalRhoGamma(1:orbitalCount,l,k))
+               endif
+               if (doWavFIELD == 1) then
+                  do k = 1, spin+2
+                     do l = minStateIndex(1,1), maxStateIndex(1,1)
+                        waveFnEvalWavGamma(l,k) = waveFnEvalWavGamma(l,k) + &
+                              & sum(atomicOrbitalWavGamma(1:orbitalCount,l,k))
+                     enddo
                   enddo
-               enddo
-            endif
+               endif
+               if (doRhoFIELD == 1) then
+                  do k = 1, spin+2
+                     do l = minStateIndex(1,1), maxStateIndex(1,1)
+                        waveFnEvalRhoGamma(l,k) = waveFnEvalRhoGamma(l,k) + &
+                              & sum(atomicOrbitalRhoGamma(1:orbitalCount,l,k))
+                     enddo
+                  enddo
+               endif
 #endif
-
-            ! Accumulate the contribution of this replicated potential site's
-            !   Gaussian set for the current mesh point.
-            if (doPotFIELD == 1) then
-               do k = 1, spin+2
-                  dataChunkPot(k,a,b,c) = dataChunkPot(k,a,b,c) + &
-                        & sum(currentPotCoeffs(1:lastContribPotAlphaIndex,k) * &
-                        & expPotAlphaDist(1:lastContribPotAlphaIndex))
-               enddo
-            endif
-
+            endif ! Psi, Wav, Rho only.
          enddo ! j=numCellsReal
       enddo ! i=numAtomSites
 
@@ -1918,22 +1912,6 @@ endif
 end subroutine computeFieldMesh
 
 
-! This subroutine will set some default (hard coded) values for some array
-!   sizes and other values.  (Basically, this will just be an easy place to
-!   change values if the program is modified or extended in the future.)
-subroutine initEnv
-
-   ! Use necessary modules
-   use O_Potential, only: spin
-   use O_Input, only: doProfileField, doPsiFIELD, doWavFIELD, doRhoFIELD, &
-         & doPotFIELD, doXDMFField
-
-   ! Make sure that no variables are accidentally defined.
-   implicit none
-
-end subroutine initEnv
-
-
 subroutine printProfileData
 
    ! Use necessary modules
@@ -1942,7 +1920,7 @@ subroutine printProfileData
    use O_Potential, only: spin
    use O_Constants, only: hartree, bohrRad
    use O_Lattice,   only: realMag, realFractCrossArea, realFractStrideLength, &
-         & realPlaneAngles, numMeshPoints
+         & numMeshPoints
    use O_FieldHDF5, only: dataSetNames
    use O_Input, only: doPsiFIELD, doWavFIELD, doRhoFIELD, doPotFIELD
 
@@ -2096,34 +2074,6 @@ subroutine printProfileData
       close (32)
    endif
 
-   ! Integrate the charge and print the result to the primary output file.  For
-   !   the case of the potential we simply obtain the average along each axis.
-!   do i = 1, 3
-!!write (20,*) "fSL(:)=",realFractStrideLength(:)
-!!write (20,*) "lM(:)=",realMag(:)
-!!write (20,*) "s(pA(:))=",sin(realPlaneAngles(:))
-!!call flush (20)
-!      integral(:) = 0.0_double
-!
-!      ! Accumulate across all mesh points.
-!      do j = 1, numMeshPoints(i)
-!         integral(1:numCols-spin) = integral(1:numCols-spin) + &
-!               & profile(i,1:numCols-spin,j)
-!         integral(numCols-spin+1:numCols) = integral(numCols-spin+1:numCols) + &
-!               & profile(i,numCols-spin+1:numCols,j)
-!      enddo
-!
-!      ! Factor in the spacing for charge, and average the potential.
-!      integral(1:numCols-spin) = integral(1:numCols-spin) * &
-!            & realFractStrideLength(i) * realMag(i) * sin(realPlaneAngles(i))
-!      integral(numCols-spin+1:numCols) = integral(numCols-spin+1:numCols) / &
-!            numMeshPoints(i)
-!
-!      ! Print the results.
-!      write (20,fmt="(6a13)") colLabel(:),"Integrated"
-!      write (20,fmt="(5e13.4)") integral(:)
-!   enddo
-
 end subroutine printProfileData
 
 
@@ -2133,11 +2083,13 @@ subroutine makeNeutralCoeffs
    use O_Kinds
    use O_Constants,   only: lAngMomCount
    use O_ElementData, only: coreCharge, valeCharge
-   use O_KPoints,     only: numKPoints, kPointWeight
    use O_AtomicSites, only: valeDim, numAtomSites, atomSites
    use O_AtomicTypes, only: atomTypes
    use O_PotTypes,    only: potTypes
    use O_Potential,   only: spin
+#ifndef GAMMA
+   use O_KPoints,     only: numKPoints, kPointWeight
+#endif
 
    ! Make sure no implicit variables are created.
    implicit none
@@ -2278,7 +2230,7 @@ subroutine makeNeutralCoeffs
    !   the total charge over all occupied atomic states.
    do i = 1, numKPoints
       accumWaveFnCoeffsNeut(:,i) = &
-         & sqrt(cmplx(neutralCoeffs(:),0.0_double) / 2.0_double * &
+         & sqrt(neutralCoeffs(:) / 2.0_double * &
          & kPointWeight(i)/real(spin,double))
 !         accumWaveFnCoeffsPsiWav(:,j+2,i) = &
 !               & cmplx(neutralCoeffs(:),0.0_double) / &

@@ -68,7 +68,7 @@ subroutine computeBond3C(inSCF)
    use O_Constants,   only: smallThresh
    use O_Lattice,     only: realVectors
    use O_Populate,    only: electronPopulation
-   use O_KPoints,     only: numKPoints, kPointWeight
+   use O_KPoints,     only: numKPoints
    use O_AtomicSites, only: valeDim, numAtomSites, atomSites
    use O_AtomicTypes, only: numAtomTypes, atomTypes, maxNumValeStates
 #ifndef GAMMA
@@ -82,15 +82,15 @@ subroutine computeBond3C(inSCF)
    implicit none
 
    ! Define local variables.
-   integer :: h,i,j,k,l,m,n,o ! Loop index variables
-   integer, allocatable, dimension (:) :: numTypeBonds
+   integer :: h,i,j,k,l,m ! Loop index variables
+   !integer, allocatable, dimension (:) :: numTypeBonds
    integer, allocatable, dimension (:) :: numOrbIndex
    integer, allocatable, dimension (:) :: bondIndex
    integer, allocatable, dimension (:) :: numAtomStates
-   integer, allocatable, dimension (:) :: numAtomsBonded
-   integer, allocatable, dimension (:) :: currentBonds
-   integer, allocatable, dimension (:) :: numBondAngles
-   integer, allocatable, dimension (:,:,:) :: bondAngleAtoms
+   !integer, allocatable, dimension (:) :: numAtomsBonded
+   !integer, allocatable, dimension (:) :: currentBonds
+   !integer, allocatable, dimension (:) :: numBondAngles
+   !integer, allocatable, dimension (:,:,:) :: bondAngleAtoms
    integer, dimension (2) :: atom1Index
    integer, dimension (2) :: atom2Index
    integer, dimension (2) :: atom3Index
@@ -105,18 +105,18 @@ subroutine computeBond3C(inSCF)
    integer :: currentType
    integer :: valeDimIndex
    integer :: minDistCount
-   real (kind=double) :: systemBondOrder
-   real (kind=double) :: currentDistMag
-   real (kind=double) :: expAlpha
-   real (kind=double) :: expFactor
+   !real (kind=double) :: systemBondOrder
+   !real (kind=double) :: currentDistMag
+   !real (kind=double) :: expAlpha
+   !real (kind=double) :: expFactor
    real (kind=double) :: chargeScaleFactor ! A number from 0-1 that scales
          ! contributions to the bondOrder according to the electron population
          ! in the current state.
    real (kind=double), dimension (2) :: currentMinDist
-   real (kind=double), allocatable, dimension (:)      :: bondOrderTotal
-   real (kind=double), allocatable, dimension (:)      :: bondLengthTotal
-   real (kind=double), allocatable, dimension (:,:)    :: bondAngle
-   real (kind=double), allocatable, dimension (:,:)    :: bondedDist
+   !real (kind=double), allocatable, dimension (:)      :: bondOrderTotal
+   !real (kind=double), allocatable, dimension (:)      :: bondLengthTotal
+   !real (kind=double), allocatable, dimension (:,:)    :: bondAngle
+   !real (kind=double), allocatable, dimension (:,:)    :: bondedDist
    type (atom1Node), allocatable, dimension (:) :: BO3C
    type (atom2Node), pointer :: currentNode2
    type (atom3Node), pointer :: currentNode3
@@ -147,6 +147,11 @@ subroutine computeBond3C(inSCF)
       allocate (valeValeOLGamma (valeDim,valeDim))
    endif
 #endif
+
+
+   ! Initialize variables that will ultimately be initialized before being
+   !   used to avoid compiler warnings about its inability to detect that.
+   latticeIndices(:,:) = 0
 
 
    ! Initialize counter to index the cumulative sum of orbitals of all types.
@@ -257,6 +262,10 @@ subroutine computeBond3C(inSCF)
    do k = 1, numAtomSites
       BO3C(k)%head => null()
    enddo
+
+   ! Initialize the currentNode pointers.
+   currentNode2 => null()
+   currentNode3 => null()
 
    ! Begin the main algorithm for setting up the list of bonded atoms. There
    !   are three loops over numAtomSites (k,l,m) that will probe every possible
@@ -443,7 +452,7 @@ subroutine computeBond3C(inSCF)
             if (electronPopulation(orderedIndex) < smallThresh) exit
 
             ! We have found a state with at least some electron population in
-            !   it. The bond order calculation will be scale according to the
+            !   it. The bond order calculation will be scaled according to the
             !   amount of charge.
             chargeScaleFactor = electronPopulation(orderedIndex)
 
@@ -469,16 +478,16 @@ subroutine computeBond3C(inSCF)
                      !   order between each pair of atoms: 1=atoms 1,2;
                      !   2=atoms 1,3; 3=atoms 2,3. This will be used to compute
                      !   the weighted centroid.
-                     call compute3CBO(kPointWeight(i),real(spin,double),&
-                           & chargeScaleFactor,j,currentNode2%valeDimRangeMag,&
+                     call compute3CBO(chargeScaleFactor,j,&
+                           & currentNode2%valeDimRangeMag,&
                            & BO3C(k)%atom1Index(:),currentNode2%atom2Index(:),&
                            & currentNode3%bondOrder3C,1)
-                     call compute3CBO(kPointWeight(i),real(spin,double),&
-                           & chargeScaleFactor,j,currentNode3%valeDimRangeMag,&
+                     call compute3CBO(chargeScaleFactor,j,&
+                           & currentNode3%valeDimRangeMag,&
                            & BO3C(k)%atom1Index(:),currentNode3%atom3Index(:),&
                            & currentNode3%bondOrder3C,2)
-                     call compute3CBO(kPointWeight(i),real(spin,double),&
-                           & chargeScaleFactor,j,currentNode3%valeDimRangeMag,&
+                     call compute3CBO(chargeScaleFactor,j,&
+                           & currentNode3%valeDimRangeMag,&
                            & currentNode2%atom2Index(:),&
                            & currentNode3%atom3Index(:),&
                            & currentNode3%bondOrder3C,3)
@@ -711,8 +720,8 @@ subroutine getMinDist (i,j,minDistCount,latticeIndices,minDist)
 end subroutine getMinDist
 
 
-subroutine compute3CBO (kPointWeight,spin,chargeScaleFactor,j,index2Mag,&
-      & index1,index2,bondOrder3C,atomPairCode)
+subroutine compute3CBO (chargeScaleFactor,j,index2Mag,index1,index2,&
+      & bondOrder3C,atomPairCode)
 
    ! Import necessary modules.
    use O_Kinds
@@ -726,8 +735,6 @@ subroutine compute3CBO (kPointWeight,spin,chargeScaleFactor,j,index2Mag,&
    implicit none
 
    ! Define passed parameters.
-   real (kind=double), intent (in) :: kPointWeight
-   real (kind=double), intent (in) :: spin
    real (kind=double), intent (in) :: chargeScaleFactor
    integer, intent (in) :: j ! State index number
    integer, intent (in) :: index2Mag ! Magnitude of the valeDim index2 range

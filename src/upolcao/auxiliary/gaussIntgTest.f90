@@ -24,7 +24,7 @@ program GaussianIntegrals
          ! note that it is for numerical integration and is a very different
          ! concept and is unrelated to the "num_steps" defined below.
    integer :: num_segments, num_steps
-   integer :: h, i, p, q
+   integer :: h, i
 
    ! Allocate space to hold the appropriately sized pc and sh matrices. The
    !   last index in both pc and sh is a 2 to hold analytical solutions
@@ -86,7 +86,7 @@ program GaussianIntegrals
          ! Compute the pc and sh integral results for the current parameters
          !   using numerical integration.
          call delectron3CIntgNumBB(alphas(1),alphas(2),alphas(3),pos(:,1),&
-               & pos(:,2),pos(:,3),pc(:,:,:,2),sh(:,:,:,2),cell_size,step_size)
+               & pos(:,2),pc(:,:,:,2),sh(:,:,:,2),cell_size,step_size)
 
          ! Print the pc and sh integral result differences.
          call print_pc_sh(h,i,8,alphas,pos,pc(:,:,1,:),sh(:,:,1,:),&
@@ -231,7 +231,7 @@ sh(1,1,3) = pc(1,1,3)
 
    end subroutine delectron3CIntgAnaBB
 
-   subroutine delectron3CIntgNumBB(a1,a2,a3,A,B,C,pc,sh,cell_size,step_size)
+   subroutine delectron3CIntgNumBB(a1,a2,a3,A,B,pc,sh,cell_size,step_size)
 
    use O_Kinds
    use O_Constants, only: pi
@@ -248,7 +248,7 @@ sh(1,1,3) = pc(1,1,3)
 
    ! Define the dummy variables passed to this subroutine.
    real (kind=double), intent (in) :: a1, a2, a3
-   real (kind=double), dimension (3), intent (in) :: A, B, C
+   real (kind=double), dimension (3), intent (in) :: A, B
    real (kind=double), dimension (1,1,3), intent(out) :: pc
    real (kind=double), dimension (1,1,3), intent(out) :: sh
    real (kind=double), intent (in) :: cell_size, step_size
@@ -260,7 +260,6 @@ sh(1,1,3) = pc(1,1,3)
    integer, dimension (1,2,3) :: conversion
    integer, dimension (3) :: l1, l2
    real (kind=double) :: start_pos, curr_pos
-   real (kind=double), dimension (3) :: xyz
    real (kind=double), dimension (3,2) :: xyz_I ! Indices=xyz, noprime||prime
 
    ! Before we proceed with the calculation we need to understand a bit more
@@ -348,7 +347,7 @@ sh(1,1,3) = pc(1,1,3)
    conversion(1,2,:) = (/1,1,1/)
 
    start_pos = -cell_size
-   num_steps = cell_size * 2.0d0 / step_size + 1  ! +1 accounts for xyz=zero.
+   num_steps = int(cell_size * 2.0d0 / step_size) + 1  ! +1 account for xyz=0.
 
    do p = 1, 1
       do q = 1, 1
@@ -368,14 +367,14 @@ sh(1,1,3) = pc(1,1,3)
             do j = 1, 3
                xyz_I(j,2) = xyz_I(j,2) &
                      & + noPrimeDElectronBB(step_size, curr_pos, A(j), &
-                     & B(j), C(j), a1, a2, a3, l1(j), l2(j))
+                     & B(j), a1, a2, a3, l1(j), l2(j))
             enddo
 
             ! Compute the prime integrals second.
             do j = 1, 3
                xyz_I(j,1) = xyz_I(j,1) &
                      & + primeDElectronBB(step_size, curr_pos, A(j), &
-                     & B(j), C(j), a1, a2, a3, l1(j), l2(j))
+                     & B(j), a1, a2, a3, l1(j), l2(j))
             enddo
          enddo
 
@@ -395,7 +394,7 @@ sh(1,1,3) = pc(1,1,3)
    end subroutine delectron3CIntgNumBB
 
 
-   function noPrimeDElectronBB(step_size, curr_pos, A, B, C, &
+   function noPrimeDElectronBB(step_size, curr_pos, A, B, &
          & a1, a2, a3, l1, l2)
 
       ! Use necessary modules.
@@ -406,7 +405,7 @@ sh(1,1,3) = pc(1,1,3)
 
       ! Define passed parameters.
       real (kind=double), intent(in) :: step_size, curr_pos
-      real (kind=double), intent(in) :: A, B, C, a1, a2, a3
+      real (kind=double), intent(in) :: A, B, a1, a2, a3
       integer, intent(in) :: l1, l2
 
       ! Define local and return variables.
@@ -423,7 +422,7 @@ sh(1,1,3) = pc(1,1,3)
    end function noPrimeDElectronBB
 
 
-   function primeDElectronBB(step_size, curr_pos, A, B, C, a1, a2, a3, l1, l2)
+   function primeDElectronBB(step_size, curr_pos, A, B, a1, a2, a3, l1, l2)
 
       ! Use necessary modules.
       use O_Kinds
@@ -433,7 +432,7 @@ sh(1,1,3) = pc(1,1,3)
 
       ! Define passed parameters.
       real (kind=double), intent(in) :: step_size, curr_pos
-      real (kind=double), intent(in) :: A, B, C, a1, a2, a3
+      real (kind=double), intent(in) :: A, B, a1, a2, a3
       integer, intent(in) :: l1, l2
 
       ! Define local and return variables.

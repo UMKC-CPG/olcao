@@ -16176,7 +16176,7 @@ end if
       a5 = 1133278.3889487833     
       a6 = 11899423.083962219     
       a7 = 136843365.46556622     
-    else if (N == 6) then  
+    else ! (N == 6) then
       a0 = 287.88527781504416     
       a1 = 1871.2543057977896     
       a2 = 14034.407293483402     
@@ -49427,7 +49427,7 @@ end if
    real (kind=double), dimension (20,20,3) :: pc
    
    real (kind=double), dimension (3) :: P, PA, PB, PC_3C, d, preFactorDM
-   real (kind=double) :: zeta, inv_2zeta, xi, preFactorOL, mu
+   real (kind=double) :: zeta, inv_2zeta, xi, preFactorOL
 
 
    ! Initialize local variables.

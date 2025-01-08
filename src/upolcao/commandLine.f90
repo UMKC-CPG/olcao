@@ -89,9 +89,7 @@ subroutine parseCommandLine
    endif
 
    ! Rank 0 records the date and time that we start.
-   if (mpiRank == 0) then
-      call timeStampStart (24)
-   endif
+   call timeStampStart (24)
 
    ! Initialize all the command line parameters.
    call initCLP
@@ -113,9 +111,7 @@ subroutine parseCommandLine
    endif
 
    ! Rank 0 records the date and time that we end.
-   if (mpiRank == 0) then
-      call timeStampEnd (24)
-   endif
+   call timeStampEnd (24)
 
 end subroutine parseCommandLine
 

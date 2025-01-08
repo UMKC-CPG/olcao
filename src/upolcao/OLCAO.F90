@@ -14,13 +14,11 @@ subroutine OLCAO
 
    ! Initialize the MPI interface and process variables.
    call initMPI
-write(20+mpiRank,*) "Hello from process ", mpiRank, "out of ", mpiSize
-call flush(20+mpiRank)
+!write(20+mpiRank,*) "Hello from process ", mpiRank, "out of ", mpiSize
+!call flush(20+mpiRank)
 
    ! Only rank 0 needs to initialize the logging labels.
-   if (mpiRank == 0) then
-      call initOperationLabels
-   endif
+   call initOperationLabels
 
    ! All ranks parse the command line parameters
    call parseCommandLine
@@ -185,13 +183,9 @@ subroutine setupSCF
    !   the exchange correlation mesh.
    call getECMeshParameters
 
-
    ! Now, the dimensions of the system are known.  Therefore, we can
-   !   initialize the HDF5 file structure format, and datasets. Only rank 0
-   !   does this.
-   if (mpiRank == 0) then
-      call initHDF5_SCF (maxNumRayPoints, numStates)
-   endif
+   !   initialize the HDF5 file structure format, and datasets.
+   call initHDF5_SCF (maxNumRayPoints, numStates)
 
 
    ! All ranks construct the exchange correlation overlap matrix, and
@@ -266,6 +260,7 @@ subroutine setupSCF
    !   deallocate the data structures that were used in all the above
    !   subroutines but that are not necessary now.
    call cleanUpIntegrals
+
 
    ! If any supplementary three-term matrices (xyz) were requested for
    !   computing other properties, then allocate the space that is necessary
@@ -371,9 +366,9 @@ subroutine mainSCF
 
    ! Import necessary modules.
    use HDF5
+   use MPI_F08
    use O_MPI
    use O_Kinds
-   use O_CommandLine, only: doDOS_SCF, doBond_SCF, doDIMO_SCF, doForce_SCF
    use O_Input, only: numStates, iterFlagTDOS
    use O_Potential, only: converged, currIteration, lastIteration, &
          & spin, rel, initPotCoeffs, cleanUpPotential
@@ -385,7 +380,7 @@ subroutine mainSCF
    use O_SecularEquation, only: secularEqnSCF, cleanUpSecularEqn, &
          & shiftEnergyEigenValues
    use O_ValeCharge, only: makeValenceRho
-   use O_Populate, only: occupiedEnergy, populateStates
+   use O_Populate, only: populateStates
    use O_LAPACKParameters, only: setBlockSize
    use O_ExchangeCorrelation, only: cleanUpExchCorr
    use O_DOS, only: computeIterationTDOS, printIterationTDOS, computeDOS
@@ -488,7 +483,10 @@ subroutine mainSCF
       if ((converged == 1) .or. (currIteration > lastIteration)) exit
 
       ! All ranks check if the job was requested to stop.
-      open (unit=666,file="OLCAOkill",status="OLD",IOSTAT=OLCAOkill)
+      if (mpiRank == 0) then
+         open (unit=666,file="OLCAOkill",status="OLD",IOSTAT=OLCAOkill)
+      endif
+      call MPI_BCAST(OLCAOkill,1,MPI_INTEGER,0,MPI_COMM_WORLD,mpierr)
       if (OLCAOkill == 0) then
          exit
       endif
@@ -531,11 +529,9 @@ subroutine intgPSCF
          & atomHamOverlapPSCF_did, atomDMOverlapPSCF_did,&
          & atomMMOverlapPSCF_did, atomOverlapSYBD_PSCF_did,&
          & atomOverlapCV_SYBD_PSCF_did, atomHamOverlapSYBD_PSCF_did,&
-         & atomDMOverlapSYBD_PSCF_did,atomMMOverlapSYBD_PSCF_did,&
          & atomOverlapPSCF_aid,atomHamOverlapPSCF_aid,&
          & atomDMOverlapPSCF_aid,atomMMOverlapPSCF_aid,&
          & atomOverlapSYBD_PSCF_aid,atomHamOverlapSYBD_PSCF_aid,&
-         & atomDMOverlapSYBD_PSCF_aid,atomMMOverlapSYBD_PSCF_aid,&
          & numComponents,fullCVDimsPSCF,packedVVDimsPSCF
    use O_Lattice, only: initializeLattice, initializeFindVec
    use O_KPoints, only: numKPoints, makePathKPoints, computePhaseFactors
@@ -595,9 +591,7 @@ subroutine intgPSCF
 
 
    ! Only rank 0 prepares the HDF5 files for the post SCF calculations.
-   if (mpiRank == 0) then
-      call initHDF5_PSCF(numStates)
-   endif
+   call initHDF5_PSCF(numStates)
 
 
    ! All ranks create the alpha distance matrices.
@@ -791,7 +785,7 @@ subroutine printSYBD
    call populateStates
 
    ! Adjust the energyEigenValues down by the fermi level determined above.
-   call shiftEnergyEigenValues(occupiedEnergy,numStates)
+   call shiftEnergyEigenValues(occupiedEnergy)
 
    if (mpiRank == 0) then
       do i = 1, spin
@@ -871,11 +865,8 @@ subroutine dos(inSCF)
    use O_MPI
    use O_Potential,       only: spin
    use O_DOS,             only: computeDOS
-   use O_KPoints,         only: numKPoints
-   use O_Input,           only: numStates
    use O_Populate,        only: occupiedEnergy, populateStates
-   use O_SecularEquation, only: energyEigenValues, &
-         & shiftEnergyEigenValues
+   use O_SecularEquation, only: shiftEnergyEigenValues
 
 
    ! Make sure that no funny variables are defined.
@@ -905,7 +896,7 @@ subroutine dos(inSCF)
 
    ! All ranks shift the energy eigen values according to the highest
    !   occupied state.
-   call shiftEnergyEigenValues(occupiedEnergy,numStates)
+   call shiftEnergyEigenValues(occupiedEnergy)
 
    ! All ranks call the DOS subroutine to compute the total and partial
    !   density of states as well as the localization index. FIX so all ranks
@@ -936,7 +927,7 @@ subroutine bond(inSCF, doBond)
    use O_Bond,            only: computeBond
    use O_Bond3C,          only: computeBond3C
    use O_Populate,        only: occupiedEnergy, populateStates
-   use O_Input,           only: thermalSigma, numStates
+   use O_Input,           only: thermalSigma
    use O_SecularEquation, only: shiftEnergyEigenValues
 
 
@@ -978,7 +969,7 @@ subroutine bond(inSCF, doBond)
 
    ! All ranks shift the energy eigen values according to the highest
    !   occupied state.
-   call shiftEnergyEigenValues(occupiedEnergy,numStates)
+   call shiftEnergyEigenValues(occupiedEnergy)
 
    ! All ranks call the bond subroutine to compute the bond order and
    !   effective charge. FIX so all ranks work together.
@@ -1014,11 +1005,8 @@ subroutine dimo(inSCF)
    ! Use necessary modules.
    use O_MPI
    use O_Potential,       only: spin
-   use O_KPoints,         only: numKPoints
-   use O_Input,           only: numStates
    use O_Populate,        only: occupiedEnergy, populateStates
-   use O_SecularEquation, only: energyEigenValues, &
-         & shiftEnergyEigenValues
+   use O_SecularEquation, only: shiftEnergyEigenValues
    use O_ValeCharge, only: makeValenceRho
 
 
@@ -1038,14 +1026,13 @@ subroutine dimo(inSCF)
       endif
    endif
 
-
    ! All ranks populate the electron states to find the highest occupied
    !   state (Fermi energy for metals).
    call populateStates
 
    ! All ranks shift the energy eigen values according to the highest
    !   occupied state.
-   call shiftEnergyEigenValues(occupiedEnergy,numStates)
+   call shiftEnergyEigenValues(occupiedEnergy)
 
    ! All ranks compute the valence charge density matrix. FIX so each rank
    !   only computes the portion of the valence charge density matrix that
@@ -1078,13 +1065,12 @@ subroutine field(inSCF)
    use O_MPI
    use O_ElementData,     only: initElementData
    use O_Populate,        only: populateStates
-   use O_Potential,       only: spin, initPotCoeffs
+   use O_Potential,       only: initPotCoeffs
    use O_Field,           only: computeFieldMesh, cleanUpField
 !   use O_SCFFieldHDF5,    only: wav_did, rho_did, pot_did, triggerAxis, &
 !         & abcDimsChunk, fileFieldChunk_dsid
 !   use O_PSCFFieldHDF5,    only: wavPSCF_did, rhoPSCF_did, potPSCF_did, &
 !         & triggerAxisPSCF, abcDimsChunkPSCF, fileFieldChunkPSCF_dsid
-   use O_SecularEquation, only: energyEigenValues
    use O_Lattice,         only: initialize3DMesh
    use O_FieldHDF5,       only: prepFieldHDF5, closeFieldHDF5
 
@@ -1096,7 +1082,8 @@ subroutine field(inSCF)
    integer, intent(in) :: inSCF
 
 
-   ! Rank 0 initializes (or accesses) the HDF field file.
+   ! Rank 0 initializes (or accesses) the HDF field file. There are no
+   !   allocations done in here.
    if (mpiRank == 0) then
       call prepFieldHDF5(inSCF)
    endif
@@ -1133,7 +1120,7 @@ subroutine field(inSCF)
    call cleanUpField
 
 
-   ! Rank 0 closes the field HDF5 file.
+   ! Rank 0 closes the field HDF5 file. There are no deallocations done here.
    if (mpiRank == 0) then
       call closeFieldHDF5
    endif
@@ -1147,15 +1134,12 @@ subroutine optc(inSCF,doOPTC)
    use O_MPI
    use O_Potential,       only: spin
    use O_OptcPrint,       only: printOptcResults
-   use O_KPoints,         only: numKPoints
    use O_Populate,        only: occupiedEnergy, populateStates
    use O_Lattice,         only: initializeLattice, initializeFindVec
-   use O_Input,           only: numStates, lastInitStatePACS, &
-         & detailCodePOPTC
+   use O_Input,           only: detailCodePOPTC!, numStates, lastInitStatePACS
    use O_OptcTransitions, only: transCounter, energyDiff, transitionProb, &
          & transitionProbPOPTC, getEnergyStatistics, computeTransitions
-   use O_SecularEquation, only: energyEigenValues, &
-         & shiftEnergyEigenValues
+   use O_SecularEquation, only: shiftEnergyEigenValues
 
 
    ! Make sure that no funny variables are defined.
@@ -1198,7 +1182,7 @@ subroutine optc(inSCF,doOPTC)
 
    ! All ranks shift the energy eigen values according to the highest
    !   occupied state.
-   call shiftEnergyEigenValues(occupiedEnergy,numStates)
+   call shiftEnergyEigenValues(occupiedEnergy)
 
    ! All ranks compute some statistics and variables concerning the energy
    !   values. FIX so each rank obtains parameters for only the portion of the
@@ -1292,7 +1276,7 @@ subroutine cleanUpPSCF
    use O_Lattice, only: cleanUpLattice
    use O_Potential, only:  cleanUpPotential
    use O_AtomicSites, only: cleanUpAtomSites
-   use O_AtomicTypes, only: cleanUpAtomTypes
+   use O_AtomicTypes, only: cleanUpAtomTypes, cleanupRadialFns
    use O_PotSites, only: cleanUpPotSites
    use O_PotTypes, only: cleanUpPotTypes
    use O_SecularEquation, only: cleanUpSecularEqn
@@ -1307,6 +1291,7 @@ subroutine cleanUpPSCF
    endif
 
    ! All ranks deallocate all the other as of yet un-deallocated arrays.
+   call cleanUpRadialFns
    call cleanUpAtomTypes
    call cleanUpAtomSites
    call cleanUpPotTypes

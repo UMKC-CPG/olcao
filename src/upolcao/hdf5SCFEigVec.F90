@@ -50,6 +50,7 @@ subroutine initSCFEigVecHDF5 (scf_fid,attribInt_dsid,attribIntDims,numStates)
    ! Import any necessary definition modules.
    use HDF5
    use O_Kinds
+   use O_MPI
 
    ! Import necessary object modules.
    use O_KPoints, only: numKPoints
@@ -88,6 +89,19 @@ subroutine initSCFEigVecHDF5 (scf_fid,attribInt_dsid,attribIntDims,numStates)
       valeStatesChunk(2) = valeStates(2)
    endif
 
+   ! Allocate space to hold IDs for the datasets in the eigenvectors group.
+#ifndef GAMMA 
+   allocate (eigenVectors_did(2,numKPoints,spin)) ! Complex
+#else
+   allocate (eigenVectors_did(1,numKPoints,spin)) ! Real
+#endif
+
+   ! Allocate space to hold the attributes for tracking completion.
+   allocate (eigenVectors_aid(numKPoints,spin))
+
+   ! Only process 0 opens the HDF5 structure.
+   if (mpiRank /= 0) return
+
    ! Create the eigenVectors group in the scf_fid.
    call h5gcreate_f (scf_fid,"eigenVectors",eigenVectors_gid,hdferr)
    if (hdferr /= 0) stop 'Failed to create eigenvectors group SCF'
@@ -106,13 +120,6 @@ subroutine initSCFEigVecHDF5 (scf_fid,attribInt_dsid,attribIntDims,numStates)
 !   call h5pset_shuffle_f(valeStates_plid,hdferr)
    call h5pset_deflate_f   (valeStates_plid,1,hdferr)
    if (hdferr /= 0) stop 'Failed to set valeStates for deflation SCF'
-
-   ! Allocate space to hold IDs for the datasets in the eigenvectors group.
-#ifndef GAMMA 
-   allocate (eigenVectors_did(2,numKPoints,spin)) ! Complex
-#else
-   allocate (eigenVectors_did(1,numKPoints,spin)) ! Real
-#endif
 
    ! Create the datasets for the eigenvectors.
    do i = 1, spin
@@ -141,9 +148,6 @@ subroutine initSCFEigVecHDF5 (scf_fid,attribInt_dsid,attribIntDims,numStates)
       enddo
    enddo
 
-   ! Allocate space to hold the attributes for tracking completion.
-   allocate (eigenVectors_aid(numKPoints,spin))
-
    ! Create the eigenvector tracking attributes.
    do i = 1, spin
       do j = 1, numKPoints
@@ -166,12 +170,12 @@ subroutine initSCFEigVecHDF5 (scf_fid,attribInt_dsid,attribIntDims,numStates)
 end subroutine initSCFEigVecHDF5 
 
 
-subroutine accessSCFEigVecHDF5 (scf_fid,attribInt_dsid,attribIntDims,&
-      & numStates)
+subroutine accessSCFEigVecHDF5 (scf_fid,numStates)
 
    ! Import any necessary definition modules.
    use HDF5
    use O_Kinds
+   use O_MPI
 
    ! Import necessary object modules.
    use O_KPoints, only: numKPoints
@@ -183,8 +187,6 @@ subroutine accessSCFEigVecHDF5 (scf_fid,attribInt_dsid,attribIntDims,&
 
    ! Define the passed parameters.
    integer(hid_t) :: scf_fid
-   integer(hid_t) :: attribInt_dsid
-   integer(hsize_t), dimension (1) :: attribIntDims
    integer, intent(in) :: numStates
 
    ! Define local variables.
@@ -210,16 +212,22 @@ subroutine accessSCFEigVecHDF5 (scf_fid,attribInt_dsid,attribIntDims,&
       valeStatesChunk(2) = valeStates(2)
    endif
 
-   ! Open the eigenVectors group in the scf_fid.
-   call h5gopen_f (scf_fid,"/eigenVectors",eigenVectors_gid,hdferr)
-   if (hdferr /= 0) stop 'Failed to open eigenvectors group SCF.'
-
    ! Allocate space to hold IDs for the datasets in the eigenvectors group.
 #ifndef GAMMA 
    allocate (eigenVectors_did(2,numKPoints,spin)) ! Complex
 #else
    allocate (eigenVectors_did(1,numKPoints,spin)) ! Real
 #endif
+
+   ! Allocate space to hold the attributes for tracking completion.
+   allocate (eigenVectors_aid(numKPoints,spin))
+
+   ! Only process 0 opens the HDF5 structure.
+   if (mpiRank /= 0) return
+
+   ! Open the eigenVectors group in the scf_fid.
+   call h5gopen_f (scf_fid,"/eigenVectors",eigenVectors_gid,hdferr)
+   if (hdferr /= 0) stop 'Failed to open eigenvectors group SCF.'
 
    ! Open the datasets for the eigenvectors.
    do i = 1, spin
@@ -254,9 +262,6 @@ subroutine accessSCFEigVecHDF5 (scf_fid,attribInt_dsid,attribIntDims,&
    call h5dget_space_f(eigenVectors_did(1,1,1),valeStates_dsid,hdferr)
    if (hdferr /= 0) stop 'Failed to obtain valeStates dataspace SCF.'
 
-   ! Allocate space to hold the attributes for tracking completion.
-   allocate (eigenVectors_aid(numKPoints,spin))
-
    ! Open the eigenvector tracking attributes.
    do i = 1, spin
       do j = 1, numKPoints
@@ -273,6 +278,7 @@ subroutine closeSCFEigVecHDF5
 
    ! Import any necessary definition modules.
    use HDF5
+   use O_MPI
 
    ! Import necessary object modules.
    use O_KPoints, only: numKPoints
@@ -285,39 +291,43 @@ subroutine closeSCFEigVecHDF5
    integer :: i,j
    integer :: hdferr
 
-   ! Close the eigenvector dataspace.
-   call h5sclose_f (valeStates_dsid,hdferr)
-   if (hdferr /= 0) stop 'Failed to close valeStates_dsid SCF.'
+   if (mpiRank == 0) then
 
-   ! Close the eigenvector datasets next.
-   do i = 1, spin
-      do j = 1, numKPoints
+      ! Close the eigenvector dataspace.
+      call h5sclose_f (valeStates_dsid,hdferr)
+      if (hdferr /= 0) stop 'Failed to close valeStates_dsid SCF.'
+
+      ! Close the eigenvector datasets next.
+      do i = 1, spin
+         do j = 1, numKPoints
 #ifndef GAMMA
-         call h5dclose_f (eigenVectors_did(1,j,i),hdferr)
-         if (hdferr /= 0) stop 'Failed to close eigenVectors_did real SCF'
-         call h5dclose_f (eigenVectors_did(2,j,i),hdferr)
-         if (hdferr /= 0) stop 'Failed to close eigenVectors_did imaginary SCF'
+            call h5dclose_f (eigenVectors_did(1,j,i),hdferr)
+            if (hdferr /= 0) stop 'Failed to close eigenVectors_did real SCF'
+            call h5dclose_f (eigenVectors_did(2,j,i),hdferr)
+            if (hdferr /= 0) stop &
+                  & 'Failed to close eigenVectors_did imaginary SCF'
 #else
-         call h5dclose_f (eigenVectors_did(1,j,i),hdferr)
-         if (hdferr /= 0) stop 'Failed to close eigenVectors_did real SCF'
+            call h5dclose_f (eigenVectors_did(1,j,i),hdferr)
+            if (hdferr /= 0) stop 'Failed to close eigenVectors_did real SCF'
 #endif
+         enddo
       enddo
-   enddo
 
-   ! Closed the eigen vector attributes.
-   do i = 1, spin
-      do j = 1, numKPoints
-         call h5aclose_f(eigenVectors_aid(j,i),hdferr)
-         if (hdferr /= 0) stop 'Failed to close eigenVectors_aid SCF'
+      ! Closed the eigen vector attributes.
+      do i = 1, spin
+         do j = 1, numKPoints
+            call h5aclose_f(eigenVectors_aid(j,i),hdferr)
+            if (hdferr /= 0) stop 'Failed to close eigenVectors_aid SCF'
+         enddo
       enddo
-   enddo
 
-   ! Close the eigenvector property list.
-   call h5pclose_f (valeStates_plid,hdferr)
-   if (hdferr /= 0) stop 'Failed to close valeStates_plid SCF.'
+      ! Close the eigenvector property list.
+      call h5pclose_f (valeStates_plid,hdferr)
+      if (hdferr /= 0) stop 'Failed to close valeStates_plid SCF.'
 
-   ! Close the eigenvector group.
-   call h5gclose_f (eigenVectors_gid,hdferr)
+      ! Close the eigenvector group.
+      call h5gclose_f (eigenVectors_gid,hdferr)
+   endif
 
    ! Deallocate dataset and attribute arrays.
    deallocate (eigenVectors_did)

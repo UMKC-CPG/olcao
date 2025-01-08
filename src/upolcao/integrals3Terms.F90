@@ -52,6 +52,7 @@ subroutine allocateIntegrals3Terms(coreDim,valeDim,numKPoints)
    allocate (coreCore (coreDim,coreDim,numKPoints,3))
    allocate (valeVale (valeDim,valeDim,numKPoints,3))
 #else
+   if (numKPoints > 1) stop "Cannot be here" ! Avoid compiler warning.
    allocate (coreCoreGamma (coreDim,coreDim,3))
    allocate (valeValeGamma (valeDim,valeDim,3))
 #endif
@@ -71,8 +72,8 @@ subroutine gaussOverlapDM(packedVVDims,did,aid)
    use O_Input, only: dipoleCenter
    use O_KPoints, only: numKPoints
    use O_GaussianRelations, only: alphaDist
-   use O_AtomicSites, only: valeDim, coreDim, numAtomSites, atomSites
-   use O_AtomicTypes, only: maxNumAtomAlphas, maxNumStates, atomTypes
+   use O_AtomicSites, only: valeDim, coreDim, numAtomSites
+   use O_AtomicTypes, only: maxNumAtomAlphas, maxNumStates
    use O_Lattice, only: numCellsReal, cellSizesReal, cellDimsReal, &
          & findLatticeVector
    use O_GaussianIntegrals, only: dipole3CIntg
@@ -90,8 +91,6 @@ subroutine gaussOverlapDM(packedVVDims,did,aid)
    ! Define local variables for logging and loop control
    integer :: i,j,k,l,m,n ! Loop index variables
    integer :: hdf5Status
-   integer :: hdferr
-   integer(hsize_t), dimension (1) :: attribIntDims ! Attribute dataspace dim
 
    ! Atom specific variables that change with each atom pair loop iteration.
    integer,              dimension (2)    :: currentAtomType
@@ -165,17 +164,6 @@ subroutine gaussOverlapDM(packedVVDims,did,aid)
       call timeStampEnd(29)
       return
    endif
-   !hdf5Status = 0
-   !attribIntDims(1) = 1
-   !call h5aread_f(aid,H5T_NATIVE_INTEGER,hdf5Status,attribIntDims,hdferr)
-   !if (hdferr /= 0) stop 'Failed to read atom DM overlap status.'
-   !if (hdf5Status == 1) then
-   !   write(20,*) "Three-center DM overlap already exists. Skipping."
-   !   call timeStampEnd(29)
-   !   call h5aclose_f(aid,hdferr)
-   !   if (hdferr /= 0) stop 'Failed to close atom DM overlap status.'
-   !   return
-   !endif
 
    ! Allocate space for locally defined allocatable arrays
    allocate (currentBasisFns     (maxNumAtomAlphas,maxNumStates,2))
@@ -518,11 +506,10 @@ subroutine gaussOverlapMM(packedVVDims,did,aid)
    use O_Kinds
    use O_TimeStamps
    use O_Constants, only: dim3
-   use O_Input, only: dipoleCenter
    use O_KPoints, only: numKPoints
    use O_GaussianRelations, only: alphaDist
-   use O_AtomicSites, only: valeDim, coreDim, numAtomSites, atomSites
-   use O_AtomicTypes, only: maxNumAtomAlphas, maxNumStates, atomTypes
+   use O_AtomicSites, only: valeDim, coreDim, numAtomSites
+   use O_AtomicTypes, only: maxNumAtomAlphas, maxNumStates
    use O_Lattice, only: numCellsReal, cellSizesReal, cellDimsReal, &
          & findLatticeVector, logBasisFnThresh
    use O_GaussianIntegrals, only: momentum2CIntg
@@ -540,8 +527,6 @@ subroutine gaussOverlapMM(packedVVDims,did,aid)
    ! Define local variables for logging and loop control
    integer :: i,j,k,l,m,n ! Loop index variables
    integer :: hdf5Status
-   integer :: hdferr
-   integer(hsize_t), dimension (1) :: attribIntDims ! Attribute dataspace dim
 
    ! Atom specific variables that change with each atom pair loop iteration.
    integer,              dimension (2)    :: currentAtomType
@@ -615,17 +600,6 @@ subroutine gaussOverlapMM(packedVVDims,did,aid)
       call timeStampEnd(12)
       return
    endif
-   !hdf5Status = 0
-   !attribIntDims(1) = 1
-   !call h5aread_f(aid,H5T_NATIVE_INTEGER,hdf5Status,attribIntDims,hdferr)
-   !if (hdferr /= 0) stop 'Failed to read atom MM overlap status.'
-   !if (hdf5Status == 1) then
-   !   write(20,*) "Two-center MM overlap already exists. Skipping."
-   !   call timeStampEnd(12)
-   !   call h5aclose_f(aid,hdferr)
-   !   if (hdferr /= 0) stop 'Failed to close atom MM overlap status.'
-   !   return
-   !endif
 
    ! Allocate space for locally defined allocatable arrays
    allocate (currentBasisFns     (maxNumAtomAlphas,maxNumStates,2))
@@ -966,11 +940,9 @@ subroutine ortho (opCode,packedVVDims,did,aid)
    use MPI_F08
    use O_MPI
    use O_Kinds
-   use O_PotTypes, only: potTypes
    use O_KPoints, only: numKPoints
    use O_AtomicSites, only: coreDim, valeDim
    use O_Orthogonalization
-   use O_Potential, only: rel
 #ifndef GAMMA
    use O_Integrals, only: coreValeOL
 #else

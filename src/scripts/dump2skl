@@ -326,65 +326,87 @@ $totAtoms = <DUMPFILE>;
 chomp($totAtoms);
 
 # Move the cursor down to the start of the box bounds section for that timestep
-<DUMPFILE>;
-
-# Read the box bounds
+my $line = <DUMPFILE>;
+if ($line =~ /abc origin/)
 {
-    my $line = <DUMPFILE>;
-    @values = split(/\s+/, $line);
-    $boxBounds[0][0] = $values[0];
-    $boxBounds[0][1] = $values[1];
+   # Read non-orthogonal box.
+   foreach my $i (0..2)
+   {
+      my $line = <DUMPFILE>;
+      @values = split(/\s+/, $line);
+      $lattice[$i][0] = $values[0];
+      $lattice[$i][1] = $values[1];
+      $lattice[$i][2] = $values[2];
+   }
+}
+else
+{
+   # Read the orthogonal box bounds
+   my $line = <DUMPFILE>;
+   @values = split(/\s+/, $line);
+   $boxBounds[0][0] = $values[0];
+   $boxBounds[0][1] = $values[1];
 
-    $line = <DUMPFILE>;
-    @values = split(/\s+/, $line);
-    $boxBounds[1][0] = $values[0];
-    $boxBounds[1][1] = $values[1];
+   $line = <DUMPFILE>;
+   @values = split(/\s+/, $line);
+   $boxBounds[1][0] = $values[0];
+   $boxBounds[1][1] = $values[1];
 
-    $line = <DUMPFILE>;
-    @values = split(/\s+/, $line);
-    $boxBounds[2][0] = $values[0];
-    $boxBounds[2][1] = $values[1];
+   $line = <DUMPFILE>;
+   @values = split(/\s+/, $line);
+   $boxBounds[2][0] = $values[0];
+   $boxBounds[2][1] = $values[1];
+
+   # Convert to lattice vectors.
+   $lattice[0][0] = $boxBounds[0][1] - $boxBounds[0][0];
+   $lattice[0][1] = 0.0;
+   $lattice[0][2] = 0.0;
+   $lattice[1][0] = 0.0;
+   $lattice[1][1] = $boxBounds[1][1] - $boxBounds[1][0];
+   $lattice[1][2] = 0.0;
+   $lattice[2][0] = 0.0;
+   $lattice[2][1] = 0.0;
+   $lattice[2][2] = $boxBounds[2][1] - $boxBounds[2][0];
 }
 
-# Move the cursor down to the start of the atom coords section for that
-# timestep
+# Move the cursor to the start of the atom coords section for that timestep
 while (my $line = <DUMPFILE>) {
-    if ($line =~ /\AITEM: ATOMS/) { last; }
+   if ($line =~ /\AITEM: ATOMS/) { last; }
 }
 
 # Read to the end of the timestep
 my $highestID = 0;
 while (my $line = <DUMPFILE>) {
-    chomp($line);
-    if ($line =~ /TIMESTEP/) { last; } #End loop at beginning of next frame
+   chomp($line);
+   if ($line =~ /TIMESTEP/) { last; } #End loop at beginning of next frame
 
-    @values = split(/\s+/, $line);
+   @values = split(/\s+/, $line);
 
-    $atomID = $values[0];
-    if ($atomID > $highestID)
-    {
-       foreach my $atom ($highestID+1..$atomID-1)
-          {$atomTypes[$atom] = -1;}
-       $highestID = $atomID;
-    }
-    $atomTypes[$atomID] = $values[1];
+   $atomID = $values[0];
+   if ($atomID > $highestID)
+   {
+      foreach my $atom ($highestID+1..$atomID-1)
+         {$atomTypes[$atom] = -1;}
+      $highestID = $atomID;
+   }
+   $atomTypes[$atomID] = $values[1];
 
-    $atomCoords[$atomID][0] = $values[2];
-    $atomCoords[$atomID][1] = $values[3];
-    $atomCoords[$atomID][2] = $values[4];
+   $atomCoords[$atomID][0] = $values[2];
+   $atomCoords[$atomID][1] = $values[3];
+   $atomCoords[$atomID][2] = $values[4];
 }
 print STDOUT "highestID = $highestID\n";
 my $currentID = 1;
 foreach $atomID (1..$highestID)
 {
-    if ($atomTypes[$atomID] >= 0)
-    {
-       $atomTypes[$currentID] = $atomTypes[$atomID];
-       $atomCoords[$currentID][0] = $atomCoords[$atomID][0];
-       $atomCoords[$currentID][1] = $atomCoords[$atomID][1];
-       $atomCoords[$currentID][2] = $atomCoords[$atomID][2];
-       $currentID++;
-    }
+   if ($atomTypes[$atomID] >= 0)
+   {
+      $atomTypes[$currentID] = $atomTypes[$atomID];
+      $atomCoords[$currentID][0] = $atomCoords[$atomID][0];
+      $atomCoords[$currentID][1] = $atomCoords[$atomID][1];
+      $atomCoords[$currentID][2] = $atomCoords[$atomID][2];
+      $currentID++;
+   }
 }
 print "currentID = $currentID\n";
 print "totAtoms = $totAtoms\n";
@@ -408,8 +430,8 @@ $xlo = &minCoord(0);
 $ylo = &minCoord(1);
 $zlo = &minCoord(2);
 
-print STDOUT "$xhi $yhi $zhi\n";
-print STDOUT "$xlo $ylo $zlo\n";
+print STDOUT "HI: $xhi $yhi $zhi\n";
+print STDOUT "LO: $xlo $ylo $zlo\n";
 
 # Compare with LAMMPS-defined box bounds and redefine if needed
 if ($boxBounds[0][1] > $xhi) {
@@ -432,6 +454,9 @@ if ($boxBounds[2][0] < $zlo) {
     $zlo = $boxBounds[2][0];
 }
 
+print STDOUT "HI: $xhi $yhi $zhi\n";
+print STDOUT "LO: $xlo $ylo $zlo\n";
+
 # If the non-periodic command line argument has been selected, add padding
 # space to the cell to prevent interactions due to periodicity
 if ($nonPeriodic) {
@@ -451,12 +476,13 @@ $xShift = 0 - $xlo;
 $yShift = 0 - $ylo;
 $zShift = 0 - $zlo;
 
-print STDOUT "$xShift $yShift $zShift\n";
+print STDOUT "SHIFT: $xShift $yShift $zShift\n";
 
 foreach my $atom (1..$totAtoms) {
     $atomCoords[$atom][0] = $atomCoords[$atom][0] + $xShift;
     $atomCoords[$atom][1] = $atomCoords[$atom][1] + $yShift;
     $atomCoords[$atom][2] = $atomCoords[$atom][2] + $zShift;
+print STDOUT "$atom $atomCoords[$atom][0] $atomCoords[$atom][1] $atomCoords[$atom][2]\n";
 }
 
 # Redefine max and min coordinates along each axis now that they have

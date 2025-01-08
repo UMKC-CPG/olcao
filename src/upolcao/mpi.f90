@@ -32,7 +32,7 @@ subroutine stopMPI(errorMessage)
    implicit none
 
    ! Declare passed parameters
-   character*80 :: errorMessage
+   character(len=*) :: errorMessage
 
    if (mpiRank == 0) then
       write (20,*) errorMessage
@@ -55,7 +55,7 @@ subroutine checkAttributeHDF5(aid,readTarget,hdf5Status)
 
    ! Define passed dummy parameters.
    integer(hsize_t), intent(in) :: aid ! attribute id
-   character*80, intent(in) :: readTarget
+   character(len=*), intent(in) :: readTarget
    integer, intent(out) :: hdf5Status
 
    ! Define local variables.

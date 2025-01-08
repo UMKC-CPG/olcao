@@ -94,6 +94,7 @@ subroutine initSCFIntegralHDF5 (scf_fid, attribInt_dsid, attribIntDims)
 
    ! Import any necessary definition modules.
    use HDF5
+   use O_MPI
 
    ! Import necessary object modules.
    use O_KPoints,     only: numKPoints
@@ -159,6 +160,33 @@ subroutine initSCFIntegralHDF5 (scf_fid, attribInt_dsid, attribIntDims)
       endif
    endif
 
+   ! For the integrals that have multiple different types of matrices, we
+   !   need to create space to hold the group IDs of each matrix.
+   allocate (atomDMxyzOL_gid (3)) ! Needs x,y,z matrices all done together
+   allocate (atomMMxyzOL_gid (3)) ! Needs x,y,z matrices all done together
+   allocate (atomPotTermOL_gid (potDim)) ! One matrix per pot term, separate.
+
+   ! Sufficient space must be allocated to hold the dataset IDs for all
+   !   matrices that need to be computed.
+   if (coreDim > 0) then
+      allocate (atomOverlapCV_did (numComponents,numKPoints))
+   else
+      allocate (atomOverlapCV_did (1,1)) ! Unused, but needs to be allocated.
+   endif
+   allocate (atomOverlap_did    (numKPoints))
+   allocate (atomKEOverlap_did  (numKPoints))
+   allocate (atomMVOverlap_did  (numKPoints))
+   allocate (atomNPOverlap_did  (numKPoints))
+   allocate (atomDMOverlap_did  (numKPoints,3))
+   allocate (atomMMOverlap_did  (numKPoints,3))
+   allocate (atomPotOverlap_did (numKPoints,potDim))
+
+   ! Allocate space to hold the attribute IDs for the potential matrics.
+   allocate (atomPotTermOL_aid  (potDim))
+
+   ! Only process 0 opens the HDF5 structure.
+   if (mpiRank /= 0) return
+
    ! Create the Integral group within the scf HDF5 file.
    call h5gcreate_f (scf_fid,"/atomIntgGroup",atomIntgGroup_gid,hdferr)
    if (hdferr /= 0) stop 'Failed to create atom intg group'
@@ -211,12 +239,6 @@ subroutine initSCFIntegralHDF5 (scf_fid, attribInt_dsid, attribIntDims)
          & hdferr)
    if (hdferr /= 0) stop 'Failed to create atom potential overlap group'
 
-   ! For the integrals that have multiple different types of matrices, we
-   !   need to create space to hold the group IDs of each matrix.
-   allocate (atomDMxyzOL_gid (3)) ! Needs x,y,z matrices all done together
-   allocate (atomMMxyzOL_gid (3)) ! Needs x,y,z matrices all done together
-   allocate (atomPotTermOL_gid (potDim)) ! One matrix per pot term, separate.
-
    ! Create the subgroups for the DM and MM terms and assign a gid name
    !   following 1=x, 2=y, and 3=z.
    do i = 1, 3
@@ -242,24 +264,6 @@ subroutine initSCFIntegralHDF5 (scf_fid, attribInt_dsid, attribIntDims)
             & hdferr)
       if (hdferr /= 0) stop 'Failed to create potential term group'
    enddo
-
-   ! Sufficient space must be allocated to hold the dataset IDs for all
-   !   matrices that need to be computed.
-   if (coreDim > 0) then
-      allocate (atomOverlapCV_did (numComponents,numKPoints))
-   else
-      allocate (atomOverlapCV_did (1,1)) ! Unused, but needs to be allocated.
-   endif
-   allocate (atomOverlap_did    (numKPoints))
-   allocate (atomKEOverlap_did  (numKPoints))
-   allocate (atomMVOverlap_did  (numKPoints))
-   allocate (atomNPOverlap_did  (numKPoints))
-   allocate (atomDMOverlap_did  (numKPoints,3))
-   allocate (atomMMOverlap_did  (numKPoints,3))
-   allocate (atomPotOverlap_did (numKPoints,potDim))
-
-   ! Allocate space to hold the attribute IDs for the potential matrics.
-   allocate (atomPotTermOL_aid  (potDim))
 
    ! Create the dataspaces that will be used for each dataset in atomIntgGroup
    !   and all of its subgroups.  The same dataspace definition works for all
@@ -422,6 +426,7 @@ subroutine accessSCFIntegralHDF5 (scf_fid)
 
    ! Import any necessary definition modules.
    use HDF5
+   use O_MPI
 
    ! Import necessary object modules.
    use O_KPoints,     only: numKPoints
@@ -451,6 +456,32 @@ subroutine accessSCFIntegralHDF5 (scf_fid)
       fullCVDims(2) = valeDim
    endif
 
+   ! For the integrals that have multiple matrices per kpoint, we need to
+   !   create space to hold the group IDs of each kpoint group.
+   allocate (atomDMxyzOL_gid (3)) ! Needs x,y,z matrices
+   allocate (atomMMxyzOL_gid (3)) ! Needs x,y,z matrices
+   allocate (atomPotTermOL_gid (potDim)) ! One matrix per pot term.
+
+   ! Allocate space to hold the dataset IDs.
+   if (coreDim > 0) then
+      allocate (atomOverlapCV_did (numComponents,numKPoints))
+   else
+      allocate (atomOverlapCV_did (1,1)) ! Unused, but needs to be allocated.
+   endif
+   allocate (atomOverlap_did (numKPoints))
+   allocate (atomKEOverlap_did (numKPoints))
+   allocate (atomMVOverlap_did (numKPoints))
+   allocate (atomNPOverlap_did (numKPoints))
+   allocate (atomDMOverlap_did (numKPoints,3))
+   allocate (atomMMOverlap_did (numKPoints,3))
+   allocate (atomPotOverlap_did (numKPoints,potDim))
+
+   ! Allocate space to hold the attribute IDs for the potential terms.
+   allocate (atomPotTermOL_aid (potDim))
+
+   ! Only process 0 opens the HDF5 structure.
+   if (mpiRank /= 0) return
+
    ! Open the Integral group within the scf HDF5 file.
    call h5gopen_f (scf_fid,"/atomIntgGroup",atomIntgGroup_gid,hdferr)
    if (hdferr /= 0) stop 'Failed to open atom intg group'
@@ -478,12 +509,6 @@ subroutine accessSCFIntegralHDF5 (scf_fid)
    call h5gopen_f (atomIntgGroup_gid,"atomPotOverlap",atomPotOverlap_gid,hdferr)
    if (hdferr /= 0) stop 'Failed to open atom potential overlap group'
 
-   ! For the integrals that have multiple matrices per kpoint, we need to
-   !   create space to hold the group IDs of each kpoint group.
-   allocate (atomDMxyzOL_gid (3)) ! Needs x,y,z matrices
-   allocate (atomMMxyzOL_gid (3)) ! Needs x,y,z matrices
-   allocate (atomPotTermOL_gid (potDim)) ! One matrix per pot term.
-
    ! Now, we open the xyz subgroups for the integrals that have them.
    do i = 1, 3
       write (currentName,fmt="(i7.7)") i
@@ -505,23 +530,6 @@ subroutine accessSCFIntegralHDF5 (scf_fid)
             & hdferr)
       if (hdferr /= 0) stop 'Failed to open potential term group'
    enddo
-
-   ! Allocate space to hold the dataset IDs.
-   if (coreDim > 0) then
-      allocate (atomOverlapCV_did (numComponents,numKPoints))
-   else
-      allocate (atomOverlapCV_did (1,1)) ! Unused, but needs to be allocated.
-   endif
-   allocate (atomOverlap_did (numKPoints))
-   allocate (atomKEOverlap_did (numKPoints))
-   allocate (atomMVOverlap_did (numKPoints))
-   allocate (atomNPOverlap_did (numKPoints))
-   allocate (atomDMOverlap_did (numKPoints,3))
-   allocate (atomMMOverlap_did (numKPoints,3))
-   allocate (atomPotOverlap_did (numKPoints,potDim))
-
-   ! Allocate space to hold the attribute IDs for the potential terms.
-   allocate (atomPotTermOL_aid (potDim))
 
    ! Open the datasets that will be used for all subgroups of atomIntgGroup.
    do i = 1, numKPoints
@@ -623,6 +631,7 @@ subroutine closeSCFIntegralHDF5
 
    ! Import any necessary definition modules.
    use HDF5
+   use O_MPI
 
    ! Import necessary object modules.
    use O_KPoints, only: numKPoints
@@ -636,100 +645,102 @@ subroutine closeSCFIntegralHDF5
    integer :: i,j
    integer :: hdferr
 
-   ! Close the property list first.
-   call h5pclose_f (valeVale_plid,hdferr)
-   if (hdferr /= 0) stop 'Failed to close valeVale_plid.'
+   if (mpiRank == 0) then
+      ! Close the property list first.
+      call h5pclose_f (valeVale_plid,hdferr)
+      if (hdferr /= 0) stop 'Failed to close valeVale_plid.'
 
-   ! Close the datasets next.
-   do i = 1, numKPoints
-      call h5dclose_f (atomOverlap_did(i),hdferr)
-      if (hdferr /= 0) stop 'Failed to close atomOverlap_did.'
+      ! Close the datasets next.
+      do i = 1, numKPoints
+         call h5dclose_f (atomOverlap_did(i),hdferr)
+         if (hdferr /= 0) stop 'Failed to close atomOverlap_did.'
 
-      call h5dclose_f (atomKEOverlap_did(i),hdferr)
-      if (hdferr /= 0) stop 'Failed to close atomKEOverlap_did.'
+         call h5dclose_f (atomKEOverlap_did(i),hdferr)
+         if (hdferr /= 0) stop 'Failed to close atomKEOverlap_did.'
 
-      call h5dclose_f (atomMVOverlap_did(i),hdferr)
-      if (hdferr /= 0) stop 'Failed to close atomMVOverlap_did.'
+         call h5dclose_f (atomMVOverlap_did(i),hdferr)
+         if (hdferr /= 0) stop 'Failed to close atomMVOverlap_did.'
 
-      call h5dclose_f (atomNPOverlap_did(i),hdferr)
-      if (hdferr /= 0) stop 'Failed to close atomNPOverlap_did.'
+         call h5dclose_f (atomNPOverlap_did(i),hdferr)
+         if (hdferr /= 0) stop 'Failed to close atomNPOverlap_did.'
 
-      do j = 1, 3
-         call h5dclose_f (atomDMOverlap_did(i,j),hdferr)
-         if (hdferr /= 0) stop 'Failed to close atomDMOverlap_did.'
+         do j = 1, 3
+            call h5dclose_f (atomDMOverlap_did(i,j),hdferr)
+            if (hdferr /= 0) stop 'Failed to close atomDMOverlap_did.'
+         enddo
+
+         do j = 1, 3
+            call h5dclose_f (atomMMOverlap_did(i,j),hdferr)
+            if (hdferr /= 0) stop 'Failed to close atomMMOverlap_did.'
+         enddo
+
+         do j = 1, potDim
+            call h5dclose_f (atomPotOverlap_did(i,j),hdferr)
+            if (hdferr /= 0) stop 'Failed to close atomPotOverlap_did.'
+         enddo
+
+         if (coreDim > 0) then
+            do j = 1, numComponents
+               call h5dclose_f (atomOverlapCV_did(j,i),hdferr)
+               if (hdferr /= 0) stop 'Failed to close atomOverlapCV_did.'
+            enddo
+         endif
+
       enddo
 
-      do j = 1, 3
-         call h5dclose_f (atomMMOverlap_did(i,j),hdferr)
-         if (hdferr /= 0) stop 'Failed to close atomMMOverlap_did.'
+      ! Close the data spaces next.
+      call h5sclose_f (valeVale_dsid,hdferr)
+      if (hdferr /= 0) stop 'Failed to close valeVale_dsid.'
+      if (coreDim > 0) then
+         call h5sclose_f (coreVale_dsid,hdferr)
+         if (hdferr /= 0) stop 'Failed to close coreVale_dsid.'
+      endif
+
+      ! Close the groups.
+      do i = 1, potDim
+         call h5gclose_f (atomPotTermOL_gid(i),hdferr)
+         if (hdferr /= 0) stop 'Failed to close atomPotKPointOL_gid.'
       enddo
 
-      do j = 1, potDim
-         call h5dclose_f (atomPotOverlap_did(i,j),hdferr)
-         if (hdferr /= 0) stop 'Failed to close atomPotOverlap_did.'
+      do i = 1, 3
+         call h5gclose_f (atomDMxyzOL_gid(i),hdferr)
+         if (hdferr /= 0) stop 'Failed to close atomDMxyzOL_gid.'
+      enddo
+
+      do i = 1, 3
+         call h5gclose_f (atomMMxyzOL_gid(i),hdferr)
+         if (hdferr /= 0) stop 'Failed to close atomMMxyzOL_gid.'
       enddo
 
       if (coreDim > 0) then
-         do j = 1, numComponents
-            call h5dclose_f (atomOverlapCV_did(j,i),hdferr)
-            if (hdferr /= 0) stop 'Failed to close atomOverlapCV_did.'
-         enddo
+         call h5gclose_f (atomOverlapCV_gid,hdferr)
+         if (hdferr /= 0) stop 'Failed to close atomOverlapCV_gid.'
       endif
 
-   enddo
+      call h5gclose_f (atomOverlap_gid,hdferr)
+      if (hdferr /= 0) stop 'Failed to close atomOverlap_gid.'
 
-   ! Close the data spaces next.
-   call h5sclose_f (valeVale_dsid,hdferr)
-   if (hdferr /= 0) stop 'Failed to close valeVale_dsid.'
-   if (coreDim > 0) then
-      call h5sclose_f (coreVale_dsid,hdferr)
-      if (hdferr /= 0) stop 'Failed to close coreVale_dsid.'
+      call h5gclose_f (atomKEOverlap_gid,hdferr)
+      if (hdferr /= 0) stop 'Failed to close atomKEOverlap_gid.'
+
+      call h5gclose_f (atomMVOverlap_gid,hdferr)
+      if (hdferr /= 0) stop 'Failed to close atomMVOverlap_gid.'
+
+      call h5gclose_f (atomNPOverlap_gid,hdferr)
+      if (hdferr /= 0) stop 'Failed to close atomNPOverlap_gid.'
+
+      call h5gclose_f (atomPotOverlap_gid,hdferr)
+      if (hdferr /= 0) stop 'Failed to close atomPotOverlap_gid.'
+
+      call h5gclose_f (atomMMOverlap_gid,hdferr)
+      if (hdferr /= 0) stop 'Failed to close atomDMxyzOverlap_gid.'
+
+      call h5gclose_f (atomDMOverlap_gid,hdferr)
+      if (hdferr /= 0) stop 'Failed to close atomDMxyzOverlap_gid.'
+
+      call h5gclose_f (atomIntgGroup_gid,hdferr)
+      if (hdferr /= 0) stop 'Failed to close atomIntgGroup_gid.'
    endif
-
-   ! Close the groups.
-   do i = 1, potDim
-      call h5gclose_f (atomPotTermOL_gid(i),hdferr)
-      if (hdferr /= 0) stop 'Failed to close atomPotKPointOL_gid.'
-   enddo
-
-   do i = 1, 3
-      call h5gclose_f (atomDMxyzOL_gid(i),hdferr)
-      if (hdferr /= 0) stop 'Failed to close atomDMxyzOL_gid.'
-   enddo
-
-   do i = 1, 3
-      call h5gclose_f (atomMMxyzOL_gid(i),hdferr)
-      if (hdferr /= 0) stop 'Failed to close atomMMxyzOL_gid.'
-   enddo
-
-   if (coreDim > 0) then
-      call h5gclose_f (atomOverlapCV_gid,hdferr)
-      if (hdferr /= 0) stop 'Failed to close atomOverlapCV_gid.'
-   endif
-
-   call h5gclose_f (atomOverlap_gid,hdferr)
-   if (hdferr /= 0) stop 'Failed to close atomOverlap_gid.'
-
-   call h5gclose_f (atomKEOverlap_gid,hdferr)
-   if (hdferr /= 0) stop 'Failed to close atomKEOverlap_gid.'
-
-   call h5gclose_f (atomMVOverlap_gid,hdferr)
-   if (hdferr /= 0) stop 'Failed to close atomMVOverlap_gid.'
-
-   call h5gclose_f (atomNPOverlap_gid,hdferr)
-   if (hdferr /= 0) stop 'Failed to close atomNPOverlap_gid.'
-
-   call h5gclose_f (atomPotOverlap_gid,hdferr)
-   if (hdferr /= 0) stop 'Failed to close atomPotOverlap_gid.'
-
-   call h5gclose_f (atomMMOverlap_gid,hdferr)
-   if (hdferr /= 0) stop 'Failed to close atomDMxyzOverlap_gid.'
-
-   call h5gclose_f (atomDMOverlap_gid,hdferr)
-   if (hdferr /= 0) stop 'Failed to close atomDMxyzOverlap_gid.'
-
-   call h5gclose_f (atomIntgGroup_gid,hdferr)
-   if (hdferr /= 0) stop 'Failed to close atomIntgGroup_gid.'
 
    ! The attributes tracking completion are closed when written.
 

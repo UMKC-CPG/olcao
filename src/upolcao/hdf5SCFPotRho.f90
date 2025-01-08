@@ -60,6 +60,7 @@ subroutine initSCFPotRhoHDF5 (scf_fid)
 
    ! Import any necessary definition modules.
    use HDF5
+   use O_MPI
 
    ! Import necessary object modules.
    use O_Potential, only: spin, potDim, lastIteration
@@ -74,6 +75,15 @@ subroutine initSCFPotRhoHDF5 (scf_fid)
 
    ! Initialize data structure dimensions.
    terms(1) = potDim
+
+   ! Allocate space to hold the IDs for the datasets in the potRhoCoeffs group.
+   allocate (potCoeffs_did(lastIteration,spin))
+   allocate (totalRhoCoeffs_did(lastIteration))
+   allocate (valeRhoCoeffs_did(lastIteration))
+   allocate (spinDiffRhoCoeffs_did(lastIteration))
+
+   ! Only process 0 opens the HDF5 structure.
+   if (mpiRank /= 0) return
 
    ! Create the potential coefficient and various fitted charge density
    !   coefficient groups in the scf_fid.
@@ -93,12 +103,6 @@ subroutine initSCFPotRhoHDF5 (scf_fid)
    call h5pset_chunk_f(potRhoCoeffs_plid,1,terms,hdferr)
 !   call h5pset_shuffle_f(states_plid,hdferr)
    call h5pset_deflate_f   (potRhoCoeffs_plid,1,hdferr)
-
-   ! Allocate space to hold the IDs for the datasets in the potRhoCoeffs group.
-   allocate (potCoeffs_did(lastIteration,spin))
-   allocate (totalRhoCoeffs_did(lastIteration))
-   allocate (valeRhoCoeffs_did(lastIteration))
-   allocate (spinDiffRhoCoeffs_did(lastIteration))
 
    ! Create the datasets for the potential coefficients.
    do i = 1, spin
@@ -140,6 +144,7 @@ subroutine accessSCFPotRhoHDF5 (scf_fid)
 
    ! Import any necessary definition modules.
    use HDF5
+   use O_MPI
 
    ! Import necessary object modules.
    use O_Potential, only: spin, potDim, lastIteration
@@ -155,6 +160,15 @@ subroutine accessSCFPotRhoHDF5 (scf_fid)
    ! Initialize data structure dimensions.
    terms(1) = potDim
 
+   ! Allocate space to hold the IDs for the datasets in the potRhoCoeffs group.
+   allocate (potCoeffs_did(lastIteration,spin))
+   allocate (totalRhoCoeffs_did(lastIteration))
+   allocate (valeRhoCoeffs_did(lastIteration))
+   allocate (spinDiffRhoCoeffs_did(lastIteration))
+
+   ! Only process 0 opens the HDF5 structure.
+   if (mpiRank /= 0) return
+
    ! Open the potential coefficient and various fitted charge density
    !   coefficient groups in the scf_fid.
    call h5gopen_f (scf_fid,"potCoeffs",potCoeffs_gid,hdferr)
@@ -167,12 +181,6 @@ subroutine accessSCFPotRhoHDF5 (scf_fid)
    if (hdferr /= 0) stop 'Failed to open spinDiffRhoCoeffs group.'
    call h5gopen_f (scf_fid,"alphas",alphas_gid,hdferr)
    if (hdferr /= 0) stop 'Failed to open alphas group.'
-
-   ! Allocate space to hold the IDs for the datasets in the potRhoCoeffs group.
-   allocate (potCoeffs_did(lastIteration,spin))
-   allocate (totalRhoCoeffs_did(lastIteration))
-   allocate (valeRhoCoeffs_did(lastIteration))
-   allocate (spinDiffRhoCoeffs_did(lastIteration))
 
    ! Open the datasets for the potential coefficients.
    do i = 1, spin
@@ -220,6 +228,7 @@ subroutine closeSCFPotRhoHDF5
 
    ! Import any necessary definition modules.
    use HDF5
+   use O_MPI
 
    ! Import necessary object modules.
    use O_Potential, only: spin, lastIteration
@@ -228,35 +237,48 @@ subroutine closeSCFPotRhoHDF5
    implicit none
 
    ! Declare local loop variables and error control.
-   integer :: i,j,k
+   integer :: i,j
    integer :: hdferr
 
-   ! Close the potRhoCoeffs dataspace.
-   call h5sclose_f (potRhoCoeffs_dsid,hdferr)
-   if (hdferr /= 0) stop 'Failed to close potRhoCoeffs_dsid.'
+   if (mpiRank == 0) then
 
-   ! Close the potential coefficient datasets.
-   do i = 1, spin
-      do j = 1, lastIteration
-         call h5dclose_f (potCoeffs_did(j,i),hdferr)
-         if (hdferr /= 0) stop 'Failed to close potCoeffs_did'
+      ! Close the potRhoCoeffs dataspace.
+      call h5sclose_f (potRhoCoeffs_dsid,hdferr)
+      if (hdferr /= 0) stop 'Failed to close potRhoCoeffs_dsid.'
+
+      ! Close the potential coefficient datasets.
+      do i = 1, spin
+         do j = 1, lastIteration
+            call h5dclose_f (potCoeffs_did(j,i),hdferr)
+            if (hdferr /= 0) stop 'Failed to close potCoeffs_did'
+         enddo
       enddo
-   enddo
 
-   ! Close the charge density coefficient datasets.
-   do i = 1, lastIteration
-      call h5dclose_f (totalRhoCoeffs_did(i),hdferr)
-      if (hdferr /= 0) stop 'Failed to close totalRhoCoeffs_did'
-      call h5dclose_f (valeRhoCoeffs_did(i),hdferr)
-      if (hdferr /= 0) stop 'Failed to close valeRhoCoeffs_did'
-      call h5dclose_f (spinDiffRhoCoeffs_did(i),hdferr)
-      if (hdferr /= 0) stop 'Failed to close spinDiffRhoCoeffs_did'
-   enddo
+      ! Close the charge density coefficient datasets.
+      do i = 1, lastIteration
+         call h5dclose_f (totalRhoCoeffs_did(i),hdferr)
+         if (hdferr /= 0) stop 'Failed to close totalRhoCoeffs_did'
+         call h5dclose_f (valeRhoCoeffs_did(i),hdferr)
+         if (hdferr /= 0) stop 'Failed to close valeRhoCoeffs_did'
+         call h5dclose_f (spinDiffRhoCoeffs_did(i),hdferr)
+         if (hdferr /= 0) stop 'Failed to close spinDiffRhoCoeffs_did'
+      enddo
 
-   ! Close the alphas dataset.
-   call h5dclose_f (alphas_did,hdferr)
-   if (hdferr /= 0) stop 'Failed to close alphas_did'
+      ! Close the alphas dataset.
+      call h5dclose_f (alphas_did,hdferr)
+      if (hdferr /= 0) stop 'Failed to close alphas_did'
 
+      ! Close the potRhoCoeffs property list.
+      call h5pclose_f (potRhoCoeffs_plid,hdferr)
+      if (hdferr /= 0) stop 'Failed to close potRhoCoeffs_plid.'
+
+      ! Close the potential coefficients group.
+      call h5gclose_f (potCoeffs_gid,hdferr)
+      call h5gclose_f (totalRhoCoeffs_gid,hdferr)
+      call h5gclose_f (valeRhoCoeffs_gid,hdferr)
+      call h5gclose_f (spinDiffRhoCoeffs_gid,hdferr)
+      call h5gclose_f (alphas_gid,hdferr)
+   endif
 
    ! Deallocate space used to hold dataset IDs for the potential and charge
    !   density coefficients.
@@ -264,18 +286,6 @@ subroutine closeSCFPotRhoHDF5
    deallocate (totalRhoCoeffs_did)
    deallocate (valeRhoCoeffs_did)
    deallocate (spinDiffRhoCoeffs_did)
-
-
-   ! Close the potRhoCoeffs property list.
-   call h5pclose_f (potRhoCoeffs_plid,hdferr)
-   if (hdferr /= 0) stop 'Failed to close potRhoCoeffs_plid.'
-
-   ! Close the potential coefficients group.
-   call h5gclose_f (potCoeffs_gid,hdferr)
-   call h5gclose_f (totalRhoCoeffs_gid,hdferr)
-   call h5gclose_f (valeRhoCoeffs_gid,hdferr)
-   call h5gclose_f (spinDiffRhoCoeffs_gid,hdferr)
-   call h5gclose_f (alphas_gid,hdferr)
 
 end subroutine closeSCFPotRhoHDF5
 

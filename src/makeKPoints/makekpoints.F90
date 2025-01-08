@@ -1043,7 +1043,7 @@ module BrillouinZones_O
       integer :: i, j
       integer :: onOtherPlane, beyondOtherPlane
 #ifdef COMPVIS
-      character*8 :: formatString_i, formatString_j
+      character*8 :: formatString_i!, formatString_j
 #endif
 
       ! Initialize beyondOtherPlane.
@@ -1212,8 +1212,8 @@ write (6,*) "numBZFaces = ", numBZFaces(currBZ)
       real (kind=double), dimension(3,3) :: A
       real (kind=double), dimension(3) :: B
 #ifdef COMPVIS
-      character*8 :: formatString_i, formatString_j, formatString_k
-      integer :: s
+!      character*8 :: formatString_i, formatString_j, formatString_k
+!      integer :: s
 #endif
 
 
@@ -1330,6 +1330,7 @@ endif
 
                      ! Add this vertex to each of the associated faces, but
                      !   only if it is unique for the face.
+                     g = 0 ! Useless, but avoids compiler warning.
                      do h = 1, 3
                         select case (h)
                            case (1)
@@ -1338,6 +1339,8 @@ endif
                               g = j
                            case (3)
                               g = k
+                           case default
+                              stop
                         end select
 
                         ! We will pull a nasty trick to perform the addition
@@ -1486,6 +1489,8 @@ if (extra == 1) then
          write (61+currBZ,advance="no",fmt="(a)") "bz_plane["
          write (61+currBZ,fmt=formatString_j) j-1, "].color = vp.color.white"
 endif
+#else
+extra = 0
 #endif
 
          ! The general parametric form for the equation of a line is:

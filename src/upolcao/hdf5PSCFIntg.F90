@@ -103,6 +103,7 @@ subroutine initPSCFIntegralHDF5 (pscf_fid, attribIntPSCF_dsid,&
 
    ! Import any necessary definition modules.
    use HDF5
+   use O_MPI
 
    ! Import necessary object modules.
    use O_Potential, only: spin
@@ -170,6 +171,38 @@ subroutine initPSCFIntegralHDF5 (pscf_fid, attribIntPSCF_dsid,&
       endif
    endif
 
+   ! For the integrals that have multiple different types of matrices, we
+   !   need to create space to hold the group IDs of each matrix.
+   allocate (atomDMxyzOL_PSCF_gid (3)) ! x,y,z matrices all done together
+   allocate (atomMMxyzOL_PSCF_gid (3)) ! x,y,z matrices all done together
+   allocate (atomDMxyzOL_SYBD_PSCF_gid (3)) ! x,y,z matrices all done together
+   allocate (atomMMxyzOL_SYBD_PSCF_gid (3)) ! x,y,z matrices all done together
+
+   ! Sufficient space must be allocated to hold the dataset IDs for all
+   !   matrices that need to be computed.
+   if (coreDim > 0) then
+      allocate (atomOverlapCV_PSCF_did  (numComponents,numKPoints_HDF5))
+   else
+      allocate (atomOverlapCV_PSCF_did  (1,1))
+   endif
+   allocate (atomOverlapPSCF_did     (numKPoints_HDF5))
+   allocate (atomHamOverlapPSCF_did  (numKPoints_HDF5,spin))
+   allocate (atomDMOverlapPSCF_did   (numKPoints_HDF5,3))
+   allocate (atomMMOverlapPSCF_did   (numKPoints_HDF5,3))
+
+   if (coreDim > 0) then
+      allocate (atomOverlapCV_SYBD_PSCF_did  (numComponents,numPathKP_HDF5))
+   else
+      allocate (atomOverlapCV_SYBD_PSCF_did  (1,1))
+   endif
+   allocate (atomOverlapSYBD_PSCF_did     (numPathKP_HDF5))
+   allocate (atomHamOverlapSYBD_PSCF_did  (numPathKP_HDF5,spin))
+   allocate (atomDMOverlapSYBD_PSCF_did   (numPathKP_HDF5,3))
+   allocate (atomMMOverlapSYBD_PSCF_did   (numPathKP_HDF5,3))
+
+   ! Only process 0 opens the HDF5 structure.
+   if (mpiRank /= 0) return
+
    ! Create the Integral group within the pscf HDF5 file.
    call h5gcreate_f (pscf_fid,"/atomIntgGroup",atomIntgGroupPSCF_gid,hdferr)
    if (hdferr /= 0) stop 'Failed to create atom intg group'
@@ -233,13 +266,6 @@ subroutine initPSCFIntegralHDF5 (pscf_fid, attribIntPSCF_dsid,&
          & atomMMOverlapSYBD_PSCF_gid,hdferr)
    if (hdferr /= 0) stop 'Failed to create momentum matrix overlap SYBD group'
 
-   ! For the integrals that have multiple different types of matrices, we
-   !   need to create space to hold the group IDs of each matrix.
-   allocate (atomDMxyzOL_PSCF_gid (3)) ! x,y,z matrices all done together
-   allocate (atomMMxyzOL_PSCF_gid (3)) ! x,y,z matrices all done together
-   allocate (atomDMxyzOL_SYBD_PSCF_gid (3)) ! x,y,z matrices all done together
-   allocate (atomMMxyzOL_SYBD_PSCF_gid (3)) ! x,y,z matrices all done together
-
    ! Create the subgroups for the DM and MM terms and assign a gid name
    !   following 1=x, 2=y, and 3=z.
    do i = 1, 3
@@ -262,28 +288,6 @@ subroutine initPSCFIntegralHDF5 (pscf_fid, attribIntPSCF_dsid,&
             & atomMMxyzOL_SYBD_PSCF_gid(i),hdferr)
       if (hdferr /= 0) stop 'Failed to create momentum matrix xyz SYBD group'
    enddo
-
-   ! Sufficient space must be allocated to hold the dataset IDs for all
-   !   matrices that need to be computed.
-   if (coreDim > 0) then
-      allocate (atomOverlapCV_PSCF_did  (numComponents,numKPoints_HDF5))
-   else
-      allocate (atomOverlapCV_PSCF_did  (1,1))
-   endif
-   allocate (atomOverlapPSCF_did     (numKPoints_HDF5))
-   allocate (atomHamOverlapPSCF_did  (numKPoints_HDF5,spin))
-   allocate (atomDMOverlapPSCF_did   (numKPoints_HDF5,3))
-   allocate (atomMMOverlapPSCF_did   (numKPoints_HDF5,3))
-
-   if (coreDim > 0) then
-      allocate (atomOverlapCV_SYBD_PSCF_did  (numComponents,numPathKP_HDF5))
-   else
-      allocate (atomOverlapCV_SYBD_PSCF_did  (1,1))
-   endif
-   allocate (atomOverlapSYBD_PSCF_did     (numPathKP_HDF5))
-   allocate (atomHamOverlapSYBD_PSCF_did  (numPathKP_HDF5,spin))
-   allocate (atomDMOverlapSYBD_PSCF_did   (numPathKP_HDF5,3))
-   allocate (atomMMOverlapSYBD_PSCF_did   (numPathKP_HDF5,3))
 
    ! Create the dataspace that will be used for each dataset in atomIntgGroup
    !   and all of its subgroups.  The same dataspace definition works for all
@@ -488,6 +492,7 @@ subroutine accessPSCFIntegralHDF5 (pscf_fid)
 
    ! Import any necessary definition modules.
    use HDF5
+   use O_MPI
 
    ! Import necessary object modules.
    use O_Potential,   only: spin
@@ -517,6 +522,37 @@ subroutine accessPSCFIntegralHDF5 (pscf_fid)
       fullCVDimsPSCF(1) = coreDim
       fullCVDimsPSCF(2) = valeDim
    endif
+
+   ! For the integrals that have multiple matrices per kpoint, we need to
+   !   create space to hold the group IDs of each kpoint group.
+   allocate (atomDMxyzOL_PSCF_gid (3)) ! Needs x,y,z matrices
+   allocate (atomMMxyzOL_PSCF_gid (3)) ! Needs x,y,z matrices
+   allocate (atomDMxyzOL_SYBD_PSCF_gid (3)) ! x,y,z matrices all done together
+   allocate (atomMMxyzOL_SYBD_PSCF_gid (3)) ! x,y,z matrices all done together
+
+   ! Allocate space to hold the dataset IDs.
+   if (coreDim > 0) then
+      allocate (atomOverlapCV_PSCF_did (numComponents,numKPoints_HDF5))
+   else
+      allocate (atomOverlapCV_PSCF_did (1,1))
+   endif
+   allocate (atomOverlapPSCF_did (numKPoints_HDF5))
+   allocate (atomHamOverlapPSCF_did (numKPoints_HDF5,spin))
+   allocate (atomDMOverlapPSCF_did (numKPoints_HDF5,3))
+   allocate (atomMMOverlapPSCF_did (numKPoints_HDF5,3))
+
+   if (coreDim > 0) then
+      allocate (atomOverlapCV_SYBD_PSCF_did (numComponents,numPathKP_HDF5))
+   else
+      allocate (atomOverlapCV_SYBD_PSCF_did (1,1))
+   endif
+   allocate (atomOverlapSYBD_PSCF_did (numPathKP_HDF5))
+   allocate (atomHamOverlapSYBD_PSCF_did (numPathKP_HDF5,spin))
+   allocate (atomDMOverlapSYBD_PSCF_did (numPathKP_HDF5,3))
+   allocate (atomMMOverlapSYBD_PSCF_did (numPathKP_HDF5,3))
+
+   ! Only process 0 opens the HDF5 structure.
+   if (mpiRank /= 0) return
 
    ! Open the Integral group within the pscf HDF5 file.
    call h5gopen_f (pscf_fid,"/atomIntgGroup",atomIntgGroupPSCF_gid,hdferr)
@@ -561,13 +597,6 @@ subroutine accessPSCFIntegralHDF5 (pscf_fid)
          & atomMMOverlapSYBD_PSCF_gid,hdferr)
    if (hdferr /= 0) stop 'Failed to open momentum matrix overlap SYBD group'
 
-   ! For the integrals that have multiple matrices per kpoint, we need to
-   !   create space to hold the group IDs of each kpoint group.
-   allocate (atomDMxyzOL_PSCF_gid (3)) ! Needs x,y,z matrices
-   allocate (atomMMxyzOL_PSCF_gid (3)) ! Needs x,y,z matrices
-   allocate (atomDMxyzOL_SYBD_PSCF_gid (3)) ! x,y,z matrices all done together
-   allocate (atomMMxyzOL_SYBD_PSCF_gid (3)) ! x,y,z matrices all done together
-
    ! Now, we open the xyz subgroups for the integrals that have them.
    do i = 1, 3
       write (currentName,fmt="(i7.7)") i
@@ -589,27 +618,6 @@ subroutine accessPSCFIntegralHDF5 (pscf_fid)
             & atomMMxyzOL_SYBD_PSCF_gid(i),hdferr)
       if (hdferr /= 0) stop 'Failed to open momentum matrix xyz SYBD group'
    enddo
-
-   ! Allocate space to hold the dataset IDs.
-   if (coreDim > 0) then
-      allocate (atomOverlapCV_PSCF_did (numComponents,numKPoints_HDF5))
-   else
-      allocate (atomOverlapCV_PSCF_did (1,1))
-   endif
-   allocate (atomOverlapPSCF_did (numKPoints_HDF5))
-   allocate (atomHamOverlapPSCF_did (numKPoints_HDF5,spin))
-   allocate (atomDMOverlapPSCF_did (numKPoints_HDF5,3))
-   allocate (atomMMOverlapPSCF_did (numKPoints_HDF5,3))
-
-   if (coreDim > 0) then
-      allocate (atomOverlapCV_SYBD_PSCF_did (numComponents,numPathKP_HDF5))
-   else
-      allocate (atomOverlapCV_SYBD_PSCF_did (1,1))
-   endif
-   allocate (atomOverlapSYBD_PSCF_did (numPathKP_HDF5))
-   allocate (atomHamOverlapSYBD_PSCF_did (numPathKP_HDF5,spin))
-   allocate (atomDMOverlapSYBD_PSCF_did (numPathKP_HDF5,3))
-   allocate (atomMMOverlapSYBD_PSCF_did (numPathKP_HDF5,3))
 
    ! Open the datasets that will be used for all subgroups of atomIntgGroup.
    do i = 1, numKPoints_HDF5
@@ -746,6 +754,7 @@ subroutine closePSCFIntegralHDF5
 
    ! Import any necessary definition modules.
    use HDF5
+   use O_MPI
 
    ! Import necessary object modules.
    use O_Potential, only: spin
@@ -759,125 +768,130 @@ subroutine closePSCFIntegralHDF5
    integer :: i,j
    integer :: hdferr
 
-   ! Close the property list first.
-   call h5pclose_f (valeValePSCF_plid,hdferr)
-   if (hdferr /= 0) stop 'Failed to close valeValePSCF_plid.'
+   if (mpiRank == 0) then
 
-   ! Close the datasets next.
-   do i = 1, numKPoints_HDF5
-      call h5dclose_f (atomOverlapPSCF_did(i),hdferr)
-      if (hdferr /= 0) stop 'Failed to close atomOverlapPSCF_did.'
+      ! Close the property list first.
+      call h5pclose_f (valeValePSCF_plid,hdferr)
+      if (hdferr /= 0) stop 'Failed to close valeValePSCF_plid.'
 
-      do j = 1, spin
-         call h5dclose_f (atomHamOverlapPSCF_did(i,j),hdferr)
-         if (hdferr /= 0) stop 'Failed to close atomHamOverlapPSCF_did.'
+      ! Close the datasets next.
+      do i = 1, numKPoints_HDF5
+         call h5dclose_f (atomOverlapPSCF_did(i),hdferr)
+         if (hdferr /= 0) stop 'Failed to close atomOverlapPSCF_did.'
+
+         do j = 1, spin
+            call h5dclose_f (atomHamOverlapPSCF_did(i,j),hdferr)
+            if (hdferr /= 0) stop 'Failed to close atomHamOverlapPSCF_did.'
+         enddo
+
+         do j = 1, 3
+            call h5dclose_f (atomDMOverlapPSCF_did(i,j),hdferr)
+            if (hdferr /= 0) stop 'Failed to close atomDMOverlapPSCF_did.'
+         enddo
+
+         do j = 1, 3
+            call h5dclose_f (atomMMOverlapPSCF_did(i,j),hdferr)
+            if (hdferr /= 0) stop 'Failed to close atomMMOverlapPSCF_did.'
+         enddo
+
+         if (coreDim > 0) then
+            do j = 1, numComponents
+               call h5dclose_f (atomOverlapCV_PSCF_did(j,i),hdferr)
+               if (hdferr /= 0) stop 'Failed to close atomOverlapCV_PSCF_did.'
+            enddo
+         endif
       enddo
 
-      do j = 1, 3
-         call h5dclose_f (atomDMOverlapPSCF_did(i,j),hdferr)
-         if (hdferr /= 0) stop 'Failed to close atomDMOverlapPSCF_did.'
+      ! Repeat for the SYBD Path KPoints
+      do i = 1, numPathKP_HDF5
+         call h5dclose_f (atomOverlapSYBD_PSCF_did(i),hdferr)
+         if (hdferr /= 0) stop 'Failed to close atomOverlapSYBD_PSCF_did.'
+
+         do j = 1, spin
+            call h5dclose_f (atomHamOverlapSYBD_PSCF_did(i,j),hdferr)
+            if (hdferr /= 0) stop &
+                  & 'Failed to close atomHamOverlapSYBD_PSCF_did.'
+         enddo
+
+         do j = 1, 3
+            call h5dclose_f (atomDMOverlapSYBD_PSCF_did(i,j),hdferr)
+            if (hdferr /= 0) stop 'Failed to close atomDMOverlapSYBD_PSCF_did.'
+         enddo
+
+         do j = 1, 3
+            call h5dclose_f (atomMMOverlapSYBD_PSCF_did(i,j),hdferr)
+            if (hdferr /= 0) stop 'Failed to close atomMMOverlapSYBD_PSCF_did.'
+         enddo
+
+         if (coreDim > 0) then
+            do j = 1, numComponents
+               call h5dclose_f (atomOverlapCV_SYBD_PSCF_did(j,i),hdferr)
+               if (hdferr /= 0) stop &
+                     & 'Failed to close atomOverlapCV_SYBD_PSCF_did.'
+            enddo
+         endif
       enddo
 
-      do j = 1, 3
-         call h5dclose_f (atomMMOverlapPSCF_did(i,j),hdferr)
-         if (hdferr /= 0) stop 'Failed to close atomMMOverlapPSCF_did.'
+      ! Close the data spaces next.
+      call h5sclose_f (valeValePSCF_dsid,hdferr)
+      if (hdferr /= 0) stop 'Failed to close valeValePSCF_dsid.'
+      if (coreDim > 0) then
+         call h5sclose_f (coreValePSCF_dsid,hdferr)
+         if (hdferr /= 0) stop 'Failed to close coreValePSCF_dsid.'
+      endif
+
+      ! Close the groups.
+      do i = 1, 3
+         call h5gclose_f (atomMMxyzOL_PSCF_gid(i),hdferr)
+         if (hdferr /= 0) stop 'Failed to close atomMMxyzOL_PSCF_gid.'
+         call h5gclose_f (atomMMxyzOL_SYBD_PSCF_gid(i),hdferr)
+         if (hdferr /= 0) stop 'Failed to close atomMMxyzOL_SYBD_PSCF_gid.'
       enddo
+
+      do i = 1, 3
+         call h5gclose_f (atomDMxyzOL_PSCF_gid(i),hdferr)
+         if (hdferr /= 0) stop 'Failed to close atomDMxyzOL_PSCF_gid.'
+         call h5gclose_f (atomDMxyzOL_SYBD_PSCF_gid(i),hdferr)
+         if (hdferr /= 0) stop 'Failed to close atomDMxyzOL_SYBD_PSCF_gid.'
+      enddo
+
+      call h5gclose_f (atomOverlapPSCF_gid,hdferr)
+      if (hdferr /= 0) stop 'Failed to close atomOverlapPSCF_gid.'
 
       if (coreDim > 0) then
-         do j = 1, numComponents
-            call h5dclose_f (atomOverlapCV_PSCF_did(j,i),hdferr)
-            if (hdferr /= 0) stop 'Failed to close atomOverlapCV_PSCF_did.'
-         enddo
+         call h5gclose_f (atomOverlapCV_PSCF_gid,hdferr)
+         if (hdferr /= 0) stop 'Failed to close atomOverlapCV_PSCF_gid.'
       endif
-   enddo
 
-   ! Repeat for the SYBD Path KPoints
-   do i = 1, numPathKP_HDF5
-      call h5dclose_f (atomOverlapSYBD_PSCF_did(i),hdferr)
-      if (hdferr /= 0) stop 'Failed to close atomOverlapSYBD_PSCF_did.'
+      call h5gclose_f (atomHamOverlapPSCF_gid,hdferr)
+      if (hdferr /= 0) stop 'Failed to close atomHamOverlapPSCF_gid.'
 
-      do j = 1, spin
-         call h5dclose_f (atomHamOverlapSYBD_PSCF_did(i,j),hdferr)
-         if (hdferr /= 0) stop 'Failed to close atomHamOverlapSYBD_PSCF_did.'
-      enddo
+      call h5gclose_f (atomMMOverlapPSCF_gid,hdferr)
+      if (hdferr /= 0) stop 'Failed to close atomMMxyzOverlapPSCF_gid.'
 
-      do j = 1, 3
-         call h5dclose_f (atomDMOverlapSYBD_PSCF_did(i,j),hdferr)
-         if (hdferr /= 0) stop 'Failed to close atomDMOverlapSYBD_PSCF_did.'
-      enddo
+      call h5gclose_f (atomDMOverlapPSCF_gid,hdferr)
+      if (hdferr /= 0) stop 'Failed to close atomDMxyzOverlapPSCF_gid.'
 
-      do j = 1, 3
-         call h5dclose_f (atomMMOverlapSYBD_PSCF_did(i,j),hdferr)
-         if (hdferr /= 0) stop 'Failed to close atomMMOverlapSYBD_PSCF_did.'
-      enddo
+      call h5gclose_f (atomOverlapSYBD_PSCF_gid,hdferr)
+      if (hdferr /= 0) stop 'Failed to close atomOverlapSYBD_PSCF_gid.'
 
       if (coreDim > 0) then
-         do j = 1, numComponents
-            call h5dclose_f (atomOverlapCV_SYBD_PSCF_did(j,i),hdferr)
-            if (hdferr /= 0) stop 'Failed to close atomOverlapCV_SYBD_PSCF_did.'
-         enddo
+         call h5gclose_f (atomOverlapCV_SYBD_PSCF_gid,hdferr)
+         if (hdferr /= 0) stop 'Failed to close atomOverlapCV_SYBD_PSCF_gid.'
       endif
-   enddo
 
-   ! Close the data spaces next.
-   call h5sclose_f (valeValePSCF_dsid,hdferr)
-   if (hdferr /= 0) stop 'Failed to close valeValePSCF_dsid.'
-   if (coreDim > 0) then
-      call h5sclose_f (coreValePSCF_dsid,hdferr)
-      if (hdferr /= 0) stop 'Failed to close coreValePSCF_dsid.'
+      call h5gclose_f (atomHamOverlapSYBD_PSCF_gid,hdferr)
+      if (hdferr /= 0) stop 'Failed to close atomHamOverlapSYBD_PSCF_gid.'
+
+      call h5gclose_f (atomMMOverlapSYBD_PSCF_gid,hdferr)
+      if (hdferr /= 0) stop 'Failed to close atomMMxyzOverlapSYBD_PSCF_gid.'
+
+      call h5gclose_f (atomDMOverlapSYBD_PSCF_gid,hdferr)
+      if (hdferr /= 0) stop 'Failed to close atomDMxyzOverlapSYBD_PSCF_gid.'
+
+      call h5gclose_f (atomIntgGroupPSCF_gid,hdferr)
+      if (hdferr /= 0) stop 'Failed to close atomIntgGroupPSCF_gid.'
    endif
-
-   ! Close the groups.
-   do i = 1, 3
-      call h5gclose_f (atomMMxyzOL_PSCF_gid(i),hdferr)
-      if (hdferr /= 0) stop 'Failed to close atomMMxyzOL_PSCF_gid.'
-      call h5gclose_f (atomMMxyzOL_SYBD_PSCF_gid(i),hdferr)
-      if (hdferr /= 0) stop 'Failed to close atomMMxyzOL_SYBD_PSCF_gid.'
-   enddo
-
-   do i = 1, 3
-      call h5gclose_f (atomDMxyzOL_PSCF_gid(i),hdferr)
-      if (hdferr /= 0) stop 'Failed to close atomDMxyzOL_PSCF_gid.'
-      call h5gclose_f (atomDMxyzOL_SYBD_PSCF_gid(i),hdferr)
-      if (hdferr /= 0) stop 'Failed to close atomDMxyzOL_SYBD_PSCF_gid.'
-   enddo
-
-   call h5gclose_f (atomOverlapPSCF_gid,hdferr)
-   if (hdferr /= 0) stop 'Failed to close atomOverlapPSCF_gid.'
-
-   if (coreDim > 0) then
-      call h5gclose_f (atomOverlapCV_PSCF_gid,hdferr)
-      if (hdferr /= 0) stop 'Failed to close atomOverlapCV_PSCF_gid.'
-   endif
-
-   call h5gclose_f (atomHamOverlapPSCF_gid,hdferr)
-   if (hdferr /= 0) stop 'Failed to close atomHamOverlapPSCF_gid.'
-
-   call h5gclose_f (atomMMOverlapPSCF_gid,hdferr)
-   if (hdferr /= 0) stop 'Failed to close atomMMxyzOverlapPSCF_gid.'
-
-   call h5gclose_f (atomDMOverlapPSCF_gid,hdferr)
-   if (hdferr /= 0) stop 'Failed to close atomDMxyzOverlapPSCF_gid.'
-
-   call h5gclose_f (atomOverlapSYBD_PSCF_gid,hdferr)
-   if (hdferr /= 0) stop 'Failed to close atomOverlapSYBD_PSCF_gid.'
-
-   if (coreDim > 0) then
-      call h5gclose_f (atomOverlapCV_SYBD_PSCF_gid,hdferr)
-      if (hdferr /= 0) stop 'Failed to close atomOverlapCV_SYBD_PSCF_gid.'
-   endif
-
-   call h5gclose_f (atomHamOverlapSYBD_PSCF_gid,hdferr)
-   if (hdferr /= 0) stop 'Failed to close atomHamOverlapSYBD_PSCF_gid.'
-
-   call h5gclose_f (atomMMOverlapSYBD_PSCF_gid,hdferr)
-   if (hdferr /= 0) stop 'Failed to close atomMMxyzOverlapSYBD_PSCF_gid.'
-
-   call h5gclose_f (atomDMOverlapSYBD_PSCF_gid,hdferr)
-   if (hdferr /= 0) stop 'Failed to close atomDMxyzOverlapSYBD_PSCF_gid.'
-
-   call h5gclose_f (atomIntgGroupPSCF_gid,hdferr)
-   if (hdferr /= 0) stop 'Failed to close atomIntgGroupPSCF_gid.'
 
    ! The attributes tracking completion are closed when written.
 

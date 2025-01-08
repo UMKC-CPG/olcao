@@ -6,8 +6,8 @@ subroutine printXDMFMetaFile
 
    ! Import the necessary data modules.
    use O_Constants, only: bohrRad
-   use O_Lattice,   only: realVectors, realFractStrideLength, numMeshPoints
-   use O_FieldHDF5, only: dataSetNames, groupNames, fileName, numDataSets
+   use O_Lattice,   only: numMeshPoints
+   use O_FieldHDF5, only: dataSetNames, groupNames, fileName
 
    ! Make sure that no variables are accidentally defined.
    implicit none

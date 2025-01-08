@@ -4891,32 +4891,35 @@ sub makeSubFile
    # Print the default commands (these are not system dependent).
    if ($xanes == 0)
    {
+      print SUBFILE "# shellcheck source=/dev/null\n";
       print SUBFILE "source $OLCAO_RC/olcaorc\n";
       print SUBFILE "export OMP_NUM_THREADS=1\n";
-      print SUBFILE "cd $proj_dir\n";
-      print SUBFILE "\"\$OLCAO_BIN/uolcao\" -dos\n";
-      print SUBFILE "\"\$OLCAO_BIN/uolcao\" -bond\n";
-      print SUBFILE "\"\$OLCAO_BIN/uolcao\" -sybd\n";
-      print SUBFILE "\"\$OLCAO_BIN/uolcao\" -optc\n";
+      print SUBFILE "cd $proj_dir || exit\n";
+      print SUBFILE "\"\$OLCAO_BIN/upolcao\" -dos\n";
+      print SUBFILE "\"\$OLCAO_BIN/upolcao\" -bond\n";
+      print SUBFILE "\"\$OLCAO_BIN/upolcao\" -sybd\n";
+      print SUBFILE "\"\$OLCAO_BIN/upolcao\" -optc\n";
    }
    elsif ($h == 0)
    {
+      print SUBFILE "# shellcheck source=/dev/null\n";
       print SUBFILE "source $OLCAO_RC/olcaorc\n";
       @values = StructureControl::prepLine("","$proj_dir",'\/');
       $basename = "/" . $values[$#values];
       print SUBFILE "export OMP_NUM_THREADS=1\n";
-      print SUBFILE "cd $proj_dir$basename\n";
-      print SUBFILE "\"\$OLCAO_BIN/uolcao\" -dos\n";
-      print SUBFILE "\"\$OLCAO_BIN/uolcao\" -bond\n";
-      print SUBFILE "\"\$OLCAO_BIN/uolcao\" -sybd\n";
-      print SUBFILE "\"\$OLCAO_BIN/uolcao\" -optc\n";
+      print SUBFILE "cd $proj_dir$basename || exit\n";
+      print SUBFILE "\"\$OLCAO_BIN/upolcao\" -dos\n";
+      print SUBFILE "\"\$OLCAO_BIN/upolcao\" -bond\n";
+      print SUBFILE "\"\$OLCAO_BIN/upolcao\" -sybd\n";
+      print SUBFILE "\"\$OLCAO_BIN/upolcao\" -optc\n";
    }
    else
    {
+      print SUBFILE "# shellcheck source=/dev/null\n";
       $proj_dir = "$proj_dir" . "/" . lc($currentName);
       print SUBFILE "source $OLCAO_RC/olcaorc\n";
       print SUBFILE "export OMP_NUM_THREADS=1\n";
-      print SUBFILE "cd $proj_dir\n";
+      print SUBFILE "cd $proj_dir || exit\n";
       foreach $orbital (1..$numCoreXanes)
       {
          @values=StructureControl::prepLine("",$xanesControl[$orbital],'\s+');

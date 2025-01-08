@@ -45,6 +45,7 @@ subroutine initPSCFEigValHDF5 (pscf_fid,numStates)
 
    ! Import any necessary definition modules.
    use HDF5
+   use O_MPI
 
    ! Import necessary object modules.
    use O_KPoints, only: numKPoints_HDF5, numPathKP_HDF5
@@ -65,6 +66,13 @@ subroutine initPSCFEigValHDF5 (pscf_fid,numStates)
    ! Initialize data structure dimensions.
    states(1) = numStates
 
+   ! Allocate space to hold the IDs for the datasets in the eigenvalues group.
+   allocate (eigenValuesPSCF_did(numKPoints_HDF5,spin))
+   allocate (eigenValuesSYBD_PSCF_did(numPathKP_HDF5,spin))
+
+   ! Only process 0 opens the HDF5 structure.
+   if (mpiRank /= 0) return
+
    ! Create the eigenValues group in the pscf_fid.
    call h5gcreate_f (pscf_fid,"eigenValues",eigenValuesPSCF_gid,hdferr)
    call h5gcreate_f (pscf_fid,"eigenValuesSYBD",eigenValuesSYBD_PSCF_gid,&
@@ -79,10 +87,6 @@ subroutine initPSCFEigValHDF5 (pscf_fid,numStates)
    call h5pset_chunk_f(statesPSCF_plid,1,states,hdferr)
 !   call h5pset_shuffle_f(statesPSCF_plid,hdferr)
    call h5pset_deflate_f   (statesPSCF_plid,1,hdferr)
-
-   ! Allocate space to hold the IDs for the datasets in the eigenvalues group.
-   allocate (eigenValuesPSCF_did(numKPoints_HDF5,spin))
-   allocate (eigenValuesSYBD_PSCF_did(numPathKP_HDF5,spin))
 
    ! Create the datasets for the eigen values.
    do i = 1, spin
@@ -109,6 +113,7 @@ subroutine accessPSCFEigValHDF5 (pscf_fid, numStates)
 
    ! Import any necessary definition modules.
    use HDF5
+   use O_MPI
 
    ! Import necessary object modules.
    use O_KPoints, only: numKPoints_HDF5, numPathKP_HDF5
@@ -129,15 +134,18 @@ subroutine accessPSCFEigValHDF5 (pscf_fid, numStates)
    ! Initialize data structure dimensions.
    states(1) = numStates
 
+   ! Allocate space to hold the IDs for the datasets in the eigenvalues group.
+   allocate (eigenValuesPSCF_did(numKPoints_HDF5,spin))
+   allocate (eigenValuesSYBD_PSCF_did(numPathKP_HDF5,spin))
+
+   ! Only process 0 opens the HDF5 structure.
+   if (mpiRank /= 0) return
+
    ! Open the eigenValues group in the scf_fid.
    call h5gopen_f (pscf_fid,"/eigenValues",eigenValuesPSCF_gid,hdferr)
    if (hdferr /= 0) stop 'Failed to open eigenValues group.'
    call h5gopen_f (pscf_fid,"/eigenValuesSYBD",eigenValuesSYBD_PSCF_gid,hdferr)
    if (hdferr /= 0) stop 'Failed to open eigenValuesSYBD group.'
-
-   ! Allocate space to hold the IDs for the datasets in the eigenvalues group.
-   allocate (eigenValuesPSCF_did(numKPoints_HDF5,spin))
-   allocate (eigenValuesSYBD_PSCF_did(numPathKP_HDF5,spin))
 
    ! Open the datasets for the eigen vectors.
    do i = 1, spin
@@ -176,6 +184,7 @@ subroutine closePSCFEigValHDF5
 
    ! Import any necessary definition modules.
    use HDF5
+   use O_MPI
 
    ! Import necessary object modules.
    use O_KPoints, only: numKPoints_HDF5, numPathKP_HDF5
@@ -188,35 +197,41 @@ subroutine closePSCFEigValHDF5
    integer :: i,j
    integer :: hdferr
 
-   ! Close the eigenvalue dataspace.
-   call h5sclose_f (statesPSCF_dsid,hdferr)
-   if (hdferr /= 0) stop 'Failed to close statesPSCF_dsid.'
+   if (mpiRank == 0) then
 
-   ! Close the eigenvalue datasets next.
-   do i = 1, spin
-      do j = 1, numKPoints_HDF5
-         call h5dclose_f (eigenValuesPSCF_did(j,i),hdferr)
-         if (hdferr /= 0) stop 'Failed to close eigenValuesPSCF_did'
+      ! Close the eigenvalue dataspace.
+      call h5sclose_f (statesPSCF_dsid,hdferr)
+      if (hdferr /= 0) stop 'Failed to close statesPSCF_dsid.'
+
+      ! Close the eigenvalue datasets next.
+      do i = 1, spin
+         do j = 1, numKPoints_HDF5
+            call h5dclose_f (eigenValuesPSCF_did(j,i),hdferr)
+            if (hdferr /= 0) stop 'Failed to close eigenValuesPSCF_did'
+         enddo
+         do j = 1, numPathKP_HDF5
+            call h5dclose_f (eigenValuesSYBD_PSCF_did(j,i),hdferr)
+            if (hdferr /= 0) stop 'Failed to close eigenValuesSYBD_PSCF_did'
+         enddo
       enddo
-      do j = 1, numPathKP_HDF5
-         call h5dclose_f (eigenValuesSYBD_PSCF_did(j,i),hdferr)
-         if (hdferr /= 0) stop 'Failed to close eigenValuesSYBD_PSCF_did'
-      enddo
-   enddo
+   endif
 
    ! Dellocate space used to hold IDs for datasets in the eigenvalues group.
    deallocate (eigenValuesPSCF_did)
    deallocate (eigenValuesSYBD_PSCF_did)
 
-   ! Close the eigenvalue property list.
-   call h5pclose_f (statesPSCF_plid,hdferr)
-   if (hdferr /= 0) stop 'Failed to close statesPSCF_plid.'
+   if (mpiRank == 0) then
 
-   ! Close the eigenvalues group.
-   call h5gclose_f (eigenValuesPSCF_gid,hdferr)
-   if (hdferr /= 0) stop 'Failed to close eigen values gid.'
-   call h5gclose_f (eigenValuesSYBD_PSCF_gid,hdferr)
-   if (hdferr /= 0) stop 'Failed to close eigen values SYBD gid.'
+      ! Close the eigenvalue property list.
+      call h5pclose_f (statesPSCF_plid,hdferr)
+      if (hdferr /= 0) stop 'Failed to close statesPSCF_plid.'
+
+      ! Close the eigenvalues group.
+      call h5gclose_f (eigenValuesPSCF_gid,hdferr)
+      if (hdferr /= 0) stop 'Failed to close eigen values gid.'
+      call h5gclose_f (eigenValuesSYBD_PSCF_gid,hdferr)
+      if (hdferr /= 0) stop 'Failed to close eigen values SYBD gid.'
+   endif
 
 end subroutine closePSCFEigValHDF5
 

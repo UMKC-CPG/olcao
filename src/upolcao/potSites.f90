@@ -56,6 +56,7 @@ subroutine readPotSites(readUnit, writeUnit)
    integer :: i
    integer :: counter
    character*2 :: atomName
+   character*80 :: errorMsg
 
    ! Read the number of potential sites.
    call readData(mpiRank,readUnit,writeUnit,numPotSites,&
@@ -71,13 +72,15 @@ subroutine readPotSites(readUnit, writeUnit)
    do i = 1, numPotSites
       read (4,*)     counter,potSites(i)%potTypeAssn,potSites(i)%cartPos,&
             & atomName
-      write (20,900) counter,potSites(i)%potTypeAssn,potSites(i)%cartPos,&
-            & atomName
+      if (mpiRank == 0) then
+         write (20,900) counter,potSites(i)%potTypeAssn,potSites(i)%cartPos,&
+               & atomName
+      endif
 
       ! Check that the list is in order
       if (counter /= i) then
-         write (20,*) 'Potential site list is out of order at i = ',i
-         stop
+         write (errorMsg,*) 'Potential site list is out of order at i = ',i
+         call stopMPI(errorMsg)
       endif
    enddo
 

@@ -69,6 +69,7 @@ subroutine readAtomicSites(readUnit,writeUnit)
    integer :: i
    integer :: counter
    character*2 :: atomName
+   character*80 :: errorMsg
 
    ! Read the number of atomic sites.
    call readData(mpiRank,readUnit,writeUnit,numAtomSites,&
@@ -91,10 +92,8 @@ subroutine readAtomicSites(readUnit,writeUnit)
 
       ! Check that the list is in order
       if (counter /= i) then
-         if (mpiRank == 0) then
-            write (20,*) 'Potential site list is out of order at i = ',i
-         endif
-         call stopMPI("")
+         write (errorMsg,*) 'Potential site list is out of order at i = ',i
+         call stopMPI(errorMsg)
       endif
    enddo
 

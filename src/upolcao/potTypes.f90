@@ -103,6 +103,7 @@ subroutine readPotTypes(readUnit, writeUnit)
    integer :: i
    integer, dimension (4) :: typeIDs
    real (kind=double), dimension (2) :: tempRealArray
+   character*80 :: errorMsg
 
    ! Read the number of potential types.
    call readData(mpiRank,readUnit,writeUnit,numPotTypes,&
@@ -128,9 +129,9 @@ subroutine readPotTypes(readUnit, writeUnit)
 
       ! The last value (typeIDs(4)) equals loop index i.
       if (typeIDs(4) /= i) then
-         write (20,*) 'Types numbered out of order:  '
-         write (20,*) 'i=',i,' typeIDs(4)=',typeIDs(4)
-         stop
+         write (errorMsg,*) 'Types numbered out of order: i= ',i,&
+               & ' typeIDs(4)=',typeIDs(4)
+         call stopMPI(errorMsg)
       endif
 
       ! Read the type label for the potential type and adjust the spacing.
@@ -200,6 +201,7 @@ subroutine getPotTypeImplicitInfo
    ! Include necessary modules.
    use O_StringSubs
    use O_PotSites ! For getMultiplicities subroutine
+   use O_MPI
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
@@ -256,10 +258,12 @@ subroutine getPotTypeImplicitInfo
 
    deallocate (multiplicities)
 
-   ! Log the important statistics
-   write (20,fmt="(a,i5)")    'Potential Dimension      = ', potDimTemp
-   write (20,fmt="(a,e12.5)") 'Smallest Potential Alpha = ', minPotAlpha
-   write (20,fmt="(a,e12.5)") 'Largest  Potential Alpha = ', maxPotAlpha
+   ! Log the important statistics.
+   if (mpiRank == 0) then
+      write (20,fmt="(a,i5)")    'Potential Dimension      = ', potDimTemp
+      write (20,fmt="(a,e12.5)") 'Smallest Potential Alpha = ', minPotAlpha
+      write (20,fmt="(a,e12.5)") 'Largest  Potential Alpha = ', maxPotAlpha
+   endif
 
 end subroutine getPotTypeImplicitInfo
 

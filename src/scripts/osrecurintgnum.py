@@ -60,8 +60,10 @@ def print_test_overlap_num(conversion, triads, f):
                 f"{conversion[i][1][1]},{conversion[i][1][2]}/)\n"
 
     head += """
+
+   ! Initialize numerical mesh quantities.
    start_pos = -cell_size
-   num_steps = cell_size * 2.0d0 / step_size + 1  ! +1 accounts for xyz=zero.
+   num_steps = int(cell_size * 2.0d0 / step_size) + 1  ! +1 accounts for xyz=0
 
    ! Initialize a counter of the triad pq pairs.
    h = 0
@@ -152,7 +154,6 @@ def print_test_kinetic_num(conversion, triads, f):
    integer, dimension (""" + f"{len(conversion)}" + """,2,3) :: conversion
    integer, dimension (3) :: l1, l2
    real (kind=double) :: start_pos, curr_pos
-   real (kind=double), dimension (3) :: xyz, xyz_soln
    real (kind=double), dimension (3,2) :: xyz_I ! Indices=xyz, prime||noprime
 
    ! Before we proceed with the calculation we need to understand a bit more
@@ -222,8 +223,10 @@ def print_test_kinetic_num(conversion, triads, f):
                 f"{conversion[i][1][1]},{conversion[i][1][2]}/)\n"
 
     head += """
+
+   ! Initialize numerical mesh quantities.
    start_pos = -cell_size
-   num_steps = cell_size * 2.0d0 / step_size + 1  ! +1 accounts for xyz=zero.
+   num_steps = int(cell_size * 2.0d0 / step_size) + 1  ! +1 accounts for xyz=0
 
    ! Initialize a counter of the triad pq pairs.
    h = 0
@@ -423,7 +426,7 @@ def print_test_kinetic_full_num(conversion, triads, f):
    integer, dimension (""" + f"{len(conversion)}" + """,2,3) :: conversion
    integer, dimension (3) :: l1, l2
    real (kind=double) :: start_pos, curr_pos
-   real (kind=double), dimension (3) :: xyz, xyz_soln
+   real (kind=double), dimension (3) :: xyz
    real (kind=double), dimension (3,2) :: xyz_I ! Indices=xyz, prime||noprime
 
    ! Full solution variables.
@@ -506,7 +509,7 @@ def print_test_kinetic_full_num(conversion, triads, f):
 
    ! Initialize numerical mesh quantities.
    start_pos = -cell_size
-   num_steps = cell_size * 2.0d0 / step_size + 1  ! +1 accounts for xyz=zero.
+   num_steps = int(cell_size * 2.0d0 / step_size) + 1  ! +1 accounts for xyz=0
 
    ! Initialize a counter of the triad pq pairs.
    h = 0
@@ -652,8 +655,10 @@ def print_test_electron_num(conversion, triads, f):
                 f"{conversion[i][1][1]},{conversion[i][1][2]}/)\n"
 
     head += """
+
+   ! Initialize numerical mesh quantities.
    start_pos = -cell_size
-   num_steps = cell_size * 2.0d0 / step_size + 1  ! +1 accounts for xyz=zero.
+   num_steps = int(cell_size * 2.0d0 / step_size) + 1  ! +1 accounts for xyz=0
 
    ! Initialize a counter of the triad pq pairs.
    h = 0
@@ -761,8 +766,10 @@ def print_test_nuclear_num1dFast(conversion, triads, f):
                 f"{conversion[i][1][1]},{conversion[i][1][2]}/)\n"
 
     head += """
+
+   ! Initialize numerical mesh quantities.
    start_pos = -cell_size
-   num_steps = cell_size * 2.0d0 / step_size + 1  ! +1 accounts for xyz=zero.
+   num_steps = int(cell_size * 2.0d0 / step_size) + 1  ! +1 accounts for xyz=0
 
    allocate(xyz(num_steps,3))
    allocate(xyz_sum(num_steps,3))
@@ -916,8 +923,10 @@ def print_test_nuclear_num(conversion, triads, f):
                 f"{conversion[i][1][1]},{conversion[i][1][2]}/)\n"
 
     head += """
+
+   ! Initialize numerical mesh quantities.
    start_pos = -cell_size
-   num_steps = cell_size * 2.0d0 / step_size + 1  ! +1 accounts for xyz=zero.
+   num_steps = int(cell_size * 2.0d0 / step_size) + 1  ! +1 accounts for xyz=0
 
    ! Original equation from sympy:
    !   (xyz(1)-A(1))**l1(1)*(xyz(1)-B(1))**l2(1)*(xyz(2)-A(2))**l1(2)*
@@ -1056,7 +1065,6 @@ def print_test_momentum_num(conversion, triads, f):
    integer, dimension (""" + f"{len(conversion)},2,3) :: conversion" + """
    integer, dimension (3) :: l1, l2
    real (kind=double) :: start_pos, curr_pos
-   real (kind=double), dimension (3) :: xyz
    real (kind=double), dimension (3,2) :: xyz_I ! Indices=xyz, noprime||prime
 
    ! Before we proceed with the calculation we need to understand a bit more
@@ -1119,8 +1127,10 @@ def print_test_momentum_num(conversion, triads, f):
                 f"{conversion[i][1][1]},{conversion[i][1][2]}/)\n"
 
     head += """
+
+   ! Initialize numerical mesh quantities.
    start_pos = -cell_size
-   num_steps = cell_size * 2.0d0 / step_size + 1  ! +1 accounts for xyz=zero.
+   num_steps = int(cell_size * 2.0d0 / step_size) + 1  ! +1 accounts for xyz=0
 
    ! Initialize a counter of the triad pq pairs
    h = 0
@@ -1316,8 +1326,9 @@ def print_test_dipole_num(conversion, triads, f):
 
     head += """
 
+   ! Initialize numerical mesh quantities.
    start_pos = -cell_size
-   num_steps = cell_size * 2.0d0 / step_size + 1  ! +1 accounts for xyz=zero.
+   num_steps = int(cell_size * 2.0d0 / step_size) + 1  ! +1 accounts for xyz=0
 
 
    ! Original equation from sympy:
@@ -1595,7 +1606,7 @@ def print_test_massvel_full_num(conversion, triads, f):
 
    ! Initialize numerical mesh quantities.
    start_pos = -cell_size
-   num_steps = cell_size * 2.0d0 / step_size + 1  ! +1 accounts for xyz=zero.
+   num_steps = int(cell_size * 2.0d0 / step_size) + 1  ! +1 accounts for xyz=0
 
    ! Initialize a counter of the triad pq pairs.
    h = 0
@@ -2275,7 +2286,6 @@ def print_test_massvel_num(conversion, triads, f):
    integer, dimension (3) :: l1, l2
    real (kind=double) :: start_pos, coeff
    real (kind=double), dimension (2) :: curr_pos
-   real (kind=double), dimension (3) :: xyz, xyz_soln
    real (kind=double), dimension (3,3) :: xyz_I
       ! The second index is for prime, noprime, 2Dprime.
       ! The first index is xyz for prime and noprime while it is xy,xz,yz for
@@ -2404,8 +2414,10 @@ def print_test_massvel_num(conversion, triads, f):
 
     head += """
    coeff = (fineStructure * 0.001d0)**2 / 8.0d0
+
+   ! Initialize numerical mesh quantities.
    start_pos = -cell_size
-   num_steps = cell_size * 2.0d0 / step_size + 1  ! +1 accounts for xyz=zero.
+   num_steps = int(cell_size * 2.0d0 / step_size) + 1  ! +1 accounts for xyz=0
 
    ! Initialize a counter of the triad pq pairs.
    h = 0
@@ -2768,7 +2780,6 @@ def print_test_dkinetic_num(conversion, triads, f):
    integer, dimension (3) :: l1, l2
    real (kind=double) :: start_pos, coeff
    real (kind=double), dimension (2) :: curr_pos
-   real (kind=double), dimension (3) :: xyz, xyz_soln
    real (kind=double), dimension (6,3) :: xyz_I
       ! The second index is for prime, noprime, 2Dprime.
       ! The first index is xyz for prime and noprime while it is xy, xz, yx,
@@ -2890,8 +2901,10 @@ def print_test_dkinetic_num(conversion, triads, f):
 
     head += """
    coeff = 0.5d0 ! Sign cancelled with minus from dellR2 = -dell
+
+   ! Initialize numerical mesh quantities.
    start_pos = -cell_size
-   num_steps = cell_size * 2.0d0 / step_size + 1  ! +1 accounts for xyz=zero.
+   num_steps = int(cell_size * 2.0d0 / step_size) + 1  ! +1 accounts for xyz=0
 
    ! Initialize a counter of the triad pq pairs.
    h = 0
@@ -3223,8 +3236,7 @@ def print_test_dkinetic_full_num(conversion, triads, f):
    integer, dimension (3) :: l1, l2
    real (kind=double) :: start_pos, coeff
    real (kind=double), dimension (2) :: curr_pos
-   real (kind=double), dimension (3) :: xyz, xyz_soln
-   real (kind=double), dimension (3,3) :: xyz_I
+   real (kind=double), dimension (3) :: xyz
       ! The second index is for prime, noprime, 2Dprime.
       ! The first index is xyz for prime and noprime while it is xy,xz,yz for
       !   the 2Dprime case.
@@ -3361,7 +3373,7 @@ def print_test_dkinetic_full_num(conversion, triads, f):
 
    ! Initialize numerical mesh quantities.
    start_pos = -cell_size
-   num_steps = cell_size * 2.0d0 / step_size + 1  ! +1 accounts for xyz=zero.
+   num_steps = int(cell_size * 2.0d0 / step_size) + 1  ! +1 accounts for xyz=0
 
    ! Initialize a counter of the triad pq pairs.
    h = 0
@@ -3512,8 +3524,10 @@ def print_test_dnuclearcb_num(conversion, triads, f):
                 f"{conversion[i][1][1]},{conversion[i][1][2]}/)\n"
 
     head += """
+
+   ! Initialize numerical mesh quantities.
    start_pos = -cell_size
-   num_steps = cell_size * 2.0d0 / step_size + 1  ! +1 accounts for xyz=zero.
+   num_steps = int(cell_size * 2.0d0 / step_size) + 1  ! +1 accounts for xyz=0
 
    ! Original equation for d/dx nuclear from sympy:
    ! (xyz(1)-A(1))**l1(1)*(xyz(2)-A(2))**l1(2)*(xyz(3)-A(3))**l1(3)
@@ -3696,7 +3710,6 @@ def print_test_delectroncb_num(conversion, triads, f):
    integer, dimension (""" + f"{len(conversion)}" + """,2,3) :: conversion
    integer, dimension (3) :: l1, l2
    real (kind=double) :: start_pos, curr_pos
-   real (kind=double), dimension (3) :: xyz
    real (kind=double), dimension (3,2) :: xyz_I ! Indices=xyz, noprime||prime
 
    ! Before we proceed with the calculation we need to understand a bit more
@@ -3778,8 +3791,10 @@ def print_test_delectroncb_num(conversion, triads, f):
                 f"{conversion[i][1][1]},{conversion[i][1][2]}/)\n"
 
     head += """
+
+   ! Initialize numerical mesh quantities.
    start_pos = -cell_size
-   num_steps = cell_size * 2.0d0 / step_size + 1  ! +1 accounts for xyz=zero.
+   num_steps = int(cell_size * 2.0d0 / step_size) + 1  ! +1 accounts for xyz=0
 
    do p = 1, """ + f"{len(triads)}" + """
       do q = 1, """ + f"{len(triads)}" + """
@@ -3915,7 +3930,7 @@ def print_test_delectronbb_num(conversion, triads, f):
 
     # Print the subroutine header for the numerical portion.
     head = """
-   subroutine delectron3CIntgNumBB(a1,a2,a3,A,B,C,pc,sh,cell_size,step_size)
+   subroutine delectron3CIntgNumBB(a1,a2,a3,A,B,pc,sh,cell_size,step_size)
 
    use O_Kinds
    use O_Constants, only: pi
@@ -3932,7 +3947,7 @@ def print_test_delectronbb_num(conversion, triads, f):
 
    ! Define the dummy variables passed to this subroutine.
    real (kind=double), intent (in) :: a1, a2, a3
-   real (kind=double), dimension (3), intent (in) :: A, B, C
+   real (kind=double), dimension (3), intent (in) :: A, B
    real (kind=double), dimension (""" \
     + f"{len(triads)},{len(triads)},3), intent(out) :: pc" + """
    real (kind=double), dimension (""" \
@@ -3946,7 +3961,6 @@ def print_test_delectronbb_num(conversion, triads, f):
    integer, dimension (""" + f"{len(conversion)}" + """,2,3) :: conversion
    integer, dimension (3) :: l1, l2
    real (kind=double) :: start_pos, curr_pos
-   real (kind=double), dimension (3) :: xyz
    real (kind=double), dimension (3,2) :: xyz_I ! Indices=xyz, noprime||prime
 
    ! Before we proceed with the calculation we need to understand a bit more
@@ -4042,8 +4056,10 @@ def print_test_delectronbb_num(conversion, triads, f):
                 f"{conversion[i][1][1]},{conversion[i][1][2]}/)\n"
 
     head += """
+
+   ! Initialize numerical mesh quantities.
    start_pos = -cell_size
-   num_steps = cell_size * 2.0d0 / step_size + 1  ! +1 accounts for xyz=zero.
+   num_steps = int(cell_size * 2.0d0 / step_size) + 1  ! +1 accounts for xyz=0
 
    do p = 1, """ + f"{len(triads)}" + """
       do q = 1, """ + f"{len(triads)}" + """
@@ -4097,7 +4113,7 @@ def print_test_delectronbb_num(conversion, triads, f):
    end subroutine delectron3CIntgNumBB
 
 
-   function noPrimeDElectronBB(step_size, curr_pos, A, B, C, &
+   function noPrimeDElectronBB(step_size, curr_pos, A, B, &
          & a1, a2, a3, l1, l2)
 
       ! Use necessary modules.
@@ -4108,7 +4124,7 @@ def print_test_delectronbb_num(conversion, triads, f):
 
       ! Define passed parameters.
       real (kind=double), intent(in) :: step_size, curr_pos
-      real (kind=double), intent(in) :: A, B, C, a1, a2, a3
+      real (kind=double), intent(in) :: A, B, a1, a2, a3
       integer, intent(in) :: l1, l2
 
       ! Define local and return variables.
@@ -4118,14 +4134,14 @@ def print_test_delectronbb_num(conversion, triads, f):
       noPrimeDElectronBB = step_size &
             & * (curr_pos - A)**l1 * (curr_pos - B)**l2 &
             & * exp(-a1*(curr_pos - A)**2) * exp(-a2*(curr_pos - B)**2) &
-            & * exp(-a3*(curr_pos - B)**2)
+            & * exp(-a3*(curr_pos - B)**2) ! Not C because B==C here.
 
       return
  
    end function noPrimeDElectronBB
 
 
-   function primeDElectronBB(step_size, curr_pos, A, B, C, a1, a2, a3, l1, l2)
+   function primeDElectronBB(step_size, curr_pos, A, B, a1, a2, a3, l1, l2)
 
       ! Use necessary modules.
       use O_Kinds
@@ -4135,7 +4151,7 @@ def print_test_delectronbb_num(conversion, triads, f):
 
       ! Define passed parameters.
       real (kind=double), intent(in) :: step_size, curr_pos
-      real (kind=double), intent(in) :: A, B, C, a1, a2, a3
+      real (kind=double), intent(in) :: A, B, a1, a2, a3
       integer, intent(in) :: l1, l2
 
       ! Define local and return variables.
@@ -4159,7 +4175,8 @@ def print_test_delectronbb_num(conversion, triads, f):
       ! Multiply prime integral by the preceeding primitive gaussian
       !   coefficient and exponential and multiply by the succeeding
       !   exponential. (We have already multiplied by the succeeding
-      !   primitive gaussian coefficient in the above lines.)
+      !   primitive gaussian coefficient in the above lines.) Note
+      !   that the last term uses B instead of C because B==C here.
       primeDElectronBB = primeDElectronBB &
             & * (curr_pos-A)**l1 * exp(-a1*(curr_pos-A)**2) &
             & * exp(-a2*(curr_pos-B)**2) * exp(-a3*(curr_pos-B)**2)
@@ -4209,7 +4226,6 @@ def print_test_delectronbc_num(conversion, triads, f):
    integer, dimension (""" + f"{len(conversion)}" + """,2,3) :: conversion
    integer, dimension (3) :: l1, l2
    real (kind=double) :: start_pos, curr_pos
-   real (kind=double), dimension (3) :: xyz
    real (kind=double), dimension (3,2) :: xyz_I ! Indices=xyz, noprime||prime
 
    ! Before we proceed with the calculation we need to understand a bit more
@@ -4286,8 +4302,10 @@ def print_test_delectronbc_num(conversion, triads, f):
                 f"{conversion[i][1][1]},{conversion[i][1][2]}/)\n"
 
     head += """
+
+   ! Initialize numerical mesh quantities.
    start_pos = -cell_size
-   num_steps = cell_size * 2.0d0 / step_size + 1  ! +1 accounts for xyz=zero.
+   num_steps = int(cell_size * 2.0d0 / step_size) + 1  ! +1 accounts for xyz=0
 
    do p = 1, """ + f"{len(triads)}" + """
       do q = 1, """ + f"{len(triads)}" + """

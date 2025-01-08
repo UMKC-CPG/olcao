@@ -262,9 +262,8 @@ subroutine initializeAtomSite (atomNumber,atomIndex,atomType,currentElements,&
    ! Include the modules we need
    use O_Kinds
    use O_Constants, only: dim3
-   use O_AtomicSites, only: numAtomSites, atomSites
-   use O_AtomicTypes, only: maxNumAtomAlphas, maxNumStates, numAtomTypes, &
-         & atomTypes
+   use O_AtomicSites, only: atomSites
+   use O_AtomicTypes, only: atomTypes
 
    ! Input variables that request which atom to extract info from, and where
    !   to put it.
@@ -284,9 +283,6 @@ subroutine initializeAtomSite (atomNumber,atomIndex,atomType,currentElements,&
    real (kind=double), dimension (dim3,2), intent(out) :: cartPos
    real (kind=double), dimension (:,:), intent(out)    :: alphas
    real (kind=double), dimension (:,:,:), intent(out)  :: currentBasisFns
-
-   ! Other local variables.
-   integer :: i
 
    ! Fill the requested information for the atomNumber provided into the
    !   array index requested by atomIndex.
@@ -347,8 +343,8 @@ subroutine initializePotSite (potNumber,potType,potElement,zFactor,nucAlpha,&
    ! Include the modules we need
    use O_Kinds
    use O_Constants, only: dim3
-   use O_PotSites, only: numPotSites, potSites
-   use O_PotTypes, only: numPotTypes, potTypes
+   use O_PotSites, only: potSites
+   use O_PotTypes, only: potTypes
 
    ! Input variables that request which atom to extract info from, and where
    !   to put it.

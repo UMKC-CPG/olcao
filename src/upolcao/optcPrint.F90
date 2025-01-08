@@ -45,6 +45,8 @@ subroutine printOptcResults(doOPTC)
       energyDelta     = deltaPACS
       ! The energyMin was already determined for PACS calculations.
       numEnergyPoints = int((maxTransEnergy - energyMin) / energyDelta) + 1
+   else
+      stop ! Avoid compiler warning.
    endif ! Sigma(E) calculations never call this subroutine.
 
    ! Initialize local conversion parameters
@@ -336,6 +338,7 @@ subroutine printSpectrum (specType,numEnergyPoints,spectrum,conversionFactor)
    integer :: unitBase
 
    ! Customize the output for the current spectrum type.
+   unitBase = 0  ! Avoid compiler warning about unused variable.
    if (mpiRank == 0) then
       if (specType == 0) then ! XANES/ELNES
          unitBase = 49
@@ -419,6 +422,7 @@ subroutine printSpectrumPOPTC (specType,numEnergyPoints,spectrumPOPTC,&
       unitBase = 249
    else
       call stopMPI("Need a spectrum type of 0, 1, or 2.")
+      stop ! Useless. Avoid compiler warning.
    endif
 
    ! Define the QN_l letters.

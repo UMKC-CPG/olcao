@@ -231,7 +231,7 @@ subroutine computeDOS(inSCF)
 
    ! Define local variables.
    integer :: h,i,j,k,l ! Loop index variables
-integer :: m
+!integer :: m
    character*17 :: formatString
    character*1, dimension (lAngMomCount) :: QN_lLetter
    character*14, dimension (4,7) :: QN_mLetter
@@ -293,18 +293,28 @@ integer :: m
    if     (detailCodePDOS == 0) then
       allocate (cumulNumDOS  (numAtomTypes + 1))
       allocate (pdosAccum    (valeDim))
+      cumulNumDOS(:) = 0
+      pdosAccum(:) = 0.0_double
    ! Store DOS for each atom's TDOS.
    elseif (detailCodePDOS == 1) then
       allocate (cumulNumDOS  (1)) ! Unused for this detailCodePDOS.
       allocate (pdosAccum    (numAtomSites))
+      cumulNumDOS(:) = 0
+      pdosAccum(:) = 0.0_double
    ! Store DOS for each QN_nl resolved atom.
    elseif (detailCodePDOS == 2) then
       allocate (cumulNumDOS  (numAtomSites + 1))
       allocate (pdosAccum    (valeDim))
+      cumulNumDOS(:) = 0
+      pdosAccum(:) = 0.0_double
    ! Store DOS for each QN_nlm resolved atom.
    elseif (detailCodePDOS == 3) then
       allocate (cumulNumDOS  (numAtomSites + 1))
       allocate (pdosAccum    (valeDim))
+      cumulNumDOS(:) = 0
+      pdosAccum(:) = 0.0_double
+   else
+      stop
    endif
 #ifndef GAMMA
    allocate      (waveFnSqrd (valeDim))
@@ -345,7 +355,6 @@ integer :: m
    QN_mLetter(4,7) = '4zzy~xxy~yyy'
 
    ! Initialize other variables.
-   cumulNumDOS(:) = 0
    cumulDOSTotal  = 0
 
    if (detailCodePDOS == 0) then
@@ -530,6 +539,9 @@ integer :: m
    do i = 1, numEnergyPoints
       energyScale(i) = eminDOS + (i-1) * deltaDOS
    enddo
+
+   ! Initialize the variables to avoid compiler warnings.
+   pdosComplete(:,:) = 0.0_double
 
    do h = 1, spin
 
@@ -787,7 +799,8 @@ integer :: m
       !   the number of electron spin states available in the system
       !   (occupied + unoccupied) OVER THE REQUESTED ENERGY RANGE ONLY!
       integratedArea = sum(totalSystemDos(1:numEnergyPoints - 1) + &
-            & totalSystemDos(2:numEnergyPoints)) * deltaDOS * 0.5_double
+            & totalSystemDos(2:numEnergyPoints)) * deltaDOS * hartree * &
+            & 0.5_double
 
       ! Record the exact values and calculated values for electrons and states.
       if (mpiRank == 0) then

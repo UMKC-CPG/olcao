@@ -126,6 +126,8 @@ subroutine parseInput(inSCF)
    use O_ReadDataSubs
    use O_TimeStamps
 
+   use O_MPI
+
    ! Make sure no funny variables are defined.
    implicit none
 
@@ -199,8 +201,6 @@ subroutine parseInput(inSCF)
    ! Close the primary input file.
    close(5)
 
-
-
    ! Open the structure input file for reading.
    open(4,file='fort.4',status='old',form='formatted')
    readUnit = 4
@@ -265,7 +265,9 @@ subroutine readTitle(readUnit,writeUnit)
    ! Read lines and regurgitate them until we find the END_TITLE tag.
    do while (.true.)
       read(5,*) titleLine
-      write (20,fmt='(a80)') titleLine
+      if (mpiRank == 0) then
+         write (20,fmt='(a80)') titleLine
+      endif
 
       if (titleLine == 'END_TITLE') then
          exit
@@ -329,14 +331,16 @@ subroutine readSharedControl(readUnit,writeUnit,inSCF)
 
    ! Check that the given values are valid.
    if (basisFnConvgTemp <= 0.0_double .or. basisFnConvgTemp > 1.0_double) then
-      write (20,*) 'Wave Fn Convergence value is not in (0,1]'
-      write (20,*) 'This is an error'
-      stop
+      if (mpiRank == 0) then
+         write (20,*) 'Wave Fn Convergence value is not in (0,1]'
+      endif
+      call stopMPI("This is an error")
    endif
    if (electroConvgTemp <= 0.0_double .or. electroConvgTemp > 1.0_double) then
-      write (20,*) 'Electrostatic Convergence value is not in (0,1]'
-      write (20,*) 'This is an error'
-      stop
+      if (mpiRank == 0) then
+         write (20,*) 'Electrostatic Convergence value is not in (0,1]'
+      endif
+      call stopMPI("This is an error")
    endif
 
    ! Immediately calculate and store the negative log of the above convergence
@@ -344,10 +348,12 @@ subroutine readSharedControl(readUnit,writeUnit,inSCF)
    !   understand the meaning of these values.
    call setCutoffThresh(basisFnConvgTemp,electroConvgTemp)
 
-   write (20,FMT="(a,e12.5)")'Maximum basisFunction threshold = ',&
-         & logBasisFnThresh
-   write (20,FMT="(a,e12.5)")'Maximum electroStatic threshold = ',&
-         & logElecThresh
+   if (mpiRank == 0) then
+      write (20,FMT="(a,e12.5)")'Maximum basisFunction threshold = ',&
+            & logBasisFnThresh
+      write (20,FMT="(a,e12.5)")'Maximum electroStatic threshold = ',&
+            & logElecThresh
+   endif
 
 
 
@@ -355,8 +361,10 @@ subroutine readSharedControl(readUnit,writeUnit,inSCF)
    call readData(mpiRank,readUnit,writeUnit,3,tempArray(:),&
          & len('NUM_STATES_TO_USE'),'NUM_STATES_TO_USE')
    numStates = int(tempArray(basisCode))
-   write (20,*) "Using ",numStates," states."
-   call flush (20)
+   if (mpiRank == 0) then
+      write (20,*) "Using ",numStates," states."
+      call flush (20)
+   endif
 
 
    ! Read the number of valence electrons in the system.
@@ -513,8 +521,10 @@ subroutine readMainControl(readUnit,writeUnit)
    do i = 1, numPotTypes
       if ((typeSpinSplitTemp(i) < -1.0_double) .or. &
           (typeSpinSplitTemp(i) >  1.0_double)) then
-         write (20,*) "SPIN_SPLIT_FACTOR outside of range [-1.0,1.0]. Stopping."
-         stop
+         if (mpiRank == 0) then
+            write (20,*) "SPIN_SPLIT_FACTOR outside of range [-1.0,1.0]."
+         endif
+         call stopMPI("Stopping.")
       endif
    enddo
 
@@ -568,7 +578,7 @@ subroutine getDipoleMomentCenter
 
    ! Local parameters
    integer :: xyzAxis, abcAxis
-   real (kind=double), dimension(3) :: posXYZ, fractABC
+   real (kind=double), dimension(3) :: fractABC
 
    ! The dipole moment center that was given in the input was in the form
    !   of ABC fractional coordinates.
@@ -924,7 +934,9 @@ subroutine readLoEnControl(readUnit,writeUnit)
       twoj1 = twoj2
       twoj2 = temp
 
-      write (6,*) "Swapped twoj1 and twoj2 to ensure twoj1 >= twoj2."
+      if (mpiRank == 0) then
+         write (6,*) "Swapped twoj1 and twoj2 to ensure twoj1 >= twoj2."
+      endif
    endif
 
 end subroutine readLoEnControl

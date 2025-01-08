@@ -58,10 +58,11 @@ module O_SCFElecStatHDF5
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    contains
 
-subroutine initSCFElecStatHDF5 (scf_fid,attribInt_dsid,attribIntDims)
+subroutine initSCFElecStatHDF5 (scf_fid,attribInt_dsid)
 
    ! Import any necessary definition modules.
    use HDF5
+   use O_MPI
 
    ! Import necessary object modules.
    use O_PotTypes    ! For potDim, numPotTypes
@@ -69,7 +70,6 @@ subroutine initSCFElecStatHDF5 (scf_fid,attribInt_dsid,attribIntDims)
    ! Define the passed parameters.
    integer(hid_t) :: scf_fid
    integer(hid_t) :: attribInt_dsid
-   integer(hsize_t), dimension (1) :: attribIntDims
 
    ! Define local variables.
    integer :: hdferr
@@ -80,6 +80,9 @@ subroutine initSCFElecStatHDF5 (scf_fid,attribInt_dsid,attribIntDims)
    potTypesPot(1) = numPotTypes
    potTypesPot(2) = potDim
    pot(1)    = potDim
+
+   ! Only process 0 opens the HDF5 structure.
+   if (mpiRank /= 0) return
 
    ! Create the electrostatic group within the HDF5 file.
    call h5gcreate_f (scf_fid,"/elecStatGroup",elecStatGroup_gid,hdferr)
@@ -167,6 +170,7 @@ subroutine accessSCFElecStatHDF5 (scf_fid)
 
    ! Import any necessary definition modules.
    use HDF5
+   use O_MPI
 
    ! Import necessary object modules.
    use O_PotTypes    ! For potDim, numPotTypes
@@ -183,6 +187,9 @@ subroutine accessSCFElecStatHDF5 (scf_fid)
    potTypesPot(1) = numPotTypes
    potTypesPot(2) = potDim
    pot(1)         = potDim
+
+   ! Only process 0 opens the HDF5 structure.
+   if (mpiRank /= 0) return
 
    ! Open the electrostatic group within the HDF5 file.
    call h5gopen_f (scf_fid,"/elecStatGroup",elecStatGroup_gid,hdferr)
@@ -241,6 +248,7 @@ subroutine closeSCFElecStatHDF5
 
    ! Import any necessary definition modules.
    use HDF5
+   use O_MPI
 
    ! Make sure that no variables are implicitly declared.
    implicit none
@@ -250,6 +258,9 @@ subroutine closeSCFElecStatHDF5
 
    ! Close all access to the electrostatic calculation parts of the HDF file
    !   for setup.
+
+   ! Only process 0 closes the HDF5 structure.
+   if (mpiRank /= 0) return
 
    ! Close the property lists first.
    call h5pclose_f (potTypesPot_plid,hdferr)

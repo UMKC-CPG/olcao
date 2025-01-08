@@ -132,7 +132,8 @@ subroutine applyPhaseFactors (currentPair,pairXBasisFn12,statesDim1,statesDim2,&
          do m = 1, statesDim2
             do n = 1, statesDim1
                currentPair(n,m,l) = currentPair(n,m,l) + cmplx(0.0_double,&
-                     & -1.0_double) * phaseFactor(l,k) * pairXBasisFn12(n,m)
+                     & -1.0_double,double) * phaseFactor(l,k) * &
+                     & pairXBasisFn12(n,m)
             enddo
          enddo
       enddo
@@ -311,7 +312,7 @@ subroutine saveCurrentPair (i,j,kPointCount,currentPair,&
       call valeValeSaving (i,j,kPointCount,valeStateIndex,valeStateNum,&
             & valeVale,currentPair)
    else
-      call valeValeSavingFull (i,j,kPointCount,valeStateIndex,valeStateNum,&
+      call valeValeSavingFull (kPointCount,valeStateIndex,valeStateNum,&
             & valeVale,currentPair,currentPairDagger)
    endif
 
@@ -342,7 +343,7 @@ subroutine saveCurrentPair (i,j,kPointCount,currentPair,&
       call coreCoreSaving (i,j,kPointCount,valeStateNum,coreStateIndex,&
             & coreStateNum,coreCore,currentPair,currentPairDagger)
    else
-      call coreCoreSavingFull (i,j,kPointCount,valeStateNum,coreStateIndex,&
+      call coreCoreSavingFull (kPointCount,valeStateNum,coreStateIndex,&
             & coreStateNum,coreCore,currentPair,currentPairDagger)
    endif
 
@@ -403,7 +404,7 @@ end subroutine valeValeSaving
 
 
 
-subroutine valeValeSavingFull (atom1,atom2,kPointCount,valeStateIndex,&
+subroutine valeValeSavingFull (kPointCount,valeStateIndex,&
       & valeStateNum,valeVale,currentPair,currentPairDagger)
 
    ! Import the necessary modules
@@ -418,8 +419,6 @@ subroutine valeValeSavingFull (atom1,atom2,kPointCount,valeStateIndex,&
    implicit none
 
    ! Define variables passed to this subroutine
-   integer :: atom1
-   integer :: atom2
    integer :: kPointCount
    integer, dimension (2) :: valeStateIndex
    integer, dimension (2) :: valeStateNum
@@ -430,7 +429,7 @@ subroutine valeValeSavingFull (atom1,atom2,kPointCount,valeStateIndex,&
          & numKPoints) :: currentPairDagger
 
    ! Define local variables for loop control and tracking.
-   integer :: i,j,k
+   integer :: i
 
    do i = 1, kPointCount
       valeVale(valeStateIndex(1)+1:valeStateIndex(1)+valeStateNum(1),&
@@ -548,7 +547,7 @@ subroutine coreCoreSaving (atom1,atom2,kPointCount,valeStateNum,&
 end subroutine coreCoreSaving
 
 
-subroutine coreCoreSavingFull (atom1,atom2,kPointCount,valeStateNum,&
+subroutine coreCoreSavingFull (kPointCount,valeStateNum,&
       & coreStateIndex,coreStateNum,coreCore,currentPair,currentPairDagger)
 
    ! Import the necessary modules
@@ -563,8 +562,6 @@ subroutine coreCoreSavingFull (atom1,atom2,kPointCount,valeStateNum,&
    implicit none
 
    ! Define variables passed to this subroutine
-   integer :: atom1
-   integer :: atom2
    integer :: kPointCount
    integer, dimension (2) :: valeStateNum
    integer, dimension (2) :: coreStateIndex

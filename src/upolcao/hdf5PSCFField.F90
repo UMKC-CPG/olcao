@@ -80,8 +80,9 @@ subroutine initPSCFFieldHDF5 (pscf_fid)
    ! Use necessary modules.
    use O_Lattice, only: numMeshPoints
 
-   ! Use the HDF5 module.
+   ! Use the HDF5 and MPI modules.
    use HDF5
+   use O_MPI
 
    ! Make sure that no funny variables are defined.
    implicit none
@@ -92,40 +93,6 @@ subroutine initPSCFFieldHDF5 (pscf_fid)
    ! Declare local variables.
    integer :: maxNumDataPoints
    integer :: hdferr
-
-!   ! Initialize the Fortran 90 HDF5 interface.
-!   call h5open_f(hdferr)
-!   if (hdferr < 0) stop 'Failed to open HDF library'
-!
-!   ! Create the property list for the field hdf5 file and turn off
-!   !   chunk caching.
-!   call h5pcreate_f    (H5P_FILE_ACCESS_F,fieldPSCF_plid,hdferr)
-!   if (hdferr /= 0) stop 'Failed to create field plid.'
-!   call h5pget_cache_f (fieldPSCF_plid,mdc_nelmts,rdcc_nelmts,rdcc_nbytes,rdcc_w0,&
-!         & hdferr)
-!   if (hdferr /= 0) stop 'Failed to get field plid cache settings.'
-!   call h5pset_cache_f (fieldPSCF_plid,mdc_nelmts,0_size_t,0_size_t,rdcc_w0,hdferr)
-!   if (hdferr /= 0) stop 'Failed to set field plid cache settings.'
-!
-!   ! Create the HDF5 file that will hold all the computed results.  This will
-!   !   die if the file already exists.  It also uses the default file creation
-!   !   and file access properties.
-!   call h5fcreate_f ("field-temp.hdf5",H5F_ACC_EXCL_F,pscf_fid,hdferr,&
-!         & H5P_DEFAULT_F,fieldPSCF_plid)
-!   if (hdferr /= 0) stop 'Failed to create field-temp.hdf5 file.'
-
-   ! Create the groups of the field hdf5 file.
-   call h5gcreate_f (pscf_fid,"/wavGroup",wavPSCF_gid,hdferr)
-   if (hdferr /= 0) stop 'Failed to create pscf wav group'
-   call h5gcreate_f (pscf_fid,"/rhoGroup",rhoPSCF_gid,hdferr)
-   if (hdferr /= 0) stop 'Failed to create pscf charge density (rho) group'
-   call h5gcreate_f (pscf_fid,"/potGroup",potPSCF_gid,hdferr)
-   if (hdferr /= 0) stop 'Failed to create pscf potential group'
-
-   ! Create the group that define the mesh.
-   call h5gcreate_f (pscf_fid,"/mesh",meshPSCF_gid,hdferr)
-   if (hdferr /= 0) stop 'Failed to create pscf mesh group'
-
 
    ! Initialize data structure dimensions.
    abcDims(:) = numMeshPoints(:)
@@ -169,6 +136,43 @@ subroutine initPSCFFieldHDF5 (pscf_fid)
 
    ! Get the largest dimension as use that for the chunk size of the mesh.
    abcMaxDimChunkPSCF(1) = maxval(abcDimsChunkPSCF(:))
+
+   ! Only process 0 opens the HDF5 structure.
+   if (mpiRank /= 0) return
+
+!   ! Initialize the Fortran 90 HDF5 interface.
+!   call h5open_f(hdferr)
+!   if (hdferr < 0) stop 'Failed to open HDF library'
+!
+!   ! Create the property list for the field hdf5 file and turn off
+!   !   chunk caching.
+!   call h5pcreate_f    (H5P_FILE_ACCESS_F,fieldPSCF_plid,hdferr)
+!   if (hdferr /= 0) stop 'Failed to create field plid.'
+!   call h5pget_cache_f (fieldPSCF_plid,mdc_nelmts,rdcc_nelmts,rdcc_nbytes,rdcc_w0,&
+!         & hdferr)
+!   if (hdferr /= 0) stop 'Failed to get field plid cache settings.'
+!   call h5pset_cache_f (fieldPSCF_plid,mdc_nelmts,0_size_t,0_size_t,rdcc_w0,hdferr)
+!   if (hdferr /= 0) stop 'Failed to set field plid cache settings.'
+!
+!   ! Create the HDF5 file that will hold all the computed results.  This will
+!   !   die if the file already exists.  It also uses the default file creation
+!   !   and file access properties.
+!   call h5fcreate_f ("field-temp.hdf5",H5F_ACC_EXCL_F,pscf_fid,hdferr,&
+!         & H5P_DEFAULT_F,fieldPSCF_plid)
+!   if (hdferr /= 0) stop 'Failed to create field-temp.hdf5 file.'
+
+   ! Create the groups of the field hdf5 file.
+   call h5gcreate_f (pscf_fid,"/wavGroup",wavPSCF_gid,hdferr)
+   if (hdferr /= 0) stop 'Failed to create pscf wav group'
+   call h5gcreate_f (pscf_fid,"/rhoGroup",rhoPSCF_gid,hdferr)
+   if (hdferr /= 0) stop 'Failed to create pscf charge density (rho) group'
+   call h5gcreate_f (pscf_fid,"/potGroup",potPSCF_gid,hdferr)
+   if (hdferr /= 0) stop 'Failed to create pscf potential group'
+
+   ! Create the group that define the mesh.
+   call h5gcreate_f (pscf_fid,"/mesh",meshPSCF_gid,hdferr)
+   if (hdferr /= 0) stop 'Failed to create pscf mesh group'
+
 
    ! Create the dataspace that will be used for each mesh dataset within the
    !   file. The same dataspace definition works for all of the datasets.
@@ -307,8 +311,9 @@ subroutine accessPSCFFieldHDF5(pscf_fid)
    ! Use necessary modules.
    use O_Lattice, only: numMeshPoints
 
-   ! Use the HDF5 module.
+   ! Use the HDF5 and MPI modules.
    use HDF5
+   use O_MPI
 
    ! Make sure that no funny variables are defined.
    implicit none
@@ -338,6 +343,9 @@ subroutine accessPSCFFieldHDF5(pscf_fid)
 
    ! Initialize data structure dimensions.
    abcDims(:) = numMeshPoints(:)
+
+   ! Only process 0 accesses the HDF5 structure.
+   if (mpiRank /= 0) return
 
    ! Open the groups of the hdf5 field file.
    call h5gopen_f (pscf_fid,"/wavGroup",wavPSCF_gid,hdferr)
@@ -421,14 +429,18 @@ end subroutine accessPSCFFieldHDF5
 
 subroutine closePSCFFieldHDF5
 
-   ! Use the HDF5 module.
+   ! Use the HDF5 and MPI modules.
    use HDF5
+   use O_MPI
 
    ! Make sure that no funny variables are defined.
    implicit none
 
    ! Declare local variables.
    integer :: hdferr
+
+   ! Only process 0 closes the HDF5 structure.
+   if (mpiRank /= 0) return
 
    ! Close the property list.
    call h5pclose_f (abcPSCF_plid,hdferr)
