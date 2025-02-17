@@ -164,19 +164,16 @@ subroutine neutralAndNuclearQPot
    real (kind=double) :: coeff ! The same as the above applies to this.
    real (kind=double) :: potMagnitude
 
+   ! Parallel variables.
+   integer :: minSite, maxSite ! Min and max potential site for this process.
+
    ! Determine if this calculation has already been completed by a previous
    !   OLCAO execution.
    call checkAttributeHDF5(potOLAndLocalQ_aid,"Pot OL and Local Q",hdf5Status)
    if (hdf5Status == 1) return
-   !hdf5Status = 0
-   !attribIntDims(1) = 1
-   !call h5aread_f(potOLAndLocalQ_aid,H5T_NATIVE_INTEGER,hdf5Status,&
-   !      & attribIntDims,hdferr)
-   !if (hdferr /= 0) stop 'Failed to read pot OL and local Q status.'
-   !if (hdf5Status == 1) then
-   !   write(20,*) "Pot OL and local Q electrostatics already exists. Skipping."
-   !   return
-   !endif
+
+   ! Determine the load balancing indices for work.
+   call loadBalMPI(numPotSites,minSite,maxSite)
 
    ! Allocate space for the coulomb potential matrices that are created here.
    allocate (nonLocalNeutQPot (potDim,potDim))
@@ -319,7 +316,33 @@ subroutine neutralAndNuclearQPot
    !   map to atomic sites too.  Still, we will keep this current algorithm
    !   because it isn't all that bad even for our now simpler case of no
    !   auxiliary functions.
-   do i = 1, numPotSites
+
+   ! For parallel calculation, the processes that have a minSite>1 will need
+   !   to compute the current status of a number of variables *as if* the
+   !   algorithm had been running in serial. In the future, this should be
+   !   replaced with a direct and intelligent assignment.
+   if (minSite > 1) then
+      do i = 1, minSite-1  ! Don't need to use iLoadBal here.
+         if (potSites(i)%firstPotType == 1) then
+            ! Assign local copies of the potential type based variables.
+            currentType(1)      = potSites(i)%potTypeAssn
+            currentNumAlphas(1) = potTypes(currentType(1))%numAlphas
+            currentAlphas(:currentNumAlphas(1),1) = &
+               & potTypes(currentType(1))%alphas(:currentNumAlphas(1))
+            currentAlphasSqrt(:currentNumAlphas(1),1) = &
+               & sqrt(currentAlphas(:currentNumAlphas(1),1))
+
+            ! Establish the beginning and ending indices for the set of
+            !   alphas (potential terms) that we are dealing with out of
+            !   all of the alphas in the whole system.
+            initAlphaIndex(1)   = finAlphaIndex(1)
+            finAlphaIndex(1)    = finAlphaIndex(1) + currentNumAlphas(1)
+         endif
+      enddo
+   endif
+
+   ! Begin computing over the assigned range of sites for this process.
+   do i = minSite, maxSite ! Was 1, numPotSites
       if (potSites(i)%firstPotType == 1) then
 
          ! Assign local copies of the potential type assignment of the current
@@ -513,7 +536,7 @@ subroutine neutralAndNuclearQPot
             enddo
 
             ! Check if the above loop set was aborted or not.  If not, it means
-            !   that we have to
+            !   that we have to continue with the calculation.
             if (aboveThreshold == 0) then
                do m = l,currentMaxNumAlpha
                   if (currentNumAlphas(1) <= currentNumAlphas(2)) then
@@ -632,6 +655,51 @@ subroutine neutralAndNuclearQPot
    deallocate (currentAlphas)
    deallocate (currentAlphasSqrt)
    deallocate (neutralQPotCoeff)
+
+   ! Accumulate the results using MPI_REDUCE. In the future the bounds of the
+   !   local buffer that were actually used should be sent explicitly so that
+   !   we don't spend extra time sending and accumulating a bunch of zeros.
+   call MPI_BARRIER(MPI_COMM_WORLD,mpierr)
+   if (mpiRank == 0) then
+      call MPI_REDUCE(MPI_IN_PLACE,nonLocalNeutQPot(:,:),potDim*potDim,&
+            & MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,mpierr)
+   else
+      call MPI_REDUCE(nonLocalNeutQPot(:,:),nonLocalNeutQPot(:,:),&
+            & potDim*potDim,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,&
+            & mpierr)
+   endif
+   call MPI_BARRIER(MPI_COMM_WORLD,mpierr)
+   if (mpiRank == 0) then
+      call MPI_REDUCE(MPI_IN_PLACE,localNeutQPot(:,:),potDim*potDim,&
+            & MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,mpierr)
+   else
+      call MPI_REDUCE(localNeutQPot(:,:),localNeutQPot(:,:),potDim*potDim,&
+            & MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,mpierr)
+   endif
+   call MPI_BARRIER(MPI_COMM_WORLD,mpierr)
+   if (mpiRank == 0) then
+      call MPI_REDUCE(MPI_IN_PLACE,nonLocalNucQPot(:),potDim,&
+            & MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,mpierr)
+   else
+      call MPI_REDUCE(nonLocalNucQPot(:),nonLocalNucQPot(:),potDim,&
+            & MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,mpierr)
+   endif
+   call MPI_BARRIER(MPI_COMM_WORLD,mpierr)
+   if (mpiRank == 0) then
+      call MPI_REDUCE(MPI_IN_PLACE,localNucQPot(:),potDim,&
+            & MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,mpierr)
+   else
+      call MPI_REDUCE(localNucQPot(:),localNucQPot(:),potDim,&
+            & MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,mpierr)
+   endif
+   call MPI_BARRIER(MPI_COMM_WORLD,mpierr)
+   if (mpiRank == 0) then
+      call MPI_REDUCE(MPI_IN_PLACE,potAlphaOverlap(:,:),potDim*potDim,&
+            & MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,mpierr)
+   else
+      call MPI_REDUCE(potAlphaOverlap(:,:),potAlphaOverlap(:,:),potDim*potDim,&
+            & MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,mpierr)
+   endif
 
    ! Record the potential overlap and local Q data.
    if (mpiRank == 0) then
@@ -803,6 +871,12 @@ subroutine residualQ
    real (kind=double) :: sqrtPi      ! Sqrt(Pi)
    real (kind=double) :: x2InvSqrtPi ! 2.0 / sqrt(pi)
 
+   ! Parallel Variables
+   integer :: minSite,maxSite
+
+   ! Determine the load balancing indices for work.
+   call loadBalMPI(numPotSites,minSite,maxSite)
+
    ! For writing the attribute.
 
    ! Determine if this calculation has already been completed by a previous
@@ -810,17 +884,6 @@ subroutine residualQ
    call checkAttributeHDF5(nonLocalResidualQ_aid,"Non-local residual Q",&
          & hdf5Status)
    if (hdf5Status == 1) return
-   !hdf5Status = 0
-   !attribIntDims(1) = 1
-   !call h5aread_f(nonLocalResidualQ_aid,H5T_NATIVE_INTEGER,hdf5Status,&
-   !      & attribIntDims,hdferr)
-   !if (hdferr /= 0) stop 'Failed to read non-local residual Q status.'
-   !if (hdf5Status == 1) then
-   !   write(20,*) "Non-local residual Q electrostatics exists. Skipping."
-   !   call h5aclose_f(nonLocalResidualQ_aid,hdferr)
-   !   if (hdferr /= 0) stop 'Failed to close non-local residual Q status.'
-   !   return
-   !endif
 
    ! Allocate space for the coulomb potential matrices that are created here.
    allocate (nonLocalResidualQ (numPotTypes,potDim))
@@ -858,8 +921,57 @@ subroutine residualQ
    ! Initialize the current element to zero.
    currentElement = 0
 
+   ! For parallel calculation, the processes that have a minSite>1 will need
+   !   to compute the current status of a number of variables *as if* the
+   !   algorithm had been running in serial. In the future, this should be
+   !   replaced with a direct and intelligent assignment.
+   if (minSite > 1) then
+      do i = 1, minSite-1
+         if (potSites(i)%firstPotType == 1) then
+            ! Assign local copies of the potential type based variables.
+            currentType(1)      = potSites(i)%potTypeAssn
+            currentNumAlphas(1) = potTypes(currentType(1))%numAlphas
+            currentAlphas(:currentNumAlphas(1),1) = &
+                  & potTypes(currentType(1))%alphas(:currentNumAlphas(1))
+            currentAlphasSqrt(:currentNumAlphas(1),1) = &
+                  & sqrt(currentAlphas(:currentNumAlphas(1),1))
+            currentAlphasFactor(:currentNumAlphas(1),1) = piXX32 / &
+                  & (currentAlphas(:currentNumAlphas(1),1) * &
+                  & currentAlphasSqrt(:currentNumAlphas(1),1))
+            lastElement    = currentElement
+            currentElement = potTypes(currentType(1))%elementID
+
+            ! Establish the beginning and ending indices for the set of
+            !   alphas (potential terms) that we are dealing with out of
+            !   all of the alphas in the whole system.
+            initAlphaIndex = finAlphaIndex
+            finAlphaIndex  = finAlphaIndex + currentNumAlphas(1)
+
+            if (lastElement /= currentElement) then
+               do j = 1, currentNumAlphas(1)
+                  ! Get the potential alpha overlap between the current alpha
+                  !   and the minimal potential alpha of the whole system.
+                  minReducedAlpha = currentAlphas(j,1) * minPotAlpha / &
+                        & (currentAlphas(j,1) + minPotAlpha)
+
+                  ! Square root of the above
+                  minReducedAlphaSqrt(j) = sqrt(minReducedAlpha)
+
+                  ! One fourth of the inverse of minReducedAlpha
+                  inv4MinReducedAlpha = 0.25_double / minReducedAlpha
+
+                  ! Compute the exp decay factor for the reciprocal space cells.
+                  recipCellExp(2:,j) = exp(-cellSizesRecip(2:) * &
+                        & inv4MinReducedAlpha) / cellSizesRecip(2:)
+               enddo
+            endif
+         endif
+      enddo
+   endif
+
    ! Begin with nested loops over the potential alphas of each potential site.
-   do i = 1, numPotSites
+   do i = minSite, maxSite ! Was 1, numPotSites
+
       if (potSites(i)%firstPotType == 1) then
 
          ! Assign local copies of the potential type assignment of the current
@@ -891,7 +1003,7 @@ subroutine residualQ
                ! Get the potential alpha overlap between the current alpha and
                !   the minimal potential alpha of the whole system.
                minReducedAlpha = currentAlphas(j,1) * minPotAlpha / &
-                            &(currentAlphas(j,1) + minPotAlpha)
+                     & (currentAlphas(j,1) + minPotAlpha)
 
                ! Square root of the above
                minReducedAlphaSqrt(j) = sqrt(minReducedAlpha)
@@ -905,8 +1017,7 @@ subroutine residualQ
                      & inv4MinReducedAlpha) / cellSizesRecip(2:)
             enddo
          endif
-
-      endif
+      endif ! potTypes(i)%firstPotType == 1
 
       ! Initialize the matrix index counter for the second nested loop.
       matrixIndex(2) = 0
@@ -1068,6 +1179,20 @@ subroutine residualQ
    deallocate (phase)
    deallocate (recipCellExp)
    deallocate (minReducedAlphaSqrt)
+
+   ! Accumulate the results into the distributed global array. In the future
+   !   the bounds of the local buffer that were actually used should be sent
+   !   to the ga_accumulation subroutine so that we don't spend extra time
+   !   sending and accumulating a bunch of zeros.
+   call MPI_BARRIER(MPI_COMM_WORLD,mpierr)
+   if (mpiRank == 0) then
+      call MPI_REDUCE(MPI_IN_PLACE,nonLocalResidualQ(:,:),numPotTypes*potDim,&
+            & MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,mpierr)
+   else
+      call MPI_REDUCE(nonLocalResidualQ(:,:),nonLocalResidualQ(:,:),&
+            & numPotTypes*potDim,MPI_DOUBLE_PRECISION,MPI_SUM,0,&
+            & MPI_COMM_WORLD,mpierr)
+   endif
 
    ! Write to disk the matrices that will be used by main later.
    if (mpiRank == 0) then

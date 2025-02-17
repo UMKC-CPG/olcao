@@ -6005,7 +6005,9 @@ sub printLMP
       print LMP "$xy $xz $yz xy xz yz\n\n";
    }
 
-   # Print information about the masses.
+   # Print information about the masses. Here, we consider each atom and print
+   #   information each time we encounter an atom with a type different than
+   #   the previous atom. (Hence, only types are printed.)
    print LMP "Masses\n\n";
    $currentElement = 0;
    $currentSpecies = 0;
@@ -6028,7 +6030,7 @@ sub printLMP
          print LMP "# $atomElementName[$atom] $currentSpecies\n";
       }
 
-      $atomUniqSpecies[$atom] = $currentSpecies;
+      $atomUniqSpecies[$atom] = $numUniqueSpecies;
    }
 
    # Print information about the atoms.

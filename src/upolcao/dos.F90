@@ -16,6 +16,7 @@ module O_DOS
 
    contains
 
+! Presently all mpi ranks compute this.
 subroutine computeIterationTDOS
 
    ! Import the necessary modules.
@@ -100,6 +101,7 @@ subroutine computeIterationTDOS
 
 end subroutine computeIterationTDOS
 
+! Presently only mpi rank 0 calls this.
 subroutine printIterationTDOS
 
    ! Import the necessary modules.
@@ -203,6 +205,7 @@ end subroutine printIterationTDOS
 subroutine computeDOS(inSCF)
 
    ! Import the necessary modules.
+   use MPI_F08
    use O_Kinds
    use O_MPI
    use O_TimeStamps
@@ -586,6 +589,7 @@ subroutine computeDOS(inSCF)
             ! Track the stateSpinKPoint index number.
             stateSpinKPointIndex = stateSpinKPointIndex + 1
 
+            ! FIX: Need to document this decision!
 !            occupancyNumber = electronPopulation(stateSpinKPointIndex)
 
             ! Determine the occupancy number for this state.  The default
@@ -668,8 +672,8 @@ subroutine computeDOS(inSCF)
 !                  localizationIndex(j) = localizationIndex(j) + &
 !                        & oneValeRealAccum * oneValeRealAccum * &
 !                        & occupancyNumber
-               enddo
-            enddo
+               enddo ! l (numAtomStates(k))
+            enddo ! k (numAtomSites)
 
 
             ! Apply broadening to the pdos values according to the given
@@ -707,7 +711,7 @@ subroutine computeDOS(inSCF)
                         & pdosComplete(1:cumulDOSTotal,k) &
                         & + pdosAccum(1:cumulDOSTotal) * expFactor
                endif
-            enddo
+            enddo ! (k numEnergyPoints)
          enddo ! (j numStates)
 
          ! Record that this kpoint has been finished.

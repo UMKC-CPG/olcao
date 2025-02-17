@@ -63,13 +63,14 @@ module O_ExchangeCorrelation
 subroutine getECMeshParameters
 
    ! Include the modules we need.
+   use MPI_F08
+   use O_MPI
    use O_Kinds
    use O_Constants, only: dim3, smallThresh
    use O_Lattice, only: numCellsReal, cellDimsReal, findLatticeVector
    use O_PotSites, only: numPotSites, potSites
    use O_PotTypes, only: minPotAlpha, potTypes
    use O_TimeStamps
-   use O_MPI
 
    ! Make certain that no implicit variables are accidently declared.
    implicit none
@@ -358,6 +359,8 @@ end subroutine getECMeshParameters
 subroutine makeECMeshAndOverlap
 
    ! Include the modules we need
+   use MPI_F08
+   use O_MPI
    use O_Kinds
    use O_Constants, only: dim3, smallThresh
    use O_Lattice, only: logElecThresh, numCellsReal, cellSizesReal, &
@@ -366,7 +369,6 @@ subroutine makeECMeshAndOverlap
    use O_PotTypes, only: potTypes, maxNumPotAlphas
    use O_Potential, only: potDim, GGA
    use O_TimeStamps
-   use O_MPI
 
    ! Import the necessary HDF modules
    use HDF5
@@ -379,6 +381,7 @@ subroutine makeECMeshAndOverlap
 
    ! Define the local loop control and error variables.
    integer :: i,j,k,l,m,n ! Loop variables.  loop1=i, nestedloop2=j ...
+   integer :: mpi_i
    integer :: hdferr
    integer :: hdf5Status
    integer(hsize_t), dimension (1) :: attribIntDims ! Attribute dataspace dim
@@ -450,6 +453,12 @@ subroutine makeECMeshAndOverlap
    !   GGA (10) based calculation.
    integer :: numOpValues
 
+   ! Declare variables for MPI
+   integer :: maxSite, minSite
+
+   ! Determine the load balancing indices.
+   call loadBalMPI(numPotSites,minSite,maxSite)
+
    ! Start making the exchange correlation matrices and mesh points.
    call timeStampStart(7)
 
@@ -460,20 +469,6 @@ subroutine makeECMeshAndOverlap
       call timeStampEnd(7)
       return
    endif
-   !hdf5Status = 0
-   !attribIntDims(1) = 1
-   !call h5aread_f(exchCorrGroup_aid,H5T_NATIVE_INTEGER,hdf5Status,&
-   !      & attribIntDims,hdferr)
-   !if (hdferr /= 0) call stopMPI('Failed to read exch corr group status.')
-   !if (hdf5Status == 1) then
-   !   if (mpiRank == 0) then
-   !      write(20,*) "Exch corr group results already exist. Skipping."
-   !   endif
-   !   call timeStampEnd(7)
-   !   call h5aclose_f(exchCorrGroup_aid,hdferr)
-   !   if (hdferr /= 0) call stopMPI('Failed to close exchCorrGroup attribute')
-   !   return
-   !endif
 
    ! Initialize variables to avoid compiler warnings.
    xdistance = 0.0_double
@@ -517,7 +512,7 @@ subroutine makeECMeshAndOverlap
    currentNegligLimit  = 0.0_double
    currentNumPotAlphas = 0
 
-   do i = 1, numPotSites
+   do i = minSite, maxSite ! Was 1, numPotSites
 
       ! Initialize the radialWeight to zero for each potential iteration.
       radialWeight(:) = 0.0_double
@@ -816,43 +811,105 @@ subroutine makeECMeshAndOverlap
       do j = 1, numRayPoints
          do k = 1, potDim
             exchCorrOverlap(1:k,k) = exchCorrOverlap(1:k,k) + &
-            exchRhoOp(k,j,1) * exchRhoOp(1:k,j,1) * radialWeight(j)
+                  & exchRhoOp(k,j,1) * exchRhoOp(1:k,j,1) * radialWeight(j)
          enddo
       enddo
 
-
       ! Save values calculated from this potential site loop.
 
-      ! Write the values for the radialWeight and exchRhoOp in HDF5 format.
+      ! Have process zero store its own results in HDF5 format and then collect
+      !   results for the radialWeight and exchRhoOp one at a time and store
+      !   them to disk in HDF5 format.
+      call MPI_BARRIER (MPI_COMM_WORLD,mpierr)
       if (mpiRank == 0) then
-         call h5dwrite_f(numPoints_did(i),H5T_NATIVE_INTEGER, &
-               & numRayPoints,numPoints,hdferr)
-      endif
-      call MPI_BCAST(hdferr,1,MPI_INTEGER,0,MPI_COMM_WORLD,mpierr)
-      if (hdferr /= 0) then
-         write (errorMsg,*) "Failed to write num ray points"
-         call stopMPI(errorMsg)
-      endif
-
-      if (mpiRank == 0) then
+         call h5dwrite_f(numPoints_did(i),H5T_NATIVE_INTEGER,numRayPoints,&
+               & numPoints,hdferr)
+         if (hdferr /= 0) stop 'Failed to write num ray points'
          call h5dwrite_f(radialWeight_did(i),H5T_NATIVE_DOUBLE, &
                & radialWeight(:),points,hdferr)
-      endif
-      call MPI_BCAST(hdferr,1,MPI_INTEGER,0,MPI_COMM_WORLD,mpierr)
-      if (hdferr /= 0) then
-         write (errorMsg,*) "Failed to write radial weights"
-         call stopMPI(errorMsg)
-      endif
-
-      if (mpiRank == 0) then
+         if (hdferr /= 0) stop 'Failed to write radial weights'
          call h5dwrite_f(exchRhoOp_did(i),H5T_NATIVE_DOUBLE, &
                & exchRhoOp(:,:,:),potPoints,hdferr)
+         if (hdferr /= 0) stop 'Failed to write exchange rho operator'
+
+         do j = 1, mpiSize-1
+
+            ! Get the index number of the potSite loop (i) from the MPI process.
+            call MPI_RECV (mpi_i,1,MPI_INTEGER,j,0,MPI_COMM_WORLD,&
+                  & MPI_STATUS_IGNORE,mpierr)
+
+            ! Receive the number of ray points from process j and write to disk.
+            call MPI_RECV (numPoints,1,MPI_INTEGER,j,1,MPI_COMM_WORLD,&
+                  & MPI_STATUS_IGNORE,mpierr)
+            call h5dwrite_f(numPoints_did(mpi_i),H5T_NATIVE_INTEGER,&
+                  & numRayPoints,numPoints,hdferr)
+            if (hdferr /= 0) stop 'Failed to write num ray points'
+
+            ! Receive the radial weights for those ray points and write to disk.
+            call MPI_RECV (radialWeight(:),int(points(1)),&
+                  & MPI_DOUBLE_PRECISION,j,2,MPI_COMM_WORLD,&
+                  & MPI_STATUS_IGNORE,mpierr)
+            call h5dwrite_f(radialWeight_did(mpi_i),H5T_NATIVE_DOUBLE, &
+                  & radialWeight(:),points,hdferr)
+            if (hdferr /= 0) stop 'Failed to write radial weights'
+
+            ! Receive the exchRhoOp from process j and write to disk.
+            call MPI_RECV (exchRhoOp(:,:,:),potDim*maxNumRayPoints*numOpValues,&
+                  & MPI_DOUBLE_PRECISION,j,3,MPI_COMM_WORLD,MPI_STATUS_IGNORE,&
+                  & mpierr)
+            call h5dwrite_f(exchRhoOp_did(mpi_i),H5T_NATIVE_DOUBLE, &
+                  & exchRhoOp(:,:,:),potPoints,hdferr)
+            if (hdferr /= 0) stop 'Failed to write radial weights'
+         enddo
+      else
+
+         ! Send the results to process 0.
+
+         ! Send the index number of the potSite loop (i) to process zero.
+         call MPI_SEND (i,1,MPI_INTEGER,0,0,MPI_COMM_WORLD,mpierr)
+
+         ! Send the number of ray points to process zero.
+         call MPI_SEND (numPoints,1,MPI_INTEGER,0,1,MPI_COMM_WORLD,mpierr)
+
+         ! Send the radial weights of those ray points to process zero.
+         call MPI_SEND (radialWeight(:),int(points(1)),&
+               & MPI_DOUBLE_PRECISION,0,2,MPI_COMM_WORLD,mpierr)
+
+         ! Send the exchRhoOp to process zero.
+         call MPI_SEND (exchRhoOp(:,:,:),potDim*maxNumRayPoints*numOpValues,&
+               & MPI_DOUBLE_PRECISION,0,3,MPI_COMM_WORLD,mpierr)
       endif
-      call MPI_BCAST(hdferr,1,MPI_INTEGER,0,MPI_COMM_WORLD,mpierr)
-      if (hdferr /= 0) then
-         write (errorMsg,*) "Failed to write exchange rho operator"
-         call stopMPI(errorMsg)
-      endif
+
+      !! Write the values for the radialWeight and exchRhoOp in HDF5 format.
+      !if (mpiRank == 0) then
+      !   call h5dwrite_f(numPoints_did(i),H5T_NATIVE_INTEGER, &
+      !         & numRayPoints,numPoints,hdferr)
+      !endif
+      !call MPI_BCAST(hdferr,1,MPI_INTEGER,0,MPI_COMM_WORLD,mpierr)
+      !if (hdferr /= 0) then
+      !   write (errorMsg,*) "Failed to write num ray points"
+      !   call stopMPI(errorMsg)
+      !endif
+
+      !if (mpiRank == 0) then
+      !   call h5dwrite_f(radialWeight_did(i),H5T_NATIVE_DOUBLE, &
+      !         & radialWeight(:),points,hdferr)
+      !endif
+      !call MPI_BCAST(hdferr,1,MPI_INTEGER,0,MPI_COMM_WORLD,mpierr)
+      !if (hdferr /= 0) then
+      !   write (errorMsg,*) "Failed to write radial weights"
+      !   call stopMPI(errorMsg)
+      !endif
+
+      !if (mpiRank == 0) then
+      !   call h5dwrite_f(exchRhoOp_did(i),H5T_NATIVE_DOUBLE, &
+      !         & exchRhoOp(:,:,:),potPoints,hdferr)
+      !endif
+      !call MPI_BCAST(hdferr,1,MPI_INTEGER,0,MPI_COMM_WORLD,mpierr)
+      !if (hdferr /= 0) then
+      !   write (errorMsg,*) "Failed to write exchange rho operator"
+      !   call stopMPI(errorMsg)
+      !endif
 
 
       ! Record the progress so far.
@@ -867,9 +924,19 @@ subroutine makeECMeshAndOverlap
          endif
          call flush (20)
       endif
-   enddo
+   enddo ! minSite, maxSite
 
    ! Save to disk the overlap that was accumulated through each loop
+
+   if (mpiRank == 0) then
+      call MPI_REDUCE(MPI_IN_PLACE,exchCorrOverlap(:,:),potDim*potDim,&
+         & MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,mpierr)
+   else
+      call MPI_REDUCE(exchCorrOverlap(:,:),exchCorrOverlap(:,:),&
+         & potDim*potDim,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_WORLD,&
+         & mpierr)
+   endif
+   call MPI_BARRIER (MPI_COMM_WORLD,mpierr)
 
    ! Write the exchCorrOverlap to disk in HDF5 format.
    if (mpiRank == 0) then

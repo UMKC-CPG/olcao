@@ -44,58 +44,58 @@ subroutine readSCFInput
    write (writeUnit,100) date,time
 
    ! Read and echo the title of the calculation.
-   call readLabel(readUnit, writeUnit)
+   call readLabel(0,readUnit, writeUnit)
 
    ! Read the name of the element abbreviated from the periodic table.
-   call readData(readUnit,writeUnit,len(elementName),elementName,&
+   call readData(0,readUnit,writeUnit,len(elementName),elementName,&
          & len('ELEMENT_NAME'),'ELEMENT_NAME')
 
    ! Read the alpha for the gaussian that defines the nuclear potential.
-   call readData(readUnit,writeUnit,nuclearAlpha,len('NUCLEAR_ALPHA'),&
+   call readData(0,readUnit,writeUnit,nuclearAlpha,len('NUCLEAR_ALPHA'),&
          & 'NUCLEAR_ALPHA')
 
    ! Read the maximum number of iterations to use.
-   call readData(readUnit,writeUnit,maxIteration,len('MAX_ITERATION'),&
+   call readData(0,readUnit,writeUnit,maxIteration,len('MAX_ITERATION'),&
          & 'MAX_ITERATION')
 
    ! Read the level of tolerance to use for testing convergence.
-   call readData(readUnit,writeUnit,tolerance,len('CONVG_TOLERANCE'),&
+   call readData(0,readUnit,writeUnit,tolerance,len('CONVG_TOLERANCE'),&
          & 'CONVG_TOLERANCE')
 
    ! Read the mixing factor to use to mix the input & output electric pot.
-   call readData(readUnit,writeUnit,mixingFactor,len('MIXING_FACTOR'),&
+   call readData(0,readUnit,writeUnit,mixingFactor,len('MIXING_FACTOR'),&
          & 'MIXING_FACTOR')
 
    ! Read the type of exchange correlation to use.
-   call readData(readUnit,writeUnit,exchCorrCode,&
+   call readData(0,readUnit,writeUnit,exchCorrCode,&
          & len('EXCHANGE_CORRELATION_CODE'),'EXCHANGE_CORRELATION_CODE')
 
    ! Read the flag that says if this is a spin polarized calculation.
-   call readData(readUnit,writeUnit,doSpinPol,len('SPIN_POLARIZATION_FLAG'),&
+   call readData(0,readUnit,writeUnit,doSpinPol,len('SPIN_POLARIZATION_FLAG'),&
          & 'SPIN_POLARIZATION_FLAG')
 
    ! Read the flag that says if this is a relativistic calculation.
-   call readData(readUnit,writeUnit,doRelativistic,len('RELATIVISTIC_FLAG'),&
+   call readData(0,readUnit,writeUnit,doRelativistic,len('RELATIVISTIC_FLAG'),&
          & 'RELATIVISTIC_FLAG')
 
    ! Read the atomic number (Z value).
-   call readData(readUnit,writeUnit,atomicNumber,len('ATOMIC_NUMBER'),&
+   call readData(0,readUnit,writeUnit,atomicNumber,len('ATOMIC_NUMBER'),&
          & 'ATOMIC_NUMBER')
 
    ! Read the atomic shell charge.  ! NOT SURE WHAT THIS IS FOR YET.
-   call readData(readUnit,writeUnit,shellCharge,len('SHELL_CHARGE'),&
+   call readData(0,readUnit,writeUnit,shellCharge,len('SHELL_CHARGE'),&
          & 'SHELL_CHARGE')
 
    ! Read the atomic shell radius.  ! NOT SURE WHAT THIS IS FOR YET.
-   call readData(readUnit,writeUnit,shellRadius,len('SHELL_RADIUS'),&
+   call readData(0,readUnit,writeUnit,shellRadius,len('SHELL_RADIUS'),&
          & 'SHELL_RADIUS')
 
    ! Read the radial grid parameters.
-   call readData(readUnit,writeUnit,radialMaxDist,aaWhatever,bbWhatever,&
+   call readData(0,readUnit,writeUnit,radialMaxDist,aaWhatever,bbWhatever,&
          & len('RADIAL_GRID_PARAMETERS'),'RADIAL_GRID_PARAMETERS')
 
    ! Read the maximum l quantum number present in this system.
-   call readData(readUnit,writeUnit,maxQNl,len('MAX_ORB_ANGMOM_QN'),&
+   call readData(0,readUnit,writeUnit,maxQNl,len('MAX_ORB_ANGMOM_QN'),&
          & 'MAX_ORB_ANGMOM_QN')
    ! Increase the value read in by 1 because all loops and array indices must
    !   start with 1 and so this will account for spin 0.  NOTE:  This can cause
@@ -106,14 +106,14 @@ subroutine readSCFInput
    !   orbitals in the case that a non spin-polarized calculation is being
    !   done.  It will be adjusted for spin-polarization in the implicit input
    !   subroutines.
-   call readData(readUnit,writeUnit,numCoreOrb,len('NUM_CORE_ORBITALS'),&
+   call readData(0,readUnit,writeUnit,numCoreOrb,len('NUM_CORE_ORBITALS'),&
          & 'NUM_CORE_ORBITALS')
 
    ! Read the number of valence orbitals.  As with the number of core orbitals
    !   above, this should be the number of valence orbitals in the case that a
    !   non spin-polarized calculation is being done.  It will be adjusted for
    !   spin-polarization in the implicit input subroutines.
-   call readData(readUnit,writeUnit,numValeOrb,len('NUM_VALE_ORBITALS'),&
+   call readData(0,readUnit,writeUnit,numValeOrb,len('NUM_VALE_ORBITALS'),&
          & 'NUM_VALE_ORBITALS')
 
    ! Allocate space to hold the orbital quantum numbers.  Note that the number

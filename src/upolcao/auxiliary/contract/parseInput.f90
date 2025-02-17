@@ -48,7 +48,7 @@ subroutine parseContractInput
    writeUnit = 20
 
    ! Read the name of the element abbreviated from the periodic table.
-   call readData(readUnit,writeUnit,len(elementName),elementName,&
+   call readData(0,readUnit,writeUnit,len(elementName),elementName,&
          & len('ELEMENT_NAME'),'ELEMENT_NAME')
 
    ! Initialize the count of orbitals.
@@ -57,13 +57,13 @@ subroutine parseContractInput
 
    ! Read the list of core orbitals and valence orbitals for each basis set
    !   beyond the previous set for this atom.
-   call readData(readUnit,writeUnit,4,numCoreOrbitals(:),&
+   call readData(0,readUnit,writeUnit,4,numCoreOrbitals(:),&
          & len('NUM_CORE_ORBITALS'),'NUM_CORE_ORBITALS')
-   call readData(readUnit,writeUnit,4,numValeOrbitalsPerBasis(:,1),&
+   call readData(0,readUnit,writeUnit,4,numValeOrbitalsPerBasis(:,1),&
          & len('NUM_VALE_ORBITALS_MB'),'NUM_VALE_ORBITALS_MB')
-   call readData(readUnit,writeUnit,4,numValeOrbitalsPerBasis(:,2),&
+   call readData(0,readUnit,writeUnit,4,numValeOrbitalsPerBasis(:,2),&
          & len('NUM_VALE_ORBITALS_FB'),'NUM_VALE_ORBITALS_FB')
-   call readData(readUnit,writeUnit,4,numValeOrbitalsPerBasis(:,3),&
+   call readData(0,readUnit,writeUnit,4,numValeOrbitalsPerBasis(:,3),&
          & len('NUM_VALE_ORBITALS_EB'),'NUM_VALE_ORBITALS_EB')
 
    ! Compute the total number of valence orbitals as the sum of the
@@ -77,17 +77,17 @@ subroutine parseContractInput
 
    ! Read the max number of Gaussians to use for the orbitals (each orbital
    !   angular momentum can not use more than this although they can use less).
-   call readData(readUnit,writeUnit,maxNumBasisGaussians,&
+   call readData(0,readUnit,writeUnit,maxNumBasisGaussians,&
          & len('MAX_NUM_GAUSSIANS'),'MAX_NUM_GAUSSIANS')
 
    ! Read the minimum and maximum gaussian alphas.
-   call readData(readUnit,writeUnit,minBasisAlpha,maxBasisAlpha,&
+   call readData(0,readUnit,writeUnit,minBasisAlpha,maxBasisAlpha,&
          & len('MIN_MAX_ALPHAS'),'MIN_MAX_ALPHAS')
 
    ! Read the atomic number and nuclear atomic alpha for this atom.
-   call readData(readUnit,writeUnit,atomicNumber,len('ATOMIC_NUMBER'),&
+   call readData(0,readUnit,writeUnit,atomicNumber,len('ATOMIC_NUMBER'),&
          & 'ATOMIC_NUMBER')
-   call readData(readUnit,writeUnit,nuclearAlpha,len('NUCLEAR_ALPHA'),&
+   call readData(0,readUnit,writeUnit,nuclearAlpha,len('NUCLEAR_ALPHA'),&
          & 'NUCLEAR_ALPHA')
 
    ! Allocate space to hold the list of which gaussians should be selected for
@@ -120,12 +120,12 @@ subroutine parseContractInput
 
    ! Read data necessary for plotting the charge density and for comparison to
    !   the charge calculated with the atomSCF program.  (If requested.)
-   call readData(readUnit,writeUnit,doCharge,len('CALCULATE_CHARGE'),&
+   call readData(0,readUnit,writeUnit,doCharge,len('CALCULATE_CHARGE'),&
          & 'CALCULATE_CHARGE')
    if (doCharge == 1) then
 
       ! Read the radial grid parameters.
-      call readData(readUnit,writeUnit,radialMaxDist,aaWhatever,bbWhatever,&
+      call readData(0,readUnit,writeUnit,radialMaxDist,aaWhatever,bbWhatever,&
             & len('RADIAL_GRID_PARAMETERS'),'RADIAL_GRID_PARAMETERS')
 
       ! Allocate space to hold charge present in each orbital and initialize it.
@@ -172,7 +172,7 @@ subroutine readOrbitalSelection(readUnit,writeUnit,QN_l,tag)
    character*15 :: tag
 
    if (numTotalOrbitals(QN_l) /= 0) then
-      call readData(readUnit,writeUnit,maxNumBasisGaussians,&
+      call readData(0,readUnit,writeUnit,maxNumBasisGaussians,&
             & selectGaussians(:,QN_l),15,tag)
    endif
 
@@ -202,7 +202,7 @@ subroutine readOrbitalOccupations(readUnit, writeUnit,QN_l,tag)
    character*21 :: tag
 
    if (numTotalOrbitals(QN_l) /= 0) then
-      call readData(readUnit,writeUnit,numTotalOrbitals(QN_l), &
+      call readData(0,readUnit,writeUnit,numTotalOrbitals(QN_l), &
                & orbitalCharge(QN_l,1:numTotalOrbitals(QN_l)),21,tag)
    endif
 

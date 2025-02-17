@@ -1030,7 +1030,7 @@ subroutine readDataSCF(h,i,numStates,matrixCode)
       ! Deallocate the packed matrix used to read and unpack the data.
       deallocate (packedValeVale)
 
-   endif
+   endif ! matrixCode > 0
 
 #ifndef GAMMA
    ! Read the wave functions for this kpoint from the datasets into

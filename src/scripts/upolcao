@@ -19,6 +19,7 @@ sub printHelp
 #               [-force [\$edge]] | [-scfforce [\$edge]] |
 #               [-field [\$edge]] | [-scffield [\$edge]] |
 #               [-loen] ]
+#               [-valgrind]
 #               [-serialxyz]
 #               -help
 #
@@ -35,6 +36,7 @@ sub printHelp
 #-serialxyz will cause any optical properties calculation to conserve
 #       memory at the cost of time by computing the x, y, and z components
 #       in serial fashion instead of the default simultanious treatment.
+#-valgrind will cause the program to be run through valgrind.
 #
 #Note: Checkpointing is used internally for the SCF and post-SCF calculations.
 #       Any completed checkpointed calculations will be skipped if found. So,
@@ -917,8 +919,8 @@ sub initExes
    # Determine the mechanism for submitting a serial OLCAO job.
    #$subMechanism = $OLCAO_EXE;
    #$subMechanism = "mpirun -np $SLURM_NTASKS valgrind --leak-check=full --gen-suppressions=all --track-origins=yes --log-file=nc.vg.%p";
-   #$subMechanism = "mpirun -np $SLURM_NTASKS valgrind --track-origins=yes --log-file=nc.vg.%p";
    $subMechanism = "mpirun -np $SLURM_NTASKS";
+   #$subMechanism = "mpirun -np $SLURM_NTASKS valgrind --track-origins=yes --log-file=nc.vg.%p";
 }
 
 

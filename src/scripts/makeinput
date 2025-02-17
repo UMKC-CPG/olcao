@@ -4895,10 +4895,14 @@ sub makeSubFile
       print SUBFILE "source $OLCAO_RC/olcaorc\n";
       print SUBFILE "export OMP_NUM_THREADS=1\n";
       print SUBFILE "cd $proj_dir || exit\n";
-      print SUBFILE "\"\$OLCAO_BIN/upolcao\" -dos\n";
-      print SUBFILE "\"\$OLCAO_BIN/upolcao\" -bond\n";
-      print SUBFILE "\"\$OLCAO_BIN/upolcao\" -sybd\n";
-      print SUBFILE "\"\$OLCAO_BIN/upolcao\" -optc\n";
+      print SUBFILE "\"\$OLCAO_BIN/uolcao\" -dos\n";
+      print SUBFILE "\"\$OLCAO_BIN/uolcao\" -bond\n";
+      print SUBFILE "\"\$OLCAO_BIN/uolcao\" -sybd\n";
+      print SUBFILE "\"\$OLCAO_BIN/uolcao\" -optc\n";
+#      print SUBFILE "\"\$OLCAO_BIN/upolcao\" -dos\n";
+#      print SUBFILE "\"\$OLCAO_BIN/upolcao\" -bond\n";
+#      print SUBFILE "\"\$OLCAO_BIN/upolcao\" -sybd\n";
+#      print SUBFILE "\"\$OLCAO_BIN/upolcao\" -optc\n";
    }
    elsif ($h == 0)
    {
@@ -4908,10 +4912,14 @@ sub makeSubFile
       $basename = "/" . $values[$#values];
       print SUBFILE "export OMP_NUM_THREADS=1\n";
       print SUBFILE "cd $proj_dir$basename || exit\n";
-      print SUBFILE "\"\$OLCAO_BIN/upolcao\" -dos\n";
-      print SUBFILE "\"\$OLCAO_BIN/upolcao\" -bond\n";
-      print SUBFILE "\"\$OLCAO_BIN/upolcao\" -sybd\n";
-      print SUBFILE "\"\$OLCAO_BIN/upolcao\" -optc\n";
+      print SUBFILE "\"\$OLCAO_BIN/uolcao\" -dos\n";
+      print SUBFILE "\"\$OLCAO_BIN/uolcao\" -bond\n";
+      print SUBFILE "\"\$OLCAO_BIN/uolcao\" -sybd\n";
+      print SUBFILE "\"\$OLCAO_BIN/uolcao\" -optc\n";
+#      print SUBFILE "\"\$OLCAO_BIN/upolcao\" -dos\n";
+#      print SUBFILE "\"\$OLCAO_BIN/upolcao\" -bond\n";
+#      print SUBFILE "\"\$OLCAO_BIN/upolcao\" -sybd\n";
+#      print SUBFILE "\"\$OLCAO_BIN/upolcao\" -optc\n";
    }
    else
    {

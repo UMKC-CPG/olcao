@@ -54,6 +54,7 @@ module O_SCFIntegralsHDF5
 
    ! Define array that holds the dimensions of the dataset.
    integer(hsize_t), dimension (2) :: packedVVDims
+   integer(hsize_t), dimension (2) :: fullVVDims
    integer(hsize_t), dimension (2) :: fullCVDims
 
    ! Define array that holds the dimensions of the chunk.
@@ -121,6 +122,8 @@ subroutine initSCFIntegralHDF5 (scf_fid, attribInt_dsid, attribIntDims)
    ! Initialize data structure dimensions.
    packedVVDims(1) = numComponents
    packedVVDims(2) = valeDim*(valeDim+1)/2 ! Linear storage of 1/2 matrix.
+   fullVVDims(1) = valeDim
+   fullVVDims(2) = valeDim
    if (coreDim > 0) then
       fullCVDims(1) = coreDim
       fullCVDims(2) = valeDim
@@ -159,6 +162,10 @@ subroutine initSCFIntegralHDF5 (scf_fid, attribInt_dsid, attribIntDims)
          fullCVDimsChunk(2) = fullCVDims(2)
       endif
    endif
+
+   ! For the fullVV 
+   !if (product(fullVVDims(:)) > 250000000) then
+   !   fullVVDimsChunk(1) = 
 
    ! For the integrals that have multiple different types of matrices, we
    !   need to create space to hold the group IDs of each matrix.

@@ -9,12 +9,12 @@ add_library(gGaussIntegrals STATIC ../../kinds.f90 ../../constants.f90
 
 # Library containing common source files that all executables need
 add_library(gCommon OBJECT ../../kinds.f90 ../../constants.f90 
-   ../../elementData.f90 ../../readData.f90 ../stringSubs.f90 ../mathSubs.f90 
-   ../sortSubs.f90 ../interfaces.F90 ../timeStamps.f90 ../commandLine.f90 
-   ../potSites.f90 ../potTypes.f90 ../atomicTypes.f90 ../atomicSites.f90 
-   ../potential.f90 ../lattice.f90 ../kpoints.f90 ../gaussRelations.f90 
-   ../hdf5SetupIntg.F90 ../hdf5SetupElec.f90 ../hdf5SetupExco.f90
-   ../hdf5Setup.f90 ../exchCorr.f90 ../input.f90)
+   ../../elementData.f90 ../../readDataSerial.f90 ../stringSubs.f90
+   ../mathSubs.f90 ../sortSubs.f90 ../interfaces.F90 ../timeStamps.f90
+   ../commandLine.f90 ../potSites.f90 ../potTypes.f90 ../atomicTypes.f90
+   ../atomicSites.f90 ../potential.f90 ../lattice.f90 ../kpoints.f90
+   ../gaussRelations.f90 ../hdf5SetupIntg.F90 ../hdf5SetupElec.f90
+   ../hdf5SetupExco.f90 ../hdf5Setup.f90 ../exchCorr.f90 ../input.f90)
 
 add_executable(gOLCAOsetup $<TARGET_OBJECTS:gCommon> ../basis.f90 
    ../elecStat.f90 ../intgOrtho.F90 ../intgSaving.F90 ../integrals.F90 
