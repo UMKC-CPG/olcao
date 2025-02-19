@@ -53,7 +53,6 @@ subroutine readAndCheckLabel(readUnit,writeUnit,length,lookLabel)
    character (LEN=length) :: lookLabel ! Label that we are looking for.
 
    ! Local variables.
-   integer :: mpierr
    character (LEN=length) :: foundLabel   ! The label that is found by reading.
    character*6            :: formatString ! Used to print label that was read.
 
