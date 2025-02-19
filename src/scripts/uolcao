@@ -287,6 +287,29 @@ sub move
       {die "Cannot move $_[0] to $_[1].  Died $!";}
 }
 
+sub append
+{
+   if (! -e $_[1])
+   {
+      if(system("cp -f $_[0] $_[1]") != 0)
+         {die "Cannot full append $_[0] to $_[1].  Died $!";}
+      return();
+   }
+   if ((! -e $_[0]) && (-e $_[1]))
+   {
+      print RUNTIME "$_[0] not found but $_[1] exists.  No append done.\n";
+      return();
+   }
+   if(system("tail -n +$_[2] $_[0] >> $_[1]") != 0)
+      {die "Cannot append $_[0] to $_[1].  Died $!";}
+}
+
+sub delete
+{
+   if(system("rm $_[0]") != 0)
+      {die "Cannot delete $_[0].  Died $!";}
+}
+
 # Define a subroutine for recording a reason for exiting to the RUNTIME file.
 sub olcao_exit
 {
@@ -1312,8 +1335,9 @@ sub manageOutput
    # Perform these specialized moves and copies for each possible task.
    if (($jobID < 200) || ($basis_scf ne "no")) # SCF was done.
    {
-      &copy("fort.7","$edge_$jobName$basis.$iteration.7");
-      &move("fort.7","$proj_home/$edge_$iteration$basis$dat");
+      &append("fort.7","$edge_$jobName$basis.$iteration.7",2);
+      &append("fort.7","$proj_home/$edge_$iteration$basis$dat",2);
+      &delete("fort.7")
       &copy("fort.14","$edge_$jobName$basis.$energy.14");
       &move("fort.14","$proj_home/$edge_$energy$basis$dat");
       &move("fort.15","$kp_scf.15");
