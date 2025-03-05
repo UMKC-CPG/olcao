@@ -1337,7 +1337,7 @@ sub manageOutput
    {
       &append("fort.7","$edge_$jobName$basis.$iteration.7",2);
       &append("fort.7","$proj_home/$edge_$iteration$basis$dat",2);
-      &delete("fort.7")
+      &delete("fort.7");
       &copy("fort.14","$edge_$jobName$basis.$energy.14");
       &move("fort.14","$proj_home/$edge_$energy$basis$dat");
       &move("fort.15","$kp_scf.15");

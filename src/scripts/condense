@@ -659,7 +659,6 @@ print STDOUT "Got here 2c\n";
    $numAtoms = StructureControl::getNumAtoms;
    $directXYZ_ref = StructureControl::getDirectXYZRef;
    $atomElementName_ref = StructureControl::getAtomElementNameRef;
-print STDOUT "$atomElementName_ref->[1]\n";
    $atomElementID_ref = StructureControl::getAtomElementIDRef;
    $atomSpeciesID_ref = StructureControl::getAtomSpeciesIDRef;
    $atomicZ_ref = StructureControl::getAtomicZRef;
@@ -669,9 +668,7 @@ print STDOUT "Got here 2d\n";
 
    # Perform a bond analysis to get bond length and bond angle information.
    system("bondAnalysis -bl -bf 1.1 -i packmol.skl");
-print STDOUT "Got here 2e\n";
    system("bondAnalysis -ba -bf 1.1 -i packmol.skl");
-print STDOUT "Got here 2f\n";
 
    # Read the bondAnalysis results and extract necessary information.
    StructureControl::readBondAnalysisBL("bondAnalysis.bl",$numAtoms);

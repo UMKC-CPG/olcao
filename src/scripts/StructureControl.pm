@@ -5871,7 +5871,7 @@ sub printPDB
       printf PDB "%6s%5d%3s%-2d%6s%4d%2s%8.3f%8.3f%8.3f%6.2f%6.2f%10s%2s\n",
          "ATOM  ",$atom,uc($atomElementName[$atom]),$atomSpeciesID[$atom],
          " MOL A",1,"  ",$directXYZ[$atom][1],$directXYZ[$atom][2],
-         $directXYZ[$atom][3],1.0,0.0,"          ",uc($atomElementName[$atom]);
+         $directXYZ[$atom][3],1.0,0.0,"           ",uc($atomElementName[$atom]);
    }
 
    # Terminate the ATOM section.
