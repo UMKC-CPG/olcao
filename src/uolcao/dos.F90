@@ -268,8 +268,6 @@ integer :: m
    real (kind=double), allocatable, dimension (:)   :: pdosAccum
    real (kind=double), allocatable, dimension (:)   :: localizationIndex
    real (kind=double), allocatable, dimension (:)   :: totalSystemDos
-   real (kind=double), allocatable, dimension (:)   :: totalTypeDos
-   real (kind=double), allocatable, dimension (:)   :: totalAtomDos
    real (kind=double), allocatable, dimension (:)   :: energyValuesAvg
    real (kind=double), allocatable, dimension (:,:) :: pdosComplete
    real (kind=double), allocatable, dimension (:,:) :: electronNumber
@@ -363,6 +361,11 @@ integer :: m
 
       ! Record the total number of orbitals summed over all types.
       cumulDOSTotal = cumulNumDOS(numAtomTypes+1)
+
+   elseif (detailCodePDOS == 1) then
+
+      ! There will be one DOS curve for each atom and that is it.
+      cumulDOSTotal = numAtomSites
 
    elseif (detailCodePDOS == 2) then
 
@@ -512,18 +515,7 @@ integer :: m
    allocate (totalSystemDos    (numEnergyPoints))
    allocate (electronNumber    (maxNumValeStates,numAtomSites))
    allocate (energyValuesAvg   (numStates))
-   if     (detailCodePDOS == 0) then ! Save DOS according to orbitals
-      allocate (pdosComplete      (cumulDOSTotal,numEnergyPoints))
-      allocate (totalTypeDos      (numEnergyPoints))
-   elseif (detailCodePDOS == 1) then ! Save DOS according to atoms
-      allocate (pdosComplete      (numAtomSites,numEnergyPoints))
-   elseif (detailCodePDOS == 2) then ! Save DOS by to atoms & orbitals
-      allocate (pdosComplete      (cumulDOSTotal,numEnergyPoints))
-      allocate (totalAtomDos      (numEnergyPoints))
-   elseif (detailCodePDOS == 3) then ! Save DOS by select atoms and lm QNs.
-      allocate (pdosComplete      (cumulDOSTotal,numEnergyPoints)) !valeDim
-      allocate (totalAtomDos      (numEnergyPoints))
-   endif
+   allocate (pdosComplete      (cumulDOSTotal,numEnergyPoints))
 
    ! Assign values to the energy scale.
    do i = 1, numEnergyPoints
@@ -1122,13 +1114,6 @@ integer :: m
    enddo ! (h spin)
 
    ! Deallocate all the unnecessary matrices and arrays
-   if (detailCodePDOS == 0) then
-      deallocate (totalTypeDos)
-   elseif (detailCodePDOS == 2) then
-      deallocate (totalAtomDos)
-   elseif (detailCodePDOS == 3) then
-      deallocate (totalAtomDos)
-   endif
    deallocate (cumulNumDOS)
    deallocate (pdosIndex)
    deallocate (numAtomStates)
