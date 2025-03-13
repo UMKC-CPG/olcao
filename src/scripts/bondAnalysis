@@ -1183,7 +1183,7 @@ sub printRingDistribution
    my $ringLen;
 
    #print OUT "Ring Range: $minRingLen $maxRingLen\n";
-   print OUT "LABEL : SEQUENCE_ID : COL_LABELS\n";
+   print OUT "LABEL : SEQUENCE_NUM : COL_LABELS\n";
    foreach $ringLen ($minRingLen..$maxRingLen)
    {
       #print OUT "Rings $ringLen\n";
