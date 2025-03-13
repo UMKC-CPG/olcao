@@ -92,6 +92,9 @@ my @absoluteSysQn;   # Sum of each Q^n over all atoms in the system.
 my @fractionalSysQn; # Above sum of each Q^n / numAtoms.
 my $numQnAtoms;      # Number of atoms in the system that are Q^n targets.
 my $netConnQn;       # Sum (i=1,n_max) {i * fractionalSysQn[i]}
+my @atomRings;       # List of ring indices that each atom belongs to.
+my @rings;           # List of rings (and the atoms in each ring).
+my @ringCounts;      # Count of the number of rings of each length.
 my @fractABC;        # Fractional coords. of each atom in a,b,c.
 my @directABC;       # Direct space coords. of each atom in a,b,c.
 my @directXYZ;       # Direct space coords. of each atom in x,y,z.
@@ -198,6 +201,7 @@ my @rpdf;         # Array result of the RPDF calculation.
 # Minimal distance matrix data structures and results (makeinput).
 my @minDist;      # Minimal distance between atom pairs accounting for PBC.
 my @selfMinDist;  # Minimal distance between an atom and its replicated self.
+my @minNetDist;   # Minimal distance between atom pairs in a bonding network.
 
 # Bonding data structures and results.
 my @numBonds;     # Number of bonds for each atom.
@@ -352,6 +356,15 @@ sub getNumQnAtoms
 sub getNetworkConnectivityQn
    {return $netConnQn;}
 
+sub getAtomRingsRef
+   {return \@atomRings;}
+
+sub getRingsRef
+   {return \@rings;}
+
+sub getRingCountsRef
+   {return \@ringCounts;}
+
 sub getMaxXYZRef
    {return \@maxPos;}
 
@@ -408,6 +421,9 @@ sub getMinDistRef
 
 sub getSelfMinDistRef
    {return \@selfMinDist;}
+
+sub getMinNetDistRef
+   {return \@minNetDist;}
 
 sub getNumBondsRef
    {return \@numBonds;}
@@ -724,6 +740,9 @@ sub reset
    undef @fractionalSysQn;
    $numQnAtoms = 0;
    $netConnQn = 0;
+   undef @atomRings;
+   undef @rings;
+   undef @ringCounts;
    undef @fractABC;
    undef @directABC;
    undef @directXYZ;
@@ -786,6 +805,7 @@ sub reset
    undef @rpdf;
    undef @minDist;
    undef @selfMinDist;
+   undef @minNetDist;
    undef @covalRadii;
    undef @colorVTK;
    undef @numBonds;
@@ -1443,6 +1463,9 @@ ENDHELP
 
    # Apply the supercell request to the cell.
    &applySupercell(@supercell[1..3],@scMirror[1..3]);
+
+foreach my $a (1..$numAtoms)
+{print STDOUT "$a @{$fractABC[$a]}[1..3]\n";}
 
    # Under certain constraints we will now reorder the magnitudes and angles.
    #   To be in agreement with W. Setyawan, S. Curtarolo, Comp. Mat. Sci.,
@@ -7471,22 +7494,376 @@ sub computeQn
 sub computeRingDistribution
 {
    # Give local names to passed parameters.
-   my $maxRingLen = $_[0];
-
+   my $minRingLen = $_[0];
+   my $maxRingLen = $_[1];
 
    # Declare local variables.
-
+   my $atom;
+   my $bond;
+   my $ringLen;
+   my $evenRing;
+   my $currAtom;
+   my $ringMidpoint;
+   my $currInLevel;
+   my $currOutLevel;
+   my $levelDelta;
+   my $bondedAtom;
+   my $bondedMinNetDist;
+   my $currStackAdds;
+   my @currRing;
+   my @inStack;
+   my @outStack;
+   my @backTrackStack;
+   my @completedVertices;
 
    # Make sure that the bond list has been created.
-   # Select an atom (A).
-   # Perform a breadth first search from atom (A).
-   # When (if) we return to the original atom (and not a periodic copy of it),
-   #   we record that ring length (L) as the minimal ring length for atom (A).
-   #   The ring found is recorded as a valid ring for atom (A).
-   #   The BFS is continued, but only considering other paths of length (L).
-   #   (Once a ring path of length (L) is found in a BFS, then no shorter path
-   #   will be found. If we exclude _longer_ paths
+   &createBondingList();
 
+   # Use the bonding list to compute the minimal network distance matrix.
+   &computeMinNetworkDistMatrix();
+
+   # Initialize the count of the number of rings of each length.
+   @{$ringCounts[0..$maxRingLen]} = (0) x ($maxRingLen + 1);
+
+   # Initialize a stack that is used to backtrack ring exploration.
+   push (@backTrackStack, 0);
+
+   # Produce a list of shortest path rings of each desired ring length.
+   for $ringLen ($minRingLen..$maxRingLen)
+   {
+      # Define the midpoint of the ring we are seeking and also set an
+      #   even/odd flag.
+      if ($ringLen % 2 == 0)
+      {
+         $evenRing = 1;
+         $ringMidpoint = $ringLen/2;
+      }
+      else
+      {
+         $evenRing = 0;
+         $ringMidpoint = ($ringLen-1)/2;
+      }
+
+      # Initialize the list of vertices for which all rings of the current
+      #   size have been found.
+      @completedVertices = (0) x ($numAtoms + 1);
+
+      # Consider each atom as the starting point for a set of rings.
+      foreach $atom (1..$numAtoms)
+      {
+         # Perform a modified depth first search for every atom that is
+         #   $ringMidpoint away from the current starting atom ($atom). The
+         #   modification is that every step out to the distant atom must
+         #   have a distance from the starting vertex atom that is one higher
+         #   than the last.
+         # Once an atom that is $ringMidpoint away from the starting atom
+         #   has been found, then we perform another depth first search back
+         #   to the starting atom with the modified requirement that all
+         #   steps must decrease the value of their network distance from the
+         #   starting atom by one (for each step) and we cannot have any
+         #   duplicate vertices in the ring list.
+         # The depth "searches" are really traversals so that we find every
+         #   single possible ring.
+
+         # Initialize the current out level to -1 so that when the first
+         #   atom is added to the ring it will be at level 0.
+         $currOutLevel = -1;
+
+         # Initialize the outgoing stack for the depth traverse to be empty.
+         @outStack = ();
+
+         # Initialize a flag to indicate increasing levels.
+         $levelDelta = 1;
+
+         # Initialize the outgoing stack with the first atom.
+         push (@outStack, $atom);
+print STDOUT "Initial outStack = @outStack\n";
+
+         # Execute the traversal until we run out of vertices.
+         while (scalar @outStack > 0)
+         {
+            # Any atom that had been added to the stack will definitely be
+            #   part of some ring. We pop the top atom and add it to the
+            #   current ring stack unless that atom is already in the ring.
+            $currAtom = pop @outStack;
+            my $found = 0;
+            foreach my $ringAtom (0..$#currRing)
+            {
+print STDOUT "rA $currRing[$ringAtom]  cA $currAtom\n";
+               if ($currAtom == $currRing[$ringAtom])
+                  {$found = 1; last;}
+            }
+            if ($found == 1)
+               {next;}
+            push (@currRing, $currAtom);
+print STDOUT "Popped outStack = @outStack\n";
+print STDOUT "Pushed currRing = @currRing\n";
+            
+            # If the size of the currRing stack equals the targeted ring
+            #   length plus one (because we added the beginning and end atoms
+            #   which are the same) then we have a complete ring that needs
+            #   to be saved.
+print STDOUT "currRing level = $minNetDist[$atom][$currAtom]\n";
+print STDOUT "currOutLevel = $currOutLevel\n";
+print STDOUT "levelDelta1 $levelDelta\n";
+            if (scalar @currRing == $ringLen + 1)
+            {
+               # Record that we found a new ring.
+               $ringCounts[$ringLen]++;
+
+               # Save the current ring minus the tail (duplicates the head).
+               pop @currRing; # Remove the tail (which equals the head).
+               my @sortedRing = sort{$a <=> $b} @currRing[0..$ringLen-1];
+               if ($ringCounts[$ringLen] > 1)
+               {
+                  my $different = 0;
+                  foreach my $tempAtom (0..$ringLen-1)
+                  {
+                     if ($sortedRing[$tempAtom] !=
+                           $rings[$ringLen][$ringCounts[$ringLen]-1][$tempAtom])
+                        {$different = 1;last;}
+                  }
+                  if ($different == 1)
+                     {@{$rings[$ringLen][$ringCounts[$ringLen]]} = @sortedRing;}
+                  else
+                     {$ringCounts[$ringLen]--;}
+               }
+               else
+               {
+                  @{$rings[$ringLen][$ringCounts[$ringLen]]} = @sortedRing;
+               }
+
+               # The stack may have additional elements in it. So, we need to
+               #   backtrack the ring to the point where the divergence
+               #   occured. Consider a stack that grew as A,B,GC,D,E,F,A and
+               #   a ring that grew as A,B,C,D,E,F,A. The stack has already
+               #   popped A,F,E,D,C and so contains only A,B,G. Thus, we
+               #   need to pop the ring all the way back to B and then add
+               #   on G.
+               while ($backTrackStack[$#backTrackStack] == 1)
+               {
+                  pop @backTrackStack;
+                  pop @currRing;
+               }
+               if ($#backTrackStack > 0)
+               {
+                  $backTrackStack[$#backTrackStack]--;
+               }
+print STDOUT "Out of loop\n";
+print STDOUT "$currAtom\n";
+print STDOUT "@currRing\n";
+print STDOUT "@outStack\n";
+print STDOUT "@backTrackStack\n";
+print STDOUT "levelDelta2 $levelDelta\n";
+
+               # If ringLen is even:
+               if ($ringLen % 2 == 0)
+               {
+                  # If the level that the ring was popped back to is greater
+                  #   than or equal to the ring midpoint, then we set
+                  #   levelDelta = -1. Else, (the length of the ring was
+                  #   popped back to a level that is less than the ring
+                  #   midpoint) we set levelDelta = 1.
+                  if ($#currRing >= $ringMidpoint)
+                     {$levelDelta = -1;}
+                  else
+                     {$levelDelta = 1;}
+               }
+               else # The ringLen is odd:
+               {
+                  # If the level that the ring was popped back to is greater
+                  #   than the ring midpoint, then we set levelDelta = -1.
+                  #   (I.e., we are on the second of two equally distant
+                  #   atoms or beyond.) Else, (the length of the ring was
+                  #   popped back to a level that is less than or equal to
+                  #   the midpoint) we set levelDelta = 1.
+                  if ($#currRing > $ringMidpoint)
+                     {$levelDelta = -1;}
+                  else
+                     {$levelDelta = 1;}
+               }
+
+               # The current out level is the level of the last atom in
+               #   the ring (unless there are no atoms left in the ring).
+               if (scalar @currRing > 0)
+                  {$currOutLevel = $minNetDist[$atom][$currRing[$#currRing]];}
+print STDOUT "levelDelta = $levelDelta   currRing last idx = $#currRing    ";
+print STDOUT "currOutLevel = $currOutLevel\n";
+               next;
+            }
+
+            # While going out, any atom that we pop will be at a "one higher"
+            #   level than wherever we were, except in the case that we are
+            #   in the middle of the turning point for an odd length ring.
+            # This "if" checks if the current level (before going up) is not
+            #   equal to the midpoint. If it is equal, that would indicate
+            #   that the previous step out was at the first part of an odd
+            #   ring turning point. In that case, we do not increase the
+            #   level but we do trigger the flag to start reducing levels.
+            if ($currOutLevel != $ringMidpoint)
+               {$currOutLevel += $levelDelta;} # Level of $currAtom.
+            else
+               {$levelDelta = -1;}
+print STDOUT "levelDelta3 $levelDelta   currOutLevel = $currOutLevel\n";
+
+            # If the ring has even length and we are at the midpoint, then we
+            #   also need to start reducing the levels. Note that this "if" is
+            #   different than the last one because this is asked *after* the
+            #   current level has been incremented to the level of the current
+            #   (just popped) atom.
+            if (($evenRing == 1) && ($currOutLevel == $ringMidpoint))
+               {$levelDelta = -1;}
+print STDOUT "levelDelta4 $levelDelta   currOutLevel = $currOutLevel\n";
+
+            # Consider each atom bonded to the current atom. As long as the
+            #   bonded atom meets certain conditions, then we will add it
+            #   to the stack where it will eventually be added to *some*
+            #   ring.
+            # Assume that we will not add any bonded atoms to the stack.
+            $currStackAdds = 0;
+print STDOUT "ca=$currAtom  numBonds[$currAtom] = $numBonds[$currAtom]\n";
+            foreach $bond (1..$numBonds[$currAtom])
+            {
+               # For convenience, get the atom number of the bonded atom,
+               #   and its minimum network distance.
+               $bondedAtom = $bonded[$currAtom][$bond];
+               $bondedMinNetDist = $minNetDist[$atom][$bondedAtom];
+print STDOUT "ba = $bondedAtom   bMND = $bondedMinNetDist\n";
+
+               # In all cases, we never add an atom that has already had
+               #   all of its rings constructed.
+               if ($completedVertices[$bondedAtom] == 1)
+                  {next;}
+
+               # Use one set of rules for increasing levels and another
+               #   set for decreasing levels.
+               if ($levelDelta == 1)
+               {
+                  # In all cases, we never add an atom that has a level greater
+                  #   than the ring midpoint.
+                  if ($bondedMinNetDist > $ringMidpoint)
+                     {next;}
+
+                  # In all cases, we never add an atom that has a level less
+                  #   than the current level.
+                  if ($bondedMinNetDist < $currOutLevel)
+                     {next;}
+
+                  # In the case of an even midpoint ring, we never add an atom
+                  #   that has a level that is the same as the current level.
+                  if (($evenRing == 1) && ($bondedMinNetDist == $currOutLevel))
+                     {next;}
+
+                  # In the case of an odd midpoint ring, we never add an atom
+                  #   that has a level that is the same as the current level,
+                  #   and where the bonded level is less than the midpoint.
+                  #   (I.e., there is an exception in the case that the bonded
+                  #   level equals the ring midpoint for odd rings. E.g.,
+                  #   consider a ring with network distances of 012210. It has
+                  #   5 atoms because the 0 distances are the same.)
+                  if (($evenRing == 0) &&
+                        ($bondedMinNetDist == $currOutLevel) &&
+                        ($bondedMinNetDist < $ringMidpoint))
+                     {next;}
+
+                  # Now, the only atoms left that we could encounter are
+                  #   "normal" next steps for the current ring or atoms at
+                  #   the midpoint of an odd ring that are at the same level.
+                  push (@outStack, $bondedAtom);
+print STDOUT "Pushed outStack @outStack\n";
+
+                  # Increment the count of the number of atoms that have been
+                  #   added to the stack for this particular currAtom.
+                  $currStackAdds++;
+               }
+               else # $levelDelta == -1
+               {
+                  # In all cases, we never add an atom that has a level
+                  #   greater than or equal to the current level.
+                  if ($bondedMinNetDist >= $currOutLevel)
+                     {next;}
+
+                  # Now, the only atoms left that we could encounter are
+                  #   "normal" next steps for the current ring.
+                  push (@outStack, $bondedAtom);
+print STDOUT "Pushed inStack @outStack\n";
+
+                  # Increment the count of the number of atoms that have been
+                  #   added to the stack for this particular currAtom.
+                  $currStackAdds++;
+               }
+            }
+
+            # If no bonds were added then the currAtom is a dead end and
+            #   should not be included in a possible ring. However, if
+            #   bonds were added to the stack, then we need to track how
+            #   many were added so that when we backtrack the ring we
+            #   know how far to go.
+            if ($currStackAdds == 0)
+            {
+               pop @currRing;
+               if (scalar @currRing == 0)
+                  {next;}
+               $currOutLevel = $minNetDist[$atom][$currRing[$#currRing]];
+               # The stack may have additional elements in it. So, we need to
+               #   backtrack the ring to the point where the divergence
+               #   occured. Consider a stack that grew as A,B,GC,D,E,F,A and
+               #   a ring that grew as A,B,C,D,E,F,A. The stack has already
+               #   popped A,F,E,D,C and so contains only A,B,G. Thus, we
+               #   need to pop the ring all the way back to B and then add
+               #   on G.
+               # If we pop all element off the ring, then we are done.
+               while ($backTrackStack[$#backTrackStack] == 1)
+               {
+                  pop @backTrackStack;
+                  pop @currRing;
+                  if (scalar @currRing > 0)
+                  {
+                     $currOutLevel = $minNetDist[$atom][$currRing[$#currRing]];
+                  }
+               }
+               if (scalar @currRing == 0)
+                  {next;}
+               if ($#backTrackStack > 0)
+                  {$backTrackStack[$#backTrackStack]--;}
+               # If ringLen is even:
+               if ($ringLen % 2 == 0)
+               {
+                  # If the level that the ring was popped back to is greater
+                  #   than or equal to the ring midpoint, then we set
+                  #   levelDelta = -1. Else, (the length of the ring was
+                  #   popped back to a level that is less than the ring
+                  #   midpoint) we set levelDelta = 1.
+                  if ($#currRing >= $ringMidpoint)
+                     {$levelDelta = -1;}
+                  else
+                     {$levelDelta = 1;}
+               }
+               else # The ringLen is odd:
+               {
+                  # If the level that the ring was popped back to a value that
+                  #   is greater than the ring midpoint, then we set
+                  #   levelDelta = -1. (I.e., we are on the second of two
+                  #   equally distant atoms or beyond.) Else, (the length of
+                  #   the ring was popped back to a level that is less than
+                  #   or equal to the midpoint) we set levelDelta = 1.
+                  if ($#currRing > $ringMidpoint)
+                     {$levelDelta = -1;}
+                  else
+                     {$levelDelta = 1;}
+               }
+print STDOUT "levelDelta5 $levelDelta   currOutLevel = $currOutLevel\n";
+            }
+            else
+               {push (@backTrackStack, $currStackAdds);}
+print STDOUT "bTS = @backTrackStack\n";
+         }
+
+         # Once this atom is done, we add it to the list of vertices that
+         #   should not be included in any future rings of this size.
+         $completedVertices[$atom] = 1;
+      }
+   }
 }
 
 
@@ -8197,6 +8574,83 @@ sub qBarCorrelation
 
       # Divide by the total number of bonded atoms.
       $qOrder[$atom] /= $numBonds[$atom];
+   }
+}
+
+
+sub computeMinNetworkDistMatrix
+{
+   # Define local variables.
+   my $atom;
+   my $bond;
+   my $currAtom;
+   my $bondedAtom;
+   my $currDepth;
+   my @queue;
+   my @visited;
+
+   # Initialize the minimal network distance matrix.
+   @minNetDist = ();
+
+   # Consider each atom and construct a minimal network distance array for it.
+   #   In contrast to the regular minimal distance (which is Euclidian), this
+   #   distance is the count on integer steps that must be taken on a bonding
+   #   network to travel from one node to another. If a node is unreachable
+   #   from another node, then the distance is "-1".
+   # The network lengths are determined by a breadth first traversal of the
+   #   bonding network. The bonding network is defined in the context of
+   #   perioding boundary conditions, but all atom numbers are from the
+   #   central cell (i.e., between 1 and $numAtoms inclusive).
+   foreach $atom (1..$numAtoms)
+   {
+      @queue = ();
+
+      @visited = (-1) x ($numAtoms + 1);
+      $visited[$atom] = 0; # Distance to myself starts as zero.
+
+      # Add the starting atom to the queue.
+      push (@queue, $atom);
+
+      # Initialize the current depth of the breadth first traversal. This is
+      #   the path length from the current starting atom to the current atom.
+      $currDepth = 0;
+
+      while (scalar @queue > 0)
+      {
+         # Get the vertex that we will now use as the current starting point
+         #   for extending the traversal path.
+         my $currAtom = shift @queue;
+#print STDOUT "a = $atom    cA = $currAtom\n";
+
+         # Compute the depth of the path.
+         $currDepth = $visited[$currAtom] + 1;
+
+         # Record the depth for each bonded atom that has not already been
+         #   visited.
+         foreach $bond (1..$numBonds[$currAtom])
+         {
+            # For convenience, get the atom number of the bonded atom.
+            $bondedAtom = $bonded[$currAtom][$bond];
+#print STDOUT "cD = $currDepth   bond=$bond    bA=$bondedAtom\n";
+
+            # Determine if the atom at the other end of this bond has been
+            #   visited yet.
+            if ($visited[$bondedAtom] == -1)
+            {
+               # Since it has not been visited, record the path length to it.
+               $visited[$bondedAtom] = $currDepth;
+
+               # Add the bonded atom to the queue so it can later be used as
+               #   a starting point vertex for future depth steps.
+               push (@queue, $bondedAtom);
+            }
+         }
+      } # End while
+
+      # At this point, the breadth first traversal should be complete and we
+      #   can add this path length list (visited array) to the minimal network
+      #   distance matrix.
+      @{$minNetDist[$atom]} = @visited;
    }
 }
 

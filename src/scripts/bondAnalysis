@@ -29,7 +29,7 @@ sub printHelp
 #The -dist option takes one parameter called \$limitDist which is a measure in
 #   angstroms of the cutoff distance beyond which atom-atom distances should
 #   not be considered.  If this option is *not* given, then the program will
-#   assume a default cutoff of 5 angstroms.
+#   assume a default cutoff of 4 angstroms.
 #The -bs -ba -bl -boo -dx -st and -co options are all mutually exclusive.  The
 #   one given last (relatively) on the command line will be the one that is
 #   performed.
@@ -137,7 +137,7 @@ sub printHelp
 ##   effect that the \$outFile is interpreted to be an outFileTag that will have
 ##   various different suffixes applied.
 ## The -c suboption is used to specify a chain length for fragment creation.
-##   The chaing length is an integer number that defines the depth of the search
+##   The chain length is an integer number that defines the depth of the search
 ##   search tree that is used to find atoms from some starting H atom. If this
 ##   option is not given then a default chain length of 3 will be used. (For
 ##   example, a chain of H-C-B would be included for fragment generation, but
@@ -147,7 +147,7 @@ sub printHelp
 #USAGE:  bondAnalysis [-o \$outFile] [-i \$inFile] [-s] [-dist \$limitDist]
 #                     [-bs | -ba | -bl | -boo [-Ylm_l \$Ylm_l] | -dx | -st
 #                     | -co | -qn [-b \$bridges ] [-i \$ions] | -vtk
-#                     | -rn
+#                     | -rn ]
 #                     |-3dfull  [-a \$aScale -b \$bScale -c \$cScale
 #                                -r \$bondRadiusScale]
 #                     |-3dparts [-a \$aScale -b \$bScale -c \$cScale -f \$fScale
@@ -205,6 +205,8 @@ my $useOLCAOBO;
 my $doHist;
 my @bridges; # Name of elements to consider as a bridge for Q^n.
 my @ions; # Name of elements to consider as ions for Q^n.
+my $minRingLen; # Smallest length ring to seek.
+my $maxRingLen; # Largest length ring to seek.
 #my $chainLength;
 #my $doFrag;
 
@@ -226,6 +228,9 @@ my $absoluteSysQn_ref; # The absolute number of atoms with Q^n of n.
 my $fractionalSysQn_ref; # The fractional number of atoms with Q^n of n.
 my $numQnAtoms;       # Number of atoms participating in the Q^n calc.
 my $netConnQn;        # The Q^n network connectivity.
+my $atomRings_ref;    # List of which rings each atom is a member of.
+my $rings_ref;        # List of rings (which atoms belong to each ring).
+my $ringCounts_ref;   # A count of the number of rings of each length.
 my $bondedList_ref;   # List of bonded central cell atom numbers.
 my $bondedExtList_ref; # List of bonded extended cell atom numbers.
 my $bondLengthExt_ref; # Bond lengths of each bond.
@@ -422,6 +427,20 @@ elsif ($operation == 12) # Create the Q^n data.
    # Obtain the Q^n network connectivity.
    $netConnQn = StructureControl::getNetworkConnectivityQn;
 }
+elsif ($operation == 13) # Create the ring data.
+{
+   # Create the ring membership lists.
+   StructureControl::computeRingDistribution($minRingLen, $maxRingLen);
+
+   # Obtain a reference to the ring membership list of each atom.
+   $atomRings_ref = StructureControl::getAtomRingsRef;
+
+   # Obtain a reference to the list of rings.
+   $rings_ref = StructureControl::getRingsRef;
+
+   # Obtain the number of rings of each length.
+   $ringCounts_ref = StructureControl::getRingCountsRef;
+}
 #elsif ($operation == 10) # Generate fragments.
 #   {&generateFragments;}
 
@@ -454,8 +473,8 @@ elsif ($operation == 11)
    {&printVTKBallAndStick;}
 elsif ($operation == 12)
    {&printQnDistribution;}
-#elsif ($operation == 13)
-#   {&printRingDistribution;}
+elsif ($operation == 13)
+   {&printRingDistribution;}
 #elsif ($operation == 10)
 #   {&printFragments;}
 
@@ -608,7 +627,11 @@ sub parseCommandLine
          }
       }
       elsif ($ARGV[$number] eq "-rn")  # Ring distribution
-         {$operation = 13;}
+      {
+         $operation = 13;
+         $minRingLen = $ARGV[++$number];
+         $maxRingLen = $ARGV[++$number];
+      }
       elsif ($ARGV[$number] eq "-3dfull")  #Full OpenScad Model
       {
          $operation = 8;
@@ -1152,31 +1175,24 @@ sub printQnDistribution
    print OUT "$netConnQn\n";
 }
 
-#sub printRingDistribution
-#{
-#   # Declare local variables.
-#   my $n;
-#   my $atom;
-#
-#   print OUT " $numQnAtoms\n";
-#   foreach $atom (1..$numAtoms)
-#   {
-#
-#      print OUT "$atom $atomElementName_ref->[$atom] ";
-#      print OUT "$atomQn_ref->[$atom]\n";
-#   }
-#
-#   print OUT "\nAbsolute Q^n\n";
-#   foreach $n (0..8)
-#      {print OUT "Q^$n $absoluteSysQn_ref->[$n]\n";}
-#
-#   print OUT "\nFractional Q^n\n";
-#   foreach $n (0..8)
-#      {print OUT "Q^$n $fractionalSysQn_ref->[$n]\n";}
-#
-#   print OUT "\nNetwork Connectivity\n";
-#   print OUT "$netConnQn\n";
-#}
+sub printRingDistribution
+{
+   # Declare local variables.
+   my $n;
+   my $ring;
+   my $ringLen;
+
+   #print OUT "Ring Range: $minRingLen $maxRingLen\n";
+   print OUT "LABEL : SEQUENCE_ID : COL_LABELS\n";
+   foreach $ringLen ($minRingLen..$maxRingLen)
+   {
+      #print OUT "Rings $ringLen\n";
+      foreach $ring (1..$ringCounts_ref->[$ringLen])
+      {
+         print OUT "$ring : @{$rings_ref->[$ringLen][$ring]} : TOTAL\n";
+      }
+   }
+}
 
 sub printBondOO
 {
