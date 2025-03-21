@@ -1642,7 +1642,8 @@ subroutine makeSCFPot (totalEnergy)
 
                   ! Calculate the determinate.
                   det = s11*s22 - s12*s12
-                  if (det/(s11*s22) >= 0.00000001_double) then
+                  !if (det/(s11*s22) >= 0.00000001_double) then
+                  if (det/(s11*s22) >= 0.01_double) then
                      th1 = ( s22*t1 - s12*t2)/det
                      th2 = (-s12*t1 + s11*t2)/det
                   endif
