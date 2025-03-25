@@ -7524,7 +7524,7 @@ sub computeRingDistribution
    # Initialize the count of the number of rings of each length.
    foreach $ring (0..$maxRingLen)
       {$ringCounts[$ring] = 0;}
-print STDOUT "ringCounts = @ringCounts\n";
+#print STDOUT "ringCounts = @ringCounts\n";
 
    # Initialize a stack that is used to backtrack ring exploration.
    push (@backTrackStack, 0);
@@ -7578,7 +7578,7 @@ print STDOUT "ringCounts = @ringCounts\n";
 
          # Initialize the outgoing stack with the first atom.
          push (@outStack, $atom);
-print STDOUT "Initial outStack = @outStack\n";
+#print STDOUT "Initial outStack = @outStack\n";
 
          # Execute the traversal until we run out of vertices.
          while (scalar @outStack > 0)
@@ -7594,22 +7594,22 @@ print STDOUT "Initial outStack = @outStack\n";
             $dupMember = 0;
             foreach my $ringAtom (0..$#currRing-1)
             {
-print STDOUT "rA $currRing[$ringAtom]  cA $currAtom\n";
+#print STDOUT "rA $currRing[$ringAtom]  cA $currAtom\n";
                if ($currAtom == $currRing[$ringAtom])
                   {$dupMember = 1; last;}
             }
-print STDOUT "Popped outStack = @outStack\n";
-print STDOUT "Pushed currRing = @currRing\n";
-print STDOUT "DupMember = $dupMember\n";
+#print STDOUT "Popped outStack = @outStack\n";
+#print STDOUT "Pushed currRing = @currRing\n";
+#print STDOUT "DupMember = $dupMember\n";
             
             # If the size of the currRing stack equals the targeted ring
             #   length plus one (because we added the beginning and end atoms
             #   which are the same) then we have a complete ring that needs
             #   to be saved (unless the ring is a duplicate of a previously
             #   saved ring which is checked in &saveRing).
-print STDOUT "currRing level = $minNetDist[$atom][$currAtom]\n";
-print STDOUT "currOutLevel = $currOutLevel\n";
-print STDOUT "levelDelta1 $levelDelta\n";
+#print STDOUT "currRing level = $minNetDist[$atom][$currAtom]\n";
+#print STDOUT "currOutLevel = $currOutLevel\n";
+#print STDOUT "levelDelta1 $levelDelta\n";
             if ((scalar @currRing == $ringLen + 1) &&
                   ($currRing[0] == $currRing[$ringLen]))
             {
@@ -7653,12 +7653,12 @@ print STDOUT "levelDelta1 $levelDelta\n";
                }
                if ($#backTrackStack > 0)
                   {$backTrackStack[$#backTrackStack]--;}
-print STDOUT "Out of loop\n";
-print STDOUT "$currAtom\n";
-print STDOUT "@currRing\n";
-print STDOUT "@outStack\n";
-print STDOUT "@backTrackStack\n";
-print STDOUT "levelDelta2 $levelDelta\n";
+#print STDOUT "Out of loop\n";
+#print STDOUT "$currAtom\n";
+#print STDOUT "@currRing\n";
+#print STDOUT "@outStack\n";
+#print STDOUT "@backTrackStack\n";
+#print STDOUT "levelDelta2 $levelDelta\n";
 
 #               # Compute the new level delta.
 #               $levelDelta = &computeRingLevelDelta($ringLen,$ringMidpoint,
@@ -7695,8 +7695,8 @@ print STDOUT "levelDelta2 $levelDelta\n";
                #   the ring (unless there are no atoms left in the ring).
                if (scalar @currRing > 0)
                   {$currOutLevel = $minNetDist[$atom][$currRing[$#currRing]];}
-print STDOUT "levelDelta = $levelDelta   currRing last idx = $#currRing    ";
-print STDOUT "currOutLevel = $currOutLevel\n";
+#print STDOUT "levelDelta = $levelDelta   currRing last idx = $#currRing    ";
+#print STDOUT "currOutLevel = $currOutLevel\n";
                next;
             }
 
@@ -7712,7 +7712,7 @@ print STDOUT "currOutLevel = $currOutLevel\n";
                {$currOutLevel += $levelDelta;} # Level of $currAtom.
             else
                {$levelDelta = -1;}
-print STDOUT "levelDelta3 $levelDelta   currOutLevel = $currOutLevel\n";
+#print STDOUT "levelDelta3 $levelDelta   currOutLevel = $currOutLevel\n";
 
             # If the ring has even length and we are at the midpoint, then we
             #   also need to start reducing the levels. Note that this "if" is
@@ -7721,7 +7721,7 @@ print STDOUT "levelDelta3 $levelDelta   currOutLevel = $currOutLevel\n";
             #   (just popped) atom.
             if (($evenRing == 1) && ($currOutLevel == $ringMidpoint))
                {$levelDelta = -1;}
-print STDOUT "levelDelta4 $levelDelta   currOutLevel = $currOutLevel\n";
+#print STDOUT "levelDelta4 $levelDelta   currOutLevel = $currOutLevel\n";
 
             # Consider each atom bonded to the current atom. As long as the
             #   bonded atom meets certain conditions, then we will add it
@@ -7729,14 +7729,14 @@ print STDOUT "levelDelta4 $levelDelta   currOutLevel = $currOutLevel\n";
             #   ring.
             # Assume that we will not add any bonded atoms to the stack.
             $currStackAdds = 0;
-print STDOUT "ca=$currAtom  numBonds[$currAtom] = $numBonds[$currAtom]\n";
+#print STDOUT "ca=$currAtom  numBonds[$currAtom] = $numBonds[$currAtom]\n";
             foreach $bond (1..$numBonds[$currAtom])
             {
                # For convenience, get the atom number of the bonded atom,
                #   and its minimum network distance.
                $bondedAtom = $bonded[$currAtom][$bond];
                $bondedMinNetDist = $minNetDist[$atom][$bondedAtom];
-print STDOUT "ba = $bondedAtom   bMND = $bondedMinNetDist\n";
+#print STDOUT "ba = $bondedAtom   bMND = $bondedMinNetDist\n";
 
                # In all cases, we never add an atom that has already had
                #   all of its rings constructed.
@@ -7783,7 +7783,7 @@ print STDOUT "ba = $bondedAtom   bMND = $bondedMinNetDist\n";
                   #   "normal" next steps for the current ring or atoms at
                   #   the midpoint of an odd ring that are at the same level.
                   push (@outStack, $bondedAtom);
-print STDOUT "Pushed outStack @outStack\n";
+#print STDOUT "Pushed outStack @outStack\n";
 
                   # Increment the count of the number of atoms that have been
                   #   added to the stack for this particular currAtom.
@@ -7799,7 +7799,7 @@ print STDOUT "Pushed outStack @outStack\n";
                   # Now, the only atoms left that we could encounter are
                   #   "normal" next steps for the current ring.
                   push (@outStack, $bondedAtom);
-print STDOUT "Pushed inStack @outStack\n";
+#print STDOUT "Pushed inStack @outStack\n";
 
                   # Increment the count of the number of atoms that have been
                   #   added to the stack for this particular currAtom.
@@ -7868,11 +7868,11 @@ print STDOUT "Pushed inStack @outStack\n";
                   else
                      {$levelDelta = 1;}
                }
-print STDOUT "levelDelta5 $levelDelta   currOutLevel = $currOutLevel\n";
+#print STDOUT "levelDelta5 $levelDelta   currOutLevel = $currOutLevel\n";
             }
             else
                {push (@backTrackStack, $currStackAdds);}
-print STDOUT "bTS = @backTrackStack\n";
+#print STDOUT "bTS = @backTrackStack\n";
          }
 
          # Once this atom is done, we add it to the list of vertices that
@@ -7940,14 +7940,7 @@ sub saveRing
 
    # Sort the current ring atoms so that we can make an easy comparison
    #   with other already saved rings.
-   print STDOUT "PreSort: $currRing_ref->[0]\n";
-   print STDOUT "PreSort: $currRing_ref->[1]\n";
-   print STDOUT "PreSort: $currRing_ref->[2]\n";
-   print STDOUT "PreSort: $currRing_ref->[3]\n";
-   print STDOUT "PreSort: $currRing_ref->[4]\n";
-   print STDOUT "PreSort: $currRing_ref->[5]\n";
    @sortedRing = sort{$a <=> $b} @{$currRing_ref}[0..$targetRingLen-1];
-   print STDOUT "PostSort: @sortedRing\n";
 
    # Just prior to calling this subroutine, we incremented the ring count by
    #   one. So, if the ring count equals one, then it is the first ring to be
@@ -7977,7 +7970,6 @@ sub saveRing
          # We detect if there is no match as soon as possible so that we can
          #   go to the next ring. Or, if there are no other rings to check,
          #   we will know that we can add the ring.
-print STDOUT "ring=$ring atom=$atom ringAtom=$sortedRing[$atom]\n";
          if ($sortedRing[$atom] != $rings_ref->[$targetRingLen][$ring][$atom])
             {$thisSame = 0; last;}
       }
