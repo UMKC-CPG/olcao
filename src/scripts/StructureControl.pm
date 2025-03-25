@@ -7497,9 +7497,11 @@ sub computeRingDistribution
    # Declare local variables.
    my $atom;
    my $bond;
+   my $ring;
    my $ringLen;
    my $evenRing;
    my $currAtom;
+   my $dupMember;
    my $ringMidpoint;
    my $currInLevel;
    my $currOutLevel;
@@ -7520,7 +7522,9 @@ sub computeRingDistribution
    &computeMinNetworkDistMatrix();
 
    # Initialize the count of the number of rings of each length.
-   @{$ringCounts[0..$maxRingLen]} = (0) x ($maxRingLen + 1);
+   foreach $ring (0..$maxRingLen)
+      {$ringCounts[$ring] = 0;}
+print STDOUT "ringCounts = @ringCounts\n";
 
    # Initialize a stack that is used to backtrack ring exploration.
    push (@backTrackStack, 0);
@@ -7581,53 +7585,58 @@ print STDOUT "Initial outStack = @outStack\n";
          {
             # Any atom that had been added to the stack will definitely be
             #   part of some ring. We pop the top atom and add it to the
-            #   current ring stack unless that atom is already in the ring.
+            #   current ring stack.
             $currAtom = pop @outStack;
-            my $found = 0;
-            foreach my $ringAtom (0..$#currRing)
+            push (@currRing, $currAtom);
+
+            # If the atom already exists in the ring, then we set a duplicate
+            #   member flag.
+            $dupMember = 0;
+            foreach my $ringAtom (0..$#currRing-1)
             {
 print STDOUT "rA $currRing[$ringAtom]  cA $currAtom\n";
                if ($currAtom == $currRing[$ringAtom])
-                  {$found = 1; last;}
+                  {$dupMember = 1; last;}
             }
-            if ($found == 1)
-               {next;}
-            push (@currRing, $currAtom);
 print STDOUT "Popped outStack = @outStack\n";
 print STDOUT "Pushed currRing = @currRing\n";
+print STDOUT "DupMember = $dupMember\n";
             
             # If the size of the currRing stack equals the targeted ring
             #   length plus one (because we added the beginning and end atoms
             #   which are the same) then we have a complete ring that needs
-            #   to be saved.
+            #   to be saved (unless the ring is a duplicate of a previously
+            #   saved ring which is checked in &saveRing).
 print STDOUT "currRing level = $minNetDist[$atom][$currAtom]\n";
 print STDOUT "currOutLevel = $currOutLevel\n";
 print STDOUT "levelDelta1 $levelDelta\n";
-            if (scalar @currRing == $ringLen + 1)
+            if ((scalar @currRing == $ringLen + 1) &&
+                  ($currRing[0] == $currRing[$ringLen]))
             {
                # Record that we found a new ring.
                $ringCounts[$ringLen]++;
 
                # Save the current ring minus the tail (duplicates the head).
                pop @currRing; # Remove the tail (which equals the head).
-               &saveRing(\@ringCounts,\@rings);
-               my @sortedRing = sort{$a <=> $b} @currRing[0..$ringLen-1];
-               if ($ringCounts[$ringLen] > 1)
-               {
-                  my $different = 0;
-                  foreach my $tempAtom (0..$ringLen-1)
-                  {
-                     if ($sortedRing[$tempAtom] !=
-                           $rings[$ringLen][$ringCounts[$ringLen]-1][$tempAtom])
-                        {$different = 1;last;}
-                  }
-                  if ($different == 1)
-                     {@{$rings[$ringLen][$ringCounts[$ringLen]]} = @sortedRing;}
-                  else
-                     {$ringCounts[$ringLen]--;}
-               }
-               else
-                  {@{$rings[$ringLen][$ringCounts[$ringLen]]} = @sortedRing;}
+               print STDOUT "PreCall: @currRing[0..$ringLen-1]\n";
+               &saveRing($ringLen,\@ringCounts,\@rings,\@currRing);
+               #my @sortedRing = sort{$a <=> $b} @currRing[0..$ringLen-1];
+               #if ($ringCounts[$ringLen] > 1)
+               #{
+               #   my $different = 0;
+               #   foreach my $tempAtom (0..$ringLen-1)
+               #   {
+               #      if ($sortedRing[$tempAtom] !=
+               #            $rings[$ringLen][$ringCounts[$ringLen]-1][$tempAtom])
+               #         {$different = 1;last;}
+               #   }
+               #   if ($different == 1)
+               #      {@{$rings[$ringLen][$ringCounts[$ringLen]]} = @sortedRing;}
+               #   else
+               #      {$ringCounts[$ringLen]--;}
+               #}
+               #else
+               #   {@{$rings[$ringLen][$ringCounts[$ringLen]]} = @sortedRing;}
 
 
                # The stack may have additional elements in it. So, we need to
@@ -7651,36 +7660,36 @@ print STDOUT "@outStack\n";
 print STDOUT "@backTrackStack\n";
 print STDOUT "levelDelta2 $levelDelta\n";
 
-               # Compute the new level delta.
-               $levelDelta = &computeRingLevelDelta($ringLen,$ringMidpoint,
-                     $#currRing);
+#               # Compute the new level delta.
+#               $levelDelta = &computeRingLevelDelta($ringLen,$ringMidpoint,
+#                     $#currRing);
 
-               ## If ringLen is even:
-               #if ($ringLen % 2 == 0)
-               #{
-               #   # If the level that the ring was popped back to is greater
-               #   #   than or equal to the ring midpoint, then we set
-               #   #   levelDelta = -1. Else, (the length of the ring was
-               #   #   popped back to a level that is less than the ring
-               #   #   midpoint) we set levelDelta = 1.
-               #   if ($#currRing >= $ringMidpoint)
-               #      {$levelDelta = -1;}
-               #   else
-               #      {$levelDelta = 1;}
-               #}
-               #else # The ringLen is odd:
-               #{
-               #   # If the level that the ring was popped back to is greater
-               #   #   than the ring midpoint, then we set levelDelta = -1.
-               #   #   (I.e., we are on the second of two equally distant
-               #   #   atoms or beyond.) Else, (the length of the ring was
-               #   #   popped back to a level that is less than or equal to
-               #   #   the midpoint) we set levelDelta = 1.
-               #   if ($#currRing > $ringMidpoint)
-               #      {$levelDelta = -1;}
-               #   else
-               #      {$levelDelta = 1;}
-               #}
+               # If ringLen is even:
+               if ($ringLen % 2 == 0)
+               {
+                  # If the level that the ring was popped back to is greater
+                  #   than or equal to the ring midpoint, then we set
+                  #   levelDelta = -1. Else, (the length of the ring was
+                  #   popped back to a level that is less than the ring
+                  #   midpoint) we set levelDelta = 1.
+                  if ($#currRing >= $ringMidpoint)
+                     {$levelDelta = -1;}
+                  else
+                     {$levelDelta = 1;}
+               }
+               else # The ringLen is odd:
+               {
+                  # If the level that the ring was popped back to is greater
+                  #   than the ring midpoint, then we set levelDelta = -1.
+                  #   (I.e., we are on the second of two equally distant
+                  #   atoms or beyond.) Else, (the length of the ring was
+                  #   popped back to a level that is less than or equal to
+                  #   the midpoint) we set levelDelta = 1.
+                  if ($#currRing > $ringMidpoint)
+                     {$levelDelta = -1;}
+                  else
+                     {$levelDelta = 1;}
+               }
 
                # The current out level is the level of the last atom in
                #   the ring (unless there are no atoms left in the ring).
@@ -7732,6 +7741,11 @@ print STDOUT "ba = $bondedAtom   bMND = $bondedMinNetDist\n";
                # In all cases, we never add an atom that has already had
                #   all of its rings constructed.
                if ($completedVertices[$bondedAtom] == 1)
+                  {next;}
+
+               # In all cases, we never add bonded atoms if the current
+               #   "root" atom is a duplicate member in the ring.
+               if ($dupMember == 1)
                   {next;}
 
                # Use one set of rules for increasing levels and another
@@ -7824,36 +7838,36 @@ print STDOUT "Pushed inStack @outStack\n";
                if ($#backTrackStack > 0)
                   {$backTrackStack[$#backTrackStack]--;}
 
-               # Compute the new level delta.
-               $levelDelta = &computeRingLevelDelta($ringLen,$ringMidpoint,
-                     $#currRing);
+#               # Compute the new level delta.
+#               $levelDelta = &computeRingLevelDelta($ringLen,$ringMidpoint,
+#                     $#currRing);
 
-               ## If ringLen is even:
-               #if ($ringLen % 2 == 0)
-               #{
-               #   # If the level that the ring was popped back to is greater
-               #   #   than or equal to the ring midpoint, then we set
-               #   #   levelDelta = -1. Else, (the length of the ring was
-               #   #   popped back to a level that is less than the ring
-               #   #   midpoint) we set levelDelta = 1.
-               #   if ($#currRing >= $ringMidpoint)
-               #      {$levelDelta = -1;}
-               #   else
-               #      {$levelDelta = 1;}
-               #}
-               #else # The ringLen is odd:
-               #{
-               #   # If the level that the ring was popped back to a value that
-               #   #   is greater than the ring midpoint, then we set
-               #   #   levelDelta = -1. (I.e., we are on the second of two
-               #   #   equally distant atoms or beyond.) Else, (the length of
-               #   #   the ring was popped back to a level that is less than
-               #   #   or equal to the midpoint) we set levelDelta = 1.
-               #   if ($#currRing > $ringMidpoint)
-               #      {$levelDelta = -1;}
-               #   else
-               #      {$levelDelta = 1;}
-               #}
+               # If ringLen is even:
+               if ($ringLen % 2 == 0)
+               {
+                  # If the level that the ring was popped back to is greater
+                  #   than or equal to the ring midpoint, then we set
+                  #   levelDelta = -1. Else, (the length of the ring was
+                  #   popped back to a level that is less than the ring
+                  #   midpoint) we set levelDelta = 1.
+                  if ($#currRing >= $ringMidpoint)
+                     {$levelDelta = -1;}
+                  else
+                     {$levelDelta = 1;}
+               }
+               else # The ringLen is odd:
+               {
+                  # If the level that the ring was popped back to a value that
+                  #   is greater than the ring midpoint, then we set
+                  #   levelDelta = -1. (I.e., we are on the second of two
+                  #   equally distant atoms or beyond.) Else, (the length of
+                  #   the ring was popped back to a level that is less than
+                  #   or equal to the midpoint) we set levelDelta = 1.
+                  if ($#currRing > $ringMidpoint)
+                     {$levelDelta = -1;}
+                  else
+                     {$levelDelta = 1;}
+               }
 print STDOUT "levelDelta5 $levelDelta   currOutLevel = $currOutLevel\n";
             }
             else
@@ -7919,29 +7933,70 @@ sub saveRing
 
    # Define local variables.
    my $atom;
-   my $different;
+   my $ring;
+   my $same;
+   my $thisSame;
    my @sortedRing;
 
    # Sort the current ring atoms so that we can make an easy comparison
    #   with other already saved rings.
-   @sortedRing = sort{$a <=> $b} $currRing_ref->[0..$targetRingLen-1];
-   if ($ringCounts_ref->[$targetRingLen] > 1)
+   print STDOUT "PreSort: $currRing_ref->[0]\n";
+   print STDOUT "PreSort: $currRing_ref->[1]\n";
+   print STDOUT "PreSort: $currRing_ref->[2]\n";
+   print STDOUT "PreSort: $currRing_ref->[3]\n";
+   print STDOUT "PreSort: $currRing_ref->[4]\n";
+   print STDOUT "PreSort: $currRing_ref->[5]\n";
+   @sortedRing = sort{$a <=> $b} @{$currRing_ref}[0..$targetRingLen-1];
+   print STDOUT "PostSort: @sortedRing\n";
+
+   # Just prior to calling this subroutine, we incremented the ring count by
+   #   one. So, if the ring count equals one, then it is the first ring to be
+   #   saved. I.e., we can just save the sorted ring and exit.
+   if ($ringCounts_ref->[$targetRingLen] == 1)
    {
-      $different = 0;
+      @{$rings_ref->[$targetRingLen][$ringCounts_ref->[$targetRingLen]]} =
+            @sortedRing;
+      return;
+   }
+
+   # If we did not exit, then we need to determine if the ring we just counted
+   #   prior to entering this subroutine should really be saved or not. I.e.,
+   #   is it a duplicate of another ring we already saved.
+
+   # We start by assuming that the ring we want to add is different from every
+   #   other ring in the current list of rings.
+   $same = 0;
+   foreach $ring (1..$ringCounts_ref->[$targetRingLen]-1)
+   {
+      # For this specific ring, we assume that the ring we want to add is
+      #   the same as it. Then, we check for a match with every atom. Because
+      #   the rings are sorted, we can do an atom-by-atom comparison.
+      $thisSame = 1;
       foreach $atom (0..$targetRingLen-1)
       {
-         if ($sortedRing[$atom] !=
-               $rings_ref->[$targetRingLen][$ringCounts_ref->[$targetRingLen]-1][$atom])
-            {$different = 1;last;}
+         # We detect if there is no match as soon as possible so that we can
+         #   go to the next ring. Or, if there are no other rings to check,
+         #   we will know that we can add the ring.
+print STDOUT "ring=$ring atom=$atom ringAtom=$sortedRing[$atom]\n";
+         if ($sortedRing[$atom] != $rings_ref->[$targetRingLen][$ring][$atom])
+            {$thisSame = 0; last;}
       }
-      if ($different == 1)
-         {@{$rings_ref->[$targetRingLen][$ringCounts_ref->[$targetRingLen]]} = @sortedRing;}
-      else
-         {$ringCounts_ref->[$targetRingLen]--;}
+
+      # If there was a match for this specific ring, then we found a global
+      #   match and can stop looking.
+      if ($thisSame == 1)
+         {$same = 1; last;}
+   }
+
+   # If we ended up not finding a match, then we can save the ring. Otherwise,
+   #   we just reduce the erroneous count.
+   if ($same == 0)
+   {
+      @{$rings_ref->[$targetRingLen][$ringCounts_ref->[$targetRingLen]]} =
+            @sortedRing;
    }
    else
-      {@{$rings_ref->[$targetRingLen][$ringCounts_ref->[$targetRingLen]]} = @sortedRing;}
-
+      {$ringCounts_ref->[$targetRingLen]--;}
 }
 
 

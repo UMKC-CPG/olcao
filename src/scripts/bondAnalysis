@@ -147,7 +147,7 @@ sub printHelp
 #USAGE:  bondAnalysis [-o \$outFile] [-i \$inFile] [-s] [-dist \$limitDist]
 #                     [-bs | -ba | -bl | -boo [-Ylm_l \$Ylm_l] | -dx | -st
 #                     | -co | -qn [-b \$bridges ] [-i \$ions] | -vtk
-#                     | -rn ]
+#                     | -rn \$minRingLen \$maxRingLen ]
 #                     |-3dfull  [-a \$aScale -b \$bScale -c \$cScale
 #                                -r \$bondRadiusScale]
 #                     |-3dparts [-a \$aScale -b \$bScale -c \$cScale -f \$fScale
@@ -631,6 +631,10 @@ sub parseCommandLine
          $operation = 13;
          $minRingLen = $ARGV[++$number];
          $maxRingLen = $ARGV[++$number];
+         if ($minRingLen =~ /-/)
+            {print STDOUT "$minRingLen must be an integer.\n"; exit;}
+         if ($maxRingLen =~ /-/)
+            {print STDOUT "$maxRingLen must be an integer.\n"; exit;}
       }
       elsif ($ARGV[$number] eq "-3dfull")  #Full OpenScad Model
       {
