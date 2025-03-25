@@ -1193,7 +1193,8 @@ sub printRingDistribution
       #print OUT "Rings $ringLen\n";
       foreach $ring (1..$ringCounts_ref->[$ringLen])
       {
-         print OUT "$ring : @{$rings_ref->[$ringLen][$ring]} : TOTAL\n";
+         print OUT "$ringLen", "_$ring : ";
+         print OUT "@{$rings_ref->[$ringLen][$ring]} : TOTAL\n";
       }
    }
 }
