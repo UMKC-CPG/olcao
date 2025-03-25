@@ -7618,25 +7618,7 @@ sub computeRingDistribution
 
                # Save the current ring minus the tail (duplicates the head).
                pop @currRing; # Remove the tail (which equals the head).
-               print STDOUT "PreCall: @currRing[0..$ringLen-1]\n";
                &saveRing($ringLen,\@ringCounts,\@rings,\@currRing);
-               #my @sortedRing = sort{$a <=> $b} @currRing[0..$ringLen-1];
-               #if ($ringCounts[$ringLen] > 1)
-               #{
-               #   my $different = 0;
-               #   foreach my $tempAtom (0..$ringLen-1)
-               #   {
-               #      if ($sortedRing[$tempAtom] !=
-               #            $rings[$ringLen][$ringCounts[$ringLen]-1][$tempAtom])
-               #         {$different = 1;last;}
-               #   }
-               #   if ($different == 1)
-               #      {@{$rings[$ringLen][$ringCounts[$ringLen]]} = @sortedRing;}
-               #   else
-               #      {$ringCounts[$ringLen]--;}
-               #}
-               #else
-               #   {@{$rings[$ringLen][$ringCounts[$ringLen]]} = @sortedRing;}
 
 
                # The stack may have additional elements in it. So, we need to
@@ -7660,36 +7642,9 @@ sub computeRingDistribution
 #print STDOUT "@backTrackStack\n";
 #print STDOUT "levelDelta2 $levelDelta\n";
 
-#               # Compute the new level delta.
-#               $levelDelta = &computeRingLevelDelta($ringLen,$ringMidpoint,
-#                     $#currRing);
-
-               # If ringLen is even:
-               if ($ringLen % 2 == 0)
-               {
-                  # If the level that the ring was popped back to is greater
-                  #   than or equal to the ring midpoint, then we set
-                  #   levelDelta = -1. Else, (the length of the ring was
-                  #   popped back to a level that is less than the ring
-                  #   midpoint) we set levelDelta = 1.
-                  if ($#currRing >= $ringMidpoint)
-                     {$levelDelta = -1;}
-                  else
-                     {$levelDelta = 1;}
-               }
-               else # The ringLen is odd:
-               {
-                  # If the level that the ring was popped back to is greater
-                  #   than the ring midpoint, then we set levelDelta = -1.
-                  #   (I.e., we are on the second of two equally distant
-                  #   atoms or beyond.) Else, (the length of the ring was
-                  #   popped back to a level that is less than or equal to
-                  #   the midpoint) we set levelDelta = 1.
-                  if ($#currRing > $ringMidpoint)
-                     {$levelDelta = -1;}
-                  else
-                     {$levelDelta = 1;}
-               }
+               # Compute the new level delta.
+               $levelDelta = &computeRingLevelDelta($ringLen,$ringMidpoint,
+                     $#currRing);
 
                # The current out level is the level of the last atom in
                #   the ring (unless there are no atoms left in the ring).
@@ -7838,36 +7793,9 @@ sub computeRingDistribution
                if ($#backTrackStack > 0)
                   {$backTrackStack[$#backTrackStack]--;}
 
-#               # Compute the new level delta.
-#               $levelDelta = &computeRingLevelDelta($ringLen,$ringMidpoint,
-#                     $#currRing);
-
-               # If ringLen is even:
-               if ($ringLen % 2 == 0)
-               {
-                  # If the level that the ring was popped back to is greater
-                  #   than or equal to the ring midpoint, then we set
-                  #   levelDelta = -1. Else, (the length of the ring was
-                  #   popped back to a level that is less than the ring
-                  #   midpoint) we set levelDelta = 1.
-                  if ($#currRing >= $ringMidpoint)
-                     {$levelDelta = -1;}
-                  else
-                     {$levelDelta = 1;}
-               }
-               else # The ringLen is odd:
-               {
-                  # If the level that the ring was popped back to a value that
-                  #   is greater than the ring midpoint, then we set
-                  #   levelDelta = -1. (I.e., we are on the second of two
-                  #   equally distant atoms or beyond.) Else, (the length of
-                  #   the ring was popped back to a level that is less than
-                  #   or equal to the midpoint) we set levelDelta = 1.
-                  if ($#currRing > $ringMidpoint)
-                     {$levelDelta = -1;}
-                  else
-                     {$levelDelta = 1;}
-               }
+               # Compute the new level delta.
+               $levelDelta = &computeRingLevelDelta($ringLen,$ringMidpoint,
+                     $#currRing);
 #print STDOUT "levelDelta5 $levelDelta   currOutLevel = $currOutLevel\n";
             }
             else
