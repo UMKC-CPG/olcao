@@ -1149,6 +1149,10 @@ sub manageInput
          &copy("$proj_home/$kp_scf$dat","fort.15");
       }
    }
+   elsif ($jobID == 301) # A local environment (LoEn) job.
+   {
+
+   }
 
    # Check for a potential coefficient file for SCF calculations.
    if ($basisCode_scf > 0)
@@ -1647,7 +1651,7 @@ sub manageOutput
          # &move("$field$basis$hdf","$edge_$field$basis$hdf");
       }
    }
-   elsif ($jobID == 300) # Local environment
+   elsif ($jobID == 301) # Local environment
    {
       # Move the local environment structural analysis files if created.
       if (-e "fort.21")

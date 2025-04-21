@@ -530,6 +530,7 @@ subroutine get_n_k_R_a(length,energy,eps1,eps2,refractIndex,extnctCoeff,&
 
    ! Define local variables.
    integer :: i,j
+   complex (kind=double) :: reflecTemp
 
    do i = 1,length
       do j = 1,3
@@ -539,7 +540,8 @@ subroutine get_n_k_R_a(length,energy,eps1,eps2,refractIndex,extnctCoeff,&
          ! eps2 = 2nk
          ! n = sqrt[(sqrt(eps1^2 + eps2^2)+eps1)/2]
          ! k = sqrt[(sqrt(eps1^2 + eps2^2)-eps1)/2] ; kappa
-         ! R = ((n-1)^2 + k) / ((n+1)^2 + k) ! Reflectivity
+!         ! R = ((n-1)^2 + k) / ((n+1)^2 + k) ! Reflectivity
+         ! R = ((n-1)^2) / ((n+1)^2 + k) ! Reflectivity
          ! alpha = 4 * pi * kappa / lambda = 2 * kappa * omega / c
          ! omega = (energy in eV) / hPlanck -> angular frequency
          refractIndex(j,i) = sqrt((sqrt(eps1(j,i)*eps1(j,i) + &
@@ -548,8 +550,15 @@ subroutine get_n_k_R_a(length,energy,eps1,eps2,refractIndex,extnctCoeff,&
          extnctCoeff(j,i) = sqrt((sqrt(eps1(j,i)*eps1(j,i) + &
                & eps2(j,i)*eps2(j,i))-eps1(j,i))/2.0_double)
 
-         reflectivity(j,i) = ((refractIndex(j,i)-1)**2 + extnctCoeff(j,i)) / &
-                         & + ((refractIndex(j,i)+1)**2 + extnctCoeff(j,i))
+!         reflectivity(j,i) = ((refractIndex(j,i)-1)**2 + extnctCoeff(j,i)) / &
+!                         & + ((refractIndex(j,i)+1)**2 + extnctCoeff(j,i))
+         reflecTemp = (refractIndex(j,i) + &
+               & cmplx(0.0_double,extnctCoeff(j,i),double) - 1.0_double)
+         reflectivity(j,i) = real(reflecTemp * conjg(reflecTemp),double)
+         reflecTemp = (refractIndex(j,i) + &
+               & cmplx(0.0_double,extnctCoeff(j,i),double) + 1.0_double)
+         reflectivity(j,i) = reflectivity(j,i) / &
+               & real(reflecTemp * conjg(reflecTemp),double)
 
          absorpCoeff(j,i) = 2.0_double * extnctCoeff(j,i) * energy(i) / &
                          & hPlanck / lightSpeed
