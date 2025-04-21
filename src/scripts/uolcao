@@ -150,7 +150,7 @@ my $serialxyz;
 # sybdPSCF=208;
 # forcePSCF=209;
 # fieldPSCF=210;
-# loenPSCF=301;
+# loenPSCF=311;
 
 # Basis information.
 my $basis_scf;
@@ -644,7 +644,7 @@ sub parseCLP
       }
       elsif ($ARGV[$number] eq "-loen")
       {
-         $jobID = 301;
+         $jobID = 311;
          $jobName = "loen";
          $edge = "gs";
       }
@@ -1149,9 +1149,22 @@ sub manageInput
          &copy("$proj_home/$kp_scf$dat","fort.15");
       }
    }
-   elsif ($jobID == 301) # A local environment (LoEn) job.
+   elsif ($jobID == 311) # A local environment (LoEn) job.
    {
+      # Like a post SCF job.
+      if (! -e "$proj_home/$kp_pscf$dat")
+         {&copy("$inputs/$kp_pscf$dat","$proj_home/$kp_pscf$dat");}
+      &copy("$proj_home/$kp_pscf$dat","fort.16");
+      &getPotCoeffs($basis_pscf);
 
+      # If the SCF part does not have an explicit "NO" for the basis, then
+      #   we should also copy the scf kpoints.
+      if ($basisCode_scf > 0)
+      {
+         if (! -e "$proj_home/$kp_scf$dat")
+            {&copy("$inputs/$kp_scf$dat","$proj_home/$kp_scf$dat");}
+         &copy("$proj_home/$kp_scf$dat","fort.15");
+      }
    }
 
    # Check for a potential coefficient file for SCF calculations.
@@ -1651,7 +1664,7 @@ sub manageOutput
          # &move("$field$basis$hdf","$edge_$field$basis$hdf");
       }
    }
-   elsif ($jobID == 301) # Local environment
+   elsif ($jobID == 311) # Local environment
    {
       # Move the local environment structural analysis files if created.
       if (-e "fort.21")
@@ -1663,6 +1676,10 @@ sub manageOutput
 
    # If a post SCF job was done, then do this.
    if (($jobID >= 200) && ($jobID < 300))
+      {&move("fort.16","$kp_pscf.16");}
+
+   # If a local environment job was done, then do this.
+   if ($jobID == 311)
       {&move("fort.16","$kp_pscf.16");}
 
    # Perform these moves for all tasks.

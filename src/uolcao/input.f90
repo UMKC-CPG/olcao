@@ -223,7 +223,7 @@ subroutine parseInput(inSCF)
    if (inSCF == 1) then
       readUnit = 15
       open(readUnit,file='fort.15',status='old',form='formatted')
-   else
+   elseif (inSCF == 0) then ! post SCF.
       readUnit = 16
       open(readUnit,file='fort.16',status='old',form='formatted')
    endif

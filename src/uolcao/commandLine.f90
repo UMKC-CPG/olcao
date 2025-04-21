@@ -153,6 +153,16 @@ subroutine readBasisCodes
    write (20,*) "0=NO; 1=MB; 2=FB; 3=EB"
    write (20,*)
 
+   ! If both basis codes are 0, then set the PSCF code to 1 so that input
+   !   files can be easily read for non-SCF and non-PSCF calculations.
+   if ((basisCode_SCF == 0) .and. (basisCode_PSCF == 0)) then
+      basisCode_PSCF = 1
+      write (20,*) "Both basis code requested to be zero."
+      write (20,*) "Setting basisCode_PSCF to 1."
+      write (20,*)
+   endif
+
+
 end subroutine readBasisCodes
 
 
@@ -270,7 +280,7 @@ subroutine readJobID
    elseif (jobID == 210) then
       doField_PSCF = 1
       write (20,*) "Doing PSCF Field"
-   elseif (jobID == 301) then
+   elseif (jobID == 311) then
       doLoEn = 1
       write (20,*) "Doing Local Environment"
    endif

@@ -19,34 +19,54 @@ module O_LocalEnv
 
    contains
 
-subroutine analyzeLocalEnv
-
-   use O_Kinds
-
-   ! Import necessary modules.
-   use O_Input,       only: parseInput, loenCode
-   use O_Lattice,     only: initializeLattice, initializeFindVec,&
-                          & cleanUpLattice
-   use O_TimeStamps,  only: initOperationLabels
-
-   ! Import the HDF5 module.
-   use HDF5
-
-   ! Make sure that there are no accidental variable declarations.
-   implicit none
-
-   ! Compute the requested local environment metric.
-   if (loenCode == 1) then
-      call bispec ! Use the bispectrum component method.
-   endif
-
-   ! Close the output file
-   close (20)
-
-   ! Open a file to signal completion of the program.
-   open (unit=2,file='fort.2',status='unknown')
-
-end subroutine analyzeLocalEnv
+!subroutine analyzeLocalEnv
+!
+!   use O_Kinds
+!
+!   ! Import necessary modules.
+!   use O_Input,       only: parseInput, loenCode
+!   use O_Lattice,     only: initializeLattice, initializeFindVec,&
+!                          & cleanUpLattice
+!   use O_TimeStamps,  only: initOperationLabels
+!
+!   ! Import the HDF5 module.
+!   use HDF5
+!
+!   ! Make sure that there are no accidental variable declarations.
+!   implicit none
+!
+!   ! Read in the input to initialize all the key data structure variables.
+!   call parseInput(2) ! Causes inSCF=2.
+!
+!
+!   ! Find specific computational parameters not EXPLICITLY given in the input
+!   !   file, but which can, however, be easily determined from the input file.
+!   !call getImplicitInfo
+!
+!
+!   ! Create real-space and reciprocal-space super lattices out of the primitive
+!   !   lattice.  These "supercells" must be big enough so as to include all the
+!   !   points within a sphere bounded by the negligability limit.  Points
+!   !   outside the sphere are considered negligable.
+!   call initializeLattice (1)
+!
+!
+!   ! Setup the necessary data structures so that we can easily find the lattice
+!   !   vector that is closest to any other arbitrary vector.
+!   call initializeFindVec
+!
+!   ! Compute the requested local environment metric.
+!   if (loenCode == 1) then
+!      call bispec ! Use the bispectrum component method.
+!   endif
+!
+!   ! Close the output file
+!   close (20)
+!
+!   ! Open a file to signal completion of the program.
+!   open (unit=2,file='fort.2',status='unknown')
+!
+!end subroutine analyzeLocalEnv
 
 
 subroutine bispec
