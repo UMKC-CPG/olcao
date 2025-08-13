@@ -155,7 +155,7 @@ class ScriptSettings():
                             f'{self.title}.')
     
         # Define the flag to print the command used to create the figure.
-        if (self.print_command == True):
+        if (self.print_command == False):
             store_action = "store_true"
         else:
             store_action = "store_false"
@@ -165,7 +165,7 @@ class ScriptSettings():
                             f'{self.print_command}.')
     
         # Define the flag to print a legend into the figure.
-        if (self.print_legend == True):
+        if (self.print_legend == False):
             store_action = "store_true"
         else:
             store_action = "store_false"

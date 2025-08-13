@@ -1,8 +1,8 @@
 # CMake file for OLCAO application: makeKPoints
 
 # Document the current location
-message("At the makeKPoints level.")
+message("At the makeKPoints application.")
 
-# List all subdirectories to be made.
-add_subdirectory(std)
-add_subdirectory(compvis)
+add_executable(makekpoints ../kinds.f90 ../constants.f90 makekpoints.F90)
+
+install(TARGETS makekpoints DESTINATION bin)

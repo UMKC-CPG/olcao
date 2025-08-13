@@ -1282,6 +1282,8 @@ module BrillouinZones_O
 
       ! Define local variables.
       integer :: i, j
+      
+      numBZEdges(currBZ) = 0
 
       ! Traverse the ring list of each face and add the unique edges to the
       !   list of unique edges.
@@ -1339,8 +1341,6 @@ module BrillouinZones_O
       enddo
 
       if (edgeAlreadyPresent == 0) then
-         write (6,*) numBZEdges(currBZ)
-         call flush (6)
          numBZEdges(currBZ) = numBZEdges(currBZ) + 1
          call copyVertex(vertex1, uniqueEdgeList(numBZEdges(currBZ))%vertex(1))
          call copyVertex(vertex2, uniqueEdgeList(numBZEdges(currBZ))%vertex(2))
@@ -2118,8 +2118,7 @@ module KPointMesh_O
                   write (fileUnit+i,*) ""
                endif
             enddo ! j
-            write (fileUnit+i,fmt="(a1, f16.12, a1)") "(", &
-                  & kPointWeight(j), "]"
+            write (fileUnit+i,fmt="(f16.12, a1)") kPointWeight(j), "]"
 
             write (fileUnit+i,*) ""
          enddo ! i

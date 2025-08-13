@@ -16,8 +16,7 @@ sub printHelp
 #                 [[[-scfkp \$a \$b \$c] [-pscfkp \$a \$b \$c]
 #                   | [-kp \$a \$b \$c]]
 #                 [-kpshift \$a \$b \$c]
-#                 [-printbz]
-#                 [-compvis]
+#                 [-printbz \$bz \$scaleFactor]
 #                 [-xcmesh [-numvect \$numSampVectors]
 #                          [-weight \$xcInWeight \$xcOutWeight]
 #                          [-samp \$xcInSamp \$xcOutSamp \$xcSpacingSamp]]
@@ -166,11 +165,9 @@ sub printHelp
 
 #The -printbz option will cause an additional file to be created as part of
 #  the input. This file contains a decription of the Brillouin zone suitable
-#  for importing in a python script.
-
-#The -compvis option will cause makeinput to use alternative executables for
-#  many called programs. The alternative executables are designed to output
-#  a file that helps visualize the execution of the program.
+#  for importing in a python script. The two required options are an integer
+#  identifying which Brillouin zone to print and a scale factor that causes
+#  the size of the Brillouin zone to be scaled.
 
 #The -xcmesh option will define the construction of the real space mesh for
 #  sampling the charge density for the exchange correlation evaluation.  The
@@ -434,7 +431,7 @@ my @kpNum;    # Total number of scf/pscf kpoints after symmetry reduction.
 my @kpNote;   # String for each group indicating general or gamma.  [1..2]
 my @setKPFlag;# Flag 1=done; 0=not done. Set kpoints on command line.
 my $printBZ;  # Flag 1=do it; 0=do not. Print a file describing the BZ.
-my $compVis;  # Flag 1=do it; 0=do not. Make certain program execution vis.
+my $scaleFactor; # Scale the coordinates for visualization.
 
 # Variables that control structure analysis and description.
 my $cellName; # String of bravis lattice cell name.
@@ -937,7 +934,7 @@ sub initDefaults
    }
    $kpWeightSum = 2;
    $printBZ = 0;
-   $compVis = 0;
+   $scaleFactor = 0.0;
    $kpShift = "-1 -1 -1";
 
    # Initial setting to track the number of basis set substitutions.
@@ -1057,11 +1054,9 @@ sub parseCommandLine
          print "kpShift = $kpShift\n";
       }
       elsif ($ARGV[$number] eq "-printbz")
-         {$printBZ = 1;}
-      elsif ($ARGV[$number] eq "-compvis")
       {
-         $compVis = 1;
-         $makekpoints_exec = "makekpoints_cv";
+         $printBZ = $ARGV[++$number];
+         $scaleFactor = $ARGV[++$number];
       }
       elsif ($ARGV[$number] eq "-subbasis")
       {
@@ -2923,7 +2918,7 @@ sub makeKP
    foreach $kpGroup (1..2)
    {
       &printKPInFile(@{$kpMesh[$kpGroup]}[1..3],$kpGroup);
-      system("$makekpoints_exec $printBZ");
+      system("$makekpoints_exec $printBZ $scaleFactor");
       $kpNum[$kpGroup] = `wc -l $kpOutFile`;  # Count the lines.
       @values=StructureControl::prepLine("",$kpNum[$kpGroup],'\s+');
       $kpNum[$kpGroup] = $values[0] - 7; # Subtract the seven line header.
@@ -3608,6 +3603,11 @@ sub processSYBDPath
    my $angle;
    my @angleName;
    my $axisLetter;
+   my $numPaths;
+   my $numPathKP;
+   my $numHighSymmKP;
+   my @highSymmKP;
+   my $KP;
 
    # Create the list of names used for angles in the equations such that they
    #   fill array indices 1 through 3. Index 0 is empty.
@@ -3680,15 +3680,50 @@ sub processSYBDPath
       $variableEqn[$variable] = eval($variableEqn[$variable]);
    }
 
-   # Read the two data structure size specification and parameter
-   #   specification lines and append them to the olcao.dat file. Note, I'm
-   #   doing it this way because it was interpreting "print OLCAO <SYMKP>" in
-   #   array context and reading the whole rest of the file before the next
-   #   while loop.
-   $line = <SYMKP>;
-   print OLCAO $line;
-   $line = <SYMKP>;
-   print OLCAO $line;
+   # If we are printing the Brillouin zone file, then we also need to
+   #   add these high symmetry kpoints. So, we first open the file for
+   #   appending.
+   if ($printBZ > 0)
+      {open (BZ, ">>BZ.1") || die "Cannot open BZ.1 for appending.\n";}
+
+   # Read a line that contains the number of distinct paths, the number of
+   #   kpoints to use on the whole path, and a flag indicating (if 1) that
+   #   the kpoint coordinates are given in Cartesian coordinats. If we are
+   #   also printing the Brillouin zone, then add this data to the BZ file.
+   @values = StructureControl::prepLine(\*SYMKP,"",'\s+');
+   print OLCAO "@values\n";
+   $numPaths = $values[0];
+   $numPathKP = $values[1];
+   if ($printBZ > 0)
+   {
+      print BZ "\nData.num_total_BZ_path_KP = $numPathKP\n";
+      print BZ "\nData.num_high_symmetry_BZ_paths = $numPaths\n";
+   }
+
+   # Read a line that contains the number of high symmetry kpoints for each
+   #   path. Then, compute the total number of high symmetry kpoints along
+   #   the full path. If we are also printing the Brillouin zone, then add
+   #   this data to the BZ file.
+   if ($printBZ > 0)
+      {print BZ "\nData.num_high_symmetry_BZ_points_per_path = (";}
+   @values = StructureControl::prepLine(\*SYMKP,"",'\s+');
+   print OLCAO "@values\n";
+   $numHighSymmKP = 0;
+   foreach my $numPathKP (0..$numPaths-2)
+   {
+      $numHighSymmKP += $values[$numPathKP];
+      if ($printBZ > 0)
+         {print BZ "$values[$numPathKP],";}
+   }
+   $numHighSymmKP += $values[$numPaths-1];
+   if ($printBZ > 0)
+      {print BZ "$values[$numPaths-1])\n";}
+
+
+   # If we are printing the Brillouin zone, then we need to start the list
+   #   of high symmetry kpoints.
+   if ($printBZ > 0)
+      {print BZ "\nData.high_symmetry_BZ_kpoints = [\n";}
 
    # Read the rest of the SYMKP file and substitute in variable corrected
    #   values where expressed in the file as it is appended into the olcao.dat
@@ -3698,9 +3733,9 @@ sub processSYBDPath
    #   we computed just above. Finally, when all substitutions have been
    #   performed we evaluate the expression and assemble them together to add
    #   to the olcao.dat file.
-   while ($line = <SYMKP>)
+   foreach $KP (1..$numHighSymmKP)
    {
-      @values = StructureControl::prepLine("",$line,'\s+');
+      @values = StructureControl::prepLine(\*SYMKP,"",'\s+');
       foreach $axis (1..3)
       {
          foreach $variable (1..$numLattSpecificVars)
@@ -3721,7 +3756,21 @@ sub processSYBDPath
 
       # Print the line into the olcao.dat file.
       printf OLCAO "%12.8f%12.8f%12.8f %1s %-5s\n", @values;
+
+      # If we are also printing the Brillouin zone file, then add these
+      #   high symmetry kpoints to the file.
+      if ($printBZ > 0)
+      {
+         my @highSymmKP;
+         foreach $axis (0..2)
+            {$highSymmKP[$axis] = $values[$axis] * $scaleFactor;}
+         if ($KP < $numHighSymmKP)
+            {printf BZ "[%12.8f , %12.8f , %12.8f],\n", @values[0..2];}
+         else
+            {printf BZ "[%12.8f , %12.8f , %12.8f]]\n", @values[0..2];}
+      }
    }
+   close(BZ)
 }
 
 
