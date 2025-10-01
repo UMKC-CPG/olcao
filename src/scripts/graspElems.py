@@ -268,7 +268,8 @@ cd "$WORK/ELEM_FILES/graspElems"
           g.write(atomDat.spin[atNum-1]+'\n')
           g.write(atomDat.magMoment[atNum-1]+'\n')
           g.write(atomDat.quadMoment[atNum-1]+'\n')
-          g.write('\nn\n')
+          #g.write('\nn\n')
+          g.write('n\n')
           g.write('S1\n\n')
 
           #CSL

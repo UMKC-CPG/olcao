@@ -1067,7 +1067,7 @@ sub readOLCAOSkl
       if (($values[0] eq "end") && ($#values == 0))
          {$gettingTitle = 0; last;}
 
-      if ($gettingTitle == 1)
+      if (($gettingTitle == 1) && ($skeleton[$lineNum-1] !~ /^;$/))
          {push (@systemTitle,$skeleton[$lineNum-1]);}
 
       if (($values[0] eq "title") && ($#values == 0))

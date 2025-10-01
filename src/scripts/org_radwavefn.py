@@ -310,7 +310,7 @@ class orbital_file:
                   1-math.exp((-0.5*(self.interpolated_radial_grid[i]-rc)**2.0) /
                   (2.0*sigma**2.0)))
           self.fitting_functions[i][j] = \
-              self.fitting_functions[i][j] /
+              self.fitting_functions[i][j] / \
               self.interpolated_radial_grid[j]**np.float64(self.fitting_l_list[i])
 
 
