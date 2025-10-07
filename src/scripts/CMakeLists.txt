@@ -8,7 +8,7 @@ ab2pf.py addAtoms appendCol atomPosDX
 batchChange batchClean batchSub bondAnalysis
 cif2skl collectSpectra condense
 dump2skl
-ea_driver_with_ea_loop.py ensembleCondense ensembleCondense.py
+ea_driver_with_ea_loop.py ensembleCondense
 gaussOverlapRT
 getPlane graspElems.py
 insert3cbo interFit.py

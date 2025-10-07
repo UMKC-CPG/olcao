@@ -369,7 +369,7 @@ class ScriptSettings():
                             type=self.list_of_strings,
                             default=self.curve_style,
                             help='Curve style. Note that -cy cannot take ' +
-                            'shorthand input (e.g., -. or -). You need to' +
+                            'shorthand input (e.g., -. or -). You need to ' +
                             'use the long option or edit the rc file ' +
                             f'for that instead. Default: {self.curve_style}.')
         parser.add_argument('-cya', '--curvestylestart',

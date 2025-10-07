@@ -13,7 +13,8 @@ if [ -z ${1+foo} ]; then
 else
    export OLCAO_DIR="$1" # Command line provided (used by nanoHUB)
 fi
-export GRASP_DIR="$HOME/programs/grasp2018/GRASP2018"
+export GRASP_DIR="$CPG_SHARE/programs/grasp2k/grasp2Kdev"
+#export GRASP_DIR="$HOME/programs/grasp2018/GRASP2018"
 
 #Default location of all script resource control files.
 export OLCAO_RC="$OLCAO_DIR/.olcao"

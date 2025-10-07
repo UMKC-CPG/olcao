@@ -79,6 +79,7 @@ subroutine computeBond (inSCF)
    real (kind=double) :: expFactor
    real (kind=double) :: sigmaSqrtPi
    real (kind=double), dimension (3) :: currentDistance
+   real (kind=double), dimension (3) :: minDist
    real (kind=double), allocatable, dimension (:)      :: atomCharge
    real (kind=double), allocatable, dimension (:)      :: atomChargeTotal
    real (kind=double), allocatable, dimension (:)      :: bondOrderTotal
@@ -718,13 +719,14 @@ subroutine computeBond (inSCF)
                if (currentDistMag < minDistMag .and. &
                      & abs(currentDistMag) > smallThresh) then
                   minDistMag = currentDistMag
+                  minDist(:) = currentDistance(:)
                endif
             enddo
             enddo
             enddo
 
             ! Record the minimal distance.
-            bondedDist(:,j) = currentDistance(:)
+            bondedDist(:,j) = minDist(:)
          enddo
 
          ! Traverse the list of bonding atoms to record the bond triplets and
@@ -740,7 +742,14 @@ subroutine computeBond (inSCF)
                bondAngleAtoms(1,numBondAngles(i),i) = currentBonds(j)
                bondAngleAtoms(2,numBondAngles(i),i) = currentBonds(k)
 
-               ! Compute the bond angle as arccos(v1.v2 / (|v1| * |v2|)).
+               ! Compute the bond angle from the law of cosines:
+               !   c^2 = a^2 + b^2 - 2ab*cos(gamma). Solve for gamma, the
+               !   angle, as: gamma = arccos((a^2 + b^2 - c^2) / 2ab) where
+               !   a is the distance from the current atom to atom j, b is the
+               !   distance from the current atom to atom k, and c is the
+               !   distance between atoms j and k. Squaring c yields a^2 +
+               !   b^2 - 2 * a dot b. Thus, we compute the bond angle as:
+               !   arccos(a.b / (|a| * |b|)).
                bondAngle(numBondAngles(i),i) = acos(dot_product(&
                      & bondedDist(:,j),bondedDist(:,k)) / &
                      & sqrt(dot_product(bondedDist(:,j),bondedDist(:,j))) / &
@@ -947,7 +956,8 @@ subroutine computeBond (inSCF)
                ! Only include bonds that exist in the statistics.
                if (bondLength(i,j) /= 0.0_double) then
 
-                  ! Record the bonded atom, the bond length, and the bond order.
+                  ! Record the bonded atom, the bond length in bohr radii,
+                  !   and the bond order.
                   write (9+h,fmt="(i5,5x,f8.4,2x,f8.4)") j,bondLength(i,j),&
                         & bondOrder(i,j)
                endif
