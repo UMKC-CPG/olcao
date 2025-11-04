@@ -155,7 +155,7 @@ class ScriptSettings():
                             f'{self.title}.')
     
         # Define the flag to print the command used to create the figure.
-        if (self.print_command == True):
+        if (self.print_command == False):
             store_action = "store_true"
         else:
             store_action = "store_false"
@@ -165,7 +165,7 @@ class ScriptSettings():
                             f'{self.print_command}.')
     
         # Define the flag to print a legend into the figure.
-        if (self.print_legend == True):
+        if (self.print_legend == False):
             store_action = "store_true"
         else:
             store_action = "store_false"
@@ -369,7 +369,7 @@ class ScriptSettings():
                             type=self.list_of_strings,
                             default=self.curve_style,
                             help='Curve style. Note that -cy cannot take ' +
-                            'shorthand input (e.g., -. or -). You need to' +
+                            'shorthand input (e.g., -. or -). You need to ' +
                             'use the long option or edit the rc file ' +
                             f'for that instead. Default: {self.curve_style}.')
         parser.add_argument('-cya', '--curvestylestart',

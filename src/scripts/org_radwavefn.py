@@ -160,20 +160,36 @@ class orbital_file:
 
     # Make the columns needed for the orbitals - positive and negative divided by r.   
     for i in range(self.num_orbitals):
-      self.large_div_r.append([lc/rc for lc,rc in zip(self.large_comps[i],self.radial_comps[i])])
-      self.neg_large_div_r.append([-1*lc/rc for lc,rc in zip(self.large_comps[i],self.radial_comps[i])])
-      self.small_div_r.append([sc/rc for sc,rc in zip(self.small_comps[i],self.radial_comps[i])])
-      self.neg_small_div_r.append([-1*sc/rc for sc,rc in zip(self.small_comps[i],self.radial_comps[i])])
+      self.large_div_r.append([lc/rc for lc,rc in
+          zip(self.large_comps[i],self.radial_comps[i])])
+      self.neg_large_div_r.append([-1*lc/rc for lc,rc in
+          zip(self.large_comps[i],self.radial_comps[i])])
+      self.small_div_r.append([sc/rc for sc,rc in
+          zip(self.small_comps[i],self.radial_comps[i])])
+      self.neg_small_div_r.append([-1*sc/rc for sc,rc in
+          zip(self.small_comps[i],self.radial_comps[i])])
 
       # Large component fitting.
-      self.interpolated_large_components.append(np.interp(np.asarray(self.interpolated_radial_grid),np.asarray(self.radial_comps[i]),np.asarray(self.large_comps[i])).tolist())
-      self.interpolated_ldivr_components.append([lc/rc for lc,rc in zip(self.interpolated_large_components[i],self.interpolated_radial_grid)])
-      self.interpolated_nldivr_components.append([-1*lcr for lcr in self.interpolated_ldivr_components[i]])
+      self.interpolated_large_components.append(
+          np.interp(np.asarray(self.interpolated_radial_grid),
+              np.asarray(self.radial_comps[i]),
+              np.asarray(self.large_comps[i])).tolist())
+      self.interpolated_ldivr_components.append([lc/rc for lc,rc in
+          zip(self.interpolated_large_components[i],
+              self.interpolated_radial_grid)])
+      self.interpolated_nldivr_components.append([-1*lcr for lcr in
+          self.interpolated_ldivr_components[i]])
 
       # Small component fitting.
-      self.interpolated_small_components.append(np.interp(np.asarray(self.interpolated_radial_grid),np.asarray(self.radial_comps[i]),np.asarray(self.small_comps[i])).tolist())
-      self.interpolated_sdivr_components.append([sc/rc for sc,rc in zip(self.interpolated_small_components[i],self.interpolated_radial_grid)])
-      self.interpolated_nsdivr_components.append([-1*scr for scr in self.interpolated_sdivr_components[i]])
+      self.interpolated_small_components.append(
+          np.interp(np.asarray(self.interpolated_radial_grid),
+              np.asarray(self.radial_comps[i]),
+              np.asarray(self.small_comps[i])).tolist())
+      self.interpolated_sdivr_components.append([sc/rc for sc,rc in
+          zip(self.interpolated_small_components[i],
+              self.interpolated_radial_grid)])
+      self.interpolated_nsdivr_components.append([-1*scr for scr in
+          self.interpolated_sdivr_components[i]])
 
   def single_component(self):
     self.fitting_max_l=self.max_l
@@ -182,13 +198,20 @@ class orbital_file:
         if ltok(j)[0]==ltok(j)[1]:
           if str(i)+'_'+str(ltok(j)[0]) in self.orbital_list:
             self.fitting_orbital_names.append(str(i)+str(ltolsym(j)))
-            self.fitting_functions.append(self.interpolated_large_components[self.orbital_list.index(str(i)+'_'+str(ltok(j)[0]))])
+            self.fitting_functions.append(
+                self.interpolated_large_components[
+                    self.orbital_list.index(str(i)+'_'+str(ltok(j)[0]))])
             self.fitting_lvals[j]+=1
             self.fitting_l_list.append(j)
         else:
-          if str(i)+'_'+str(ltok(j)[0]) in self.orbital_list and str(i)+'_'+str(ltok(j)[1]) in self.orbital_list:
+          if str(i)+'_'+str(ltok(j)[0]) in self.orbital_list \
+              and str(i)+'_'+str(ltok(j)[1]) in self.orbital_list:
             self.fitting_orbital_names.append(str(i)+str(ltolsym(j)))
-            self.fitting_functions.append([(f1+f2)/2.0 for f1,f2 in zip(self.interpolated_large_components[self.orbital_list.index(str(i)+'_'+str(ltok(j)[0]))],self.interpolated_large_components[self.orbital_list.index(str(i)+'_'+str(ltok(j)[1]))])])
+            self.fitting_functions.append([(f1+f2)/2.0 for f1,f2 in
+                zip(self.interpolated_large_components[
+                    self.orbital_list.index(str(i)+'_'+str(ltok(j)[0]))],
+                    self.interpolated_large_components[
+                        self.orbital_list.index(str(i)+'_'+str(ltok(j)[1]))])])
             self.fitting_lvals[j]+=1
             self.fitting_l_list.append(j)
 
@@ -201,19 +224,22 @@ class orbital_file:
         if ltok(j)[0]==ltok(j)[1]:
           if str(i)+'_'+str(ltok(j)[0]) in self.orbital_list:
             self.fitting_orbital_names.append(str(i)+str(ltolsym(j)))
-            self.fitting_functions.append(self.interpolated_large_components[self.orbital_list.index(str(i)+'_'+str(ltok(j)[0]))])
+            self.fitting_functions.append(self.interpolated_large_components[
+                self.orbital_list.index(str(i)+'_'+str(ltok(j)[0]))])
             self.fitting_lvals[j]+=1
             self.fitting_l_list.append(j)
         else:
           if str(i)+'_'+str(ltok(j)[0]) in self.orbital_list:
             self.fitting_orbital_names.append(str(i)+str(ltolsym(j)))
-            self.fitting_functions.append(self.interpolated_large_components[self.orbital_list.index(str(i)+'_'+str(ltok(j)[0]))])
+            self.fitting_functions.append(self.interpolated_large_components[
+                self.orbital_list.index(str(i)+'_'+str(ltok(j)[0]))])
             self.fitting_lvals[j]+=1
             self.fitting_l_list.append(j)
 
           if str(i)+'_'+str(ltok(j)[1]) in self.orbital_list:
             self.fitting_orbital_names.append(str(i)+str(ltolsym(j)))
-            self.fitting_functions.append(self.interpolated_large_components[self.orbital_list.index(str(i)+'_'+str(ltok(j)[1]))])
+            self.fitting_functions.append(self.interpolated_large_components[
+                self.orbital_list.index(str(i)+'_'+str(ltok(j)[1]))])
             self.fitting_lvals[j]+=1
             self.fitting_l_list.append(j)
 
@@ -227,18 +253,21 @@ class orbital_file:
         if ltosk(j)[0]==ltosk(j)[1]:
           if str(i)+'_'+str(ltosk(j)[0]) in self.orbital_list:
             self.fitting_orbital_names.append('s_'+str(i)+'_'+str(ltosk(j)[0]))
-            self.fitting_functions.append(self.interpolated_small_components[self.orbital_list.index(str(i)+'_'+str(ltosk(j)[0]))])
+            self.fitting_functions.append(self.interpolated_small_components[
+                self.orbital_list.index(str(i)+'_'+str(ltosk(j)[0]))])
             self.fitting_lvals[j]+=1
             self.fitting_l_list.append(j)
         else:
           if str(i)+'_'+str(ltosk(j)[0]) in self.orbital_list:
             self.fitting_orbital_names.append('s_'+str(i)+'_'+str(ltosk(j)[0]))
-            self.fitting_functions.append(self.interpolated_small_components[self.orbital_list.index(str(i)+'_'+str(ltosk(j)[0]))])
+            self.fitting_functions.append(self.interpolated_small_components[
+                self.orbital_list.index(str(i)+'_'+str(ltosk(j)[0]))])
             self.fitting_lvals[j]+=1
             self.fitting_l_list.append(j)
           if str(i)+'_'+str(ltosk(j)[1]) in self.orbital_list:
             self.fitting_orbital_names.append('s_'+str(i)+'_'+str(ltosk(j)[1]))
-            self.fitting_functions.append(self.interpolated_small_components[self.orbital_list.index(str(i)+'_'+str(ltosk(j)[1]))])
+            self.fitting_functions.append(self.interpolated_small_components[
+                self.orbital_list.index(str(i)+'_'+str(ltosk(j)[1]))])
             self.fitting_lvals[j]+=1
             self.fitting_l_list.append(j)
 
@@ -247,18 +276,21 @@ class orbital_file:
         if ltok(j)[0]==ltok(j)[1]:
           if str(i)+'_'+str(ltok(j)[0]) in self.orbital_list:
             self.fitting_orbital_names.append('l_'+str(i)+'_'+str(ltok(j)[0]))
-            self.fitting_functions.append(self.interpolated_large_components[self.orbital_list.index(str(i)+'_'+str(ltok(j)[0]))])
+            self.fitting_functions.append(self.interpolated_large_components[
+                self.orbital_list.index(str(i)+'_'+str(ltok(j)[0]))])
             self.fitting_lvals[j]+=1
             self.fitting_l_list.append(j)
         else:
           if str(i)+'_'+str(ltok(j)[0]) in self.orbital_list:
             self.fitting_orbital_names.append('l_'+str(i)+'_'+str(ltok(j)[0]))
-            self.fitting_functions.append(self.interpolated_large_components[self.orbital_list.index(str(i)+'_'+str(ltok(j)[0]))])
+            self.fitting_functions.append(self.interpolated_large_components[
+                self.orbital_list.index(str(i)+'_'+str(ltok(j)[0]))])
             self.fitting_lvals[j]+=1
             self.fitting_l_list.append(j)
           if str(i)+'_'+str(ltok(j)[1]) in self.orbital_list:
             self.fitting_orbital_names.append('l_'+str(i)+'_'+str(ltok(j)[1]))
-            self.fitting_functions.append(self.interpolated_large_components[self.orbital_list.index(str(i)+'_'+str(ltok(j)[1]))])
+            self.fitting_functions.append(self.interpolated_large_components[
+                self.orbital_list.index(str(i)+'_'+str(ltok(j)[1]))])
             self.fitting_lvals[j]+=1
             self.fitting_l_list.append(j)
 
@@ -269,8 +301,13 @@ class orbital_file:
         if self.interpolated_radial_grid[j] > rc:
           self.fitting_functions[i][j]=0.0
         else:
-          self.fitting_functions[i][j]=self.fitting_functions[i][j]*(1-math.exp((-0.5*(self.interpolated_radial_grid[i]-rc)**2.0)/(2.0*sigma**2.0)))
-          self.fitting_functions[i][j]=self.fitting_functions[i][j]/self.interpolated_radial_grid[j]**np.float64(self.fitting_l_list[i])
+          self.fitting_functions[i][j] = \
+              self.fitting_functions[i][j]*(
+                  1-math.exp((-0.5*(self.interpolated_radial_grid[i]-rc)**2.0) /
+                  (2.0*sigma**2.0)))
+          self.fitting_functions[i][j] = \
+              self.fitting_functions[i][j] / \
+              self.interpolated_radial_grid[j]**np.float64(self.fitting_l_list[i])
 
 
   def __init__(self,fname):
@@ -341,14 +378,37 @@ if __name__== "__main__":
   with open('eigenvalues','w') as f:
     f.write('n_quantum_number,k_quantum_number,large_l_quantum_number,small_l_quantum_number,energy_eigenvalue\n')    
     for i in range(atom.orbital_info.num_orbitals):
-      f.write(str(atom.orbital_info.qnums[i][0])+','+str(atom.orbital_info.qnums[i][1])+','+str(atom.orbital_info.qnums[i][2])+','+str(atom.orbital_info.qnums[i][3])+','+str(atom.orbital_info.energy_eigenvalues[i])+'\n')
+      f.write(str(atom.orbital_info.qnums[i][0]) + ','
+          + str(atom.orbital_info.qnums[i][1]) + ','
+          + str(atom.orbital_info.qnums[i][2]) + ','
+          + str(atom.orbital_info.qnums[i][3]) + ','
+          + str(atom.orbital_info.energy_eigenvalues[i]) + '\n')
   
   # Create a file for each orbital using <Element>_n_<nqnum>_k_<qnum>.dat 
   for i in range(atom.orbital_info.num_orbitals):
-    with open(atom.element+'_n_'+str(atom.orbital_info.n_qnums[i])+'_k_'+str(atom.orbital_info.k_qnums[i])+'.dat','w') as g:
-      g.write('radial_grid,large_component,large_component_div_r,neg_large_component_div_r,small_component,small_component_div_r,neg_small_component_div_r\n')
-      for r,l,l_r,n_l_r,s,s_r,n_s_r in zip(atom.orbital_info.radial_comps[i],atom.orbital_info.large_comps[i],atom.orbital_info.large_div_r[i],atom.orbital_info.neg_large_div_r[i],atom.orbital_info.small_comps[i],atom.orbital_info.small_div_r[i],atom.orbital_info.neg_small_div_r[i]):
-        g.write(str(r)+','+str(l)+','+str(l_r)+','+str(n_l_r)+','+str(s)+','+str(s_r)+','+str(n_s_r)+'\n')
+    with open(atom.element
+              + '_n_' + str(atom.orbital_info.n_qnums[i])
+              + '_k_' + str(atom.orbital_info.k_qnums[i])
+              + '.dat', 'w') as g:
+
+      g.write('radial_grid,large_component,large_component_div_r,'
+          + 'neg_large_component_div_r,small_component,'
+          + 'small_component_div_r,neg_small_component_div_r\n')
+      for r, l, l_r, n_l_r, s, s_r, n_s_r in zip(
+          atom.orbital_info.radial_comps[i],
+          atom.orbital_info.large_comps[i],
+          atom.orbital_info.large_div_r[i],
+          atom.orbital_info.neg_large_div_r[i],
+          atom.orbital_info.small_comps[i],
+          atom.orbital_info.small_div_r[i],
+          atom.orbital_info.neg_small_div_r[i]):
+        g.write(str(r) + ','
+            + str(l) + ','
+            + str(l_r) + ','
+            + str(n_l_r) + ','
+            + str(s) + ','
+            + str(s_r) + ','
+            + str(n_s_r) + '\n')
 
 
 

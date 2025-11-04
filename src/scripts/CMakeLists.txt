@@ -8,7 +8,7 @@ ab2pf.py addAtoms appendCol atomPosDX
 batchChange batchClean batchSub bondAnalysis
 cif2skl collectSpectra condense
 dump2skl
-ensembleCondense
+ea_driver_with_ea_loop.py ensembleCondense
 gaussOverlapRT
 getPlane graspElems.py
 insert3cbo interFit.py
@@ -24,7 +24,7 @@ pdb2skl plotgraph plotgraph.py polcao pot2plot.py processPOPTC
 rpdf runCheck runIsoAtoms
 scanSpectra selectSYBD skl2isaacs skl2lmp skl2pdb skl2vasp spectra2ODX
 unpackOLCAODB uolcao upolcao
-vasp2skl
+vasp2skl viewCell.py
 xcMesh xyz2skl)
 
 set (MODULES AngleData.pm BondData.pm ElementData.pm StructureControl.pm)

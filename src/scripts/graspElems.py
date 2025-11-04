@@ -5,7 +5,7 @@
 #
 # The following script will take in command line inputs
 #   and generate the necessary bash scripts to run
-#   Grasp2K calculation.
+#   Grasp calculation.
 #
 #
 # Example Inputs:
@@ -188,7 +188,7 @@ def makeExecs(commList):
 #SBATCH --mail-type=begin
 #SBATCH --mail-type=end
 
-source "$GRASP2K_DIR/make-environment_ifort"
+source "$GRASP_DIR/make-environment_ifort"
 
 cd "$WORK/ELEM_FILES/graspElems"
 """
@@ -260,7 +260,7 @@ cd "$WORK/ELEM_FILES/graspElems"
           g=open("run"+commList[i],'w')
           g.write(batchHead[0])
           g.write("set -x\n")
-          g.write("\n$GRASP2K_BIN/rnucleus <<S1\n")
+          g.write("\n$GRASP_BIN/rnucleus <<S1\n")
           g.write(str(atNum)+"\n")
           g.write((atomDat.isotopes[atNum-1]).replace(commList[i],''))
           g.write('\nn\n')
@@ -268,11 +268,12 @@ cd "$WORK/ELEM_FILES/graspElems"
           g.write(atomDat.spin[atNum-1]+'\n')
           g.write(atomDat.magMoment[atNum-1]+'\n')
           g.write(atomDat.quadMoment[atNum-1]+'\n')
-          g.write('\nn\n')
+          #g.write('\nn\n')
+          g.write('n\n')
           g.write('S1\n\n')
 
           #CSL
-          g.write("$GRASP2K_BIN/csl <<S1\n")
+          g.write("$GRASP_BIN/csl <<S1\n")
           g.write("y\n")
           g.write(atomDat.coreAtoms[atNum-1]+"\n")
           if commList[i+1]=="MB":
@@ -295,19 +296,19 @@ cd "$WORK/ELEM_FILES/graspElems"
           g.write("mv rcsl.out rcsf.inp\n\n")
 
           # RANGULAR
-          g.write("$GRASP2K_BIN/rangular <<S1\n")
+          g.write("$GRASP_BIN/rangular <<S1\n")
           g.write("y\n")
           g.write("S1\n\n")
 
           # RWFNESTIMATE
-          g.write("$GRASP2K_BIN/rwfnestimate <<S1\n")
+          g.write("$GRASP_BIN/rwfnestimate <<S1\n")
           g.write("y\n")
           g.write("2\n")
           g.write("*\n")
           g.write("S1\n\n")
 
           ##JSPLIT
-          #g.write("$GRASP2K_BIN/jsplit <<S1\n")
+          #g.write("$GRASP_BIN/jsplit <<S1\n")
           #g.write("y\n")
           #g.write("S1\n\n")
 
@@ -315,12 +316,12 @@ cd "$WORK/ELEM_FILES/graspElems"
           #g.write('mv rcsl.out rcsl.inp\n\n')
 
           ##MCP3
-          #g.write("$GRASP2K_BIN/mcp3 <<S1\n")
+          #g.write("$GRASP_BIN/mcp3 <<S1\n")
           #g.write("y\n")
           #g.write("S1\n\n")
 
           ##ERWF
-          #g.write("$GRASP2K_BIN/erwf <<S1\n")
+          #g.write("$GRASP_BIN/erwf <<S1\n")
           #g.write("y\n") 
           #if commList[i+1]=="MB":
           #    g.write(atomDat.mbERWF[atNum-1]+"\n")
@@ -340,27 +341,27 @@ cd "$WORK/ELEM_FILES/graspElems"
           g.write(batchHead[0])
           g.write("set -x\n")
 
-          g.write("$GRASP2K_BIN/rmcdhf <<S1\n")
+          g.write("$GRASP_BIN/rmcdhf <<S1\n")
           g.write("y\ny\n#BLOCKS AS 1's\n")
           g.write("*\n\n100000\nS1\n\n")
 
           g.write("mv rwfn.inp rwfn-orig.inp\n")
           g.write("mv rwfn.out rwfn.inp\n\n")
 
-          g.write("$GRASP2K_BIN/readrwf <<S1\n")
+          g.write("$GRASP_BIN/readrwf <<S1\n")
           g.write("1\n")
           g.write("rwfn.inp\n")
           g.write("rwfn.out\n")
           g.write("S1\n")
 
-          #g.write("$GRASP2K_BIN/rscf2 <<S1\n")
+          #g.write("$GRASP_BIN/rscf2 <<S1\n")
           #g.write("y\ny\n#BLOCKS AS 1's\n")
           #g.write("*\n\n100000\nS1\n\n")
 
           #g.write("mv rwfn.inp rwfn-orig.inp\n")
           #g.write("mv rwfn.out rwfn.inp\n\n")
 
-          #g.write("$GRASP2K_BIN/readrwf <<S1\n")
+          #g.write("$GRASP_BIN/readrwf <<S1\n")
           #g.write("1\n")
           #g.write("rwfn.inp\n")
           #g.write("rwfn.out\n")

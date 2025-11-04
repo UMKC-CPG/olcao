@@ -11,7 +11,7 @@ def parameters_and_defaults():
             "infile" : "gs_dos-fb.t.plot",  # -i
             "outfile" : "Xscript.py",  # -o; If not given, X=display
             "title" : "Plotted by " + os.getenv('USER'),  # -t
-            "print_command" : True,  # -pc
+            "print_command" : False,  # -pc
             "print_legend" : False,  # -pl
             "page_orientation" : "portrait",  # -po "portrait"; "landscape"
             "fig_format" : "letter",  # -ff "letter"; "A4"
@@ -27,7 +27,7 @@ def parameters_and_defaults():
             "y_min" : m.inf,  # -yi; Use m.inf to autoscale.
             "y_max" : m.inf,  # -ya; Use m.inf to autoscale.
             "x_multiple" : 5,  # -xm
-            "y_multiple" : 5,  # -ym
+            "y_multiple" : 1,  # -ym
             "x_axis_inc" : 5,  # -xai
             "x_axis_minor_ticks" : 4,  # -xmi
             "y_axis_major_ticks" : 10,  # -yma
@@ -38,7 +38,7 @@ def parameters_and_defaults():
             "subplots_per_fig" : [1],  # -sp
             "curves_per_subplot" : [1],  # -cs
             "curve_separation" : [10],  # -cp
-            "curve_width" : [],  # -ct
+            "curve_width" : [3],  # -ct
             "curve_width_start" : 0.5,  # -cta
             "curve_width_step" : 0.25,  # -cte
             "curve_width_size" : 1,  # -cti

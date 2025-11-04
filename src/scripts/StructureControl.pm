@@ -1067,7 +1067,7 @@ sub readOLCAOSkl
       if (($values[0] eq "end") && ($#values == 0))
          {$gettingTitle = 0; last;}
 
-      if ($gettingTitle == 1)
+      if (($gettingTitle == 1) && ($skeleton[$lineNum-1] !~ /^;$/))
          {push (@systemTitle,$skeleton[$lineNum-1]);}
 
       if (($values[0] eq "title") && ($#values == 0))
@@ -7245,7 +7245,9 @@ sub finalizeInteractionData
       #   by index^2 / 100^2 because the index numbers are 100 times greater
       #   than the distances.
       foreach $point (1..1000)
-         {$rpdf[$point] = $rpdfBroadened[$point]/($point*$point/100.0/100.0);}
+         {my $r = $point * 0.01;
+         
+         $rpdf[$point] = $rpdfBroadened[$point]/($numItems1 * $r * $r);}
    }
    elsif ($interactionType == 4) # Bond orientational order
    {
