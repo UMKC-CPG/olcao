@@ -19,7 +19,7 @@ module O_TimeStamps
    character(len=10) :: tempTime
    character(len=12) :: time
    character(len=51) :: banner
-   character(len=51), dimension(31) :: opLabels
+   character(len=51), dimension(32) :: opLabels
    integer :: numOpCodes
 
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -33,7 +33,7 @@ subroutine initOperationLabels
    implicit none
 
    ! Set the number of operation codes.
-   numOpCodes = 31
+   numOpCodes = 32
 
    opLabels(1)  = '***************  Parse Input Files  ***************'
    opLabels(2)  = '***********  Get Implicit Information  ************'
@@ -66,6 +66,7 @@ subroutine initOperationLabels
    opLabels(29) = '************  Dipole Moment Integrals  ************'
    opLabels(30) = '************  Mass Velocity Integrals  ************'
    opLabels(31) = '***********  Initialize PSCF HDF5 File  ***********'
+   opLabels(32) = '**************  KOverlap Integrals  ***************'
 
 end subroutine initOperationLabels
 

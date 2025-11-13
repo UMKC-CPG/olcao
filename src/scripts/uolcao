@@ -11,6 +11,7 @@ sub printHelp
 #              [-dos  [\$edge]]  | [-scfdos  [\$edge]] |
 #              [-bond [\$edge]]  | [-scfbond [\$edge]] |
 #              [-dimo [\$edge]]  | [-scfdimo [\$edge]] |
+#              [-mtop [\$edge]]  | [-scfmtop [\$edge]] |
 #              [-optc [\$edge]]  | [-scfoptc [\$edge]] |
 #              [-pacs [\$edge]]  | [-scfpacs [\$edge]] |
 #              [-nlop [\$edge]]  | [-scfnlop [\$edge]] |
@@ -58,6 +59,9 @@ sub printHelp
 #-dimo and -scfdimo will do a dipole moment calculation using the potential
 #       for the requested edge. The default SCF and post SCF basis is the full
 #       basis. The output include only a total dipole moment output file.
+#-mtop and -scfmtop will do a polarization calculation using the potential
+#       for the requested edge. The default SCF and post SCF basis is the full
+#       basis. The output includes only a polarization output file.
 #-optc and -scfoptc will do an optical properties calculation using the
 #       potential for the requested edge.  The default SCF basis is FB and the
 #       default post SCF basis is EB. Output includes may distinct files that
@@ -89,8 +93,8 @@ sub printHelp
 #       density rho), the electronic potential function, the spin dependent
 #       wave function charge density, and potential, and the difference
 #       between the interacting and non-interacting system wave function, rho,
-#       and potential (also with spin dependency). The control parameters are
-#       in the input file. By default it will use a full basis. (As a note,
+#       and potential (also with spin dependency). Also computes 1-D axial
+#       profiles and charge centers. By default, a full basis is used. (Note:
 #       all of this data is "field" data and hence the name of the option.)
 #-loen will quantify the local environment around each atom defined by a
 #       cutoff factor and some selected algorithm. Presently, the available
@@ -140,6 +144,7 @@ my $serialxyz;
 # sybdSCF=108;
 # forceSCF=109;
 # fieldSCF=110;
+# mtopSCF=111;
 # dosPSCF=201;
 # bondPSCF=202;
 # dimoPSCF=203;
@@ -150,6 +155,7 @@ my $serialxyz;
 # sybdPSCF=208;
 # forcePSCF=209;
 # fieldPSCF=210;
+# mtopPSCF=211;
 # loenPSCF=311;
 
 # Basis information.
@@ -186,6 +192,7 @@ my $pscf;
 my $dos;
 my $bond;
 my $dimo;
+my $mtop;
 my $optc;
 my $pacs;
 my $nlop;
@@ -229,7 +236,6 @@ my $plot;
 my $raw;
 my $out;
 my $dat;
-my $dx;
 my $hdf;
 my $xdmf3;
 
@@ -325,27 +331,6 @@ sub setDefaultVars
    $jobID=0;         #Default SCF total energy calculation.
    $jobName="scf";
    $spinPol=1;       #Use 1 for non-spinpol; use 2 for spinpol.
-   #$dosRun=0;        #Should a dos task be done?
-   #$bondRun=0;       #Should a bond task be done?
-   #$dimoRun=0;       #Should a dipole task be done?
-   #$optcRun=0;       #Should a optc task be done?
-   #$pacsRun=0;       #Should a pacs task be done?
-   #$nlopRun=0;       #Should a nlop task be done?
-   #$sigeRun=0;       #Should a sige task be done?
-   #$sybdRun=0;       #Should a sybd task be done?
-   #$forceRun=0;      #Should a force task be done?
-   #$fieldRun=0;      #Should a field task be done?
-   #$dosRunSCF=0;     #Run DOS in SCF?
-   #$bondRunSCF=0;    #Run bond in SCF?
-   #$dimoRunSCF=0;    #Run dipole in SCF?
-   #$optcRunSCF=0;    #Run opts in SCF?
-   #$pacsRunSCF=0;    #Run pacs in SCF?
-   #$nlopRunSCF=0;    #Run nlop in SCF?
-   #$sigeRunSCF=0;    #Run sige in SCF?
-   #$sybdRunSCF=0;    #Run sybd in SCF? (Doesn't make much sense.)
-   #$forceRunSCF=0;   #Run force in SCF?
-   #$fieldRunSCF=0;   #Run field in SCF?
-   #$loenRun=0;       #Should a local environment task be done?
    $basis_scf="fb";  #String for which scf basis to be use. (Default is full.)
    $basisCode_scf=0; #Code for which scf basis to be use. (Default is none.)
    $basisSet_scf=0;  #Set to 1 if given explicitly on the command line.
@@ -495,6 +480,18 @@ sub parseCLP
             {$basis_scf = "fb";}  #Full Basis
          $basisSet_scf = 1;
       }
+      elsif ($ARGV[$number] eq "-scfmtop")
+      {
+         $jobID = 111;
+         $jobName = "scf+mtop";
+         if (($#ARGV == $number) || ($ARGV[$number+1] =~ /\-/))
+            {$edge = "gs";}
+         else
+            {$edge=$ARGV[++$number];}
+         if ($basisSet_scf == 0)
+            {$basis_scf = "fb";}  #Full Basis
+         $basisSet_scf = 1;
+      }
       elsif ($ARGV[$number] eq "-dos")
       {
          $jobID = 201;
@@ -631,6 +628,21 @@ sub parseCLP
       {
          $jobID = 210;
          $jobName = "pscf+field";
+         if (($#ARGV == $number) || ($ARGV[$number+1] =~ /\-/))
+            {$edge = "gs";}
+         else
+            {$edge=$ARGV[++$number];}
+         if ($basisSet_pscf == 0)
+            {$basis_pscf = "fb";}  #Full Basis
+         $basisSet_pscf = 1;
+         if ($basisSet_scf == 0)
+            {$basis_scf = "fb";}  #Full Basis
+         $basisSet_scf = 1;
+      }
+      elsif ($ARGV[$number] eq "-mtop")
+      {
+         $jobID = 211;
+         $jobName = "pscf+mtop";
          if (($#ARGV == $number) || ($ARGV[$number+1] =~ /\-/))
             {$edge = "gs";}
          else
@@ -813,6 +825,7 @@ sub initFileNames
    $sybd  = "sybd";
    $force = "force";
    $field = "field";
+   $mtop  = "mtop";
    $loen  = "loen";
    $vdim  = "vdim";
 
@@ -849,7 +862,6 @@ sub initFileNames
    $raw   = ".raw";
    $out   = ".out";
    $dat   = ".dat";
-   $dx    = ".dx";
    $hdf   = ".hdf5";
    $xdmf3 = ".xdmf3";
 }
@@ -1635,27 +1647,9 @@ sub manageOutput
          &move("fort.32","$proj_home/$edge_$field$basis$profile-c$dat");
       }
 
-      # Only move openDX files if they were created.
+      # If the charge center file was created, then move it.
       if (-e "fort.56")
-      {
-         &move("fort.56","$proj_home/$atomPos$dx");
-         &move("fort.57","$proj_home/$lattice$dx");
-         if ($spinPol == 2)
-         {
-            &move("fort.58","$proj_home/$edge_$field$basis$rho$upPdn$dx");
-            &move("fort.59","$proj_home/$edge_$field$basis$rho$upMdn$dx");
-            &move("fort.60","$proj_home/$edge_$field$basis$rho$upPdn" .
-                  "$minusNeut$dx");
-            &move("fort.61","$proj_home/$edge_$field$basis$pot$up$dx");
-            &move("fort.62","$proj_home/$edge_$field$basis$pot$dn$dx");
-         }
-         else
-         {
-            &move("fort.58","$proj_home/$edge_$field$basis$rho$dx");
-            &move("fort.59","$proj_home/$edge_$field$basis$rho$minusNeut$dx");
-            &move("fort.60","$proj_home/$edge_$field$basis$pot$dx");
-         }
-      }
+         {&move("fort.56","$proj_home/$edge_$field$basis$rho$dat");}
 
       # Only move XDMF-HDF5 files if they were created.
       if (-e "fort.78")
@@ -1664,6 +1658,22 @@ sub manageOutput
          # &move("$field$basis$hdf","$edge_$field$basis$hdf");
       }
    }
+   elsif ($jobID % 100 == 11) # mtop (Polarization)
+   {
+      if ($spinPol == 2)
+      {
+         &copy("fort.180","$edge_$mtop$basis$tot$plot.180");
+         &move("fort.180","$proj_home/$edge_$mtop$basis$tot$up$plot");
+         &copy("fort.181","$edge_$mtop$basis$tot$plot.181");
+         &move("fort.181","$proj_home/$edge_$mtop$basis$tot$dn$plot");
+      }
+      else
+      {
+         &copy("fort.180","$edge_$mtop$basis$tot$plot.180");
+         &move("fort.180","$proj_home/$edge_$mtop$basis$tot$plot");
+      }
+   }
+
    elsif ($jobID == 311) # Local environment
    {
       # Move the local environment structural analysis files if created.

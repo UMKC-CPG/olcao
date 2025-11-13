@@ -7,6 +7,8 @@ module O_Field
 real (kind=double), allocatable, dimension (:,:) :: accumCharge  ! Accumulated
          ! charge for each spin,kPoint combination.
 real (kind=double) :: accumChargeKP
+   real (kind=double), dimension(3) :: xyzElecMoment
+   real (kind=double), dimension(3) :: xyzIonMoment
    real (kind=double), allocatable, dimension (:,:,:) :: profilePsiReal
    real (kind=double), allocatable, dimension (:,:,:) :: profilePsiImag
    real (kind=double), allocatable, dimension (:,:,:) :: profileWav
@@ -20,6 +22,12 @@ real (kind=double) :: accumChargeKP
          !          potentials.  This is important because they have different
          !          units that the other charge columns.
          ! Index3 = 1..max(numMeshPoints(a,b,c))
+         ! PsiReal and PsiImag are the real and imaginary parts of the solid
+         !   state wave function. Wav is the absolute square of the solid
+         !   state wave function including all/only designated (and possibly
+         !   unoccupied) states. Rho is the absolute square of the solid state
+         !   wave function scaled by occupation number (so only occupied
+         !   states can contribute). Pot is the potential function.
    real (kind=double), allocatable, dimension (:,:,:,:) :: meshChunk ! The
          ! Mesh points all collected into a single array. The first index is
          ! for xyz, the remaining three indices are for the abc lattice
@@ -89,9 +97,7 @@ subroutine computeFieldMesh(inSCF)
    use O_Kpoints,      only: numKPoints, kPointWeight, phaseFactor
    use O_Input,        only: numStates, numElectrons, doProfileField, &
          & eminFIELD, emaxFIELD, doPsiFIELD, doWavFIELD, doRhoFIELD, &
-         & doPotFIELD, doXDMFField
-!   use O_OpenDX,       only: printODXFieldHead, printODXFieldTail, &
-!         & printODXAtomPos, printODXLattice
+         & doPotFIELD, doXDMFField, doDipoleField
    use O_XDMF_VTK,     only: printXDMFMetaFile
    use O_AtomicTypes,  only: numAtomTypes, atomTypes, maxNumAtomAlphas, &
          & maxNumStates, maxNumValeRadialFns
@@ -138,10 +144,6 @@ subroutine computeFieldMesh(inSCF)
    real (kind=double), allocatable, dimension (:) :: negligLimit
    real (kind=double), allocatable, dimension (:,:,:) :: &
          & structuredElectronPopulation
-!#ifndef GAMMA
-!   real (kind=double), allocatable, dimension (:,:) :: tempRealValeVale
-!   real (kind=double), allocatable, dimension (:,:) :: tempImagValeVale
-!#endif
 
 
    ! Data for each mesh point.  For spin non-polarized calculations, we have
@@ -348,15 +350,6 @@ allocate (tempPointValue(10))
 
 allocate (currNumElec (numKPoints,spin))
 
-!   ! If we will create an OpenDX file, then we will print the header for the
-!   !   field data, the lattice information, and the atomic positions now.
-!   if (doODXField == 1) then
-!!write (20,*) "numActiveDataSets =",numActiveDataSets
-!      call printODXFieldHead (numActiveDataSets)
-!      call printODXAtomPos
-!      call printODXLattice
-!   endif
-
    if (doXDMFField == 1) then
       call printXDMFMetaFile
    endif
@@ -373,6 +366,8 @@ allocate (currNumElec (numKPoints,spin))
    endif
    if (doRhoFIELD == 1) then
       profileRho (:,:,:) = 0.0_double
+      xyzElecMoment(:) = 0.0_double
+      xyzIonMoment(:) = 0.0_double
    endif
    if (doPotFIELD == 1) then
       profilePot (:,:,:) = 0.0_double
@@ -500,14 +495,14 @@ accumChargeKP = 0.0_double
    do i = 1, numKPoints
 
       ! Skip any kpoints with a negligable contribution for each state.
-      skipKP = 0
+      skipKP = 1 ! Assume that we will skip this kpoint.
       do j = 1, numStates
          if (sum(abs(structuredElectronPopulation(j,i,:)))>smallThresh) then
-            skipKP = 1
+            skipKP = 0 ! Enough contribution for this kpoint to not skip.
             exit
          endif
       enddo
-      if (skipKP == 0) then
+      if (skipKP == 1) then
          cycle
       endif
 
@@ -791,7 +786,7 @@ call flush (20)
 #endif
    enddo ! i kpoint
 
-!write (20,*) "accumChargeKP=",accumChargeKP
+write (20,*) "accumChargeKP=",accumChargeKP
 
    ! There is a lot of calculation that needs to be done here.  We need to
    !   consider each mesh point in turn.  We calculate the accumulated
@@ -893,8 +888,8 @@ call flush (20)
       !   waveFnSqrd at the current mesh point defined by a,b,c loop indices.
       do i = 1, numAtomSites
 
-         ! Obtain key information about this atom. (The use of "2" is
-         !   arbitrary.)
+         ! Obtain key information about this atom. Because the current
+         !   position above uses "1", we need to use "2" here.
          call initializeAtomSite(i,2,currentAtomType,currentElements,&
             & currentNumTotalStates,currentNumCoreStates,currentNumValeStates,&
             & currentNumAlphas,currentlmIndex,currentlmAlphaIndex,&
@@ -1511,6 +1506,14 @@ call flush (20)
          endif
       endif
 
+      ! Accumulate the data for the dipole.
+      if (doDipoleField == 1) then
+         if (doRhoFIELD == 1) then
+            call accumElecMoment(xyzElecMoment,currentPosition(:,1), &
+                  & dataChunkRho,a,b,c)
+         endif
+      endif
+
       if ((doXDMFField == 1) .and. (triggerAxis == 1) .and. &
             & (a == numMeshPoints(1))) then
 
@@ -1682,24 +1685,18 @@ endif
       call flush (20)
    enddo ! c-axis loop
 
-   ! Finalize printing of the OpenDX field data.
-!   if (doODXField == 1) then
-!
-!      ! Write a newline to finish out any uneven (incomplete) lines if needed.
-!      if (mod(currentPointCount,5) /= 0) then
-!         do i = 1,numCols
-!            write (57+i,*)
-!         enddo
-!      endif
-!
-!      ! Print the tail for the field data.
-!      call printODXFieldTail (numCols)
-!   endif
 
-
-   ! Print the profile data.
-   if (doProfileField == 1) then
+   ! Print the profile data if requested.
+   if (doProfileFIELD == 1) then
       call printProfileData
+   endif
+
+   ! Compute the ionic contribution to the dipole moment.
+   call accumIonMoment
+
+   ! Print dipole moment data if requested.
+   if (doDipoleFIELD == 1) then
+      call printDipoleData
    endif
 
 
@@ -1752,8 +1749,6 @@ endif
       deallocate (modifiedBasisFnsRho)
       deallocate (accumWaveFnCoeffsRho)
    endif
-!   deallocate (tempRealValeVale)
-!   deallocate (tempImagValeVale)
 #else
    if (doPsiFIELD == 1) then
       deallocate (waveFnEvalPsiGamma)
@@ -1911,6 +1906,9 @@ subroutine printProfileData
    open (unit=31,file='fort.31',form='formatted')
    open (unit=32,file='fort.32',form='formatted')
 
+   ! Open the electron moment file.
+   open (unit=56,file='fort.56',form='formatted')
+
    ! Print the header.
    do i = 1,3
       write(29+i,fmt="(a1,a3)",advance="NO") axis(i),"Pos"
@@ -2063,6 +2061,28 @@ subroutine printProfileData
 !   enddo
 
 end subroutine printProfileData
+
+
+subroutine printDipoleData
+
+   ! Use necessary modules
+   use O_Input, only: numElectrons
+
+   ! Make sure that no variables are accidentally defined.
+   implicit none
+
+   ! Open the dipole moment file.
+   open (unit=56,file='fort.56',form='formatted')
+
+   write (56,fmt="(3e16.8)") xyzElecMoment(:)
+   write (56,fmt="(3e16.8)") xyzIonMoment(:)
+   write (56,fmt="(3e16.8)") (xyzIonMoment(:) - xyzElecMoment(:)) / &
+         & numElectrons
+
+   ! Close the electron moment data file.
+   close (56)
+
+end subroutine printDipoleData
 
 
 subroutine makeNeutralCoeffs
@@ -2243,7 +2263,7 @@ subroutine accumulateProfile(profile,dataChunk,a,b,c)
    ! Define passed parameters.
    real (kind=double), dimension (:,:,:), intent(inout) :: profile
    real (kind=double), dimension (:,:,:,:), intent(in) :: dataChunk
-   integer, intent(in) :: a, b, c
+   integer, intent(in) :: a, b, c ! Current a,b,c loop indices.
 
    ! Define local variables
    integer :: i
@@ -2255,6 +2275,67 @@ subroutine accumulateProfile(profile,dataChunk,a,b,c)
    enddo
 
 end subroutine accumulateProfile
+
+
+subroutine accumElecMoment(xyzElecMoment,xyzOfabcPoint,dataChunkRho,a,b,c)
+
+   use O_Potential, only: spin
+   use O_Lattice, only: realMeshCellVolume
+
+   implicit none
+
+   ! Define passed parameters.
+   real (kind=double), dimension (3), intent(inout) :: xyzElecMoment 
+   real (kind=double), dimension (3), intent(in) :: xyzOfabcPoint
+   real (kind=double), dimension (:,:,:,:), intent(in) :: dataChunkRho
+   integer, intent(in) :: a, b, c ! Current a,b,c loop indices.
+
+   ! Define local variables.
+   integer :: i
+
+   ! Accumulate the contribution to the electron moment from this charge
+   !   point.
+   do i = 1,spin
+      xyzElecMoment(:) = xyzElecMoment(:) + dataChunkRho(i,a,b,c) * &
+            & realMeshCellVolume * xyzOfabcPoint(:)
+   enddo
+
+end subroutine accumElecMoment
+
+
+subroutine accumIonMoment
+
+   use O_AtomicSites, only: coreDim, numAtomSites, atomSites
+   use O_PotTypes, only: potTypes
+   use O_ElementData, only: coreCharge
+
+   implicit none
+
+   ! Define local variables.
+   integer :: i
+   integer :: currCoreCharge
+
+   ! The xyzIonMoment is already set to zero.
+
+   ! Visit each atomic site.
+   do i = 1, numAtomSites
+!write (20,*) i
+!write (20,*) xyzIonMoment(:)
+!write (20,*) coreCharge(:,int(potTypes(atomSites(i)%atomTypeAssn)%nucCharge))
+!write (20,*) atomSites(i)%cartPos(:)
+      if (coreDim == 0) then
+         currCoreCharge = 0
+      else
+         currCoreCharge = sum(coreCharge(:,&
+               & int(potTypes(atomSites(i)%atomTypeAssn)%nucCharge)))
+      endif
+
+      xyzIonMoment(:) = xyzIonMoment(:) + &
+            & (int(potTypes(atomSites(i)%atomTypeAssn)%nucCharge) - &
+            & currCoreCharge) * atomSites(i)%cartPos(:)
+   enddo
+
+end subroutine accumIonMoment
 
 
 subroutine writeFieldHDF5(did,idx,dataChunk,didName,axis)

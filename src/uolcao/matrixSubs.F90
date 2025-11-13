@@ -5,6 +5,61 @@ module O_MatrixSubs
 
    contains
 
+
+subroutine matrixDet(A, n, det)
+   
+   use O_Kinds
+
+
+   implicit none
+
+   integer, intent(in) :: n
+   complex(kind=double), intent(in) :: A(n,n)
+   complex(kind=double), intent(out) :: det
+
+   complex(kind=double), allocatable :: L(:,:), U(:,:)
+   integer :: i, j, k
+   complex(kind=double) :: sumi
+
+   allocate(L(n,n), U(n,n))
+   L = 0.0_double
+   U = 0.0_double
+
+   do i = 1, n
+      L(i,i) = 1.0_double
+   end do
+
+   do j = 1, n
+      do i = 1, j
+         sumi = (0.0_double, 0.0_double)
+         do k = 1, i-1
+            sumi = sumi + L(i,k) * U(k,j)
+         end do
+         U(i,j) = A(i,j) - sumi
+      end do
+
+      do i = j+1, n
+         sumi = (0.0_double, 0.0_double)
+         do k = 1, j-1
+            sumi = sumi + L(i,k) * U(k,j)
+         end do
+         if (U(j,j) == (0.0_double, 0.0_double)) then
+            det = (0.0_double, 0.0_double)
+            return
+         end if
+         L(i,j) = (A(i,j) - sumi) / U(j,j)
+      end do
+   end do
+
+   det = (1.0_double, 0.0_double)
+   do i = 1, n
+      det = det * U(i,i)
+   end do
+
+   deallocate(L, U)
+end subroutine matrixDet
+
+
 #ifndef GAMMA
 
 subroutine matrixElementMult(summation,matrix1,matrix2,dim1,dim2)

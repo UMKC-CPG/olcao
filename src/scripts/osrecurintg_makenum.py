@@ -47,6 +47,7 @@ class ScriptSettings():
         self.dkinetic = temp_params[7]
         self.dnuclear = temp_params[8]
         self.delectron = temp_params[9]
+        self.Koverlap = temp_params[10]
         # self.e_field = temp_params[5]
         # self.e_grad = temp_params[6]
         # self.ang_mom = temp_params[7]
@@ -113,6 +114,10 @@ def parse_command_line():
                         'overlap integral (3rd term being s-type), which is '+
                         'used for the derivative of the electron repulsion.')
 
+    parser.add_argument('-ko', '--Koverlap', action='store_true',
+                        default='store_false', help = 'Include the '+
+                        'overlap integral with a plane wave term.')
+
     return parser.parse_args()
 
 
@@ -150,6 +155,9 @@ def reconcile(args, settings):
 
     if (args.delectron == True):
         settings.delectron = True
+
+    if (args.Koverlap == True):
+        settings.Koverlap = True
 
     # Return settings that incorporate the command line arguments.
     return settings
@@ -245,6 +253,8 @@ def nuclear():
     return sp.printing.fcode(orbital_1 * (orbital_3 * inv_r3) * orbital_2)
 
 
+# This integral is seperable. We only need to solve it for one dimension and
+#   then we will use string substitutions to extend it to three dimensions.
 def electron():
     Px = sp.symbols('Px')
     lx1 = sp.symbols('lx1')
@@ -543,6 +553,23 @@ def derivative_electronBC():
 
     return sp.printing.fcode(orbital_1 * sp.diff((orbital_3 * orbital_2), Rx3))
 
+# Overlap with an additional plane wave term. We only need to solve it for
+#   one dimension and then we will use string substitutions to extend it
+#   to three dimensions.
+def Koverlap():
+    Px = sp.symbols('Px')
+    lx1 = sp.symbols('lx1')
+    lx2 = sp.symbols('lx2')
+    zeta1, zeta2 = sp.symbols('zeta1 zeta2')
+    Rx1 = sp.symbols('Rx1')
+    Rx2 = sp.symbols('Rx2')
+    Ki = sp.symbols('Ki')
+    Kf = sp.symbols('Kf')
+
+    orbital_1 = (Px-Rx1)**lx1 * sp.exp(-zeta1*(Px-Rx1)**2)
+    orbital_2 = (Px-Rx2)**lx2 * sp.exp(-zeta2*(Px-Rx2)**2)
+    plane_wave = sp.exp(-1j*(Kf-Ki)*Px)
+    return sp.printing.fcode(orbital_1 * orbital_2 * plane_wave)
 
 def apply_seperable_substitutions(string):
 
@@ -853,6 +880,10 @@ def main():
         f.write("\n\n!<A|B|C> solutions:\n")
         lib.print_cont_string(string, 80, 3, f, True)
 
+    if (settings.Koverlap):
+        string = Koverlap()
+        string = apply_seperable_substitutions(string)
+        lib.print_cont_string(string, 80, 3, f, True)
 
 if __name__ == '__main__':
     # Everything before this point was a subroutine definition or a request

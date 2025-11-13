@@ -57,6 +57,32 @@ subroutine printXDMFMetaFile
 end subroutine printXDMFMetaFile
 
 
+subroutine printVTKHead
+
+   ! Import the necessary data modules.
+   use O_Constants, only: bohrRad
+   use O_Lattice,   only: realVectors, realFractStrideLength, numMeshPoints
+
+   ! Make sure that no variables are accidentally defined.
+   implicit none
+
+   ! Define local variables.
+   integer :: i,j
+
+   ! Open the field file.
+   open (unit=56,file="fort.56",status='new',form='formatted')
+
+   ! Print the VTK Polydata header.
+   write (56,fmt="(a)") "# vtk DataFile Version 4.2"
+   write (56,fmt="(a)") "This is a model produced by the KC-O OLCAO program."
+   write (56,fmt="(a)") "ASCII"
+   write (56,fmt="(a)") "DATASET POLYDATA"
+   write (56,*)
+
+
+end subroutine printVTKHead
+
+
 subroutine printVTKLattice
 
    ! Import the necessary modules.

@@ -23,6 +23,9 @@ module O_SCFHDF5
    integer(size_t) :: rdcc_nbytes ! Raw-data chunk cache size in bytes.
    real            :: rdcc_w0     ! Raw-data chunk cache weighting parameter.
 
+   ! Declare the kPoint group ID.
+   integer(hid_t) :: kPoint_gid
+
    ! Declare shared variables that are used for creating attributes that will
    !   track the completion of all datasets.
    integer(hid_t) :: attribInt_dsid ! Attribute dataspace.
@@ -48,7 +51,10 @@ subroutine initHDF5_SCF (maxNumRayPoints, numStates)
    use O_SCFEigValHDF5
    use O_SCFEigVecHDF5
    use O_SCFPotRhoHDF5
-   use O_CommandLine, only: excitedQN_n, excitedQN_l, basisCode_SCF
+   use O_CommandLine, only: excitedQN_n, excitedQN_l, basisCode_SCF, &
+         & doSYBD_SCF, doMTOP_SCF
+   use O_KPoints, only: numAxialKPoints, numPathKP, numPaths, &
+         & numTotalHighSymKP, numHighSymKP, highSymKP, highSymKPChar
 
    ! Make sure that no funny variables are defined.
    implicit none
@@ -58,9 +64,13 @@ subroutine initHDF5_SCF (maxNumRayPoints, numStates)
    integer, intent(in) :: numStates
 
    ! Declare local variables.
+   integer :: i,j
    integer :: hdferr
-   logical :: file_exists
+   integer :: charCount
+   logical :: fileExists
+   logical :: groupExists
    character*14 :: fileName
+   character*17 :: kPointName
    character*2 :: edge
 
    ! Log the time we start to setup the SCF HDF5 files.
@@ -105,11 +115,32 @@ subroutine initHDF5_SCF (maxNumRayPoints, numStates)
    call h5pset_cache_f (scf_plid,mdc_nelmts,0_size_t,0_size_t,rdcc_w0,hdferr)
    if (hdferr /= 0) stop 'Failed to set scf plid cache settings.'
 
+   ! Create the name for the kPoint dependent data group.
+   if (doSYBD_SCF == 1) then
+      write(kPointName,fmt="(i4.4)") numPathKP
+      charCount = 4
+      pathLoop: do i = 1, numPaths
+         do j = 1, numHighSymKP(i)
+            write(kPointName,fmt="(a,1a)") kPointName,highSymKPChar(j,i)
+            charCount = charCount + 1
+            if (charCount == 17) then
+               exit pathLoop
+            endif
+         enddo
+      enddo pathLoop
+   elseif (doMTOP_SCF == 1) then
+      write(kPointName,fmt="(i4.4,a1,i4.4,a1,i4.4,a3)") numAxialKPoints(1), &
+            & "_", numAxialKPoints(2), "_", numAxialKPoints(3), "_MP"
+   else
+      write(kPointName,fmt="(i5.5,a1,i5.5,a1,i5.5)") numAxialKPoints(1), &
+            & "_", numAxialKPoints(2), "_", numAxialKPoints(3)
+   endif
+
    ! Determine if an HDF5 file already exists for this calculation.
-   inquire (file=fileName, exist=file_exists)
+   inquire (file=fileName, exist=fileExists)
 
    ! If it does, then access the existing file. If not, then create one.
-   if (file_exists .eqv. .true.) then
+   if (fileExists .eqv. .true.) then
       ! We are continuing a previous calculation.
 
       ! Open the HDF5 file for reading / writing.
@@ -117,12 +148,45 @@ subroutine initHDF5_SCF (maxNumRayPoints, numStates)
             & scf_plid)
       if (hdferr /= 0) stop 'Failed to open scf hdf5 file.'
 
-      ! Access the groups of the HDF5 file.
-      call accessSCFIntegralHDF5 (scf_fid)
+      ! Check if a top-level group for the current kPoint set exists. If so,
+      !   then we are continuing that kPoint set. Otherwise, we are starting
+      !   a new kPoint set and will need to initialize it.
+      call h5lexists_f(scf_fid,kPointName,groupExists,hdferr)
+
+      ! If the group exists, then access the kPoint dependent data.
+      if (groupExists .eqv. .true.) then
+
+         ! Open the group.
+         call h5gopen_f(scf_fid,kPointName,kPoint_gid,hdferr)
+
+         ! Access the groups of the HDF5 file.
+         call accessSCFIntegralHDF5 (kPoint_gid)
+         call accessSCFEigVecHDF5 (kPoint_gid,attribInt_dsid,attribIntDims,&
+               & numStates)
+         call accessSCFEigValHDF5 (kPoint_gid,numStates)
+      else
+
+         ! All datasets will have an attached attribute logging that the
+         !   calculation has successfully completed. (Checkpointing.) Thus,
+         !   we need to create the shared attribute dataspace.
+         attribIntDims(1) = 1
+         call h5screate_simple_f (1,attribIntDims(1),attribInt_dsid,hdferr)
+         if (hdferr /= 0) stop 'Failed to create the attribInt_dsid'
+
+         ! Create the kPoint group that will hold all kPoint dependent results.
+         call h5gcreate_f(scf_fid,kPointName,kPoint_gid,hdferr)
+
+         ! Create the subgroups of the pscf hdf5 file. This must be done in this
+         !   order due to dependencies on potPot_dsid and others.
+         call initSCFIntegralHDF5 (kPoint_gid,attribInt_dsid,attribIntDims)
+         call initSCFEigVecHDF5 (kPoint_gid,attribInt_dsid,attribIntDims,&
+               & numStates)
+         call initSCFEigValHDF5 (kPoint_gid,numStates)
+      endif
+
+      ! Access the kPoint independent groups of the HDF5 file.
       call accessSCFElecStatHDF5 (scf_fid)
       call accessSCFExchCorrHDF5 (scf_fid)
-      call accessSCFEigVecHDF5 (scf_fid,attribInt_dsid,attribIntDims,numStates)
-      call accessSCFEigValHDF5 (scf_fid,numStates)
       call accessSCFPotRhoHDF5 (scf_fid)
 
    else
@@ -141,14 +205,17 @@ subroutine initHDF5_SCF (maxNumRayPoints, numStates)
       call h5screate_simple_f (1,attribIntDims(1),attribInt_dsid,hdferr)
       if (hdferr /= 0) stop 'Failed to create the attribInt_dsid'
 
+      ! Create the kPoint group that will hold all kPoint dependent results.
+      call h5gcreate_f(scf_fid,kPointName,kPoint_gid,hdferr)
+
       ! Create the subgroups of the scf hdf5 file. This must be done in this
       !   order due to dependencies on potPot_dsid and others.
-      call initSCFIntegralHDF5 (scf_fid,attribInt_dsid,attribIntDims)
+      call initSCFIntegralHDF5 (kPoint_gid,attribInt_dsid,attribIntDims)
+      call initSCFEigVecHDF5 (kPoint_gid,attribInt_dsid,attribIntDims,numStates)
+      call initSCFEigValHDF5 (kPoint_gid,numStates)
       call initSCFElecStatHDF5 (scf_fid,attribInt_dsid,attribIntDims)
       call initSCFExchCorrHDF5 (scf_fid,attribInt_dsid,attribIntDims,&
             & maxNumRayPoints)
-      call initSCFEigVecHDF5 (scf_fid,attribInt_dsid,attribIntDims,numStates)
-      call initSCFEigValHDF5 (scf_fid,numStates)
       call initSCFPotRhoHDF5 (scf_fid)
    endif
 

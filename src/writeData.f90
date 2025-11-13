@@ -5,7 +5,7 @@ public :: writeLabel, writeData
 
 
 interface writeData
-   module procedure writeDoubleArray, writeInt, writeIntArray
+   module procedure writeDoubleArray, writeInt, writeIntArray, writeNothing
 end interface writeData
 
 contains
@@ -109,5 +109,18 @@ subroutine writeIntArray (numValues,intArray,fileUnit)
 
 end subroutine writeIntArray
 
+
+subroutine writeNothing (fileUnit)
+
+   use O_Kinds
+
+   implicit none
+
+   ! Passed parameters
+   integer :: fileUnit ! File to write to
+
+   write (fileUnit,*)
+
+end subroutine writeNothing
 
 end module O_WriteDataSubs

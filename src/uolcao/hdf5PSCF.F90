@@ -23,6 +23,9 @@ module O_PSCFHDF5
    integer(size_t) :: rdcc_nbytes ! Raw-data chunk cache size in bytes.
    real            :: rdcc_w0     ! Raw-data chunk cache weighting parameter.
 
+   ! Declare the kPoint group ID.
+   integer(hid_t) :: kPoint_gid
+
    ! Declare shared variables that are used for creating attributes that will
    !   track the completion of all datasets.
    integer(hid_t) :: attribInt_dsid ! Attribute dataspace.
@@ -46,7 +49,10 @@ subroutine initHDF5_PSCF (numStates)
    use O_PSCFEigValHDF5
    use O_PSCFEigVecHDF5
    use O_PSCFFieldHDF5
-   use O_CommandLine, only: excitedQN_n, excitedQN_l, basisCode_PSCF
+   use O_CommandLine, only: excitedQN_n, excitedQN_l, basisCode_PSCF, &
+         & doSYBD_PSCF, doMTOP_PSCF
+   use O_KPoints, only: numAxialKPoints, numPathKP, numPaths, &
+         & numTotalHighSymKP, numHighSymKP, highSymKP, highSymKPChar
 
    ! Make sure that no funny variables are defined.
    implicit none
@@ -55,9 +61,13 @@ subroutine initHDF5_PSCF (numStates)
    integer, intent(in) :: numStates
 
    ! Declare local variables.
+   integer :: i,j
    integer :: hdferr
-   logical :: file_exists
+   integer :: charCount
+   logical :: fileExists
+   logical :: groupExists
    character*15 :: fileName
+   character*17 :: kPointName
    character*2 :: edge
 
    ! Log the time we start to setup the PSCF HDF5 files.
@@ -101,22 +111,76 @@ subroutine initHDF5_PSCF (numStates)
    call h5pset_cache_f (pscf_plid,mdc_nelmts,0_size_t,0_size_t,rdcc_w0,hdferr)
    if (hdferr /= 0) stop 'Failed to set pscf plid cache settings.'
 
+   ! Create the name for the kPoint dependent data group.
+   if (doSYBD_PSCF == 1) then
+      write(kPointName,fmt="(i4.4,a1)") numPathKP, "_"
+      charCount = 5
+      pathLoop: do i = 1, numPaths
+         do j = 1, numHighSymKP(i)
+            charCount = charCount + 1
+            kPointName(charCount:charCount) = highSymKPChar(j,i)
+            if (charCount == 17) then
+               exit pathLoop
+            endif
+         enddo
+      enddo pathLoop
+   elseif (doMTOP_PSCF == 1) then
+      write(kPointName,fmt="(i4.4,a1,i4.4,a1,i4.4,a3)") numAxialKPoints(1), &
+            & "_", numAxialKPoints(2), "_", numAxialKPoints(3), "_MP"
+   else
+      write(kPointName,fmt="(i5.5,a1,i5.5,a1,i5.5)") numAxialKPoints(1), &
+            & "_", numAxialKPoints(2), "_", numAxialKPoints(3)
+   endif
+
    ! Determine if an HDF5 file already exists for this calculation.
-   inquire (file=fileName, exist=file_exists)
+   inquire (file=fileName, exist=fileExists)
 
    ! If it does, then access the existing file. If not, then create one.
-   if (file_exists .eqv. .true.) then
-      ! We are continuing a previous calculation.
+   if (fileExists .eqv. .true.) then
+      ! We are continuing a previous calculation, but we might not be
+      !   continuing with the same set of kPoints.
 
       ! Open the HDF5 file for reading / writing.
       call h5fopen_f (fileName,H5F_ACC_RDWR_F,pscf_fid,hdferr,pscf_plid)
       if (hdferr /= 0) stop 'Failed to open pscf hdf5 file.'
 
-      ! Access the groups of the HDF5 file.
-      call accessPSCFIntegralHDF5 (pscf_fid)
-      call accessPSCFEigVecHDF5 (pscf_fid,attribInt_dsid,attribIntDims,&
-            & numStates)
-      call accessPSCFEigValHDF5 (pscf_fid,numStates)
+      ! Check if a top-level group for the current kPoint set exists. If so,
+      !   then we are continuing that kPoint set. Otherwise, we are starting
+      !   a new kPoint set and will need to initialize it.
+      call h5lexists_f(pscf_fid,kPointName,groupExists,hdferr)
+
+      ! If the group exists, then access the kPoint dependent data.
+      if (groupExists .eqv. .true.) then
+
+         ! Open the group.
+         call h5gopen_f(pscf_fid,kPointName,kPoint_gid,hdferr)
+
+         ! Access the groups of the HDF5 file.
+         call accessPSCFIntegralHDF5 (kPoint_gid)
+         call accessPSCFEigVecHDF5 (kPoint_gid,attribInt_dsid,attribIntDims,&
+               & numStates)
+         call accessPSCFEigValHDF5 (kPoint_gid,numStates)
+      else
+
+         ! All datasets will have an attached attribute logging that the
+         !   calculation has successfully completed. (Checkpointing.) Thus,
+         !   we need to create the shared attribute dataspace.
+         attribIntDims(1) = 1
+         call h5screate_simple_f (1,attribIntDims(1),attribInt_dsid,hdferr)
+         if (hdferr /= 0) stop 'Failed to create the attribInt_dsid'
+
+         ! Create the kPoint group that will hold all kPoint dependent results.
+         call h5gcreate_f(pscf_fid,kPointName,kPoint_gid,hdferr)
+
+         ! Create the subgroups of the pscf hdf5 file. This must be done in this
+         !   order due to dependencies on potPot_dsid and others.
+         call initPSCFIntegralHDF5 (kPoint_gid,attribInt_dsid,attribIntDims)
+         call initPSCFEigVecHDF5 (kPoint_gid,attribInt_dsid,attribIntDims,&
+               & numStates)
+         call initPSCFEigValHDF5 (kPoint_gid,numStates)
+      endif
+
+      ! Access the kPoint independent data
       call accessPSCFFieldHDF5 (pscf_fid)
 
    else
@@ -135,11 +199,15 @@ subroutine initHDF5_PSCF (numStates)
       call h5screate_simple_f (1,attribIntDims(1),attribInt_dsid,hdferr)
       if (hdferr /= 0) stop 'Failed to create the attribInt_dsid'
 
+      ! Create the kPoint group that will hold all kPoint dependent results.
+      call h5gcreate_f(pscf_fid,kPointName,kPoint_gid,hdferr)
+
       ! Create the subgroups of the pscf hdf5 file. This must be done in this
       !   order due to dependencies on potPot_dsid and others.
-      call initPSCFIntegralHDF5 (pscf_fid,attribInt_dsid,attribIntDims)
-      call initPSCFEigVecHDF5 (pscf_fid,attribInt_dsid,attribIntDims,numStates)
-      call initPSCFEigValHDF5 (pscf_fid,numStates)
+      call initPSCFIntegralHDF5 (kPoint_gid,attribInt_dsid,attribIntDims)
+      call initPSCFEigVecHDF5 (kPoint_gid,attribInt_dsid,attribIntDims,&
+            & numStates)
+      call initPSCFEigValHDF5 (kPoint_gid,numStates)
       call initPSCFFieldHDF5 (pscf_fid)
    endif
 

@@ -17,6 +17,7 @@ sub printHelp
 #                   | [-kp \$a \$b \$c]]
 #                 [-kpshift \$a \$b \$c]
 #                 [-printbz \$bz \$scaleFactor]
+#                 [-xccode \$xcCode]
 #                 [-xcmesh [-numvect \$numSampVectors]
 #                          [-weight \$xcInWeight \$xcOutWeight]
 #                          [-samp \$xcInSamp \$xcOutSamp \$xcSpacingSamp]]
@@ -279,6 +280,8 @@ sub printHelp
 #   -xanes:        This is off by default so that only one set of input files
 #        will be created.  The default radius if the option is given is 3.50 A.
 #        The \$xanesAtoms are chosen 1 from each species by default.
+#   -xccode:       The default exchange correlation code is 100 which
+#                  corresponds to the Wigner iterpolation method.
 #   -xcmesh:       The default number of sampling vectors is 100.  The default
 #        weights are 0.5, 0.5.  The default in sampling is 0.1, the out
 #        sampling is 3.5, and the spacing is 0.8.
@@ -374,7 +377,8 @@ my $pdb;   # Make a pdb structure file = 1; Don't = 0.
 my $cif;   # Make a cif structure file = 1; Don't = 0.
 my $queueType; # Make a bash (0); pbs (1); lsf (2); or slurm (3) file.
 
-# Variables that define the exchange correlation mesh.
+# Variables that define the exchange correlation mesh and evaluation method.
+my $xcCode;        # Exchange correlation code ($OLCAO_DIR/share/xc_code.dat)
 my $xcInWeight;    # Weighting of points within the radial cutoff.
 my $xcOutWeight;   # Weighting of points outside the radial cutoff.
 my $xcInSamp;      # Sampling rate of points inside the radial cutoff.
@@ -426,7 +430,7 @@ my $thermSmearMAIN; # Term in eV to smear e- population.  1 eV = 11604.505 K
 # K Point variables.
 my $kpWeightSum; # Total number of electrons per band. 1=spinpolarized, 2=not.
 my $kpShift;  # Lattice dependent shift of the regular kpoint mesh.
-my @kpMesh;   # Num. of kpoints in each dim. for scf and pscf.[SPA][1..2]
+my @kpMesh;   # Num. of kpoints in each dim. for [scf , pscf][x,y,z]
 my @kpNum;    # Total number of scf/pscf kpoints after symmetry reduction.
 my @kpNote;   # String for each group indicating general or gamma.  [1..2]
 my @setKPFlag;# Flag 1=done; 0=not done. Set kpoints on command line.
@@ -653,6 +657,7 @@ if ($emu == 1)
 }
 
 
+
 # Print out the necessary files for OLCAO (olcao.dat, scfV, kpoints etc.)
 $dateTime = `date`;
 chomp($dateTime);
@@ -867,6 +872,7 @@ sub initDefaults
    $esCutoff=16;
 
    # Default exchange correlation mesh parameters.
+   $xcCode=100;
    $xcInWeight=0.5;
    $xcOutWeight=0.5;
    $xcInSamp=0.1;
@@ -1248,6 +1254,8 @@ sub parseCommandLine
                {$number--;last;}
          }
       }
+      elsif ($ARGV[$number] eq "-xccode")
+         {$xcCode = $ARGV[++$number];}
       elsif ($ARGV[$number] eq "-xcmesh")
       {
          foreach $argument (1..3)
@@ -2921,7 +2929,7 @@ sub makeKP
       system("$makekpoints_exec $printBZ $scaleFactor");
       $kpNum[$kpGroup] = `wc -l $kpOutFile`;  # Count the lines.
       @values=StructureControl::prepLine("",$kpNum[$kpGroup],'\s+');
-      $kpNum[$kpGroup] = $values[0] - 7; # Subtract the seven line header.
+      $kpNum[$kpGroup] = $values[0] - 9; # Subtract the nine line header.
       &move("$kpOutFile","$inputTemp/$kpGroupFile[$kpGroup]");
    }
    &move("$kpInFile","$inputTemp/$kpInFile");
@@ -3489,7 +3497,7 @@ sub printOLCAOInput
    print OLCAO "CONVERGENCE_TEST\n";
    print OLCAO "$convergMAIN\n";
    print OLCAO "XC_CODE\n";
-   print OLCAO "100\n";
+   print OLCAO "$xcCode\n";
    print OLCAO "FEEDBACK_LEVEL\n";
    print OLCAO "2\n";
    print OLCAO "RELAXATION_FACTOR\n";
@@ -3529,6 +3537,11 @@ sub printOLCAOInput
          die "$sybdPath not found in sybd database.\n";
    &processSYBDPath;
    close (SYMKP);
+
+   # Print data useful for the mtop portion of the calculation.
+   print OLCAO "MTOP_INPUT_DATA\n";
+   print OLCAO "$kpMesh[1][1] $kpMesh[1][2] $kpMesh[1][3] # SCF\n";
+   print OLCAO "$kpShift # Shift\n";
 
    # Print data that is useful for the xanes portion of the calculation.
    print OLCAO "PACS_INPUT_DATA\n";
@@ -3574,6 +3587,7 @@ sub printOLCAOInput
    print OLCAO "1 1 1 1                       ! 0/1 for psi, psi^2, rho, pot\n";
    print OLCAO "1                             ! 1=Produce XDMF+HDF5 output\n";
    print OLCAO "1                             ! 1=Produce 1D profile output\n";
+   print OLCAO "1                             ! 1=Produce dipole output\n";
 
    # Print local environment (loen) control parameters.
    print OLCAO "LOEN_INPUT_DATA\n";
@@ -3607,6 +3621,7 @@ sub processSYBDPath
    my $numPathKP;
    my $numHighSymmKP;
    my @highSymmKP;
+   my $symmKPChar;
    my $KP;
 
    # Create the list of names used for angles in the equations such that they
@@ -3725,6 +3740,10 @@ sub processSYBDPath
    if ($printBZ > 0)
       {print BZ "\nData.high_symmetry_BZ_kpoints = [\n";}
 
+   # Create a string for collecting characters identifying the high symmetry
+   #   kpoints.
+   $symmKPChar = "";
+
    # Read the rest of the SYMKP file and substitute in variable corrected
    #   values where expressed in the file as it is appended into the olcao.dat
    #   file. We do that by first reading the line and then splitting it by
@@ -3757,6 +3776,9 @@ sub processSYBDPath
       # Print the line into the olcao.dat file.
       printf OLCAO "%12.8f%12.8f%12.8f %1s %-5s\n", @values;
 
+      # Add the first character to a string.
+      $symmKPChar = $symmKPChar . substr($values[4], 0, 1);
+
       # If we are also printing the Brillouin zone file, then add these
       #   high symmetry kpoints to the file.
       if ($printBZ > 0)
@@ -3770,7 +3792,10 @@ sub processSYBDPath
             {printf BZ "[%12.8f , %12.8f , %12.8f]]\n", @values[0..2];}
       }
    }
-   close(BZ)
+   close(BZ);
+
+   # Add the string of high symmetry kPoint names.
+   print OLCAO "$symmKPChar\n";
 }
 
 

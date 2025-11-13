@@ -21,6 +21,7 @@ module O_SecularEquation
    complex (kind=double), allocatable, dimension (:,:,:) :: valeVale
    complex (kind=double), allocatable, dimension (:,:)   :: valeValeOL
    complex (kind=double), allocatable, dimension (:,:,:) :: valeValeMM
+   complex (kind=double), allocatable, dimension (:,:,:) :: valeValeKO
 #else
    real (kind=double), allocatable, dimension (:,:,:) :: valeValeGamma
    real (kind=double), allocatable, dimension (:,:)   :: valeValeOLGamma
@@ -67,7 +68,7 @@ subroutine secularEqnSCF(spinDirection, numStates)
 
    ! Define the local variables used in this subroutine.
    integer :: i,j ! Loop index variables
-integer :: k, l, m, n, o, p
+!integer :: k, l, m, n, o, p
    integer :: hdferr
    integer :: hdf5Status
    integer(hsize_t), dimension (1) :: attribIntDims ! Attribute dataspace dim
@@ -334,10 +335,8 @@ subroutine secularEqnPSCF(spinDirection,numStates,numComponents,ol_did,&
    use HDF5
    use O_Kinds
    use O_TimeStamps
-   use O_CommandLine, only: doSYBD_PSCF
    use O_KPoints, only: numKPoints
-   use O_Potential, only: rel, spin, potDim, potCoeffs, numPlusUJAtoms, &
-         & currIteration
+   use O_Potential, only: spin, numPlusUJAtoms, currIteration
    use O_AtomicSites, only: valeDim
    use O_PSCFEigValHDF5, only: states
    use O_PSCFEigVecHDF5, only: valeStatesPSCF
@@ -367,8 +366,8 @@ subroutine secularEqnPSCF(spinDirection,numStates,numComponents,ol_did,&
    integer(hid_t), dimension(numKPoints,spin), intent(in) :: eVec_aid
 
    ! Define the local variables used in this subroutine.
-   integer :: i,j ! Loop index variables
-integer :: k, l, m, n, o, p
+   integer :: i ! Loop index variables
+!integer :: k, l, m, n, o, p
    integer :: hdferr
    integer :: hdf5Status
    integer(hsize_t), dimension (1) :: attribIntDims ! Attribute dataspace dim
@@ -631,7 +630,7 @@ subroutine update1UJ (currKPoint, valeValeRho)
    ! Use necessary modules.
    use O_Kinds
    use O_Potential, only: numPlusUJAtoms, plusUJAtomSize, plusUJAtomValeIndex, &
-         & plusUJAtomGSElectrons, plusUJAtomValue, plusUJ, spin
+         & plusUJ, spin
 
    ! Make sure that no unnecessary variables are declared.
    implicit none
@@ -706,9 +705,8 @@ subroutine update2AndApplyUJ(currKPoint,spinDirection)
 
    ! Use necessary modules.
    use O_Kinds
-   use O_KPoints, only: numKPoints, kPointWeight
-   use O_PotTypes, only: numPotTypes
-   use O_AtomicSites, only: numAtomSites
+!   use O_KPoints, only: numKPoints, kPointWeight
+   use O_KPoints, only: kPointWeight
    use O_Potential, only: plusUJ, plusUJAtomSize, numPlusUJAtoms, &
          & plusUJAtomValeIndex, plusUJAtomValue, plusUJAtomGSElectrons, spin
 
@@ -845,7 +843,7 @@ subroutine update2AndApplyUJ(currKPoint,spinDirection)
 end subroutine update2AndApplyUJ
 
 
-subroutine shiftEnergyEigenValues(energyShift,numStates)
+subroutine shiftEnergyEigenValues(energyShift)
 
 !use O_KPoints
    ! Make sure that no funny variables are defined.
@@ -853,7 +851,6 @@ subroutine shiftEnergyEigenValues(energyShift,numStates)
 
    ! Define dummy variables passed to this subroutine.
    real (kind=double) :: energyShift
-   integer, intent (in) :: numStates
 !integer :: i,j,k
 
    ! Shift the energyEigenValues down by the requested about.
@@ -1027,12 +1024,11 @@ end subroutine shiftEnergyEigenValues
 subroutine readDataSCF(h,i,numStates,matrixCode)
 
    ! Import necessary data modules.
-   use O_KPoints, only: numKPoints
    use O_AtomicSites, only: valeDim
-   use O_SCFIntegralsHDF5, only: packedVVDims,atomOverlap_did,atomMMOverlap_did
-   use O_SCFEigVecHDF5, only: valeStates,eigenVectors_did
-   use O_SCFEigValHDF5, only: states,eigenValues_did
+   use O_SCFIntegralsHDF5, only: packedVVDims,atomOverlap_did,&
+         & atomMMOverlap_did, atomKOverlap_did
 #ifndef GAMMA
+   use O_SCFEigVecHDF5, only: valeStates,eigenVectors_did
    use O_MatrixSubs, only: readMatrix,readPackedMatrix,unpackMatrix
 #else
    use O_MatrixSubs, only: readPackedMatrix,unpackMatrixGamma
@@ -1046,7 +1042,6 @@ subroutine readDataSCF(h,i,numStates,matrixCode)
 
    ! Define local variables.
    integer :: dim1
-   integer :: hdferr
    integer :: j ! Loop index (usually xyz).
    real (kind=double), allocatable, dimension (:,:) :: packedValeVale
 #ifndef GAMMA
@@ -1091,6 +1086,17 @@ subroutine readDataSCF(h,i,numStates,matrixCode)
            call unpackMatrixGamma(valeValeMMGamma(:,:,j),packedValeVale,valeDim,1)
 #endif
          enddo
+      elseif (matrixCode == 3) then
+         do j = 1, 3
+            ! Read the xyz KOverlap matrix elements.
+            call readPackedMatrix(atomKOverlap_did(i,j),packedValeVale,&
+                  & packedVVDims,dim1,valeDim)
+
+            ! Unpack the matrix
+#ifndef GAMMA
+            call unpackMatrix(valeValeKO(:,:,j),packedValeVale,valeDim,1)
+#endif
+         enddo
       endif
 
       ! Deallocate the packed matrix used to read and unpack the data.
@@ -1126,12 +1132,11 @@ end subroutine readDataSCF
 subroutine readDataPSCF(h,i,numStates,matrixCode)
 
    ! Use necessary modules.
-   use O_KPoints, only: numKPoints
+!   use O_KPoints, only: numKPoints
    use O_AtomicSites, only: valeDim
    use O_PSCFIntegralsHDF5, only: packedVVDimsPSCF,atomOverlapPSCF_did,&
-         & atomMMOverlapPSCF_did
+         & atomMMOverlapPSCF_did, atomKOverlapPSCF_did
    use O_PSCFEigVecHDF5, only: valeStatesPSCF,eigenVectorsPSCF_did
-   use O_PSCFEigValHDF5, only: states,eigenValuesPSCF_did
 #ifndef GAMMA
    use O_MatrixSubs, only: readMatrix, readPackedMatrix, unpackMatrix
 #else
@@ -1147,7 +1152,6 @@ subroutine readDataPSCF(h,i,numStates,matrixCode)
 
    ! Define local variables.
    integer :: dim1
-   integer :: hdferr
    integer :: j ! Loop index (usually xyz).
    real (kind=double), allocatable, dimension (:,:) :: packedValeVale
 #ifndef GAMMA
@@ -1183,12 +1187,8 @@ subroutine readDataPSCF(h,i,numStates,matrixCode)
       elseif (matrixCode == 2) then
          do j = 1, 3
             ! Read the xyz momentum matrix elements.
-!write(20,*) i,j,shape(packedValeVale),packedVVDimsPSCF,dim1,valeDim
             call readPackedMatrix(atomMMOverlapPSCF_did(i,j),packedValeVale,&
                   & packedVVDimsPSCF,dim1,valeDim)
-#ifndef GAMMA
-!write(20,*) i,packedValeVale(:,:)
-#endif
 
             ! Unpack the matrix.
 #ifndef GAMMA
@@ -1197,6 +1197,16 @@ subroutine readDataPSCF(h,i,numStates,matrixCode)
             call unpackMatrixGamma(valeValeMMGamma(:,:,j),packedValeVale,valeDim,1)
 #endif
          enddo
+      elseif ((matrixCode >= 3) .and. (matrixCode <= 5)) then
+         ! Read the KOverlap matrix elements for the requested axis.
+         call readPackedMatrix(atomKOverlapPSCF_did(i,matrixCode-2),&
+               & packedValeVale,packedVVDimsPSCF,dim1,valeDim)
+
+         ! Unpack the matrix.
+#ifndef GAMMA
+         call unpackMatrix(valeValeKO(:,:,matrixCode-2),&
+               & packedValeVale,valeDim,1)
+#endif
       endif
 
       ! Deallocate the packed matrix used to read and unpack the data.
@@ -1231,7 +1241,6 @@ subroutine readDataPSCF(h,i,numStates,matrixCode)
 #endif
 
 end subroutine readDataPSCF
-
 
 
 subroutine cleanUpSecularEqn

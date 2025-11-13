@@ -96,6 +96,7 @@ module O_Input
    integer :: doPotFIELD ! Flag to include potential function.
    integer :: doXDMFFIELD ! Flag requesting HDF5 and XDMF output files.
    integer :: doProfileFIELD ! Flag requesting a set of 1D profile files.
+   integer :: doDipoleFIELD ! Flag requesting a dipole field calculation.
    real (kind=double) :: eminFIELD ! Given in eV, stored in a.u.
    real (kind=double) :: emaxFIELD ! Given in eV, stored in a.u.
 
@@ -177,6 +178,9 @@ subroutine parseInput(inSCF)
    ! Read sybd input control parameters.
    call readSYBDControl(readUnit,writeUnit)
 
+   ! Read mtop input control parameters.
+   call readMTOPControl(readUnit,writeUnit)
+   
    ! Read PACS input control parameters.
    call readPACSControl(readUnit,writeUnit)
 
@@ -218,7 +222,6 @@ subroutine parseInput(inSCF)
    close(4)
 
 
-
    ! Open the kpoint mesh input file for reading.
    if (inSCF == 1) then
       readUnit = 15
@@ -233,6 +236,7 @@ subroutine parseInput(inSCF)
 
    ! Close the kpoint mesh input file.
    close(readUnit)
+
 
    ! Log the ending of the input reading.
    call timeStampEnd(1)
@@ -563,7 +567,7 @@ subroutine getDipoleMomentCenter
 
    ! Local parameters
    integer :: xyzAxis, abcAxis
-   real (kind=double), dimension(3) :: posXYZ, fractABC
+   real (kind=double), dimension(3) :: fractABC
 
    ! The dipole moment center that was given in the input was in the form
    !   of ABC fractional coordinates.
@@ -679,6 +683,25 @@ subroutine readSYBDControl(readUnit,writeUnit)
    call readSYBDKPoints(readUnit, writeUnit)
 
 end subroutine readSYBDControl
+
+
+subroutine readMTOPControl(readUnit,writeUnit)
+
+   ! Use necessary modules
+   use O_ReadDataSubs
+   use O_KPoints, only: readMTOPKPoints
+
+   implicit none
+
+   ! passed parameters
+   integer, intent(in)    :: readUnit   ! The unit number of the file from which
+                                        ! we are reading.
+   integer, intent(in)    :: writeUnit  ! The unit number of the file to which
+                                        ! we are writing.
+
+   call readMTOPKPoints(readUnit, writeUnit)
+
+end subroutine readMTOPControl
 
 
 subroutine readPACSControl(readUnit,writeUnit)
@@ -864,8 +887,9 @@ subroutine readFieldControl(readUnit,writeUnit)
    call readNumMeshPoints(readUnit,writeUnit)
    call readData(readUnit,writeUnit,eminFIELD,emaxFIELD,0,'')
    call readData(readUnit,writeUnit,4,tempArray,0,'')
-   call readData(readUnit,writeUnit,doXDMFField,0,'')
-   call readData(readUnit,writeUnit,doProfileField,0,'')
+   call readData(readUnit,writeUnit,doXDMFFIELD,0,'')
+   call readData(readUnit,writeUnit,doProfileFIELD,0,'')
+   call readData(readUnit,writeUnit,doDipoleFIELD,0,'')
 
    doPsiFIELD = tempArray(1)
    doWavFIELD = tempArray(2)

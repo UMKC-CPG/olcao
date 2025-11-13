@@ -16,6 +16,7 @@ def parameters_and_defaults():
             "2CMM" : False, # T (F) = do (!do) two-center momentum matrix
             "2CMV" : False, # T (F) = do (!do) two-center mass velocity
             "2CDM" : False, # T (F) = do (!do) two-center dipole moment
+            "2CKOL" : False, # T (F) = do (!do) two-center K overlap
             "2CDKE" : False, # T (F) = do (!do) two-center derivative KE
             "3CDNPCB" : False, # T (F) = do (!do) three-center deriv. NP-CB
             "3CDNPBB" : False, # T (F) = do (!do) three-center deriv. NP-BB

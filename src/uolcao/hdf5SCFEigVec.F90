@@ -211,7 +211,7 @@ subroutine accessSCFEigVecHDF5 (scf_fid,attribInt_dsid,attribIntDims,&
    endif
 
    ! Open the eigenVectors group in the scf_fid.
-   call h5gopen_f (scf_fid,"/eigenVectors",eigenVectors_gid,hdferr)
+   call h5gopen_f (scf_fid,"eigenVectors",eigenVectors_gid,hdferr)
    if (hdferr /= 0) stop 'Failed to open eigenvectors group SCF.'
 
    ! Allocate space to hold IDs for the datasets in the eigenvectors group.

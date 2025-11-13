@@ -44,6 +44,7 @@ module O_CommandLine
          ! partial band structure data (3).
    integer :: doForce_SCF ! Include computation of the force between atoms.
    integer :: doField_SCF ! Compute a charge, potential, or wave fn field.
+   integer :: doMTOP_SCF ! Compute the polarization using the modern theory.
 
    ! Properties to compute in the PSCF stage.
    integer :: doDOS_PSCF  ! Include DOS/PDOS calculation.
@@ -58,6 +59,7 @@ module O_CommandLine
          ! partial band structure data (3).
    integer :: doForce_PSCF ! Include computation of the force between atoms.
    integer :: doField_PSCF ! Compute a charge, potential, or wave fn field.
+   integer :: doMTOP_PSCF ! Compute the polarization using the modern theory.
 
    ! Properties to compute based only on geometry and not the wave function.
    integer :: doLoEn ! Compute a metric that quantifies the local environment.
@@ -250,6 +252,9 @@ subroutine readJobID
    elseif (jobID == 110) then
       doField_SCF = 1
       write (20,*) "Doing SCF Field"
+   elseif (jobID == 111) then
+      doMTOP_SCF = 1
+      write (20,*) "Doing SCF Modern Polarizatino"
    elseif (jobID == 201) then
       doDOS_PSCF = 1
       write (20,*) "Doing PSCF Density of States"
@@ -280,6 +285,9 @@ subroutine readJobID
    elseif (jobID == 210) then
       doField_PSCF = 1
       write (20,*) "Doing PSCF Field"
+   elseif (jobID == 211) then
+      doMTOP_PSCF = 1
+      write (20,*) "Doing PSCF Modern Polarization"
    elseif (jobID == 311) then
       doLoEn = 1
       write (20,*) "Doing Local Environment"
@@ -310,6 +318,7 @@ subroutine initCLP
    doSYBD_SCF      = -1
    doForce_SCF     = -1
    doField_SCF     = -1
+   doMTOP_SCF      = -1
    doDOS_PSCF      = -1
    doBond_PSCF     = -1
    doDIMO_PSCF     = -1
@@ -317,6 +326,7 @@ subroutine initCLP
    doSYBD_PSCF     = -1
    doForce_PSCF    = -1
    doField_PSCF    = -1
+   doMTOP_PSCF     = -1
    serialXYZ       = -1
    doLoEn          = -1
 

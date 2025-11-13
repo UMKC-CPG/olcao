@@ -89,6 +89,43 @@ subroutine multWithBasisFn1 (currentBasisFns,pairXBasisFn2,pairXBasisFn12,&
 end subroutine multWithBasisFn1
 
 
+subroutine cmplxMultWithBasisFn1 (currentBasisFns,pairXBasisFn2,pairXBasisFn12,&
+      & currentlmIndex,currentNumTotalStates,maxAlpha1Used)
+
+   ! Import the necessary modules
+   use O_Kinds
+
+   ! Import the necessary data modules
+   use O_AtomicTypes
+
+   ! Make sure that there are not accidental variable declarations.
+   implicit none
+
+   ! Define variables passed to this subroutine
+   real (kind=double), dimension (maxNumAtomAlphas,&
+         & maxNumStates,2) :: currentBasisFns
+   complex (kind=double), dimension (16,maxNumAtomAlphas,&
+         & maxNumStates) :: pairXBasisFn2
+   complex (kind=double), dimension (maxNumStates,maxNumStates) :: &
+         & pairXBasisFn12
+   integer, dimension (maxNumStates,2)  :: currentlmIndex
+   integer, dimension(2) :: currentNumTotalStates
+   integer :: maxAlpha1Used
+
+   ! Define local variables
+   integer :: l,m
+
+   do l = 1, currentNumTotalStates(2)
+      do m = 1, currentNumTotalStates(1)
+         pairXBasisFn12(m,l) = &
+               & sum(currentBasisFns(:maxAlpha1Used,m,1) * &
+               & pairXBasisFn2(currentlmIndex(m,1),:maxAlpha1Used,l))
+      enddo
+   enddo
+
+end subroutine cmplxMultWithBasisFn1
+
+
 #ifndef GAMMA
 
 
@@ -139,6 +176,55 @@ subroutine applyPhaseFactors (currentPair,pairXBasisFn12,statesDim1,statesDim2,&
    endif
 
 end subroutine applyPhaseFactors
+
+
+subroutine cmplxApplyPhaseFactors (currentPair,pairXBasisFn12,statesDim1,&
+      & statesDim2,k,runCode)
+
+   ! Import the necessary modules
+   use O_Kinds
+
+   ! Import the necessary data modules
+   use O_KPoints
+   use O_AtomicTypes
+
+   ! Make sure no funny variables are defined accidentally.
+   implicit none
+
+   ! Define the variables passed to this subroutine
+   integer, intent(in) :: statesDim1
+   integer, intent(in) :: statesDim2
+   complex (kind=double), dimension (maxNumStates,maxNumStates,&
+         & numKPoints), intent(inout) :: currentPair
+   complex (kind=double), dimension (statesDim1,statesDim2), &
+         & intent(in) :: pairXBasisFn12
+   integer, intent(in) :: k ! Cell loop index
+   integer, intent(in) :: runCode
+
+   ! Define the local variables
+   integer :: l,m,n
+
+   if (runCode == 0) then
+      do l = 1, numKPoints
+         do m = 1, statesDim2
+            do n = 1, statesDim1
+               currentPair(n,m,l) = currentPair(n,m,l) + &
+                     & phaseFactor(l,k) * pairXBasisFn12(n,m)
+            enddo
+         enddo
+      enddo
+   else ! runCore == 1; Include a -i factor.
+      do l = 1, numKPoints
+         do m = 1, statesDim2
+            do n = 1, statesDim1
+               currentPair(n,m,l) = currentPair(n,m,l) + cmplx(0.0_double,&
+                     & -1.0_double) * phaseFactor(l,k) * pairXBasisFn12(n,m)
+            enddo
+         enddo
+      enddo
+   endif
+
+end subroutine cmplxApplyPhaseFactors
 
 
 subroutine kPointLatticeOriginShift (currentNumTotalStates,currentPair,&

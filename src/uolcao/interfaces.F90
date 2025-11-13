@@ -326,6 +326,23 @@ module O_BLASDSYR
    end interface
 end module O_BLASDSYR
 
+module O_BLASZGERU
+   interface
+      subroutine zgeru(M,N,ALPHA,X,INCX,Y,INCY,A,LDA)
+         use O_Kinds
+         integer :: M
+         integer :: N
+         integer :: LDA
+         real (kind=double) :: ALPHA
+         complex (kind=double), dimension (M) :: X
+         integer :: INCX
+         complex (kind=double), dimension (N) :: Y
+         integer :: INCY
+         complex (kind=double), dimension (LDA,N) :: A
+      end subroutine zgeru
+   end interface
+end module O_BLASZGERU
+
 module zherkInterface
    interface
       subroutine zherk (UPLO,TRANS,N,K,ALPHA,A,LDA,BETA,C,LDC)
@@ -401,4 +418,3 @@ module dsyr2kInterface
       end subroutine dsyr2k
    end interface
 end module dsyr2kInterface
-

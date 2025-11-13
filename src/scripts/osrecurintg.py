@@ -70,6 +70,7 @@ class ScriptSettings():
         self.delectroncb = default_rc["3CDOLCB"]
         self.delectronbb = default_rc["3CDOLBB"]
         self.delectronbc = default_rc["3CDOLBC"]
+        self.Koverlap = default_rc["2CKOL"]
 
 
     def parse_command_line(self):
@@ -191,10 +192,16 @@ Please contact Paul Rulis (rulisp@umkc.edu) regarding questions.
                             's-type), which is used for derivative '+
                             'electron repulsion. <A|B|C>')
 
+        parser.add_argument('-ko', '--Koverlap', action='store_true',
+                            default=False, 
+                            help = 'Include two-center with '+
+                            'plane wave which is used for the '+
+                            'polarization calculation')
+
         parser.add_argument('-a', '--all', action='store_true',
                             default=False,
                             help = 'Activate o,k,n,e,m,mv,d,dk,dncb,dnbb,'+
-                            'dnbc,decb,debb,debc integral types.')
+                            'dnbc,decb,debb,debc,ko integral types.')
 
         return parser.parse_args()
 
@@ -257,6 +264,9 @@ Please contact Paul Rulis (rulisp@umkc.edu) regarding questions.
         if (args.delectronbc == True):
             self.delectronbc = True
 
+        if (args.Koverlap == True):
+            self.Koverlap = True
+
         if (args.all == True):
             self.overlap = True
             self.kinetic = True
@@ -272,6 +282,7 @@ Please contact Paul Rulis (rulisp@umkc.edu) regarding questions.
             self.delectroncb = True
             self.delectronbb = True
             self.delectronbc = True
+            self.Koverlap = True
 
     def recordCLP(self):
         with open("command", "a") as cmd:
@@ -478,11 +489,16 @@ def print_head(settings, f, num_sh_intg, num_pc_intg, max_lam):
    ! Define program variables.
    real (kind=double), allocatable, dimension (:,:,:,:) :: pc
    real (kind=double), allocatable, dimension (:,:,:,:) :: sh
+   complex (kind=double), allocatable, dimension (:,:,:,:) :: pcCmplx
+   complex (kind=double), allocatable, dimension (:,:,:,:) :: shCmplx
    real (kind=double), dimension (3) :: alphas
+   real (kind=double), dimension (3) :: deltaK ! x,y,z of Kf-Ki
    real (kind=double), dimension (3,3) :: pos ! x,y,z of A,B,C
    real (kind=double), dimension (3,2) :: temp_alphas
+   real (kind=double), dimension (3,2) :: temp_deltaK ! x,y,z of Kf-Ki
    real (kind=double), dimension (3,3,2) :: temp_pos ! x,y,z of A,B,C
    real (kind=double), dimension (3) :: temp_alphas_step
+   real (kind=double), dimension (3) :: temp_deltaK_step ! x,y,z of Kf-Ki
    real (kind=double), dimension (3,3) :: temp_pos_step ! x,y,z of A,B,C
    real (kind=double) :: cell_size, step_size ! Parameters for the numerical
          ! integration process. Read carefully! The cell size is given as a
@@ -505,6 +521,9 @@ def print_head(settings, f, num_sh_intg, num_pc_intg, max_lam):
    allocate (pc(""" \
     + f"{num_pc_intg},{num_pc_intg},{max(2*max_lam+1,3)},2))" + """
    allocate (sh(""" + f"{num_sh_intg},{num_sh_intg},3,2))" + """
+   allocate (pcCmplx(""" \
+    + f"{num_pc_intg},{num_pc_intg},{max(2*max_lam+1,3)},2))" + """
+   allocate (shCmplx(""" + f"{num_sh_intg},{num_sh_intg},3,2))" + """
 
    ! Open the control file.
    open (10, file="intgcontrol", status='old')
@@ -526,25 +545,29 @@ def print_head(settings, f, num_sh_intg, num_pc_intg, max_lam):
       if (num_steps == 1) then
    
          ! Read the parameters for the current segment.
-         read (10,*) temp_alphas(:,1), temp_pos(:,:,1)
+         read (10,*) temp_alphas(:,1), temp_pos(:,:,1), temp_deltaK(:,1)
 
          ! Fill in dummy values for the temp step data. (It will not be used.)
          temp_alphas_step(:) = 0.0d0
+         temp_deltaK_step(:) = 0.0d0
          temp_pos_step(:,:) = 0.0d0
       else
    
          ! Read the beginning and ending parameters for the current segment.
-         read (10,*) temp_alphas(:,1), temp_pos(:,:,1) ! First step
-         read (10,*) temp_alphas(:,2), temp_pos(:,:,2) ! Last step
+         !   First step followed by last step.
+         read (10,*) temp_alphas(:,1), temp_pos(:,:,1), temp_deltaK(:,1)
+         read (10,*) temp_alphas(:,2), temp_pos(:,:,2), temp_deltaK(:,2)
 
          ! Compute the size of the step for each parameter.
          temp_alphas_step(:) = (temp_alphas(:,2) - temp_alphas(:,1))/num_steps
+         temp_deltaK_step(:) = (temp_deltaK(:,2) - temp_deltaK(:,1))/num_steps
          temp_pos_step(:,:) = (temp_pos(:,:,2) - temp_pos(:,:,1))/num_steps
       endif
 
       ! Start iterating over the steps.
       do i = 1, num_steps
          alphas(:) = temp_alphas(:,1) + (i-1) * temp_alphas_step(:)
+         deltaK(:) = temp_deltaK(:,1) + (i-1) * temp_deltaK_step(:)
          pos(:,:) = temp_pos(:,:,1) + (i-1) * temp_pos_step(:,:)
 """
 
@@ -890,6 +913,28 @@ def print_head(settings, f, num_sh_intg, num_pc_intg, max_lam):
                 elif (xyz == 2):
                     head += '               & "DElezbc.dat")\n'
 
+        if (settings.Koverlap):
+            head += """
+
+         ! Compute the pc and sh integral results for the current parameters
+         !   using the analytic formulas.
+         call Koverlap2CIntgAna(alphas(1),alphas(2),pos(:,1),pos(:,2),&
+               & deltaK(:),pcCmplx(:,:,1,1),shCmplx(:,:,1,1))
+
+         ! Compute the pc and sh integral results for the current parameters
+         !   using numerical integration.
+         call Koverlap2CIntgNum(alphas(1),alphas(2),pos(:,1),pos(:,2),&
+               & deltaK(:),pcCmplx(:,:,1,2),shCmplx(:,:,1,2),&
+               & cell_size,step_size)
+
+         ! Print the pc and sh integral result differences.
+         call print_pc_sh(h,i,11,alphas,pos,real(pcCmplx(:,:,1,:),double),&
+               & real(shCmplx(:,:,1,:),double),"KO_Real.dat")
+         call print_pc_sh(h,i,12,alphas,pos,aimag(pcCmplx(:,:,1,:)),&
+               & aimag(shCmplx(:,:,1,:)),"KO_Cmpx.dat")
+
+"""
+
         head += """
       enddo
    enddo
@@ -897,6 +942,8 @@ def print_head(settings, f, num_sh_intg, num_pc_intg, max_lam):
    ! Deallocate space.
    deallocate(pc)
    deallocate(sh)
+   deallocate(pcCmplx)
+   deallocate(shCmplx)
 
 """
 
@@ -1320,6 +1367,23 @@ def main():
             ana.print_test_delectronbc_ana(conversion, triads, matrix_de,
                     matrix_ol, f)
             num.print_test_delectronbc_num(conversion, triads, f)
+
+    # Manage the modern theory of polarization integrals
+    if (settings.Koverlap):
+        matrix_ko = ana.Koverlap(triads, settings.vectorize)
+        if (settings.production):
+            if (settings.vectorize):
+                ana.print_production_Koverlap_vec(conversion, triads,
+                                                matrix_ko, lam_sh_list,
+                                                lam_pc_list, f)
+            else:
+                ana.print_production_Koverlap(conversion, triads,
+                                            matrix_ko, lam_sh_list,
+                                            lam_pc_list, f)
+
+        else:
+            ana.print_test_Koverlap_ana(conversion, triads, matrix_ko, f)
+            num.print_test_Koverlap_num(conversion, triads, f)
 
     # Print the overall foot.
     print_foot(settings.production, settings.vectorize, f)

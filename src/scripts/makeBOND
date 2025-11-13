@@ -82,6 +82,10 @@ sub printHelp
 #   is given, then the openDX models will contain specific sets of bonds and
 #   the atoms in the model must be present as one of the ends of the bond.
 #
+#The -vtk option will do the same as the preceding option, but will produce
+#   only one file and in the VTK legacy format. The color coding has yet to
+#   be implemented.
+#
 #The -3dfull option will produce a single OpenScad model file that can be used
 #   to produce data for a 3D printer. This model will contain all atoms and
 #   bonds of the complete system unioned together so that the whole model prints
@@ -99,10 +103,6 @@ sub printHelp
 #   work the same way for this command as they do for the -3dfull option. The
 #   additional -vol option is used to specify the printable volume that the 3D
 #   printer has accessible to it.
-#
-#The -vtk option will do the same as the preceding option, but will produce
-#   only one file and in the VTK legacy format. The color coding has yet to
-#   be implemented.
 #
 #The -mesh option will produce a 3D mesh of data points for display in openDX.
 #   The values at each mesh point are computed by averaging the values of
@@ -154,6 +154,7 @@ sub printHelp
 #                 [-maxbo \$maxBO] [-minbo \$minBO]
 #                 [-maxbl \$maxBL] [-minbl \$minBL]
 #                 [-scatter]
+#                 [-dipole]
 #                 [-profile \$profileAxis]
 #                 [-model [[-atom] | [-bond]] [-rf \$radiusFactor] [-grey]
 #                        [-bo3c]]
@@ -489,6 +490,8 @@ sub parseCLP
          {$groupControlFile = $ARGV[++$number];}
       elsif ($ARGV[$number] eq "-scatter")
          {$scatterPlot=1;}
+      elsif ($ARGV[$number] eq "-dipole")
+         {$dipole=1;}
       elsif ($ARGV[$number] eq "-model")
       {
          $systemModelDX=1;
@@ -616,7 +619,7 @@ sub readData
    my $j;
    my $count;
 
-   # At this point we have to perfrom an ugly kludge until this fixed
+   # At this point we have to perfrom an ugly kludge until this is fixed
    #   properly. We will need to open the data file, read it all, and
    #   determine the set of ELEMENT_NAMEs.
 
@@ -2007,7 +2010,7 @@ sub getExtendedPositions
                              $diffZ[1] * $diffZ[1]);
       $minDistance[2] = $minDistance[1];
 
-      if ($minDistance[1] > $bondLength[$i]*$bohrRad + 0.1)
+      if ($minDistance[1] > $bondLength[$i] + 0.1)
       {
 
          # Find the locations of the two new 'atoms'.
@@ -2423,7 +2426,7 @@ sub printModelVTK
 
    # Print the lattice info. At the time of writing this, I do not know if
    #   this step is still necessary, so it will be included just in case.
-   &printLatticeDX;
+   #&printLatticeDX;
 
 
    # Now, loop to print all the Q* and BO information of each requested kind,

@@ -36,20 +36,12 @@ module O_KPoints
          !   responsibilty of the user to know whether or not a LAT method can
          !   be used if they provide the kPoints as an explicit list with
          !   kPointStyleCode 0.
-         !   If 0 then the histogram method will be used.
-         !   If 1 then LAT as described in will be used.
-         !   If 2 then LAT as described in will be used.
-         !   If 3 then LAT as described in will be used.
+         !   If kPointIntgCode=0 then the histogram method will be used.
+         !   If kPointIntgCode=1 then the LAT method will be used.
    integer :: numKPoints ! The number of kpoints in the system.
    integer :: numPaths ! The number of discontinuous high-sym. KP paths.
    integer :: numPathKP ! Number of kpoints that will be used to create the
          !   path between the high symmetry kpoints.
-   integer :: numKPoints_HDF5 ! Number of kpoints in the given kpoints file or
-         !   obtained via kpoint density, used specifically for the HDF5 file
-         !   to circumvent the issue with "numKPoints" being reassigned.
-   integer :: numPathKP_HDF5 ! Number of kpoints in the olcao.dat input file
-         !   for SYBD calculations, used specifically for the HDF5 to
-         !   circumvent the issue with "numPathKP" being reassigned.
    integer :: isCartesian ! 1 = yes, 0 = no (Are the high symmetry kpoints
          !   given in cartesian coordinates?)
    integer :: numTotalHighSymKP ! Total number of high symmetry kpoints over
@@ -57,9 +49,15 @@ module O_KPoints
    integer, dimension (dim3) :: numAxialKPoints ! Number of kpoints along each
          !   of the a, b, c axes defining the kpoint mesh. This is only used
          !   if the kPointStyleCode equals 1 or 2.
+   integer, dimension (dim3) :: numAxialMTOP_KP ! Number of kpoints along
+         !   each of the a,b,c axes defining the kpoint mesh. This is only
+         !   used if either doMTOP_SCF or doMTOP_PSCF flag is set to 1.
    integer, allocatable, dimension (:) :: numHighSymKP ! Number of high
          !   symmetry kpoints that define the vertices of each path to be taken
          !   for the band diagram.
+   integer, allocatable, dimension (:,:) :: MTOPIndexMap ! Map between the
+         !   desired sequence of kpoints for MTOP calculations and the one-
+         !   dimensional list of kpoints.
    real (kind=double) :: minKPointDensity ! The number of kpoints along each
          !   a,b,c axis divided by the magnitude of that axis must be greater
          !   than or equal to the value of minKPointDensity. This is only used
@@ -67,6 +65,9 @@ module O_KPoints
    real (kind=double), dimension (dim3) :: kPointShift ! Fractional amount to
          !   shift the kpoint mesh by along each of the a,b,c axes. This is
          !   only used if the kPointStyleCode equals 1 or 2.
+   real (kind=double), dimension (dim3) :: kPointShiftMTOP ! Fractional amount
+         !   to shift the kpoint mesh by along each of the a,b,c axes. This is
+         !   only used if either doMTOP_SCF or doMTOP_PSCF flag is set to 1.
    real (kind=double), allocatable, dimension (:) :: kPointWeight ! The
          !   weight assigned to each kpoint.
    real (kind=double), allocatable, dimension (:,:) :: kPoints ! The acutal
@@ -83,6 +84,8 @@ module O_KPoints
    complex (kind=double), allocatable, dimension (:,:) :: phaseFactor ! The
          !   cosine and sine of the dot product between each kpoint and each
          !   real space superlattice vector.
+   character*1, allocatable, dimension (:,:) :: highSymKPChar ! The characters
+         !   that identify each point on the high symmetry kpoint paths.
 
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    ! Begin list of module subroutines.!
@@ -111,11 +114,13 @@ subroutine readKPoints(readUnit, writeUnit)
    integer :: i ! Loop index variable.
    integer :: counter ! Dummy variable to read the kpoint index number.
 
-   ! Read the kpoint definition style code.
+   ! Read the kpoint definition style code. I.e., how the mesh should be
+   !   constructed.
    call readData(readUnit,writeUnit,kPointStyleCode,len('KPOINT_STYLE_CODE'),&
          & 'KPOINT_STYLE_CODE')
 
    ! Read the code that defines the type of integration method to be used.
+   !   I.e., Weighted sums, tetrahedral, etc.
    call readData(readUnit,writeUnit,kPointIntgCode,len('KPOINT_INTG_CODE'),&
          & 'KPOINT_INTG_CODE')
 
@@ -125,6 +130,10 @@ subroutine readKPoints(readUnit, writeUnit)
       ! Read the number of kpoints.
       call readData(readUnit,writeUnit,numKPoints,len('NUM_BLOCH_VECTORS'),&
             & 'NUM_BLOCH_VECTORS')
+
+      ! Read the number of kpoints requested on each axis.
+      call readData(readUnit,writeUnit,3,numAxialKPoints,&
+            & len('NUM_AXIAL_KPOINTS'),'NUM_AXIAL_KPOINTS')
 
       ! Allocate space to hold the kpoints and their weighting factors.
       allocate (kPoints(dim3,numKPoints))
@@ -140,15 +149,10 @@ subroutine readKPoints(readUnit, writeUnit)
       !   coordinates.
       do i = 1, numKPoints
          read (readUnit,*) counter, kPointWeight(i), kPoints(1:dim3,i)
-         write (writeUnit,100) counter, kPointWeight(i), kPoints(1:dim3,i)
+         write (writeUnit,fmt="(i5,1x,4f15.8)") counter, kPointWeight(i), &
+               & kPoints(1:dim3,i)
       enddo
       call flush (writeUnit)
-
-      ! Copy the given numKPoints to numKPoints_HDF5 so that when the HDF5
-      !   file is initiated it will use the correct number of kpoints. (The
-      !   file needs to be initialized after the SYBD numPathKP->numKPoints
-      !   reassignment has occured.)
-      numKPoints_HDF5 = numKPoints
 
    elseif (KPointStyleCode == 1) then
       ! Read axial numbers of kpoints and a shift.
@@ -162,11 +166,11 @@ subroutine readKPoints(readUnit, writeUnit)
       call readData(readUnit,writeUnit,3,kPointShift,len('KP_SHIFT_A_B_C'),&
             & 'KP_SHIFT_A_B_C')
 
-      ! Expand the requested kpoints into explicit kpoints.
-      !call computeKPointMesh
+      ! The kpoint mesh will be constructed later, once implicit information
+      !   such as the reciprocal lattice has been obtained.
 
    elseif (KPointStyleCode == 2) then
-      ! Read fractional min. kp sep. and a shift.
+      ! Read fractional minimum kpoint separation and a shift.
 
       ! Read the minimum line density required of kpoints along all axes.
       call readData(readUnit,writeUnit,minKPointDensity,&
@@ -176,18 +180,18 @@ subroutine readKPoints(readUnit, writeUnit)
       !   away from the origin along each a,b,c axis.
       call readData(readUnit,writeUnit,3,kPointShift,len('KP_SHIFT_A_B_C'),&
             & 'KP_SHIFT_A_B_C')
+
+      ! The kpoint mesh will be constructed later, once implicit information
+      !   such as the reciprocal lattice has been obtained.
    endif
 
 
-   ! If a LAT method is requested, then we need to make the tetrahedra. If
-   !   the KPointIntgCode == 0, then we don't have anything additional to do.
-   call generateTetrahedra
-!   if (KPointIntgCode == 1) then
-!      call generateTetWholeBZ
-!   elseif (KPointIntgCode == 2) then
-!   endif
-
-   100 format (i5,1x,4f15.8)
+   ! Set up additional information depending on type of integration method.
+   if (KPointIntgCode == 0) then
+      return
+   elseif (KPointIntgCode == 1) then
+      call generateTetrahedra ! Linear Analytic Tetrahedral (LAT) method.
+   endif
 
 end subroutine readKPoints
 
@@ -198,6 +202,7 @@ subroutine readSYBDKPoints(readUnit, writeUnit)
    use O_Kinds
    use O_Constants, only: dim3
    use O_ReadDataSubs
+   use O_WriteDataSubs
 
    ! Make sure that there are not accidental variable declarations.
    implicit none
@@ -244,8 +249,10 @@ subroutine readSYBDKPoints(readUnit, writeUnit)
    write (writeUnit,*) 'Number of high symmetry K-Points = ',numTotalHighSymKP
    call flush (writeUnit)
    
-   ! Allocate space to hold the high symmetry kpoints.
+   ! Allocate space to hold the high symmetry kpoints and their identifying
+   !   characters.
    allocate (highSymKP(dim3,maxval(numHighSymKP),numPaths))
+   allocate (highSymKPChar(maxval(numHighSymKP),numPaths))
 
    ! Read the high symmetry kpoints for each path.
    do i = 1, numPaths
@@ -256,13 +263,38 @@ subroutine readSYBDKPoints(readUnit, writeUnit)
       enddo
    enddo
 
-   ! Copy the given numPathKP to numPathKP_HDF5 so that when the HDF5
-   !   file is initiated it will use the correct number of kpoints. (The
-   !   file needs to be initialized after the SYBD numPathKP->numKPoints
-   !   reassignment has occured.)
-   numPathKP_HDF5 = numPathKP
+   ! Read the set of characters identifying the high symmetry kpoints.
+   do i = 1, numPaths
+      do j = 1, numHighSymKP(i)
+         call readData(readUnit,writeUnit,highSymKPChar(j,i),0)
+      enddo
+   enddo
+   call writeData(writeUnit)
 
 end subroutine readSYBDKPoints
+
+
+subroutine readMTOPKPoints(readUnit, writeUnit)
+
+   ! Include the necessary modules
+   use O_Kinds
+   use O_Constants, only: dim3
+   use O_ReadDataSubs
+
+   implicit none
+
+   ! Passed parameters
+   integer, intent(in) :: readUnit   ! The unit number of the file to read
+   integer, intent(in) :: writeUnit  ! The unit number of the file to write
+
+   ! Read input data
+   call readAndCheckLabel(readUnit, writeUnit, len('MTOP_INPUT_DATA'), &
+         & 'MTOP_INPUT_DATA')
+   call readData(readUnit, writeUnit, 3, numAxialMTOP_KP(:), 0, '')
+   call readData(readUnit, writeUnit, 3, kPointShiftMTOP(:), 0, '')
+   call flush(writeUnit)
+
+end subroutine readMTOPKPoints
 
 
 ! This converts kpoints from abc fractional (of the recip space cell) to
@@ -360,9 +392,11 @@ subroutine makePathKPoints
    !   file.  So, we begin by redefining the number of kpoints in the system.
    numKPoints = numPathKP
 
-   ! Decallocate the kpoints and weights defined in fort.15.
-   deallocate (kPointWeight)
-   deallocate (kPoints)
+   ! Decallocate the kpoints and weights that may have been read in.
+   if (allocated(kPointWeight)) then
+      deallocate (kPointWeight)
+      deallocate (kPoints)
+   endif
 
    ! Reallocate the kpoint storage with the new parameters.  Note that the
    !   weights are going to store the magnitudes and not the usual kpoint
@@ -553,6 +587,383 @@ subroutine makePathKPoints
 end subroutine makePathKPoints
 
 
+subroutine initializeKPointMesh(applySymmetry)
+
+   ! Define used modules.
+   use O_Kinds
+   use O_Constants
+
+   ! Make sure no funny variables are created.
+   implicit none
+
+   ! Define passed parameters.
+   integer, intent (in) :: applySymmetry
+
+   ! Define local variables
+   integer :: i, j, k
+   integer :: numMeshKPoints
+   integer, dimension (3) :: loopIndex
+   !integer, allocatable, dimension(:) :: kPointTracker
+   real (kind=double) :: kpThresh ! Threshhold for which two kpoints are
+         ! considered to be symmetricly the same via point group operations.
+   real (kind=double) :: weightSum ! Sum of initial weights of all kpoints.
+         ! weightSum = 1 for relativistic; 2 for non-relativistic
+   real (kind=double), dimension(3) :: abcDelta
+   real (kind=double), allocatable, dimension(:,:) :: abcMeshKPoints
+   !real (kind=double), allocatable, dimension(:,:) :: abcFoldedKPoints
+
+   ! Define the threshhold for when two kpoints are symmetry reduced via
+   !   point group operations.  (i.e. how close do two kpoints have to be
+   !   when one is folded near the other for them to be considered the same?)
+   kpThresh = 0.00001_double  ! A bit arbitrary!
+
+   ! Compute the number of uniform mesh points in order to allocate space to
+   !   hold the kpoints.
+   numMeshKPoints = product(numAxialKPoints(:))
+
+   ! Initialize the weight to 2 always.  (There are 2 electrons per state
+   !   by default.  If a spin-polarized calculation is done, then the 1 e-
+   !   per state is accounted for in the olcao fortran program itself.)
+   weightSum = 2.0_double
+
+   ! Compute the mesh points separation step size in fractional units.
+   abcDelta(:) = 1.0_double / numAxialKPoints(:)
+
+   ! Allocate necessary space.
+   !allocate (kPointTracker(numMeshKPoints))
+   allocate (abcMeshKPoints(3,numMeshKPoints))
+
+   ! Loop over abc kpoints numbers to create the initial uniform mesh in
+   !   fractional units of the abc reciprocal space cell.
+   numMeshKPoints = 0
+   do i = 1, numAxialKPoints(1)
+
+      ! Store the i loop index.
+      loopIndex(1) = i
+
+      do j = 1, numAxialKPoints(2)
+
+         ! Store the j loop index.
+         loopIndex(2) = j
+
+         do k = 1, numAxialKPoints(3)
+
+            ! Increment the number of uniform mesh kpoints.
+            numMeshKPoints = numMeshKPoints + 1
+
+            ! Store the k loop index.
+            loopIndex(3) = k
+
+            ! Compute the current mesh kpoint location.
+            abcMeshKPoints(:,numMeshKPoints) = &
+                  & (loopIndex(:)-1.0_double+kPointShift(:)) * abcDelta(:)
+
+         enddo  ! k=1,numAxialKPoints(3)
+      enddo  ! j=1,numAxialKPoints(2)
+   enddo  ! i=1,numAxialKPoints(1)
+
+   ! Presently, we just make the full mesh here and do not reduce by symmetry.
+   !   In the future, we will do symmetry reductions here. Until then, we just
+   !   copy the abcMeshKPoints into the list of kPoints.
+
+   ! At this point we have the mesh in abcMeshKPoints and the total number of
+   !   kPoints in numMeshKPoints. If we are here it is because we are not using
+   !   the kPoints given explicitly in the kPoints input file. So, we need to
+   !   manage the allocation of space to hold the weights and kpoints.
+   if (allocated(kPoints)) then
+      deallocate(kPoints)
+      deallocate(kPointWeight)
+   endif
+
+   ! Once deallocated (or if they were never allocated to begin with), we can
+   !   allocate space to hold the kpoints and their weights.
+   allocate(kPoints(3,numMeshKPoints))
+   allocate(kPointWeight(numMeshKpoints))
+
+   ! Now, finally, we can copy the kPoints until we add the symmetry part
+   !   later. Also, we can initialize the weights.
+   kPoints(:,:) = abcMeshKPoints(:,:)
+   kPointWeight(:) = weightSum/real(numMeshKPoints,double)
+   numKPoints = numMeshKPoints
+
+   deallocate(abcMeshKPoints)
+
+   ! If we don't need symmetry, then return.
+   if (applySymmetry == 0) then
+      return
+   endif
+
+end subroutine initializeKPointMesh
+
+
+subroutine initializeKPoints (inSCF)
+
+   ! Define used modules.
+   use O_Kinds
+   use O_Constants, only: dim3
+   use O_CommandLine, only: doSYBD_SCF, doSYBD_PSCF, doMTOP_SCF, doMTOP_PSCF
+
+   ! Prevent accidental variable definition.
+   implicit none
+
+   ! Declare passed parameters.
+   integer, intent(in) :: inSCF
+
+   ! Define local variables.
+
+   ! The considerations for this operation are:
+
+   ! At this point an SCF or PSCF kpoint input file has been read in. The
+   !   olcao.dat file has been read in. Implicit information has been
+   !   computed. The lattices have been initialized.
+
+   ! If either doSYBD_SCF or doSYBD_PSCF variable was set, then we need to
+   !   shift to use the defined SYBD kpoints regardless of any other setting.
+
+   ! If either doMTOP_SCF or doMTOP_PSCF variable was set, then we need to
+   !   shift to use the defined MTOP kpoints regardless of any other setting.
+   !   The MTOP kpoints are a uniform mesh given as a number of kpoints in
+   !   each of the a,b,c directions along with the amount of shift from the
+   !   origin.
+
+   ! If none of doSYBD_SCF, doSYBD_PSCF, doMTOP_SCF, and doMTOP_PSCF are set,
+   !   then we turn to the kpoints as defined in the kpoint input file.
+   !   Otherwise, if one of the above situations was true, then there is
+   !   nothing left to do and we can leave this subroutine.
+
+   ! If the kpoint style was set to zero, then the kpoints were explicitly
+   !   provided in the kpoint input file, the number of kpoints was set,
+   !   the kpoint weights were set, and the kpoint values themselves were
+   !   set. Therefore, there is nothing left to do and we can leave this
+   !   subroutine.
+
+   ! If the kpoint style was set to one, then the number of kpoints in each
+   !   a,b,c direction were provided along with the amount of shift that
+   !   should be applied to the mesh. Therefore, it is necessary to create
+   !   a mesh from this information and reduce it by symmetry.
+
+   ! If the kpoint style was set to two, then the density of kpoints was
+   !   provided along with the amount of shift that should be applied to the
+   !   mesh. Therefore, it is necessary to create a mesh from this information
+   !   and reduce it by symmetry.
+
+   ! Proceed:
+
+   ! Check for the above sequence of situations.
+   if ((doSYBD_SCF == 1) .and. (inSCF == 1)) then
+      call makePathKPoints
+   elseif ((doSYBD_PSCF == 1) .and. (inSCF == 0)) then
+      call makePathKPoints
+   elseif ((doMTOP_SCF == 1) .and. (inSCF == 1)) then
+      numAxialKPoints(:) = numAxialMTOP_KP(:)
+      kPointShift(:) = kPointShiftMTOP(:)
+      call initializeKPointMesh(0) ! Do not apply symmetry.
+      call convertKPointsToXYZ
+      call makeMTOPIndexMap
+   elseif ((doMTOP_PSCF == 1) .and. (inSCF == 0)) then
+      numAxialKPoints(:) = numAxialMTOP_KP(:)
+      kPointShift(:) = kPointShiftMTOP(:)
+      call initializeKPointMesh(0) ! Do not apply symmetry.
+      call convertKPointsToXYZ
+      call makeMTOPIndexMap
+   elseif (kPointStyleCode == 0) then
+      call convertKPointsToXYZ
+   elseif (kPointStyleCode == 1) then
+      call initializeKPointMesh(1) ! Apply symmetry to reduce KP.
+      call convertKPointsToXYZ
+   elseif (kPointStyleCode == 2) then
+      call computeAxialKPoints
+      call initializeKPointMesh(1) ! Apply symmetry to reduce KP.
+      call convertKPointsToXYZ
+   endif
+
+   ! Compute the phase factors.
+   call computePhaseFactors
+
+end subroutine initializeKPoints
+
+
+subroutine computeAxialKPoints
+
+   ! Define used modules.
+   use O_Kinds
+   use O_Constants, only:dim3
+   use O_Lattice, only: recipCellVolume, recipMag
+
+   ! Define local variables.
+   integer :: i
+   integer :: nearIndex
+   real (kind=double) :: stepSize
+   real (kind=double) :: numKPointsEstimate
+   real (kind=double), dimension (dim3) :: fractionalPoints
+
+   ! To determine the number of axial KPoints needed to achieve the desired
+   !   kpoint density, we first estimate the total number of kpoints needed.
+   numKPointsEstimate = minKPointDensity * recipCellVolume
+
+   ! The number of kpoints along each axis should be such that the spacing
+   !   is nearly equal (one axis vs. another) and the product of the number
+   !   of kpoints along each axis is as close to the estimate as possible.
+
+   ! To force the step sizes to be equal for each axis, the ratio of the
+   !   axial magnitude and the number of kpoints along that axis should be
+   !   equal for all axes. I.e., recipMag(1) / numAxialKPoints(1) = stepSize,
+   !   and so forth for 2, and 3. With a fixed stepSize this would yield
+   !   real numbers for the number of kpoints. We will assume this for now
+   !   and then make integer later.
+
+   ! Now, establish a point density constraint:
+   !   recipCellVolume / product(numAxialKPoints(:)) = 1 / minKPointsDensity
+
+   ! Therefore, the step size is:
+   stepSize = (product(recipMag(:)) / &
+         & (recipCellVolume * minKPointDensity))**(1.0_double/3.0_double)
+
+   ! Now, solve for the number of axial points:
+   numAxialKPoints(:) = int(recipMag(:) / stepSize)
+
+   ! Compute the residual fractional part.
+   fractionalPoints(:) = (recipMag(:) / stepSize) &
+         & - real(numAxialKPoints(:),double)
+
+   ! Finally, adjust for the shift to integer values.
+
+   ! First, increment the number of kpoints along axes that are closest to
+   !   the next integer number of points until the density exceeds the target.
+   do while (minKPointDensity * recipCellVolume > product(numAxialKPoints(:)))
+      nearIndex = maxloc(fractionalPoints(:),1)
+      numAxialKPoints(nearIndex) = numAxialKPoints(nearIndex) + 1
+      fractionalPoints(nearIndex) = 0.0_double
+   enddo
+
+   ! Then, decrement the number of kpoints along the axes that are closest to
+   !   the previous integer (floor) until the density is less than the target.
+   !   First, fix any fractionalPoints that are zero to be one so that they
+   !   are never reduced.
+   do i = 1, 3
+      if (fractionalPoints(i) == 0.0_double) then
+         fractionalPoints(i) = 1.0_double
+      endif
+   enddo
+   do while (minKPointDensity * recipCellVolume < product(numAxialKPoints(:)))
+      nearIndex = minloc(fractionalPoints(:),1)
+      numAxialKPoints(nearIndex) = numAxialKPoints(nearIndex) - 1
+      if (numAxialKPoints(nearIndex) == 0) then
+         numAxialKPoints(nearIndex) = 1
+      endif
+      fractionalPoints(nearIndex) = 1.0_double
+   enddo
+
+   ! At this point, the numAxialKPoints should be optimized to be as close as
+   !   possible to the target density while keeping inter-point spacing as
+   !   constant as possible (comparing axes).
+
+end subroutine computeAxialKPoints
+
+
+subroutine makeMTOPIndexMap
+
+   ! Use necessary modules
+
+   ! Make sure no variables are accidentally declared.
+   implicit none
+
+   ! Declare local variables.
+   integer :: axis1, axis2
+   integer :: coeff1, coeff2
+
+   integer :: i,j,k                 ! grid indices
+   integer :: n1,n2,n3              ! mesh dims
+   integer :: lin, lin_first, lin_prev, lin2, Fixed2D
+!   integer :: totalLinks
+   integer :: axis, numsteps,base
+   integer :: jfix, kfix, ifix
+   integer :: i2, j2, k2,s,t, ii, jj, kk
+   !integer :: s_loc                 ! local link counter inside one string
+   real(kind=double), allocatable :: kPoints(:,:)
+   real(kind=double) :: kfrac(3), kf1, kf2, kf3
+   real(kind=double), allocatable, dimension(:,:) :: kp
+
+   ! Start
+
+   ! Mesh sizes
+   n1 = numAxialKPoints(1)
+   n2 = numAxialKPoints(2)
+   n3 = numAxialKPoints(3)
+
+   allocate(MTOPIndexMap( max(n2*n3*(n1+1), max(n1*n3*(n2+1), n1*n2*(n3+1))) , 3))
+
+   MTOPIndexMap(:,:) = 0
+
+
+   write (20,'(A)') 'MTOP 1D strings along each axis (2D fixed, 1D varying):'
+
+   ! =========================
+   ! axis = 1 (strings along i; fix j,k)
+   ! =========================
+ ! write(20,'(A)') '================ axis 1 (X strings; fixed j,k) ================'
+   do axis = 1, 3
+      select case(axis)
+      case(1)
+         numsteps = n1   ! number of steps per string for this axis (useful elsewhere)
+         Fixed2D = n2*n3
+         axis1 = n3
+         axis2 = n2
+      case(2)
+         numsteps = n2
+         Fixed2D = n1*n3
+         axis1 = n3
+         axis2 = n1
+      case(3)
+         numsteps = n3
+         Fixed2D = n1*n2
+         axis1 = n1
+         axis2 = n2
+      end select
+
+
+      s = 0
+      do k = 1, axis1
+         do j = 1, axis2
+            select case(axis)
+            case(1)
+               coeff1 = j-1
+               coeff2 = k-1
+            case(2)
+               coeff1 = 0
+               coeff2 = k-1
+            case(3)
+               coeff1 = j-1
+               coeff2 = 0
+            end select
+
+            s = s + 1
+            base = (s-1)*(numsteps+1)
+            do i = 1, numsteps
+               MTOPIndexMap(base+i,axis) = i + (j-1)*n1 + (k-1)*n1*n2 
+            enddo
+            MTOPIndexMap(base+numsteps+1,axis) = 1 + coeff1*n1 + coeff2*n1*n2
+            write(20,'(A,I0,A,I0)') '=== Axis=',axis,'  String(loop)=',s
+            do t = 1, numsteps+1
+               lin = MTOPIndexMap(base+t, axis)
+               ii = 1 + mod(lin-1,n1)
+               jj = 1 + mod((lin-1)/n1,n2)
+               kk = 1 + mod((lin-1)/(n1*n2),n3)
+               kf1 = real(ii-1,kind=double)/real(n1,kind=double)
+               kf2 = real(jj-1,kind=double)/real(n2,kind=double)
+               kf3 = real(kk-1,kind=double)/real(n3,kind=double)
+
+               write(20,'(A,I0,2X,A,I0,2X,3(1X,ES22.14))') ' step', t,'MTOPIndexMap= ', lin,&
+                  &  kf1,kf2,kf3             
+             enddo
+         enddo
+      enddo
+   enddo
+
+
+end subroutine makeMTOPIndexMap
+
+
 subroutine generateTetrahedra
 
    ! Include the modules we need
@@ -597,6 +1008,7 @@ subroutine cleanUpKPoints
    deallocate (kPoints)
    deallocate (numHighSymKP)
    deallocate (highSymKP)
+   deallocate (highSymKPChar)
 
    if (allocated(pathKPointMag)) then
       deallocate(pathKPointMag)

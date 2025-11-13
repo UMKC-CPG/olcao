@@ -193,14 +193,14 @@ subroutine makeValenceRho(inSCF)
 !      if (numKPoints > 1) then
 
          ! Skip any kpoints with a negligable contribution for each state.
-         skipKP = 0
+         skipKP = 1 ! Assume that we will skip this kpoint.
          do j = 1, numStates
             if (sum(abs(structuredElectronPopulation(j,i,:)))>smallThresh) then
-               skipKP = 1
+               skipKP = 0 ! Enough contribution to not skip.
                exit
             endif
          enddo
-         if (skipKP == 0) then
+         if (skipKP == 1) then
             cycle
          endif
 

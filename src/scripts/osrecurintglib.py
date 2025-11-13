@@ -191,7 +191,7 @@ def print_one_sh(conversion, f, lam_sh_list, matrix_meta, xyz, sh_idx_a,
         pc_idx = ""
         if (matrix_meta[0] == 4): # Nuclear
             pc_idx = ",1"
-    elif (matrix_meta[1] == 3): # Momentum, dipole moment, derivatives
+    elif (matrix_meta[1] == 3): # Momentum, dipole moment, Koverlap, derivatives
         sh_idx = f",{xyz+1}"
         pc_idx = f",{xyz+1}"
     '''
@@ -605,7 +605,7 @@ def print_pc_to_sh(conversion, f, matrix_meta, xyz, sh_max_idx_a,
         pc_idx = ""
         if (matrix_meta[0] == 4): # Nuclear
             pc_idx = ",1"
-    elif (matrix_meta[1] == 3): # Momentum, dipole moment, derivatives
+    elif (matrix_meta[1] == 3): # Momentum, dipole moment, Koverlap, derivatives
         sh_idx = f",{xyz+1}"
         pc_idx = f",{xyz+1}"
     '''

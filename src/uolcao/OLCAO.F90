@@ -9,9 +9,13 @@ subroutine OLCAO
    use O_PSCFHDF5
    use O_CommandLine
    use O_TimeStamps, only: initOperationLabels
+   use O_ElementData,     only: initElementData
 
    ! Initialize the logging labels.
    call initOperationLabels
+
+   ! Initialize element data from periodic table of the elements.
+   call initElementData
 
    ! Parse the command line parameters
    call parseCommandLine
@@ -40,6 +44,10 @@ subroutine OLCAO
 
       if (doField_SCF == 1) then
          call field(1)  ! Passing inSCF == 1
+      endif
+
+      if (doMTOP_SCF == 1) then
+         call mtop(1)  ! Passing inSCF == 1
       endif
 
       if (doPSCF == 1) then
@@ -76,6 +84,10 @@ subroutine OLCAO
          call field(0)  ! Passing inSCF == 0
       endif
 
+      if (doMTOP_PSCF == 1) then
+         call mtop(0)  ! Passing inSCF == 0
+      endif
+
       call cleanUpPSCF
 
       call closeHDF5_PSCF
@@ -97,15 +109,16 @@ subroutine setupSCF
    use O_SCFHDF5, only: initHDF5_SCF
    use O_SCFIntegralsHDF5, only: atomOverlap_did, atomOverlapCV_did, &
          & atomKEOverlap_did, atomMVOverlap_did, atomNPOverlap_did, &
-         & atomDMOverlap_did, atomMMOverlap_did, atomPotOverlap_did, &
-         & atomOverlap_aid, atomKEOverlap_aid, atomMVOverlap_aid, &
-         & atomNPOverlap_aid, atomDMOverlap_aid, atomMMOverlap_aid, &
-         & atomPotTermOL_aid, numComponents, fullCVDims, packedVVDims
-      use O_CommandLine, only: doDIMO_SCF, doOPTC_SCF, doField_SCF
+         & atomDMOverlap_did, atomMMOverlap_did, atomKOverlap_did, &
+         & atomPotOverlap_did, atomOverlap_aid, atomKEOverlap_aid, &
+         & atomMVOverlap_aid, atomNPOverlap_aid, atomDMOverlap_aid, &
+         & atomMMOverlap_aid, atomKOverlap_aid, atomPotTermOL_aid, &
+         & numComponents, fullCVDims, packedVVDims
+      use O_CommandLine, only: doDIMO_SCF, doOPTC_SCF, doField_SCF, doMTOP_SCF
    use O_Input, only: parseInput, numStates
    use O_Lattice, only: initializeLattice, initializeFindVec, &
          & cleanUpLattice
-   use O_KPoints, only: numKPoints, computePhaseFactors
+   use O_KPoints, only: numKPoints, initializeKPoints
    use O_Basis, only: renormalizeBasis, cleanUpBasis
    use O_ExchangeCorrelation, only: maxNumRayPoints, getECMeshParameters, &
          & makeECMeshAndOverlap, cleanUpExchCorr
@@ -116,8 +129,7 @@ subroutine setupSCF
          & gaussOverlapKE, gaussOverlapMV, gaussOverlapNP, &
          & elecPotGaussOverlap, cleanUpIntegrals, &
          & secondCleanUpIntegrals
-   use O_Integrals3Terms,  only: allocateIntegrals3Terms, &
-         & gaussOverlapDM, gaussOverlapMM, cleanUpIntegrals3Terms
+   use O_Integrals3Terms ! Use all so we can exclude gaussKOverlap
    use O_AtomicSites, only: coreDim, valeDim, cleanUpAtomSites
    use O_AtomicTypes, only: cleanUpRadialFns, cleanUpAtomTypes
    use O_PotSites, only: cleanUpPotSites
@@ -181,8 +193,8 @@ subroutine setupSCF
    call initializeFindVec
 
 
-   ! Compute the kpoint phase factors.
-   call computePhaseFactors
+   ! Compute the desired set of kpoints.
+   call initializeKPoints (1) ! inSCF == 1
 
 
    ! Renormalize the basis functions
@@ -253,7 +265,7 @@ subroutine setupSCF
    ! If any supplementary three-term matrices (xyz) were requested for
    !   computing other properties, then allocate the space that is necessary
    !   for the integral calculation and do the integral.
-   if ((doDIMO_SCF == 1) .or. (doOPTC_SCF >= 1)) then
+   if ((doDIMO_SCF == 1) .or. (doOPTC_SCF >= 1) .or. (doMTOP_SCF == 1)) then
 
       ! Consider in the future an option to do the XYZ independently to
       !   conserve memory if that becomes a problem.
@@ -266,6 +278,11 @@ subroutine setupSCF
       if (doOPTC_SCF >= 1) then
          call gaussOverlapMM(packedVVDims,atomMMOverlap_did,atomMMOverlap_aid)
       endif
+#ifndef GAMMA
+      if (doMTOP_SCF == 1) then
+         call gaussKOverlap(packedVVDims,atomKOverlap_did,atomKOverlap_aid)
+      endif
+#endif
 
       ! Clean up from the 3Term integrals.
       call cleanUpIntegrals3Terms
@@ -329,7 +346,6 @@ subroutine getImplicitInfo
    use O_PotSites, only: getPotSiteImplicitInfo
    use O_PotTypes, only: getPotTypeImplicitInfo
    use O_Lattice, only: getRecipCellVectors
-   use O_KPoints, only: convertKPointsToXYZ
    use O_Potential, only: initPotStructures
    use O_Populate, only: initCoreStateStructures
    use O_Input, only: getDipoleMomentCenter
@@ -351,7 +367,6 @@ subroutine getImplicitInfo
    call getPotTypeImplicitInfo
 
    call getRecipCellVectors
-   call convertKPointsToXYZ
 
    call initPotStructures
 
@@ -482,66 +497,6 @@ subroutine mainSCF
       call secularEqnSCF(i, numStates)
    enddo
 
-
-!   ! Shift the energy eigen values according to the highest occupied state.
-!   call shiftEnergyEigenValues(occupiedEnergy,numStates)
-!
-!   ! Find the Fermi level, the number of occupied bands, and the number of
-!   !   electrons occupying each of those bands.
-!   if ((doDOS == 1) .or. (doBond == 1) .or. (doDIMO == 1) .or. &
-!         & (doForce == 1)) then
-!      call populateStates
-!   endif
-!
-!   ! Compute the dos if it was requested.  For spin polarized calculations the
-!   !   spin up is in 60, 70, 80 and spin down is in 61, 71, 81.
-!   if (doDOS_SCF == 1) then
-!      open (unit=60,file='fort.60',status='new',form='formatted') ! TDOS
-!      open (unit=70,file='fort.70',status='new',form='formatted') ! PDOS
-!      open (unit=80,file='fort.80',status='new',form='formatted') ! LI
-!      if (spin == 2) then
-!         open (unit=61,file='fort.61',status='new',form='formatted') !Spin TDOS
-!         open (unit=71,file='fort.71',status='new',form='formatted') !Spin PDOS
-!         open (unit=81,file='fort.81',status='new',form='formatted') !Spin LI
-!      endif
-!      call computeDos
-!   endif
-!
-!   ! Compute the bond order if it was requested.
-!   if (doBond_SCF == 1) then
-!      open (unit=10,file='fort.10',status='new',form='formatted')
-!      if (spin == 2) then
-!         open (unit=11,file='fort.11',status='new',form='formatted')
-!      endif
-!      call computeBond
-!   endif
-!
-!   ! Use the dipole moment matrix to compute the dipole.
-!   if (doDIMO_SCF == 1) then
-!      open (unit=74,file='fort.74',status='new',form='formatted')
-!      if (spin == 2) then
-!         open (unit=75,file='fort.75',status='new',form='formatted')
-!      endif
-!      call makeValenceRho
-!   endif
-!
-!   ! Compute forces between atoms.
-!   if (doForce_SCF == 1) then
-!      open (unit=98,file='fort.98',status='new',form='formatted')
-!      if (spin == 2) then
-!         open (unit=99,file='fort.99',status='new',form='formatted')
-!      endif
-!      call computeForceIntg(totalEnergy)
-!      call makeValenceRho
-!   endif
-
-!   ! Close the HDF objects that were used.
-!   call closeHDF5_SCF
-!
-!   ! Close the HDF5 interface.
-!   call h5close_f (hdferr)
-!   if (hdferr /= 0) stop 'Failed to close the HDF5 interface.'
-
 end subroutine mainSCF
 
 
@@ -551,27 +506,23 @@ subroutine intgPSCF
    use O_Kinds
    use O_TimeStamps
    use O_Input, only: parseInput, numStates
-   use O_CommandLine, only: doDIMO_PSCF, doOPTC_PSCF, doSYBD_PSCF, doField_PSCF
+   use O_CommandLine, only: doDIMO_PSCF, doOPTC_PSCF, doSYBD_PSCF, &
+         & doMTOP_PSCF, doField_PSCF
    use O_Potential, only: initPotCoeffs, spin
    use O_Basis, only: renormalizeBasis, cleanUpBasis
    use O_Integrals, only: allocateIntegralsPSCF, gaussOverlapOL,&
          & gaussOverlapHamPSCF, cleanUpIntegrals, secondCleanUpIntegrals, &
          & cleanUpHamIntegrals, reallocateIntegralsPSCF
-   use O_Integrals3Terms, only: gaussOverlapDM, gaussOverlapMM, &
-         & allocateIntegrals3Terms, cleanUpIntegrals3Terms
+   use O_Integrals3Terms ! Use all so we can exclude gaussKOverlap
    use O_PSCFHDF5, only: initHDF5_PSCF
    use O_PSCFIntegralsHDF5, only: atomOverlapPSCF_did, atomOverlapCV_PSCF_did,&
          & atomHamOverlapPSCF_did, atomDMOverlapPSCF_did,&
-         & atomMMOverlapPSCF_did, atomOverlapSYBD_PSCF_did,&
-         & atomOverlapCV_SYBD_PSCF_did, atomHamOverlapSYBD_PSCF_did,&
-         & atomDMOverlapSYBD_PSCF_did,atomMMOverlapSYBD_PSCF_did,&
+         & atomMMOverlapPSCF_did, atomKOverlapPSCF_did,&
          & atomOverlapPSCF_aid,atomHamOverlapPSCF_aid,&
          & atomDMOverlapPSCF_aid,atomMMOverlapPSCF_aid,&
-         & atomOverlapSYBD_PSCF_aid,atomHamOverlapSYBD_PSCF_aid,&
-         & atomDMOverlapSYBD_PSCF_aid,atomMMOverlapSYBD_PSCF_aid,&
-         & numComponents,fullCVDimsPSCF,packedVVDimsPSCF
+         & atomKOverlapPSCF_aid, numComponents,fullCVDimsPSCF,packedVVDimsPSCF
    use O_Lattice, only: initializeLattice, initializeFindVec
-   use O_KPoints, only: numKPoints, makePathKPoints, computePhaseFactors
+   use O_KPoints, only: numKPoints, makePathKPoints, initializeKPoints
    use O_GaussianRelations, only: makeAlphaDist, makeAlphaNucDist,&
          & makeAlphaPotDist, cleanUpGaussRelations
    use O_AtomicSites, only: coreDim, valeDim
@@ -593,13 +544,6 @@ subroutine intgPSCF
    call getImplicitInfo
 
 
-   ! In the case of a symmetric band structure calculation we must modify the
-   !   kpoints according to the lattice type information given in the
-   !   olcao.dat input file.
-   if (doSYBD_PSCF == 1) then
-      call makePathKPoints
-   endif
-
    ! Create real-space super lattice out of the primitive lattice.  These
    !   "supercells" must be big enough so as to include all the points within
    !   sphere bounded by the negligability limit.  Points outside the sphere
@@ -612,8 +556,8 @@ subroutine intgPSCF
    call initializeFindVec
 
 
-   ! Compute the kpoint phase factors.
-   call computePhaseFactors
+   ! Initialize the kpoints according to any input control parameters.
+   call initializeKPoints(0) ! inSCF == 0
 
 
    ! Renormalize the basis functions.
@@ -637,14 +581,8 @@ subroutine intgPSCF
 
 
    ! Calculate the matrix elements of the overlap between all LCAO basis fns.
-   if (doSYBD_PSCF < 0) then
-      call gaussOverlapOL(numComponents,fullCVDimsPSCF,packedVVDimsPSCF,&
-            & atomOverlapPSCF_did,atomOverlapCV_PSCF_did,atomOverlapPSCF_aid)
-   else
-      call gaussOverlapOL(numComponents,fullCVDimsPSCF,packedVVDimsPSCF,&
-            & atomOverlapSYBD_PSCF_did,atomOverlapCV_SYBD_PSCF_did,&
-            & atomOverlapSYBD_PSCF_aid)
-   endif
+   call gaussOverlapOL(numComponents,fullCVDimsPSCF,packedVVDimsPSCF,&
+         & atomOverlapPSCF_did,atomOverlapCV_PSCF_did,atomOverlapPSCF_aid)
 
 
    ! Create the alpha distance matrix with nuclear alpha factor
@@ -660,12 +598,7 @@ subroutine intgPSCF
 
 
    ! Compute the hamiltonian matrix elements.
-   if (doSYBD_PSCF < 0) then
-      call gaussOverlapHamPSCF(atomHamOverlapPSCF_did,atomHamOverlapPSCF_aid)
-   else
-      call gaussOverlapHamPSCF(atomHamOverlapSYBD_PSCF_did,&
-            & atomHamOverlapSYBD_PSCF_aid)
-   endif
+   call gaussOverlapHamPSCF(atomHamOverlapPSCF_did,atomHamOverlapPSCF_aid)
 
 
    ! Now that all the single matrices are done being made we can deallocate
@@ -677,7 +610,7 @@ subroutine intgPSCF
    ! If any supplementary three-term matrices (xyz) were requested for
    !   computing other properties, then allocate the space that is necessary
    !   for the integral calculation and do the integral.
-   if ((doDIMO_PSCF == 1) .or. (doOPTC_PSCF >= 1)) then
+   if ((doDIMO_PSCF == 1) .or. (doOPTC_PSCF >= 1) .or. (doMTOP_PSCF == 1)) then
 
       ! Consider in the future an option to do the XYZ independently to
       !   conserve memory if that becomes a problem.
@@ -692,6 +625,12 @@ subroutine intgPSCF
          call gaussOverlapMM(packedVVDimsPSCF,atomMMOverlapPSCF_did,&
                & atomMMOverlapPSCF_aid)
       endif
+#ifndef GAMMA
+      if (doMTOP_PSCF == 1) then
+         call gaussKOverlap(packedVVDimsPSCF,atomKOverlapPSCF_did,&
+               & atomKOverlapPSCF_aid)
+      endif
+#endif
 
       ! Clean up from the 3Term integrals.
       call cleanUpIntegrals3Terms
@@ -718,16 +657,14 @@ subroutine bandPSCF
    use O_AtomicSites,      only: valeDim
    use O_LAPACKParameters, only: setBlockSize
    use O_Input,            only: numStates
-   use O_CommandLine,      only: doSYBD_PSCF
+   use O_CommandLine,      only: doSYBD_PSCF, doMTOP_PSCF
    use O_Lattice,          only: initializeLattice, initializeFindVec
    use O_KPoints,          only: makePathKPoints, numKPoints, &
          & computePhaseFactors
    use O_PSCFIntegralsHDF5, only: numComponents, atomOverlapPSCF_did,&
-         & atomHamOverlapPSCF_did, atomOverlapSYBD_PSCF_did,&
-         & atomHamOverlapSYBD_PSCF_did
-   use O_PSCFEigVecHDF5, only: eigenVectorsPSCF_did,eigenVectorsSYBD_PSCF_did,&
-         & eigenVectorsPSCF_aid, eigenVectorsSYBD_PSCF_aid
-   use O_PSCFEigValHDF5, only: eigenValuesPSCF_did,eigenValuesSYBD_PSCF_did
+         & atomHamOverlapPSCF_did
+   use O_PSCFEigVecHDF5, only: eigenVectorsPSCF_did, eigenVectorsPSCF_aid
+   use O_PSCFEigValHDF5, only: eigenValuesPSCF_did
    use O_SecularEquation, only: secularEqnPSCF, cleanUpSecularEqn
 
    ! Make sure that there are no accidental variable declarations.
@@ -753,16 +690,9 @@ subroutine bandPSCF
    call flush (20)
 
    do i = 1, spin
-      if (doSYBD_PSCF < 0) then  ! No SYBD
-         call secularEqnPSCF(i,numStates,numComponents,atomOverlapPSCF_did,&
-               & atomHamOverlapPSCF_did,eigenValuesPSCF_did,&
-               & eigenVectorsPSCF_did,eigenVectorsPSCF_aid)
-      else
-         call secularEqnPSCF(i,numStates,numComponents,&
-               & atomOverlapSYBD_PSCF_did,&
-               & atomHamOverlapSYBD_PSCF_did,eigenValuesSYBD_PSCF_did,&
-               & eigenVectorsSYBD_PSCF_did,eigenVectorsSYBD_PSCF_aid)
-      endif
+      call secularEqnPSCF(i,numStates,numComponents,atomOverlapPSCF_did,&
+            & atomHamOverlapPSCF_did,eigenValuesPSCF_did,&
+            & eigenVectorsPSCF_did,eigenVectorsPSCF_aid)
    enddo
 
 !   call cleanUpSecularEqn
@@ -798,7 +728,7 @@ subroutine printSYBD
    call populateStates
 
    ! Adjust the energyEigenValues down by the fermi level determined above.
-   call shiftEnergyEigenValues(occupiedEnergy,numStates)
+   call shiftEnergyEigenValues(occupiedEnergy)
 
    do i = 1, spin
 
@@ -907,7 +837,7 @@ subroutine dos(inSCF)
    call populateStates
 
    ! Shift the energy eigen values according to the highest occupied state.
-   call shiftEnergyEigenValues(occupiedEnergy,numStates)
+   call shiftEnergyEigenValues(occupiedEnergy)
 
    ! Call the DOS subroutine to compute the total and partial density of states
    !   as well as the localization index.
@@ -974,7 +904,7 @@ subroutine bond (inSCF, doBond)
    call populateStates
 
    ! Shift the energy eigen values according to the highest occupied state.
-   call shiftEnergyEigenValues(occupiedEnergy,numStates)
+   call shiftEnergyEigenValues(occupiedEnergy)
 
    ! Call the bond subroutine to compute the bond order and effective charge.
    call computeBond(inSCF)
@@ -1035,7 +965,7 @@ subroutine dimo(inSCF)
    call populateStates
 
    ! Shift the energy eigen values according to the highest occupied state.
-   call shiftEnergyEigenValues(occupiedEnergy,numStates)
+   call shiftEnergyEigenValues(occupiedEnergy)
 
    ! Call the DOS subroutine to compute the total and partial density of states
    !   as well as the localization index.
@@ -1063,7 +993,6 @@ subroutine field(inSCF)
    ! Import the necessary modules.
    use O_Kinds
    use O_TimeStamps
-   use O_ElementData,     only: initElementData
    use O_Populate,        only: populateStates
    use O_Potential,       only: spin, initPotCoeffs
    use O_Field,           only: computeFieldMesh, cleanUpField
@@ -1089,10 +1018,6 @@ subroutine field(inSCF)
 
    ! Open the potential file that will be read from in this program.
    open (unit=8,file='fort.8',status='old',form='formatted')
-
-
-   ! Initialize element data from periodic table of the elements.
-   call initElementData
 
 
    ! Populate the electron states to find the highest occupied state (Fermi
@@ -1172,7 +1097,7 @@ subroutine optc(inSCF,doOPTC)
 !   endif
 
    ! Shift the energy eigen values according to the highest occupied state.
-   call shiftEnergyEigenValues(occupiedEnergy,numStates)
+   call shiftEnergyEigenValues(occupiedEnergy)
 
    ! Compute some statistics and variables concerning the energy values.
    call getEnergyStatistics(doOPTC)
@@ -1197,6 +1122,67 @@ subroutine optc(inSCF,doOPTC)
    endif
 
 end subroutine optc
+
+
+subroutine mtop(inSCF)
+
+   ! Use necessary modules.
+   use HDF5
+   use O_TimeStamps
+   use O_Potential,       only: spin
+   use O_Populate,        only: occupiedEnergy, populateStates
+   use O_SecularEquation, only: shiftEnergyEigenValues
+   use O_MTOP ! Use all to avoid def GAMMA issues.
+      
+   ! Make sure that no funny variables are defined.
+   implicit none
+
+   ! Declare passed parameters.
+   integer, intent(in) :: inSCF
+
+   ! Declare local variables.
+   integer :: i
+   real(kind=double), dimension(3,2) :: P
+
+   ! Open the MTOP files that will be written to.  If a spin polarized
+   !   calculation is being done, then 180 holds spin up and 181 holds
+   !   spin down.
+   open (unit=180,file='fort.180',status='new',form='formatted')
+   if (spin == 2) then
+      open (unit=181,file='fort.181',status='new',form='formatted')
+   endif
+
+
+   ! Populate the electron states to find the highest occupied state (Fermi
+   !   energy for metals).
+   call populateStates
+
+   ! Shift the energy eigen values according to the highest occupied state.
+   call shiftEnergyEigenValues(occupiedEnergy)
+#ifndef GAMMA
+   call computeMTOPPolarization(inSCF,P)
+   do i = 1, spin
+      write(20,*) 'Polarization (a.u.):', P(:,i)
+
+      ! Print to stdout as requested
+      write(20,'(A,1X,F20.12)') 'P(x) =', P(1,i)
+      write(20,'(A,1X,F20.12)') 'P(y) =', P(2,i)
+      write(20,'(A,1X,F20.12)') 'P(z) =', P(3,i)
+
+      ! Also write to fort.180 so the run script can copy it
+      write(179+i,'(A,1X,F20.12)') 'P(x) =', P(1,i)
+      write(179+i,'(A,1X,F20.12)') 'P(y) =', P(2,i)
+      write(179+i,'(A,1X,F20.12)') 'P(z) =', P(3,i)
+      flush(179+i)
+   enddo
+#endif
+   ! Close the output files.
+   close(180)
+   if (spin == 2) then
+      close(181)
+   endif
+
+end subroutine mtop
 
 
 subroutine loen(inSCF)
@@ -1306,7 +1292,7 @@ end subroutine cleanUpSCF
 subroutine cleanUpPSCF
 
    ! Use necessary modules.
-   use O_CommandLine, only: doSYBD_PSCF
+   use O_CommandLine, only: doSYBD_PSCF, doMTOP_PSCF
    use O_Lattice, only: cleanUpLattice
    use O_Potential, only:  cleanUpPotential
    use O_AtomicSites, only: cleanUpAtomSites

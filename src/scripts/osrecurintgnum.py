@@ -4431,6 +4431,117 @@ def print_test_delectronbc_num(conversion, triads, f):
 """
     f.write(foot)
 
+def print_test_Koverlap_num(conversion, triads, f):
+
+    # Print the subroutine header for the numerical portion.
+    head = """
+   subroutine Koverlap2CIntgNum(a1,a2,A,B,deltaK,pc,sh,cell_size,step_size)
+
+   use O_Kinds
+   use O_Constants, only: pi
+
+   implicit none
+
+   ! sh(16,16): 1,s; 2,x; 3,y; 4,z; 5,xy; 6,xz; 7,yz; 8,xx-yy;
+   ! 9,2zz-xx-yy; 10,xyz; 11,xxz-yyz; 12,xxx-3yyx; 13,3xxy-yyy; 
+   ! 14,2zzz-3xxz-3yyz; 15,4zzx-xxx-yyx; 16,4zzy-xxy-yyy
+
+   ! pc(20,20): 1,s; 2,x; 3,y; 4,z; 5,xx; 6,yy; 7,zz; 8,xy; 9,xz;
+   ! 10,yz; 11,xyz; 12,xxy; 13,xxz; 14,yyx; 15,yyz; 16,zzx; 17,zzy
+   ! 18,xxx; 19,yyy; 20,zzz
+
+   ! Define the dummy variables passed to this subroutine.
+   real (kind=double), intent (in) :: a1, a2
+   real (kind=double), dimension (3), intent (in) :: A, B
+   real (kind=double), dimension (3), intent (in) :: deltaK
+   complex (kind=double), dimension (""" + \
+           f"{len(triads)},{len(triads)}" + """), intent(out) :: pc
+   complex (kind=double), dimension (""" + \
+           f"{len(conversion)},{len(conversion)}" + """), intent(out) :: sh
+   real (kind=double), intent (in) :: cell_size, step_size
+
+   ! Define local variables.
+   integer :: p, q, h, i
+   integer :: num_steps
+   integer, dimension (""" + f"{len(triads)}" + """,3) :: triads
+   integer, dimension (""" + f"{len(conversion)}" + """,2,3) :: conversion
+   integer, dimension (3) :: l1, l2
+   real (kind=double) :: start_pos
+   real (kind=double), dimension (3) :: xyz
+   complex (kind=double), dimension (3) :: xyz_sum, xyz_soln
+
+   ! Initialize local variables.
+"""
+    for i in range(len(triads)):
+        head += f"   triads({i+1},:) = (/{triads[i][0]}," + \
+                f"{triads[i][1]},{triads[i][2]}/)\n"
+
+    for i in range(len(conversion)):
+        head += f"   conversion({i+1},1,:) = (/{conversion[i][0][0]}," + \
+                f"{conversion[i][0][1]},{conversion[i][0][2]}/)\n"
+        head += f"   conversion({i+1},2,:) = (/{conversion[i][1][0]}," + \
+                f"{conversion[i][1][1]},{conversion[i][1][2]}/)\n"
+
+    head += """
+
+   ! Initialize numerical mesh quantities.
+   start_pos = -cell_size
+   num_steps = int(cell_size * 2.0d0 / step_size) + 1  ! +1 accounts for xyz=0
+
+   ! Initialize a counter of the triad pq pairs.
+   h = 0
+
+   do p = 1, """ + f"{len(triads)}" + """
+      do q = 1, """ f"{len(triads)}" + """
+
+         ! Assign l1 and l2 values for each gto.
+         l1 = triads(q,:)
+         l2 = triads(p,:)
+
+         ! Initialize sum variables.
+         xyz_sum(:) = 0.0d0
+
+         do i = 0, num_steps
+            xyz(:) = (start_pos + (i*step_size))
+            xyz_soln(:) = step_size * &
+                  & (xyz(:) - A(:))**l1(:) * (xyz(:) - B(:))**l2(:) * &
+                  & exp(-a1*(xyz(:) - A(:))**2) * exp(-a2*(xyz(:) - &
+                  & B(:))**2) * (cos(deltaK(:)*xyz(:)) - &
+                  & cmplx(0.0d0,1.0d0,double) * sin(deltaK(:)*xyz(:)))
+            xyz_sum(:) = xyz_sum(:) + xyz_soln(:)
+         enddo
+
+         pc(q,p) = product(xyz_sum(:))
+
+         ! Record progress thorugh the pq pairs.
+         h = h + 1
+         if (mod(h,10) .eq. 0) then
+            write (6,ADVANCE="NO",FMT="(a1)") "|"
+         else
+            write (6,ADVANCE="NO",FMT="(a1)") "."
+         endif
+         if (mod(h,50) .eq. 0) then
+            write (6,*) " ",h
+         endif
+         call flush (6)
+
+      enddo
+     enddo
+
+"""
+    f.write(head)
+
+    # Print the section to assemble the sh matrix.
+    num_conversion = len(conversion)
+    lib.print_pc_to_sh(conversion, f, [1, 1, ""], 0, num_conversion,
+                       num_conversion)
+
+
+    # Print the subroutine foot.
+    foot = """
+   end subroutine Koverlap2CIntgNum
+"""
+    f.write(foot)
 
 if __name__ == '__main__':
     # Everything before this point was a subroutine definition or a request

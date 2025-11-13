@@ -21,7 +21,6 @@ module O_PSCFEigVecHDF5
 
    ! Declare the eigenvector subgroup of the pscf_fid.
    integer(hid_t) :: eigenVectorsPSCF_gid
-   integer(hid_t) :: eigenVectorsSYBD_PSCF_gid
 
    ! Declare the eigenvector dataspace.
    integer(hid_t) :: valeStatesPSCF_dsid
@@ -34,13 +33,11 @@ module O_PSCFEigVecHDF5
    !   given ID numbers dynamically.  (Index1=real,imag; Index2=1..kpoints;
    !   Index3=1..spin)
    integer(hid_t), allocatable, dimension (:,:,:) :: eigenVectorsPSCF_did
-   integer(hid_t), allocatable, dimension (:,:,:) :: eigenVectorsSYBD_PSCF_did
 
    ! Declare the attribute IDs that will be used to track completion of the
    !   eigenvector calculations. We need one for each kpoint and spin (because
    !   the real and imaginary will always be completed at the same time).
    integer(hid_t), allocatable, dimension (:,:) :: eigenVectorsPSCF_aid
-   integer(hid_t), allocatable, dimension (:,:) :: eigenVectorsSYBD_PSCF_aid
 
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    ! Begin list of module subroutines.!
@@ -55,7 +52,7 @@ subroutine initPSCFEigVecHDF5 (pscf_fid,attribIntPSCF_dsid,&
    use O_Kinds
 
    ! Import necessary object modules.
-   use O_KPoints, only: numKPoints_HDF5, numPathKP_HDF5
+   use O_KPoints, only: numKPoints
    use O_AtomicSites, only: valeDim
    use O_Potential, only: spin
 
@@ -95,9 +92,6 @@ subroutine initPSCFEigVecHDF5 (pscf_fid,attribIntPSCF_dsid,&
    ! Create the eigenVectors group in the pscf_fid.
    call h5gcreate_f (pscf_fid,"eigenVectors",eigenVectorsPSCF_gid,hdferr)
    if (hdferr /= 0) stop 'Failed to create eigenvectorsPSCF group'
-   call h5gcreate_f (pscf_fid,"eigenVectorsSYBD",eigenVectorsSYBD_PSCF_gid,&
-         & hdferr)
-   if (hdferr /= 0) stop 'Failed to create eigenvectorsSYBD_PSCF group'
 
    ! Create the dataspace that will be used for the energy eigen vectors.
    call h5screate_simple_f(2,valeStatesPSCF,valeStatesPSCF_dsid,hdferr)
@@ -116,16 +110,14 @@ subroutine initPSCFEigVecHDF5 (pscf_fid,attribIntPSCF_dsid,&
 
    ! Allocate space to hold IDs for the datasets in the eigenvectors group.
 #ifndef GAMMA 
-   allocate (eigenVectorsPSCF_did(2,numKPoints_HDF5,spin)) ! Complex
-   allocate (eigenVectorsSYBD_PSCF_did(2,numPathKP_HDF5,spin)) ! Complex
+   allocate (eigenVectorsPSCF_did(2,numKPoints,spin)) ! Complex
 #else
-   allocate (eigenVectorsPSCF_did(1,numKPoints_HDF5,spin)) ! Real
-   allocate (eigenVectorsSYBD_PSCF_did(1,numPathKP_HDF5,spin)) ! Real, useless?
+   allocate (eigenVectorsPSCF_did(1,numKPoints,spin)) ! Real
 #endif
 
    ! Create the datasets for the eigenvectors.
    do i = 1, spin
-      do j = 1, numKPoints_HDF5
+      do j = 1, numKPoints
 #ifndef GAMMA
          write (currentName,fmt="(a4,i7.7,i7.7)") "real",j,i
          currentName = trim (currentName)
@@ -148,64 +140,27 @@ subroutine initPSCFEigVecHDF5 (pscf_fid,attribIntPSCF_dsid,&
          if (hdferr /= 0) stop 'Failed to create eigenVectors real did PSCF'
 #endif
       enddo
-
-      ! Repeat for the SYBD eigenvectors.
-      do j = 1, numPathKP_HDF5
-#ifndef GAMMA
-         write (currentName,fmt="(a4,i7.7,i7.7)") "real",j,i
-         currentName = trim (currentName)
-         call h5dcreate_f(eigenVectorsSYBD_PSCF_gid,currentName,&
-               & H5T_NATIVE_DOUBLE,valeStatesPSCF_dsid,&
-               & eigenVectorsSYBD_PSCF_did(1,j,i),hdferr,valeStatesPSCF_plid)
-         if (hdferr /= 0) stop 'Failed create eigenVectors SYBD real did PSCF'
-         write (currentName,fmt="(a4,i7.7,i7.7)") "imag",j,i
-         currentName = trim (currentName)
-         call h5dcreate_f(eigenVectorsSYBD_PSCF_gid,currentName,&
-               & H5T_NATIVE_DOUBLE,valeStatesPSCF_dsid,&
-               & eigenVectorsSYBD_PSCF_did(2,j,i),hdferr,valeStatesPSCF_plid)
-         if (hdferr /= 0) stop 'Failed create eigenVectors SYBD imag. did PSCF'
-#else
-         write (currentName,fmt="(i7.7,i7.7)") j,i
-         currentName = trim (currentName)
-         call h5dcreate_f(eigenVectorsSYBD_PSCF_gid,currentName,&
-               & H5T_NATIVE_DOUBLE,valeStatesPSCF_dsid,&
-               & eigenVectorsSYBD_PSCF_did(1,j,i),hdferr,valeStatesPSCF_plid)
-         if (hdferr /= 0) stop 'Failed to create eigenVectors SYBD real did PSCF'
-#endif
-      enddo
    enddo
 
    ! Allocate space to hold the attributes for tracking completion.
-   allocate (eigenVectorsPSCF_aid(numKPoints_HDF5,spin))
-   allocate (eigenVectorsSYBD_PSCF_aid(numPathKP_HDF5,spin))
+   allocate (eigenVectorsPSCF_aid(numKPoints,spin))
 
    ! Create the eigenvector tracking attributes.
    do i = 1, spin
-      do j = 1, numKPoints_HDF5
+      do j = 1, numKPoints
          call h5acreate_f (eigenVectorsPSCF_did(1,j,i),"status",&
                & H5T_NATIVE_INTEGER,attribIntPSCF_dsid,&
                & eigenVectorsPSCF_aid(j,i),hdferr)
-            if (hdferr /= 0) stop 'Failed to create eigenVectorsPSCF_aid.'
-      enddo
-      do j = 1, numPathKP_HDF5
-         call h5acreate_f (eigenVectorsSYBD_PSCF_did(1,j,i),"status",&
-               & H5T_NATIVE_INTEGER,attribIntPSCF_dsid,&
-               & eigenVectorsSYBD_PSCF_aid(j,i),hdferr)
-            if (hdferr /= 0) stop 'Failed to create eigenVectorsSYBD_PSCF_aid.'
+         if (hdferr /= 0) stop 'Failed to create eigenVectorsPSCF_aid.'
       enddo
    enddo
 
    ! Init eigenvector tracking attributes to uncomputed (status=0) state.
    do i = 1, spin
-      do j = 1, numKPoints_HDF5
+      do j = 1, numKPoints
          call h5awrite_f (eigenVectorsPSCF_aid(j,i),H5T_NATIVE_INTEGER,0,&
                & attribIntDimsPSCF,hdferr)
-            if (hdferr /= 0) stop 'Failed to init eigenVectorsPSCF_aid.'
-      enddo
-      do j = 1, numPathKP_HDF5
-         call h5awrite_f (eigenVectorsSYBD_PSCF_aid(j,i),H5T_NATIVE_INTEGER,0,&
-               & attribIntDimsPSCF,hdferr)
-            if (hdferr /= 0) stop 'Failed to init eigenVectorsSYBD_PSCF_aid.'
+         if (hdferr /= 0) stop 'Failed to init eigenVectorsPSCF_aid.'
       enddo
    enddo
 
@@ -220,7 +175,7 @@ subroutine accessPSCFEigVecHDF5 (pscf_fid,attribIntPSCF_dsid,&
    use O_Kinds
 
    ! Import necessary object modules.
-   use O_KPoints, only: numKPoints_HDF5, numPathKP_HDF5
+   use O_KPoints, only: numKPoints
    use O_AtomicSites, only: valeDim
    use O_Potential, only: spin
 
@@ -258,24 +213,19 @@ subroutine accessPSCFEigVecHDF5 (pscf_fid,attribIntPSCF_dsid,&
    endif
 
    ! Open the eigenVectors group in the pscf_fid.
-   call h5gopen_f (pscf_fid,"/eigenVectors",eigenVectorsPSCF_gid,hdferr)
+   call h5gopen_f (pscf_fid,"eigenVectors",eigenVectorsPSCF_gid,hdferr)
    if (hdferr /= 0) stop 'Failed to open eigenvectorsPSCF group.'
-   call h5gopen_f (pscf_fid,"/eigenVectorsSYBD",eigenVectorsSYBD_PSCF_gid,&
-         & hdferr)
-   if (hdferr /= 0) stop 'Failed to open eigenvectorsSYBD_PSCF group.'
 
    ! Allocate space to hold IDs for the datasets in the eigenvectors group.
 #ifndef GAMMA 
-   allocate (eigenVectorsPSCF_did(2,numKPoints_HDF5,spin)) ! Complex
-   allocate (eigenVectorsSYBD_PSCF_did(2,numPathKP_HDF5,spin)) ! Complex
+   allocate (eigenVectorsPSCF_did(2,numKPoints,spin)) ! Complex
 #else
-   allocate (eigenVectorsPSCF_did(1,numKPoints_HDF5,spin)) ! Real
-   allocate (eigenVectorsSYBD_PSCF_did(1,numPathKP_HDF5,spin)) ! Real, useless?
+   allocate (eigenVectorsPSCF_did(1,numKPoints,spin)) ! Real
 #endif
 
    ! Open the datasets for the eigenvectors.
    do i = 1, spin
-      do j = 1, numKPoints_HDF5
+      do j = 1, numKPoints
 #ifndef GAMMA
          write (currentName,fmt="(a4,i7.7,i7.7)") "real",j,i
          currentName = trim (currentName)
@@ -295,56 +245,26 @@ subroutine accessPSCFEigVecHDF5 (pscf_fid,attribIntPSCF_dsid,&
          if (hdferr /= 0) stop 'Failed to open eigenVectorsPSCF real did.'
 #endif
       enddo
-
-      ! Repeat for the SYBD eigenvectors.
-      do j = 1, numPathKP_HDF5
-#ifndef GAMMA
-         write (currentName,fmt="(a4,i7.7,i7.7)") "real",j,i
-         currentName = trim (currentName)
-         call h5dopen_f(eigenVectorsSYBD_PSCF_gid,currentName,&
-               & eigenVectorsSYBD_PSCF_did(1,j,i),hdferr)
-         if (hdferr /= 0) stop 'Failed to open eigenVectorsSYBD_PSCF real did.'
-         write (currentName,fmt="(a4,i7.7,i7.7)") "imag",j,i
-         currentName = trim (currentName)
-         call h5dopen_f(eigenVectorsSYBD_PSCF_gid,currentName,&
-               & eigenVectorsSYBD_PSCF_did(2,j,i),hdferr)
-         if (hdferr /= 0) stop 'Failed to open eigenVectorsSYBD_PSCF imag did.'
-#else
-         write (currentName,fmt="(i7.7,i7.7)") j,i
-         currentName = trim (currentName)
-         call h5dopen_f(eigenVectorsSYBD_PSCF_gid,currentName,&
-               & eigenVectorsSYBD_PSCF_did(1,j,i),hdferr)
-         if (hdferr /= 0) stop 'Failed to open eigenVectorsSYBD_PSCF real did.'
-#endif
-      enddo
    enddo
 
-   ! Obtain the property list for the energy eigen vectors. (Used for both
-   !   SYBD and regular KPoint meshes.)
+   ! Obtain the property list for the energy eigen vectors.
    call h5dget_create_plist_f(eigenVectorsPSCF_did(1,1,1),valeStatesPSCF_plid,&
          & hdferr)
    if (hdferr /= 0) stop 'Failed to obtain valeStatesPSCF property list.'
 
-   ! Obtain the dataspace for the energy eigen vectors. (Used for both SYBD
-   !   and regular KPoint meshes.)
+   ! Obtain the dataspace for the energy eigen vectors.
    call h5dget_space_f(eigenVectorsPSCF_did(1,1,1),valeStatesPSCF_dsid,hdferr)
    if (hdferr /= 0) stop 'Failed to obtain valeStatesPSCF dataspace.'
 
    ! Allocate space to hold the attributes for tracking completion.
-   allocate (eigenVectorsPSCF_aid(numKPoints_HDF5,spin))
-   allocate (eigenVectorsSYBD_PSCF_aid(numPathKP_HDF5,spin))
+   allocate (eigenVectorsPSCF_aid(numKPoints,spin))
 
    ! Open the eigenvector tracking attributes.
    do i = 1, spin
-      do j = 1, numKPoints_HDF5
+      do j = 1, numKPoints
          call h5aopen_f (eigenVectorsPSCF_did(1,j,i),"status",&
                & eigenVectorsPSCF_aid(j,i),hdferr)
-            if (hdferr /= 0) stop 'Failed to open eigenVectorsPSCF_aid.'
-      enddo
-      do j = 1, numPathKP_HDF5
-         call h5aopen_f (eigenVectorsSYBD_PSCF_did(1,j,i),"status",&
-               & eigenVectorsSYBD_PSCF_aid(j,i),hdferr)
-            if (hdferr /= 0) stop 'Failed to open eigenVectorsSYBD_PSCF_aid.'
+         if (hdferr /= 0) stop 'Failed to open eigenVectorsPSCF_aid.'
       enddo
    enddo
 
@@ -357,7 +277,7 @@ subroutine closePSCFEigVecHDF5
    use HDF5
 
    ! Import necessary object modules.
-   use O_KPoints, only: numKPoints_HDF5, numPathKP_HDF5
+   use O_KPoints, only: numKPoints
    use O_Potential, only: spin
 
    ! Make sure that no variables are implicitly declared.
@@ -373,7 +293,7 @@ subroutine closePSCFEigVecHDF5
 
    ! Close the eigenvector datasets next.
    do i = 1, spin
-      do j = 1, numKPoints_HDF5
+      do j = 1, numKPoints
 #ifndef GAMMA
          call h5dclose_f (eigenVectorsPSCF_did(1,j,i),hdferr)
          if (hdferr /= 0) stop 'Failed to close eigenVectorsPSCF_did real'
@@ -382,17 +302,6 @@ subroutine closePSCFEigVecHDF5
 #else
          call h5dclose_f (eigenVectorsPSCF_did(1,j,i),hdferr)
          if (hdferr /= 0) stop 'Failed to close eigenVectorsPSCF_did real'
-#endif
-      enddo
-      do j = 1, numPathKP_HDF5
-#ifndef GAMMA
-         call h5dclose_f (eigenVectorsSYBD_PSCF_did(1,j,i),hdferr)
-         if (hdferr /= 0) stop 'Failed to close eigenVectorsPSCF_did SYBD real'
-         call h5dclose_f (eigenVectorsSYBD_PSCF_did(2,j,i),hdferr)
-         if (hdferr /= 0) stop 'Failed to close eigenVectorsPSCF_did SYBD imag.'
-#else
-         call h5dclose_f (eigenVectorsSYBD_PSCF_did(1,j,i),hdferr)
-         if (hdferr /= 0) stop 'Failed to close eigenVectorsSYBD_PSCF_did real'
 #endif
       enddo
    enddo
@@ -405,11 +314,9 @@ subroutine closePSCFEigVecHDF5
 
    ! Close the eigenvector group.
    call h5gclose_f (eigenVectorsPSCF_gid,hdferr)
-   call h5gclose_f (eigenVectorsSYBD_PSCF_gid,hdferr)
 
    ! Deallocate unnecessary array.
    deallocate (eigenVectorsPSCF_did)
-   deallocate (eigenVectorsSYBD_PSCF_did)
 
 end subroutine closePSCFEigVecHDF5
 

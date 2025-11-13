@@ -15,7 +15,8 @@ def parameters_and_defaults():
             False, # T (F) = include (exclude) dipole moment term
             False, # T (F) = include (exclude) kinetic energy derivative term
             False, # T (F) = include (exclude) nuclear pot. derivative term
-            False  # T (F) = include (exclude) electronic pot. derivative term
+            False, # T (F) = include (exclude) electronic pot. derivative term
+            False  # T (F) = include (exclude) two-center KOverlap
             ]
     return param_list
 

@@ -345,6 +345,296 @@ def add_dipole_overlap_terms(a, b, i, xyz, triads, do_a, vectorize):
 
     return temp_string
 
+# Used specifically by the Koverlap recursive formula.
+def add_koverlap_terms(a, b, i, a_plus_idx, a_minus_idx, b_minus_idx,
+        a_minus_minus_idx, b_minus_minus_idx,a_minus_minus_minus_idx,
+        b_minus_minus_minus_idx, triads, vectorize):
+
+    # If we need to vectorize, then add (:) or :, in the appropriate places.
+    if (vectorize):
+        vec_tag = "(:)"
+        vec_tag_comma = ":,"
+    else:
+        vec_tag = ""
+        vec_tag_comma = ""
+
+
+    # Search for the a+1_i first.
+    #a_plus_idx = triad_search(triads[a].copy(), triads, True, i, a+1, num_triads)
+
+
+    # Search for the a+1_i first.
+    #b_plus_idx = triad_search(triads[a].copy(), triads, True, i, b+1, num_triads)
+
+
+    # Always wrap the terms with this initial string.
+    temp_string = f""
+    
+    #for (2,0,0)(0,0,0) or (0,0,0)(2,0,0) coming from (1,0,0)(0,0,0) or (0,0,0)(1,0,0)
+    if (triads[a][i] == 1 and triads[b][i] == 0):
+        temp_string += f" + (hermite_term(2,{i+1}) - hermite_term(1,{i+1})**2)*"
+        temp_string += f"pc({a_minus_idx+1},{b+1})"
+  
+    # for (1,0,0)(1,0,0) and so on., coming from (0,0,0)(1,0,0) 
+    if (triads[a][i] == 0 and triads[b][i] == 1):
+        temp_string += f" + (hermite_term(2,{i+1}) - hermite_term(1,{i+1})**2)*"
+        temp_string += f"pc({a+1},{b_minus_idx+1})"
+
+    #print(f"a: {a}, b: {b}")
+    #print(f"a_minus_idx: {a_minus_idx}, b_minus_idx: {b_minus_idx}, i: {i}")
+    # if ((a_minus_idx == 0) and (b_minus_idx == 1)):
+    #     temp_string += f" + pc(1,1)*(PA({i+1})+PB({i+1}))*(hermite_term(2,{i+1}) \
+    #             - hermite_term(1,{i+1})**2) \
+    #             + (hermite_term(3,{i+1}) - hermite_term(2,{i+1})\
+    #             *hermite_term(1,{i+1}))"
+    #if ((a == 0) and (b == 4) and (a_plus_idx == 1)):
+
+    # for (2,0,0)(1,0,0) and (1,0,0)(2,0,0) coming from (1,0,0)(1,0,0)
+    if (triads[a][i] == 1 and triads[b][i] == 1):
+        temp_string += f" + ((PA({i+1})+PB({i+1}))*(hermite_term(2,{i+1}) \
+                - hermite_term(1,{i+1})**2) + (hermite_term(3,{i+1}) - hermite_term(2,{i+1})\
+                *hermite_term(1,{i+1})))*"
+        temp_string += f" pc({a_minus_idx+1},{b_minus_idx+1})"
+
+    else:
+        temp_string += f""
+    #print(f"temp_string: {temp_string}")
+    #print(f"triads[a]: {triads[a]}, triads[b]: {triads[b]}")
+    #print(f"triads[a][i]: {triads[a][i]}, triads[b][i]: {triads[b][i]}")
+    
+
+    # for (2,0,0)(1,0,0) coming from (2,0,0)(0,0,0), Also (3,0,0)(0,0,0) coming from (2,0,0)(0,0,0)
+    if (triads[a][i] == 2 and triads[b][i] == 0): 
+        temp_string += f" + ((2.0*PA({i+1}))*(hermite_term({2},{i+1}) - hermite_term({1},{i+1})**2) \
+                + (hermite_term({3},{i+1}) - hermite_term({2},{i+1})*hermite_term({1},{i+1})))*"
+        temp_string += f"pc({a_minus_minus_idx+1},{b+1})"
+    
+    # for (1,0,0)(2,0,0) coming from (0,0,0)(2,0,0), Also (0,0,0)(3,0,0) coming from (0,0,0)(2,0,0)
+    if (triads[a][i] == 0 and triads[b][i] == 2): 
+        temp_string += f" + ((2.0*PB({i+1}))*(hermite_term({2},{i+1}) - hermite_term({1},{i+1})**2) \
+                + (hermite_term({3},{i+1}) - hermite_term({2},{i+1})*hermite_term({1},{i+1})))*"
+        temp_string += f"pc({a+1},{b_minus_minus_idx+1})"
+    
+
+    #for (2,0,0)(2,0,0) coming from (2,0,0)(1,0,0) or (3,0,0)(1,0,0) coming from (2,0,0)(1,0,0)
+    if (triads[a][i] == 2 and triads[b][i] == 1):
+        temp_string += f" + ((PA({i+1})**2 + 2.0*PA({i+1})*PB({i+1}))*(hermite_term({2},{i+1})\
+                - hermite_term({1},{i+1})**2) + (2.0*PA({i+1}) + PB({i+1}))*(hermite_term({3},{i+1}) \
+                - hermite_term({2},{i+1})*hermite_term({1},{i+1})) + (hermite_term({4},{i+1}) \
+                - hermite_term({3},{i+1})*hermite_term({1},{i+1})))*"
+        temp_string += f"pc({a_minus_minus_idx+1},{b_minus_idx+1})"
+    
+
+    #for (2,0,0)(2,0,0) coming from (1,0,0)(2,0,0) or (1,0,0)(3,0,0) coming from (1,0,0)(2,0,0)
+    if (triads[a][i] == 1 and triads[b][i] == 2):
+        temp_string += f" + ((PB({i+1})**2 + 2.0*PA({i+1})*PB({i+1}))*(hermite_term({2},{i+1})\
+                - hermite_term({1},{i+1})**2) + (2.0*PB({i+1}) + PA({i+1}))*(hermite_term({3},{i+1}) \
+                - hermite_term({2},{i+1})*hermite_term({1},{i+1})) + (hermite_term({4},{i+1}) \
+                - hermite_term({3},{i+1})*hermite_term({1},{i+1})))*"
+        temp_string += f"pc({a_minus_idx+1},{b_minus_minus_idx+1})"
+
+    
+    #for (1,0,0)(3,0,0) coming from (0,0,0)(3,0,0)
+    if (triads[a][i] == 0 and triads[b][i] == 3):
+        temp_string += f" + ((3.0*(PB({i+1})**2))*(hermite_term({2},{i+1}) - hermite_term({1},{i+1})**2)\
+                + (3*PB({i+1}))*(hermite_term({3},{i+1}) - hermite_term({2},{i+1})*hermite_term({1},{i+1}))\
+                + (hermite_term({4},{i+1}) - hermite_term({3},{i+1})*hermite_term({1},{i+1})))*"
+        temp_string += f"pc({a+1},{b_minus_minus_minus_idx+1})"
+    
+ 
+    #for (3,0,0)(2,0,0) and so on coming from (2,0,0)(2,0,0)
+    if (triads[a][i] == 2 and triads[b][i] == 2):
+        temp_string += f" + ((2.0*PA({i+1})**2*PB({i+1}) + 2.0*PA({i+1})*PB({i+1})**2)\
+                *(hermite_term({2},{i+1}) - hermite_term({1},{i+1})**2) + (PA({i+1})**2 \
+                + PB({i+1})**2 + 4.0*PA({i+1})*PB({i+1}))*(hermite_term({3},{i+1})\
+                - hermite_term({2},{i+1})*hermite_term({1},{i+1})) + (2.0*PB({i+1}) + 2.0*PA({i+1}))\
+                *(hermite_term({4},{i+1}) - hermite_term({3},{i+1})*hermite_term({1},{i+1}))\
+                + (hermite_term({5},{i+1}) - hermite_term({4},{i+1})* hermite_term({1},{i+1})))*"
+        temp_string += f"pc({a_minus_minus_idx+1},{b_minus_minus_idx+1})"
+    
+
+    # for (2,0,0)(3,0,0) coming from (1,0,0)(3,0,0) and so on for diffrent i
+    if (triads[a][i] == 1 and triads[b][i] == 3):
+        temp_string += f" + ((3.0*(PB({i+1})**2)*PA({i+1}) + PB({i+1})**3)*(hermite_term({2},{i+1})\
+                - hermite_term({1},{i+1})**2) + (3.0*PB({i+1})*PA({i+1}) + 3.0*(PB({i+1})**2))\
+                *(hermite_term({3},{i+1}) - hermite_term({2},{i+1})* hermite_term({1},{i+1}))\
+                + (PA({i+1}) + 3.0*PB({i+1}))*(hermite_term({4},{i+1}) - hermite_term({3},{i+1})\
+                *hermite_term({1},{i+1}))+ (hermite_term({5},{i+1}) - hermite_term({4},{i+1})\
+                * hermite_term({1},{i+1})))*"
+        temp_string += f"pc({a_minus_idx+1},{b_minus_minus_minus_idx+1})"
+    
+
+    # for (3,0,0)(3,0,0) coming from (2,0,0)(3,0,0)
+    if (triads[a][i] == 2 and triads[b][i] == 3):
+        temp_string += f" + ((2.0*(PB({i+1})**3)*PA({i+1}) + 3.0*(PA({i+1})**2)*(PB({i+1})**2))*(hermite_term({2},{i+1})\
+                - hermite_term({1},{i+1})**2) + ((PB({i+1})**3) + 6.0*(PB({i+1})**2)*PA({i+1}) + 3.0*PB({i+1})\
+                *(PA({i+1})**2))*(hermite_term({3},{i+1}) - hermite_term({2},{i+1})*hermite_term({1},{i+1})) \
+                + (PA({i+1})**2+ 3.0*(PB({i+1})**2) + 6.0*PB({i+1})*PA({i+1}))*(hermite_term({4},{i+1}) \
+                - hermite_term({3},{i+1})*hermite_term({1},{i+1})) + (2.0*PA({i+1}) + 3.0*PB({i+1}))\
+                *(hermite_term({5},{i+1})- hermite_term({4},{i+1})*hermite_term({1},{i+1})) \
+                + (hermite_term({6},{i+1}) - hermite_term({5},{i+1})*hermite_term({1},{i+1})))*"
+        temp_string += f"pc({a_minus_minus_idx+1},{b_minus_minus_minus_idx+1})"
+
+    # Close the outer wrap.
+    temp_string += ""
+
+    return temp_string
+
+
+    ## If we need to vectorize, then add (:) or :, in the appropriate places.
+    #if (vectorize):
+    #    vec_tag = "(:)"
+    #    vec_tag_comma = ":,"
+    #else:
+    #    vec_tag = ""
+    #    vec_tag_comma = ""
+
+
+    ## Search for the a+1_i first.
+    ##a_plus_idx = triad_search(triads[a].copy(), triads, True, i, a+1, num_triads)
+
+
+    ## Search for the a+1_i first.
+    ##b_plus_idx = triad_search(triads[a].copy(), triads, True, i, b+1, num_triads)
+
+
+    ## Always wrap the terms with this initial string.
+    #temp_string = f""
+
+    ## For (2,0,0)(0,0,0) or (0,0,0)(2,0,0) coming from
+    ##   (1,0,0)(0,0,0) or (0,0,0)(1,0,0)
+    #if (triads[a][i] == 1 and triads[b][i] == 0):
+    #    temp_string += f" + (hermite_term(2,{i+1}) - " \
+    #            + f"hermite_term(1,{i+1})**2)*pc({a_minus_idx+1},{b+1})"
+
+    ## for (1,0,0)(1,0,0) and so on., coming from (0,0,0)(1,0,0)
+    #if (triads[a][i] == 0 and triads[b][i] == 1):
+    #    temp_string += f" + (hermite_term(2,{i+1}) - " \
+    #            + f"hermite_term(1,{i+1})**2)*pc({a+1},{b_minus_idx+1})"
+
+    ##print(f"a: {a}, b: {b}")
+    ##print(f"a_minus_idx: {a_minus_idx}, b_minus_idx: {b_minus_idx}, i: {i}")
+    ## if ((a_minus_idx == 0) and (b_minus_idx == 1)):
+    ##     temp_string += f" + pc(1,1)*(PA({i+1})+PB({i+1}))*\
+    ##                (hermite_term(2,{i+1}) \
+    ##             - hermite_term(1,{i+1})**2) \
+    ##             + (hermite_term(3,{i+1}) - hermite_term(2,{i+1})\
+    ##             *hermite_term(1,{i+1}))"
+    ##if ((a == 0) and (b == 4) and (a_plus_idx == 1)):
+
+    ## for (2,0,0)(1,0,0) and (1,0,0)(2,0,0) coming from (1,0,0)(1,0,0)
+    #if (triads[a][i] == 1 and triads[b][i] == 1):
+    #    temp_string += f" + ((PA({i+1})+PB({i+1}))*(hermite_term(2,{i+1}) " \
+    #            f"- hermite_term(1,{i+1})**2) + (hermite_term(3,{i+1}) " \
+    #            f"- hermite_term(2,{i+1})*hermite_term(1,{i+1}))) " \
+    #            f"* pc({a_minus_idx+1},{b_minus_idx+1})"
+
+    ##else:
+    ##    temp_string += f""
+    ##print(f"temp_string: {temp_string}")
+    ##print(f"triads[a]: {triads[a]}, triads[b]: {triads[b]}")
+    ##print(f"triads[a][i]: {triads[a][i]}, triads[b][i]: {triads[b][i]}")
+
+    ##fixed
+    ##For (2,0,0)(1,0,0) coming from (2,0,0)(0,0,0),
+    ##Also (3,0,0)(0,0,0) coming from (2,0,0)(0,0,0)
+    #if (triads[a][i] == 2 and triads[b][i] == 0):
+    #    temp_string += f" + ((2.0*PA({i+1}))*(hermite_term({2},{i+1}) " \
+    #            f"- hermite_term({1},{i+1})**2) + (hermite_term({3},{i+1}) " \
+    #            f"- hermite_term({2},{i+1})*hermite_term({1},{i+1})))*" \
+    #            f"pc({a_minus_minus_idx+1},{b+1})"
+
+    ##For (1,0,0)(2,0,0) coming from (0,0,0)(2,0,0),
+    ##Also (0,0,0)(3,0,0) coming from (0,0,0)(2,0,0)
+    #if (triads[a][i] == 0 and triads[b][i] == 2):
+    #    temp_string += f" + ((2.0*PB({i+1}))*(hermite_term({2},{i+1}) " \
+    #            f"- hermite_term({1},{i+1})**2) + (hermite_term({3},{i+1}) " \
+    #            f"- hermite_term({2},{i+1})*hermite_term({1},{i+1})))*" \
+    #            f"pc({a+1},{b_minus_minus_idx+1})"
+
+    ##pc need to be fixed
+    ##For (2,0,0)(2,0,0) coming from (2,0,0)(1,0,0)
+    ##or (3,0,0)(1,0,0) coming from (2,0,0)(1,0,0)
+    #if (triads[a][i] == 2 and triads[b][i] == 1):
+    #    temp_string += f" + ((PA({i+1})**2 + 2.0*PA({i+1})*PB({i+1}))*" \
+    #            f"(hermite_term({2},{i+1}) - hermite_term({1},{i+1})**2) " \
+    #            f"+ (2.0*PA({i+1}) + PB({i+1}))*(hermite_term({3},{i+1})" \
+    #            f"- hermite_term({2},{i+1})*hermite_term({1},{i+1})) " \
+    #            f"+ (hermite_term({4},{i+1}) - hermite_term({3},{i+1})*"\
+    #            f"hermite_term({1},{i+1})))*" \
+    #            f"pc({a_minus_minus_idx+1},{b_minus_idx+1})"
+
+    ##fixed
+    ##For (2,0,0)(2,0,0) coming from (1,0,0)(2,0,0)
+    ##or (1,0,0)(3,0,0) coming from (1,0,0)(2,0,0)
+    #if (triads[a][i] == 1 and triads[b][i] == 2):
+    #    temp_string += f" + ((PB({i+1})**2 + 2.0*PA({i+1})*PB({i+1}))*" \
+    #            f"(hermite_term({2},{i+1}) - hermite_term({1},{i+1})**2) " \
+    #            f"+ (2.0*PB({i+1}) + PA({i+1}))*(hermite_term({3},{i+1})" \
+    #            f"- hermite_term({2},{i+1})*hermite_term({1},{i+1})) " \
+    #            f"+ (hermite_term({4},{i+1}) - hermite_term({3},{i+1})*" \
+    #            f"hermite_term({1},{i+1})))*" \
+    #            f"pc({a_minus_idx+1},{b_minus_minus_idx+1})"
+
+
+    ##For (1,0,0)(3,0,0) coming from (0,0,0)(3,0,0)
+    #if (triads[a][i] == 0 and triads[b][i] == 3):
+    #    temp_string += f" + ((3.0*(PB({i+1})**2))*(hermite_term({2},{i+1}) " \
+    #            f"- hermite_term({1},{i+1})**2) + (3*PB({i+1}))*" \
+    #            f"(hermite_term({3},{i+1}) - hermite_term({2},{i+1})*" \
+    #            f"hermite_term({1},{i+1})) + (hermite_term({4},{i+1}) " \
+    #            f"- hermite_term({3},{i+1})*hermite_term({1},{i+1})))*" \
+    #            f"pc({a+1},{b_minus_minus_minus_idx+1})"
+
+    ##fixed
+    ##for (3,0,0)(2,0,0) and so on coming from (2,0,0)(2,0,0)
+    #if (triads[a][i] == 2 and triads[b][i] == 2):
+    #    temp_string += f" + ((2.0*PA({i+1})**2*PB({i+1}) " \
+    #            f"+ 2.0*PA({i+1})*PB({i+1})**2)*(hermite_term({2},{i+1}) " \
+    #            f"- hermite_term({1},{i+1})**2) + (PA({i+1})**2 " \
+    #            f"+ PB({i+1})**2 + 4.0*PA({i+1})*PB({i+1}))*" \
+    #            f"(hermite_term({3},{i+1}) - hermite_term({2},{i+1})*" \
+    #            f"hermite_term({1},{i+1})) + (2.0*PB({i+1}) + 2.0*PA({i+1}))" \
+    #            f"*(hermite_term({4},{i+1}) - hermite_term({3},{i+1})*" \
+    #            f"hermite_term({1},{i+1})) + (hermite_term({5},{i+1}) " \
+    #            f"- hermite_term({4},{i+1})* hermite_term({1},{i+1})))*" \
+    #            f"pc({a_minus_minus_idx+1},{b_minus_minus_idx+1})"
+
+    ##check!!!!!
+    ## for (2,0,0)(3,0,0) coming from (1,0,0)(3,0,0) and so on for diffrent i
+    #if (triads[a][i] == 1 and triads[b][i] == 3):
+    #    temp_string += f" + ((3.0*(PB({i+1})**2)*PA({i+1}) + PB({i+1})**3) " \
+    #            f"*(hermite_term({2},{i+1}) - hermite_term({1},{i+1})**2) " \
+    #            f"+ (3.0*PB({i+1})*PA({i+1}) + 3.0*(PB({i+1})**2)) " \
+    #            f"*(hermite_term({3},{i+1}) - hermite_term({2},{i+1})*" \
+    #            f"hermite_term({1},{i+1})) + (PA({i+1}) + 3.0*PB({i+1}))*" \
+    #            f"(hermite_term({4},{i+1}) - hermite_term({3},{i+1})" \
+    #            f"*hermite_term({1},{i+1}))+ (hermite_term({5},{i+1}) " \
+    #            f"- hermite_term({4},{i+1}) * hermite_term({1},{i+1})))*" \
+    #            f"pc({a_minus_idx+1},{b_minus_minus_minus_idx+1})"
+
+    ##fixed
+    ## for (3,0,0)(3,0,0) coming from (2,0,0)(3,0,0)
+    #if (triads[a][i] == 2 and triads[b][i] == 3):
+    #    temp_string += f" + ((2.0*(PB({i+1})**3)*PA({i+1}) " \
+    #            f"+ 3.0*(PA({i+1})**2)*(PB({i+1})**2))*" \
+    #            f"(hermite_term({2},{i+1}) - hermite_term({1},{i+1})**2) " \
+    #            f"+ ((PB({i+1})**3) + 6.0*(PB({i+1})**2)*PA({i+1}) " \
+    #            f"+ 3.0*PB({i+1})*(PA({i+1})**2))*(hermite_term({3},{i+1}) " \
+    #            f"- hermite_term({2},{i+1})*hermite_term({1},{i+1})) " \
+    #            f"+ (PA({i+1})**2+ 3.0*(PB({i+1})**2) + 6.0*PB({i+1})*" \
+    #            f"PA({i+1}))*(hermite_term({4},{i+1}) " \
+    #            f"- hermite_term({3},{i+1})*hermite_term({1},{i+1})) " \
+    #            f"+ (2.0*PA({i+1}) + 3.0*PB({i+1}))*(hermite_term({5},{i+1}) "\
+    #            f"- hermite_term({4},{i+1})*hermite_term({1},{i+1})) " \
+    #            f"+ (hermite_term({6},{i+1}) - hermite_term({5},{i+1})*" \
+    #            f"hermite_term({1},{i+1})))*" \
+    #            f"pc({a_minus_minus_idx+1},{b_minus_minus_minus_idx+1})"
+
+    ## Close the outer wrap.
+    #temp_string += ""
+
+    #return temp_string
 
 # This subroutine is used for the 2-center overlap, the kinetic energy, the
 #   3-center overlap (used ultimately for electron repulsion after a charge
@@ -1545,7 +1835,205 @@ def dnuclearcb(triads, vectorize):
                         
     return soln_mtx_dncb
 
+def Koverlap(triads, vectorize):
 
+    # If we need to vectorize, then add (:) or :, in the appropriate places.
+    if (vectorize):
+        vec_tag = "(:)"
+        vec_tag_comma = ":,"
+    else:
+        vec_tag = ""
+        vec_tag_comma = ""
+
+    # Make a convenient shorthand for the length of the triad array.
+    num_triads = len(triads)
+
+    # Initialize the solution matrix to empty strings.
+    soln_mtx_ko = [[""]*num_triads for i in range(num_triads)]
+
+    # Initialize the 0,0 (python) 1,1 (fotran) element.
+    soln_mtx_ko[0][0] = f"preFactorKO({vec_tag}1)*preFactorKO({vec_tag}2)*" \
+            + f"preFactorKO({vec_tag}3)"
+
+    temp_string = soln_mtx_ko[0][0]
+    # Produce a string for each element of the solution matrix.
+    for a in range(num_triads):
+        for b in range(num_triads):
+            #print(f"a: {a}, b: {b}")
+            # Every element that we visit in the a,b nested loops should
+            #   already be filled in. But, we check here just to confirm.
+            if (soln_mtx_ko[a][b] == ""):
+                print("Missing element: ", a, ",", b, ".")
+                #print(soln_mtx_ko)
+                exit()
+
+
+            # Use the current element to build out higher elements. We will
+            #   add 1 to each of the x, y, z components of the current 'a'
+            #   and 'b' triads to build new element possibilities. We will
+            #   then search the triad list for a match and if found we will
+            #   assemble the element accordingly.
+
+            # Start by adding 1 to the 'a' triad x, y, z terms and searching
+            #   for matches in the other (higher) triads.
+            for i in range(3):
+
+                # Search for the index numbers in the triad list associated
+                #   with a+1_i, a-1_i, and b-1_i.
+
+                # Search for the a+1_i first.
+                a_plus_idx = triad_search(triads[a].copy(), triads, True, i,
+                                          a+1, num_triads)
+
+                # If no match was found, then go to the next i (x,y,z).
+                if (a_plus_idx == -1):
+                    break
+
+                # If this solution matrix element is already done, then
+                #   skip to the next i.
+                if (soln_mtx_ko[a_plus_idx][b] != ""):
+                    continue
+
+                # For the current a+1_i we need to find the associated a-1_i.
+                a_minus_idx = \
+                        triad_search(triads[a].copy(), triads, False, i, 0, a)
+
+                # For the current a+1_i we need to find the associated b-1_i.
+                b_minus_idx = \
+                        triad_search(triads[b].copy(), triads, False, i, 0, b)
+
+                # a --
+                a_minus_minus_idx = \
+                        triad_search(triads[a_minus_idx].copy(), triads,
+                                False, i, 0, a_minus_idx)
+
+                #a ---
+                a_minus_minus_minus_idx = \
+                        triad_search(triads[a_minus_minus_idx].copy(), triads,
+                                False, i, 0, a_minus_minus_idx)
+
+                # b --
+                b_minus_minus_idx = \
+                        triad_search(triads[b_minus_idx].copy(), triads,
+                                False, i, 0, b_minus_idx)
+
+                #b ---
+                b_minus_minus_minus_idx = \
+                        triad_search(triads[b_minus_minus_idx].copy(), triads,
+                                False, i, 0, b_minus_minus_idx)
+
+
+                # At this point we have an a+1_i match and have found the
+                #   indices for a-1_i and b-1_i (or the indices are -1 if
+                #   no match was found).
+
+                # Now, we assemble the [a_plus_idx][b] element.
+                if (a+1 == 1 and b+1 == 1):
+                    temp_string = f"(PA({vec_tag_comma}{i+1}) + " \
+                            + f"hermite_term({1},{vec_tag_comma}{i+1}))*"
+                    temp_string += f"preFactorKO({vec_tag}1)*" \
+                            + f"preFactorKO({vec_tag}2)*" \
+                            + f"preFactorKO({vec_tag}3)"
+                else:
+                    temp_string = f"(PA({vec_tag_comma}{i+1}) + " \
+                            + f"hermite_term({1},{vec_tag_comma}{i+1}))*"
+                    temp_string += f"pc({vec_tag_comma}{a+1},{b+1})"
+
+                # Add the Koverlap terms from
+                temp_string += \
+                        add_koverlap_terms(a, b, i, a_plus_idx, a_minus_idx,\
+                        b_minus_idx, a_minus_minus_idx, b_minus_minus_idx,\
+                        a_minus_minus_minus_idx, b_minus_minus_minus_idx,\
+                        triads, vectorize)
+                #print(f"{a_plus_idx} {b} {temp_string}")
+                #temp_string += add_recursive_minus_terms(1, 1, a, b, i,
+                #        a_minus_idx, b_minus_idx, triads, "ko", vectorize)
+                soln_mtx_ko[a_plus_idx][b] = temp_string
+
+            # Now do the same for the b triad. Start by adding a 1 to the 'b'
+            #   triad x, y, z terms and searching for matches in the other
+            #   higher triads.
+            for i in range(3):
+
+                # Search for the index numbers in the triad list associated
+                #   with b+1_i, b-1_i, and a-1_i.
+
+                # Search for the b+1_i first.
+                b_plus_idx = triad_search(triads[b].copy(), triads, True, i,
+                                          b+1, num_triads)
+
+                # If no match was found, then go to the next i (x,y,z).
+                if (b_plus_idx == -1):
+                    break
+
+                # If this solution matrix element is already done, then
+                #   skip to the next i.
+                if (soln_mtx_ko[a][b_plus_idx] != ""):
+                    continue
+
+                # For the current b+1_i we need to find the associated b-1_i.
+                b_minus_idx = \
+                        triad_search(triads[b].copy(), triads, False, i, 0, b)
+
+                # For the current b+1_i we need to find the associated a-1_i.
+                a_minus_idx = \
+                        triad_search(triads[a].copy(), triads, False, i, 0, a)
+
+                # a --
+                a_minus_minus_idx = \
+                        triad_search(triads[a_minus_idx].copy(), triads,
+                                False, i, 0, a_minus_idx)
+
+                #a ---
+                a_minus_minus_minus_idx = \
+                        triad_search(triads[a_minus_minus_idx].copy(), triads,
+                                False, i, 0, a_minus_minus_idx)
+
+                # b --
+                b_minus_minus_idx = \
+                        triad_search(triads[b_minus_idx].copy(), triads,
+                                False, i, 0, b_minus_idx)
+
+                #b ---
+                b_minus_minus_minus_idx = \
+                        triad_search(triads[b_minus_minus_idx].copy(), triads,
+                                False, i, 0, b_minus_minus_idx)
+
+                # At this point we have a b+1_i match and have found the
+                #   indices for b-1_i and a-1_i (or the indices are -1 if
+                #   no match was found.
+
+                # Now we assemble the [a][b_plus_idx] element.
+                if (a+1 == 1 and b+1 == 1):
+                    temp_string = f"(PB({vec_tag_comma}{i+1}) + " \
+                            + f"hermite_term({1},{vec_tag_comma}{i+1}))*"
+                    temp_string += f"preFactorKO({vec_tag}1)*" \
+                            + f"preFactorKO({vec_tag}2)*" \
+                            + f"preFactorKO({vec_tag}3)"
+                else:
+                    temp_string = f"(PB({vec_tag_comma}{i+1}) + " \
+                            + f"hermite_term({1},{vec_tag_comma}{i+1}))*"
+                    temp_string += f"pc({vec_tag_comma}{a+1},{b+1})"
+
+                # Add the Koverlap terms
+                temp_string += \
+                        add_koverlap_terms(a, b, i, b_plus_idx, a_minus_idx,\
+                        b_minus_idx, a_minus_minus_idx, b_minus_minus_idx, \
+                        a_minus_minus_minus_idx, b_minus_minus_minus_idx,\
+                        triads, vectorize)
+                #temp_string += add_recursive_minus_terms(1, 1, a, b, i,
+                #        a_minus_idx, b_minus_idx, triads, "ko", vectorize)
+
+                soln_mtx_ko[a][b_plus_idx] = temp_string
+            #print(f"printing matrix a {a} {b}")
+            #for m in range(a_plus_idx+1):
+                #for n in range(b+1):
+                    #print(f"{m} {n} {soln_mtx_ko[m][n]}")
+            #print(f"printing matrix b {a} {b}")
+            #for m in range(a+1):
+                #for n in range(b_plus_idx+1):
+                    #print(f"{m} {n} {soln_mtx_ko[m][n]}")
+    return soln_mtx_ko
 
 def print_production_overlap_vec(conversion, triads, matrix, lam_sh_list,
                                  lam_pc_list, f):
@@ -2768,6 +3256,96 @@ def print_production_dnuclearcb(conversion, triads, matrix_dn, matrix_n,
    end subroutine dnuclear3CIntgCB
 """
     f.write(foot)
+
+
+def print_production_Koverlap(conversion, triads, matrix, lam_sh_list,
+                             lam_pc_list, f):
+
+    
+    # Print the subroutine header for the analytical portion.
+    head = """
+   subroutine Koverlap2CIntg(a1,a2,A,B,deltaK,l1l2switch,sh)
+
+   use O_Kinds
+   use O_Constants, only: pi
+
+   implicit none
+
+   ! sh(16,16): 1,s; 2,x; 3,y; 4,z; 5,xy; 6,xz; 7,yz; 8,xx-yy;
+   ! 9,2zz-xx-yy; 10,xyz; 11,xxz-yyz; 12,xxx-3yyx; 13,3xxy-yyy; 
+   ! 14,2zzz-3xxz-3yyz; 15,4zzx-xxx-yyx; 16,4zzy-xxy-yyy
+
+   ! pc(20,20): 1,s; 2,x; 3,y; 4,z; 5,xx; 6,yy; 7,zz; 8,xy; 9,xz;
+   ! 10,yz; 11,xyz; 12,xxy; 13,xxz; 14,yyx; 15,yyz; 16,zzx; 17,zzy
+   ! 18,xxx; 19,yyy; 20,zzz
+
+   ! Define the dummy variables passed to this subroutine.
+   real (kind=double), intent (in) :: a1, a2
+   real (kind=double), dimension (3), intent (in) :: A, B
+   real (kind=double), dimension (3), intent (in) :: deltaK
+   integer, intent (in) :: l1l2switch
+   complex (kind=double), dimension (""" \
+           + f"{len(conversion)},{len(conversion)}), intent(out) :: sh" + """
+
+   ! Define local variables.
+   complex (kind=double), dimension (""" \
+           + f"{len(triads)},{len(triads)}) :: pc" + """
+   real (kind=double), dimension (3) :: P, PA, PB, d
+   !real (kind=double), dimension (3,3) :: Ki, Kf
+   real (kind=double) :: zeta, inv_2zeta, xi
+   complex (kind=double), dimension (3) :: preFactorKO
+   real (kind=double), dimension (3) :: hermite_r
+   real (kind=double), dimension (6,3) :: Hn
+   complex (kind=double), dimension (6,3) :: hermite_term
+
+   ! Initialize local variables.
+   zeta = a1 + a2
+   inv_2zeta = 1.0d0 / (2.0d0 * zeta)
+   xi = a1 * a2 / zeta
+   P(:) = (a1*A(:) + a2*B(:)) / zeta
+   PA(:) = P(:) - A(:)
+   PB(:) = P(:) - B(:)
+   d(:) = A(:) - B(:)
+   !delta_K(:,:) = Kf(:,:) - Ki(:,:)
+   !Solving Hermite Polynomials
+   hermite_r(:) = -deltaK(:)/(2*(zeta)**0.5)
+
+   
+   ! Calculate Hermite based on the value of compined_l
+   !Hn(0,:) = 1.0
+   Hn(1,:) = 2.0*hermite_r(:)
+   Hn(2,:) = 4.0*hermite_r(:)**2 - 2.0
+   Hn(3,:) = 8.0*hermite_r(:)**3 - 12.0*hermite_r(:)
+   Hn(4,:) = 16.0*hermite_r(:)**4 - 48.0*hermite_r(:)**2 + 12.0
+   Hn(5,:) = 32.0*hermite_r(:)**5 - 160.0*hermite_r(:)**3 + 120.0*hermite_r(:)
+   Hn(6,:) = 64.0*hermite_r(:)**6 - 480.0*hermite_r(:)**4 + 720.0*hermite_r(:)**2 - 120.0
+
+   !hermite_term(0,:) = Hn(1,:) ! Combined_l = 0
+   hermite_term(1,:) = Hn(1,:)*(((cmplx(0.0d0,1.0d0,double))/(2.0d0*((zeta)**0.5)))**1)
+   hermite_term(2,:) = Hn(2,:)*(((cmplx(0.0d0,1.0d0,double))/(2.0d0*((zeta)**0.5)))**2)
+   hermite_term(3,:) = Hn(3,:)*(((cmplx(0.0d0,1.0d0,double))/(2.0d0*((zeta)**0.5)))**3)
+   hermite_term(4,:) = Hn(4,:)*(((cmplx(0.0d0,1.0d0,double))/(2.0d0*((zeta)**0.5)))**4)
+   hermite_term(5,:) = Hn(5,:)*(((cmplx(0.0d0,1.0d0,double))/(2.0d0*((zeta)**0.5)))**5)
+   hermite_term(6,:) = Hn(6,:)*(((cmplx(0.0d0,1.0d0,double))/(2.0d0*((zeta)**0.5)))**6)
+ 
+   ! This is the (s|K|s) integral
+   preFactorKO(:) = ((pi/zeta)**0.5)*exp(-xi*d(:)*d(:))&
+           & *exp(-(deltaK(:))**2/(4*zeta)) &
+           & *exp(cmplx(0.0d0,-1.0d0,double)*deltaK(:)*P(:))   
+
+"""
+    f.write(head)
+
+    # Print the pc and sh Gaussian terms.
+    lib.print_production_pc_sh(conversion, triads, f, [matrix], [[8, 1, ""]],
+            lam_sh_list, lam_pc_list, False)
+
+    # Print the subroutine foot.
+    foot = """
+   end subroutine Koverlap2CIntg
+"""
+    f.write(foot)
+
 
 
 
@@ -4136,6 +4714,91 @@ def print_test_dnuclearcb_ana(conversion, triads, matrix_dn, matrix_n,
 """
     f.write(foot)
 
+def print_test_Koverlap_ana(conversion, triads, matrix, f):
+
+    # Print the subroutine header for the analytical portion.
+    head = """
+   subroutine Koverlap2CIntgAna(a1,a2,A,B,deltaK,pc,sh)
+
+   use O_Kinds
+   use O_Constants, only: pi
+
+   implicit none
+
+   ! sh(16,16): 1,s; 2,x; 3,y; 4,z; 5,xy; 6,xz; 7,yz; 8,xx-yy;
+   ! 9,2zz-xx-yy; 10,xyz; 11,xxz-yyz; 12,xxx-3yyx; 13,3xxy-yyy;
+   ! 14,2zzz-3xxz-3yyz; 15,4zzx-xxx-yyx; 16,4zzy-xxy-yyy
+
+   ! pc(20,20): 1,s; 2,x; 3,y; 4,z; 5,xx; 6,yy; 7,zz; 8,xy; 9,xz;
+   ! 10,yz; 11,xyz; 12,xxy; 13,xxz; 14,yyx; 15,yyz; 16,zzx; 17,zzy
+   ! 18,xxx; 19,yyy; 20,zzz
+
+   ! Define the dummy variables passed to this subroutine.
+   real (kind=double), intent (in) :: a1, a2
+   real (kind=double), dimension (3), intent (in) :: A, B
+   real (kind=double), dimension (3) :: deltaK
+   complex (kind=double), dimension (""" \
+           + f"{len(triads)},{len(triads)}), intent(out) :: pc" + """
+   complex (kind=double), dimension (""" \
+           + f"{len(conversion)},{len(conversion)}), intent(out) :: sh" + """
+
+   ! Define local variables.
+   real (kind=double), dimension (3) :: P, PA, PB, d
+   !real (kind=double), dimension (3) :: deltaK
+   real (kind=double) :: zeta, inv_2zeta, xi
+   complex (kind=double), dimension (3) :: preFactorKO
+   real (kind=double), dimension (3) :: hermite_r
+   real (kind=double), dimension (6,3) :: Hn
+   complex (kind=double), dimension (6,3) :: hermite_term
+
+   ! Initialize local variables.
+   zeta = a1 + a2
+   inv_2zeta = 1.0d0 / (2.0d0 * zeta)
+   xi = a1 * a2 / zeta
+   P(:) = (a1*A(:) + a2*B(:)) / zeta
+   PA(:) = P(:) - A(:)
+   PB(:) = P(:) - B(:)
+   d(:) = A(:) - B(:)
+   !delta_K(:) = Kf(:) - Ki(:)
+   !Solving Hermite Polynomials
+   hermite_r(:) = -deltaK(:)/(2*(zeta)**0.5)
+
+
+   ! Calculate Hermite based on the value of compined_l
+   !Hn(0,:) = 1.0
+   Hn(1,:) = 2.0*hermite_r(:)
+   Hn(2,:) = 4.0*hermite_r(:)**2 - 2.0
+   Hn(3,:) = 8.0*hermite_r(:)**3 - 12.0*hermite_r(:)
+   Hn(4,:) = 16.0*hermite_r(:)**4 - 48.0*hermite_r(:)**2 + 12.0
+   Hn(5,:) = 32.0*hermite_r(:)**5 - 160.0*hermite_r(:)**3 + 120.0*hermite_r(:)
+   Hn(6,:) = 64.0*hermite_r(:)**6 - 480.0*hermite_r(:)**4 + 720.0*hermite_r(:)**2 - 120.0
+
+   !hermite_term(0,:) = Hn(1,:) ! Combined_l = 0
+   hermite_term(1,:) = Hn(1,:)*(((cmplx(0.0d0,1.0d0,double))/(2.0d0*((zeta)**0.5)))**1)
+   hermite_term(2,:) = Hn(2,:)*(((cmplx(0.0d0,1.0d0,double))/(2.0d0*((zeta)**0.5)))**2)
+   hermite_term(3,:) = Hn(3,:)*(((cmplx(0.0d0,1.0d0,double))/(2.0d0*((zeta)**0.5)))**3)
+   hermite_term(4,:) = Hn(4,:)*(((cmplx(0.0d0,1.0d0,double))/(2.0d0*((zeta)**0.5)))**4)
+   hermite_term(5,:) = Hn(5,:)*(((cmplx(0.0d0,1.0d0,double))/(2.0d0*((zeta)**0.5)))**5)
+   hermite_term(6,:) = Hn(6,:)*(((cmplx(0.0d0,1.0d0,double))/(2.0d0*((zeta)**0.5)))**6)
+
+   ! This is the (s|K|s) integral
+   preFactorKO(:) = ((pi/zeta)**0.5)*exp(-xi*d(:)*d(:))&
+           & *exp(-(deltaK(:))**2/(4*zeta)) &
+           & *exp(cmplx(0.0d0,-1.0d0,double)*deltaK(:)*P(:))
+
+"""
+    f.write(head)
+
+    # Print the pc and sh Gaussian terms.
+    num_triads = len(triads)
+    lib.print_pc(conversion, f, [matrix], [[8, 1, ""]], num_triads,
+                 num_triads)
+
+    # Print the subroutine foot.
+    foot = """
+   end subroutine Koverlap2CIntgAna
+"""
+    f.write(foot)
 
 if __name__ == '__main__':
     # Everything before this point was a subroutine definition or a request

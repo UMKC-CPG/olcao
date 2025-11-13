@@ -566,7 +566,7 @@ module Lattice_O
          endif
 
          do i = 1, 12
-! POVRay
+! POV-Ray style
 !            write (51+h,advance="NO",fmt="(a2)") "[["
 !            write (51+h,advance="NO",fmt="(f16.12, a2)") &
 !               & latticeEdges(i)%vertex(1)%coord(1), ", "
@@ -581,7 +581,7 @@ module Lattice_O
 !               & latticeEdges(i)%vertex(2)%coord(2), ", "
 !            write (51+h,advance="NO",fmt="(f16.12)") &
 !               & latticeEdges(i)%vertex(2)%coord(3)
-! Blender
+! Blender style
             ! Print mapping of vertices to unique vertex list.
             write (51+h,advance="NO",fmt="(a1)") "("
             write (51+h,advance="NO",fmt="(i1, a2)") &
@@ -608,7 +608,7 @@ module Lattice_O
          endif
 
          do i = 1, 6
-! For POVRay
+! For POV-Ray style
 !            write (51+h,advance="NO",fmt="(a1)") "["
 !            do j = 1, latticeFaces(i)%numVertices
 !               write (51+h,advance="NO",fmt="(a1)") "["
@@ -629,7 +629,7 @@ module Lattice_O
 !            write (51+h,advance="NO",fmt="(f16.12, a1)") &
 !                  & latticeFaces(i)%vertex(1)%coord(3), "]"
 
-            ! For Blender
+            ! For Blender style
             write (51+h,advance="NO",fmt="(a1)") "("
             do j = 1, latticeFaces(i)%numVertices - 1
                write (51+h,advance="NO",fmt="(i1, a2)") &
@@ -1500,7 +1500,7 @@ module BrillouinZones_O
          do j = 1, numBZFaces(i)
             write (51+i,advance="NO",fmt="(a1)") "("
 
-            ! For POVRAY
+            ! For POV-Ray style
 !            do k = 1, faceList(j)%numVertices
 !               faceList(j)%vertex(k)%coord(:) = &
 !                     & faceList(j)%vertex(k)%coord(:) * scaleFactor
@@ -1522,7 +1522,7 @@ module BrillouinZones_O
 !            write (51+i,advance="NO",fmt="(d16.8, a1)") &
 !                  & faceList(j)%vertex(1)%coord(3), "]"
 
-            ! For Blender
+            ! For Blender style
             do k = faceList(j)%numVertices, 2, -1
                write (51+i,advance="NO",fmt="(i3, a2)") &
                      & faceList(j)%indexToUniqueVertexList(k), ", "
@@ -1533,7 +1533,7 @@ module BrillouinZones_O
                   & faceList(j)%indexToUniqueVertexList(1)
 
 
-!            ! For Blender
+!            ! For Blender style
 !            do k = 1, faceList(j)%numVertices - 1
 !               write (51+i,advance="NO",fmt="(i3, a2)") &
 !                     & faceList(j)%indexToUniqueVertexList(k), ", "
@@ -1561,7 +1561,7 @@ module BrillouinZones_O
             uniqueEdgeList(j)%vertex(2)%coord(:) = &
                   & uniqueEdgeList(j)%vertex(2)%coord(:) * scaleFactor
 
-            ! Print actual coordinates (useful for POVRAY).
+            ! Print actual coordinates (useful for POV-Ray).
 !            write (51+i,advance="NO",fmt="(a2)") "[["
 !            write (51+i, advance="NO",fmt="(f16.12, a2)") &
 !                  & uniqueEdgeList(j)%vertex(1)%coord(1), ", "
@@ -2018,6 +2018,9 @@ module KPointMesh_O
 
       write (fileUnit,fmt="(a17)") "NUM_BLOCH_VECTORS"
       write (fileUnit,fmt="(i9.9)") numFoldedKPoints
+
+      write (fileUnit,fmt="(a17)") "NUM_AXIAL_KPOINTS"
+      write (fileUnit,fmt="(3i6)") numABCKPoints(:)
 
       write (fileUnit,fmt="(a19)") "NUM_WEIGHT_KA_KB_KC"
       do i = 1, numFoldedKPoints

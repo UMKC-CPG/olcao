@@ -66,6 +66,7 @@ module O_Lattice  ! Lattice and superlattice object.
    ! Real space uniform mesh information.
    integer :: numTotalMeshPoints
    integer, dimension (3) :: numMeshPoints
+   real (kind=double) :: realMeshCellVolume
    real (kind=double), dimension(3) :: realFractStrideLength
    real (kind=double), dimension(3) :: realFractCrossArea
    real (kind=double), allocatable, dimension (:,:,:) :: meshValues
@@ -74,6 +75,8 @@ module O_Lattice  ! Lattice and superlattice object.
    real (kind=double), dimension (dim3,dim3) :: recipVectors ! These
          !   are the unit vectors of the reciprocal lattice a', b', c'
          !   given in x, y, z components.
+   real (kind=double), dimension (dim3) :: recipMag ! Magnitudes of the
+         !   reciprocal space cell (a,b,c).
    integer, dimension(dim3) :: primRepsRecip ! The number of repetitions
          !   needed for each vector direction (a, b, c) to enclose the
          !   negligability limit.
@@ -210,6 +213,11 @@ subroutine getRecipCellVectors
 
    realCellVolume = abs(realCellVolume) ! Volume is always positive
    recipCellVolume = ((2.0_double*pi)**3)/realCellVolume
+
+   ! Compute the magnitudes of the reciprocal cell lattice vectors.
+   do i = 1, 3
+      recipMag(i) = sqrt(sum(recipVectors(:,i)**2))
+   enddo
 
    ! Also, since we're here, let's compute the inverse of the real lattice
    !   vector matrix.
@@ -449,6 +457,8 @@ subroutine initialize3DMesh
    call getRealNormalVectors
 
    call getRealPlaneAngles
+
+   call getRealMeshCellVolume
 
 end subroutine initialize3DMesh
 
@@ -1811,6 +1821,16 @@ subroutine getRealFractStrideLength
       realFractStrideLength(i) = 1.0_double / real(numMeshPoints(i),double)
    enddo
 end subroutine getRealFractStrideLength
+
+
+subroutine getRealMeshCellVolume
+
+   implicit none
+
+   realMeshCellVolume = product(realFractStrideLength(:) * realMag(:)) * &
+         & sin(realPlaneAngles(1))
+
+end subroutine getRealMeshCellVolume
 
 
 subroutine getRealFractCrossArea

@@ -113,7 +113,7 @@ subroutine accessSCFEigValHDF5 (scf_fid,numStates)
    states(1) = numStates
 
    ! Open the eigenValues group in the scf_fid.
-   call h5gopen_f (scf_fid,"/eigenValues",eigenValues_gid,hdferr)
+   call h5gopen_f (scf_fid,"eigenValues",eigenValues_gid,hdferr)
    if (hdferr /= 0) stop 'Failed to open eigenValues group.'
 
    ! Allocate space to hold the IDs for the datasets in the eigenvalues group.

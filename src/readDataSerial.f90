@@ -8,7 +8,7 @@ module O_ReadDataSubs
    interface readData
       module procedure readDouble, read2Double, read3Double, readDoubleArray,&
             & readDoubleMatrix, readIntDouble, readInt2Double,&
-            & readInt, read2Int, read3Int, readIntArray, readChar
+            & readInt, read2Int, read3Int, readIntArray, readChar, readOneChar
    end interface readData
 
    contains
@@ -471,6 +471,32 @@ subroutine readChar (readUnit,writeUnit,varLength,charVar,&
    call flush (writeUnit)
 
 end subroutine readChar
+
+
+subroutine readOneChar (readUnit,writeUnit,charVar,advanceFlag)
+
+   implicit none
+
+   ! Passed parameters
+   integer, intent(in)    :: readUnit  ! The unit number of the file from which
+                                       ! we are reading.
+   integer, intent(in)    :: writeUnit  ! The unit number of the file to which
+                                        ! we are writing.
+   character, intent(out) :: charVar ! Character to be read.
+   integer, intent(in) :: advanceFlag
+
+   ! Read and regurgitate the input parameter.
+   if (advanceFlag == 0) then
+      read (readUnit,ADVANCE="NO",fmt="(a1)") charVar
+      write (writeUnit,ADVANCE="NO",fmt="(a1)") charVar
+      call flush (writeUnit)
+   else
+      read (readUnit,fmt="(a1)") charVar
+      write (writeUnit,fmt="(a1)") charVar
+      call flush (writeUnit)
+   endif
+
+end subroutine readOneChar
 
 
 end module O_ReadDataSubs

@@ -18,10 +18,13 @@ subroutine computeBond (inSCF)
    use O_AtomicTypes, only: numAtomTypes, atomTypes, maxNumStates
    use O_KPoints,     only: numKPoints
    use O_Populate,    only: electronPopulation
-   use O_AtomicSites, only: valeDim, numAtomSites, atomSites
-   use O_Constants,   only: pi, hartree, bigThresh, smallThresh
+   use O_AtomicSites, only: coreDim, valeDim, numAtomSites, atomSites
+   use O_PotTypes,    only: potTypes
+   use O_Constants,   only: pi, hartree, bigThresh, smallThresh, bohrRad
+   use O_ElementData, only: coreCharge
    use O_Input,       only: numStates, sigmaBOND, eminBOND, emaxBOND, &
-         & deltaBOND, maxBL, outputCodeBondQ, excitedAtomPACS, maxNumNeighbors
+         & deltaBOND, maxBL, outputCodeBondQ, excitedAtomPACS, &
+         & maxNumNeighbors, numElectrons
 #ifndef GAMMA
    use O_SecularEquation, only: valeVale, valeValeOL, energyEigenValues, &
          & readDataSCF, readDataPSCF
@@ -78,9 +81,13 @@ subroutine computeBond (inSCF)
    real (kind=double) :: expAlpha
    real (kind=double) :: expFactor
    real (kind=double) :: sigmaSqrtPi
+   real (kind=double) :: currCoreCharge
+   real (kind=double) :: currCharge
+   real (kind=double), dimension (3) :: xyzIonMoment
+   real (kind=double), dimension (3) :: xyzElecMoment
    real (kind=double), dimension (3) :: currentDistance
    real (kind=double), dimension (3) :: minDist
-   real (kind=double), allocatable, dimension (:)      :: atomCharge
+   real (kind=double), allocatable, dimension (:,:)    :: atomCharge
    real (kind=double), allocatable, dimension (:)      :: atomChargeTotal
    real (kind=double), allocatable, dimension (:)      :: bondOrderTotal
    real (kind=double), allocatable, dimension (:)      :: bondLengthTotal
@@ -205,7 +212,7 @@ subroutine computeBond (inSCF)
    allocate (bondOrderEnergyDep (maxNumNeighbors))
    allocate (bondOrder          (numAtomSites,numAtomSites))
    allocate (bondLength         (numAtomSites,numAtomSites))
-   allocate (atomCharge         (numAtomSites))
+   allocate (atomCharge         (numAtomSites,spin))
    allocate (atomOrbitalCharge  (numAtomSites,maxNumStates))
    if (excitedAtomPACS .ne. 0) then
       allocate (energyScale         (numEnergyPoints))
@@ -228,7 +235,7 @@ subroutine computeBond (inSCF)
       ! Initialize various arrays and matrices.
       bondOrder          (:,:) = 0.0_double
       bondLength         (:,:) = 0.0_double
-      atomCharge         (:)   = 0.0_double
+      atomCharge         (:,h) = 0.0_double
       atomOrbitalCharge  (:,:) = 0.0_double
       if (excitedAtomPACS .ne. 0) then
          bondCompleteAtom    (:,:) = 0.0_double
@@ -420,7 +427,7 @@ subroutine computeBond (inSCF)
 
                      enddo
                   endif
-               enddo ! (l atom2)
+               enddo ! (l numAtomSites atom2)
                do l = 1, numEnergyPoints
 
                   ! Compute the exponential alpha for broadening this point.
@@ -486,7 +493,7 @@ subroutine computeBond (inSCF)
                   !   kpoint (i).
 !                  atomCharge(k) = atomCharge(k) + oneValeRealAccum * &
 !                        & kPointWeight(i) / real(spin,double)
-                  atomCharge(k) = atomCharge(k) + oneValeRealAccum * &
+                  atomCharge(k,h) = atomCharge(k,h) + oneValeRealAccum * &
                         & electronPopulation(stateSpinKPointIndex)
 
                   ! Store the atom orbital charge contribution.
@@ -628,7 +635,8 @@ subroutine computeBond (inSCF)
 
 
 
-      ! Begin accumulating statistics and recording output to disk.
+      ! Begin accumulating statistics and recording output to disk for the
+      !   current spin h.
 
 
 
@@ -758,7 +766,7 @@ subroutine computeBond (inSCF)
          enddo
 
          deallocate (bondedDist)
-      enddo
+      enddo ! i numAtomSites
 
 
       ! Compute the total bond order for the excited atom as an energy
@@ -802,11 +810,11 @@ subroutine computeBond (inSCF)
 
          ! Accumulate the charge for this atom to its atom type total.
          atomChargeTotal(currentType) = atomChargeTotal(currentType) + &
-               & atomCharge(i)
+               & atomCharge(i,h)
          numChargedAtoms(currentType) = numChargedAtoms(currentType) + 1
 
          ! Accumulate the charge for this atom to the total system charge.
-         systemCharge = systemCharge + atomCharge(i)
+         systemCharge = systemCharge + atomCharge(i,h)
 
          ! Begin a second loop over the other atoms.
          do j = 1, numAtomSites
@@ -837,7 +845,7 @@ subroutine computeBond (inSCF)
                endif
             endif
          enddo
-      enddo
+      enddo ! i numAtomSites
 
       ! Begin recording the energy dependent bond order results to disk, making
       !   sure to convert the energy scale to eV.
@@ -868,7 +876,7 @@ subroutine computeBond (inSCF)
 
                ! Only record atoms of the current type.
                if (atomSites(j)%atomTypeAssn == i) then
-                  write (9+h,fmt="(4x,i5,10x,f10.6)") j,atomCharge(j)
+                  write (9+h,fmt="(4x,i5,10x,f10.6)") j,atomCharge(j,h)
                endif
             enddo
 
@@ -927,7 +935,7 @@ subroutine computeBond (inSCF)
                   & atomTypes(currentType)%speciesID
             write (9+h,fmt=200) "TYPE_ID          ", &
                   & atomTypes(currentType)%typeID
-            write (9+h,fmt=300) "ATOM_CHARGE      ", atomCharge(i)
+            write (9+h,fmt=300) "ATOM_CHARGE      ", atomCharge(i,h)
             numSQN_l = atomTypes(currentType)%numQN_lValeRadialFns(1)
             numPQN_l = atomTypes(currentType)%numQN_lValeRadialFns(2)
             numDQN_l = atomTypes(currentType)%numQN_lValeRadialFns(3)
@@ -956,17 +964,17 @@ subroutine computeBond (inSCF)
                ! Only include bonds that exist in the statistics.
                if (bondLength(i,j) /= 0.0_double) then
 
-                  ! Record the bonded atom, the bond length in bohr radii,
+                  ! Record the bonded atom, the bond length in Angstroms,
                   !   and the bond order.
-                  write (9+h,fmt="(i5,5x,f8.4,2x,f8.4)") j,bondLength(i,j),&
-                        & bondOrder(i,j)
+                  write (9+h,fmt="(i5,5x,f8.4,2x,f8.4)") j,&
+                        & bondLength(i,j)*bohrRad,bondOrder(i,j)
                endif
             enddo
             write (9+h,fmt=200) "NUM_BOND_ANGLES  ", numBondAngles(i)
             do j = 1, numBondAngles(i)
                ! Record the triplet of atoms for this bond angle and the bond
                !   angle converted into degrees.
-               write (9+h,fmt="(i5,5x,i5,5x,i5,f8.4)") bondAngleAtoms(1,j,i),&
+               write (9+h,fmt="(i5,5x,i5,5x,i5,f12.5)") bondAngleAtoms(1,j,i),&
                      & i,bondAngleAtoms(2,j,i), bondAngle(j,i)*180.0_double/pi
             enddo
                   
@@ -985,6 +993,41 @@ subroutine computeBond (inSCF)
       deallocate (bondAngle)
       deallocate (currentBonds)
    enddo ! (h spin)
+
+   ! At this point, the atom effective charges have been computed. We can
+   !   use them to compute the dipole moment.
+
+   xyzIonMoment(:) = 0.0_double
+   do i = 1, numAtomSites
+      if (coreDim == 0) then
+         currCoreCharge = 0
+      else
+         currCoreCharge = sum(coreCharge(:,&
+               & int(potTypes(atomSites(i)%atomTypeAssn)%nucCharge)))
+      endif
+
+      xyzIonMoment(:) = xyzIonMoment(:) + &
+            & (int(potTypes(atomSites(i)%atomTypeAssn)%nucCharge) - &
+            & currCoreCharge) * atomSites(i)%cartPos(:)
+   enddo
+   write(20,*)
+   write(20,fmt="(a,3e12.4)") "xyzIonMoment(:) = ", xyzIonMoment(:)
+
+   xyzElecMoment(:) = 0.0_double
+   do i = 1, numAtomSites
+      if (spin == 1) then
+         currCharge = atomCharge(i,1)
+      else
+         currCharge = sum(atomCharge(i,:))
+      endif
+         xyzElecMoment(:) = xyzElecMoment(:) + currCharge * &
+               & atomSites(i)%cartPos(:)
+   enddo
+   write(20,*)
+   write(20,fmt="(a,3e12.4)") "xyzElecMoment(:) = ", xyzElecMoment(:)
+
+   write (20,fmt="(a,3e12.4)") "I-E(:) = ", &
+         & (xyzIonMoment(:) - xyzElecMoment(:)) / numElectrons
 
    ! Deallocate matrices that are no longer needed.
    deallocate (numOrbIndex)
