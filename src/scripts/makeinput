@@ -3540,7 +3540,7 @@ sub printOLCAOInput
 
    # Print data useful for the mtop portion of the calculation.
    print OLCAO "MTOP_INPUT_DATA\n";
-   print OLCAO "$kpMesh[1][1] $kpMesh[1][2] $kpMesh[1][3] # SCF\n";
+   print OLCAO "$kpMesh[2][1] $kpMesh[2][2] $kpMesh[2][3] # PSCF\n";
    print OLCAO "$kpShift # Shift\n";
 
    # Print data that is useful for the xanes portion of the calculation.

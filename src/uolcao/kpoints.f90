@@ -943,7 +943,6 @@ subroutine makeMTOPIndexMap
                MTOPIndexMap(base+i,axis) = i + (j-1)*n1 + (k-1)*n1*n2 
             enddo
             MTOPIndexMap(base+numsteps+1,axis) = 1 + coeff1*n1 + coeff2*n1*n2
-            write(20,'(A,I0,A,I0)') '=== Axis=',axis,'  String(loop)=',s
             do t = 1, numsteps+1
                lin = MTOPIndexMap(base+t, axis)
                ii = 1 + mod(lin-1,n1)
@@ -952,9 +951,6 @@ subroutine makeMTOPIndexMap
                kf1 = real(ii-1,kind=double)/real(n1,kind=double)
                kf2 = real(jj-1,kind=double)/real(n2,kind=double)
                kf3 = real(kk-1,kind=double)/real(n3,kind=double)
-
-               write(20,'(A,I0,2X,A,I0,2X,3(1X,ES22.14))') ' step', t,'MTOPIndexMap= ', lin,&
-                  &  kf1,kf2,kf3             
              enddo
          enddo
       enddo
