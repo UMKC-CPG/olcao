@@ -99,7 +99,7 @@ class orbital_file:
   def parse_file(self,fname):
 
     # Open the file and store lines as a list.
-    with open(fname, 'r') as f:
+    with open(fname,'r') as f:
       rwfn=f.readlines()
 
       # FORTRAN to PYTHON - Scientific notation should be 'E'
@@ -121,8 +121,7 @@ class orbital_file:
         self.num_orbitals+=1
         self.n_qnums.append(int(l[0]))
         self.k_qnums.append(int(l[1]))
-        self.qnums.append([int(l[0]), int(l[1]),
-                          lktol(int(l[1])), sktol(int(l[1]))])
+        self.qnums.append([int(l[0]),int(l[1]),lktol(int(l[1])),sktol(int(l[1]))])
         self.energy_eigenvalues.append(float(l[2]))
         self.numerical_points.append(int(l[3]))
 
@@ -137,13 +136,12 @@ class orbital_file:
         #  and start on the next non-zero value.
         n=self.numerical_points[len(self.numerical_points)-1]
 
-        bounds=[i+1, (n+i)-1, (n+i)+1, 2*n+i-1, 2*n+i+1, 3*n+i-1]
+        bounds=[i+1,(n+i)-1,(n+i)+1,2*n+i-1,2*n+i+1,3*n+i-1]
 
         self.large_comps.append([float(x) for x in rwfn[bounds[0]:bounds[1]]])
         self.small_comps.append([float(x) for x in rwfn[bounds[2]:bounds[3]]])
         self.radial_comps.append([float(x) for x in rwfn[bounds[4]:bounds[5]]])
-        self.numerical_points[len(self.numerical_points)-1] \
-                = self.numerical_points[len(self.numerical_points)-1] - 1
+        self.numerical_points[len(self.numerical_points)-1]=self.numerical_points[len(self.numerical_points)-1]-1
         
 
       else:
@@ -155,13 +153,10 @@ class orbital_file:
     self.max_k=max(self.k_qnums,key=abs)
     self.max_l=lktol(self.max_k)
     self.max_small_l=sktol(self.max_k)
-    self.orbital_list=[str(x) + '_' + str(y)
-                       for x,y in zip(self.n_qnums,self.k_qnums)]
+    self.orbital_list=[str(x)+'_'+str(y) for x,y in zip(self.n_qnums,self.k_qnums)]
 
     # Make an interpolated radial grid for fitting purposes.
-    self.interpolated_radial_grid = \
-            sorted(list(set(
-                [float(r) for sublist in self.radial_comps for r in sublist])))
+    self.interpolated_radial_grid=sorted(list(set([float(r) for sublist in self.radial_comps for r in sublist])))
 
     # Make the columns needed for the orbitals - positive and negative divided by r.   
     for i in range(self.num_orbitals):
@@ -219,6 +214,7 @@ class orbital_file:
                         self.orbital_list.index(str(i)+'_'+str(ltok(j)[1]))])])
             self.fitting_lvals[j]+=1
             self.fitting_l_list.append(j)
+
 
   
   def two_component(self):
@@ -379,9 +375,8 @@ if __name__== "__main__":
   atom=atomic_system('isodata','rwfn.out')
 
   # Create the eigenvalues file as a csv
-  with open('eigenvalues', 'w') as f:
-    f.write('n_quantum_number,k_quantum_number,large_l_quantum_number,'
-            + 'small_l_quantum_number,energy_eigenvalue\n')    
+  with open('eigenvalues','w') as f:
+    f.write('n_quantum_number,k_quantum_number,large_l_quantum_number,small_l_quantum_number,energy_eigenvalue\n')    
     for i in range(atom.orbital_info.num_orbitals):
       f.write(str(atom.orbital_info.qnums[i][0]) + ','
           + str(atom.orbital_info.qnums[i][1]) + ','
