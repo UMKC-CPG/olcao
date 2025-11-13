@@ -167,7 +167,7 @@ subroutine initHDF5_PSCF (numStates)
          !   we need to create the shared attribute dataspace.
          attribIntDims(1) = 1
          call h5screate_simple_f (1,attribIntDims(1),attribInt_dsid,hdferr)
-         if (hdferr /= 0) stop 'Failed to create the attribInt_dsid'
+         if (hdferr /= 0) stop 'Failed to create the attribInt_dsid PSCF'
 
          ! Create the kPoint group that will hold all kPoint dependent results.
          call h5gcreate_f(pscf_fid,kPointName,kPoint_gid,hdferr)
@@ -197,7 +197,7 @@ subroutine initHDF5_PSCF (numStates)
       !   we need to create the shared attribute dataspace.
       attribIntDims(1) = 1
       call h5screate_simple_f (1,attribIntDims(1),attribInt_dsid,hdferr)
-      if (hdferr /= 0) stop 'Failed to create the attribInt_dsid'
+      if (hdferr /= 0) stop 'Failed to create the attribInt_dsid PSCF'
 
       ! Create the kPoint group that will hold all kPoint dependent results.
       call h5gcreate_f(pscf_fid,kPointName,kPoint_gid,hdferr)
@@ -251,7 +251,7 @@ subroutine closeHDF5_PSCF
 
    ! Close access to the HDF5 interface.
    call h5close_f (hdferr)
-   if (hdferr /= 0) stop 'Failed to close the HDF5 interface.'
+   if (hdferr /= 0) stop 'Failed to close the HDF5 interface PSCF.'
 
 end subroutine closeHDF5_PSCF
 

@@ -91,22 +91,22 @@ subroutine initPSCFEigVecHDF5 (pscf_fid,attribIntPSCF_dsid,&
 
    ! Create the eigenVectors group in the pscf_fid.
    call h5gcreate_f (pscf_fid,"eigenVectors",eigenVectorsPSCF_gid,hdferr)
-   if (hdferr /= 0) stop 'Failed to create eigenvectorsPSCF group'
+   if (hdferr /= 0) stop 'Failed to create eigenvectorsPSCF group SCF'
 
    ! Create the dataspace that will be used for the energy eigen vectors.
    call h5screate_simple_f(2,valeStatesPSCF,valeStatesPSCF_dsid,hdferr)
-   if (hdferr /= 0) stop 'Failed to create valeStatesPSCF dataspace'
+   if (hdferr /= 0) stop 'Failed to create valeStatesPSCF dataspace SCF'
 
    ! Create the property list first.  Then set the properties one at a time.
    call h5pcreate_f(H5P_DATASET_CREATE_F,valeStatesPSCF_plid,hdferr)
-   if (hdferr /= 0) stop 'Failed to create valeStatesPSCF plid'
+   if (hdferr /= 0) stop 'Failed to create valeStatesPSCF plid SCF'
    call h5pset_layout_f(valeStatesPSCF_plid,H5D_CHUNKED_F,hdferr)
-   if (hdferr /= 0) stop 'Failed to set valeStatesPSCF plid layout as chunked'
+   if (hdferr /= 0) stop 'Failed to set valeStatesPSCF plid layout as chunked SCF'
    call h5pset_chunk_f(valeStatesPSCF_plid,2,valeStatesPSCFChunk,hdferr)
-   if (hdferr /= 0) stop 'Failed to set valeStatesPSCF plid chunk size'
+   if (hdferr /= 0) stop 'Failed to set valeStatesPSCF plid chunk size SCF'
 !   call h5pset_shuffle_f(valeStatesPSCF_plid,hdferr)
    call h5pset_deflate_f   (valeStatesPSCF_plid,1,hdferr)
-   if (hdferr /= 0) stop 'Failed to set valeStatesPSCF for deflation'
+   if (hdferr /= 0) stop 'Failed to set valeStatesPSCF for deflation SCF'
 
    ! Allocate space to hold IDs for the datasets in the eigenvectors group.
 #ifndef GAMMA 
@@ -124,20 +124,20 @@ subroutine initPSCFEigVecHDF5 (pscf_fid,attribIntPSCF_dsid,&
          call h5dcreate_f(eigenVectorsPSCF_gid,currentName,H5T_NATIVE_DOUBLE,&
                & valeStatesPSCF_dsid,eigenVectorsPSCF_did(1,j,i),hdferr,&
                & valeStatesPSCF_plid)
-         if (hdferr /= 0) stop 'Failed to create eigenVectors real did PSCF'
+         if (hdferr /= 0) stop 'Failed to create eigenVectors real did PSCF SCF'
          write (currentName,fmt="(a4,i7.7,i7.7)") "imag",j,i
          currentName = trim (currentName)
          call h5dcreate_f(eigenVectorsPSCF_gid,currentName,H5T_NATIVE_DOUBLE,&
                & valeStatesPSCF_dsid,eigenVectorsPSCF_did(2,j,i),hdferr,&
                & valeStatesPSCF_plid)
-         if (hdferr /= 0) stop 'Failed to create eigenVectors imag did PSCF'
+         if (hdferr /= 0) stop 'Failed to create eigenVectors imag did PSCF SCF'
 #else
          write (currentName,fmt="(i7.7,i7.7)") j,i
          currentName = trim (currentName)
          call h5dcreate_f(eigenVectorsPSCF_gid,currentName,H5T_NATIVE_DOUBLE,&
                & valeStatesPSCF_dsid,eigenVectorsPSCF_did(1,j,i),hdferr,&
                & valeStatesPSCF_plid)
-         if (hdferr /= 0) stop 'Failed to create eigenVectors real did PSCF'
+         if (hdferr /= 0) stop 'Failed to create eigenVectors real did PSCF SCF'
 #endif
       enddo
    enddo
@@ -151,7 +151,7 @@ subroutine initPSCFEigVecHDF5 (pscf_fid,attribIntPSCF_dsid,&
          call h5acreate_f (eigenVectorsPSCF_did(1,j,i),"status",&
                & H5T_NATIVE_INTEGER,attribIntPSCF_dsid,&
                & eigenVectorsPSCF_aid(j,i),hdferr)
-         if (hdferr /= 0) stop 'Failed to create eigenVectorsPSCF_aid.'
+         if (hdferr /= 0) stop 'Failed to create eigenVectorsPSCF_aid. SCF'
       enddo
    enddo
 
@@ -160,7 +160,7 @@ subroutine initPSCFEigVecHDF5 (pscf_fid,attribIntPSCF_dsid,&
       do j = 1, numKPoints
          call h5awrite_f (eigenVectorsPSCF_aid(j,i),H5T_NATIVE_INTEGER,0,&
                & attribIntDimsPSCF,hdferr)
-         if (hdferr /= 0) stop 'Failed to init eigenVectorsPSCF_aid.'
+         if (hdferr /= 0) stop 'Failed to init eigenVectorsPSCF_aid. SCF'
       enddo
    enddo
 
@@ -214,7 +214,7 @@ subroutine accessPSCFEigVecHDF5 (pscf_fid,attribIntPSCF_dsid,&
 
    ! Open the eigenVectors group in the pscf_fid.
    call h5gopen_f (pscf_fid,"eigenVectors",eigenVectorsPSCF_gid,hdferr)
-   if (hdferr /= 0) stop 'Failed to open eigenvectorsPSCF group.'
+   if (hdferr /= 0) stop 'Failed to open eigenvectorsPSCF group PSCF'
 
    ! Allocate space to hold IDs for the datasets in the eigenvectors group.
 #ifndef GAMMA 
@@ -231,18 +231,18 @@ subroutine accessPSCFEigVecHDF5 (pscf_fid,attribIntPSCF_dsid,&
          currentName = trim (currentName)
          call h5dopen_f(eigenVectorsPSCF_gid,currentName,&
                & eigenVectorsPSCF_did(1,j,i),hdferr)
-         if (hdferr /= 0) stop 'Failed to open eigenVectorsPSCF real did.'
+         if (hdferr /= 0) stop 'Failed to open eigenVectorsPSCF real did PSCF'
          write (currentName,fmt="(a4,i7.7,i7.7)") "imag",j,i
          currentName = trim (currentName)
          call h5dopen_f(eigenVectorsPSCF_gid,currentName,&
                & eigenVectorsPSCF_did(2,j,i),hdferr)
-         if (hdferr /= 0) stop 'Failed to open eigenVectorsPSCF imag did.'
+         if (hdferr /= 0) stop 'Failed to open eigenVectorsPSCF imag did PSCF'
 #else
          write (currentName,fmt="(i7.7,i7.7)") j,i
          currentName = trim (currentName)
          call h5dopen_f(eigenVectorsPSCF_gid,currentName,&
                & eigenVectorsPSCF_did(1,j,i),hdferr)
-         if (hdferr /= 0) stop 'Failed to open eigenVectorsPSCF real did.'
+         if (hdferr /= 0) stop 'Failed to open eigenVectorsPSCF real did PSCF'
 #endif
       enddo
    enddo
@@ -250,11 +250,11 @@ subroutine accessPSCFEigVecHDF5 (pscf_fid,attribIntPSCF_dsid,&
    ! Obtain the property list for the energy eigen vectors.
    call h5dget_create_plist_f(eigenVectorsPSCF_did(1,1,1),valeStatesPSCF_plid,&
          & hdferr)
-   if (hdferr /= 0) stop 'Failed to obtain valeStatesPSCF property list.'
+   if (hdferr /= 0) stop 'Failed to obtain valeStatesPSCF property list PSCF'
 
    ! Obtain the dataspace for the energy eigen vectors.
    call h5dget_space_f(eigenVectorsPSCF_did(1,1,1),valeStatesPSCF_dsid,hdferr)
-   if (hdferr /= 0) stop 'Failed to obtain valeStatesPSCF dataspace.'
+   if (hdferr /= 0) stop 'Failed to obtain valeStatesPSCF dataspace PSCF'
 
    ! Allocate space to hold the attributes for tracking completion.
    allocate (eigenVectorsPSCF_aid(numKPoints,spin))
@@ -264,7 +264,7 @@ subroutine accessPSCFEigVecHDF5 (pscf_fid,attribIntPSCF_dsid,&
       do j = 1, numKPoints
          call h5aopen_f (eigenVectorsPSCF_did(1,j,i),"status",&
                & eigenVectorsPSCF_aid(j,i),hdferr)
-         if (hdferr /= 0) stop 'Failed to open eigenVectorsPSCF_aid.'
+         if (hdferr /= 0) stop 'Failed to open eigenVectorsPSCF_aid PSCF'
       enddo
    enddo
 
@@ -289,19 +289,20 @@ subroutine closePSCFEigVecHDF5
 
    ! Close the eigenvector dataspace.
    call h5sclose_f (valeStatesPSCF_dsid,hdferr)
-   if (hdferr /= 0) stop 'Failed to close valeStatesPSCF_dsid.'
+   if (hdferr /= 0) stop 'Failed to close valeStatesPSCF_dsid PSCF'
 
    ! Close the eigenvector datasets next.
    do i = 1, spin
       do j = 1, numKPoints
 #ifndef GAMMA
          call h5dclose_f (eigenVectorsPSCF_did(1,j,i),hdferr)
-         if (hdferr /= 0) stop 'Failed to close eigenVectorsPSCF_did real'
+         if (hdferr /= 0) stop 'Failed to close eigenVectorsPSCF_did real PSCF'
          call h5dclose_f (eigenVectorsPSCF_did(2,j,i),hdferr)
-         if (hdferr /= 0) stop 'Failed to close eigenVectorsPSCF_did imaginary'
+         if (hdferr /= 0) stop &
+               & 'Failed to close eigenVectorsPSCF_did imaginary PSCF'
 #else
          call h5dclose_f (eigenVectorsPSCF_did(1,j,i),hdferr)
-         if (hdferr /= 0) stop 'Failed to close eigenVectorsPSCF_did real'
+         if (hdferr /= 0) stop 'Failed to close eigenVectorsPSCF_did real PSCF'
 #endif
       enddo
    enddo
@@ -310,7 +311,7 @@ subroutine closePSCFEigVecHDF5
 
    ! Close the eigenvector property list.
    call h5pclose_f (valeStatesPSCF_plid,hdferr)
-   if (hdferr /= 0) stop 'Failed to close valeStatesPSCF_plid.'
+   if (hdferr /= 0) stop 'Failed to close valeStatesPSCF_plid PSCF'
 
    ! Close the eigenvector group.
    call h5gclose_f (eigenVectorsPSCF_gid,hdferr)

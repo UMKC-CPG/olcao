@@ -119,7 +119,7 @@ subroutine accessPSCFEigValHDF5 (pscf_fid, numStates)
 
    ! Open the eigenValues group in the scf_fid.
    call h5gopen_f (pscf_fid,"eigenValues",eigenValuesPSCF_gid,hdferr)
-   if (hdferr /= 0) stop 'Failed to open eigenValues group.'
+   if (hdferr /= 0) stop 'Failed to open eigenValues group PSCF'
 
    ! Allocate space to hold the IDs for the datasets in the eigenvalues group.
    allocate (eigenValuesPSCF_did(numKPoints,spin))
@@ -131,7 +131,7 @@ subroutine accessPSCFEigValHDF5 (pscf_fid, numStates)
          currentName = trim (currentName)
          call h5dopen_f(eigenValuesPSCF_gid,currentName,&
                & eigenValuesPSCF_did(j,i),hdferr)
-         if (hdferr /= 0) stop 'Failed to open eigenValues dataset.'
+         if (hdferr /= 0) stop 'Failed to open eigenValues dataset PSCF'
       enddo
    enddo
 
@@ -139,11 +139,11 @@ subroutine accessPSCFEigValHDF5 (pscf_fid, numStates)
 
    ! Obtain the property list for the eigenvalues.
    call h5dget_create_plist_f(eigenValuesPSCF_did(1,1),statesPSCF_plid,hdferr)
-   if (hdferr /= 0) stop 'Failed to obtain eigenvalues property list.'
+   if (hdferr /= 0) stop 'Failed to obtain eigenvalues property list PSCF'
 
    ! Obtain the dataspace for the eigenvalues.
    call h5dget_space_f(eigenValuesPSCF_did(1,1),statesPSCF_dsid,hdferr)
-   if (hdferr /= 0) stop 'Failed to obtain eigenvalues dataspace.'
+   if (hdferr /= 0) stop 'Failed to obtain eigenvalues dataspace PSCF'
 
 end subroutine accessPSCFEigValHDF5
 
@@ -166,13 +166,13 @@ subroutine closePSCFEigValHDF5
 
    ! Close the eigenvalue dataspace.
    call h5sclose_f (statesPSCF_dsid,hdferr)
-   if (hdferr /= 0) stop 'Failed to close statesPSCF_dsid.'
+   if (hdferr /= 0) stop 'Failed to close statesPSCF_dsid PSCF'
 
    ! Close the eigenvalue datasets next.
    do i = 1, spin
       do j = 1, numKPoints
          call h5dclose_f (eigenValuesPSCF_did(j,i),hdferr)
-         if (hdferr /= 0) stop 'Failed to close eigenValuesPSCF_did'
+         if (hdferr /= 0) stop 'Failed to close eigenValuesPSCF_did PSCF'
       enddo
    enddo
 
@@ -181,11 +181,11 @@ subroutine closePSCFEigValHDF5
 
    ! Close the eigenvalue property list.
    call h5pclose_f (statesPSCF_plid,hdferr)
-   if (hdferr /= 0) stop 'Failed to close statesPSCF_plid.'
+   if (hdferr /= 0) stop 'Failed to close statesPSCF_plid PSCF'
 
    ! Close the eigenvalues group.
    call h5gclose_f (eigenValuesPSCF_gid,hdferr)
-   if (hdferr /= 0) stop 'Failed to close eigen values gid.'
+   if (hdferr /= 0) stop 'Failed to close eigen values gid PSCF'
 
 end subroutine closePSCFEigValHDF5
 

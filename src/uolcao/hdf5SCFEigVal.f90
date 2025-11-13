@@ -63,16 +63,22 @@ subroutine initSCFEigValHDF5 (scf_fid,numStates)
 
    ! Create the eigenValues group in the scf_fid.
    call h5gcreate_f (scf_fid,"eigenValues",eigenValues_gid,hdferr)
+   if (hdferr /= 0) stop 'Failed to create eigenValues gid SCF'
 
    ! Create the dataspace that will be used for the energy eigen values.
    call h5screate_simple_f(1,states,states_dsid,hdferr)
+   if (hdferr /= 0) stop 'Failed to create eigenValues dsid SCF'
 
    ! Create the property list first.  Then set the properties one at a time.
    call h5pcreate_f(H5P_DATASET_CREATE_F,states_plid,hdferr)
+   if (hdferr /= 0) stop 'Failed to create eigenValues plid SCF'
    call h5pset_layout_f(states_plid,H5D_CHUNKED_F,hdferr)
+   if (hdferr /= 0) stop 'Failed to set eigenValues plid layout SCF'
    call h5pset_chunk_f(states_plid,1,states,hdferr)
+   if (hdferr /= 0) stop 'Failed to set eigenValues plid chunk size SCF'
 !   call h5pset_shuffle_f(states_plid,hdferr)
    call h5pset_deflate_f   (states_plid,1,hdferr)
+   if (hdferr /= 0) stop 'Failed to set eigenValues plid deflate SCF'
 
    ! Allocate space to hold the IDs for the datasets in the eigenvalues group.
    allocate (eigenValues_did(numKPoints,spin))
@@ -84,6 +90,7 @@ subroutine initSCFEigValHDF5 (scf_fid,numStates)
          currentName = trim (currentName)
          call h5dcreate_f(eigenValues_gid,currentName,H5T_NATIVE_DOUBLE,&
                & states_dsid,eigenValues_did(j,i),hdferr,states_plid)
+         if (hdferr /= 0) stop 'Failed to create eigenValues did SCF'
       enddo
    enddo
 
@@ -114,7 +121,7 @@ subroutine accessSCFEigValHDF5 (scf_fid,numStates)
 
    ! Open the eigenValues group in the scf_fid.
    call h5gopen_f (scf_fid,"eigenValues",eigenValues_gid,hdferr)
-   if (hdferr /= 0) stop 'Failed to open eigenValues group.'
+   if (hdferr /= 0) stop 'Failed to open eigenValues group SCF'
 
    ! Allocate space to hold the IDs for the datasets in the eigenvalues group.
    allocate (eigenValues_did(numKPoints,spin))
@@ -126,7 +133,7 @@ subroutine accessSCFEigValHDF5 (scf_fid,numStates)
          currentName = trim (currentName)
          call h5dopen_f(eigenValues_gid,currentName,eigenValues_did(j,i),&
                & hdferr)
-         if (hdferr /= 0) stop 'Failed to open eigenValues dataset.'
+         if (hdferr /= 0) stop 'Failed to open eigenValues dataset SCF'
       enddo
    enddo
 
@@ -134,11 +141,11 @@ subroutine accessSCFEigValHDF5 (scf_fid,numStates)
 
    ! Obtain the property list for the eigenvalues.
    call h5dget_create_plist_f(eigenValues_did(1,1),states_plid,hdferr)
-   if (hdferr /= 0) stop 'Failed to obtain eigenvalues property list.'
+   if (hdferr /= 0) stop 'Failed to obtain eigenvalues property list SCF'
 
    ! Obtain the dataspace for the eigenvalues.
    call h5dget_space_f(eigenValues_did(1,1),states_dsid,hdferr)
-   if (hdferr /= 0) stop 'Failed to obtain eigenvalues dataspace.'
+   if (hdferr /= 0) stop 'Failed to obtain eigenvalues dataspace SCF'
 
 end subroutine accessSCFEigValHDF5
 
@@ -161,13 +168,13 @@ subroutine closeSCFEigValHDF5
 
    ! Close the eigenvalue dataspace.
    call h5sclose_f (states_dsid,hdferr)
-   if (hdferr /= 0) stop 'Failed to close states_dsid.'
+   if (hdferr /= 0) stop 'Failed to close states_dsid SCF'
 
    ! Close the eigenvalue datasets next.
    do i = 1, spin
       do j = 1, numKPoints
          call h5dclose_f (eigenValues_did(j,i),hdferr)
-         if (hdferr /= 0) stop 'Failed to close eigenValues_did'
+         if (hdferr /= 0) stop 'Failed to close eigenValues_did SCF'
       enddo
    enddo
 
@@ -176,7 +183,7 @@ subroutine closeSCFEigValHDF5
 
    ! Close the eigenvalue property list.
    call h5pclose_f (states_plid,hdferr)
-   if (hdferr /= 0) stop 'Failed to close states_plid.'
+   if (hdferr /= 0) stop 'Failed to close states_plid SCF'
 
    ! Close the eigenvalues group.
    call h5gclose_f (eigenValues_gid,hdferr)
