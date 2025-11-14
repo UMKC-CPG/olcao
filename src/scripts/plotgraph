@@ -534,6 +534,8 @@ open(OUT, "> plotscript") || die "Cannot open output file for writing.\n";
 #	section at the top.
 if("$TERM" =~ "xterm")
    {print OUT "set term x11\n";}
+elsif("$TERM" =~ "tmux")
+   {print OUT "set term x11\n";}
 else
    {print OUT "set term kc_tek40xx\n";}
 print OUT "set timestamp \"%d/%m/%y %H:%M\" offset 80,-1 font \"Helvetica\"\n";
