@@ -1142,7 +1142,7 @@ subroutine mtop(inSCF)
 
    ! Declare local variables.
    integer :: i
-   real(kind=double), dimension(3,2) :: P
+   real(kind=double), dimension(3,2) :: xyzP
 
    ! Open the MTOP files that will be written to.  If a spin polarized
    !   calculation is being done, then 180 holds spin up and 181 holds
@@ -1160,22 +1160,31 @@ subroutine mtop(inSCF)
    ! Shift the energy eigen values according to the highest occupied state.
    call shiftEnergyEigenValues(occupiedEnergy)
 #ifndef GAMMA
-   call computeMTOPPolarization(inSCF,P)
+   call computeMTOPPolarization(inSCF,xyzP)
+
+   ! Print out the MTOP result.
    do i = 1, spin
-      write(20,*) 'Polarization (a.u.):', P(:,i)
+      write(20,*) 'Polarization (a.u.):', xyzP(:,i)
 
       ! Print to stdout as requested
-      write(20,'(A,1X,F20.12)') 'P(x) =', P(1,i)
-      write(20,'(A,1X,F20.12)') 'P(y) =', P(2,i)
-      write(20,'(A,1X,F20.12)') 'P(z) =', P(3,i)
+      if (i == 1) then
+         write(20,fmt="(a)") "Spin Up"
+         write(20,'(A,1X,F20.12)') 'P(x) =', xyzP(1,i)
+         write(20,'(A,1X,F20.12)') 'P(y) =', xyzP(2,i)
+         write(20,'(A,1X,F20.12)') 'P(z) =', xyzP(3,i)
+      else
+         write(20,fmt="(a)") "Spin Dn"
+         write(20,'(A,1X,F20.12)') 'P(x) =', xyzP(1,i)
+         write(20,'(A,1X,F20.12)') 'P(y) =', xyzP(2,i)
+         write(20,'(A,1X,F20.12)') 'P(z) =', xyzP(3,i)
+      endif
 
       ! Also write to fort.180 so the run script can copy it
-      write(179+i,'(A,1X,F20.12)') 'P(x) =', P(1,i)
-      write(179+i,'(A,1X,F20.12)') 'P(y) =', P(2,i)
-      write(179+i,'(A,1X,F20.12)') 'P(z) =', P(3,i)
+      write(179+i,fmt="(3e16.8)") xyzP(:,i)
       flush(179+i)
    enddo
 #endif
+
    ! Close the output files.
    close(180)
    if (spin == 2) then

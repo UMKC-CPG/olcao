@@ -267,7 +267,7 @@ subroutine readTitle(readUnit,writeUnit)
    ! Read lines and regurgitate them until we find the END_TITLE tag.
    do while (.true.)
       read(5,*) titleLine
-      write (20,fmt='(a80)') titleLine
+      write (20,fmt='(a)') trim(titleLine)
 
       if (titleLine == 'END_TITLE') then
          exit

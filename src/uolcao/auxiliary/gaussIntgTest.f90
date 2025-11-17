@@ -202,8 +202,7 @@ program GaussianIntegrals
    real (kind=double), dimension (3) :: P, PA, PB, d
    !real (kind=double), dimension (3) :: deltaK
    real (kind=double) :: zeta, inv_2zeta, xi
-   complex (kind=double), dimension (3) :: preFactorko, preFactorko1, &
-         & preFactorko2
+   complex (kind=double), dimension (3) :: preFactorKO
    real (kind=double), dimension (3) :: hermite_r
    real (kind=double), dimension (6,3) :: Hn
    complex (kind=double), dimension (6,3) :: hermite_term
@@ -239,20 +238,20 @@ program GaussianIntegrals
    hermite_term(6,:) = Hn(6,:)*(((cmplx(0.0d0,1.0d0,double))/(2.0d0*((zeta)**0.5)))**6)
 
    ! This is the (s|K|s) integral
-   preFactorko(:) = ((pi/zeta)**0.5)*exp(-xi*d(:)*d(:))&
+   preFactorKO(:) = ((pi/zeta)**0.5)*exp(-xi*d(:)*d(:))&
            & *exp(-(deltaK(:))**2/(4*zeta)) &
            & *exp(cmplx(0.0d0,-1.0d0,double)*deltaK(:)*P(:))
 
-pc(1,1) = preFactorko(1)*preFactorko(2)*preFactorko(3)
+pc(1,1) = preFactorKO(1)*preFactorKO(2)*preFactorKO(3)
 
-pc(2,1) = (PA(1) + hermite_term(1,1))*preFactorko(1)*preFactorko(2)*preFactork&
-&o(3)
+pc(2,1) = (PA(1) + hermite_term(1,1))*preFactorKO(1)*preFactorKO(2)*preFactorK&
+&O(3)
 
-pc(3,1) = (PA(2) + hermite_term(1,2))*preFactorko(1)*preFactorko(2)*preFactork&
-&o(3)
+pc(3,1) = (PA(2) + hermite_term(1,2))*preFactorKO(1)*preFactorKO(2)*preFactorK&
+&O(3)
 
-pc(4,1) = (PA(3) + hermite_term(1,3))*preFactorko(1)*preFactorko(2)*preFactork&
-&o(3)
+pc(4,1) = (PA(3) + hermite_term(1,3))*preFactorKO(1)*preFactorKO(2)*preFactorK&
+&O(3)
 
 pc(5,1) = (PA(1) + hermite_term(1,1))*pc(2,1) + (hermite_term(2,1) - hermite_t&
 &erm(1,1)**2)*pc(1,1)
@@ -295,8 +294,8 @@ pc(20,1) = (PA(3) + hermite_term(1,3))*pc(7,1) + ((2.0*PA(3))*(hermite_term(2,&
 &3) - hermite_term(1,3)**2)                 + (hermite_term(3,3) - hermite_term&
 &(2,3)*hermite_term(1,3)))*pc(1,1)
 
-pc(1,2) = (PB(1) + hermite_term(1,1))*preFactorko(1)*preFactorko(2)*preFactork&
-&o(3)
+pc(1,2) = (PB(1) + hermite_term(1,1))*preFactorKO(1)*preFactorKO(2)*preFactorK&
+&O(3)
 
 pc(2,2) = (PA(1) + hermite_term(1,1))*pc(1,2) + (hermite_term(2,1) - hermite_t&
 &erm(1,1)**2)*pc(1,1)
@@ -351,8 +350,8 @@ pc(20,2) = (PA(3) + hermite_term(1,3))*pc(7,2) + ((2.0*PA(3))*(hermite_term(2,&
 &3) - hermite_term(1,3)**2)                 + (hermite_term(3,3) - hermite_term&
 &(2,3)*hermite_term(1,3)))*pc(1,2)
 
-pc(1,3) = (PB(2) + hermite_term(1,2))*preFactorko(1)*preFactorko(2)*preFactork&
-&o(3)
+pc(1,3) = (PB(2) + hermite_term(1,2))*preFactorKO(1)*preFactorKO(2)*preFactorK&
+&O(3)
 
 pc(2,3) = (PA(1) + hermite_term(1,1))*pc(1,3)
 
@@ -408,8 +407,8 @@ pc(20,3) = (PA(3) + hermite_term(1,3))*pc(7,3) + ((2.0*PA(3))*(hermite_term(2,&
 &3) - hermite_term(1,3)**2)                 + (hermite_term(3,3) - hermite_term&
 &(2,3)*hermite_term(1,3)))*pc(1,3)
 
-pc(1,4) = (PB(3) + hermite_term(1,3))*preFactorko(1)*preFactorko(2)*preFactork&
-&o(3)
+pc(1,4) = (PB(3) + hermite_term(1,3))*preFactorKO(1)*preFactorKO(2)*preFactorK&
+&O(3)
 
 pc(2,4) = (PA(1) + hermite_term(1,1))*pc(1,4)
 
@@ -2233,12 +2232,8 @@ sh(16,16) = 16*pc(17,17) - 4*pc(17,12) - 4*pc(17,19) - 4*pc(12,17) + pc(12,12)&
             xyz_soln(:) = step_size * &
                   & (xyz(:) - A(:))**l1(:) * (xyz(:) - B(:))**l2(:) * &
                   & exp(-a1*(xyz(:) - A(:))**2) * exp(-a2*(xyz(:) - &
-                  & B(:))**2) * exp(cmplx(0.0d0,-1.0d0)*deltaK(:)*xyz(:))
-!            xyz_soln(:) = step_size * &
-!                  & (xyz(:) - A(:))**l1(:) * (xyz(:) - B(:))**l2(:) * &
-!                  & exp(-a1*(xyz(:) - A(:))**2) * exp(-a2*(xyz(:) - &
-!                  & B(:))**2) * (cos(deltaK(:)*xyz(:)) - &
-!                  & cmplx(0.0d0,1.0d0,double) * sin(deltaK(:)*xyz(:)))
+                  & B(:))**2) * (cos(deltaK(:)*xyz(:)) - &
+                  & cmplx(0.0d0,1.0d0,double) * sin(deltaK(:)*xyz(:)))
             xyz_sum(:) = xyz_sum(:) + xyz_soln(:)
          enddo
 

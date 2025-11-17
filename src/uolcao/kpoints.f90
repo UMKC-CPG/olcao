@@ -55,7 +55,7 @@ module O_KPoints
    integer, allocatable, dimension (:) :: numHighSymKP ! Number of high
          !   symmetry kpoints that define the vertices of each path to be taken
          !   for the band diagram.
-   integer, allocatable, dimension (:,:) :: MTOPIndexMap ! Map between the
+   integer, allocatable, dimension (:,:) :: mtopKPMap ! Map between the
          !   desired sequence of kpoints for MTOP calculations and the one-
          !   dimensional list of kpoints.
    real (kind=double) :: minKPointDensity ! The number of kpoints along each
@@ -633,7 +633,7 @@ subroutine initializeKPointMesh(applySymmetry)
    !allocate (kPointTracker(numMeshKPoints))
    allocate (abcMeshKPoints(3,numMeshKPoints))
 
-   ! Loop over abc kpoints numbers to create the initial uniform mesh in
+   ! Loop over abc axial kpoints numbers to create the initial uniform mesh in
    !   fractional units of the abc reciprocal space cell.
    numMeshKPoints = 0
    do i = 1, numAxialKPoints(1)
@@ -662,6 +662,30 @@ subroutine initializeKPointMesh(applySymmetry)
       enddo  ! j=1,numAxialKPoints(2)
    enddo  ! i=1,numAxialKPoints(1)
 
+   ! There are a variety of ways to traverse the linear list of kPoints:
+   !   Shorthand:
+   !      nAKP(q) is numAxialKPoints(q) with q = a,b,c.
+   !      nAKP(q,s) is numAxialKPoints(q,s) with q=a,b,c and s being
+   !         the step size.
+   !   Given a loop structure over the a,b,c nAKP, the specific kpoint
+   !       in the linear array can be found as loop_c*1 + loop_b*len_c
+   !       + loop_a*len_b*len_c.
+   !
+   !   (1) Iterating a counter using a loop structure along the lines of
+   !       nAKP(1,1)->nAKP(2,1)->nAKP(3,1) will visit all mesh points
+   !       in a series of strings of length numAxialKPoints(3) along the c
+   !       axis. Because all incremental step sizes are one, this sequence
+   !       will exactly and sequentially visit all elements in the kpoints
+   !       array.
+   !   (2) Iterating a counter using a loop structure along the lines of
+   !       nAKP(1,1)->nAKP(3,1)->nAKP(2,nAKP(3)) will visit all mesh
+   !       points in a series of strings of length numAxialKPoints(2) along
+   !       the b axis.
+   !   (3) Iterating a counter using a loop structure along the lines of
+   !       nAKP(2,1)->nAKP(3,1)->nAKP(1,nAKP(2)*nAKP(3)) will visit all
+   !       mesh points in a series of strings of length numAxialKPoins(1)
+   !       along the a axis.
+
    ! Presently, we just make the full mesh here and do not reduce by symmetry.
    !   In the future, we will do symmetry reductions here. Until then, we just
    !   copy the abcMeshKPoints into the list of kPoints.
@@ -678,7 +702,7 @@ subroutine initializeKPointMesh(applySymmetry)
    ! Once deallocated (or if they were never allocated to begin with), we can
    !   allocate space to hold the kpoints and their weights.
    allocate(kPoints(3,numMeshKPoints))
-   allocate(kPointWeight(numMeshKpoints))
+   allocate(kPointWeight(numMeshKPoints))
 
    ! Now, finally, we can copy the kPoints until we add the symmetry part
    !   later. Also, we can initialize the weights.
@@ -869,95 +893,66 @@ subroutine makeMTOPIndexMap
    implicit none
 
    ! Declare local variables.
-   integer :: axis1, axis2
-   integer :: coeff1, coeff2
+   integer :: kPointCount
+   integer :: i,j,k
 
-   integer :: i,j,k                 ! grid indices
-   integer :: n1,n2,n3              ! mesh dims
-   integer :: lin, lin_first, lin_prev, lin2, Fixed2D
-!   integer :: totalLinks
-   integer :: axis, numsteps,base
-   integer :: jfix, kfix, ifix
-   integer :: i2, j2, k2,s,t, ii, jj, kk
-   !integer :: s_loc                 ! local link counter inside one string
-   real(kind=double), allocatable :: kPoints(:,:)
-   real(kind=double) :: kfrac(3), kf1, kf2, kf3
-   real(kind=double), allocatable, dimension(:,:) :: kp
+   ! Allocate space to hold the MTOP index map.
+   allocate (mtopKPMap(3,numKPoints))
 
-   ! Start
-
-   ! Mesh sizes
-   n1 = numAxialKPoints(1)
-   n2 = numAxialKPoints(2)
-   n3 = numAxialKPoints(3)
-
-   allocate(MTOPIndexMap( max(n2*n3*(n1+1), max(n1*n3*(n2+1), n1*n2*(n3+1))) , 3))
-
-   MTOPIndexMap(:,:) = 0
-
-
-   write (20,'(A)') 'MTOP 1D strings along each axis (2D fixed, 1D varying):'
-
-   ! =========================
-   ! axis = 1 (strings along i; fix j,k)
-   ! =========================
- ! write(20,'(A)') '================ axis 1 (X strings; fixed j,k) ================'
-   do axis = 1, 3
-      select case(axis)
-      case(1)
-         numsteps = n1   ! number of steps per string for this axis (useful elsewhere)
-         Fixed2D = n2*n3
-         axis1 = n3
-         axis2 = n2
-      case(2)
-         numsteps = n2
-         Fixed2D = n1*n3
-         axis1 = n3
-         axis2 = n1
-      case(3)
-         numsteps = n3
-         Fixed2D = n1*n2
-         axis1 = n1
-         axis2 = n2
-      end select
-
-
-      s = 0
-      do k = 1, axis1
-         do j = 1, axis2
-            select case(axis)
-            case(1)
-               coeff1 = j-1
-               coeff2 = k-1
-            case(2)
-               coeff1 = 0
-               coeff2 = k-1
-            case(3)
-               coeff1 = j-1
-               coeff2 = 0
-            end select
-
-            s = s + 1
-            base = (s-1)*(numsteps+1)
-            do i = 1, numsteps
-               MTOPIndexMap(base+i,axis) = i + (j-1)*n1 + (k-1)*n1*n2 
-            enddo
-            MTOPIndexMap(base+numsteps+1,axis) = 1 + coeff1*n1 + coeff2*n1*n2
-            do t = 1, numsteps+1
-               lin = MTOPIndexMap(base+t, axis)
-               ii = 1 + mod(lin-1,n1)
-               jj = 1 + mod((lin-1)/n1,n2)
-               kk = 1 + mod((lin-1)/(n1*n2),n3)
-               kf1 = real(ii-1,kind=double)/real(n1,kind=double)
-               kf2 = real(jj-1,kind=double)/real(n2,kind=double)
-               kf3 = real(kk-1,kind=double)/real(n3,kind=double)
-             enddo
+   ! Build a map between the linear list of kpoints as they were created in
+   !   the initializeKPointMesh subroutine and the order in which the c-axis
+   !   strings of kpoints are needed for MTOP calculations.
+   kPointCount = 0
+   do i = 1, numAxialKPoints(1)
+      do j = 1, numAxialKPoints(2)
+         do k = 1, numAxialKPoints(3)
+            kPointCount = kPointCount + 1
+            mtopKPMap(3,kPointCount) = kPointCount
          enddo
       enddo
    enddo
 
+   ! Build a map between the linear list of kpoints as they were created in
+   !   the initializeKPointMesh subroutine and the order in which the b-axis
+   !   strings of kpoints are needed for MTOP calculations.
+   kPointCount = 0
+   do i = 1, numAxialKPoints(1)
+      do j = 1, numAxialKPoints(3)
+         do k = 1, numAxialKPoints(2)
+            kPointCount = kPointCount + 1
+            mtopKPMap(2,kPointCount) = getIndexFromIndices(i,k,j)
+         enddo
+      enddo
+   enddo
+
+   ! Build a map between the linear list of kpoints as they were created in
+   !   the initializeKPointMesh subroutine and the order in which the a-axis
+   !   strings of kpoints are needed for MTOP calculations.
+   kPointCount = 0
+   do i = 1, numAxialKPoints(2)
+      do j = 1, numAxialKPoints(3)
+         do k = 1, numAxialKPoints(1)
+            kPointCount = kPointCount + 1
+            mtopKPMap(1,kPointCount) = getIndexFromIndices(k,i,j)
+         enddo
+      enddo
+   enddo
 
 end subroutine makeMTOPIndexMap
+
+
+function getIndexFromIndices(a,b,c)
+
+   implicit none
+
+   ! Passed parameters.
+   integer, intent(in) :: a, b, c
+   integer :: getIndexFromIndices
+
+   getIndexFromIndices = c + (b-1)*numAxialKPoints(2) + &
+         & (a-1)*numAxialKPoints(2)*numAxialKPoints(1)
+
+end function getIndexFromIndices
 
 
 subroutine generateTetrahedra
@@ -1013,6 +1008,11 @@ subroutine cleanUpKPoints
    ! Only allocated in setup.
    if (allocated(phaseFactor)) then
       deallocate (phaseFactor)
+   endif
+
+   ! Only allocated for MTOP.
+   if (allocated(mtopKPMap)) then
+      deallocate (mtopKPMap)
    endif
 
 end subroutine cleanUpKPoints

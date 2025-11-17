@@ -74,7 +74,8 @@ module O_Lattice  ! Lattice and superlattice object.
    ! Reciprocal space cell information.
    real (kind=double), dimension (dim3,dim3) :: recipVectors ! These
          !   are the unit vectors of the reciprocal lattice a', b', c'
-         !   given in x, y, z components.
+         !   given in x, y, z components. First index is x,y,z, second index
+         !   is a', b', c'.
    real (kind=double), dimension (dim3) :: recipMag ! Magnitudes of the
          !   reciprocal space cell (a,b,c).
    integer, dimension(dim3) :: primRepsRecip ! The number of repetitions

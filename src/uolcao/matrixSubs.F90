@@ -62,6 +62,7 @@ end subroutine matrixDet
 
 #ifndef GAMMA
 
+! Element by element multiplication on packed matrices.
 subroutine matrixElementMult(summation,matrix1,matrix2,dim1,dim2)
 
    ! Import the precision variables and the type definitions.
@@ -106,6 +107,36 @@ subroutine matrixElementMult(summation,matrix1,matrix2,dim1,dim2)
    summation = summation + tempSummation * 2.0_double
 
 end subroutine matrixElementMult
+
+
+! Element by element multiplication on full (unpacked) square complex
+!   and not necessarily hermitian matrices.
+subroutine fullMatrixElementMult(summation,matrix1,matrix2,dim1)
+
+   ! Import the precision variables and the type definitions.
+   use O_Kinds
+
+   ! Make sure that there are not accidental variable declarations.
+   implicit none
+
+   ! Define the passed parameters.
+   complex (kind=double), intent(inout) :: summation
+   complex (kind=double), intent(in), dimension (:,:) :: matrix1
+   complex (kind=double), intent(in), dimension (:,:) :: matrix2
+   integer, intent(in) :: dim1
+
+   ! Define the local variables
+   integer :: i,j
+
+   summation = cmplx(0.0_double,0.0_double,double)
+
+   do i = 1,dim1
+      do j = 1, dim1
+         summation = summation + matrix1(j,i)*matrix2(j,i)
+      enddo
+   enddo
+
+end subroutine fullMatrixElementMult
 
 #else
 
