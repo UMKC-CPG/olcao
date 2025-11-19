@@ -37,8 +37,8 @@ subroutine makeValenceRho(inSCF)
    use O_Kinds
    use O_TimeStamps
    use O_CommandLine, only: doDIMO_SCF, doDIMO_PSCF, doForce_SCF, doForce_PSCF
-   use O_AtomicSites, only: valeDim
-   use O_Input, only: numStates
+   use O_AtomicSites, only: valeDim, computeIonicMoment, xyzIonMoment
+   use O_Input, only: numStates, numElectrons
    use O_KPoints, only: numKPoints
    use O_Constants, only: smallThresh
    use O_Potential, only: rel,spin,potDim,potCoeffs,&
@@ -426,7 +426,7 @@ subroutine makeValenceRho(inSCF)
 
       ! If needed, compute the forces
       if (((doForce_SCF == 1) .and. (converged == 1)) .or. &
-            & ((doDIMO_PSCF == 1) .and. (inSCF == 0))) then
+            & ((doForce_PSCF == 1) .and. (inSCF == 0))) then
          do j = 1, 3 ! xyz directions
             do k = 1, spin
 #ifndef GAMMA
@@ -538,13 +538,19 @@ subroutine makeValenceRho(inSCF)
    !    of valence electrons and a0 is the bohr radius. 
    if (((doDIMO_SCF == 1) .and. (converged == 1)) .or. &
          & ((doDIMO_PSCF == 1) .and. (inSCF == 0))) then
-      write (74,*) "Dipole Moment x-direction: ", dipoleMomentTrace(1,1)
-      write (74,*) "Dipole Moment y-direction: ", dipoleMomentTrace(2,1)
-      write (74,*) "Dipole Moment z-direction: ", dipoleMomentTrace(3,1)
+
+      ! Compute the nuclear contribution to the dipole
+      call computeIonicMoment
+
+      write (74,*) "Electronic Moment (x,y,z): ", dipoleMomentTrace(:,1)
+      write (74,*) "Nuclear Moment (x,y,z):    ", xyzIonMoment(:)
+      write (74,*) "Dipole Moment (x,y,z):    ", (xyzIonMoment(:) - &
+            & dipoleMomentTrace(:,1)) / numElectrons
       if (spin == 2) then
-         write (75,*) "Dipole Moment x-direction: ", dipoleMomentTrace(1,2) 
-         write (75,*) "Dipole Moment y-direction: ", dipoleMomentTrace(2,2)
-         write (75,*) "Dipole Moment z-direction: ", dipoleMomentTrace(3,2)
+         write (75,*) "Electronic Moment (x,y,z): ", dipoleMomentTrace(:,2)
+         write (75,*) "Nuclear Moment (x,y,z):    ", xyzIonMoment(:)
+         write (75,*) "Dipole Moment (x,y,z):    ", (xyzIonMoment(:) - &
+               & dipoleMomentTrace(:,2)) / numElectrons
       endif
    endif
 

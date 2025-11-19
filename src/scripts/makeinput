@@ -5001,7 +5001,7 @@ sub makeSubFile
       $proj_dir = "$proj_dir" . "/" . lc($currentName);
       print SUBFILE "source $OLCAO_RC/olcaorc\n";
       print SUBFILE "export OMP_NUM_THREADS=1\n";
-      print SUBFILE "cd $proj_dir || exit\n";
+      print SUBFILE "cd \$SLURM_SUBMIT_DIR || exit\n";
       foreach $orbital (1..$numCoreXanes)
       {
          @values=StructureControl::prepLine("",$xanesControl[$orbital],'\s+');

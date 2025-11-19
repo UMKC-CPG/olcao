@@ -941,6 +941,8 @@ subroutine makeMTOPIndexMap
 end subroutine makeMTOPIndexMap
 
 
+! Given the a,b,c indices of a kpoint in the full kpoint mesh, this function
+!   will return then index of the same kpoint in the linear list of kpoints.
 function getIndexFromIndices(a,b,c)
 
    implicit none
@@ -949,6 +951,13 @@ function getIndexFromIndices(a,b,c)
    integer, intent(in) :: a, b, c
    integer :: getIndexFromIndices
 
+   ! The linear list of kpoints is created by nested loops over kpoints in
+   !   the a, b, c axes in that order. Hence, the c-axis kpoints iterate
+   !   fastest through the linear list, followed by the b-axis kpoints. So
+   !   the linear list index is the current c index + nAKP(2) times the
+   !   number of full lines on the c-axis we passed to get to the current
+   !   b-axis point, followed by nAKP(2)*nAKP(3) times the number of full
+   !   c,b planes we passed to get to the current a-axis point.
    getIndexFromIndices = c + (b-1)*numAxialKPoints(2) + &
          & (a-1)*numAxialKPoints(2)*numAxialKPoints(1)
 

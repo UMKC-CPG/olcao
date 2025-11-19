@@ -35,7 +35,8 @@ subroutine computeMTOPPolarization(inSCF,xyzP)
    use O_Potential,   only: spin
    use O_Populate,    only: electronPopulation
    use O_KPoints,     only: numKPoints, numAxialKPoints, mtopKPMap, kPoints
-   use O_AtomicSites, only: valeDim, numAtomSites, atomSites
+   use O_AtomicSites, only: valeDim, numAtomSites, atomSites, &
+         & computeIonicMoment, xyzIonMoment
    use O_AtomicTypes, only: numAtomTypes, atomTypes, maxNumValeStates
    use O_Input,       only: numStates
    use O_MatrixSubs,  only: fullMatrixElementMult
@@ -66,12 +67,16 @@ integer :: m,n
    complex(kind=double), allocatable, dimension(:,:,:) :: stateStateSum
    integer :: fixed2d,numStep
    integer :: energyLevelCounter,skipKP
-   integer :: s_start, kcur, knxt, axis
+   integer :: kcur, knxt, axis
    integer :: loop
 
    integer :: kPointCount
 
    real(kind=double) :: fn(3,2)
+
+
+   ! Record the start of the calculation
+   call timeStampStart(33)
 
 
    ! allocate the Eigenvectors for sequences C
@@ -146,8 +151,6 @@ integer :: m,n
 
          do i = 1, numStep
             kPointCount = kPointCount + 1
-!            s_start = (loop-1)*(numStep+1) !+ 1
-write(20,*) "s_start", s_start
             kcur = mtopKPMap(axis,kPointCount)
             if (i < numStep) then
                knxt = mtopKPMap(axis,kPointCount+1)
@@ -155,11 +158,9 @@ write(20,*) "s_start", s_start
                knxt = mtopKPMap(axis,kPointCount-numStep+1)
             endif
 
-!            kcur = MTOPIndexMap(s_start+i, axis)!; if (kcur<=0) exit
-!            knxt = MTOPIndexMap(s_start+i+1, axis)
-write(20,*) "kcur knxt", kcur, knxt
-write(20,*) "kcur", kPoints(:,kcur)
-write(20,*) "knxt", kPoints(:,knxt)
+!write(20,*) "kcur knxt", kcur, knxt
+!write(20,*) "kcur", kPoints(:,kcur)
+!write(20,*) "knxt", kPoints(:,knxt)
 
             ! Skip any kpoints with a negligable contribution for each state.
             skipKP = 1 ! Assume that we will skip these kpoints.
@@ -253,7 +254,7 @@ write(20,*) "knxt", kPoints(:,knxt)
 !enddo
 !enddo
 
-            write(20,*) "i axis phiString = ", i, axis, phiString(1)
+!write(20,*) "i axis phiString = ", i, axis, phiString(1)
 
             do j = 1, spin
                call phase_from_matrix(stateStateSum(:maxOccupiedState, &
@@ -261,7 +262,7 @@ write(20,*) "knxt", kPoints(:,knxt)
                phiString(j) = phiString(j) * ld_step
             enddo
 
-            write(20,*) "ld_step phiString = ", ld_step, phiString(1)
+!write(20,*) "ld_step phiString = ", ld_step, phiString(1)
 
          end do ! i = 1,numStep
 
@@ -269,34 +270,38 @@ write(20,*) "knxt", kPoints(:,knxt)
             psi(axis,i) = psi(axis,i) + aimag(log(phiString(i)))
          enddo
 
-         write(20,*) "axis psi = ", axis, psi(axis,1)
+!write(20,*) "axis psi = ", axis, psi(axis,1)
 
       end do ! loop
 
       do i = 1, spin
-         write(20,*) "axis psi fixed2d = ", axis, psi(axis,i), fixed2d
+!write(20,*) "axis psi fixed2d = ", axis, psi(axis,i), fixed2d
          psi(axis,i)=psi(axis,i)/fixed2d
 
-         write(20,*) "axis psi = ", axis, psi(axis,i)
+!write(20,*) "axis psi = ", axis, psi(axis,i)
          fn(axis,i) = psi(axis,i)/(2.0d0*pi)
 
-         write(20,*) "axis fn = ", axis, fn(axis,i)
+!write(20,*) "axis fn = ", axis, fn(axis,i)
          fn(axis,i) = modulo(fn(axis,i) + 0.5d0, 1.0d0) - 0.5d0
 
-         write(20,*) "axis fn = ", axis, fn(axis,i)
+!write(20,*) "axis fn = ", axis, fn(axis,i)
          xyzP(:,i) = xyzP(:,i) + (-eCharge/realCellVolume) &
                & * fn(axis,i) * realVectors(:,axis)
 
-         write(20,*) "axis xyzP = ", axis, xyzP(:,i)
+!write(20,*) "axis xyzP = ", axis, xyzP(:,i)
       enddo
 
 !         psi(axis) = psi(axis) - 2.0d0*pi*dnint( psi(axis)/(2.0d0*pi) )
    enddo ! axis
 
+   call computeIonicMoment
+
    do i = 1, spin
-      write(20,*) 'xyzP [C/m^2] = ', xyzP(:,i)
+!      write(20,*) 'xyzP [C/m^2] = ', xyzP(:,i)
       xyzP(:,i) = xyzP(:,i) * (10.0d0*eCharge/(bohrRad**2))
       write(20,*) 'xyzP [C/m^2] = ', xyzP(:,i)
+      write(20,*) 'xyzIonMoment = ', xyzIonMoment(:)
+      write(20,*) 'Dipole Moment = ', xyzIonMoment(:) + xyzP(:,i)
    enddo
 
    deallocate(CKnxt)
@@ -304,6 +309,9 @@ write(20,*) "knxt", kPoints(:,knxt)
    deallocate(structuredElectronPopulation)
    deallocate(phiString)
    deallocate(currentPopulation)
+
+   ! Record the end of the calculation
+   call timeStampEnd(33)
 
 end subroutine computeMTOPPolarization
 #endif
@@ -355,9 +363,9 @@ subroutine phase_from_matrix(A, detU)
 !   enddo
 !enddo
 !
-do i=1,n
-   write(20,*) "i,Ac(i,i)=", i, Ac(i,i)
-enddo
+!do i=1,n
+!   write(20,*) "i,Ac(i,i)=", i, Ac(i,i)
+!enddo
 
    do i=1,n
       if (abs(Ac(i,i)) <= tiny) then
@@ -369,7 +377,7 @@ enddo
    end do
 
 !write(20,*) "Squaring det.", detU
-   detU = detU * detU
+!   detU = detU * detU
 
 !   visited = .false.; swaps = 0
 !   do i=1,n

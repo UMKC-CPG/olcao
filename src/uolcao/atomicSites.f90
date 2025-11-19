@@ -44,6 +44,9 @@ module O_AtomicSites
          !   s=1,p=3,d=5,f=7 summed orbital types for all atoms.
    integer :: maxDim ! The maximum of the above two dimensions.
 
+   ! Ionic data.
+   real (kind=double), dimension(dim3) :: xyzIonMoment
+
 
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    ! Begin list of module subroutines.!
@@ -147,6 +150,39 @@ subroutine getAtomicSiteImplicitInfo
    write (20,fmt="(a,i5)") 'Maximum Dimension   = ',maxDim
 
 end subroutine getAtomicSiteImplicitInfo
+
+
+subroutine computeIonicMoment
+
+   use O_Kinds
+   use O_PotTypes, only: potTypes
+   use O_Lattice, only: realCellVolume
+   use O_ElementData, only: coreCharge
+
+   implicit none
+
+   ! Define local variables.
+   integer :: i
+   integer :: currCoreCharge
+
+   xyzIonMoment(:) = 0.0_double
+
+   do i = 1, numAtomSites
+      if (coreDim == 0) then
+         currCoreCharge = 0
+      else
+         currCoreCharge = sum(coreCharge(:,&
+               & int(potTypes(atomSites(i)%atomTypeAssn)%nucCharge)))
+      endif
+
+      xyzIonMoment(:) = xyzIonMoment(:) + &
+            & (int(potTypes(atomSites(i)%atomTypeAssn)%nucCharge) - &
+            & currCoreCharge) * atomSites(i)%cartPos(:)
+   enddo
+
+   xyzIonMoment(:) = xyzIonMoment / realCellVolume
+
+end subroutine computeIonicMoment
 
 
 subroutine cleanUpAtomSites

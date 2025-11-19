@@ -1048,12 +1048,12 @@ subroutine gaussKOverlap(packedVVDims,did,aid)
    hdf5Status = 0
    attribIntDims(1) = 1
    call h5aread_f(aid,H5T_NATIVE_INTEGER,hdf5Status,attribIntDims,hdferr)
-   if (hdferr /= 0) stop 'Failed to read atom Koverlap status.'
+   if (hdferr /= 0) stop 'Failed to read atom KOverlap status.'
    if (hdf5Status == 1) then
-      write(20,*) "Two-center Koverlap already exists. Skipping."
-      call timeStampEnd(12)
+      write(20,*) "Two-center KOverlap already exists. Skipping."
+      call timeStampEnd(32)
       call h5aclose_f(aid,hdferr)
-      if (hdferr /= 0) stop 'Failed to close atom Koverlap status.'
+      if (hdferr /= 0) stop 'Failed to close atom KOverlap status.'
       return
    endif
 

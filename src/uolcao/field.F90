@@ -8,7 +8,6 @@ real (kind=double), allocatable, dimension (:,:) :: accumCharge  ! Accumulated
          ! charge for each spin,kPoint combination.
 real (kind=double) :: accumChargeKP
    real (kind=double), dimension(3) :: xyzElecMoment
-   real (kind=double), dimension(3) :: xyzIonMoment
    real (kind=double), allocatable, dimension (:,:,:) :: profilePsiReal
    real (kind=double), allocatable, dimension (:,:,:) :: profilePsiImag
    real (kind=double), allocatable, dimension (:,:,:) :: profileWav
@@ -93,7 +92,8 @@ subroutine computeFieldMesh(inSCF)
    use O_Populate,     only: electronPopulation
    use O_Constants,    only: smallThresh, hartree
    use O_PotTypes,     only: maxNumPotAlphas, potTypes
-   use O_AtomicSites,  only: valeDim, numAtomSites, atomSites
+   use O_AtomicSites,  only: valeDim, numAtomSites, atomSites, &
+         & computeIonicMoment, xyzIonMoment
    use O_Kpoints,      only: numKPoints, kPointWeight, phaseFactor
    use O_Input,        only: numStates, numElectrons, doProfileField, &
          & eminFIELD, emaxFIELD, doPsiFIELD, doWavFIELD, doRhoFIELD, &
@@ -367,7 +367,6 @@ allocate (currNumElec (numKPoints,spin))
    if (doRhoFIELD == 1) then
       profileRho (:,:,:) = 0.0_double
       xyzElecMoment(:) = 0.0_double
-      xyzIonMoment(:) = 0.0_double
    endif
    if (doPotFIELD == 1) then
       profilePot (:,:,:) = 0.0_double
@@ -1692,7 +1691,7 @@ endif
    endif
 
    ! Compute the ionic contribution to the dipole moment.
-   call accumIonMoment
+   call computeIonicMoment
 
    ! Print dipole moment data if requested.
    if (doDipoleFIELD == 1) then
@@ -2067,6 +2066,7 @@ subroutine printDipoleData
 
    ! Use necessary modules
    use O_Input, only: numElectrons
+   use O_AtomicSites, only: xyzIonMoment
 
    ! Make sure that no variables are accidentally defined.
    implicit none
@@ -2301,41 +2301,6 @@ subroutine accumElecMoment(xyzElecMoment,xyzOfabcPoint,dataChunkRho,a,b,c)
    enddo
 
 end subroutine accumElecMoment
-
-
-subroutine accumIonMoment
-
-   use O_AtomicSites, only: coreDim, numAtomSites, atomSites
-   use O_PotTypes, only: potTypes
-   use O_ElementData, only: coreCharge
-
-   implicit none
-
-   ! Define local variables.
-   integer :: i
-   integer :: currCoreCharge
-
-   ! The xyzIonMoment is already set to zero.
-
-   ! Visit each atomic site.
-   do i = 1, numAtomSites
-!write (20,*) i
-!write (20,*) xyzIonMoment(:)
-!write (20,*) coreCharge(:,int(potTypes(atomSites(i)%atomTypeAssn)%nucCharge))
-!write (20,*) atomSites(i)%cartPos(:)
-      if (coreDim == 0) then
-         currCoreCharge = 0
-      else
-         currCoreCharge = sum(coreCharge(:,&
-               & int(potTypes(atomSites(i)%atomTypeAssn)%nucCharge)))
-      endif
-
-      xyzIonMoment(:) = xyzIonMoment(:) + &
-            & (int(potTypes(atomSites(i)%atomTypeAssn)%nucCharge) - &
-            & currCoreCharge) * atomSites(i)%cartPos(:)
-   enddo
-
-end subroutine accumIonMoment
 
 
 subroutine writeFieldHDF5(did,idx,dataChunk,didName,axis)

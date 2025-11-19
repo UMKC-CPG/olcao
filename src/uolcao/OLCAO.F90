@@ -1162,27 +1162,27 @@ subroutine mtop(inSCF)
 #ifndef GAMMA
    call computeMTOPPolarization(inSCF,xyzP)
 
-   ! Print out the MTOP result.
-   do i = 1, spin
-      write(20,*) 'Polarization (a.u.):', xyzP(:,i)
+   !! Print out the MTOP result.
+   !do i = 1, spin
+   !   write(20,*) 'Polarization (a.u.):', xyzP(:,i)
 
-      ! Print to stdout as requested
-      if (i == 1) then
-         write(20,fmt="(a)") "Spin Up"
-         write(20,'(A,1X,F20.12)') 'P(x) =', xyzP(1,i)
-         write(20,'(A,1X,F20.12)') 'P(y) =', xyzP(2,i)
-         write(20,'(A,1X,F20.12)') 'P(z) =', xyzP(3,i)
-      else
-         write(20,fmt="(a)") "Spin Dn"
-         write(20,'(A,1X,F20.12)') 'P(x) =', xyzP(1,i)
-         write(20,'(A,1X,F20.12)') 'P(y) =', xyzP(2,i)
-         write(20,'(A,1X,F20.12)') 'P(z) =', xyzP(3,i)
-      endif
+   !   ! Print to stdout as requested
+   !   if (i == 1) then
+   !      write(20,fmt="(a)") "Spin Up"
+   !      write(20,'(A,1X,F20.12)') 'P(x) =', xyzP(1,i)
+   !      write(20,'(A,1X,F20.12)') 'P(y) =', xyzP(2,i)
+   !      write(20,'(A,1X,F20.12)') 'P(z) =', xyzP(3,i)
+   !   else
+   !      write(20,fmt="(a)") "Spin Dn"
+   !      write(20,'(A,1X,F20.12)') 'P(x) =', xyzP(1,i)
+   !      write(20,'(A,1X,F20.12)') 'P(y) =', xyzP(2,i)
+   !      write(20,'(A,1X,F20.12)') 'P(z) =', xyzP(3,i)
+   !   endif
 
-      ! Also write to fort.180 so the run script can copy it
-      write(179+i,fmt="(3e16.8)") xyzP(:,i)
-      flush(179+i)
-   enddo
+   !   ! Also write to fort.180 so the run script can copy it
+   !   write(179+i,fmt="(3e16.8)") xyzP(:,i)
+   !   flush(179+i)
+   !enddo
 #endif
 
    ! Close the output files.
