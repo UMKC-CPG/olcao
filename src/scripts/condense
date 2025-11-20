@@ -85,6 +85,7 @@ sub printHelp
 # ch4 Family1 8
 #
 # cell_size 100.0
+# condensation_rate 0.33
 #
 # reactions 6
 # b10c2h12 b-1 b10c2h12 b-1 0.85
@@ -151,6 +152,7 @@ use File::Copy;
 # Declare global variables.
 my $inputFile;
 my $cellSize;
+my $condensation_rate;
 my $numMoleculeTypes;
 my $numReactionTypes;
 my $numUniqueRxnMolPairs;
@@ -296,6 +298,8 @@ sub parseInputFile
       }
       elsif (lc($values[0]) eq "cell_size")
          {$cellSize = $values[1];}
+      elsif (lc($values[0]) eq "condensation_rate")
+         {$condensation_rate = $values[1];}
       elsif (lc($values[0]) eq "reactions")
       {
          # Get the number of different types of reactions.
@@ -538,16 +542,17 @@ sub runPackmol
 
    while ($line = <RAW>)
    {
-      @values = StructureControl::prepLine("",$line,'\s+');
-      if ($values[0] eq "ATOM")
-      {
-         print FIXED substr($line,0,54);
-         print FIXED "  1.00  0.00";
-         printf FIXED "%13s", $values[$#values];
-         print FIXED "\n";
-      }
-      else
-         {print FIXED "$line";}
+#      @values = StructureControl::prepLine("",$line,'\s+');
+#      if ($values[0] eq "ATOM")
+#      {
+#         print FIXED substr($line,0,54);
+#         print FIXED "  1.00  0.00";
+#         printf FIXED "%13s", $values[$#values];
+#         print FIXED "\n";
+#      }
+#      else
+#         {print FIXED "$line";}
+      print FIXED "$line";
    }
 
    close (RAW);
@@ -658,7 +663,6 @@ print STDOUT "Got here 2c\n";
    $numAtoms = StructureControl::getNumAtoms;
    $directXYZ_ref = StructureControl::getDirectXYZRef;
    $atomElementName_ref = StructureControl::getAtomElementNameRef;
-print STDOUT "$atomElementName_ref->[1]\n";
    $atomElementID_ref = StructureControl::getAtomElementIDRef;
    $atomSpeciesID_ref = StructureControl::getAtomSpeciesIDRef;
    $atomicZ_ref = StructureControl::getAtomicZRef;
@@ -668,9 +672,7 @@ print STDOUT "Got here 2d\n";
 
    # Perform a bond analysis to get bond length and bond angle information.
    system("bondAnalysis -bl -bf 1.1 -i packmol.skl");
-print STDOUT "Got here 2e\n";
    system("bondAnalysis -ba -bf 1.1 -i packmol.skl");
-print STDOUT "Got here 2f\n";
 
    # Read the bondAnalysis results and extract necessary information.
    StructureControl::readBondAnalysisBL("bondAnalysis.bl",$numAtoms);
@@ -1165,7 +1167,8 @@ ENDLAMMPSHEAD
    print LMPIN<<ENDLAMMPSTAIL;
 
 fix energy all nve
-fix squish all deform 500 x scale 0.33 y scale 0.33 z scale 0.33 remap x
+#fix squish all deform 500 x scale 0.33 y scale 0.33 z scale 0.33 remap x
+fix squish all deform 500 x scale $condensation_rate y scale $condensation_rate z scale $condensation_rate remap x
 
 # Run
 
