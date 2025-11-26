@@ -950,7 +950,7 @@ end subroutine gaussOverlapMM
 
 ! Two center K-Overlap integral.
 #ifndef GAMMA
-subroutine gaussKOverlap(packedVVDims,did,aid)
+subroutine gaussKOverlap(packedVVDims,did,aid,plusG)
 
    ! Import necessary modules.
    use O_Kinds
@@ -974,6 +974,7 @@ subroutine gaussKOverlap(packedVVDims,did,aid)
    integer(hsize_t), dimension(2), intent(in) :: packedVVDims
    integer(hid_t), dimension(numKPoints,3), intent(in) :: did
    integer(hid_t), intent(in) :: aid
+   real (kind=double), dimension(3,3), intent(in) :: plusG
 
    ! Define local variables for logging and loop control
    integer :: axis
@@ -1048,13 +1049,24 @@ subroutine gaussKOverlap(packedVVDims,did,aid)
    hdf5Status = 0
    attribIntDims(1) = 1
    call h5aread_f(aid,H5T_NATIVE_INTEGER,hdf5Status,attribIntDims,hdferr)
-   if (hdferr /= 0) stop 'Failed to read atom KOverlap status.'
-   if (hdf5Status == 1) then
-      write(20,*) "Two-center KOverlap already exists. Skipping."
-      call timeStampEnd(32)
-      call h5aclose_f(aid,hdferr)
-      if (hdferr /= 0) stop 'Failed to close atom KOverlap status.'
-      return
+   if (sum(PlusG(:,:)) == 0.0_double) then 
+      if (hdferr /= 0) stop 'Failed to read atom KOverlap status.'
+      if (hdf5Status == 1) then
+         write(20,*) "Two-center KOverlap already exists. Skipping."
+         call timeStampEnd(32)
+         call h5aclose_f(aid,hdferr)
+         if (hdferr /= 0) stop 'Failed to close atom KOverlap status.'
+         return
+      endif
+   else
+      if (hdferr /= 0) stop 'Failed to read atom KOverlapPlusG status.'
+      if (hdf5Status == 1) then
+         write(20,*) "Two-center KOverlapPlusG already exists. Skipping."
+         call timeStampEnd(32)
+         call h5aclose_f(aid,hdferr)
+         if (hdferr /= 0) stop 'Failed to close atom KOverlapPlusG status.'
+         return
+      endif
    endif
 
    ! Allocate space for locally defined allocatable arrays
@@ -1272,8 +1284,9 @@ subroutine gaussKOverlap(packedVVDims,did,aid)
                      call KOverlap2CIntg (currentAlphas(alphaIndex(1),1), &
                            & currentAlphas(alphaIndex(2),2), &
                            & currentPosition(:,1), shiftedAtomPos(:), &
-                           & recipVectors(:,axis) / numAxialKPoints(axis), &
-                           & l1l2Switch, oneAlphaSetK(:,:,axis))
+                           & (recipVectors(:,axis) / numAxialKPoints(axis)) &
+                           & + plusG(:,axis), l1l2Switch, &
+                           & oneAlphaSetK(:,:,axis))
                   enddo
 
                   ! Collect the results of the overlap of the current alpha
@@ -1351,7 +1364,11 @@ subroutine gaussKOverlap(packedVVDims,did,aid)
    deallocate (currentPair)
 
    ! Perform orthogonalization and save the results to disk.
-   call ortho(8,packedVVDims,did,aid)
+   if (sum(plusG(:,:)) == 0.0_double) then
+      call ortho(8,packedVVDims,did,aid)
+   else
+      call ortho(9,packedVVDims,did,aid)
+   endif
 
    ! Make a finishing time stamp.
    call timeStampEnd (32)
@@ -1493,6 +1510,8 @@ subroutine ortho (opCode,packedVVDims,did,aid)
             if (hdferr /= 0) stop 'failed to write momentum matrix vale vale'
          case (8)
             if (hdferr /= 0) stop 'failed to write Koverlap vale vale'
+         case (9)
+            if (hdferr /= 0) stop 'failed to write KoverlapPlusG vale vale'
          end select
       enddo
    enddo ! KPoints
@@ -1508,6 +1527,8 @@ subroutine ortho (opCode,packedVVDims,did,aid)
       if (hdferr /= 0) stop 'Failed to record atom momentum matrix success.'
    case (8)
       if (hdferr /= 0) stop 'Failed to record atom Koverlap success.'
+   case (9)
+      if (hdferr /= 0) stop 'Failed to record atom KoverlapPlusG success.'
    end select
 
    ! Close the attribute.
@@ -1519,6 +1540,8 @@ subroutine ortho (opCode,packedVVDims,did,aid)
       if (hdferr /= 0) stop 'Failed to close atom momentum matrix attribute.'
    case (8)
       if (hdferr /= 0) stop 'Failed to close atom Koverlap attribute.'
+   case (9)
+      if (hdferr /= 0) stop 'Failed to close atom KoverlapPlusG attribute.'
    end select
 
 

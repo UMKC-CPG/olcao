@@ -38,7 +38,7 @@ def parameters_and_defaults():
             "subplots_per_fig" : [1],  # -sp
             "curves_per_subplot" : [1],  # -cs
             "curve_separation" : [10],  # -cp
-            "curve_width" : [3],  # -ct
+            "curve_width" : [1],  # -ct
             "curve_width_start" : 0.5,  # -cta
             "curve_width_step" : 0.25,  # -cte
             "curve_width_size" : 1,  # -cti

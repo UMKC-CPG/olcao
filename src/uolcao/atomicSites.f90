@@ -155,6 +155,7 @@ end subroutine getAtomicSiteImplicitInfo
 subroutine computeIonicMoment
 
    use O_Kinds
+   use O_Constants, only: eCharge
    use O_PotTypes, only: potTypes
    use O_Lattice, only: realCellVolume
    use O_ElementData, only: coreCharge
@@ -163,24 +164,24 @@ subroutine computeIonicMoment
 
    ! Define local variables.
    integer :: i
-   integer :: currCoreCharge
+   real (kind=double) :: currCoreCharge
 
    xyzIonMoment(:) = 0.0_double
 
    do i = 1, numAtomSites
       if (coreDim == 0) then
-         currCoreCharge = 0
+         currCoreCharge = 0.0_double
       else
          currCoreCharge = sum(coreCharge(:,&
                & int(potTypes(atomSites(i)%atomTypeAssn)%nucCharge)))
       endif
 
-      xyzIonMoment(:) = xyzIonMoment(:) + &
-            & (int(potTypes(atomSites(i)%atomTypeAssn)%nucCharge) - &
+      xyzIonMoment(:) = xyzIonMoment(:) + eCharge / realCellVolume * &
+            & (potTypes(atomSites(i)%atomTypeAssn)%nucCharge - &
             & currCoreCharge) * atomSites(i)%cartPos(:)
    enddo
 
-   xyzIonMoment(:) = xyzIonMoment / realCellVolume
+   ! Convert from atomic units of distance (bohr radii).
 
 end subroutine computeIonicMoment
 

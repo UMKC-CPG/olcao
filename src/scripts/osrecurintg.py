@@ -508,8 +508,8 @@ def print_head(settings, f, num_sh_intg, num_pc_intg, max_lam):
          ! to +cell_size. The step size is just what it appears to be, but
          ! note that it is for numerical integration and is a very different
          ! concept and is unrelated to the "num_steps" defined below.
-   integer :: num_segments, num_steps
-   integer :: h, i, p, q
+   integer :: num_segments, num_steps, curr_line
+   integer :: h, i
 
    ! Allocate space to hold the appropriately sized pc and sh matrices. The
    !   last index in both pc and sh is a 2 to hold analytical solutions
@@ -533,6 +533,9 @@ def print_head(settings, f, num_sh_intg, num_pc_intg, max_lam):
 
    ! Read the number of segments.
    read (10,*) num_segments
+
+   ! Initialize the line number for printing.
+   curr_line = 0
 
    ! For each segment, read in the number of steps, allocate space to hold
    !   relevant information for each step, compute the step descriptions,
@@ -566,6 +569,10 @@ def print_head(settings, f, num_sh_intg, num_pc_intg, max_lam):
 
       ! Start iterating over the steps.
       do i = 1, num_steps
+
+         ! Increment the line number
+         curr_line = curr_line + 1
+
          alphas(:) = temp_alphas(:,1) + (i-1) * temp_alphas_step(:)
          deltaK(:) = temp_deltaK(:,1) + (i-1) * temp_deltaK_step(:)
          pos(:,:) = temp_pos(:,:,1) + (i-1) * temp_pos_step(:,:)
@@ -585,7 +592,7 @@ def print_head(settings, f, num_sh_intg, num_pc_intg, max_lam):
                & pc(:,:,1,2),sh(:,:,1,2),cell_size,step_size)
 
          ! Print the pc and sh integral result differences.
-         call print_pc_sh(h,i,1,alphas,pos,pc(:,:,1,:),sh(:,:,1,:),&
+         call print_pc_sh(h,i,1,alphas,pos,deltaK,pc(:,:,1,:),sh(:,:,1,:),&
                & "overlap.dat")
 """
 
@@ -603,7 +610,7 @@ def print_head(settings, f, num_sh_intg, num_pc_intg, max_lam):
                & pc(:,:,1,2),sh(:,:,1,2),cell_size,step_size)
 
          ! Print the pc and sh integral result differences.
-         call print_pc_sh(h,i,2,alphas,pos,pc(:,:,1,:),sh(:,:,1,:),&
+         call print_pc_sh(h,i,2,alphas,pos,deltaK,pc(:,:,1,:),sh(:,:,1,:),&
                & "kinetic.dat")
 """
 
@@ -622,7 +629,7 @@ def print_head(settings, f, num_sh_intg, num_pc_intg, max_lam):
                & step_size)
 
          ! Print the pc and sh integral result differences.
-         call print_pc_sh(h,i,3,alphas,pos,pc(:,:,1,:),sh(:,:,1,:),&
+         call print_pc_sh(h,i,3,alphas,pos,deltaK,pc(:,:,1,:),sh(:,:,1,:),&
                & "nuclear.dat")
 """
 
@@ -641,7 +648,7 @@ def print_head(settings, f, num_sh_intg, num_pc_intg, max_lam):
                & step_size)
 
          ! Print the pc and sh integral result differences.
-         call print_pc_sh(h,i,4,alphas,pos,pc(:,:,1,:),sh(:,:,1,:),&
+         call print_pc_sh(h,i,4,alphas,pos,deltaK,pc(:,:,1,:),sh(:,:,1,:),&
                & "electrn.dat")
 """
 
@@ -664,7 +671,7 @@ def print_head(settings, f, num_sh_intg, num_pc_intg, max_lam):
 
             for xyz in range(3):
                 head += "         "
-                head += f"call print_pc_sh(h,i,{xyz+5},alphas,pos,"
+                head += f"call print_pc_sh(h,i,{xyz+5},alphas,pos,deltaK,"
                 head += f"pc(:,:,{xyz+1},:),sh(:,:,{xyz+1},:),&\n"
                 if (xyz == 0):
                     head += '               & "momentx.dat")\n'
@@ -688,7 +695,7 @@ def print_head(settings, f, num_sh_intg, num_pc_intg, max_lam):
                & pc(:,:,1,2),sh(:,:,1,2),cell_size,step_size)
 
          ! Print the pc and sh integral result differences.
-         call print_pc_sh(h,i,2,alphas,pos,pc(:,:,1,:),sh(:,:,1,:),&
+         call print_pc_sh(h,i,2,alphas,pos,deltaK,pc(:,:,1,:),sh(:,:,1,:),&
                & "massvel.dat")
 """
 
@@ -709,7 +716,7 @@ def print_head(settings, f, num_sh_intg, num_pc_intg, max_lam):
 """
             for xyz in range(3):
                  head += "         "
-                 head += f"call print_pc_sh(h,i,{xyz+8},alphas,pos,"
+                 head += f"call print_pc_sh(h,i,{xyz+8},alphas,pos,deltaK,"
                  head += f"pc(:,:,{xyz+1},:),sh(:,:,{xyz+1},:),&\n"
                  if (xyz == 0):
                      head += '               & "dipolex.dat")\n'
@@ -737,7 +744,7 @@ def print_head(settings, f, num_sh_intg, num_pc_intg, max_lam):
 
             for xyz in range(3):
                 head += "         "
-                head += f"call print_pc_sh(h,i,{xyz+8},alphas,pos,"
+                head += f"call print_pc_sh(h,i,{xyz+8},alphas,pos,deltaK,"
                 head += f"pc(:,:,{xyz+1},:),sh(:,:,{xyz+1},:),&\n"
                 if (xyz == 0):
                     head += '               & "DKinEnx.dat")\n'
@@ -765,7 +772,7 @@ def print_head(settings, f, num_sh_intg, num_pc_intg, max_lam):
 
             for xyz in range(3):
                 head += "         "
-                head += f"call print_pc_sh(h,i,{xyz+8},alphas,pos,"
+                head += f"call print_pc_sh(h,i,{xyz+8},alphas,pos,deltaK,"
                 head += f"pc(:,:,{xyz+1},:),sh(:,:,{xyz+1},:),&\n"
                 if (xyz == 0):
                     head += '               & "DNucxcb.dat")\n'
@@ -793,7 +800,7 @@ def print_head(settings, f, num_sh_intg, num_pc_intg, max_lam):
 
             for xyz in range(3):
                 head += "         "
-                head += f"call print_pc_sh(h,i,{xyz+8},alphas,pos,"
+                head += f"call print_pc_sh(h,i,{xyz+8},alphas,pos,deltaK,"
                 head += f"pc(:,:,{xyz+1},:),sh(:,:,{xyz+1},:),&\n"
                 if (xyz == 0):
                     head += '               & "DNucxbb.dat")\n'
@@ -821,7 +828,7 @@ def print_head(settings, f, num_sh_intg, num_pc_intg, max_lam):
 
             for xyz in range(3):
                 head += "         "
-                head += f"call print_pc_sh(h,i,{xyz+8},alphas,pos,"
+                head += f"call print_pc_sh(h,i,{xyz+8},alphas,pos,deltaK,"
                 head += f"pc(:,:,{xyz+1},:),sh(:,:,{xyz+1},:),&\n"
                 if (xyz == 0):
                     head += '               & "DNucxbc.dat")\n'
@@ -849,7 +856,7 @@ def print_head(settings, f, num_sh_intg, num_pc_intg, max_lam):
 
             for xyz in range(3):
                 head += "         "
-                head += f"call print_pc_sh(h,i,{xyz+8},alphas,pos,"
+                head += f"call print_pc_sh(h,i,{xyz+8},alphas,pos,deltaK,"
                 head += f"pc(:,:,{xyz+1},:),sh(:,:,{xyz+1},:),&\n"
                 if (xyz == 0):
                     head += '               & "DElexcb.dat")\n'
@@ -877,7 +884,7 @@ def print_head(settings, f, num_sh_intg, num_pc_intg, max_lam):
 
             for xyz in range(3):
                 head += "         "
-                head += f"call print_pc_sh(h,i,{xyz+8},alphas,pos,"
+                head += f"call print_pc_sh(h,i,{xyz+8},alphas,pos,deltaK,"
                 head += f"pc(:,:,{xyz+1},:),sh(:,:,{xyz+1},:),&\n"
                 if (xyz == 0):
                     head += '               & "DElexbb.dat")\n'
@@ -904,7 +911,7 @@ def print_head(settings, f, num_sh_intg, num_pc_intg, max_lam):
 
             for xyz in range(3):
                 head += "         "
-                head += f"call print_pc_sh(h,i,{xyz+8},alphas,pos,"
+                head += f"call print_pc_sh(h,i,{xyz+8},alphas,pos,deltaK,"
                 head += f"pc(:,:,{xyz+1},:),sh(:,:,{xyz+1},:),&\n"
                 if (xyz == 0):
                     head += '               & "DElexbc.dat")\n'
@@ -928,9 +935,9 @@ def print_head(settings, f, num_sh_intg, num_pc_intg, max_lam):
                & cell_size,step_size)
 
          ! Print the pc and sh integral result differences.
-         call print_pc_sh(h,i,11,alphas,pos,real(pcCmplx(:,:,1,:),double),&
-               & real(shCmplx(:,:,1,:),double),"KO_Real.dat")
-         call print_pc_sh(h,i,12,alphas,pos,aimag(pcCmplx(:,:,1,:)),&
+         call print_pc_sh(h,i,11,alphas,pos,deltaK,real(pcCmplx(:,:,1,:),&
+               & double),real(shCmplx(:,:,1,:),double),"KO_Real.dat")
+         call print_pc_sh(h,i,12,alphas,pos,deltaK,aimag(pcCmplx(:,:,1,:)),&
                & aimag(shCmplx(:,:,1,:)),"KO_Cmpx.dat")
 
 """
@@ -954,7 +961,7 @@ def print_head(settings, f, num_sh_intg, num_pc_intg, max_lam):
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    contains
 
-   subroutine print_pc_sh(h,i,unitPlus,alphas,pos,pc,sh,filename)
+   subroutine print_pc_sh(h,i,unitPlus,alphas,pos,deltaK,pc,sh,filename)
 
       ! Use necessary modules
       use O_Kinds
@@ -965,7 +972,8 @@ def print_head(settings, f, num_sh_intg, num_pc_intg, max_lam):
       ! Define dummy variables.
       integer :: h, i, unitPlus
       real(kind=double), dimension(3) :: alphas
-      real(kind=double), dimension(3,3) :: pos ! xyz (1st idx) of ABC (2nd)
+      real(kind=double), dimension(3,3) :: pos ! xyz (idx1) of atoms ABC (2nd)
+      real(kind=double), dimension(3) :: deltaK
       real(kind=double), dimension("""
         head += f"{num_pc_intg},{num_pc_intg},2) :: pc"
         head += """ ! Last idx 1 = ana; 2 = num
@@ -973,43 +981,145 @@ def print_head(settings, f, num_sh_intg, num_pc_intg, max_lam):
         head += f"{num_sh_intg},{num_sh_intg},2) :: sh"
         head += """ ! Last idx 1 = ana; 2 = num
       character*11 :: filename
+      character*14, dimension(16) :: shName
+      character*3, dimension(20) :: pcName
 
       ! Define local variables.
       logical :: io_opened
       integer :: j,k
 
+      ! Initialize the shName and pcName arrays.
+      shName(1) = "s"
+      shName(2) = "x"
+      shName(3) = "y"
+      shName(4) = "z"
+      shName(5) = "xy"
+      shName(6) = "xz"
+      shName(7) = "yz"
+      shName(8) = "xx-yy"
+      shName(9) = "2zz-xx-yy"
+      shName(10) = "xyz"
+      shName(11) = "xxz-yyz"
+      shName(12) = "xxx-3yyx"
+      shName(13) = "3xxy-yyy"
+      shName(14) = "2zzz-3xxz-3yyz"
+      shName(15) = "4zzx-xxx-yyx"
+      shName(16) = "4zzy-xxy-yyy"
+      pcName(1) = "s"
+      pcName(2) = "x"
+      pcName(3) = "y"
+      pcName(4) = "z"
+      pcName(5) = "xx"
+      pcName(6) = "yy"
+      pcName(7) = "zz"
+      pcName(8) = "xy"
+      pcName(9) = "xz"
+      pcName(10) = "yz"
+      pcName(11) = "xyz"
+      pcName(12) = "xxy"
+      pcName(13) = "xxz"
+      pcName(14) = "yyx"
+      pcName(15) = "yyz"
+      pcName(16) = "zzx"
+      pcName(17) = "zzy"
+      pcName(18) = "xxx"
+      pcName(19) = "yyy"
+      pcName(20) = "zzz"
+
       ! Open the output file if it isn't already open.
       inquire(299+unitPlus, OPENED = io_opened)
       if (.not. io_opened) then
          open (299+unitPlus, file=filename, status="unknown")
+
+         ! Print a header line.
+
+         ! Start with the parameters.
+         write (299+unitPlus,fmt="(a)",advance="NO") "IDX SEG STEP "
+         write (299+unitPlus,fmt="(a)",advance="NO") "alpha1 alpha2 alpha3 "
+         write (299+unitPlus,fmt="(a)",advance="NO") "Ax Ay Az "
+         write (299+unitPlus,fmt="(a)",advance="NO") "Bx By Bz "
+         write (299+unitPlus,fmt="(a)",advance="NO") "Cx Cy Cz "
+         write (299+unitPlus,fmt="(a)",advance="NO") "deltaKx deltaKy deltaKz "
+
+         ! Now add the pc names.
+         do j = 1, """ + f"{num_pc_intg}" + """
+            do k = 1, """ + f"{num_pc_intg}" + """
+               write (299+unitPlus,fmt="(4a)",advance="NO") &
+                     & trim(pcName(k)),"_",trim(pcName(j))," "
+            enddo
+         enddo
+
+         ! Now add the sh names.
+         do j = 1, """ + f"{num_sh_intg}" + """
+            do k = 1, """ + f"{num_sh_intg}" + """
+               write (299+unitPlus,fmt="(4a)",advance="NO") &
+                     & trim(shName(k)),"_",trim(shName(j))," "
+            enddo
+         enddo
+
       endif
 
-      write (299+unitPlus,fmt="(2i5)",advance="NO") h, i
-      write (299+unitPlus,fmt="(3e16.8)",advance="NO") alphas(:)
-      write (299+unitPlus,fmt="(3e16.8)",advance="NO") pos(:,1)
-      write (299+unitPlus,fmt="(3e16.8)",advance="NO") pos(:,2)
-      write (299+unitPlus,fmt="(3e16.8)",advance="NO") pos(:,3)
+      if ((num_segments > 1) .or. (num_steps > 1)) then
 
-      ! Print the result difference for the given pc matrix.
-      do j = 1, """ + f"{num_pc_intg}" + """
-         do k = 1, """ + f"{num_pc_intg}" + """
-            write (299+unitPlus,fmt="(e16.8)",advance="NO") pc(k,j,1)
-            write (299+unitPlus,fmt="(e16.8)",advance="NO") pc(k,j,2)
-            write (299+unitPlus,fmt="(e16.8)",advance="NO") &
-                  & pc(k,j,1) - pc(k,j,2)
+         ! Print the line number.
+         write (299+unitPlus,fmt="(i5)",advance="NO") curr_line
+
+         write (299+unitPlus,fmt="(2i5)",advance="NO") h, i
+         write (299+unitPlus,fmt="(3e16.8)",advance="NO") alphas(:)
+         write (299+unitPlus,fmt="(3e16.8)",advance="NO") pos(:,1)
+         write (299+unitPlus,fmt="(3e16.8)",advance="NO") pos(:,2)
+         write (299+unitPlus,fmt="(3e16.8)",advance="NO") pos(:,3)
+         write (299+unitPlus,fmt="(3e16.8)",advance="NO") deltaK(:)
+
+         ! Print the result difference for the given pc matrix.
+         do j = 1, """ + f"{num_pc_intg}" + """
+            do k = 1, """ + f"{num_pc_intg}" + """
+               !write (299+unitPlus,fmt="(e16.8)",advance="NO") pc(k,j,1)
+               !write (299+unitPlus,fmt="(e16.8)",advance="NO") pc(k,j,2)
+               write (299+unitPlus,fmt="(e16.8)",advance="NO") &
+                     & pc(k,j,1) - pc(k,j,2)
+            enddo
          enddo
-      enddo
 
-      ! Print the result difference for the given sh matrix.
-      do j = 1, """ + f"{num_sh_intg}" + """
-         do k = 1, """ + f"{num_sh_intg}" + """
-            write (299+unitPlus,fmt="(e16.8)",advance="NO") &
-                  & sh(k,j,1) - sh(k,j,2)
+         ! Print the result difference for the given sh matrix.
+         do j = 1, """ + f"{num_sh_intg}" + """
+            do k = 1, """ + f"{num_sh_intg}" + """
+               write (299+unitPlus,fmt="(e16.8)",advance="NO") &
+                     & sh(k,j,1) - sh(k,j,2)
+            enddo
          enddo
-      enddo
 
-      ! Write an endline to prepare for the next step.
-      write (299+unitPlus, *) ""
+         ! Write an endline to prepare for the next step.
+         write (299+unitPlus, *) ""
+
+      else
+         write (299+unitPlus,fmt="(2i5)",advance="NO") h, i
+         write (299+unitPlus,fmt="(3e16.8)",advance="NO") alphas(:)
+         write (299+unitPlus,fmt="(3e16.8)",advance="NO") pos(:,1)
+         write (299+unitPlus,fmt="(3e16.8)",advance="NO") pos(:,2)
+         write (299+unitPlus,fmt="(3e16.8)",advance="NO") pos(:,3)
+         write (299+unitPlus,fmt="(3e16.8)") deltaK(:)
+
+         ! Print the result difference for the given pc matrix.
+         do j = 1, """ + f"{num_pc_intg}" + """
+            do k = 1, """ + f"{num_pc_intg}" + """
+               write (299+unitPlus,fmt="(2a4)") pcName(k), pcName(j)
+               write (299+unitPlus,fmt="(e16.8)",advance="NO") pc(k,j,1)
+               write (299+unitPlus,fmt="(e16.8)",advance="NO") pc(k,j,2)
+               write (299+unitPlus,fmt="(e16.8)") &
+                     & pc(k,j,1) - pc(k,j,2)
+            enddo
+         enddo
+
+         ! Print the result difference for the given sh matrix.
+         do j = 1, """ + f"{num_sh_intg}" + """
+            do k = 1, """ + f"{num_sh_intg}" + """
+               write (299+unitPlus,fmt="(2a16)") shName(k), shName(j)
+               write (299+unitPlus,fmt="(e16.8)") &
+                     & sh(k,j,1) - sh(k,j,2)
+            enddo
+         enddo
+      endif
    end subroutine
 """
 

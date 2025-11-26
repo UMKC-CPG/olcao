@@ -31,6 +31,7 @@ module O_PSCFIntegralsHDF5
    integer(hid_t) :: atomDMOverlapPSCF_gid
    integer(hid_t) :: atomMMOverlapPSCF_gid
    integer(hid_t) :: atomKOverlapPSCF_gid
+   integer(hid_t) :: atomKOverlapPlusGPSCF_gid
 
    ! Define the group IDs of the dynamically numbered subgroups. I.e., for
    !   the groups that hold another group, we define that collection of
@@ -38,6 +39,7 @@ module O_PSCFIntegralsHDF5
    integer(hid_t), allocatable, dimension (:) :: atomDMxyzOL_PSCF_gid
    integer(hid_t), allocatable, dimension (:) :: atomMMxyzOL_PSCF_gid
    integer(hid_t), allocatable, dimension (:) :: atomKxyzOL_PSCF_gid
+   integer(hid_t), allocatable, dimension (:) :: atomKxyzOLPlusG_PSCF_gid
 
    ! The dataspaces of each dataset in atomIntgGroupPSCF_gid are the same in
    !   all characteristics (type, dimension, etc.) and therefore can be
@@ -67,6 +69,7 @@ module O_PSCFIntegralsHDF5
    integer(hid_t), allocatable, dimension (:,:) :: atomDMOverlapPSCF_did
    integer(hid_t), allocatable, dimension (:,:) :: atomMMOverlapPSCF_did
    integer(hid_t), allocatable, dimension (:,:) :: atomKOverlapPSCF_did
+   integer(hid_t), allocatable, dimension (:,:) :: atomKOverlapPlusGPSCF_did
 
    ! Define the attribute IDs that will be used for each group. One attribute
    !   is sufficient for each integral type except the potential overlap.
@@ -77,6 +80,7 @@ module O_PSCFIntegralsHDF5
    integer(hid_t) :: atomDMOverlapPSCF_aid
    integer(hid_t) :: atomMMOverlapPSCF_aid
    integer(hid_t) :: atomKOverlapPSCF_aid
+   integer(hid_t) :: atomKOverlapPlusGPSCF_aid
 
 
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -201,11 +205,16 @@ subroutine initPSCFIntegralHDF5 (pscf_fid, attribIntPSCF_dsid,&
          & atomKOverlapPSCF_gid,hdferr)
    if (hdferr /= 0) stop 'Failed to create Koverlap group PSCF'
 
+   call h5gcreate_f (atomIntgGroupPSCF_gid,"atomKOverlapPlusG",&
+         & atomKOverlapPlusGPSCF_gid,hdferr)
+   if (hdferr /= 0) stop 'Failed to create KoverlapPlusG group PSCF'
+
    ! For the integrals that have multiple different types of matrices, we
    !   need to create space to hold the group IDs of each matrix.
    allocate (atomDMxyzOL_PSCF_gid (3)) ! x,y,z matrices all done together
    allocate (atomMMxyzOL_PSCF_gid (3)) ! x,y,z matrices all done together
    allocate (atomKxyzOL_PSCF_gid (3)) ! x,y,z matrices all done together
+   allocate (atomKxyzOLPlusG_PSCF_gid (3)) ! x,y,z matrices all done together
 
    ! Create the subgroups for the DM and MM terms and assign a gid name
    !   following 1=x, 2=y, and 3=z.
@@ -224,6 +233,10 @@ subroutine initPSCFIntegralHDF5 (pscf_fid, attribIntPSCF_dsid,&
       call h5gcreate_f (atomKOverlapPSCF_gid,currentName,&
             & atomKxyzOL_PSCF_gid(i),hdferr)
       if (hdferr /= 0) stop 'Failed to create KOverlap xyz group PSCF'
+
+      call h5gcreate_f (atomKOverlapPlusGPSCF_gid,currentName,&
+            & atomKxyzOLPlusG_PSCF_gid(i),hdferr)
+      if (hdferr /= 0) stop 'Failed to create KOverlapPlusG xyz group PSCF'
    enddo
 
    ! Sufficient space must be allocated to hold the dataset IDs for all
@@ -233,11 +246,12 @@ subroutine initPSCFIntegralHDF5 (pscf_fid, attribIntPSCF_dsid,&
    else
       allocate (atomOverlapCV_PSCF_did  (1,1))
    endif
-   allocate (atomOverlapPSCF_did    (numKPoints))
+   allocate (atomOverlapPSCF_did (numKPoints))
    allocate (atomHamOverlapPSCF_did (numKPoints,spin))
-   allocate (atomDMOverlapPSCF_did  (numKPoints,3))
-   allocate (atomMMOverlapPSCF_did  (numKPoints,3))
-   allocate (atomKOverlapPSCF_did   (numKPoints,3))
+   allocate (atomDMOverlapPSCF_did (numKPoints,3))
+   allocate (atomMMOverlapPSCF_did (numKPoints,3))
+   allocate (atomKOverlapPSCF_did (numKPoints,3))
+   allocate (atomKOverlapPlusGPSCF_did (numKPoints,3))
 
    ! Create the dataspace that will be used for each dataset in atomIntgGroup
    !   and all of its subgroups.  The same dataspace definition works for all
@@ -312,6 +326,11 @@ subroutine initPSCFIntegralHDF5 (pscf_fid, attribIntPSCF_dsid,&
                & H5T_NATIVE_DOUBLE,valeValePSCF_dsid,&
                & atomKOverlapPSCF_did(i,j),hdferr,valeValePSCF_plid)
          if (hdferr /= 0) stop 'Failed to create Koverlap did'
+
+         call h5dcreate_f (atomKxyzOLPlusG_PSCF_gid(j),currentName,&
+               & H5T_NATIVE_DOUBLE,valeValePSCF_dsid,&
+               & atomKOverlapPlusGPSCF_did(i,j),hdferr,valeValePSCF_plid)
+         if (hdferr /= 0) stop 'Failed to create KoverlapPlusG did'
       enddo
 
       if (coreDim > 0) then
@@ -349,6 +368,10 @@ subroutine initPSCFIntegralHDF5 (pscf_fid, attribIntPSCF_dsid,&
          & attribIntPSCF_dsid,atomKOverlapPSCF_aid,hdferr)
    if (hdferr /= 0) stop 'Failed to create Koverlap aid PSCF'
 
+   call h5acreate_f (atomKOverlapPlusGPSCF_gid,"status",H5T_NATIVE_INTEGER,&
+         & attribIntPSCF_dsid,atomKOverlapPlusGPSCF_aid,hdferr)
+   if (hdferr /= 0) stop 'Failed to create KoverlapPlusG aid PSCF'
+
    ! Initialize all dataset attributes to the uncomputed (status = zero) state.
    call h5awrite_f(atomOverlapPSCF_aid,H5T_NATIVE_INTEGER,0,attribIntDimsPSCF,&
          & hdferr)
@@ -369,6 +392,10 @@ subroutine initPSCFIntegralHDF5 (pscf_fid, attribIntPSCF_dsid,&
    call h5awrite_f(atomKOverlapPSCF_aid,H5T_NATIVE_INTEGER,0,&
          & attribIntDimsPSCF,hdferr)
    if (hdferr /= 0) stop 'Failed to initialize atomKOverlapPSCF_aid PSCF'
+
+   call h5awrite_f(atomKOverlapPlusGPSCF_aid,H5T_NATIVE_INTEGER,0,&
+         & attribIntDimsPSCF,hdferr)
+   if (hdferr /= 0) stop 'Failed to initialize atomKOverlapPlusGPSCF_aid PSCF'
 
    ! At this point, we flush all meta data to the PSCF HDF5 file. Then, the
    !   HDF5 file is primed for use.
@@ -438,12 +465,16 @@ subroutine accessPSCFIntegralHDF5 (pscf_fid)
    call h5gopen_f (atomIntgGroupPSCF_gid,"atomKOverlap",&
          & atomKOverlapPSCF_gid,hdferr)
    if (hdferr /= 0) stop 'Failed to open Koverlap group PSCF'
+   call h5gopen_f (atomIntgGroupPSCF_gid,"atomKOverlapPlusG",&
+         & atomKOverlapPlusGPSCF_gid,hdferr)
+   if (hdferr /= 0) stop 'Failed to open KoverlapPlusG group PSCF'
 
    ! For the integrals that have multiple matrices per kpoint, we need to
    !   create space to hold the group IDs of each kpoint group.
    allocate (atomDMxyzOL_PSCF_gid (3)) ! Needs x,y,z matrices
    allocate (atomMMxyzOL_PSCF_gid (3)) ! Needs x,y,z matrices
    allocate (atomKxyzOL_PSCF_gid (3)) ! Needs x,y,z matrices
+   allocate (atomKxyzOLPlusG_PSCF_gid (3)) ! Needs x,y,z matrices
 
    ! Now, we open the xyz subgroups for the integrals that have them.
    do i = 1, 3
@@ -461,6 +492,10 @@ subroutine accessPSCFIntegralHDF5 (pscf_fid)
       call h5gopen_f (atomKOverlapPSCF_gid,currentName,&
             & atomKxyzOL_PSCF_gid(i),hdferr)
       if (hdferr /= 0) stop 'Failed to open KOverlap xyz group PSCF'
+
+      call h5gopen_f (atomKOverlapPlusGPSCF_gid,currentName,&
+            & atomKxyzOLPlusG_PSCF_gid(i),hdferr)
+      if (hdferr /= 0) stop 'Failed to open KOverlapPlusG xyz group PSCF'
    enddo
 
    ! Allocate space to hold the dataset IDs.
@@ -474,6 +509,7 @@ subroutine accessPSCFIntegralHDF5 (pscf_fid)
    allocate (atomDMOverlapPSCF_did (numKPoints,3))
    allocate (atomMMOverlapPSCF_did (numKPoints,3))
    allocate (atomKOverlapPSCF_did (numKPoints,3))
+   allocate (atomKOverlapPlusGPSCF_did (numKPoints,3))
 
    ! Open the datasets that will be used for all subgroups of atomIntgGroup.
    do i = 1, numKPoints
@@ -502,6 +538,10 @@ subroutine accessPSCFIntegralHDF5 (pscf_fid)
          call h5dopen_f (atomKxyzOL_PSCF_gid(j),currentName,&
                & atomKOverlapPSCF_did(i,j),hdferr)
          if (hdferr /= 0) stop 'Failed to open Koverlap did PSCF'
+
+         call h5dopen_f (atomKxyzOLPlusG_PSCF_gid(j),currentName,&
+               & atomKOverlapPlusGPSCF_did(i,j),hdferr)
+         if (hdferr /= 0) stop 'Failed to open KoverlapPlusG did PSCF'
       enddo
 
       if (coreDim > 0) then
@@ -532,6 +572,10 @@ subroutine accessPSCFIntegralHDF5 (pscf_fid)
 
    call h5aopen_f (atomKOverlapPSCF_gid,'status',atomKOverlapPSCF_aid,hdferr)
    if (hdferr /= 0) stop 'Failed to open Koverlap aid PSCF'
+
+   call h5aopen_f (atomKOverlapPlusGPSCF_gid,'status',&
+         & atomKOverlapPlusGPSCF_aid, hdferr)
+   if (hdferr /= 0) stop 'Failed to open KoverlapPlusG aid PSCF'
 
    ! Obtain the properties of the datasets that were just opened. They are all
    !   the same and so only one copy is necessary.  (Actually, this value is
@@ -605,6 +649,11 @@ subroutine closePSCFIntegralHDF5
          if (hdferr /= 0) stop 'Failed to close atomKOverlapPSCF_did PSCF'
       enddo
 
+      do j = 1, 3
+         call h5dclose_f (atomKOverlapPlusGPSCF_did(i,j),hdferr)
+         if (hdferr /= 0) stop 'Failed to close atomKOverlapPlusGPSCF_did PSCF'
+      enddo
+
       if (coreDim > 0) then
          do j = 1, numComponents
             call h5dclose_f (atomOverlapCV_PSCF_did(j,i),hdferr)
@@ -637,6 +686,11 @@ subroutine closePSCFIntegralHDF5
       if (hdferr /= 0) stop 'Failed to close atomKxyzOL_PSCF_gid PSCF'
    enddo
 
+   do i = 1, 3
+      call h5gclose_f (atomKxyzOLPlusG_PSCF_gid(i),hdferr)
+      if (hdferr /= 0) stop 'Failed to close atomKxyzOLPlusG_PSCF_gid PSCF'
+   enddo
+
    call h5gclose_f (atomOverlapPSCF_gid,hdferr)
    if (hdferr /= 0) stop 'Failed to close atomOverlapPSCF_gid PSCF'
 
@@ -657,6 +711,9 @@ subroutine closePSCFIntegralHDF5
    call h5gclose_f (atomKOverlapPSCF_gid,hdferr)
    if (hdferr /= 0) stop 'Failed to close atomKxyzOverlapPSCF_gid PSCF'
 
+   call h5gclose_f (atomKOverlapPlusGPSCF_gid,hdferr)
+   if (hdferr /= 0) stop 'Failed to close atomKxyzOverlapPlusGPSCF_gid PSCF'
+
    call h5gclose_f (atomIntgGroupPSCF_gid,hdferr)
    if (hdferr /= 0) stop 'Failed to close atomIntgGroupPSCF_gid PSCF'
 
@@ -672,6 +729,7 @@ subroutine closePSCFIntegralHDF5
    deallocate (atomDMxyzOL_PSCF_gid)
    deallocate (atomMMxyzOL_PSCF_gid)
    deallocate (atomKxyzOL_PSCF_gid)
+   deallocate (atomKxyzOLPlusG_PSCF_gid)
 
    ! Note that the attributes are closed as soon as they are finished.
    

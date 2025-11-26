@@ -33,6 +33,7 @@ module O_SCFIntegralsHDF5
    integer(hid_t) :: atomDMOverlap_gid
    integer(hid_t) :: atomMMOverlap_gid
    integer(hid_t) :: atomKOverlap_gid
+   integer(hid_t) :: atomKOverlapPlusG_gid
    integer(hid_t) :: atomPotOverlap_gid
 
    ! Define the group IDs of the dynamically numbered subgroups. I.e., for
@@ -41,6 +42,7 @@ module O_SCFIntegralsHDF5
    integer(hid_t), allocatable, dimension (:) :: atomDMxyzOL_gid
    integer(hid_t), allocatable, dimension (:) :: atomMMxyzOL_gid
    integer(hid_t), allocatable, dimension (:) :: atomKxyzOL_gid
+   integer(hid_t), allocatable, dimension (:) :: atomKxyzOLPlusG_gid
    integer(hid_t), allocatable, dimension (:) :: atomPotTermOL_gid
 
    ! The dataspaces of each dataset in atomIntgGroup_gid are the same in
@@ -73,6 +75,7 @@ module O_SCFIntegralsHDF5
    integer(hid_t), allocatable, dimension (:,:) :: atomDMOverlap_did
    integer(hid_t), allocatable, dimension (:,:) :: atomMMOverlap_did
    integer(hid_t), allocatable, dimension (:,:) :: atomKOverlap_did
+   integer(hid_t), allocatable, dimension (:,:) :: atomKOverlapPlusG_did
    integer(hid_t), allocatable, dimension (:,:) :: atomPotOverlap_did
 
    ! Define the attribute IDs that will be used for each group. One attribute
@@ -86,6 +89,7 @@ module O_SCFIntegralsHDF5
    integer(hid_t) :: atomDMOverlap_aid
    integer(hid_t) :: atomMMOverlap_aid
    integer(hid_t) :: atomKOverlap_aid
+   integer(hid_t) :: atomKOverlapPlusG_aid
    integer(hid_t), allocatable, dimension (:) :: atomPotTermOL_aid
 
 
@@ -215,6 +219,10 @@ subroutine initSCFIntegralHDF5 (scf_fid, attribInt_dsid, attribIntDims)
          & hdferr)
    if (hdferr /= 0) stop 'Failed to create Koverlap group SCF'
 
+   call h5gcreate_f (atomIntgGroup_gid,"atomKOverlapPlusG",&
+         & atomKOverlapPlusG_gid,hdferr)
+   if (hdferr /= 0) stop 'Failed to create KoverlapPlusG group SCF'
+
    call h5gcreate_f (atomIntgGroup_gid,"atomPotOverlap",atomPotOverlap_gid,&
          & hdferr)
    if (hdferr /= 0) stop 'Failed to create atom potential overlap group SCF'
@@ -224,6 +232,7 @@ subroutine initSCFIntegralHDF5 (scf_fid, attribInt_dsid, attribIntDims)
    allocate (atomDMxyzOL_gid (3)) ! Needs x,y,z matrices all done together
    allocate (atomMMxyzOL_gid (3)) ! Needs x,y,z matrices all done together
    allocate (atomKxyzOL_gid (3)) ! Needs x,y,z matrices all done together
+   allocate (atomKxyzOLPlusG_gid (3)) ! Needs x,y,z matrices all done together
    allocate (atomPotTermOL_gid (potDim)) ! One matrix per pot term, separate.
 
    ! Create the subgroups for the DM and MM terms and assign a gid name
@@ -243,6 +252,10 @@ subroutine initSCFIntegralHDF5 (scf_fid, attribInt_dsid, attribIntDims)
       call h5gcreate_f (atomKOverlap_gid,currentName,&
             & atomKxyzOL_gid(i),hdferr)
       if (hdferr /= 0) stop 'Failed to create KOverlap xyz group SCF'
+
+      call h5gcreate_f (atomKOverlapPlusG_gid,currentName,&
+            & atomKxyzOLPlusG_gid(i),hdferr)
+      if (hdferr /= 0) stop 'Failed to create KOverlapPlusG xyz group SCF'
    enddo
 
    ! Create the subgroups for the potential terms and assign a gid name equal
@@ -270,6 +283,7 @@ subroutine initSCFIntegralHDF5 (scf_fid, attribInt_dsid, attribIntDims)
    allocate (atomDMOverlap_did  (numKPoints,3))
    allocate (atomMMOverlap_did  (numKPoints,3))
    allocate (atomKOverlap_did  (numKPoints,3))
+   allocate (atomKOverlapPlusG_did  (numKPoints,3))
    allocate (atomPotOverlap_did (numKPoints,potDim))
 
    ! Allocate space to hold the attribute IDs for the potential matrics.
@@ -352,6 +366,11 @@ subroutine initSCFIntegralHDF5 (scf_fid, attribInt_dsid, attribIntDims)
                & H5T_NATIVE_DOUBLE,valeVale_dsid,atomKOverlap_did(i,j),&
                & hdferr,valeVale_plid)
          if (hdferr /= 0) stop 'Failed to create Koverlap did SCF'
+
+         call h5dcreate_f (atomKxyzOLPlusG_gid(j),currentName,&
+               & H5T_NATIVE_DOUBLE,valeVale_dsid,atomKOverlapPlusG_did(i,j),&
+               & hdferr,valeVale_plid)
+         if (hdferr /= 0) stop 'Failed to create KoverlapPlusG did SCF'
       enddo
 
       do j = 1, potDim
@@ -403,6 +422,10 @@ subroutine initSCFIntegralHDF5 (scf_fid, attribInt_dsid, attribIntDims)
          & attribInt_dsid,atomKOverlap_aid,hdferr)
    if (hdferr /= 0) stop 'Failed to create Koverlap aid SCF'
 
+   call h5acreate_f (atomKOverlapPlusG_gid,"status",H5T_NATIVE_INTEGER,&
+         & attribInt_dsid,atomKOverlapPlusG_aid,hdferr)
+   if (hdferr /= 0) stop 'Failed to create KoverlapPlusG aid SCF'
+
    do i = 1, potDim
       call h5acreate_f (atomPotTermOL_gid(i),"status",H5T_NATIVE_INTEGER,&
             & attribInt_dsid,atomPotTermOL_aid(i),hdferr)
@@ -430,6 +453,10 @@ subroutine initSCFIntegralHDF5 (scf_fid, attribInt_dsid, attribIntDims)
 
    call h5awrite_f(atomKOverlap_aid,H5T_NATIVE_INTEGER,0,attribIntDims,hdferr)
    if (hdferr /= 0) stop 'Failed to initialize atomKOverlap_aid SCF'
+
+   call h5awrite_f(atomKOverlapPlusG_aid,H5T_NATIVE_INTEGER,0,attribIntDims,&
+         & hdferr)
+   if (hdferr /= 0) stop 'Failed to initialize atomKOverlapPlusG_aid SCF'
 
    do i = 1, potDim
       call h5awrite_f(atomPotTermOL_aid(i),H5T_NATIVE_INTEGER,0,&
@@ -503,6 +530,9 @@ subroutine accessSCFIntegralHDF5 (scf_fid)
    if (hdferr /= 0) stop 'Failed to open momentum matrix overlap group SCF'
    call h5gopen_f (atomIntgGroup_gid,"atomKOverlap",atomKOverlap_gid,hdferr)
    if (hdferr /= 0) stop 'Failed to open Koverlap group SCF'
+   call h5gopen_f (atomIntgGroup_gid,"atomKOverlapPlusG",&
+         & atomKOverlapPlusG_gid,hdferr)
+   if (hdferr /= 0) stop 'Failed to open KoverlapPlusG group SCF'
    call h5gopen_f (atomIntgGroup_gid,"atomPotOverlap",atomPotOverlap_gid,hdferr)
    if (hdferr /= 0) stop 'Failed to open atom potential overlap group SCF'
 
@@ -511,6 +541,7 @@ subroutine accessSCFIntegralHDF5 (scf_fid)
    allocate (atomDMxyzOL_gid (3)) ! Needs x,y,z matrices
    allocate (atomMMxyzOL_gid (3)) ! Needs x,y,z matrices
    allocate (atomKxyzOL_gid (3)) ! Needs x,y,z matrices
+   allocate (atomKxyzOLPlusG_gid (3)) ! Needs x,y,z matrices
    allocate (atomPotTermOL_gid (potDim)) ! One matrix per pot term.
 
    ! Now, we open the xyz subgroups for the integrals that have them.
@@ -526,6 +557,10 @@ subroutine accessSCFIntegralHDF5 (scf_fid)
 
       call h5gopen_f (atomKOverlap_gid,currentName,atomKxyzOL_gid(i),hdferr)
       if (hdferr /= 0) stop 'Failed to open KOverlap xyz group SCF'
+
+      call h5gopen_f (atomKOverlapPlusG_gid,currentName,atomKxyzOLPlusG_gid(i),&
+            & hdferr)
+      if (hdferr /= 0) stop 'Failed to open KOverlapPlusG xyz group SCF'
    enddo
 
    ! Now, we can open the potential subgroups for each term.
@@ -551,6 +586,7 @@ subroutine accessSCFIntegralHDF5 (scf_fid)
    allocate (atomDMOverlap_did (numKPoints,3))
    allocate (atomMMOverlap_did (numKPoints,3))
    allocate (atomKOverlap_did (numKPoints,3))
+   allocate (atomKOverlapPlusG_did (numKPoints,3))
    allocate (atomPotOverlap_did (numKPoints,potDim))
 
    ! Allocate space to hold the attribute IDs for the potential terms.
@@ -586,6 +622,10 @@ subroutine accessSCFIntegralHDF5 (scf_fid)
          call h5dopen_f (atomKxyzOL_gid(j),currentName,&
                & atomKOverlap_did(i,j),hdferr)
          if (hdferr /= 0) stop 'Failed to open Koverlap did SCF'
+
+         call h5dopen_f (atomKxyzOLPlusG_gid(j),currentName,&
+               & atomKOverlapPlusG_did(i,j),hdferr)
+         if (hdferr /= 0) stop 'Failed to open KoverlapPlusG did SCF'
       enddo
 
       do j = 1, potDim
@@ -627,6 +667,10 @@ subroutine accessSCFIntegralHDF5 (scf_fid)
 
    call h5aopen_f (atomKOverlap_gid,'status',atomKOverlap_aid,hdferr)
    if (hdferr /= 0) stop 'Failed to open Koverlap aid SCF'
+
+   call h5aopen_f (atomKOverlapPlusG_gid,'status',atomKOverlapPlusG_aid,&
+         & hdferr)
+   if (hdferr /= 0) stop 'Failed to open KoverlapPlusG aid SCF'
 
    do i = 1, potDim
       call h5aopen_f (atomPotTermOL_gid(i),'status',atomPotTermOL_aid(i),&
@@ -709,6 +753,11 @@ subroutine closeSCFIntegralHDF5
          if (hdferr /= 0) stop 'Failed to close atomKOverlap_did SCF'
       enddo
 
+      do j = 1, 3
+         call h5dclose_f (atomKOverlapPlusG_did(i,j),hdferr)
+         if (hdferr /= 0) stop 'Failed to close atomKOverlapPlusG_did SCF'
+      enddo
+
       do j = 1, potDim
          call h5dclose_f (atomPotOverlap_did(i,j),hdferr)
          if (hdferr /= 0) stop 'Failed to close atomPotOverlap_did SCF'
@@ -752,6 +801,11 @@ subroutine closeSCFIntegralHDF5
       if (hdferr /= 0) stop 'Failed to close atomKxyzOL_gid SCF'
    enddo
 
+   do i = 1, 3
+      call h5gclose_f (atomKxyzOLPlusG_gid(i),hdferr)
+      if (hdferr /= 0) stop 'Failed to close atomKxyzOLPlusG_gid SCF'
+   enddo
+
    if (coreDim > 0) then
       call h5gclose_f (atomOverlapCV_gid,hdferr)
       if (hdferr /= 0) stop 'Failed to close atomOverlapCV_gid SCF'
@@ -781,6 +835,9 @@ subroutine closeSCFIntegralHDF5
    call h5gclose_f (atomKOverlap_gid,hdferr)
    if (hdferr /= 0) stop 'Failed to close atomKxyzOverlap_gid SCF'
 
+   call h5gclose_f (atomKOverlapPlusG_gid,hdferr)
+   if (hdferr /= 0) stop 'Failed to close atomKxyzOverlapPlusG_gid SCF'
+
    call h5gclose_f (atomIntgGroup_gid,hdferr)
    if (hdferr /= 0) stop 'Failed to close atomIntgGroup_gid SCF'
 
@@ -801,6 +858,7 @@ subroutine closeSCFIntegralHDF5
    deallocate (atomDMxyzOL_gid)
    deallocate (atomMMxyzOL_gid)
    deallocate (atomKxyzOL_gid)
+   deallocate (atomKxyzOLPlusG_gid)
 
    ! Note that the attributes are closed as soon as they are finished.
    

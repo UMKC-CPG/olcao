@@ -110,14 +110,15 @@ subroutine setupSCF
    use O_SCFIntegralsHDF5, only: atomOverlap_did, atomOverlapCV_did, &
          & atomKEOverlap_did, atomMVOverlap_did, atomNPOverlap_did, &
          & atomDMOverlap_did, atomMMOverlap_did, atomKOverlap_did, &
-         & atomPotOverlap_did, atomOverlap_aid, atomKEOverlap_aid, &
-         & atomMVOverlap_aid, atomNPOverlap_aid, atomDMOverlap_aid, &
-         & atomMMOverlap_aid, atomKOverlap_aid, atomPotTermOL_aid, &
+         & atomKOverlapPlusG_did, atomPotOverlap_did, atomOverlap_aid, &
+         & atomKEOverlap_aid, atomMVOverlap_aid, atomNPOverlap_aid, &
+         & atomDMOverlap_aid, atomMMOverlap_aid, atomKOverlap_aid, &
+         & atomKOverlapPlusG_aid, atomPotTermOL_aid, &
          & numComponents, fullCVDims, packedVVDims
       use O_CommandLine, only: doDIMO_SCF, doOPTC_SCF, doField_SCF, doMTOP_SCF
    use O_Input, only: parseInput, numStates
    use O_Lattice, only: initializeLattice, initializeFindVec, &
-         & cleanUpLattice
+         & cleanUpLattice, recipVectors
    use O_KPoints, only: numKPoints, initializeKPoints
    use O_Basis, only: renormalizeBasis, cleanUpBasis
    use O_ExchangeCorrelation, only: maxNumRayPoints, getECMeshParameters, &
@@ -146,6 +147,9 @@ subroutine setupSCF
    ! Make sure that there are no accidental variable declarations.
    implicit none
 
+   ! Define local variables.
+   real (kind=double), dimension(3,3) :: zeroVectors
+
    ! Define global mpi parameters
 !   integer :: myWorldPid
 !   integer :: numWorldProcs
@@ -159,6 +163,8 @@ subroutine setupSCF
 !   integer :: tauerr
 !   integer :: mpierr
 
+   ! Initialize local variables.
+   zeroVectors(:,:) = 0.0_double
 
    ! Initialize the MPI interface
 !   call MPI_INIT (mpierr)
@@ -280,7 +286,10 @@ subroutine setupSCF
       endif
 #ifndef GAMMA
       if (doMTOP_SCF == 1) then
-         call gaussKOverlap(packedVVDims,atomKOverlap_did,atomKOverlap_aid)
+         call gaussKOverlap(packedVVDims,atomKOverlap_did,atomKOverlap_aid,&
+               & zeroVectors)
+         call gaussKOverlap(packedVVDims,atomKOverlapPlusG_did,&
+               & atomKOverlapPlusG_aid,recipVectors)
       endif
 #endif
 
@@ -518,10 +527,11 @@ subroutine intgPSCF
    use O_PSCFIntegralsHDF5, only: atomOverlapPSCF_did, atomOverlapCV_PSCF_did,&
          & atomHamOverlapPSCF_did, atomDMOverlapPSCF_did,&
          & atomMMOverlapPSCF_did, atomKOverlapPSCF_did,&
-         & atomOverlapPSCF_aid,atomHamOverlapPSCF_aid,&
-         & atomDMOverlapPSCF_aid,atomMMOverlapPSCF_aid,&
-         & atomKOverlapPSCF_aid, numComponents,fullCVDimsPSCF,packedVVDimsPSCF
-   use O_Lattice, only: initializeLattice, initializeFindVec
+         & atomKOverlapPlusGPSCF_did,atomOverlapPSCF_aid,&
+         & atomHamOverlapPSCF_aid,atomDMOverlapPSCF_aid,atomMMOverlapPSCF_aid,&
+         & atomKOverlapPSCF_aid, atomKOverlapPlusGPSCF_aid,&
+         & numComponents,fullCVDimsPSCF,packedVVDimsPSCF
+   use O_Lattice, only: initializeLattice, initializeFindVec, recipVectors
    use O_KPoints, only: numKPoints, makePathKPoints, initializeKPoints
    use O_GaussianRelations, only: makeAlphaDist, makeAlphaNucDist,&
          & makeAlphaPotDist, cleanUpGaussRelations
@@ -530,6 +540,11 @@ subroutine intgPSCF
    ! Make sure that there are not accidental variable declarations.
    implicit none
 
+   ! Define local variables.
+   real (kind=double), dimension(3,3) :: zeroVectors
+
+   ! Initialize local variables.
+   zeroVectors(:,:) = 0.0_double
 
    ! Open the potential file that will be read from in this program.
    open (unit=8,file='fort.8',status='old',form='formatted')
@@ -628,7 +643,10 @@ subroutine intgPSCF
 #ifndef GAMMA
       if (doMTOP_PSCF == 1) then
          call gaussKOverlap(packedVVDimsPSCF,atomKOverlapPSCF_did,&
-               & atomKOverlapPSCF_aid)
+               & atomKOverlapPSCF_aid,zeroVectors)
+         call gaussKOverlap(packedVVDimsPSCF,&
+               & atomKOverlapPlusGPSCF_did,atomKOverlapPlusGPSCF_aid,&
+               & recipVectors)
       endif
 #endif
 

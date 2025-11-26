@@ -360,120 +360,146 @@ def add_koverlap_terms(a, b, i, a_plus_idx, a_minus_idx, b_minus_idx,
 
 
     # Search for the a+1_i first.
-    #a_plus_idx = triad_search(triads[a].copy(), triads, True, i, a+1, num_triads)
+    # a_plus_idx = triad_search(triads[a].copy(), triads, True, i, a+1,
+    #   num_triads)
 
 
     # Search for the a+1_i first.
-    #b_plus_idx = triad_search(triads[a].copy(), triads, True, i, b+1, num_triads)
+    # b_plus_idx = triad_search(triads[a].copy(), triads, True, i, b+1,
+    #   num_triads)
 
 
     # Always wrap the terms with this initial string.
     temp_string = f""
     
-    #for (2,0,0)(0,0,0) or (0,0,0)(2,0,0) coming from (1,0,0)(0,0,0) or (0,0,0)(1,0,0)
+    # For (2,0,0)(0,0,0) or (0,0,0)(2,0,0)
+    #   coming from (1,0,0)(0,0,0) or (0,0,0)(1,0,0)
     if (triads[a][i] == 1 and triads[b][i] == 0):
-        temp_string += f" + (hermite_term(2,{i+1}) - hermite_term(1,{i+1})**2)*"
-        temp_string += f"pc({a_minus_idx+1},{b+1})"
+        temp_string += f" + (hermite_term(2,{i+1})"
+        temp_string += f" - hermite_term(1,{i+1})**2)"
+        temp_string += f"*pc({a_minus_idx+1},{b+1})"
   
     # for (1,0,0)(1,0,0) and so on., coming from (0,0,0)(1,0,0) 
     if (triads[a][i] == 0 and triads[b][i] == 1):
-        temp_string += f" + (hermite_term(2,{i+1}) - hermite_term(1,{i+1})**2)*"
-        temp_string += f"pc({a+1},{b_minus_idx+1})"
+        temp_string += f" + (hermite_term(2,{i+1})"
+        temp_string += f" - hermite_term(1,{i+1})**2)"
+        temp_string += f"*pc({a+1},{b_minus_idx+1})"
 
-    #print(f"a: {a}, b: {b}")
-    #print(f"a_minus_idx: {a_minus_idx}, b_minus_idx: {b_minus_idx}, i: {i}")
-    # if ((a_minus_idx == 0) and (b_minus_idx == 1)):
-    #     temp_string += f" + pc(1,1)*(PA({i+1})+PB({i+1}))*(hermite_term(2,{i+1}) \
-    #             - hermite_term(1,{i+1})**2) \
-    #             + (hermite_term(3,{i+1}) - hermite_term(2,{i+1})\
-    #             *hermite_term(1,{i+1}))"
-    #if ((a == 0) and (b == 4) and (a_plus_idx == 1)):
-
-    # for (2,0,0)(1,0,0) and (1,0,0)(2,0,0) coming from (1,0,0)(1,0,0)
+    # For (2,0,0)(1,0,0) and (1,0,0)(2,0,0)
+    #   coming from (1,0,0)(1,0,0)
     if (triads[a][i] == 1 and triads[b][i] == 1):
-        temp_string += f" + ((PA({i+1})+PB({i+1}))*(hermite_term(2,{i+1}) \
-                - hermite_term(1,{i+1})**2) + (hermite_term(3,{i+1}) - hermite_term(2,{i+1})\
-                *hermite_term(1,{i+1})))*"
-        temp_string += f" pc({a_minus_idx+1},{b_minus_idx+1})"
+        temp_string += f" + ((PA({i+1})+PB({i+1}))*(hermite_term(2,{i+1})"
+        temp_string += f" - hermite_term(1,{i+1})**2) + (hermite_term(3,{i+1})"
+        temp_string += f" - hermite_term(2,{i+1})*hermite_term(1,{i+1})))"
+        temp_string += f"*pc({a_minus_idx+1},{b_minus_idx+1})"
 
     else:
         temp_string += f""
-    #print(f"temp_string: {temp_string}")
-    #print(f"triads[a]: {triads[a]}, triads[b]: {triads[b]}")
-    #print(f"triads[a][i]: {triads[a][i]}, triads[b][i]: {triads[b][i]}")
-    
 
-    # for (2,0,0)(1,0,0) coming from (2,0,0)(0,0,0), Also (3,0,0)(0,0,0) coming from (2,0,0)(0,0,0)
+    # For (2,0,0)(1,0,0) coming from (2,0,0)(0,0,0)
+    #   Also for (3,0,0)(0,0,0) coming from (2,0,0)(0,0,0)
     if (triads[a][i] == 2 and triads[b][i] == 0): 
-        temp_string += f" + ((2.0*PA({i+1}))*(hermite_term({2},{i+1}) - hermite_term({1},{i+1})**2) \
-                + (hermite_term({3},{i+1}) - hermite_term({2},{i+1})*hermite_term({1},{i+1})))*"
-        temp_string += f"pc({a_minus_minus_idx+1},{b+1})"
+        temp_string += f" + ((2.0*PA({i+1}))*(hermite_term({2},{i+1})"
+        temp_string += f" - hermite_term({1},{i+1})**2)"
+        temp_string += f" + (hermite_term({3},{i+1})"
+        temp_string += f" - hermite_term({2},{i+1})*hermite_term({1},{i+1})))"
+        temp_string += f"*pc({a_minus_minus_idx+1},{b+1})"
     
-    # for (1,0,0)(2,0,0) coming from (0,0,0)(2,0,0), Also (0,0,0)(3,0,0) coming from (0,0,0)(2,0,0)
+    # For (1,0,0)(2,0,0) coming from (0,0,0)(2,0,0)
+    #   Also for (0,0,0)(3,0,0) coming from (0,0,0)(2,0,0)
     if (triads[a][i] == 0 and triads[b][i] == 2): 
-        temp_string += f" + ((2.0*PB({i+1}))*(hermite_term({2},{i+1}) - hermite_term({1},{i+1})**2) \
-                + (hermite_term({3},{i+1}) - hermite_term({2},{i+1})*hermite_term({1},{i+1})))*"
-        temp_string += f"pc({a+1},{b_minus_minus_idx+1})"
+        temp_string += f" + ((2.0*PB({i+1}))*(hermite_term({2},{i+1})"
+        temp_string += f" - hermite_term({1},{i+1})**2)"
+        temp_string += f" + (hermite_term({3},{i+1})"
+        temp_string += f" - hermite_term({2},{i+1})*hermite_term({1},{i+1})))"
+        temp_string += f"*pc({a+1},{b_minus_minus_idx+1})"
     
 
-    #for (2,0,0)(2,0,0) coming from (2,0,0)(1,0,0) or (3,0,0)(1,0,0) coming from (2,0,0)(1,0,0)
+    # For (2,0,0)(2,0,0) coming from (2,0,0)(1,0,0)
+    #   Or for (3,0,0)(1,0,0) coming from (2,0,0)(1,0,0)
     if (triads[a][i] == 2 and triads[b][i] == 1):
-        temp_string += f" + ((PA({i+1})**2 + 2.0*PA({i+1})*PB({i+1}))*(hermite_term({2},{i+1})\
-                - hermite_term({1},{i+1})**2) + (2.0*PA({i+1}) + PB({i+1}))*(hermite_term({3},{i+1}) \
-                - hermite_term({2},{i+1})*hermite_term({1},{i+1})) + (hermite_term({4},{i+1}) \
-                - hermite_term({3},{i+1})*hermite_term({1},{i+1})))*"
-        temp_string += f"pc({a_minus_minus_idx+1},{b_minus_idx+1})"
+        temp_string += f" + ((PA({i+1})**2 + 2.0*PA({i+1})*PB({i+1}))"
+        temp_string += f"*(hermite_term({2},{i+1})"
+        temp_string += f" - hermite_term({1},{i+1})**2) + (2.0*PA({i+1})"
+        temp_string += f" + PB({i+1}))*(hermite_term({3},{i+1})"
+        temp_string += f" - hermite_term({2},{i+1})*hermite_term({1},{i+1}))"
+        temp_string += f" + (hermite_term({4},{i+1})"
+        temp_string += f" - hermite_term({3},{i+1})*hermite_term({1},{i+1})))"
+        temp_string += f"*pc({a_minus_minus_idx+1},{b_minus_idx+1})"
     
 
-    #for (2,0,0)(2,0,0) coming from (1,0,0)(2,0,0) or (1,0,0)(3,0,0) coming from (1,0,0)(2,0,0)
+    # For (2,0,0)(2,0,0) coming from (1,0,0)(2,0,0)
+    #   Or for (1,0,0)(3,0,0) coming from (1,0,0)(2,0,0)
     if (triads[a][i] == 1 and triads[b][i] == 2):
-        temp_string += f" + ((PB({i+1})**2 + 2.0*PA({i+1})*PB({i+1}))*(hermite_term({2},{i+1})\
-                - hermite_term({1},{i+1})**2) + (2.0*PB({i+1}) + PA({i+1}))*(hermite_term({3},{i+1}) \
-                - hermite_term({2},{i+1})*hermite_term({1},{i+1})) + (hermite_term({4},{i+1}) \
-                - hermite_term({3},{i+1})*hermite_term({1},{i+1})))*"
-        temp_string += f"pc({a_minus_idx+1},{b_minus_minus_idx+1})"
+        temp_string += f" + ((PB({i+1})**2 + 2.0*PA({i+1})*PB({i+1}))"
+        temp_string += f"*(hermite_term({2},{i+1})"
+        temp_string += f" - hermite_term({1},{i+1})**2)"
+        temp_string += f" + (2.0*PB({i+1}) + PA({i+1}))"
+        temp_string += f"*(hermite_term({3},{i+1})"
+        temp_string += f" - hermite_term({2},{i+1})*hermite_term({1},{i+1}))"
+        temp_string += f"+ (hermite_term({4},{i+1})"
+        temp_string += f"- hermite_term({3},{i+1})*hermite_term({1},{i+1})))"
+        temp_string += f"*pc({a_minus_idx+1},{b_minus_minus_idx+1})"
 
     
-    #for (1,0,0)(3,0,0) coming from (0,0,0)(3,0,0)
+    # For (1,0,0)(3,0,0) coming from (0,0,0)(3,0,0)
     if (triads[a][i] == 0 and triads[b][i] == 3):
-        temp_string += f" + ((3.0*(PB({i+1})**2))*(hermite_term({2},{i+1}) - hermite_term({1},{i+1})**2)\
-                + (3*PB({i+1}))*(hermite_term({3},{i+1}) - hermite_term({2},{i+1})*hermite_term({1},{i+1}))\
-                + (hermite_term({4},{i+1}) - hermite_term({3},{i+1})*hermite_term({1},{i+1})))*"
-        temp_string += f"pc({a+1},{b_minus_minus_minus_idx+1})"
+        temp_string += f" + ((3.0*(PB({i+1})**2))*(hermite_term({2},{i+1})"
+        temp_string += f" - hermite_term({1},{i+1})**2) + (3*PB({i+1}))"
+        temp_string += f"*(hermite_term({3},{i+1}) - hermite_term({2},{i+1})"
+        temp_string += f"*hermite_term({1},{i+1})) + (hermite_term({4},{i+1})"
+        temp_string += f" - hermite_term({3},{i+1})*hermite_term({1},{i+1})))"
+        temp_string += f"*pc({a+1},{b_minus_minus_minus_idx+1})"
     
  
-    #for (3,0,0)(2,0,0) and so on coming from (2,0,0)(2,0,0)
+    # For (3,0,0)(2,0,0) and so on coming from (2,0,0)(2,0,0)
     if (triads[a][i] == 2 and triads[b][i] == 2):
-        temp_string += f" + ((2.0*PA({i+1})**2*PB({i+1}) + 2.0*PA({i+1})*PB({i+1})**2)\
-                *(hermite_term({2},{i+1}) - hermite_term({1},{i+1})**2) + (PA({i+1})**2 \
-                + PB({i+1})**2 + 4.0*PA({i+1})*PB({i+1}))*(hermite_term({3},{i+1})\
-                - hermite_term({2},{i+1})*hermite_term({1},{i+1})) + (2.0*PB({i+1}) + 2.0*PA({i+1}))\
-                *(hermite_term({4},{i+1}) - hermite_term({3},{i+1})*hermite_term({1},{i+1}))\
-                + (hermite_term({5},{i+1}) - hermite_term({4},{i+1})* hermite_term({1},{i+1})))*"
-        temp_string += f"pc({a_minus_minus_idx+1},{b_minus_minus_idx+1})"
+        temp_string += f" + ((2.0*PA({i+1})**2*PB({i+1})"
+        temp_string += f" + 2.0*PA({i+1})*PB({i+1})**2)"
+        temp_string += f"*(hermite_term({2},{i+1})"
+        temp_string += f" - hermite_term({1},{i+1})**2) + (PA({i+1})**2"
+        temp_string += f" + PB({i+1})**2 + 4.0*PA({i+1})*PB({i+1}))"
+        temp_string += f"*(hermite_term({3},{i+1}) - hermite_term({2},{i+1})"
+        temp_string += f"*hermite_term({1},{i+1}))"
+        temp_string += f" + (2.0*PB({i+1}) + 2.0*PA({i+1}))"
+        temp_string += f"*(hermite_term({4},{i+1}) - hermite_term({3},{i+1})"
+        temp_string += f"*hermite_term({1},{i+1})) + (hermite_term({5},{i+1})"
+        temp_string += f" - hermite_term({4},{i+1})*hermite_term({1},{i+1})))"
+        temp_string += f"*pc({a_minus_minus_idx+1},{b_minus_minus_idx+1})"
     
 
-    # for (2,0,0)(3,0,0) coming from (1,0,0)(3,0,0) and so on for diffrent i
+    # For (2,0,0)(3,0,0) coming from (1,0,0)(3,0,0) and so on for diffrent i
     if (triads[a][i] == 1 and triads[b][i] == 3):
-        temp_string += f" + ((3.0*(PB({i+1})**2)*PA({i+1}) + PB({i+1})**3)*(hermite_term({2},{i+1})\
-                - hermite_term({1},{i+1})**2) + (3.0*PB({i+1})*PA({i+1}) + 3.0*(PB({i+1})**2))\
-                *(hermite_term({3},{i+1}) - hermite_term({2},{i+1})* hermite_term({1},{i+1}))\
-                + (PA({i+1}) + 3.0*PB({i+1}))*(hermite_term({4},{i+1}) - hermite_term({3},{i+1})\
-                *hermite_term({1},{i+1}))+ (hermite_term({5},{i+1}) - hermite_term({4},{i+1})\
-                * hermite_term({1},{i+1})))*"
-        temp_string += f"pc({a_minus_idx+1},{b_minus_minus_minus_idx+1})"
+        temp_string += f" + ((3.0*(PB({i+1})**2)*PA({i+1})"
+        temp_string += f" + PB({i+1})**3)*(hermite_term({2},{i+1})"
+        temp_string += f" - hermite_term({1},{i+1})**2)"
+        temp_string += f" + (3.0*PB({i+1})*PA({i+1}) + 3.0*(PB({i+1})**2))"
+        temp_string += f"*(hermite_term({3},{i+1}) - hermite_term({2},{i+1})"
+        temp_string += f"* hermite_term({1},{i+1}))"
+        temp_string += f" + (PA({i+1}) + 3.0*PB({i+1}))"
+        temp_string += f"*(hermite_term({4},{i+1}) - hermite_term({3},{i+1})"
+        temp_string += f"*hermite_term({1},{i+1}))+ (hermite_term({5},{i+1})"
+        temp_string += f"- hermite_term({4},{i+1})*hermite_term({1},{i+1})))"
+        temp_string += f"*pc({a_minus_idx+1},{b_minus_minus_minus_idx+1})"
     
 
-    # for (3,0,0)(3,0,0) coming from (2,0,0)(3,0,0)
+    # For (3,0,0)(3,0,0) coming from (2,0,0)(3,0,0)
     if (triads[a][i] == 2 and triads[b][i] == 3):
-        temp_string += f" + ((2.0*(PB({i+1})**3)*PA({i+1}) + 3.0*(PA({i+1})**2)*(PB({i+1})**2))*(hermite_term({2},{i+1})\
-                - hermite_term({1},{i+1})**2) + ((PB({i+1})**3) + 6.0*(PB({i+1})**2)*PA({i+1}) + 3.0*PB({i+1})\
-                *(PA({i+1})**2))*(hermite_term({3},{i+1}) - hermite_term({2},{i+1})*hermite_term({1},{i+1})) \
-                + (PA({i+1})**2+ 3.0*(PB({i+1})**2) + 6.0*PB({i+1})*PA({i+1}))*(hermite_term({4},{i+1}) \
-                - hermite_term({3},{i+1})*hermite_term({1},{i+1})) + (2.0*PA({i+1}) + 3.0*PB({i+1}))\
-                *(hermite_term({5},{i+1})- hermite_term({4},{i+1})*hermite_term({1},{i+1})) \
-                + (hermite_term({6},{i+1}) - hermite_term({5},{i+1})*hermite_term({1},{i+1})))*"
-        temp_string += f"pc({a_minus_minus_idx+1},{b_minus_minus_minus_idx+1})"
+        temp_string += f" + ((2.0*(PB({i+1})**3)*PA({i+1})"
+        temp_string += f" + 3.0*(PA({i+1})**2)*(PB({i+1})**2))"
+        temp_string += f"*(hermite_term({2},{i+1})"
+        temp_string += f" - hermite_term({1},{i+1})**2) + ((PB({i+1})**3)"
+        temp_string += f" + 6.0*(PB({i+1})**2)*PA({i+1}) + 3.0*PB({i+1})"
+        temp_string += f"*(PA({i+1})**2))*(hermite_term({3},{i+1})"
+        temp_string += f" - hermite_term({2},{i+1})*hermite_term({1},{i+1}))"
+        temp_string += f" + (PA({i+1})**2+ 3.0*(PB({i+1})**2)"
+        temp_string += f" + 6.0*PB({i+1})*PA({i+1}))*(hermite_term({4},{i+1})"
+        temp_string += f" - hermite_term({3},{i+1})*hermite_term({1},{i+1}))"
+        temp_string += f" + (2.0*PA({i+1}) + 3.0*PB({i+1}))"
+        temp_string += f"*(hermite_term({5},{i+1}) - hermite_term({4},{i+1})"
+        temp_string += f"*hermite_term({1},{i+1})) + (hermite_term({6},{i+1})"
+        temp_string += f" - hermite_term({5},{i+1})*hermite_term({1},{i+1})))"
+        temp_string += f"*pc({a_minus_minus_idx+1},{b_minus_minus_minus_idx+1})"
 
     # Close the outer wrap.
     temp_string += ""
@@ -4759,8 +4785,8 @@ def print_test_Koverlap_ana(conversion, triads, matrix, f):
    PA(:) = P(:) - A(:)
    PB(:) = P(:) - B(:)
    d(:) = A(:) - B(:)
-   !delta_K(:) = Kf(:) - Ki(:)
-   !Solving Hermite Polynomials
+   
+   ! Solving Hermite Polynomials
    hermite_r(:) = -deltaK(:)/(2*(zeta)**0.5)
 
 
@@ -4771,15 +4797,22 @@ def print_test_Koverlap_ana(conversion, triads, matrix, f):
    Hn(3,:) = 8.0*hermite_r(:)**3 - 12.0*hermite_r(:)
    Hn(4,:) = 16.0*hermite_r(:)**4 - 48.0*hermite_r(:)**2 + 12.0
    Hn(5,:) = 32.0*hermite_r(:)**5 - 160.0*hermite_r(:)**3 + 120.0*hermite_r(:)
-   Hn(6,:) = 64.0*hermite_r(:)**6 - 480.0*hermite_r(:)**4 + 720.0*hermite_r(:)**2 - 120.0
+   Hn(6,:) = 64.0*hermite_r(:)**6 - 480.0*hermite_r(:)**4 &
+         & + 720.0*hermite_r(:)**2 - 120.0
 
    !hermite_term(0,:) = Hn(1,:) ! Combined_l = 0
-   hermite_term(1,:) = Hn(1,:)*(((cmplx(0.0d0,1.0d0,double))/(2.0d0*((zeta)**0.5)))**1)
-   hermite_term(2,:) = Hn(2,:)*(((cmplx(0.0d0,1.0d0,double))/(2.0d0*((zeta)**0.5)))**2)
-   hermite_term(3,:) = Hn(3,:)*(((cmplx(0.0d0,1.0d0,double))/(2.0d0*((zeta)**0.5)))**3)
-   hermite_term(4,:) = Hn(4,:)*(((cmplx(0.0d0,1.0d0,double))/(2.0d0*((zeta)**0.5)))**4)
-   hermite_term(5,:) = Hn(5,:)*(((cmplx(0.0d0,1.0d0,double))/(2.0d0*((zeta)**0.5)))**5)
-   hermite_term(6,:) = Hn(6,:)*(((cmplx(0.0d0,1.0d0,double))/(2.0d0*((zeta)**0.5)))**6)
+   hermite_term(1,:) = Hn(1,:) * &
+         & (((cmplx(0.0d0,1.0d0,double))/(2.0d0*((zeta)**0.5)))**1)
+   hermite_term(2,:) = Hn(2,:) * &
+         & (((cmplx(0.0d0,1.0d0,double))/(2.0d0*((zeta)**0.5)))**2)
+   hermite_term(3,:) = Hn(3,:) * &
+         & (((cmplx(0.0d0,1.0d0,double))/(2.0d0*((zeta)**0.5)))**3)
+   hermite_term(4,:) = Hn(4,:) * &
+         & (((cmplx(0.0d0,1.0d0,double))/(2.0d0*((zeta)**0.5)))**4)
+   hermite_term(5,:) = Hn(5,:) * &
+         & (((cmplx(0.0d0,1.0d0,double))/(2.0d0*((zeta)**0.5)))**5)
+   hermite_term(6,:) = Hn(6,:) * &
+         & (((cmplx(0.0d0,1.0d0,double))/(2.0d0*((zeta)**0.5)))**6)
 
    ! This is the (s|K|s) integral
    preFactorKO(:) = ((pi/zeta)**0.5)*exp(-xi*d(:)*d(:))&

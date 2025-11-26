@@ -135,7 +135,7 @@ subroutine makeValeVale (valeDim,coreDim,packedValeDim,valeCore,coreVale,&
 
    ! Define the small threshhold for eliminating resultant values
    real (kind=double) :: smallThresh10
-   smallThresh10 = real(1.0D-10,double)
+   smallThresh10 = real(1.0D-20,double)
 
 
    if (storeFlag == 0) then

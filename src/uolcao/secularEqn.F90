@@ -1026,7 +1026,7 @@ subroutine readDataSCF(h,i,numStates,matrixCode)
    ! Import necessary data modules.
    use O_AtomicSites, only: valeDim
    use O_SCFIntegralsHDF5, only: packedVVDims,atomOverlap_did,&
-         & atomMMOverlap_did, atomKOverlap_did
+         & atomMMOverlap_did, atomKOverlap_did, atomKOverlapPlusG_did
 #ifndef GAMMA
    use O_SCFEigVecHDF5, only: valeStates,eigenVectors_did
    use O_MatrixSubs, only: readMatrix,readPackedMatrix,unpackMatrix
@@ -1086,17 +1086,24 @@ subroutine readDataSCF(h,i,numStates,matrixCode)
            call unpackMatrixGamma(valeValeMMGamma(:,:,j),packedValeVale,valeDim,1)
 #endif
          enddo
-      elseif (matrixCode == 3) then
-         do j = 1, 3
-            ! Read the xyz KOverlap matrix elements.
-            call readPackedMatrix(atomKOverlap_did(i,j),packedValeVale,&
-                  & packedVVDims,dim1,valeDim)
+      elseif ((matrixCode >= 3) .and. (matrixCode <= 5)) then
+         ! Read the KOverlap matrix elements for the requested axis.
+         call readPackedMatrix(atomKOverlap_did(i,matrixCode-2),&
+               & packedValeVale,packedVVDims,dim1,valeDim)
 
-            ! Unpack the matrix
+         ! Unpack the matrix
 #ifndef GAMMA
-            call unpackMatrix(valeValeKO(:,:,j),packedValeVale,valeDim,1)
+         call unpackMatrix(valeValeKO(:,:,j),packedValeVale,valeDim,1)
 #endif
-         enddo
+      elseif ((matrixCode >= 6) .and. (matrixCode <= 8)) then
+         ! Read the KOverlapPlusG matrix elements for the requested axis.
+         call readPackedMatrix(atomKOverlapPlusG_did(i,matrixCode-5),&
+               & packedValeVale,packedVVDims,dim1,valeDim)
+
+         ! Unpack the matrix
+#ifndef GAMMA
+         call unpackMatrix(valeValeKO(:,:,j),packedValeVale,valeDim,1)
+#endif
       endif
 
       ! Deallocate the packed matrix used to read and unpack the data.
@@ -1135,7 +1142,8 @@ subroutine readDataPSCF(h,i,numStates,matrixCode)
 !   use O_KPoints, only: numKPoints
    use O_AtomicSites, only: valeDim
    use O_PSCFIntegralsHDF5, only: packedVVDimsPSCF,atomOverlapPSCF_did,&
-         & atomMMOverlapPSCF_did, atomKOverlapPSCF_did
+         & atomMMOverlapPSCF_did, atomKOverlapPSCF_did,&
+         & atomKOverlapPlusGPSCF_did
    use O_PSCFEigVecHDF5, only: valeStatesPSCF,eigenVectorsPSCF_did
 #ifndef GAMMA
    use O_MatrixSubs, only: readMatrix, readPackedMatrix, unpackMatrix
@@ -1205,6 +1213,16 @@ subroutine readDataPSCF(h,i,numStates,matrixCode)
          ! Unpack the matrix.
 #ifndef GAMMA
          call unpackMatrix(valeValeKO(:,:,matrixCode-2),&
+               & packedValeVale,valeDim,1)
+#endif
+      elseif ((matrixCode >= 6) .and. (matrixCode <= 8)) then
+         ! Read the KOverlapPlusG matrix elements for the requested axis.
+         call readPackedMatrix(atomKOverlapPlusGPSCF_did(i,matrixCode-5),&
+               & packedValeVale,packedVVDimsPSCF,dim1,valeDim)
+
+         ! Unpack the matrix.
+#ifndef GAMMA
+         call unpackMatrix(valeValeKO(:,:,matrixCode-5),&
                & packedValeVale,valeDim,1)
 #endif
       endif

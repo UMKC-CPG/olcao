@@ -28,8 +28,8 @@ program GaussianIntegrals
          ! to +cell_size. The step size is just what it appears to be, but
          ! note that it is for numerical integration and is a very different
          ! concept and is unrelated to the "num_steps" defined below.
-   integer :: num_segments, num_steps
-   integer :: h, i, p, q
+   integer :: num_segments, num_steps, curr_line
+   integer :: h, i
 
    ! Allocate space to hold the appropriately sized pc and sh matrices. The
    !   last index in both pc and sh is a 2 to hold analytical solutions
@@ -51,6 +51,9 @@ program GaussianIntegrals
 
    ! Read the number of segments.
    read (10,*) num_segments
+
+   ! Initialize the line number for printing.
+   curr_line = 0
 
    ! For each segment, read in the number of steps, allocate space to hold
    !   relevant information for each step, compute the step descriptions,
@@ -84,6 +87,10 @@ program GaussianIntegrals
 
       ! Start iterating over the steps.
       do i = 1, num_steps
+
+         ! Increment the line number
+         curr_line = curr_line + 1
+
          alphas(:) = temp_alphas(:,1) + (i-1) * temp_alphas_step(:)
          deltaK(:) = temp_deltaK(:,1) + (i-1) * temp_deltaK_step(:)
          pos(:,:) = temp_pos(:,:,1) + (i-1) * temp_pos_step(:,:)
@@ -101,9 +108,9 @@ program GaussianIntegrals
                & cell_size,step_size)
 
          ! Print the pc and sh integral result differences.
-         call print_pc_sh(h,i,11,alphas,pos,real(pcCmplx(:,:,1,:),double),&
-               & real(shCmplx(:,:,1,:),double),"KO_Real.dat")
-         call print_pc_sh(h,i,12,alphas,pos,aimag(pcCmplx(:,:,1,:)),&
+         call print_pc_sh(h,i,11,alphas,pos,deltaK,real(pcCmplx(:,:,1,:),&
+               & double),real(shCmplx(:,:,1,:),double),"KO_Real.dat")
+         call print_pc_sh(h,i,12,alphas,pos,deltaK,aimag(pcCmplx(:,:,1,:)),&
                & aimag(shCmplx(:,:,1,:)),"KO_Cmpx.dat")
 
 
@@ -122,7 +129,7 @@ program GaussianIntegrals
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    contains
 
-   subroutine print_pc_sh(h,i,unitPlus,alphas,pos,pc,sh,filename)
+   subroutine print_pc_sh(h,i,unitPlus,alphas,pos,deltaK,pc,sh,filename)
 
       ! Use necessary modules
       use O_Kinds
@@ -133,47 +140,150 @@ program GaussianIntegrals
       ! Define dummy variables.
       integer :: h, i, unitPlus
       real(kind=double), dimension(3) :: alphas
-      real(kind=double), dimension(3,3) :: pos ! xyz (1st idx) of ABC (2nd)
+      real(kind=double), dimension(3,3) :: pos ! xyz (idx1) of atoms ABC (2nd)
+      real(kind=double), dimension(3) :: deltaK
       real(kind=double), dimension(20,20,2) :: pc ! Last idx 1 = ana; 2 = num
       real(kind=double), dimension(16,16,2) :: sh ! Last idx 1 = ana; 2 = num
       character*11 :: filename
+      character*14, dimension(16) :: shName
+      character*3, dimension(20) :: pcName
 
       ! Define local variables.
       logical :: io_opened
       integer :: j,k
 
+      ! Initialize the shName and pcName arrays.
+      shName(1) = "s"
+      shName(2) = "x"
+      shName(3) = "y"
+      shName(4) = "z"
+      shName(5) = "xy"
+      shName(6) = "xz"
+      shName(7) = "yz"
+      shName(8) = "xx-yy"
+      shName(9) = "2zz-xx-yy"
+      shName(10) = "xyz"
+      shName(11) = "xxz-yyz"
+      shName(12) = "xxx-3yyx"
+      shName(13) = "3xxy-yyy"
+      shName(14) = "2zzz-3xxz-3yyz"
+      shName(15) = "4zzx-xxx-yyx"
+      shName(16) = "4zzy-xxy-yyy"
+      pcName(1) = "s"
+      pcName(2) = "x"
+      pcName(3) = "y"
+      pcName(4) = "z"
+      pcName(5) = "xx"
+      pcName(6) = "yy"
+      pcName(7) = "zz"
+      pcName(8) = "xy"
+      pcName(9) = "xz"
+      pcName(10) = "yz"
+      pcName(11) = "xyz"
+      pcName(12) = "xxy"
+      pcName(13) = "xxz"
+      pcName(14) = "yyx"
+      pcName(15) = "yyz"
+      pcName(16) = "zzx"
+      pcName(17) = "zzy"
+      pcName(18) = "xxx"
+      pcName(19) = "yyy"
+      pcName(20) = "zzz"
+
       ! Open the output file if it isn't already open.
       inquire(299+unitPlus, OPENED = io_opened)
       if (.not. io_opened) then
          open (299+unitPlus, file=filename, status="unknown")
+
+         ! Print a header line.
+
+         ! Start with the parameters.
+         write (299+unitPlus,fmt="(a)",advance="NO") "IDX SEG STEP "
+         write (299+unitPlus,fmt="(a)",advance="NO") "alpha1 alpha2 alpha3 "
+         write (299+unitPlus,fmt="(a)",advance="NO") "Ax Ay Az "
+         write (299+unitPlus,fmt="(a)",advance="NO") "Bx By Bz "
+         write (299+unitPlus,fmt="(a)",advance="NO") "Cx Cy Cz "
+         write (299+unitPlus,fmt="(a)",advance="NO") "deltaKx deltaKy deltaKz "
+
+         ! Now add the pc names.
+         do j = 1, 20
+            do k = 1, 20
+               write (299+unitPlus,fmt="(4a)",advance="NO") &
+                     & trim(pcName(k)),"_",trim(pcName(j))," "
+            enddo
+         enddo
+
+         ! Now add the sh names.
+         do j = 1, 16
+            do k = 1, 16
+               write (299+unitPlus,fmt="(4a)",advance="NO") &
+                     & trim(shName(k)),"_",trim(shName(j))," "
+            enddo
+         enddo
+
       endif
 
-      write (299+unitPlus,fmt="(2i5)",advance="NO") h, i
-      write (299+unitPlus,fmt="(3e16.8)",advance="NO") alphas(:)
-      write (299+unitPlus,fmt="(3e16.8)",advance="NO") pos(:,1)
-      write (299+unitPlus,fmt="(3e16.8)",advance="NO") pos(:,2)
-      write (299+unitPlus,fmt="(3e16.8)",advance="NO") pos(:,3)
+      if ((num_segments > 1) .or. (num_steps > 1)) then
 
-      ! Print the result difference for the given pc matrix.
-      do j = 1, 20
-         do k = 1, 20
-            write (299+unitPlus,fmt="(e16.8)",advance="NO") pc(k,j,1)
-            write (299+unitPlus,fmt="(e16.8)",advance="NO") pc(k,j,2)
-            write (299+unitPlus,fmt="(e16.8)",advance="NO") &
-                  & pc(k,j,1) - pc(k,j,2)
+         ! Print the line number.
+         write (299+unitPlus,fmt="(i5)",advance="NO") curr_line
+
+         write (299+unitPlus,fmt="(2i5)",advance="NO") h, i
+         write (299+unitPlus,fmt="(3e16.8)",advance="NO") alphas(:)
+         write (299+unitPlus,fmt="(3e16.8)",advance="NO") pos(:,1)
+         write (299+unitPlus,fmt="(3e16.8)",advance="NO") pos(:,2)
+         write (299+unitPlus,fmt="(3e16.8)",advance="NO") pos(:,3)
+         write (299+unitPlus,fmt="(3e16.8)",advance="NO") deltaK(:)
+
+         ! Print the result difference for the given pc matrix.
+         do j = 1, 20
+            do k = 1, 20
+               !write (299+unitPlus,fmt="(e16.8)",advance="NO") pc(k,j,1)
+               !write (299+unitPlus,fmt="(e16.8)",advance="NO") pc(k,j,2)
+               write (299+unitPlus,fmt="(e16.8)",advance="NO") &
+                     & pc(k,j,1) - pc(k,j,2)
+            enddo
          enddo
-      enddo
 
-      ! Print the result difference for the given sh matrix.
-      do j = 1, 16
-         do k = 1, 16
-            write (299+unitPlus,fmt="(e16.8)",advance="NO") &
-                  & sh(k,j,1) - sh(k,j,2)
+         ! Print the result difference for the given sh matrix.
+         do j = 1, 16
+            do k = 1, 16
+               write (299+unitPlus,fmt="(e16.8)",advance="NO") &
+                     & sh(k,j,1) - sh(k,j,2)
+            enddo
          enddo
-      enddo
 
-      ! Write an endline to prepare for the next step.
-      write (299+unitPlus, *) ""
+         ! Write an endline to prepare for the next step.
+         write (299+unitPlus, *) ""
+
+      else
+         write (299+unitPlus,fmt="(2i5)",advance="NO") h, i
+         write (299+unitPlus,fmt="(3e16.8)",advance="NO") alphas(:)
+         write (299+unitPlus,fmt="(3e16.8)",advance="NO") pos(:,1)
+         write (299+unitPlus,fmt="(3e16.8)",advance="NO") pos(:,2)
+         write (299+unitPlus,fmt="(3e16.8)",advance="NO") pos(:,3)
+         write (299+unitPlus,fmt="(3e16.8)") deltaK(:)
+
+         ! Print the result difference for the given pc matrix.
+         do j = 1, 20
+            do k = 1, 20
+               write (299+unitPlus,fmt="(2a4)") pcName(k), pcName(j)
+               write (299+unitPlus,fmt="(e16.8)",advance="NO") pc(k,j,1)
+               write (299+unitPlus,fmt="(e16.8)",advance="NO") pc(k,j,2)
+               write (299+unitPlus,fmt="(e16.8)") &
+                     & pc(k,j,1) - pc(k,j,2)
+            enddo
+         enddo
+
+         ! Print the result difference for the given sh matrix.
+         do j = 1, 16
+            do k = 1, 16
+               write (299+unitPlus,fmt="(2a16)") shName(k), shName(j)
+               write (299+unitPlus,fmt="(e16.8)") &
+                     & sh(k,j,1) - sh(k,j,2)
+            enddo
+         enddo
+      endif
    end subroutine
 
    subroutine Koverlap2CIntgAna(a1,a2,A,B,deltaK,pc,sh)
@@ -215,8 +325,8 @@ program GaussianIntegrals
    PA(:) = P(:) - A(:)
    PB(:) = P(:) - B(:)
    d(:) = A(:) - B(:)
-   !delta_K(:) = Kf(:) - Ki(:)
-   !Solving Hermite Polynomials
+   
+   ! Solving Hermite Polynomials
    hermite_r(:) = -deltaK(:)/(2*(zeta)**0.5)
 
 
@@ -227,15 +337,22 @@ program GaussianIntegrals
    Hn(3,:) = 8.0*hermite_r(:)**3 - 12.0*hermite_r(:)
    Hn(4,:) = 16.0*hermite_r(:)**4 - 48.0*hermite_r(:)**2 + 12.0
    Hn(5,:) = 32.0*hermite_r(:)**5 - 160.0*hermite_r(:)**3 + 120.0*hermite_r(:)
-   Hn(6,:) = 64.0*hermite_r(:)**6 - 480.0*hermite_r(:)**4 + 720.0*hermite_r(:)**2 - 120.0
+   Hn(6,:) = 64.0*hermite_r(:)**6 - 480.0*hermite_r(:)**4 &
+         & + 720.0*hermite_r(:)**2 - 120.0
 
    !hermite_term(0,:) = Hn(1,:) ! Combined_l = 0
-   hermite_term(1,:) = Hn(1,:)*(((cmplx(0.0d0,1.0d0,double))/(2.0d0*((zeta)**0.5)))**1)
-   hermite_term(2,:) = Hn(2,:)*(((cmplx(0.0d0,1.0d0,double))/(2.0d0*((zeta)**0.5)))**2)
-   hermite_term(3,:) = Hn(3,:)*(((cmplx(0.0d0,1.0d0,double))/(2.0d0*((zeta)**0.5)))**3)
-   hermite_term(4,:) = Hn(4,:)*(((cmplx(0.0d0,1.0d0,double))/(2.0d0*((zeta)**0.5)))**4)
-   hermite_term(5,:) = Hn(5,:)*(((cmplx(0.0d0,1.0d0,double))/(2.0d0*((zeta)**0.5)))**5)
-   hermite_term(6,:) = Hn(6,:)*(((cmplx(0.0d0,1.0d0,double))/(2.0d0*((zeta)**0.5)))**6)
+   hermite_term(1,:) = Hn(1,:) * &
+         & (((cmplx(0.0d0,1.0d0,double))/(2.0d0*((zeta)**0.5)))**1)
+   hermite_term(2,:) = Hn(2,:) * &
+         & (((cmplx(0.0d0,1.0d0,double))/(2.0d0*((zeta)**0.5)))**2)
+   hermite_term(3,:) = Hn(3,:) * &
+         & (((cmplx(0.0d0,1.0d0,double))/(2.0d0*((zeta)**0.5)))**3)
+   hermite_term(4,:) = Hn(4,:) * &
+         & (((cmplx(0.0d0,1.0d0,double))/(2.0d0*((zeta)**0.5)))**4)
+   hermite_term(5,:) = Hn(5,:) * &
+         & (((cmplx(0.0d0,1.0d0,double))/(2.0d0*((zeta)**0.5)))**5)
+   hermite_term(6,:) = Hn(6,:) * &
+         & (((cmplx(0.0d0,1.0d0,double))/(2.0d0*((zeta)**0.5)))**6)
 
    ! This is the (s|K|s) integral
    preFactorKO(:) = ((pi/zeta)**0.5)*exp(-xi*d(:)*d(:))&
@@ -283,16 +400,16 @@ pc(16,1) = (PA(1) + hermite_term(1,1))*pc(7,1)
 pc(17,1) = (PA(2) + hermite_term(1,2))*pc(7,1)
 
 pc(18,1) = (PA(1) + hermite_term(1,1))*pc(5,1) + ((2.0*PA(1))*(hermite_term(2,&
-&1) - hermite_term(1,1)**2)                 + (hermite_term(3,1) - hermite_term&
-&(2,1)*hermite_term(1,1)))*pc(1,1)
+&1) - hermite_term(1,1)**2) + (hermite_term(3,1) - hermite_term(2,1)*hermite_te&
+&rm(1,1)))*pc(1,1)
 
 pc(19,1) = (PA(2) + hermite_term(1,2))*pc(6,1) + ((2.0*PA(2))*(hermite_term(2,&
-&2) - hermite_term(1,2)**2)                 + (hermite_term(3,2) - hermite_term&
-&(2,2)*hermite_term(1,2)))*pc(1,1)
+&2) - hermite_term(1,2)**2) + (hermite_term(3,2) - hermite_term(2,2)*hermite_te&
+&rm(1,2)))*pc(1,1)
 
 pc(20,1) = (PA(3) + hermite_term(1,3))*pc(7,1) + ((2.0*PA(3))*(hermite_term(2,&
-&3) - hermite_term(1,3)**2)                 + (hermite_term(3,3) - hermite_term&
-&(2,3)*hermite_term(1,3)))*pc(1,1)
+&3) - hermite_term(1,3)**2) + (hermite_term(3,3) - hermite_term(2,3)*hermite_te&
+&rm(1,3)))*pc(1,1)
 
 pc(1,2) = (PB(1) + hermite_term(1,1))*preFactorKO(1)*preFactorKO(2)*preFactorK&
 &O(3)
@@ -305,8 +422,8 @@ pc(3,2) = (PA(2) + hermite_term(1,2))*pc(1,2)
 pc(4,2) = (PA(3) + hermite_term(1,3))*pc(1,2)
 
 pc(5,2) = (PA(1) + hermite_term(1,1))*pc(2,2) + ((PA(1)+PB(1))*(hermite_term(2&
-&,1)                 - hermite_term(1,1)**2) + (hermite_term(3,1) - hermite_ter&
-&m(2,1)                *hermite_term(1,1)))* pc(1,1)
+&,1) - hermite_term(1,1)**2) + (hermite_term(3,1) - hermite_term(2,1)*hermite_t&
+&erm(1,1)))*pc(1,1)
 
 pc(6,2) = (PA(2) + hermite_term(1,2))*pc(3,2) + (hermite_term(2,2) - hermite_t&
 &erm(1,2)**2)*pc(1,2)
@@ -337,18 +454,17 @@ pc(16,2) = (PA(1) + hermite_term(1,1))*pc(7,2) + (hermite_term(2,1) - hermite_&
 pc(17,2) = (PA(2) + hermite_term(1,2))*pc(7,2)
 
 pc(18,2) = (PA(1) + hermite_term(1,1))*pc(5,2) + ((PA(1)**2 + 2.0*PA(1)*PB(1))&
-&*(hermite_term(2,1)                - hermite_term(1,1)**2) + (2.0*PA(1) + PB(1&
-&))*(hermite_term(3,1)                 - hermite_term(2,1)*hermite_term(1,1)) +&
-& (hermite_term(4,1)                 - hermite_term(3,1)*hermite_term(1,1)))*pc&
-&(1,1)
+&*(hermite_term(2,1) - hermite_term(1,1)**2) + (2.0*PA(1) + PB(1))*(hermite_ter&
+&m(3,1) - hermite_term(2,1)*hermite_term(1,1)) + (hermite_term(4,1) - hermite_t&
+&erm(3,1)*hermite_term(1,1)))*pc(1,1)
 
 pc(19,2) = (PA(2) + hermite_term(1,2))*pc(6,2) + ((2.0*PA(2))*(hermite_term(2,&
-&2) - hermite_term(1,2)**2)                 + (hermite_term(3,2) - hermite_term&
-&(2,2)*hermite_term(1,2)))*pc(1,2)
+&2) - hermite_term(1,2)**2) + (hermite_term(3,2) - hermite_term(2,2)*hermite_te&
+&rm(1,2)))*pc(1,2)
 
 pc(20,2) = (PA(3) + hermite_term(1,3))*pc(7,2) + ((2.0*PA(3))*(hermite_term(2,&
-&3) - hermite_term(1,3)**2)                 + (hermite_term(3,3) - hermite_term&
-&(2,3)*hermite_term(1,3)))*pc(1,2)
+&3) - hermite_term(1,3)**2) + (hermite_term(3,3) - hermite_term(2,3)*hermite_te&
+&rm(1,3)))*pc(1,2)
 
 pc(1,3) = (PB(2) + hermite_term(1,2))*preFactorKO(1)*preFactorKO(2)*preFactorK&
 &O(3)
@@ -364,8 +480,8 @@ pc(5,3) = (PA(1) + hermite_term(1,1))*pc(2,3) + (hermite_term(2,1) - hermite_t&
 &erm(1,1)**2)*pc(1,3)
 
 pc(6,3) = (PA(2) + hermite_term(1,2))*pc(3,3) + ((PA(2)+PB(2))*(hermite_term(2&
-&,2)                 - hermite_term(1,2)**2) + (hermite_term(3,2) - hermite_ter&
-&m(2,2)                *hermite_term(1,2)))* pc(1,1)
+&,2) - hermite_term(1,2)**2) + (hermite_term(3,2) - hermite_term(2,2)*hermite_t&
+&erm(1,2)))*pc(1,1)
 
 pc(7,3) = (PA(3) + hermite_term(1,3))*pc(4,3) + (hermite_term(2,3) - hermite_t&
 &erm(1,3)**2)*pc(1,3)
@@ -394,18 +510,17 @@ pc(17,3) = (PA(2) + hermite_term(1,2))*pc(7,3) + (hermite_term(2,2) - hermite_&
 &term(1,2)**2)*pc(7,1)
 
 pc(18,3) = (PA(1) + hermite_term(1,1))*pc(5,3) + ((2.0*PA(1))*(hermite_term(2,&
-&1) - hermite_term(1,1)**2)                 + (hermite_term(3,1) - hermite_term&
-&(2,1)*hermite_term(1,1)))*pc(1,3)
+&1) - hermite_term(1,1)**2) + (hermite_term(3,1) - hermite_term(2,1)*hermite_te&
+&rm(1,1)))*pc(1,3)
 
 pc(19,3) = (PA(2) + hermite_term(1,2))*pc(6,3) + ((PA(2)**2 + 2.0*PA(2)*PB(2))&
-&*(hermite_term(2,2)                - hermite_term(1,2)**2) + (2.0*PA(2) + PB(2&
-&))*(hermite_term(3,2)                 - hermite_term(2,2)*hermite_term(1,2)) +&
-& (hermite_term(4,2)                 - hermite_term(3,2)*hermite_term(1,2)))*pc&
-&(1,1)
+&*(hermite_term(2,2) - hermite_term(1,2)**2) + (2.0*PA(2) + PB(2))*(hermite_ter&
+&m(3,2) - hermite_term(2,2)*hermite_term(1,2)) + (hermite_term(4,2) - hermite_t&
+&erm(3,2)*hermite_term(1,2)))*pc(1,1)
 
 pc(20,3) = (PA(3) + hermite_term(1,3))*pc(7,3) + ((2.0*PA(3))*(hermite_term(2,&
-&3) - hermite_term(1,3)**2)                 + (hermite_term(3,3) - hermite_term&
-&(2,3)*hermite_term(1,3)))*pc(1,3)
+&3) - hermite_term(1,3)**2) + (hermite_term(3,3) - hermite_term(2,3)*hermite_te&
+&rm(1,3)))*pc(1,3)
 
 pc(1,4) = (PB(3) + hermite_term(1,3))*preFactorKO(1)*preFactorKO(2)*preFactorK&
 &O(3)
@@ -424,8 +539,8 @@ pc(6,4) = (PA(2) + hermite_term(1,2))*pc(3,4) + (hermite_term(2,2) - hermite_t&
 &erm(1,2)**2)*pc(1,4)
 
 pc(7,4) = (PA(3) + hermite_term(1,3))*pc(4,4) + ((PA(3)+PB(3))*(hermite_term(2&
-&,3)                 - hermite_term(1,3)**2) + (hermite_term(3,3) - hermite_ter&
-&m(2,3)                *hermite_term(1,3)))* pc(1,1)
+&,3) - hermite_term(1,3)**2) + (hermite_term(3,3) - hermite_term(2,3)*hermite_t&
+&erm(1,3)))*pc(1,1)
 
 pc(8,4) = (PA(2) + hermite_term(1,2))*pc(2,4)
 
@@ -453,35 +568,33 @@ pc(16,4) = (PA(1) + hermite_term(1,1))*pc(7,4)
 pc(17,4) = (PA(2) + hermite_term(1,2))*pc(7,4)
 
 pc(18,4) = (PA(1) + hermite_term(1,1))*pc(5,4) + ((2.0*PA(1))*(hermite_term(2,&
-&1) - hermite_term(1,1)**2)                 + (hermite_term(3,1) - hermite_term&
-&(2,1)*hermite_term(1,1)))*pc(1,4)
+&1) - hermite_term(1,1)**2) + (hermite_term(3,1) - hermite_term(2,1)*hermite_te&
+&rm(1,1)))*pc(1,4)
 
 pc(19,4) = (PA(2) + hermite_term(1,2))*pc(6,4) + ((2.0*PA(2))*(hermite_term(2,&
-&2) - hermite_term(1,2)**2)                 + (hermite_term(3,2) - hermite_term&
-&(2,2)*hermite_term(1,2)))*pc(1,4)
+&2) - hermite_term(1,2)**2) + (hermite_term(3,2) - hermite_term(2,2)*hermite_te&
+&rm(1,2)))*pc(1,4)
 
 pc(20,4) = (PA(3) + hermite_term(1,3))*pc(7,4) + ((PA(3)**2 + 2.0*PA(3)*PB(3))&
-&*(hermite_term(2,3)                - hermite_term(1,3)**2) + (2.0*PA(3) + PB(3&
-&))*(hermite_term(3,3)                 - hermite_term(2,3)*hermite_term(1,3)) +&
-& (hermite_term(4,3)                 - hermite_term(3,3)*hermite_term(1,3)))*pc&
-&(1,1)
+&*(hermite_term(2,3) - hermite_term(1,3)**2) + (2.0*PA(3) + PB(3))*(hermite_ter&
+&m(3,3) - hermite_term(2,3)*hermite_term(1,3)) + (hermite_term(4,3) - hermite_t&
+&erm(3,3)*hermite_term(1,3)))*pc(1,1)
 
 pc(1,5) = (PB(1) + hermite_term(1,1))*pc(1,2) + (hermite_term(2,1) - hermite_t&
 &erm(1,1)**2)*pc(1,1)
 
 pc(2,5) = (PA(1) + hermite_term(1,1))*pc(1,5) + ((2.0*PB(1))*(hermite_term(2,1&
-&) - hermite_term(1,1)**2)                 + (hermite_term(3,1) - hermite_term(&
-&2,1)*hermite_term(1,1)))*pc(1,1)
+&) - hermite_term(1,1)**2) + (hermite_term(3,1) - hermite_term(2,1)*hermite_ter&
+&m(1,1)))*pc(1,1)
 
 pc(3,5) = (PA(2) + hermite_term(1,2))*pc(1,5)
 
 pc(4,5) = (PA(3) + hermite_term(1,3))*pc(1,5)
 
 pc(5,5) = (PA(1) + hermite_term(1,1))*pc(2,5) + ((PB(1)**2 + 2.0*PA(1)*PB(1))*&
-&(hermite_term(2,1)                - hermite_term(1,1)**2) + (2.0*PB(1) + PA(1)&
-&)*(hermite_term(3,1)                 - hermite_term(2,1)*hermite_term(1,1)) + &
-&(hermite_term(4,1)                 - hermite_term(3,1)*hermite_term(1,1)))*pc(&
-&1,1)
+&(hermite_term(2,1) - hermite_term(1,1)**2) + (2.0*PB(1) + PA(1))*(hermite_term&
+&(3,1) - hermite_term(2,1)*hermite_term(1,1))+ (hermite_term(4,1)- hermite_term&
+&(3,1)*hermite_term(1,1)))*pc(1,1)
 
 pc(6,5) = (PA(2) + hermite_term(1,2))*pc(3,5) + (hermite_term(2,2) - hermite_t&
 &erm(1,2)**2)*pc(1,5)
@@ -502,31 +615,30 @@ pc(12,5) = (PA(2) + hermite_term(1,2))*pc(5,5)
 pc(13,5) = (PA(3) + hermite_term(1,3))*pc(5,5)
 
 pc(14,5) = (PA(1) + hermite_term(1,1))*pc(6,5) + ((2.0*PB(1))*(hermite_term(2,&
-&1) - hermite_term(1,1)**2)                 + (hermite_term(3,1) - hermite_term&
-&(2,1)*hermite_term(1,1)))*pc(6,1)
+&1) - hermite_term(1,1)**2) + (hermite_term(3,1) - hermite_term(2,1)*hermite_te&
+&rm(1,1)))*pc(6,1)
 
 pc(15,5) = (PA(3) + hermite_term(1,3))*pc(6,5)
 
 pc(16,5) = (PA(1) + hermite_term(1,1))*pc(7,5) + ((2.0*PB(1))*(hermite_term(2,&
-&1) - hermite_term(1,1)**2)                 + (hermite_term(3,1) - hermite_term&
-&(2,1)*hermite_term(1,1)))*pc(7,1)
+&1) - hermite_term(1,1)**2) + (hermite_term(3,1) - hermite_term(2,1)*hermite_te&
+&rm(1,1)))*pc(7,1)
 
 pc(17,5) = (PA(2) + hermite_term(1,2))*pc(7,5)
 
 pc(18,5) = (PA(1) + hermite_term(1,1))*pc(5,5) + ((2.0*PA(1)**2*PB(1) + 2.0*PA&
-&(1)*PB(1)**2)                *(hermite_term(2,1) - hermite_term(1,1)**2) + (PA&
-&(1)**2                 + PB(1)**2 + 4.0*PA(1)*PB(1))*(hermite_term(3,1)       &
-&         - hermite_term(2,1)*hermite_term(1,1)) + (2.0*PB(1) + 2.0*PA(1))     &
-&           *(hermite_term(4,1) - hermite_term(3,1)*hermite_term(1,1))         &
-&       + (hermite_term(5,1) - hermite_term(4,1)* hermite_term(1,1)))*pc(1,1)
+&(1)*PB(1)**2)*(hermite_term(2,1) - hermite_term(1,1)**2) + (PA(1)**2 + PB(1)**&
+&2 + 4.0*PA(1)*PB(1))*(hermite_term(3,1) - hermite_term(2,1)*hermite_term(1,1))&
+& + (2.0*PB(1) + 2.0*PA(1))*(hermite_term(4,1) - hermite_term(3,1)*hermite_term&
+&(1,1)) + (hermite_term(5,1) - hermite_term(4,1)*hermite_term(1,1)))*pc(1,1)
 
 pc(19,5) = (PA(2) + hermite_term(1,2))*pc(6,5) + ((2.0*PA(2))*(hermite_term(2,&
-&2) - hermite_term(1,2)**2)                 + (hermite_term(3,2) - hermite_term&
-&(2,2)*hermite_term(1,2)))*pc(1,5)
+&2) - hermite_term(1,2)**2) + (hermite_term(3,2) - hermite_term(2,2)*hermite_te&
+&rm(1,2)))*pc(1,5)
 
 pc(20,5) = (PA(3) + hermite_term(1,3))*pc(7,5) + ((2.0*PA(3))*(hermite_term(2,&
-&3) - hermite_term(1,3)**2)                 + (hermite_term(3,3) - hermite_term&
-&(2,3)*hermite_term(1,3)))*pc(1,5)
+&3) - hermite_term(1,3)**2) + (hermite_term(3,3) - hermite_term(2,3)*hermite_te&
+&rm(1,3)))*pc(1,5)
 
 pc(1,6) = (PB(2) + hermite_term(1,2))*pc(1,3) + (hermite_term(2,2) - hermite_t&
 &erm(1,2)**2)*pc(1,1)
@@ -534,8 +646,8 @@ pc(1,6) = (PB(2) + hermite_term(1,2))*pc(1,3) + (hermite_term(2,2) - hermite_t&
 pc(2,6) = (PA(1) + hermite_term(1,1))*pc(1,6)
 
 pc(3,6) = (PA(2) + hermite_term(1,2))*pc(1,6) + ((2.0*PB(2))*(hermite_term(2,2&
-&) - hermite_term(1,2)**2)                 + (hermite_term(3,2) - hermite_term(&
-&2,2)*hermite_term(1,2)))*pc(1,1)
+&) - hermite_term(1,2)**2) + (hermite_term(3,2) - hermite_term(2,2)*hermite_ter&
+&m(1,2)))*pc(1,1)
 
 pc(4,6) = (PA(3) + hermite_term(1,3))*pc(1,6)
 
@@ -543,17 +655,16 @@ pc(5,6) = (PA(1) + hermite_term(1,1))*pc(2,6) + (hermite_term(2,1) - hermite_t&
 &erm(1,1)**2)*pc(1,6)
 
 pc(6,6) = (PA(2) + hermite_term(1,2))*pc(3,6) + ((PB(2)**2 + 2.0*PA(2)*PB(2))*&
-&(hermite_term(2,2)                - hermite_term(1,2)**2) + (2.0*PB(2) + PA(2)&
-&)*(hermite_term(3,2)                 - hermite_term(2,2)*hermite_term(1,2)) + &
-&(hermite_term(4,2)                 - hermite_term(3,2)*hermite_term(1,2)))*pc(&
-&1,1)
+&(hermite_term(2,2) - hermite_term(1,2)**2) + (2.0*PB(2) + PA(2))*(hermite_term&
+&(3,2) - hermite_term(2,2)*hermite_term(1,2))+ (hermite_term(4,2)- hermite_term&
+&(3,2)*hermite_term(1,2)))*pc(1,1)
 
 pc(7,6) = (PA(3) + hermite_term(1,3))*pc(4,6) + (hermite_term(2,3) - hermite_t&
 &erm(1,3)**2)*pc(1,6)
 
 pc(8,6) = (PA(2) + hermite_term(1,2))*pc(2,6) + ((2.0*PB(2))*(hermite_term(2,2&
-&) - hermite_term(1,2)**2)                 + (hermite_term(3,2) - hermite_term(&
-&2,2)*hermite_term(1,2)))*pc(2,1)
+&) - hermite_term(1,2)**2) + (hermite_term(3,2) - hermite_term(2,2)*hermite_ter&
+&m(1,2)))*pc(2,1)
 
 pc(9,6) = (PA(3) + hermite_term(1,3))*pc(2,6)
 
@@ -562,8 +673,8 @@ pc(10,6) = (PA(3) + hermite_term(1,3))*pc(3,6)
 pc(11,6) = (PA(3) + hermite_term(1,3))*pc(8,6)
 
 pc(12,6) = (PA(2) + hermite_term(1,2))*pc(5,6) + ((2.0*PB(2))*(hermite_term(2,&
-&2) - hermite_term(1,2)**2)                 + (hermite_term(3,2) - hermite_term&
-&(2,2)*hermite_term(1,2)))*pc(5,1)
+&2) - hermite_term(1,2)**2) + (hermite_term(3,2) - hermite_term(2,2)*hermite_te&
+&rm(1,2)))*pc(5,1)
 
 pc(13,6) = (PA(3) + hermite_term(1,3))*pc(5,6)
 
@@ -574,23 +685,22 @@ pc(15,6) = (PA(3) + hermite_term(1,3))*pc(6,6)
 pc(16,6) = (PA(1) + hermite_term(1,1))*pc(7,6)
 
 pc(17,6) = (PA(2) + hermite_term(1,2))*pc(7,6) + ((2.0*PB(2))*(hermite_term(2,&
-&2) - hermite_term(1,2)**2)                 + (hermite_term(3,2) - hermite_term&
-&(2,2)*hermite_term(1,2)))*pc(7,1)
+&2) - hermite_term(1,2)**2) + (hermite_term(3,2) - hermite_term(2,2)*hermite_te&
+&rm(1,2)))*pc(7,1)
 
 pc(18,6) = (PA(1) + hermite_term(1,1))*pc(5,6) + ((2.0*PA(1))*(hermite_term(2,&
-&1) - hermite_term(1,1)**2)                 + (hermite_term(3,1) - hermite_term&
-&(2,1)*hermite_term(1,1)))*pc(1,6)
+&1) - hermite_term(1,1)**2) + (hermite_term(3,1) - hermite_term(2,1)*hermite_te&
+&rm(1,1)))*pc(1,6)
 
 pc(19,6) = (PA(2) + hermite_term(1,2))*pc(6,6) + ((2.0*PA(2)**2*PB(2) + 2.0*PA&
-&(2)*PB(2)**2)                *(hermite_term(2,2) - hermite_term(1,2)**2) + (PA&
-&(2)**2                 + PB(2)**2 + 4.0*PA(2)*PB(2))*(hermite_term(3,2)       &
-&         - hermite_term(2,2)*hermite_term(1,2)) + (2.0*PB(2) + 2.0*PA(2))     &
-&           *(hermite_term(4,2) - hermite_term(3,2)*hermite_term(1,2))         &
-&       + (hermite_term(5,2) - hermite_term(4,2)* hermite_term(1,2)))*pc(1,1)
+&(2)*PB(2)**2)*(hermite_term(2,2) - hermite_term(1,2)**2) + (PA(2)**2 + PB(2)**&
+&2 + 4.0*PA(2)*PB(2))*(hermite_term(3,2) - hermite_term(2,2)*hermite_term(1,2))&
+& + (2.0*PB(2) + 2.0*PA(2))*(hermite_term(4,2) - hermite_term(3,2)*hermite_term&
+&(1,2)) + (hermite_term(5,2) - hermite_term(4,2)*hermite_term(1,2)))*pc(1,1)
 
 pc(20,6) = (PA(3) + hermite_term(1,3))*pc(7,6) + ((2.0*PA(3))*(hermite_term(2,&
-&3) - hermite_term(1,3)**2)                 + (hermite_term(3,3) - hermite_term&
-&(2,3)*hermite_term(1,3)))*pc(1,6)
+&3) - hermite_term(1,3)**2) + (hermite_term(3,3) - hermite_term(2,3)*hermite_te&
+&rm(1,3)))*pc(1,6)
 
 pc(1,7) = (PB(3) + hermite_term(1,3))*pc(1,4) + (hermite_term(2,3) - hermite_t&
 &erm(1,3)**2)*pc(1,1)
@@ -600,8 +710,8 @@ pc(2,7) = (PA(1) + hermite_term(1,1))*pc(1,7)
 pc(3,7) = (PA(2) + hermite_term(1,2))*pc(1,7)
 
 pc(4,7) = (PA(3) + hermite_term(1,3))*pc(1,7) + ((2.0*PB(3))*(hermite_term(2,3&
-&) - hermite_term(1,3)**2)                 + (hermite_term(3,3) - hermite_term(&
-&2,3)*hermite_term(1,3)))*pc(1,1)
+&) - hermite_term(1,3)**2) + (hermite_term(3,3) - hermite_term(2,3)*hermite_ter&
+&m(1,3)))*pc(1,1)
 
 pc(5,7) = (PA(1) + hermite_term(1,1))*pc(2,7) + (hermite_term(2,1) - hermite_t&
 &erm(1,1)**2)*pc(1,7)
@@ -610,55 +720,53 @@ pc(6,7) = (PA(2) + hermite_term(1,2))*pc(3,7) + (hermite_term(2,2) - hermite_t&
 &erm(1,2)**2)*pc(1,7)
 
 pc(7,7) = (PA(3) + hermite_term(1,3))*pc(4,7) + ((PB(3)**2 + 2.0*PA(3)*PB(3))*&
-&(hermite_term(2,3)                - hermite_term(1,3)**2) + (2.0*PB(3) + PA(3)&
-&)*(hermite_term(3,3)                 - hermite_term(2,3)*hermite_term(1,3)) + &
-&(hermite_term(4,3)                 - hermite_term(3,3)*hermite_term(1,3)))*pc(&
-&1,1)
+&(hermite_term(2,3) - hermite_term(1,3)**2) + (2.0*PB(3) + PA(3))*(hermite_term&
+&(3,3) - hermite_term(2,3)*hermite_term(1,3))+ (hermite_term(4,3)- hermite_term&
+&(3,3)*hermite_term(1,3)))*pc(1,1)
 
 pc(8,7) = (PA(2) + hermite_term(1,2))*pc(2,7)
 
 pc(9,7) = (PA(3) + hermite_term(1,3))*pc(2,7) + ((2.0*PB(3))*(hermite_term(2,3&
-&) - hermite_term(1,3)**2)                 + (hermite_term(3,3) - hermite_term(&
-&2,3)*hermite_term(1,3)))*pc(2,1)
+&) - hermite_term(1,3)**2) + (hermite_term(3,3) - hermite_term(2,3)*hermite_ter&
+&m(1,3)))*pc(2,1)
 
 pc(10,7) = (PA(3) + hermite_term(1,3))*pc(3,7) + ((2.0*PB(3))*(hermite_term(2,&
-&3) - hermite_term(1,3)**2)                 + (hermite_term(3,3) - hermite_term&
-&(2,3)*hermite_term(1,3)))*pc(3,1)
+&3) - hermite_term(1,3)**2) + (hermite_term(3,3) - hermite_term(2,3)*hermite_te&
+&rm(1,3)))*pc(3,1)
 
 pc(11,7) = (PA(3) + hermite_term(1,3))*pc(8,7) + ((2.0*PB(3))*(hermite_term(2,&
-&3) - hermite_term(1,3)**2)                 + (hermite_term(3,3) - hermite_term&
-&(2,3)*hermite_term(1,3)))*pc(8,1)
+&3) - hermite_term(1,3)**2) + (hermite_term(3,3) - hermite_term(2,3)*hermite_te&
+&rm(1,3)))*pc(8,1)
 
 pc(12,7) = (PA(2) + hermite_term(1,2))*pc(5,7)
 
 pc(13,7) = (PA(3) + hermite_term(1,3))*pc(5,7) + ((2.0*PB(3))*(hermite_term(2,&
-&3) - hermite_term(1,3)**2)                 + (hermite_term(3,3) - hermite_term&
-&(2,3)*hermite_term(1,3)))*pc(5,1)
+&3) - hermite_term(1,3)**2) + (hermite_term(3,3) - hermite_term(2,3)*hermite_te&
+&rm(1,3)))*pc(5,1)
 
 pc(14,7) = (PA(1) + hermite_term(1,1))*pc(6,7)
 
 pc(15,7) = (PA(3) + hermite_term(1,3))*pc(6,7) + ((2.0*PB(3))*(hermite_term(2,&
-&3) - hermite_term(1,3)**2)                 + (hermite_term(3,3) - hermite_term&
-&(2,3)*hermite_term(1,3)))*pc(6,1)
+&3) - hermite_term(1,3)**2) + (hermite_term(3,3) - hermite_term(2,3)*hermite_te&
+&rm(1,3)))*pc(6,1)
 
 pc(16,7) = (PA(1) + hermite_term(1,1))*pc(7,7)
 
 pc(17,7) = (PA(2) + hermite_term(1,2))*pc(7,7)
 
 pc(18,7) = (PA(1) + hermite_term(1,1))*pc(5,7) + ((2.0*PA(1))*(hermite_term(2,&
-&1) - hermite_term(1,1)**2)                 + (hermite_term(3,1) - hermite_term&
-&(2,1)*hermite_term(1,1)))*pc(1,7)
+&1) - hermite_term(1,1)**2) + (hermite_term(3,1) - hermite_term(2,1)*hermite_te&
+&rm(1,1)))*pc(1,7)
 
 pc(19,7) = (PA(2) + hermite_term(1,2))*pc(6,7) + ((2.0*PA(2))*(hermite_term(2,&
-&2) - hermite_term(1,2)**2)                 + (hermite_term(3,2) - hermite_term&
-&(2,2)*hermite_term(1,2)))*pc(1,7)
+&2) - hermite_term(1,2)**2) + (hermite_term(3,2) - hermite_term(2,2)*hermite_te&
+&rm(1,2)))*pc(1,7)
 
 pc(20,7) = (PA(3) + hermite_term(1,3))*pc(7,7) + ((2.0*PA(3)**2*PB(3) + 2.0*PA&
-&(3)*PB(3)**2)                *(hermite_term(2,3) - hermite_term(1,3)**2) + (PA&
-&(3)**2                 + PB(3)**2 + 4.0*PA(3)*PB(3))*(hermite_term(3,3)       &
-&         - hermite_term(2,3)*hermite_term(1,3)) + (2.0*PB(3) + 2.0*PA(3))     &
-&           *(hermite_term(4,3) - hermite_term(3,3)*hermite_term(1,3))         &
-&       + (hermite_term(5,3) - hermite_term(4,3)* hermite_term(1,3)))*pc(1,1)
+&(3)*PB(3)**2)*(hermite_term(2,3) - hermite_term(1,3)**2) + (PA(3)**2 + PB(3)**&
+&2 + 4.0*PA(3)*PB(3))*(hermite_term(3,3) - hermite_term(2,3)*hermite_term(1,3))&
+& + (2.0*PB(3) + 2.0*PA(3))*(hermite_term(4,3) - hermite_term(3,3)*hermite_term&
+&(1,3)) + (hermite_term(5,3) - hermite_term(4,3)*hermite_term(1,3)))*pc(1,1)
 
 pc(1,8) = (PB(2) + hermite_term(1,2))*pc(1,2)
 
@@ -671,12 +779,12 @@ pc(3,8) = (PA(2) + hermite_term(1,2))*pc(1,8) + (hermite_term(2,2) - hermite_t&
 pc(4,8) = (PA(3) + hermite_term(1,3))*pc(1,8)
 
 pc(5,8) = (PA(1) + hermite_term(1,1))*pc(2,8) + ((PA(1)+PB(1))*(hermite_term(2&
-&,1)                 - hermite_term(1,1)**2) + (hermite_term(3,1) - hermite_ter&
-&m(2,1)                *hermite_term(1,1)))* pc(1,3)
+&,1) - hermite_term(1,1)**2) + (hermite_term(3,1) - hermite_term(2,1)*hermite_t&
+&erm(1,1)))*pc(1,3)
 
 pc(6,8) = (PA(2) + hermite_term(1,2))*pc(3,8) + ((PA(2)+PB(2))*(hermite_term(2&
-&,2)                 - hermite_term(1,2)**2) + (hermite_term(3,2) - hermite_ter&
-&m(2,2)                *hermite_term(1,2)))* pc(1,2)
+&,2) - hermite_term(1,2)**2) + (hermite_term(3,2) - hermite_term(2,2)*hermite_t&
+&erm(1,2)))*pc(1,2)
 
 pc(7,8) = (PA(3) + hermite_term(1,3))*pc(4,8) + (hermite_term(2,3) - hermite_t&
 &erm(1,3)**2)*pc(1,8)
@@ -707,20 +815,18 @@ pc(17,8) = (PA(2) + hermite_term(1,2))*pc(7,8) + (hermite_term(2,2) - hermite_&
 &term(1,2)**2)*pc(7,2)
 
 pc(18,8) = (PA(1) + hermite_term(1,1))*pc(5,8) + ((PA(1)**2 + 2.0*PA(1)*PB(1))&
-&*(hermite_term(2,1)                - hermite_term(1,1)**2) + (2.0*PA(1) + PB(1&
-&))*(hermite_term(3,1)                 - hermite_term(2,1)*hermite_term(1,1)) +&
-& (hermite_term(4,1)                 - hermite_term(3,1)*hermite_term(1,1)))*pc&
-&(1,3)
+&*(hermite_term(2,1) - hermite_term(1,1)**2) + (2.0*PA(1) + PB(1))*(hermite_ter&
+&m(3,1) - hermite_term(2,1)*hermite_term(1,1)) + (hermite_term(4,1) - hermite_t&
+&erm(3,1)*hermite_term(1,1)))*pc(1,3)
 
 pc(19,8) = (PA(2) + hermite_term(1,2))*pc(6,8) + ((PA(2)**2 + 2.0*PA(2)*PB(2))&
-&*(hermite_term(2,2)                - hermite_term(1,2)**2) + (2.0*PA(2) + PB(2&
-&))*(hermite_term(3,2)                 - hermite_term(2,2)*hermite_term(1,2)) +&
-& (hermite_term(4,2)                 - hermite_term(3,2)*hermite_term(1,2)))*pc&
-&(1,2)
+&*(hermite_term(2,2) - hermite_term(1,2)**2) + (2.0*PA(2) + PB(2))*(hermite_ter&
+&m(3,2) - hermite_term(2,2)*hermite_term(1,2)) + (hermite_term(4,2) - hermite_t&
+&erm(3,2)*hermite_term(1,2)))*pc(1,2)
 
 pc(20,8) = (PA(3) + hermite_term(1,3))*pc(7,8) + ((2.0*PA(3))*(hermite_term(2,&
-&3) - hermite_term(1,3)**2)                 + (hermite_term(3,3) - hermite_term&
-&(2,3)*hermite_term(1,3)))*pc(1,8)
+&3) - hermite_term(1,3)**2) + (hermite_term(3,3) - hermite_term(2,3)*hermite_te&
+&rm(1,3)))*pc(1,8)
 
 pc(1,9) = (PB(3) + hermite_term(1,3))*pc(1,2)
 
@@ -733,15 +839,15 @@ pc(4,9) = (PA(3) + hermite_term(1,3))*pc(1,9) + (hermite_term(2,3) - hermite_t&
 &erm(1,3)**2)*pc(1,2)
 
 pc(5,9) = (PA(1) + hermite_term(1,1))*pc(2,9) + ((PA(1)+PB(1))*(hermite_term(2&
-&,1)                 - hermite_term(1,1)**2) + (hermite_term(3,1) - hermite_ter&
-&m(2,1)                *hermite_term(1,1)))* pc(1,4)
+&,1) - hermite_term(1,1)**2) + (hermite_term(3,1) - hermite_term(2,1)*hermite_t&
+&erm(1,1)))*pc(1,4)
 
 pc(6,9) = (PA(2) + hermite_term(1,2))*pc(3,9) + (hermite_term(2,2) - hermite_t&
 &erm(1,2)**2)*pc(1,9)
 
 pc(7,9) = (PA(3) + hermite_term(1,3))*pc(4,9) + ((PA(3)+PB(3))*(hermite_term(2&
-&,3)                 - hermite_term(1,3)**2) + (hermite_term(3,3) - hermite_ter&
-&m(2,3)                *hermite_term(1,3)))* pc(1,2)
+&,3) - hermite_term(1,3)**2) + (hermite_term(3,3) - hermite_term(2,3)*hermite_t&
+&erm(1,3)))*pc(1,2)
 
 pc(8,9) = (PA(2) + hermite_term(1,2))*pc(2,9)
 
@@ -771,20 +877,18 @@ pc(16,9) = (PA(1) + hermite_term(1,1))*pc(7,9) + (hermite_term(2,1) - hermite_&
 pc(17,9) = (PA(2) + hermite_term(1,2))*pc(7,9)
 
 pc(18,9) = (PA(1) + hermite_term(1,1))*pc(5,9) + ((PA(1)**2 + 2.0*PA(1)*PB(1))&
-&*(hermite_term(2,1)                - hermite_term(1,1)**2) + (2.0*PA(1) + PB(1&
-&))*(hermite_term(3,1)                 - hermite_term(2,1)*hermite_term(1,1)) +&
-& (hermite_term(4,1)                 - hermite_term(3,1)*hermite_term(1,1)))*pc&
-&(1,4)
+&*(hermite_term(2,1) - hermite_term(1,1)**2) + (2.0*PA(1) + PB(1))*(hermite_ter&
+&m(3,1) - hermite_term(2,1)*hermite_term(1,1)) + (hermite_term(4,1) - hermite_t&
+&erm(3,1)*hermite_term(1,1)))*pc(1,4)
 
 pc(19,9) = (PA(2) + hermite_term(1,2))*pc(6,9) + ((2.0*PA(2))*(hermite_term(2,&
-&2) - hermite_term(1,2)**2)                 + (hermite_term(3,2) - hermite_term&
-&(2,2)*hermite_term(1,2)))*pc(1,9)
+&2) - hermite_term(1,2)**2) + (hermite_term(3,2) - hermite_term(2,2)*hermite_te&
+&rm(1,2)))*pc(1,9)
 
 pc(20,9) = (PA(3) + hermite_term(1,3))*pc(7,9) + ((PA(3)**2 + 2.0*PA(3)*PB(3))&
-&*(hermite_term(2,3)                - hermite_term(1,3)**2) + (2.0*PA(3) + PB(3&
-&))*(hermite_term(3,3)                 - hermite_term(2,3)*hermite_term(1,3)) +&
-& (hermite_term(4,3)                 - hermite_term(3,3)*hermite_term(1,3)))*pc&
-&(1,2)
+&*(hermite_term(2,3) - hermite_term(1,3)**2) + (2.0*PA(3) + PB(3))*(hermite_ter&
+&m(3,3) - hermite_term(2,3)*hermite_term(1,3)) + (hermite_term(4,3) - hermite_t&
+&erm(3,3)*hermite_term(1,3)))*pc(1,2)
 
 pc(1,10) = (PB(3) + hermite_term(1,3))*pc(1,3)
 
@@ -800,12 +904,12 @@ pc(5,10) = (PA(1) + hermite_term(1,1))*pc(2,10) + (hermite_term(2,1) - hermite&
 &_term(1,1)**2)*pc(1,10)
 
 pc(6,10) = (PA(2) + hermite_term(1,2))*pc(3,10) + ((PA(2)+PB(2))*(hermite_term&
-&(2,2)                 - hermite_term(1,2)**2) + (hermite_term(3,2) - hermite_t&
-&erm(2,2)                *hermite_term(1,2)))* pc(1,4)
+&(2,2) - hermite_term(1,2)**2) + (hermite_term(3,2) - hermite_term(2,2)*hermite&
+&_term(1,2)))*pc(1,4)
 
 pc(7,10) = (PA(3) + hermite_term(1,3))*pc(4,10) + ((PA(3)+PB(3))*(hermite_term&
-&(2,3)                 - hermite_term(1,3)**2) + (hermite_term(3,3) - hermite_t&
-&erm(2,3)                *hermite_term(1,3)))* pc(1,3)
+&(2,3) - hermite_term(1,3)**2) + (hermite_term(3,3) - hermite_term(2,3)*hermite&
+&_term(1,3)))*pc(1,3)
 
 pc(8,10) = (PA(2) + hermite_term(1,2))*pc(2,10) + (hermite_term(2,2) - hermite&
 &_term(1,2)**2)*pc(2,4)
@@ -836,20 +940,18 @@ pc(17,10) = (PA(2) + hermite_term(1,2))*pc(7,10) + (hermite_term(2,2) - hermit&
 &e_term(1,2)**2)*pc(7,4)
 
 pc(18,10) = (PA(1) + hermite_term(1,1))*pc(5,10) + ((2.0*PA(1))*(hermite_term(&
-&2,1) - hermite_term(1,1)**2)                 + (hermite_term(3,1) - hermite_te&
-&rm(2,1)*hermite_term(1,1)))*pc(1,10)
+&2,1) - hermite_term(1,1)**2) + (hermite_term(3,1) - hermite_term(2,1)*hermite_&
+&term(1,1)))*pc(1,10)
 
 pc(19,10) = (PA(2) + hermite_term(1,2))*pc(6,10) + ((PA(2)**2 + 2.0*PA(2)*PB(2&
-&))*(hermite_term(2,2)                - hermite_term(1,2)**2) + (2.0*PA(2) + PB&
-&(2))*(hermite_term(3,2)                 - hermite_term(2,2)*hermite_term(1,2))&
-& + (hermite_term(4,2)                 - hermite_term(3,2)*hermite_term(1,2)))*&
-&pc(1,4)
+&))*(hermite_term(2,2) - hermite_term(1,2)**2) + (2.0*PA(2) + PB(2))*(hermite_t&
+&erm(3,2) - hermite_term(2,2)*hermite_term(1,2)) + (hermite_term(4,2) - hermite&
+&_term(3,2)*hermite_term(1,2)))*pc(1,4)
 
 pc(20,10) = (PA(3) + hermite_term(1,3))*pc(7,10) + ((PA(3)**2 + 2.0*PA(3)*PB(3&
-&))*(hermite_term(2,3)                - hermite_term(1,3)**2) + (2.0*PA(3) + PB&
-&(3))*(hermite_term(3,3)                 - hermite_term(2,3)*hermite_term(1,3))&
-& + (hermite_term(4,3)                 - hermite_term(3,3)*hermite_term(1,3)))*&
-&pc(1,3)
+&))*(hermite_term(2,3) - hermite_term(1,3)**2) + (2.0*PA(3) + PB(3))*(hermite_t&
+&erm(3,3) - hermite_term(2,3)*hermite_term(1,3)) + (hermite_term(4,3) - hermite&
+&_term(3,3)*hermite_term(1,3)))*pc(1,3)
 
 pc(1,11) = (PB(3) + hermite_term(1,3))*pc(1,8)
 
@@ -863,16 +965,16 @@ pc(4,11) = (PA(3) + hermite_term(1,3))*pc(1,11) + (hermite_term(2,3) - hermite&
 &_term(1,3)**2)*pc(1,8)
 
 pc(5,11) = (PA(1) + hermite_term(1,1))*pc(2,11) + ((PA(1)+PB(1))*(hermite_term&
-&(2,1)                 - hermite_term(1,1)**2) + (hermite_term(3,1) - hermite_t&
-&erm(2,1)                *hermite_term(1,1)))* pc(1,10)
+&(2,1) - hermite_term(1,1)**2) + (hermite_term(3,1) - hermite_term(2,1)*hermite&
+&_term(1,1)))*pc(1,10)
 
 pc(6,11) = (PA(2) + hermite_term(1,2))*pc(3,11) + ((PA(2)+PB(2))*(hermite_term&
-&(2,2)                 - hermite_term(1,2)**2) + (hermite_term(3,2) - hermite_t&
-&erm(2,2)                *hermite_term(1,2)))* pc(1,9)
+&(2,2) - hermite_term(1,2)**2) + (hermite_term(3,2) - hermite_term(2,2)*hermite&
+&_term(1,2)))*pc(1,9)
 
 pc(7,11) = (PA(3) + hermite_term(1,3))*pc(4,11) + ((PA(3)+PB(3))*(hermite_term&
-&(2,3)                 - hermite_term(1,3)**2) + (hermite_term(3,3) - hermite_t&
-&erm(2,3)                *hermite_term(1,3)))* pc(1,8)
+&(2,3) - hermite_term(1,3)**2) + (hermite_term(3,3) - hermite_term(2,3)*hermite&
+&_term(1,3)))*pc(1,8)
 
 pc(8,11) = (PA(2) + hermite_term(1,2))*pc(2,11) + (hermite_term(2,2) - hermite&
 &_term(1,2)**2)*pc(2,9)
@@ -905,28 +1007,25 @@ pc(17,11) = (PA(2) + hermite_term(1,2))*pc(7,11) + (hermite_term(2,2) - hermit&
 &e_term(1,2)**2)*pc(7,9)
 
 pc(18,11) = (PA(1) + hermite_term(1,1))*pc(5,11) + ((PA(1)**2 + 2.0*PA(1)*PB(1&
-&))*(hermite_term(2,1)                - hermite_term(1,1)**2) + (2.0*PA(1) + PB&
-&(1))*(hermite_term(3,1)                 - hermite_term(2,1)*hermite_term(1,1))&
-& + (hermite_term(4,1)                 - hermite_term(3,1)*hermite_term(1,1)))*&
-&pc(1,10)
+&))*(hermite_term(2,1) - hermite_term(1,1)**2) + (2.0*PA(1) + PB(1))*(hermite_t&
+&erm(3,1) - hermite_term(2,1)*hermite_term(1,1)) + (hermite_term(4,1) - hermite&
+&_term(3,1)*hermite_term(1,1)))*pc(1,10)
 
 pc(19,11) = (PA(2) + hermite_term(1,2))*pc(6,11) + ((PA(2)**2 + 2.0*PA(2)*PB(2&
-&))*(hermite_term(2,2)                - hermite_term(1,2)**2) + (2.0*PA(2) + PB&
-&(2))*(hermite_term(3,2)                 - hermite_term(2,2)*hermite_term(1,2))&
-& + (hermite_term(4,2)                 - hermite_term(3,2)*hermite_term(1,2)))*&
-&pc(1,9)
+&))*(hermite_term(2,2) - hermite_term(1,2)**2) + (2.0*PA(2) + PB(2))*(hermite_t&
+&erm(3,2) - hermite_term(2,2)*hermite_term(1,2)) + (hermite_term(4,2) - hermite&
+&_term(3,2)*hermite_term(1,2)))*pc(1,9)
 
 pc(20,11) = (PA(3) + hermite_term(1,3))*pc(7,11) + ((PA(3)**2 + 2.0*PA(3)*PB(3&
-&))*(hermite_term(2,3)                - hermite_term(1,3)**2) + (2.0*PA(3) + PB&
-&(3))*(hermite_term(3,3)                 - hermite_term(2,3)*hermite_term(1,3))&
-& + (hermite_term(4,3)                 - hermite_term(3,3)*hermite_term(1,3)))*&
-&pc(1,8)
+&))*(hermite_term(2,3) - hermite_term(1,3)**2) + (2.0*PA(3) + PB(3))*(hermite_t&
+&erm(3,3) - hermite_term(2,3)*hermite_term(1,3)) + (hermite_term(4,3) - hermite&
+&_term(3,3)*hermite_term(1,3)))*pc(1,8)
 
 pc(1,12) = (PB(2) + hermite_term(1,2))*pc(1,5)
 
 pc(2,12) = (PA(1) + hermite_term(1,1))*pc(1,12) + ((2.0*PB(1))*(hermite_term(2&
-&,1) - hermite_term(1,1)**2)                 + (hermite_term(3,1) - hermite_ter&
-&m(2,1)*hermite_term(1,1)))*pc(1,3)
+&,1) - hermite_term(1,1)**2) + (hermite_term(3,1) - hermite_term(2,1)*hermite_t&
+&erm(1,1)))*pc(1,3)
 
 pc(3,12) = (PA(2) + hermite_term(1,2))*pc(1,12) + (hermite_term(2,2) - hermite&
 &_term(1,2)**2)*pc(1,5)
@@ -934,14 +1033,13 @@ pc(3,12) = (PA(2) + hermite_term(1,2))*pc(1,12) + (hermite_term(2,2) - hermite&
 pc(4,12) = (PA(3) + hermite_term(1,3))*pc(1,12)
 
 pc(5,12) = (PA(1) + hermite_term(1,1))*pc(2,12) + ((PB(1)**2 + 2.0*PA(1)*PB(1)&
-&)*(hermite_term(2,1)                - hermite_term(1,1)**2) + (2.0*PB(1) + PA(&
-&1))*(hermite_term(3,1)                 - hermite_term(2,1)*hermite_term(1,1)) &
-&+ (hermite_term(4,1)                 - hermite_term(3,1)*hermite_term(1,1)))*p&
-&c(1,3)
+&)*(hermite_term(2,1) - hermite_term(1,1)**2) + (2.0*PB(1) + PA(1))*(hermite_te&
+&rm(3,1) - hermite_term(2,1)*hermite_term(1,1))+ (hermite_term(4,1)- hermite_te&
+&rm(3,1)*hermite_term(1,1)))*pc(1,3)
 
 pc(6,12) = (PA(2) + hermite_term(1,2))*pc(3,12) + ((PA(2)+PB(2))*(hermite_term&
-&(2,2)                 - hermite_term(1,2)**2) + (hermite_term(3,2) - hermite_t&
-&erm(2,2)                *hermite_term(1,2)))* pc(1,5)
+&(2,2) - hermite_term(1,2)**2) + (hermite_term(3,2) - hermite_term(2,2)*hermite&
+&_term(1,2)))*pc(1,5)
 
 pc(7,12) = (PA(3) + hermite_term(1,3))*pc(4,12) + (hermite_term(2,3) - hermite&
 &_term(1,3)**2)*pc(1,12)
@@ -961,40 +1059,38 @@ pc(12,12) = (PA(2) + hermite_term(1,2))*pc(5,12) + (hermite_term(2,2) - hermit&
 pc(13,12) = (PA(3) + hermite_term(1,3))*pc(5,12)
 
 pc(14,12) = (PA(1) + hermite_term(1,1))*pc(6,12) + ((2.0*PB(1))*(hermite_term(&
-&2,1) - hermite_term(1,1)**2)                 + (hermite_term(3,1) - hermite_te&
-&rm(2,1)*hermite_term(1,1)))*pc(6,3)
+&2,1) - hermite_term(1,1)**2) + (hermite_term(3,1) - hermite_term(2,1)*hermite_&
+&term(1,1)))*pc(6,3)
 
 pc(15,12) = (PA(3) + hermite_term(1,3))*pc(6,12)
 
 pc(16,12) = (PA(1) + hermite_term(1,1))*pc(7,12) + ((2.0*PB(1))*(hermite_term(&
-&2,1) - hermite_term(1,1)**2)                 + (hermite_term(3,1) - hermite_te&
-&rm(2,1)*hermite_term(1,1)))*pc(7,3)
+&2,1) - hermite_term(1,1)**2) + (hermite_term(3,1) - hermite_term(2,1)*hermite_&
+&term(1,1)))*pc(7,3)
 
 pc(17,12) = (PA(2) + hermite_term(1,2))*pc(7,12) + (hermite_term(2,2) - hermit&
 &e_term(1,2)**2)*pc(7,5)
 
 pc(18,12) = (PA(1) + hermite_term(1,1))*pc(5,12) + ((2.0*PA(1)**2*PB(1) + 2.0*&
-&PA(1)*PB(1)**2)                *(hermite_term(2,1) - hermite_term(1,1)**2) + (&
-&PA(1)**2                 + PB(1)**2 + 4.0*PA(1)*PB(1))*(hermite_term(3,1)     &
-&           - hermite_term(2,1)*hermite_term(1,1)) + (2.0*PB(1) + 2.0*PA(1))   &
-&             *(hermite_term(4,1) - hermite_term(3,1)*hermite_term(1,1))       &
-&         + (hermite_term(5,1) - hermite_term(4,1)* hermite_term(1,1)))*pc(1,3)
+&PA(1)*PB(1)**2)*(hermite_term(2,1) - hermite_term(1,1)**2) + (PA(1)**2 + PB(1)&
+&**2 + 4.0*PA(1)*PB(1))*(hermite_term(3,1) - hermite_term(2,1)*hermite_term(1,1&
+&)) + (2.0*PB(1) + 2.0*PA(1))*(hermite_term(4,1) - hermite_term(3,1)*hermite_te&
+&rm(1,1)) + (hermite_term(5,1) - hermite_term(4,1)*hermite_term(1,1)))*pc(1,3)
 
 pc(19,12) = (PA(2) + hermite_term(1,2))*pc(6,12) + ((PA(2)**2 + 2.0*PA(2)*PB(2&
-&))*(hermite_term(2,2)                - hermite_term(1,2)**2) + (2.0*PA(2) + PB&
-&(2))*(hermite_term(3,2)                 - hermite_term(2,2)*hermite_term(1,2))&
-& + (hermite_term(4,2)                 - hermite_term(3,2)*hermite_term(1,2)))*&
-&pc(1,5)
+&))*(hermite_term(2,2) - hermite_term(1,2)**2) + (2.0*PA(2) + PB(2))*(hermite_t&
+&erm(3,2) - hermite_term(2,2)*hermite_term(1,2)) + (hermite_term(4,2) - hermite&
+&_term(3,2)*hermite_term(1,2)))*pc(1,5)
 
 pc(20,12) = (PA(3) + hermite_term(1,3))*pc(7,12) + ((2.0*PA(3))*(hermite_term(&
-&2,3) - hermite_term(1,3)**2)                 + (hermite_term(3,3) - hermite_te&
-&rm(2,3)*hermite_term(1,3)))*pc(1,12)
+&2,3) - hermite_term(1,3)**2) + (hermite_term(3,3) - hermite_term(2,3)*hermite_&
+&term(1,3)))*pc(1,12)
 
 pc(1,13) = (PB(3) + hermite_term(1,3))*pc(1,5)
 
 pc(2,13) = (PA(1) + hermite_term(1,1))*pc(1,13) + ((2.0*PB(1))*(hermite_term(2&
-&,1) - hermite_term(1,1)**2)                 + (hermite_term(3,1) - hermite_ter&
-&m(2,1)*hermite_term(1,1)))*pc(1,4)
+&,1) - hermite_term(1,1)**2) + (hermite_term(3,1) - hermite_term(2,1)*hermite_t&
+&erm(1,1)))*pc(1,4)
 
 pc(3,13) = (PA(2) + hermite_term(1,2))*pc(1,13)
 
@@ -1002,17 +1098,16 @@ pc(4,13) = (PA(3) + hermite_term(1,3))*pc(1,13) + (hermite_term(2,3) - hermite&
 &_term(1,3)**2)*pc(1,5)
 
 pc(5,13) = (PA(1) + hermite_term(1,1))*pc(2,13) + ((PB(1)**2 + 2.0*PA(1)*PB(1)&
-&)*(hermite_term(2,1)                - hermite_term(1,1)**2) + (2.0*PB(1) + PA(&
-&1))*(hermite_term(3,1)                 - hermite_term(2,1)*hermite_term(1,1)) &
-&+ (hermite_term(4,1)                 - hermite_term(3,1)*hermite_term(1,1)))*p&
-&c(1,4)
+&)*(hermite_term(2,1) - hermite_term(1,1)**2) + (2.0*PB(1) + PA(1))*(hermite_te&
+&rm(3,1) - hermite_term(2,1)*hermite_term(1,1))+ (hermite_term(4,1)- hermite_te&
+&rm(3,1)*hermite_term(1,1)))*pc(1,4)
 
 pc(6,13) = (PA(2) + hermite_term(1,2))*pc(3,13) + (hermite_term(2,2) - hermite&
 &_term(1,2)**2)*pc(1,13)
 
 pc(7,13) = (PA(3) + hermite_term(1,3))*pc(4,13) + ((PA(3)+PB(3))*(hermite_term&
-&(2,3)                 - hermite_term(1,3)**2) + (hermite_term(3,3) - hermite_t&
-&erm(2,3)                *hermite_term(1,3)))* pc(1,5)
+&(2,3) - hermite_term(1,3)**2) + (hermite_term(3,3) - hermite_term(2,3)*hermite&
+&_term(1,3)))*pc(1,5)
 
 pc(8,13) = (PA(2) + hermite_term(1,2))*pc(2,13)
 
@@ -1031,34 +1126,32 @@ pc(13,13) = (PA(3) + hermite_term(1,3))*pc(5,13) + (hermite_term(2,3) - hermit&
 &e_term(1,3)**2)*pc(5,5)
 
 pc(14,13) = (PA(1) + hermite_term(1,1))*pc(6,13) + ((2.0*PB(1))*(hermite_term(&
-&2,1) - hermite_term(1,1)**2)                 + (hermite_term(3,1) - hermite_te&
-&rm(2,1)*hermite_term(1,1)))*pc(6,4)
+&2,1) - hermite_term(1,1)**2) + (hermite_term(3,1) - hermite_term(2,1)*hermite_&
+&term(1,1)))*pc(6,4)
 
 pc(15,13) = (PA(3) + hermite_term(1,3))*pc(6,13) + (hermite_term(2,3) - hermit&
 &e_term(1,3)**2)*pc(6,5)
 
 pc(16,13) = (PA(1) + hermite_term(1,1))*pc(7,13) + ((2.0*PB(1))*(hermite_term(&
-&2,1) - hermite_term(1,1)**2)                 + (hermite_term(3,1) - hermite_te&
-&rm(2,1)*hermite_term(1,1)))*pc(7,4)
+&2,1) - hermite_term(1,1)**2) + (hermite_term(3,1) - hermite_term(2,1)*hermite_&
+&term(1,1)))*pc(7,4)
 
 pc(17,13) = (PA(2) + hermite_term(1,2))*pc(7,13)
 
 pc(18,13) = (PA(1) + hermite_term(1,1))*pc(5,13) + ((2.0*PA(1)**2*PB(1) + 2.0*&
-&PA(1)*PB(1)**2)                *(hermite_term(2,1) - hermite_term(1,1)**2) + (&
-&PA(1)**2                 + PB(1)**2 + 4.0*PA(1)*PB(1))*(hermite_term(3,1)     &
-&           - hermite_term(2,1)*hermite_term(1,1)) + (2.0*PB(1) + 2.0*PA(1))   &
-&             *(hermite_term(4,1) - hermite_term(3,1)*hermite_term(1,1))       &
-&         + (hermite_term(5,1) - hermite_term(4,1)* hermite_term(1,1)))*pc(1,4)
+&PA(1)*PB(1)**2)*(hermite_term(2,1) - hermite_term(1,1)**2) + (PA(1)**2 + PB(1)&
+&**2 + 4.0*PA(1)*PB(1))*(hermite_term(3,1) - hermite_term(2,1)*hermite_term(1,1&
+&)) + (2.0*PB(1) + 2.0*PA(1))*(hermite_term(4,1) - hermite_term(3,1)*hermite_te&
+&rm(1,1)) + (hermite_term(5,1) - hermite_term(4,1)*hermite_term(1,1)))*pc(1,4)
 
 pc(19,13) = (PA(2) + hermite_term(1,2))*pc(6,13) + ((2.0*PA(2))*(hermite_term(&
-&2,2) - hermite_term(1,2)**2)                 + (hermite_term(3,2) - hermite_te&
-&rm(2,2)*hermite_term(1,2)))*pc(1,13)
+&2,2) - hermite_term(1,2)**2) + (hermite_term(3,2) - hermite_term(2,2)*hermite_&
+&term(1,2)))*pc(1,13)
 
 pc(20,13) = (PA(3) + hermite_term(1,3))*pc(7,13) + ((PA(3)**2 + 2.0*PA(3)*PB(3&
-&))*(hermite_term(2,3)                - hermite_term(1,3)**2) + (2.0*PA(3) + PB&
-&(3))*(hermite_term(3,3)                 - hermite_term(2,3)*hermite_term(1,3))&
-& + (hermite_term(4,3)                 - hermite_term(3,3)*hermite_term(1,3)))*&
-&pc(1,5)
+&))*(hermite_term(2,3) - hermite_term(1,3)**2) + (2.0*PA(3) + PB(3))*(hermite_t&
+&erm(3,3) - hermite_term(2,3)*hermite_term(1,3)) + (hermite_term(4,3) - hermite&
+&_term(3,3)*hermite_term(1,3)))*pc(1,5)
 
 pc(1,14) = (PB(1) + hermite_term(1,1))*pc(1,6)
 
@@ -1066,27 +1159,26 @@ pc(2,14) = (PA(1) + hermite_term(1,1))*pc(1,14) + (hermite_term(2,1) - hermite&
 &_term(1,1)**2)*pc(1,6)
 
 pc(3,14) = (PA(2) + hermite_term(1,2))*pc(1,14) + ((2.0*PB(2))*(hermite_term(2&
-&,2) - hermite_term(1,2)**2)                 + (hermite_term(3,2) - hermite_ter&
-&m(2,2)*hermite_term(1,2)))*pc(1,2)
+&,2) - hermite_term(1,2)**2) + (hermite_term(3,2) - hermite_term(2,2)*hermite_t&
+&erm(1,2)))*pc(1,2)
 
 pc(4,14) = (PA(3) + hermite_term(1,3))*pc(1,14)
 
 pc(5,14) = (PA(1) + hermite_term(1,1))*pc(2,14) + ((PA(1)+PB(1))*(hermite_term&
-&(2,1)                 - hermite_term(1,1)**2) + (hermite_term(3,1) - hermite_t&
-&erm(2,1)                *hermite_term(1,1)))* pc(1,6)
+&(2,1) - hermite_term(1,1)**2) + (hermite_term(3,1) - hermite_term(2,1)*hermite&
+&_term(1,1)))*pc(1,6)
 
 pc(6,14) = (PA(2) + hermite_term(1,2))*pc(3,14) + ((PB(2)**2 + 2.0*PA(2)*PB(2)&
-&)*(hermite_term(2,2)                - hermite_term(1,2)**2) + (2.0*PB(2) + PA(&
-&2))*(hermite_term(3,2)                 - hermite_term(2,2)*hermite_term(1,2)) &
-&+ (hermite_term(4,2)                 - hermite_term(3,2)*hermite_term(1,2)))*p&
-&c(1,2)
+&)*(hermite_term(2,2) - hermite_term(1,2)**2) + (2.0*PB(2) + PA(2))*(hermite_te&
+&rm(3,2) - hermite_term(2,2)*hermite_term(1,2))+ (hermite_term(4,2)- hermite_te&
+&rm(3,2)*hermite_term(1,2)))*pc(1,2)
 
 pc(7,14) = (PA(3) + hermite_term(1,3))*pc(4,14) + (hermite_term(2,3) - hermite&
 &_term(1,3)**2)*pc(1,14)
 
 pc(8,14) = (PA(2) + hermite_term(1,2))*pc(2,14) + ((2.0*PB(2))*(hermite_term(2&
-&,2) - hermite_term(1,2)**2)                 + (hermite_term(3,2) - hermite_ter&
-&m(2,2)*hermite_term(1,2)))*pc(2,2)
+&,2) - hermite_term(1,2)**2) + (hermite_term(3,2) - hermite_term(2,2)*hermite_t&
+&erm(1,2)))*pc(2,2)
 
 pc(9,14) = (PA(3) + hermite_term(1,3))*pc(2,14)
 
@@ -1095,8 +1187,8 @@ pc(10,14) = (PA(3) + hermite_term(1,3))*pc(3,14)
 pc(11,14) = (PA(3) + hermite_term(1,3))*pc(8,14)
 
 pc(12,14) = (PA(2) + hermite_term(1,2))*pc(5,14) + ((2.0*PB(2))*(hermite_term(&
-&2,2) - hermite_term(1,2)**2)                 + (hermite_term(3,2) - hermite_te&
-&rm(2,2)*hermite_term(1,2)))*pc(5,2)
+&2,2) - hermite_term(1,2)**2) + (hermite_term(3,2) - hermite_term(2,2)*hermite_&
+&term(1,2)))*pc(5,2)
 
 pc(13,14) = (PA(3) + hermite_term(1,3))*pc(5,14)
 
@@ -1109,33 +1201,31 @@ pc(16,14) = (PA(1) + hermite_term(1,1))*pc(7,14) + (hermite_term(2,1) - hermit&
 &e_term(1,1)**2)*pc(7,6)
 
 pc(17,14) = (PA(2) + hermite_term(1,2))*pc(7,14) + ((2.0*PB(2))*(hermite_term(&
-&2,2) - hermite_term(1,2)**2)                 + (hermite_term(3,2) - hermite_te&
-&rm(2,2)*hermite_term(1,2)))*pc(7,2)
+&2,2) - hermite_term(1,2)**2) + (hermite_term(3,2) - hermite_term(2,2)*hermite_&
+&term(1,2)))*pc(7,2)
 
 pc(18,14) = (PA(1) + hermite_term(1,1))*pc(5,14) + ((PA(1)**2 + 2.0*PA(1)*PB(1&
-&))*(hermite_term(2,1)                - hermite_term(1,1)**2) + (2.0*PA(1) + PB&
-&(1))*(hermite_term(3,1)                 - hermite_term(2,1)*hermite_term(1,1))&
-& + (hermite_term(4,1)                 - hermite_term(3,1)*hermite_term(1,1)))*&
-&pc(1,6)
+&))*(hermite_term(2,1) - hermite_term(1,1)**2) + (2.0*PA(1) + PB(1))*(hermite_t&
+&erm(3,1) - hermite_term(2,1)*hermite_term(1,1)) + (hermite_term(4,1) - hermite&
+&_term(3,1)*hermite_term(1,1)))*pc(1,6)
 
 pc(19,14) = (PA(2) + hermite_term(1,2))*pc(6,14) + ((2.0*PA(2)**2*PB(2) + 2.0*&
-&PA(2)*PB(2)**2)                *(hermite_term(2,2) - hermite_term(1,2)**2) + (&
-&PA(2)**2                 + PB(2)**2 + 4.0*PA(2)*PB(2))*(hermite_term(3,2)     &
-&           - hermite_term(2,2)*hermite_term(1,2)) + (2.0*PB(2) + 2.0*PA(2))   &
-&             *(hermite_term(4,2) - hermite_term(3,2)*hermite_term(1,2))       &
-&         + (hermite_term(5,2) - hermite_term(4,2)* hermite_term(1,2)))*pc(1,2)
+&PA(2)*PB(2)**2)*(hermite_term(2,2) - hermite_term(1,2)**2) + (PA(2)**2 + PB(2)&
+&**2 + 4.0*PA(2)*PB(2))*(hermite_term(3,2) - hermite_term(2,2)*hermite_term(1,2&
+&)) + (2.0*PB(2) + 2.0*PA(2))*(hermite_term(4,2) - hermite_term(3,2)*hermite_te&
+&rm(1,2)) + (hermite_term(5,2) - hermite_term(4,2)*hermite_term(1,2)))*pc(1,2)
 
 pc(20,14) = (PA(3) + hermite_term(1,3))*pc(7,14) + ((2.0*PA(3))*(hermite_term(&
-&2,3) - hermite_term(1,3)**2)                 + (hermite_term(3,3) - hermite_te&
-&rm(2,3)*hermite_term(1,3)))*pc(1,14)
+&2,3) - hermite_term(1,3)**2) + (hermite_term(3,3) - hermite_term(2,3)*hermite_&
+&term(1,3)))*pc(1,14)
 
 pc(1,15) = (PB(3) + hermite_term(1,3))*pc(1,6)
 
 pc(2,15) = (PA(1) + hermite_term(1,1))*pc(1,15)
 
 pc(3,15) = (PA(2) + hermite_term(1,2))*pc(1,15) + ((2.0*PB(2))*(hermite_term(2&
-&,2) - hermite_term(1,2)**2)                 + (hermite_term(3,2) - hermite_ter&
-&m(2,2)*hermite_term(1,2)))*pc(1,4)
+&,2) - hermite_term(1,2)**2) + (hermite_term(3,2) - hermite_term(2,2)*hermite_t&
+&erm(1,2)))*pc(1,4)
 
 pc(4,15) = (PA(3) + hermite_term(1,3))*pc(1,15) + (hermite_term(2,3) - hermite&
 &_term(1,3)**2)*pc(1,6)
@@ -1144,18 +1234,17 @@ pc(5,15) = (PA(1) + hermite_term(1,1))*pc(2,15) + (hermite_term(2,1) - hermite&
 &_term(1,1)**2)*pc(1,15)
 
 pc(6,15) = (PA(2) + hermite_term(1,2))*pc(3,15) + ((PB(2)**2 + 2.0*PA(2)*PB(2)&
-&)*(hermite_term(2,2)                - hermite_term(1,2)**2) + (2.0*PB(2) + PA(&
-&2))*(hermite_term(3,2)                 - hermite_term(2,2)*hermite_term(1,2)) &
-&+ (hermite_term(4,2)                 - hermite_term(3,2)*hermite_term(1,2)))*p&
-&c(1,4)
+&)*(hermite_term(2,2) - hermite_term(1,2)**2) + (2.0*PB(2) + PA(2))*(hermite_te&
+&rm(3,2) - hermite_term(2,2)*hermite_term(1,2))+ (hermite_term(4,2)- hermite_te&
+&rm(3,2)*hermite_term(1,2)))*pc(1,4)
 
 pc(7,15) = (PA(3) + hermite_term(1,3))*pc(4,15) + ((PA(3)+PB(3))*(hermite_term&
-&(2,3)                 - hermite_term(1,3)**2) + (hermite_term(3,3) - hermite_t&
-&erm(2,3)                *hermite_term(1,3)))* pc(1,6)
+&(2,3) - hermite_term(1,3)**2) + (hermite_term(3,3) - hermite_term(2,3)*hermite&
+&_term(1,3)))*pc(1,6)
 
 pc(8,15) = (PA(2) + hermite_term(1,2))*pc(2,15) + ((2.0*PB(2))*(hermite_term(2&
-&,2) - hermite_term(1,2)**2)                 + (hermite_term(3,2) - hermite_ter&
-&m(2,2)*hermite_term(1,2)))*pc(2,4)
+&,2) - hermite_term(1,2)**2) + (hermite_term(3,2) - hermite_term(2,2)*hermite_t&
+&erm(1,2)))*pc(2,4)
 
 pc(9,15) = (PA(3) + hermite_term(1,3))*pc(2,15) + (hermite_term(2,3) - hermite&
 &_term(1,3)**2)*pc(2,6)
@@ -1167,8 +1256,8 @@ pc(11,15) = (PA(3) + hermite_term(1,3))*pc(8,15) + (hermite_term(2,3) - hermit&
 &e_term(1,3)**2)*pc(8,6)
 
 pc(12,15) = (PA(2) + hermite_term(1,2))*pc(5,15) + ((2.0*PB(2))*(hermite_term(&
-&2,2) - hermite_term(1,2)**2)                 + (hermite_term(3,2) - hermite_te&
-&rm(2,2)*hermite_term(1,2)))*pc(5,4)
+&2,2) - hermite_term(1,2)**2) + (hermite_term(3,2) - hermite_term(2,2)*hermite_&
+&term(1,2)))*pc(5,4)
 
 pc(13,15) = (PA(3) + hermite_term(1,3))*pc(5,15) + (hermite_term(2,3) - hermit&
 &e_term(1,3)**2)*pc(5,6)
@@ -1181,25 +1270,23 @@ pc(15,15) = (PA(3) + hermite_term(1,3))*pc(6,15) + (hermite_term(2,3) - hermit&
 pc(16,15) = (PA(1) + hermite_term(1,1))*pc(7,15)
 
 pc(17,15) = (PA(2) + hermite_term(1,2))*pc(7,15) + ((2.0*PB(2))*(hermite_term(&
-&2,2) - hermite_term(1,2)**2)                 + (hermite_term(3,2) - hermite_te&
-&rm(2,2)*hermite_term(1,2)))*pc(7,4)
+&2,2) - hermite_term(1,2)**2) + (hermite_term(3,2) - hermite_term(2,2)*hermite_&
+&term(1,2)))*pc(7,4)
 
 pc(18,15) = (PA(1) + hermite_term(1,1))*pc(5,15) + ((2.0*PA(1))*(hermite_term(&
-&2,1) - hermite_term(1,1)**2)                 + (hermite_term(3,1) - hermite_te&
-&rm(2,1)*hermite_term(1,1)))*pc(1,15)
+&2,1) - hermite_term(1,1)**2) + (hermite_term(3,1) - hermite_term(2,1)*hermite_&
+&term(1,1)))*pc(1,15)
 
 pc(19,15) = (PA(2) + hermite_term(1,2))*pc(6,15) + ((2.0*PA(2)**2*PB(2) + 2.0*&
-&PA(2)*PB(2)**2)                *(hermite_term(2,2) - hermite_term(1,2)**2) + (&
-&PA(2)**2                 + PB(2)**2 + 4.0*PA(2)*PB(2))*(hermite_term(3,2)     &
-&           - hermite_term(2,2)*hermite_term(1,2)) + (2.0*PB(2) + 2.0*PA(2))   &
-&             *(hermite_term(4,2) - hermite_term(3,2)*hermite_term(1,2))       &
-&         + (hermite_term(5,2) - hermite_term(4,2)* hermite_term(1,2)))*pc(1,4)
+&PA(2)*PB(2)**2)*(hermite_term(2,2) - hermite_term(1,2)**2) + (PA(2)**2 + PB(2)&
+&**2 + 4.0*PA(2)*PB(2))*(hermite_term(3,2) - hermite_term(2,2)*hermite_term(1,2&
+&)) + (2.0*PB(2) + 2.0*PA(2))*(hermite_term(4,2) - hermite_term(3,2)*hermite_te&
+&rm(1,2)) + (hermite_term(5,2) - hermite_term(4,2)*hermite_term(1,2)))*pc(1,4)
 
 pc(20,15) = (PA(3) + hermite_term(1,3))*pc(7,15) + ((PA(3)**2 + 2.0*PA(3)*PB(3&
-&))*(hermite_term(2,3)                - hermite_term(1,3)**2) + (2.0*PA(3) + PB&
-&(3))*(hermite_term(3,3)                 - hermite_term(2,3)*hermite_term(1,3))&
-& + (hermite_term(4,3)                 - hermite_term(3,3)*hermite_term(1,3)))*&
-&pc(1,6)
+&))*(hermite_term(2,3) - hermite_term(1,3)**2) + (2.0*PA(3) + PB(3))*(hermite_t&
+&erm(3,3) - hermite_term(2,3)*hermite_term(1,3)) + (hermite_term(4,3) - hermite&
+&_term(3,3)*hermite_term(1,3)))*pc(1,6)
 
 pc(1,16) = (PB(1) + hermite_term(1,1))*pc(1,7)
 
@@ -1209,48 +1296,47 @@ pc(2,16) = (PA(1) + hermite_term(1,1))*pc(1,16) + (hermite_term(2,1) - hermite&
 pc(3,16) = (PA(2) + hermite_term(1,2))*pc(1,16)
 
 pc(4,16) = (PA(3) + hermite_term(1,3))*pc(1,16) + ((2.0*PB(3))*(hermite_term(2&
-&,3) - hermite_term(1,3)**2)                 + (hermite_term(3,3) - hermite_ter&
-&m(2,3)*hermite_term(1,3)))*pc(1,2)
+&,3) - hermite_term(1,3)**2) + (hermite_term(3,3) - hermite_term(2,3)*hermite_t&
+&erm(1,3)))*pc(1,2)
 
 pc(5,16) = (PA(1) + hermite_term(1,1))*pc(2,16) + ((PA(1)+PB(1))*(hermite_term&
-&(2,1)                 - hermite_term(1,1)**2) + (hermite_term(3,1) - hermite_t&
-&erm(2,1)                *hermite_term(1,1)))* pc(1,7)
+&(2,1) - hermite_term(1,1)**2) + (hermite_term(3,1) - hermite_term(2,1)*hermite&
+&_term(1,1)))*pc(1,7)
 
 pc(6,16) = (PA(2) + hermite_term(1,2))*pc(3,16) + (hermite_term(2,2) - hermite&
 &_term(1,2)**2)*pc(1,16)
 
 pc(7,16) = (PA(3) + hermite_term(1,3))*pc(4,16) + ((PB(3)**2 + 2.0*PA(3)*PB(3)&
-&)*(hermite_term(2,3)                - hermite_term(1,3)**2) + (2.0*PB(3) + PA(&
-&3))*(hermite_term(3,3)                 - hermite_term(2,3)*hermite_term(1,3)) &
-&+ (hermite_term(4,3)                 - hermite_term(3,3)*hermite_term(1,3)))*p&
-&c(1,2)
+&)*(hermite_term(2,3) - hermite_term(1,3)**2) + (2.0*PB(3) + PA(3))*(hermite_te&
+&rm(3,3) - hermite_term(2,3)*hermite_term(1,3))+ (hermite_term(4,3)- hermite_te&
+&rm(3,3)*hermite_term(1,3)))*pc(1,2)
 
 pc(8,16) = (PA(2) + hermite_term(1,2))*pc(2,16)
 
 pc(9,16) = (PA(3) + hermite_term(1,3))*pc(2,16) + ((2.0*PB(3))*(hermite_term(2&
-&,3) - hermite_term(1,3)**2)                 + (hermite_term(3,3) - hermite_ter&
-&m(2,3)*hermite_term(1,3)))*pc(2,2)
+&,3) - hermite_term(1,3)**2) + (hermite_term(3,3) - hermite_term(2,3)*hermite_t&
+&erm(1,3)))*pc(2,2)
 
 pc(10,16) = (PA(3) + hermite_term(1,3))*pc(3,16) + ((2.0*PB(3))*(hermite_term(&
-&2,3) - hermite_term(1,3)**2)                 + (hermite_term(3,3) - hermite_te&
-&rm(2,3)*hermite_term(1,3)))*pc(3,2)
+&2,3) - hermite_term(1,3)**2) + (hermite_term(3,3) - hermite_term(2,3)*hermite_&
+&term(1,3)))*pc(3,2)
 
 pc(11,16) = (PA(3) + hermite_term(1,3))*pc(8,16) + ((2.0*PB(3))*(hermite_term(&
-&2,3) - hermite_term(1,3)**2)                 + (hermite_term(3,3) - hermite_te&
-&rm(2,3)*hermite_term(1,3)))*pc(8,2)
+&2,3) - hermite_term(1,3)**2) + (hermite_term(3,3) - hermite_term(2,3)*hermite_&
+&term(1,3)))*pc(8,2)
 
 pc(12,16) = (PA(2) + hermite_term(1,2))*pc(5,16)
 
 pc(13,16) = (PA(3) + hermite_term(1,3))*pc(5,16) + ((2.0*PB(3))*(hermite_term(&
-&2,3) - hermite_term(1,3)**2)                 + (hermite_term(3,3) - hermite_te&
-&rm(2,3)*hermite_term(1,3)))*pc(5,2)
+&2,3) - hermite_term(1,3)**2) + (hermite_term(3,3) - hermite_term(2,3)*hermite_&
+&term(1,3)))*pc(5,2)
 
 pc(14,16) = (PA(1) + hermite_term(1,1))*pc(6,16) + (hermite_term(2,1) - hermit&
 &e_term(1,1)**2)*pc(6,7)
 
 pc(15,16) = (PA(3) + hermite_term(1,3))*pc(6,16) + ((2.0*PB(3))*(hermite_term(&
-&2,3) - hermite_term(1,3)**2)                 + (hermite_term(3,3) - hermite_te&
-&rm(2,3)*hermite_term(1,3)))*pc(6,2)
+&2,3) - hermite_term(1,3)**2) + (hermite_term(3,3) - hermite_term(2,3)*hermite_&
+&term(1,3)))*pc(6,2)
 
 pc(16,16) = (PA(1) + hermite_term(1,1))*pc(7,16) + (hermite_term(2,1) - hermit&
 &e_term(1,1)**2)*pc(7,7)
@@ -1258,21 +1344,19 @@ pc(16,16) = (PA(1) + hermite_term(1,1))*pc(7,16) + (hermite_term(2,1) - hermit&
 pc(17,16) = (PA(2) + hermite_term(1,2))*pc(7,16)
 
 pc(18,16) = (PA(1) + hermite_term(1,1))*pc(5,16) + ((PA(1)**2 + 2.0*PA(1)*PB(1&
-&))*(hermite_term(2,1)                - hermite_term(1,1)**2) + (2.0*PA(1) + PB&
-&(1))*(hermite_term(3,1)                 - hermite_term(2,1)*hermite_term(1,1))&
-& + (hermite_term(4,1)                 - hermite_term(3,1)*hermite_term(1,1)))*&
-&pc(1,7)
+&))*(hermite_term(2,1) - hermite_term(1,1)**2) + (2.0*PA(1) + PB(1))*(hermite_t&
+&erm(3,1) - hermite_term(2,1)*hermite_term(1,1)) + (hermite_term(4,1) - hermite&
+&_term(3,1)*hermite_term(1,1)))*pc(1,7)
 
 pc(19,16) = (PA(2) + hermite_term(1,2))*pc(6,16) + ((2.0*PA(2))*(hermite_term(&
-&2,2) - hermite_term(1,2)**2)                 + (hermite_term(3,2) - hermite_te&
-&rm(2,2)*hermite_term(1,2)))*pc(1,16)
+&2,2) - hermite_term(1,2)**2) + (hermite_term(3,2) - hermite_term(2,2)*hermite_&
+&term(1,2)))*pc(1,16)
 
 pc(20,16) = (PA(3) + hermite_term(1,3))*pc(7,16) + ((2.0*PA(3)**2*PB(3) + 2.0*&
-&PA(3)*PB(3)**2)                *(hermite_term(2,3) - hermite_term(1,3)**2) + (&
-&PA(3)**2                 + PB(3)**2 + 4.0*PA(3)*PB(3))*(hermite_term(3,3)     &
-&           - hermite_term(2,3)*hermite_term(1,3)) + (2.0*PB(3) + 2.0*PA(3))   &
-&             *(hermite_term(4,3) - hermite_term(3,3)*hermite_term(1,3))       &
-&         + (hermite_term(5,3) - hermite_term(4,3)* hermite_term(1,3)))*pc(1,2)
+&PA(3)*PB(3)**2)*(hermite_term(2,3) - hermite_term(1,3)**2) + (PA(3)**2 + PB(3)&
+&**2 + 4.0*PA(3)*PB(3))*(hermite_term(3,3) - hermite_term(2,3)*hermite_term(1,3&
+&)) + (2.0*PB(3) + 2.0*PA(3))*(hermite_term(4,3) - hermite_term(3,3)*hermite_te&
+&rm(1,3)) + (hermite_term(5,3) - hermite_term(4,3)*hermite_term(1,3)))*pc(1,2)
 
 pc(1,17) = (PB(2) + hermite_term(1,2))*pc(1,7)
 
@@ -1282,49 +1366,48 @@ pc(3,17) = (PA(2) + hermite_term(1,2))*pc(1,17) + (hermite_term(2,2) - hermite&
 &_term(1,2)**2)*pc(1,7)
 
 pc(4,17) = (PA(3) + hermite_term(1,3))*pc(1,17) + ((2.0*PB(3))*(hermite_term(2&
-&,3) - hermite_term(1,3)**2)                 + (hermite_term(3,3) - hermite_ter&
-&m(2,3)*hermite_term(1,3)))*pc(1,3)
+&,3) - hermite_term(1,3)**2) + (hermite_term(3,3) - hermite_term(2,3)*hermite_t&
+&erm(1,3)))*pc(1,3)
 
 pc(5,17) = (PA(1) + hermite_term(1,1))*pc(2,17) + (hermite_term(2,1) - hermite&
 &_term(1,1)**2)*pc(1,17)
 
 pc(6,17) = (PA(2) + hermite_term(1,2))*pc(3,17) + ((PA(2)+PB(2))*(hermite_term&
-&(2,2)                 - hermite_term(1,2)**2) + (hermite_term(3,2) - hermite_t&
-&erm(2,2)                *hermite_term(1,2)))* pc(1,7)
+&(2,2) - hermite_term(1,2)**2) + (hermite_term(3,2) - hermite_term(2,2)*hermite&
+&_term(1,2)))*pc(1,7)
 
 pc(7,17) = (PA(3) + hermite_term(1,3))*pc(4,17) + ((PB(3)**2 + 2.0*PA(3)*PB(3)&
-&)*(hermite_term(2,3)                - hermite_term(1,3)**2) + (2.0*PB(3) + PA(&
-&3))*(hermite_term(3,3)                 - hermite_term(2,3)*hermite_term(1,3)) &
-&+ (hermite_term(4,3)                 - hermite_term(3,3)*hermite_term(1,3)))*p&
-&c(1,3)
+&)*(hermite_term(2,3) - hermite_term(1,3)**2) + (2.0*PB(3) + PA(3))*(hermite_te&
+&rm(3,3) - hermite_term(2,3)*hermite_term(1,3))+ (hermite_term(4,3)- hermite_te&
+&rm(3,3)*hermite_term(1,3)))*pc(1,3)
 
 pc(8,17) = (PA(2) + hermite_term(1,2))*pc(2,17) + (hermite_term(2,2) - hermite&
 &_term(1,2)**2)*pc(2,7)
 
 pc(9,17) = (PA(3) + hermite_term(1,3))*pc(2,17) + ((2.0*PB(3))*(hermite_term(2&
-&,3) - hermite_term(1,3)**2)                 + (hermite_term(3,3) - hermite_ter&
-&m(2,3)*hermite_term(1,3)))*pc(2,3)
+&,3) - hermite_term(1,3)**2) + (hermite_term(3,3) - hermite_term(2,3)*hermite_t&
+&erm(1,3)))*pc(2,3)
 
 pc(10,17) = (PA(3) + hermite_term(1,3))*pc(3,17) + ((2.0*PB(3))*(hermite_term(&
-&2,3) - hermite_term(1,3)**2)                 + (hermite_term(3,3) - hermite_te&
-&rm(2,3)*hermite_term(1,3)))*pc(3,3)
+&2,3) - hermite_term(1,3)**2) + (hermite_term(3,3) - hermite_term(2,3)*hermite_&
+&term(1,3)))*pc(3,3)
 
 pc(11,17) = (PA(3) + hermite_term(1,3))*pc(8,17) + ((2.0*PB(3))*(hermite_term(&
-&2,3) - hermite_term(1,3)**2)                 + (hermite_term(3,3) - hermite_te&
-&rm(2,3)*hermite_term(1,3)))*pc(8,3)
+&2,3) - hermite_term(1,3)**2) + (hermite_term(3,3) - hermite_term(2,3)*hermite_&
+&term(1,3)))*pc(8,3)
 
 pc(12,17) = (PA(2) + hermite_term(1,2))*pc(5,17) + (hermite_term(2,2) - hermit&
 &e_term(1,2)**2)*pc(5,7)
 
 pc(13,17) = (PA(3) + hermite_term(1,3))*pc(5,17) + ((2.0*PB(3))*(hermite_term(&
-&2,3) - hermite_term(1,3)**2)                 + (hermite_term(3,3) - hermite_te&
-&rm(2,3)*hermite_term(1,3)))*pc(5,3)
+&2,3) - hermite_term(1,3)**2) + (hermite_term(3,3) - hermite_term(2,3)*hermite_&
+&term(1,3)))*pc(5,3)
 
 pc(14,17) = (PA(1) + hermite_term(1,1))*pc(6,17)
 
 pc(15,17) = (PA(3) + hermite_term(1,3))*pc(6,17) + ((2.0*PB(3))*(hermite_term(&
-&2,3) - hermite_term(1,3)**2)                 + (hermite_term(3,3) - hermite_te&
-&rm(2,3)*hermite_term(1,3)))*pc(6,3)
+&2,3) - hermite_term(1,3)**2) + (hermite_term(3,3) - hermite_term(2,3)*hermite_&
+&term(1,3)))*pc(6,3)
 
 pc(16,17) = (PA(1) + hermite_term(1,1))*pc(7,17)
 
@@ -1332,41 +1415,38 @@ pc(17,17) = (PA(2) + hermite_term(1,2))*pc(7,17) + (hermite_term(2,2) - hermit&
 &e_term(1,2)**2)*pc(7,7)
 
 pc(18,17) = (PA(1) + hermite_term(1,1))*pc(5,17) + ((2.0*PA(1))*(hermite_term(&
-&2,1) - hermite_term(1,1)**2)                 + (hermite_term(3,1) - hermite_te&
-&rm(2,1)*hermite_term(1,1)))*pc(1,17)
+&2,1) - hermite_term(1,1)**2) + (hermite_term(3,1) - hermite_term(2,1)*hermite_&
+&term(1,1)))*pc(1,17)
 
 pc(19,17) = (PA(2) + hermite_term(1,2))*pc(6,17) + ((PA(2)**2 + 2.0*PA(2)*PB(2&
-&))*(hermite_term(2,2)                - hermite_term(1,2)**2) + (2.0*PA(2) + PB&
-&(2))*(hermite_term(3,2)                 - hermite_term(2,2)*hermite_term(1,2))&
-& + (hermite_term(4,2)                 - hermite_term(3,2)*hermite_term(1,2)))*&
-&pc(1,7)
+&))*(hermite_term(2,2) - hermite_term(1,2)**2) + (2.0*PA(2) + PB(2))*(hermite_t&
+&erm(3,2) - hermite_term(2,2)*hermite_term(1,2)) + (hermite_term(4,2) - hermite&
+&_term(3,2)*hermite_term(1,2)))*pc(1,7)
 
 pc(20,17) = (PA(3) + hermite_term(1,3))*pc(7,17) + ((2.0*PA(3)**2*PB(3) + 2.0*&
-&PA(3)*PB(3)**2)                *(hermite_term(2,3) - hermite_term(1,3)**2) + (&
-&PA(3)**2                 + PB(3)**2 + 4.0*PA(3)*PB(3))*(hermite_term(3,3)     &
-&           - hermite_term(2,3)*hermite_term(1,3)) + (2.0*PB(3) + 2.0*PA(3))   &
-&             *(hermite_term(4,3) - hermite_term(3,3)*hermite_term(1,3))       &
-&         + (hermite_term(5,3) - hermite_term(4,3)* hermite_term(1,3)))*pc(1,3)
+&PA(3)*PB(3)**2)*(hermite_term(2,3) - hermite_term(1,3)**2) + (PA(3)**2 + PB(3)&
+&**2 + 4.0*PA(3)*PB(3))*(hermite_term(3,3) - hermite_term(2,3)*hermite_term(1,3&
+&)) + (2.0*PB(3) + 2.0*PA(3))*(hermite_term(4,3) - hermite_term(3,3)*hermite_te&
+&rm(1,3)) + (hermite_term(5,3) - hermite_term(4,3)*hermite_term(1,3)))*pc(1,3)
 
 pc(1,18) = (PB(1) + hermite_term(1,1))*pc(1,5) + ((2.0*PB(1))*(hermite_term(2,&
-&1) - hermite_term(1,1)**2)                 + (hermite_term(3,1) - hermite_term&
-&(2,1)*hermite_term(1,1)))*pc(1,1)
+&1) - hermite_term(1,1)**2) + (hermite_term(3,1) - hermite_term(2,1)*hermite_te&
+&rm(1,1)))*pc(1,1)
 
 pc(2,18) = (PA(1) + hermite_term(1,1))*pc(1,18) + ((3.0*(PB(1)**2))*(hermite_t&
-&erm(2,1) - hermite_term(1,1)**2)                + (3*PB(1))*(hermite_term(3,1)&
-& - hermite_term(2,1)*hermite_term(1,1))                + (hermite_term(4,1) - &
-&hermite_term(3,1)*hermite_term(1,1)))*pc(1,1)
+&erm(2,1) - hermite_term(1,1)**2) + (3*PB(1))*(hermite_term(3,1) - hermite_term&
+&(2,1)*hermite_term(1,1)) + (hermite_term(4,1) - hermite_term(3,1)*hermite_term&
+&(1,1)))*pc(1,1)
 
 pc(3,18) = (PA(2) + hermite_term(1,2))*pc(1,18)
 
 pc(4,18) = (PA(3) + hermite_term(1,3))*pc(1,18)
 
 pc(5,18) = (PA(1) + hermite_term(1,1))*pc(2,18) + ((3.0*(PB(1)**2)*PA(1) + PB(&
-&1)**3)*(hermite_term(2,1)                - hermite_term(1,1)**2) + (3.0*PB(1)*&
-&PA(1) + 3.0*(PB(1)**2))                *(hermite_term(3,1) - hermite_term(2,1)&
-&* hermite_term(1,1))                + (PA(1) + 3.0*PB(1))*(hermite_term(4,1) -&
-& hermite_term(3,1)                *hermite_term(1,1))+ (hermite_term(5,1) - he&
-&rmite_term(4,1)                * hermite_term(1,1)))*pc(1,1)
+&1)**3)*(hermite_term(2,1) - hermite_term(1,1)**2) + (3.0*PB(1)*PA(1) + 3.0*(PB&
+&(1)**2))*(hermite_term(3,1) - hermite_term(2,1)* hermite_term(1,1)) + (PA(1) +&
+& 3.0*PB(1))*(hermite_term(4,1) - hermite_term(3,1)*hermite_term(1,1))+ (hermit&
+&e_term(5,1)- hermite_term(4,1)*hermite_term(1,1)))*pc(1,1)
 
 pc(6,18) = (PA(2) + hermite_term(1,2))*pc(3,18) + (hermite_term(2,2) - hermite&
 &_term(1,2)**2)*pc(1,18)
@@ -1387,46 +1467,45 @@ pc(12,18) = (PA(2) + hermite_term(1,2))*pc(5,18)
 pc(13,18) = (PA(3) + hermite_term(1,3))*pc(5,18)
 
 pc(14,18) = (PA(1) + hermite_term(1,1))*pc(6,18) + ((3.0*(PB(1)**2))*(hermite_&
-&term(2,1) - hermite_term(1,1)**2)                + (3*PB(1))*(hermite_term(3,1&
-&) - hermite_term(2,1)*hermite_term(1,1))                + (hermite_term(4,1) -&
-& hermite_term(3,1)*hermite_term(1,1)))*pc(6,1)
+&term(2,1) - hermite_term(1,1)**2) + (3*PB(1))*(hermite_term(3,1) - hermite_ter&
+&m(2,1)*hermite_term(1,1)) + (hermite_term(4,1) - hermite_term(3,1)*hermite_ter&
+&m(1,1)))*pc(6,1)
 
 pc(15,18) = (PA(3) + hermite_term(1,3))*pc(6,18)
 
 pc(16,18) = (PA(1) + hermite_term(1,1))*pc(7,18) + ((3.0*(PB(1)**2))*(hermite_&
-&term(2,1) - hermite_term(1,1)**2)                + (3*PB(1))*(hermite_term(3,1&
-&) - hermite_term(2,1)*hermite_term(1,1))                + (hermite_term(4,1) -&
-& hermite_term(3,1)*hermite_term(1,1)))*pc(7,1)
+&term(2,1) - hermite_term(1,1)**2) + (3*PB(1))*(hermite_term(3,1) - hermite_ter&
+&m(2,1)*hermite_term(1,1)) + (hermite_term(4,1) - hermite_term(3,1)*hermite_ter&
+&m(1,1)))*pc(7,1)
 
 pc(17,18) = (PA(2) + hermite_term(1,2))*pc(7,18)
 
 pc(18,18) = (PA(1) + hermite_term(1,1))*pc(5,18) + ((2.0*(PB(1)**3)*PA(1) + 3.&
-&0*(PA(1)**2)*(PB(1)**2))*(hermite_term(2,1)                - hermite_term(1,1)&
-&**2) + ((PB(1)**3) + 6.0*(PB(1)**2)*PA(1) + 3.0*PB(1)                *(PA(1)**&
-&2))*(hermite_term(3,1) - hermite_term(2,1)*hermite_term(1,1))                 &
-&+ (PA(1)**2+ 3.0*(PB(1)**2) + 6.0*PB(1)*PA(1))*(hermite_term(4,1)             &
-&    - hermite_term(3,1)*hermite_term(1,1)) + (2.0*PA(1) + 3.0*PB(1))          &
-&      *(hermite_term(5,1)- hermite_term(4,1)*hermite_term(1,1))               &
-&  + (hermite_term(6,1) - hermite_term(5,1)*hermite_term(1,1)))*pc(1,1)
+&0*(PA(1)**2)*(PB(1)**2))*(hermite_term(2,1) - hermite_term(1,1)**2) + ((PB(1)*&
+&*3) + 6.0*(PB(1)**2)*PA(1) + 3.0*PB(1)*(PA(1)**2))*(hermite_term(3,1) - hermit&
+&e_term(2,1)*hermite_term(1,1)) + (PA(1)**2+ 3.0*(PB(1)**2) + 6.0*PB(1)*PA(1))*&
+&(hermite_term(4,1) - hermite_term(3,1)*hermite_term(1,1)) + (2.0*PA(1) + 3.0*P&
+&B(1))*(hermite_term(5,1) - hermite_term(4,1)*hermite_term(1,1)) + (hermite_ter&
+&m(6,1) - hermite_term(5,1)*hermite_term(1,1)))*pc(1,1)
 
 pc(19,18) = (PA(2) + hermite_term(1,2))*pc(6,18) + ((2.0*PA(2))*(hermite_term(&
-&2,2) - hermite_term(1,2)**2)                 + (hermite_term(3,2) - hermite_te&
-&rm(2,2)*hermite_term(1,2)))*pc(1,18)
+&2,2) - hermite_term(1,2)**2) + (hermite_term(3,2) - hermite_term(2,2)*hermite_&
+&term(1,2)))*pc(1,18)
 
 pc(20,18) = (PA(3) + hermite_term(1,3))*pc(7,18) + ((2.0*PA(3))*(hermite_term(&
-&2,3) - hermite_term(1,3)**2)                 + (hermite_term(3,3) - hermite_te&
-&rm(2,3)*hermite_term(1,3)))*pc(1,18)
+&2,3) - hermite_term(1,3)**2) + (hermite_term(3,3) - hermite_term(2,3)*hermite_&
+&term(1,3)))*pc(1,18)
 
 pc(1,19) = (PB(2) + hermite_term(1,2))*pc(1,6) + ((2.0*PB(2))*(hermite_term(2,&
-&2) - hermite_term(1,2)**2)                 + (hermite_term(3,2) - hermite_term&
-&(2,2)*hermite_term(1,2)))*pc(1,1)
+&2) - hermite_term(1,2)**2) + (hermite_term(3,2) - hermite_term(2,2)*hermite_te&
+&rm(1,2)))*pc(1,1)
 
 pc(2,19) = (PA(1) + hermite_term(1,1))*pc(1,19)
 
 pc(3,19) = (PA(2) + hermite_term(1,2))*pc(1,19) + ((3.0*(PB(2)**2))*(hermite_t&
-&erm(2,2) - hermite_term(1,2)**2)                + (3*PB(2))*(hermite_term(3,2)&
-& - hermite_term(2,2)*hermite_term(1,2))                + (hermite_term(4,2) - &
-&hermite_term(3,2)*hermite_term(1,2)))*pc(1,1)
+&erm(2,2) - hermite_term(1,2)**2) + (3*PB(2))*(hermite_term(3,2) - hermite_term&
+&(2,2)*hermite_term(1,2)) + (hermite_term(4,2) - hermite_term(3,2)*hermite_term&
+&(1,2)))*pc(1,1)
 
 pc(4,19) = (PA(3) + hermite_term(1,3))*pc(1,19)
 
@@ -1434,19 +1513,18 @@ pc(5,19) = (PA(1) + hermite_term(1,1))*pc(2,19) + (hermite_term(2,1) - hermite&
 &_term(1,1)**2)*pc(1,19)
 
 pc(6,19) = (PA(2) + hermite_term(1,2))*pc(3,19) + ((3.0*(PB(2)**2)*PA(2) + PB(&
-&2)**3)*(hermite_term(2,2)                - hermite_term(1,2)**2) + (3.0*PB(2)*&
-&PA(2) + 3.0*(PB(2)**2))                *(hermite_term(3,2) - hermite_term(2,2)&
-&* hermite_term(1,2))                + (PA(2) + 3.0*PB(2))*(hermite_term(4,2) -&
-& hermite_term(3,2)                *hermite_term(1,2))+ (hermite_term(5,2) - he&
-&rmite_term(4,2)                * hermite_term(1,2)))*pc(1,1)
+&2)**3)*(hermite_term(2,2) - hermite_term(1,2)**2) + (3.0*PB(2)*PA(2) + 3.0*(PB&
+&(2)**2))*(hermite_term(3,2) - hermite_term(2,2)* hermite_term(1,2)) + (PA(2) +&
+& 3.0*PB(2))*(hermite_term(4,2) - hermite_term(3,2)*hermite_term(1,2))+ (hermit&
+&e_term(5,2)- hermite_term(4,2)*hermite_term(1,2)))*pc(1,1)
 
 pc(7,19) = (PA(3) + hermite_term(1,3))*pc(4,19) + (hermite_term(2,3) - hermite&
 &_term(1,3)**2)*pc(1,19)
 
 pc(8,19) = (PA(2) + hermite_term(1,2))*pc(2,19) + ((3.0*(PB(2)**2))*(hermite_t&
-&erm(2,2) - hermite_term(1,2)**2)                + (3*PB(2))*(hermite_term(3,2)&
-& - hermite_term(2,2)*hermite_term(1,2))                + (hermite_term(4,2) - &
-&hermite_term(3,2)*hermite_term(1,2)))*pc(2,1)
+&erm(2,2) - hermite_term(1,2)**2) + (3*PB(2))*(hermite_term(3,2) - hermite_term&
+&(2,2)*hermite_term(1,2)) + (hermite_term(4,2) - hermite_term(3,2)*hermite_term&
+&(1,2)))*pc(2,1)
 
 pc(9,19) = (PA(3) + hermite_term(1,3))*pc(2,19)
 
@@ -1455,9 +1533,9 @@ pc(10,19) = (PA(3) + hermite_term(1,3))*pc(3,19)
 pc(11,19) = (PA(3) + hermite_term(1,3))*pc(8,19)
 
 pc(12,19) = (PA(2) + hermite_term(1,2))*pc(5,19) + ((3.0*(PB(2)**2))*(hermite_&
-&term(2,2) - hermite_term(1,2)**2)                + (3*PB(2))*(hermite_term(3,2&
-&) - hermite_term(2,2)*hermite_term(1,2))                + (hermite_term(4,2) -&
-& hermite_term(3,2)*hermite_term(1,2)))*pc(5,1)
+&term(2,2) - hermite_term(1,2)**2) + (3*PB(2))*(hermite_term(3,2) - hermite_ter&
+&m(2,2)*hermite_term(1,2)) + (hermite_term(4,2) - hermite_term(3,2)*hermite_ter&
+&m(1,2)))*pc(5,1)
 
 pc(13,19) = (PA(3) + hermite_term(1,3))*pc(5,19)
 
@@ -1468,39 +1546,38 @@ pc(15,19) = (PA(3) + hermite_term(1,3))*pc(6,19)
 pc(16,19) = (PA(1) + hermite_term(1,1))*pc(7,19)
 
 pc(17,19) = (PA(2) + hermite_term(1,2))*pc(7,19) + ((3.0*(PB(2)**2))*(hermite_&
-&term(2,2) - hermite_term(1,2)**2)                + (3*PB(2))*(hermite_term(3,2&
-&) - hermite_term(2,2)*hermite_term(1,2))                + (hermite_term(4,2) -&
-& hermite_term(3,2)*hermite_term(1,2)))*pc(7,1)
+&term(2,2) - hermite_term(1,2)**2) + (3*PB(2))*(hermite_term(3,2) - hermite_ter&
+&m(2,2)*hermite_term(1,2)) + (hermite_term(4,2) - hermite_term(3,2)*hermite_ter&
+&m(1,2)))*pc(7,1)
 
 pc(18,19) = (PA(1) + hermite_term(1,1))*pc(5,19) + ((2.0*PA(1))*(hermite_term(&
-&2,1) - hermite_term(1,1)**2)                 + (hermite_term(3,1) - hermite_te&
-&rm(2,1)*hermite_term(1,1)))*pc(1,19)
+&2,1) - hermite_term(1,1)**2) + (hermite_term(3,1) - hermite_term(2,1)*hermite_&
+&term(1,1)))*pc(1,19)
 
 pc(19,19) = (PA(2) + hermite_term(1,2))*pc(6,19) + ((2.0*(PB(2)**3)*PA(2) + 3.&
-&0*(PA(2)**2)*(PB(2)**2))*(hermite_term(2,2)                - hermite_term(1,2)&
-&**2) + ((PB(2)**3) + 6.0*(PB(2)**2)*PA(2) + 3.0*PB(2)                *(PA(2)**&
-&2))*(hermite_term(3,2) - hermite_term(2,2)*hermite_term(1,2))                 &
-&+ (PA(2)**2+ 3.0*(PB(2)**2) + 6.0*PB(2)*PA(2))*(hermite_term(4,2)             &
-&    - hermite_term(3,2)*hermite_term(1,2)) + (2.0*PA(2) + 3.0*PB(2))          &
-&      *(hermite_term(5,2)- hermite_term(4,2)*hermite_term(1,2))               &
-&  + (hermite_term(6,2) - hermite_term(5,2)*hermite_term(1,2)))*pc(1,1)
+&0*(PA(2)**2)*(PB(2)**2))*(hermite_term(2,2) - hermite_term(1,2)**2) + ((PB(2)*&
+&*3) + 6.0*(PB(2)**2)*PA(2) + 3.0*PB(2)*(PA(2)**2))*(hermite_term(3,2) - hermit&
+&e_term(2,2)*hermite_term(1,2)) + (PA(2)**2+ 3.0*(PB(2)**2) + 6.0*PB(2)*PA(2))*&
+&(hermite_term(4,2) - hermite_term(3,2)*hermite_term(1,2)) + (2.0*PA(2) + 3.0*P&
+&B(2))*(hermite_term(5,2) - hermite_term(4,2)*hermite_term(1,2)) + (hermite_ter&
+&m(6,2) - hermite_term(5,2)*hermite_term(1,2)))*pc(1,1)
 
 pc(20,19) = (PA(3) + hermite_term(1,3))*pc(7,19) + ((2.0*PA(3))*(hermite_term(&
-&2,3) - hermite_term(1,3)**2)                 + (hermite_term(3,3) - hermite_te&
-&rm(2,3)*hermite_term(1,3)))*pc(1,19)
+&2,3) - hermite_term(1,3)**2) + (hermite_term(3,3) - hermite_term(2,3)*hermite_&
+&term(1,3)))*pc(1,19)
 
 pc(1,20) = (PB(3) + hermite_term(1,3))*pc(1,7) + ((2.0*PB(3))*(hermite_term(2,&
-&3) - hermite_term(1,3)**2)                 + (hermite_term(3,3) - hermite_term&
-&(2,3)*hermite_term(1,3)))*pc(1,1)
+&3) - hermite_term(1,3)**2) + (hermite_term(3,3) - hermite_term(2,3)*hermite_te&
+&rm(1,3)))*pc(1,1)
 
 pc(2,20) = (PA(1) + hermite_term(1,1))*pc(1,20)
 
 pc(3,20) = (PA(2) + hermite_term(1,2))*pc(1,20)
 
 pc(4,20) = (PA(3) + hermite_term(1,3))*pc(1,20) + ((3.0*(PB(3)**2))*(hermite_t&
-&erm(2,3) - hermite_term(1,3)**2)                + (3*PB(3))*(hermite_term(3,3)&
-& - hermite_term(2,3)*hermite_term(1,3))                + (hermite_term(4,3) - &
-&hermite_term(3,3)*hermite_term(1,3)))*pc(1,1)
+&erm(2,3) - hermite_term(1,3)**2) + (3*PB(3))*(hermite_term(3,3) - hermite_term&
+&(2,3)*hermite_term(1,3)) + (hermite_term(4,3) - hermite_term(3,3)*hermite_term&
+&(1,3)))*pc(1,1)
 
 pc(5,20) = (PA(1) + hermite_term(1,1))*pc(2,20) + (hermite_term(2,1) - hermite&
 &_term(1,1)**2)*pc(1,20)
@@ -1509,63 +1586,61 @@ pc(6,20) = (PA(2) + hermite_term(1,2))*pc(3,20) + (hermite_term(2,2) - hermite&
 &_term(1,2)**2)*pc(1,20)
 
 pc(7,20) = (PA(3) + hermite_term(1,3))*pc(4,20) + ((3.0*(PB(3)**2)*PA(3) + PB(&
-&3)**3)*(hermite_term(2,3)                - hermite_term(1,3)**2) + (3.0*PB(3)*&
-&PA(3) + 3.0*(PB(3)**2))                *(hermite_term(3,3) - hermite_term(2,3)&
-&* hermite_term(1,3))                + (PA(3) + 3.0*PB(3))*(hermite_term(4,3) -&
-& hermite_term(3,3)                *hermite_term(1,3))+ (hermite_term(5,3) - he&
-&rmite_term(4,3)                * hermite_term(1,3)))*pc(1,1)
+&3)**3)*(hermite_term(2,3) - hermite_term(1,3)**2) + (3.0*PB(3)*PA(3) + 3.0*(PB&
+&(3)**2))*(hermite_term(3,3) - hermite_term(2,3)* hermite_term(1,3)) + (PA(3) +&
+& 3.0*PB(3))*(hermite_term(4,3) - hermite_term(3,3)*hermite_term(1,3))+ (hermit&
+&e_term(5,3)- hermite_term(4,3)*hermite_term(1,3)))*pc(1,1)
 
 pc(8,20) = (PA(2) + hermite_term(1,2))*pc(2,20)
 
 pc(9,20) = (PA(3) + hermite_term(1,3))*pc(2,20) + ((3.0*(PB(3)**2))*(hermite_t&
-&erm(2,3) - hermite_term(1,3)**2)                + (3*PB(3))*(hermite_term(3,3)&
-& - hermite_term(2,3)*hermite_term(1,3))                + (hermite_term(4,3) - &
-&hermite_term(3,3)*hermite_term(1,3)))*pc(2,1)
+&erm(2,3) - hermite_term(1,3)**2) + (3*PB(3))*(hermite_term(3,3) - hermite_term&
+&(2,3)*hermite_term(1,3)) + (hermite_term(4,3) - hermite_term(3,3)*hermite_term&
+&(1,3)))*pc(2,1)
 
 pc(10,20) = (PA(3) + hermite_term(1,3))*pc(3,20) + ((3.0*(PB(3)**2))*(hermite_&
-&term(2,3) - hermite_term(1,3)**2)                + (3*PB(3))*(hermite_term(3,3&
-&) - hermite_term(2,3)*hermite_term(1,3))                + (hermite_term(4,3) -&
-& hermite_term(3,3)*hermite_term(1,3)))*pc(3,1)
+&term(2,3) - hermite_term(1,3)**2) + (3*PB(3))*(hermite_term(3,3) - hermite_ter&
+&m(2,3)*hermite_term(1,3)) + (hermite_term(4,3) - hermite_term(3,3)*hermite_ter&
+&m(1,3)))*pc(3,1)
 
 pc(11,20) = (PA(3) + hermite_term(1,3))*pc(8,20) + ((3.0*(PB(3)**2))*(hermite_&
-&term(2,3) - hermite_term(1,3)**2)                + (3*PB(3))*(hermite_term(3,3&
-&) - hermite_term(2,3)*hermite_term(1,3))                + (hermite_term(4,3) -&
-& hermite_term(3,3)*hermite_term(1,3)))*pc(8,1)
+&term(2,3) - hermite_term(1,3)**2) + (3*PB(3))*(hermite_term(3,3) - hermite_ter&
+&m(2,3)*hermite_term(1,3)) + (hermite_term(4,3) - hermite_term(3,3)*hermite_ter&
+&m(1,3)))*pc(8,1)
 
 pc(12,20) = (PA(2) + hermite_term(1,2))*pc(5,20)
 
 pc(13,20) = (PA(3) + hermite_term(1,3))*pc(5,20) + ((3.0*(PB(3)**2))*(hermite_&
-&term(2,3) - hermite_term(1,3)**2)                + (3*PB(3))*(hermite_term(3,3&
-&) - hermite_term(2,3)*hermite_term(1,3))                + (hermite_term(4,3) -&
-& hermite_term(3,3)*hermite_term(1,3)))*pc(5,1)
+&term(2,3) - hermite_term(1,3)**2) + (3*PB(3))*(hermite_term(3,3) - hermite_ter&
+&m(2,3)*hermite_term(1,3)) + (hermite_term(4,3) - hermite_term(3,3)*hermite_ter&
+&m(1,3)))*pc(5,1)
 
 pc(14,20) = (PA(1) + hermite_term(1,1))*pc(6,20)
 
 pc(15,20) = (PA(3) + hermite_term(1,3))*pc(6,20) + ((3.0*(PB(3)**2))*(hermite_&
-&term(2,3) - hermite_term(1,3)**2)                + (3*PB(3))*(hermite_term(3,3&
-&) - hermite_term(2,3)*hermite_term(1,3))                + (hermite_term(4,3) -&
-& hermite_term(3,3)*hermite_term(1,3)))*pc(6,1)
+&term(2,3) - hermite_term(1,3)**2) + (3*PB(3))*(hermite_term(3,3) - hermite_ter&
+&m(2,3)*hermite_term(1,3)) + (hermite_term(4,3) - hermite_term(3,3)*hermite_ter&
+&m(1,3)))*pc(6,1)
 
 pc(16,20) = (PA(1) + hermite_term(1,1))*pc(7,20)
 
 pc(17,20) = (PA(2) + hermite_term(1,2))*pc(7,20)
 
 pc(18,20) = (PA(1) + hermite_term(1,1))*pc(5,20) + ((2.0*PA(1))*(hermite_term(&
-&2,1) - hermite_term(1,1)**2)                 + (hermite_term(3,1) - hermite_te&
-&rm(2,1)*hermite_term(1,1)))*pc(1,20)
+&2,1) - hermite_term(1,1)**2) + (hermite_term(3,1) - hermite_term(2,1)*hermite_&
+&term(1,1)))*pc(1,20)
 
 pc(19,20) = (PA(2) + hermite_term(1,2))*pc(6,20) + ((2.0*PA(2))*(hermite_term(&
-&2,2) - hermite_term(1,2)**2)                 + (hermite_term(3,2) - hermite_te&
-&rm(2,2)*hermite_term(1,2)))*pc(1,20)
+&2,2) - hermite_term(1,2)**2) + (hermite_term(3,2) - hermite_term(2,2)*hermite_&
+&term(1,2)))*pc(1,20)
 
 pc(20,20) = (PA(3) + hermite_term(1,3))*pc(7,20) + ((2.0*(PB(3)**3)*PA(3) + 3.&
-&0*(PA(3)**2)*(PB(3)**2))*(hermite_term(2,3)                - hermite_term(1,3)&
-&**2) + ((PB(3)**3) + 6.0*(PB(3)**2)*PA(3) + 3.0*PB(3)                *(PA(3)**&
-&2))*(hermite_term(3,3) - hermite_term(2,3)*hermite_term(1,3))                 &
-&+ (PA(3)**2+ 3.0*(PB(3)**2) + 6.0*PB(3)*PA(3))*(hermite_term(4,3)             &
-&    - hermite_term(3,3)*hermite_term(1,3)) + (2.0*PA(3) + 3.0*PB(3))          &
-&      *(hermite_term(5,3)- hermite_term(4,3)*hermite_term(1,3))               &
-&  + (hermite_term(6,3) - hermite_term(5,3)*hermite_term(1,3)))*pc(1,1)
+&0*(PA(3)**2)*(PB(3)**2))*(hermite_term(2,3) - hermite_term(1,3)**2) + ((PB(3)*&
+&*3) + 6.0*(PB(3)**2)*PA(3) + 3.0*PB(3)*(PA(3)**2))*(hermite_term(3,3) - hermit&
+&e_term(2,3)*hermite_term(1,3)) + (PA(3)**2+ 3.0*(PB(3)**2) + 6.0*PB(3)*PA(3))*&
+&(hermite_term(4,3) - hermite_term(3,3)*hermite_term(1,3)) + (2.0*PA(3) + 3.0*P&
+&B(3))*(hermite_term(5,3) - hermite_term(4,3)*hermite_term(1,3)) + (hermite_ter&
+&m(6,3) - hermite_term(5,3)*hermite_term(1,3)))*pc(1,1)
 
 sh(1,1) = pc(1,1)
 

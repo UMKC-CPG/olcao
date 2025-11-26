@@ -30,53 +30,63 @@ subroutine computeMTOPPolarization(inSCF,xyzP)
    use O_Kinds
    use O_TimeStamps
    use O_Constants,   only: pi, eCharge, smallThresh, bohrRad
-   use O_Lattice, only: recipVectors, realVectors, realCellVolume,&
-         & invRealVectors
    use O_Potential,   only: spin
    use O_Populate,    only: electronPopulation
-   use O_KPoints,     only: numKPoints, numAxialKPoints, mtopKPMap, kPoints
-   use O_AtomicSites, only: valeDim, numAtomSites, atomSites, &
-         & computeIonicMoment, xyzIonMoment
-   use O_AtomicTypes, only: numAtomTypes, atomTypes, maxNumValeStates
+   use O_KPoints,     only: numKPoints, numAxialKPoints, mtopKPMap
+   use O_AtomicSites, only: valeDim, computeIonicMoment, xyzIonMoment
    use O_Input,       only: numStates
    use O_MatrixSubs,  only: fullMatrixElementMult
    use O_SecularEquation, only: valeVale, valeValeKO, readDataSCF, readDataPSCF
-   use O_BLASZGERU
+   use O_BLASZGERC
 
    ! Make sure that no funny variables are used.
    implicit none
 
    ! Define passed parameters.
    integer, intent(in) :: inSCF
-   real(kind=double), intent(out) :: xyzP(3,2)
+   real(kind=double), dimension(3,2), intent(out) :: xyzP
 
    ! Define local variables.
    integer :: h,i,j,k,l
-integer :: m,n
+integer :: n,m
    integer :: maxOccupiedState
+   integer :: currNumLines,numSteps
+   integer :: energyLevelCounter
+   integer :: kcur, knxt, axis
+   integer :: kPointCount
+   integer :: maxNumStrings
+   integer, dimension(3) :: numStrings
+   real(kind=double), dimension(3,2) :: xyzP_A
+   real(kind=double), dimension(3,2) :: xyzP_B
+   real(kind=double), dimension(3,2) :: xyzP_C
    real(kind=double), dimension(2) :: psiAxis
+   real(kind=double), dimension(3,2) :: averagePhase_A
+   real(kind=double), dimension(3,2) :: averagePhase_B
+   real(kind=double), dimension(3,2) :: averagePhase_C
    real(kind=double), dimension (3,2) :: psi
    real(kind=double), allocatable, dimension (:) :: currentPopulation
    real (kind=double), allocatable, dimension (:,:,:) :: &
          & structuredElectronPopulation
-   complex(kind=double) :: dotProduct 
-   complex(kind=double) :: ld_step
-   complex(kind=double), allocatable, dimension(:) :: phiString
+   complex(kind=double), allocatable, dimension(:) :: phiString_B
+   complex(kind=double), allocatable, dimension(:) :: phiString_C
    complex(kind=double), allocatable, dimension(:,:,:) :: valeValePsi
    complex(kind=double), allocatable, dimension(:,:,:) :: CKnxt
-   complex(kind=double), allocatable, dimension(:,:,:) :: stateStateSum
-   integer :: fixed2d,numStep
-   integer :: energyLevelCounter,skipKP
-   integer :: kcur, knxt, axis
-   integer :: loop
-
-   integer :: kPointCount
-
-   real(kind=double) :: fn(3,2)
+   complex(kind=double), allocatable, dimension(:,:,:) :: stateStateMat
+   complex(kind=double), allocatable, dimension(:,:,:) :: prodM_A
+   real(kind=double), allocatable, dimension(:,:) :: stringPhaseSet_A
+   real(kind=double), allocatable, dimension(:,:) :: stringPhaseSet_B
+   real(kind=double), allocatable, dimension(:,:) :: stringPhaseSet_C
 
 
    ! Record the start of the calculation
    call timeStampStart(33)
+
+   ! Compute the number of strings for each axis and also the maximum number
+   !   of strings of all axes.
+   numStrings(1) = numAxialKPoints(2)*numAxialKPoints(3)
+   numStrings(2) = numAxialKPoints(1)*numAxialKPoints(3)
+   numStrings(3) = numAxialKPoints(1)*numAxialKPoints(2)
+   maxNumStrings = maxval(numStrings(:))
 
 
    ! allocate the Eigenvectors for sequences C
@@ -84,20 +94,26 @@ integer :: m,n
    allocate (CKnxt(valeDim,numStates,spin))
    allocate (valeValePsi(valeDim,valeDim,spin))
    allocate (valeValeKO(valeDim,valeDim,3))
+write (20,*) "inSCF = ",inSCF
    if (inSCF == 0) then
       allocate (valeVale(valeDim,numStates,spin))
    endif
    allocate (structuredElectronPopulation (numStates,numKPoints,spin))
-   allocate (phiString(spin))
+   allocate (phiString_B(spin))
+   allocate (phiString_C(spin))
    allocate (currentPopulation(spin))
-   allocate (stateStateSum(numStates,numStates,spin))
+   allocate (stringPhaseSet_A(maxNumStrings,spin))
+   allocate (stringPhaseSet_B(maxNumStrings,spin))
+   allocate (stringPhaseSet_C(maxNumStrings,spin))
 
    valeVale(:,:,:) = cmplx(0.0_double,0.0_double,double)
    valeValeKO(:,:,:) = cmplx(0.0_double,0.0_double,double)
-   stateStateSum(:,:,:) = cmplx(0.0_double,0.0_double,double)
  
    psi(:,:) = 0.0d0
    xyzP(:,:) = 0.0d0
+   xyzP_A(:,:) = 0.0d0
+   xyzP_B(:,:) = 0.0d0
+   xyzP_C(:,:) = 0.0d0
 
    ! Fill a matrix of electron populations from the electron population that
    !   was computed in populateLevels.  Note that electronPopulation is a one
@@ -116,108 +132,102 @@ integer :: m,n
       enddo
    enddo
 
-! For polarization along each axis the code fixes the other two k-coordinates
-!   and generates a set of parallel closed loops.Along x (numStep), it holds Ky
-!   and Kz constant (fixed2d), producing  Ky*Kz independent loops. Each loop
-!   steps through Kx and wraps, so the number of steps is  Kx+1 wih the final
-!   point equal to the first.Along each link between consecutive k-points the
-!   code forms the occupied-subspace overlap matrix and takes its determinant,
-!   which collapses the gauge freedom to a single complex link value.When the
-!   loop closes, the imaginary part of the accumulated logarithms gives the
-!   Berry phase for that loop.The same procedure applies along y and z . For
-!   y, the loops fix Kx and Kz giving Kx*Kz loops, each with Ky+1 steps, and
-!   the same determinant and logarithm accumulation. For z, the loops fix Kx
-!   and Ky, giving Kx*Ky loops, each with Kz+1 steps, again accumulating log
-!   det along the links and taking the imaginary part at closure.
+   ! Compute the index number of the highest occupied state for kpoint 1.
+   maxOccupiedState = 0
+   do i = 1, numStates
+      if (sum(structuredElectronPopulation(i,1,:)) < smallThresh) then
+         maxOccupiedState = i-1
+         exit
+      endif
+   enddo
 
+   ! Check that all other kPoints maintain the same highest occupied state.
+   do i = 1, numKPoints
+      if (sum(structuredElectronPopulation(maxOccupiedState,i,:)) < &
+            & smallThresh) then
+         stop "State index < maxOccupiedState is not occupied enough."
+      endif
+      if (sum(structuredElectronPopulation(maxOccupiedState+1,i,:)) > &
+            & smallThresh) then
+         stop "State index > maxOccupiedState occupied too much."
+      endif
+   enddo
+
+   ! Now that we know the max number of occupied states, we can allocate
+   !   space to hold the results as we compute them.
+   allocate (stateStateMat(maxOccupiedState,maxOccupiedState,spin))
+   allocate (prodM_A(maxOccupiedState,maxOccupiedState,spin))
+
+   write(20,*) "Expecting ", sum(numStrings(:)), " strings in three groups."
+write(20,*) "maxOccState = ", maxOccupiedState
 
    do axis = 1, 3
-      if (axis == 1) then
-         numStep = numAxialKPoints(1)
-         fixed2d = numAxialKPoints(2) * numAxialKPoints(3)
-      elseif (axis == 2) then
-         numStep = numAxialKPoints(2)
-         fixed2d = numAxialKPoints(1) * numAxialKPoints(3)
-      else
-         numStep = numAxialKPoints(3)
-         fixed2d = numAxialKPoints(1) * numAxialKPoints(2)
-      endif
-
       kPointCount = 0
+      numSteps = numAxialKPoints(axis)
+      currNumLines = numStrings(axis)
+      stringPhaseSet_A(:,:) = 0.0_double
+      stringPhaseSet_B(:,:) = 0.0_double
+      stringPhaseSet_C(:,:) = 0.0_double
 
-      do loop = 1, fixed2d
-         phiString(:) = (1.0d0, 0.0d0)
+      do h = 1, currNumLines
+         stateStateMat(:,:,:) = cmplx(0.0_double,0.0_double,double)
+         phiString_B(:) = (1.0d0, 0.0d0)
+         phiString_C(:) = (1.0d0, 0.0d0)
          psiAxis(:) = 0.0d0
+         prodM_A(:,:,:) = cmplx(0.0_double,0.0_double,double)
+         do i = 1, maxOccupiedState ! Set to identity matrix.
+            prodM_A(i,i,:) = cmplx(1.0_double,0.0_double,double)
+         enddo
 
-         do i = 1, numStep
+         do i = 1, numSteps
             kPointCount = kPointCount + 1
             kcur = mtopKPMap(axis,kPointCount)
-            if (i < numStep) then
+            if (i < numSteps) then
                knxt = mtopKPMap(axis,kPointCount+1)
             else
-               knxt = mtopKPMap(axis,kPointCount-numStep+1)
+               knxt = mtopKPMap(axis,kPointCount-numSteps+1)
             endif
 
 !write(20,*) "kcur knxt", kcur, knxt
 !write(20,*) "kcur", kPoints(:,kcur)
 !write(20,*) "knxt", kPoints(:,knxt)
+!write(20,*) "kdiff", kPoints(:,knxt) - kPoints(:,kcur)
 
-            ! Skip any kpoints with a negligable contribution for each state.
-            skipKP = 1 ! Assume that we will skip these kpoints.
-            do j = 1, numStates
-               if ((sum(abs(structuredElectronPopulation(j,kcur,:))) > &
-                     & smallThresh) .and. &
-                     & (sum(abs(structuredElectronPopulation(j,knxt,:))) > &
-                     & smallThresh)) then
-                  skipKP = 0 ! If both kp contribute enough then don't skip
-                  exit
-               endif
-            enddo
-            if (skipKP == 1) then
-               cycle
+            ! Read next kpoint waveFn coefficients and appropriate KOverlap.
+            if (i < numSteps) then ! Code 3,4,5
+               do k = 1, spin
+                  if (inSCF == 1) then
+                     call readDataSCF(k,knxt,numStates,axis+2)
+                  else
+                     call readDataPSCF(k,knxt,numStates,axis+2)
+                  endif
+               enddo
+            else ! Code 6, 7, 8: PlusG version
+               do k = 1, spin
+                  if (inSCF == 1) then
+                     call readDataSCF(k,knxt,numStates,axis+5)
+                  else
+                     call readDataPSCF(k,knxt,numStates,axis+5)
+                  endif
+               enddo
             endif
-
-            ! Read next kpoint waveFn coefficients and KOverlap. Code 3,4,5
-            do h = 1, spin
-               if (inSCF == 1) then
-                  call readDataSCF(h,knxt,numStates,axis+2)
-               else
-                  call readDataPSCF(h,knxt,numStates,axis+2)
-               endif
-            enddo
 
             ! Copy the valeVale (waveFn coeffs) to a temporary matrix because
             !   we will reuse valeVale for the other (current) kpoint.
-            !if (i < numStep) then
-               CKnxt(:valeDim,:numStates,:) = valeVale(:valeDim,:numStates,:)
-            !else
-            !   dotProduct = dot_product(recipVectors(:,axis),r)
-            !   CKnxt(:valeDim,:numStates,:) = &
-            !         & cmplx(cos(dotProduct),sin(dotProduct),double) * &
-            !         & valeVale(:valeDim,:numStates,:)
-            !endif
+            CKnxt(:valeDim,:numStates,:) = valeVale(:valeDim,:numStates,:)
 
             ! Read in only the current kpoint wave function coefficients. Code 0.
-            do h = 1, spin
+            do k = 1, spin
                if (inSCF == 1) then
-                  call readDataSCF(h,kcur,numStates,0)
+                  call readDataSCF(k,kcur,numStates,0)
                else
-                  call readDataPSCF(h,kcur,numStates,0)
+                  call readDataPSCF(k,kcur,numStates,0)
                end if
             enddo
 
             ! Initialize a matrix to hold the outer product of the waveFn
             !   coefficients from the current and next kpoint.
             valeValePsi(:,:,:) = cmplx(0.0_double,0.0_double,double)
-
-            do j = 1, numStates
-
-               currentPopulation(:) = structuredElectronPopulation(j,kcur,:)
-               if (sum(abs(currentPopulation(:))) < smallThresh) then
-                  maxOccupiedState = j-1
-                  exit
-               endif
-            enddo
 
 !write(20,*) "numStates maxOcc=", numStates, maxOccupiedState
 
@@ -226,13 +236,17 @@ integer :: m,n
 !do n = 1, valeDim
 !write(20,*) "n,CKnxt,vV",n, CKnxt(n,j,1), valeVale(n,k,1)
 !enddo
+                  ! Get the average population of the curr
                   currentPopulation(:) = &
                         & (structuredElectronPopulation(j,kcur,:) + &
                         & structuredElectronPopulation(k,kcur,:)) / 2.0_double
+!write(20,*) "currentPopulation = ", currentPopulation(:)
 
                   ! Create a valeValePsi for each pair of occupied states.
                   do l = 1, spin
-                     call zgerc(valeDim,valeDim,currentPopulation(l),&
+!valeValePsi(:,:,l) = cmplx(0.0_double,0.0_double,double)
+                     call zgerc(valeDim,valeDim,cmplx(currentPopulation(l)/2.0d0,&
+                        & 0.0_double,double),&
                            & CKnxt(:,j,l),1,valeVale(:,k,l),1,valeValePsi(:,:,l),&
                            & valeDim)
 
@@ -242,54 +256,98 @@ integer :: m,n
 !enddo
 !enddo
 
-                     call fullMatrixElementMult (stateStateSum(k,j,l), &
+                     call fullMatrixElementMult (stateStateMat(k,j,l), &
                            & valeValePsi(:,:,l), valeValeKO(:,:,axis), valeDim)
                   enddo
                enddo
             enddo
+do m = 1, maxOccupiedState
+do n = 1, maxOccupiedState
+write(20,*) "n,m,sSM = ", n, m, stateStateMat(n,m,1)
+enddo
+enddo
 
-!do n = 1, maxOccupiedState
-!do m = 1, maxOccupiedState
-!write(20,*) "m n sSS=",m,n,stateStateSum(m,n,1)
-!enddo
-!enddo
 
-!write(20,*) "i axis phiString = ", i, axis, phiString(1)
+            ! Accumulate this stateStateMat into the final product.
 
+            ! (A) Perform the product part of -im(ln(det(prod(M)))).
             do j = 1, spin
-               call phase_from_matrix(stateStateSum(:maxOccupiedState, &
-                     & :maxOccupiedState,j), ld_step)
-               phiString(j) = phiString(j) * ld_step
+               prodM_A(:,:,j) = matmul(prodM_A(:,:,j),stateStateMat(:,:,j))
             enddo
 
-!write(20,*) "ld_step phiString = ", ld_step, phiString(1)
+            ! (B) Perform the product (and determinant) parts of:
+            !   -im(ln(prod(det(M))))
+            do j = 1, spin
+               phiString_B(j) = phiString_B(j)*matrixDet(stateStateMat(:,:,j))
+            enddo
 
-         end do ! i = 1,numStep
+            ! (C) Perform the sum (and natural log and determinant) parts of:
+            !   -im(sum(ln(det(M))))
+            do j = 1, spin
+               phiString_C(j) = phiString_C(j) + &
+                     & log(matrixDet(stateStateMat(:,:,j)))
+            enddo
 
+         enddo ! i = 1,numSteps (completing a line)
+
+         ! (A) Take the determinent of the product of matrices for this string
+         !   followed by the log and extraction of the negative imaginary
+         !   component.
          do i = 1, spin
-            psi(axis,i) = psi(axis,i) + aimag(log(phiString(i)))
+            stringPhaseSet_A(h,i) = -aimag(log(matrixDet(prodM_A(:,:,i))))
          enddo
 
-!write(20,*) "axis psi = ", axis, psi(axis,1)
+         ! (B) Take the log and extract the negative of the imaginary
+         !   component.
+         do i = 1, spin
+            stringPhaseSet_B(h,i) = -aimag(log(phiString_B(i)))
+         enddo
 
-      end do ! loop
+         ! (C) Extract the negative of the imaginary component.
+         do i = 1, spin
+            stringPhaseSet_C(h,i) = -aimag(phiString_C(i))
+         enddo
 
-      do i = 1, spin
-!write(20,*) "axis psi fixed2d = ", axis, psi(axis,i), fixed2d
-         psi(axis,i)=psi(axis,i)/fixed2d
+         ! Mark the completion of this string.
+         if (mod(h,10) .eq. 0) then
+            write (20,ADVANCE="NO",FMT="(a1)") "|"
+         else
+            write (20,ADVANCE="NO",FMT="(a1)") "."
+         endif
+         if (mod(h,50) .eq. 0) then
+            write (20,*) " ",h
+         endif
+         call flush (20)
 
-!write(20,*) "axis psi = ", axis, psi(axis,i)
-         fn(axis,i) = psi(axis,i)/(2.0d0*pi)
+      end do ! h (iterating over the set of lines)
+      write(20,*)
 
-!write(20,*) "axis fn = ", axis, fn(axis,i)
-         fn(axis,i) = modulo(fn(axis,i) + 0.5d0, 1.0d0) - 0.5d0
+write(20,*) "Doing A"
+      call getAveragePhase(currNumLines,axis,stringPhaseSet_A,averagePhase_A,&
+            & xyzP_A)
+write(20,*) "Doing B"
+      call getAveragePhase(currNumLines,axis,stringPhaseSet_B,averagePhase_B,&
+            & xyzP_B)
+write(20,*) "Doing C"
+      call getAveragePhase(currNumLines,axis,stringPhaseSet_C,averagePhase_C,&
+            & xyzP_C)
 
-!write(20,*) "axis fn = ", axis, fn(axis,i)
-         xyzP(:,i) = xyzP(:,i) + (-eCharge/realCellVolume) &
-               & * fn(axis,i) * realVectors(:,axis)
-
-!write(20,*) "axis xyzP = ", axis, xyzP(:,i)
-      enddo
+!      do i = 1, spin
+!!write(20,*) "axis psi currNumLines = ", axis, psi(axis,i), currNumLines
+!         psi(axis,i)=psi(axis,i)/currNumLines
+!
+!!write(20,*) "axis psi = ", axis, psi(axis,i)
+!         fn(axis,i) = psi(axis,i)/(2.0d0*pi)
+!
+!!write(20,*) "axis fn = ", axis, fn(axis,i)
+!         fn(axis,i) = modulo(fn(axis,i) + 0.5d0, 1.0d0) - 0.5d0
+!
+!!write(20,*) "axis fn = ", axis, fn(axis,i)
+!         xyzP(:,i) = xyzP(:,i) + (-eCharge/realCellVolume) &
+!               & * fn(axis,i) * realVectors(:,axis)
+!
+!!write(20,*) "axis xyzP = ", axis, xyzP(:,i)
+!      enddo
 
 !         psi(axis) = psi(axis) - 2.0d0*pi*dnint( psi(axis)/(2.0d0*pi) )
    enddo ! axis
@@ -298,17 +356,31 @@ integer :: m,n
 
    do i = 1, spin
 !      write(20,*) 'xyzP [C/m^2] = ', xyzP(:,i)
-      xyzP(:,i) = xyzP(:,i) * (10.0d0*eCharge/(bohrRad**2))
-      write(20,*) 'xyzP [C/m^2] = ', xyzP(:,i)
+      !xyzP(:,i) = xyzP(:,i) * (10.0d0/(bohrRad**2))
+      write(20,*) 'xyzP_A [C/m^2] = ', xyzP_A(:,i)
+      write(20,*) 'xyzP_B [C/m^2] = ', xyzP_B(:,i)
+      write(20,*) 'xyzP_C [C/m^2] = ', xyzP_C(:,i)
       write(20,*) 'xyzIonMoment = ', xyzIonMoment(:)
-      write(20,*) 'Dipole Moment = ', xyzIonMoment(:) + xyzP(:,i)
+      write(20,*) 'Dipole Moment A = ', xyzIonMoment(:) + xyzP_A(:,i)
+      write(20,*) 'Dipole Moment B = ', xyzIonMoment(:) + xyzP_B(:,i)
+      write(20,*) 'Dipole Moment C = ', xyzIonMoment(:) + xyzP_C(:,i)
    enddo
 
+   xyzP = xyzP_A
+
+   ! Deallocate results. Note that valeVale is deallocated later.
    deallocate(CKnxt)
+   deallocate(valeValePsi)
    deallocate(valeValeKO)
    deallocate(structuredElectronPopulation)
-   deallocate(phiString)
+   deallocate(phiString_B)
+   deallocate(phiString_C)
    deallocate(currentPopulation)
+   deallocate(stringPhaseSet_A)
+   deallocate(stringPhaseSet_B)
+   deallocate(stringPhaseSet_C)
+   deallocate(stateStateMat)
+   deallocate(prodM_A)
 
    ! Record the end of the calculation
    call timeStampEnd(33)
@@ -316,7 +388,90 @@ integer :: m,n
 end subroutine computeMTOPPolarization
 #endif
 
-subroutine phase_from_matrix(A, detU)
+subroutine getAveragePhase(currNumLines,axis,stringPhaseSet,averagePhase,&
+      & xyzP)
+
+   ! Use necessary modules
+   use O_Constants, only: pi, eCharge, smallThresh
+   use O_Potential, only: spin
+   use O_Lattice, only: realVectors, realCellVolume
+
+   implicit none
+
+   ! Define passed parameters.
+   integer, intent(in) :: currNumLines
+   integer, intent(in) :: axis
+   real (kind=double), dimension(currNumLines,spin), intent(inout) :: &
+         & stringPhaseSet
+   real (kind=double), dimension(3,spin), intent(inout) :: averagePhase
+   real(kind=double), intent(inout) :: xyzP(3,2)
+
+   ! Define local variables.
+   integer :: h, i
+
+   ! Now that the phase for each line along this axis has been determined,
+   !   we can take an average of the phase across all lines. However,
+   !   before we can do that, we need to make sure that all the phases are
+   !   part of the same bunch and that none of them are part of a separate
+   !   bunch that was shifted by a quantum of polarization (2*pi).
+   ! We do that by a series of steps. First, we shift all phases into the
+   !   range 0,+2pi. Then, we compare all phases to the first phase and
+   !   ensure that each is no more than +/- pi away from it. Finally, we
+   !   comute the average phase and then shift it to be within the range
+   !   -pi,+pi.
+   ! This will work regardless of the "spread" of phases in the inital
+   !   list. But, it will never let the phase "jump" by 2pi if we carry out
+   !   a series of calculations (e.g., compression, tension, etc.).
+   do h = 1, spin
+      ! Step one. Ensure all phases are in the 0 to +2pi range.
+      do i = 1, currNumLines
+write(20,*) "Stage1: i,h,sPS = ",i,h,stringPhaseSet(i,h)
+         ! Ensure that the phase is positive.
+         do while (stringPhaseSet(i,h) < 0.0_double)
+            stringPhaseSet(i,h) = stringPhaseSet(i,h) + 2.0_double*pi
+         enddo
+         ! Ensure that the phase is between 0 and 2pi.
+         stringPhaseSet(i,h) = modulo(stringPhaseSet(i,h),2.0_double*pi)
+      enddo
+
+      ! Step two. Ensure that the phases are no more than pi apart.
+write(20,*) "Stage2: i,h,sPS = ",1,h,stringPhaseSet(1,h)
+      do i = 2, currNumLines
+write(20,*) "Stage2: i,h,sPS = ",i,h,stringPhaseSet(i,h)
+         if (abs(stringPhaseSet(i,h) - stringPhaseSet(1,h)) > pi) then
+            if (stringPhaseSet(i,h) > stringPhaseSet(1,h)) then
+               stringPhaseSet(i,h) = stringPhaseSet(i,h) - 2.0_double*pi
+            else
+               stringPhaseSet(i,h) = stringPhaseSet(i,h) + 2.0_double*pi
+            endif
+         endif
+      enddo
+
+do i = 1, currNumLines
+write(20,*) "Stage3: i,h,sPS = ",i,h,stringPhaseSet(i,h)
+enddo
+
+      ! Step three. Compute the average and then ensure that it is >-pi, <+pi.
+      averagePhase(axis,h) = sum(stringPhaseSet(1:currNumLines,h)) / &
+            & currNumLines
+write(20,*) "axis, Avg Phase = ", axis, averagePhase(axis,h)
+      if (averagePhase(axis,h) < -pi) then
+         averagePhase(axis,h) = averagePhase(axis,h) + 2.0_double*pi
+      elseif (averagePhase(axis,h) > pi) then
+         averagePhase(axis,h) = averagePhase(axis,h) - 2.0_double*pi
+      endif
+write(20,*) "axis, Avg Phase = ", axis, averagePhase(axis,h)
+
+      ! Step four. Convert to xyz and apply prefactors and conversions from
+      !   atomic units (bohr radii) to ...
+      xyzP(:,h) = xyzP(:,h) + (-eCharge/realCellVolume) * &
+            & averagePhase(axis,h) / pi / spin * realVectors(:,axis)
+   enddo
+
+end subroutine getAveragePhase
+
+
+function matrixDet(A)
 
    ! Define modules to use.
    use O_Kinds
@@ -324,29 +479,25 @@ subroutine phase_from_matrix(A, detU)
    ! Make sure no variables are accidentally declared.
    implicit none
 
+   ! Declare return variable.
+   complex(kind=double) :: matrixDet
+
    ! Declare passed parameters.
    complex(kind=double), intent(in) :: A(:,:)
-   complex(kind=double), intent(out) :: detU
 
    ! Define local variables.
-   integer :: n,i,info,istat,swaps,j,p
+   integer :: n,i,info,istat
+   !integer :: swaps,j,p
    complex(kind=double), allocatable :: Ac(:,:)
    integer,              allocatable :: ipiv(:)
    logical,              allocatable :: visited(:)
    real(kind=double), parameter :: tiny = 1.0d-14
    external :: zgetrf
 
-   detU = (1.0d0,0.0d0)
+   matrixDet = (1.0d0,0.0d0)
 
    if (size(A,1) /= size(A,2)) return
    n = size(A,1); if (n==0) return
-
-!write(20,*) "n=",n
-!do i=1,n
-!   do j = 1, n
-!      write(20,*) "j,i,A(j,i)=", j, i, A(j,i)
-!   enddo
-!enddo
 
    allocate(Ac(n,n), ipiv(n), visited(n), stat=istat)
       if (istat/=0) stop "Allocate failed."
@@ -357,27 +508,17 @@ subroutine phase_from_matrix(A, detU)
       stop "LU Decomposition failed."
    end if
 
-!do i=1,n
-!   do j = 1,n
-!      write(20,*) "j,i,Ac(j,i)=", j, i, Ac(j,i)
-!   enddo
-!enddo
-!
-!do i=1,n
-!   write(20,*) "i,Ac(i,i)=", i, Ac(i,i)
-!enddo
-
    do i=1,n
-      if (abs(Ac(i,i)) <= tiny) then
-         deallocate(Ac,ipiv,visited)
-         write(20,*) i, "Diagonal element is too small."
-         return
-      end if
-      detU = detU * Ac(i,i)
+      !if (abs(Ac(i,i)) <= tiny) then
+      !   deallocate(Ac,ipiv,visited)
+      !   write(20,*) i, "Diagonal element is too small."
+      !   return
+      !end if
+      matrixDet = matrixDet * Ac(i,i)
    end do
 
-!write(20,*) "Squaring det.", detU
-!   detU = detU * detU
+!write(20,*) "Squaring det.", matrixDet
+!   matrixDet = matrixDet * matrixDet
 
 !   visited = .false.; swaps = 0
 !   do i=1,n
@@ -390,11 +531,11 @@ subroutine phase_from_matrix(A, detU)
 !         if (p>0) swaps = swaps + (p-1)
 !      end if
 !   end do
-!   if (mod(swaps,2)==1) detU = -detU
+!   if (mod(swaps,2)==1) matrixDet = -matrixDet
 !
-!   detU = detU / cmplx(max(abs(detU), tiny), 0.0d0, kind=double)  ! unit phasor
+!   matrixDet = matrixDet / cmplx(max(abs(matrixDet), tiny), 0.0d0, kind=double)  ! unit phasor
 
    deallocate(Ac, ipiv, visited)
-end subroutine phase_from_matrix
+end function matrixDet
 
 end module O_MTOP
