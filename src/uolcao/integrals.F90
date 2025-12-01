@@ -3744,14 +3744,14 @@ subroutine ortho (opCode,packedVVDims,did,aid)
          ! Form product of (valeCoreOL)(coreVale) and (valeCore)(coreValeOL).
          !   Subtract both from the target matrix elements (valeVale).
          call valeCoreCoreVale (valeDim,coreDim,valeVale(:,:,i),&
-               & coreVale(:,:,i),coreValeOL(:,:,i))
+               & coreVale(:,:,i),coreValeOL(:,:,i),0)
       enddo
 #else
       ! Form a product of (valeCoreOL)(coreVale) and (valeCore)
       !   (coreValeOL).  Subtract both from the target matrix elements
       !   (valeValeGamma).
       call valeCoreCoreValeGamma (valeDim,coreDim,valeValeGamma,&
-            & coreValeGamma,coreValeOLGamma)
+            & coreValeGamma,coreValeOLGamma,0)
 #endif
    endif
 
@@ -3904,14 +3904,14 @@ subroutine orthoHamPSCF(spin,did,aid)
             !   (valeCore)(coreValeOL). Subtract both from the target matrix
             !   elements (valeVale).
             call valeCoreCoreVale (valeDim,coreDim,valeValeHam(:,:,i,h),&
-                  & coreValeHam(:,:,i,h),coreValeOL(:,:,i))
+                  & coreValeHam(:,:,i,h),coreValeOL(:,:,i),0)
          enddo
 #else
          ! Form a product of (valeCoreOL)(coreVale) and (valeCore)
          !   (coreValeOL).  Subtract both from the target matrix elements
          !   (valeValeGamma).
          call valeCoreCoreValeGamma (valeDim,coreDim,valeValeHamGamma(:,:,h),&
-               & coreValeHamGamma(:,:,h),coreValeOLGamma)
+               & coreValeHamGamma(:,:,h),coreValeOLGamma,0)
 #endif
       enddo
    endif

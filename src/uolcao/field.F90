@@ -1691,7 +1691,7 @@ endif
    endif
 
    ! Compute the ionic contribution to the dipole moment.
-   call computeIonicMoment
+   call computeIonicMoment(1)
 
    ! Print dipole moment data if requested.
    if (doDipoleFIELD == 1) then

@@ -1025,7 +1025,7 @@ subroutine readDataSCF(h,i,numStates,matrixCode)
 
    ! Import necessary data modules.
    use O_AtomicSites, only: valeDim
-   use O_SCFIntegralsHDF5, only: packedVVDims,atomOverlap_did,&
+   use O_SCFIntegralsHDF5, only: packedVVDims,fullVVDims,atomOverlap_did,&
          & atomMMOverlap_did, atomKOverlap_did, atomKOverlapPlusG_did
 #ifndef GAMMA
    use O_SCFEigVecHDF5, only: valeStates,eigenVectors_did
@@ -1087,22 +1087,38 @@ subroutine readDataSCF(h,i,numStates,matrixCode)
 #endif
          enddo
       elseif ((matrixCode >= 3) .and. (matrixCode <= 5)) then
-         ! Read the KOverlap matrix elements for the requested axis.
-         call readPackedMatrix(atomKOverlap_did(i,matrixCode-2),&
-               & packedValeVale,packedVVDims,dim1,valeDim)
 
-         ! Unpack the matrix
 #ifndef GAMMA
-         call unpackMatrix(valeValeKO(:,:,j),packedValeVale,valeDim,1)
+         ! Allocate space to read the complex KOverlap matrix
+         allocate (tempRealValeVale (valeDim,valeDim))
+         allocate (tempImagValeVale (valeDim,valeDim))
+
+         ! Read the complex KOverlap matrix from the datasets.
+         call readMatrix(atomKOverlap_did(i,matrixCode-2,:),&
+            & valeValeKO(:,:,matrixCode-2),&
+            & tempRealValeVale(:,:),tempImagValeVale(:,:),&
+            & fullVVDims,valeDim,valeDim)
+
+         ! Deallocate the space to read the complex wave function.
+         deallocate (tempRealValeVale)
+         deallocate (tempImagValeVale)
 #endif
       elseif ((matrixCode >= 6) .and. (matrixCode <= 8)) then
-         ! Read the KOverlapPlusG matrix elements for the requested axis.
-         call readPackedMatrix(atomKOverlapPlusG_did(i,matrixCode-5),&
-               & packedValeVale,packedVVDims,dim1,valeDim)
 
-         ! Unpack the matrix
 #ifndef GAMMA
-         call unpackMatrix(valeValeKO(:,:,j),packedValeVale,valeDim,1)
+         ! Allocate space to read the complex KOverlapPlusG matrix
+         allocate (tempRealValeVale (valeDim,valeDim))
+         allocate (tempImagValeVale (valeDim,valeDim))
+
+         ! Read the complex KOverlap matrix from the datasets.
+         call readMatrix(atomKOverlapPlusG_did(i,matrixCode-5,:),&
+            & valeValeKO(:,:,matrixCode-5),&
+            & tempRealValeVale(:,:),tempImagValeVale(:,:),&
+            & fullVVDims,valeDim,valeDim)
+
+         ! Deallocate the space to read the complex wave function.
+         deallocate (tempRealValeVale)
+         deallocate (tempImagValeVale)
 #endif
       endif
 
@@ -1141,8 +1157,8 @@ subroutine readDataPSCF(h,i,numStates,matrixCode)
    ! Use necessary modules.
 !   use O_KPoints, only: numKPoints
    use O_AtomicSites, only: valeDim
-   use O_PSCFIntegralsHDF5, only: packedVVDimsPSCF,atomOverlapPSCF_did,&
-         & atomMMOverlapPSCF_did, atomKOverlapPSCF_did,&
+   use O_PSCFIntegralsHDF5, only: packedVVDimsPSCF,fullVVDimsPSCF,&
+         & atomOverlapPSCF_did,atomMMOverlapPSCF_did,atomKOverlapPSCF_did,&
          & atomKOverlapPlusGPSCF_did
    use O_PSCFEigVecHDF5, only: valeStatesPSCF,eigenVectorsPSCF_did
 #ifndef GAMMA
@@ -1206,25 +1222,41 @@ subroutine readDataPSCF(h,i,numStates,matrixCode)
 #endif
          enddo
       elseif ((matrixCode >= 3) .and. (matrixCode <= 5)) then
-         ! Read the KOverlap matrix elements for the requested axis.
-         call readPackedMatrix(atomKOverlapPSCF_did(i,matrixCode-2),&
-               & packedValeVale,packedVVDimsPSCF,dim1,valeDim)
 
-         ! Unpack the matrix.
 #ifndef GAMMA
-         call unpackMatrix(valeValeKO(:,:,matrixCode-2),&
-               & packedValeVale,valeDim,1)
+         ! Allocate space to read the complex KOverlap matrix
+         allocate (tempRealValeVale (valeDim,valeDim))
+         allocate (tempImagValeVale (valeDim,valeDim))
+
+         ! Read the complex KOverlap matrix from the datasets.
+         call readMatrix(atomKOverlapPSCF_did(i,matrixCode-2,:),&
+            & valeValeKO(:,:,matrixCode-2),&
+            & tempRealValeVale(:,:),tempImagValeVale(:,:),&
+            & fullVVDimsPSCF,valeDim,valeDim)
+
+         ! Deallocate the space to read the complex wave function.
+         deallocate (tempRealValeVale)
+         deallocate (tempImagValeVale)
 #endif
+
       elseif ((matrixCode >= 6) .and. (matrixCode <= 8)) then
-         ! Read the KOverlapPlusG matrix elements for the requested axis.
-         call readPackedMatrix(atomKOverlapPlusGPSCF_did(i,matrixCode-5),&
-               & packedValeVale,packedVVDimsPSCF,dim1,valeDim)
 
-         ! Unpack the matrix.
 #ifndef GAMMA
-         call unpackMatrix(valeValeKO(:,:,matrixCode-5),&
-               & packedValeVale,valeDim,1)
+         ! Allocate space to read the complex KOverlapPlusG matrix
+         allocate (tempRealValeVale (valeDim,valeDim))
+         allocate (tempImagValeVale (valeDim,valeDim))
+
+         ! Read the complex KOverlap matrix from the datasets.
+         call readMatrix(atomKOverlapPlusGPSCF_did(i,matrixCode-5,:),&
+            & valeValeKO(:,:,matrixCode-5),&
+            & tempRealValeVale(:,:),tempImagValeVale(:,:),&
+            & fullVVDimsPSCF,valeDim,valeDim)
+
+         ! Deallocate the space to read the complex wave function.
+         deallocate (tempRealValeVale)
+         deallocate (tempImagValeVale)
 #endif
+
       endif
 
       ! Deallocate the packed matrix used to read and unpack the data.

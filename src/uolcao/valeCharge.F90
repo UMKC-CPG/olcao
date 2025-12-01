@@ -540,7 +540,7 @@ subroutine makeValenceRho(inSCF)
          & ((doDIMO_PSCF == 1) .and. (inSCF == 0))) then
 
       ! Compute the nuclear contribution to the dipole
-      call computeIonicMoment
+      call computeIonicMoment(1)
 
       write (74,*) "Electronic Moment (x,y,z): ", dipoleMomentTrace(:,1)
       write (74,*) "Nuclear Moment (x,y,z):    ", xyzIonMoment(:)

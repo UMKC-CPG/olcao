@@ -45,7 +45,8 @@ subroutine valeCoreCoreValeOL (valeDim,coreDim,valeVale,coreValeOL)
 
 end subroutine valeCoreCoreValeOL
 
-subroutine valeCoreCoreVale (valeDim,coreDim,valeVale,coreVale,coreValeOL)
+subroutine valeCoreCoreVale (valeDim,coreDim,valeVale,coreVale,coreValeOL,&
+      & fullFlag)
 
    ! Import the necessary modules
    use O_Kinds
@@ -62,12 +63,15 @@ subroutine valeCoreCoreVale (valeDim,coreDim,valeVale,coreVale,coreValeOL)
    complex (kind=double), dimension (valeDim,valeDim) :: valeVale
    complex (kind=double), dimension (coreDim,valeDim) :: coreVale
    complex (kind=double), dimension (coreDim,valeDim) :: coreValeOL
+   integer :: fullFlag
 
-   call zher2k('U','C',valeDim,coreDim,(-1.0_double,0.0_double),&
-         & coreValeOL,coreDim,coreVale,coreDim,1.0_double,valeVale,valeDim)
-
-!   valeVale = valeVale - matmul(conjg(transpose(coreValeOL)),coreVale) - &
-!         & matmul(conjg(transpose(coreVale)),coreValeOL)
+   if (fullFlag == 0) then
+      call zher2k('U','C',valeDim,coreDim,(-1.0_double,0.0_double),&
+            & coreValeOL,coreDim,coreVale,coreDim,1.0_double,valeVale,valeDim)
+   else
+      valeVale = valeVale - matmul(conjg(transpose(coreValeOL)),coreVale) - &
+            & matmul(conjg(transpose(coreVale)),coreValeOL)
+   endif
 
 end subroutine valeCoreCoreVale
 
@@ -89,6 +93,7 @@ subroutine coreValeCoreCore (valeDim,coreDim,valeCore,coreVale,coreCore)
    complex (kind=double), dimension (coreDim,ValeDim) :: coreVale
    complex (kind=double), dimension (coreDim,coreDim) :: coreCore
 
+   ! Define local variables.
    integer :: i,j
 
 
@@ -135,7 +140,7 @@ subroutine makeValeVale (valeDim,coreDim,packedValeDim,valeCore,coreVale,&
 
    ! Define the small threshhold for eliminating resultant values
    real (kind=double) :: smallThresh10
-   smallThresh10 = real(1.0D-20,double)
+   smallThresh10 = real(1.0D-10,double)
 
 
    if (storeFlag == 0) then
@@ -147,6 +152,7 @@ subroutine makeValeVale (valeDim,coreDim,packedValeDim,valeCore,coreVale,&
             enddo
          enddo
       else
+         ! Full storage, but assuming Hermitian
          do i = 1, valeDim
             do j = 1, i
                valeVale(j,i) = valevale(j,i) + sum( &
@@ -156,33 +162,43 @@ subroutine makeValeVale (valeDim,coreDim,packedValeDim,valeCore,coreVale,&
          enddo
       endif
    else
+      if (fullFlag == 0) then
 
-      ! Initialize the current index for packing the valeVale matrix.
-      currentIndex = 0
+         ! Initialize the current index for packing the valeVale matrix.
+         currentIndex = 0
 
-      do i = 1, valeDim
-         do j = 1, i
+         do i = 1, valeDim
+            do j = 1, i
 
-            ! Compute the result.
-            valeVale(j,i) = valeVale(j,i) + sum( &
-                  & valeCore(1:coreDim,j) * coreVale(1:coreDim,i))
+               ! Compute the result.
+               valeVale(j,i) = valeVale(j,i) + sum( &
+                     & valeCore(1:coreDim,j) * coreVale(1:coreDim,i))
 
-            ! Increment the array index for packing the valeVale matrix.
-            currentIndex = currentIndex + 1
+               ! Increment the array index for packing the valeVale matrix.
+               currentIndex = currentIndex + 1
 
-            ! Pack it.
-            packedValeVale(1,currentIndex) =  real(valeVale(j,i),double)
-            packedValeVale(2,currentIndex) = aimag(valeVale(j,i))
+               ! Pack it.
+               packedValeVale(1,currentIndex) =  real(valeVale(j,i),double)
+               packedValeVale(2,currentIndex) = aimag(valeVale(j,i))
 
-            ! Check for negligable components and reduce them to 0.
-            if (abs(packedValeVale(1,currentIndex)) < smallThresh10) then
-               packedValeVale(1,currentIndex) = 0.0_double
-            endif
-            if (abs(packedValeVale(2,currentIndex)) < smallThresh10) then
-               packedValeVale(2,currentIndex) = 0.0_double
-            endif
+               ! Check for negligable components and reduce them to 0.
+               if (abs(packedValeVale(1,currentIndex)) < smallThresh10) then
+                  packedValeVale(1,currentIndex) = 0.0_double
+               endif
+               if (abs(packedValeVale(2,currentIndex)) < smallThresh10) then
+                  packedValeVale(2,currentIndex) = 0.0_double
+               endif
+            enddo
          enddo
-      enddo
+      else
+         ! Full storage, and not assuming Hermitian
+         do i = 1, valeDim
+            do j = 1, valeDim
+               valeVale(j,i) = valevale(j,i) + sum( &
+                     & valeCore(1:coreDim,j) * coreVale(1:coreDim,i))
+            enddo
+         enddo
+      endif
    endif
 end subroutine makeValeVale
 
@@ -217,7 +233,7 @@ end subroutine valeCoreCoreValeOLGamma
 
 
 subroutine valeCoreCoreValeGamma (valeDim,coreDim,valeValeGamma,&
-      & coreValeGamma,coreValeOLGamma)
+      & coreValeGamma,coreValeOLGamma,fullFlag)
 
    ! Import the necessary modules
    use O_Kinds
@@ -234,12 +250,15 @@ subroutine valeCoreCoreValeGamma (valeDim,coreDim,valeValeGamma,&
    real (kind=double), dimension (valeDim,valeDim) :: valeValeGamma
    real (kind=double), dimension (coreDim,valeDim) :: coreValeGamma
    real (kind=double), dimension (coreDim,valeDim) :: coreValeOLGamma
+   integer :: fullFlag
 
-   call dsyr2k('U','C',valeDim,coreDim,-1.0_double,coreValeOLGamma,coreDim,&
-         & coreValeGamma,coreDim,1.0_double,valeValeGamma,valeDim)
-
-!   valeValeGamma = valeValeGamma - matmul(transpose(coreValeOLGamma),&
-!         & coreValeGamma) - matmul(transpose(coreValeGamma),coreValeOLGamma)
+   if (fullFlag == 0) then
+      call dsyr2k('U','C',valeDim,coreDim,-1.0_double,coreValeOLGamma,coreDim,&
+            & coreValeGamma,coreDim,1.0_double,valeValeGamma,valeDim)
+   else
+      valeValeGamma = valeValeGamma - matmul(transpose(coreValeOLGamma),&
+            & coreValeGamma) - matmul(transpose(coreValeGamma),coreValeOLGamma)
+   endif
 
 end subroutine valeCoreCoreValeGamma
 
@@ -315,6 +334,7 @@ subroutine makeValeValeGamma (valeDim,coreDim,packedValeDim,valeCoreGamma,&
             enddo
          enddo
       else
+         ! Full storage, but assuming Hermitian
          do i = 1, valeDim
             do j = 1, i
                valeValeGamma(j,i) = valeValeGamma(j,i) + sum( &
@@ -324,29 +344,39 @@ subroutine makeValeValeGamma (valeDim,coreDim,packedValeDim,valeCoreGamma,&
          enddo
       endif
    else
+      if (fullFlag == 0) then
 
-      ! Initialize the current index for packing the valeVale matrix.
-      currentIndex = 0
+         ! Initialize the current index for packing the valeVale matrix.
+         currentIndex = 0
 
-      do i = 1, valeDim
-         do j = 1, i
+         do i = 1, valeDim
+            do j = 1, i
 
-            ! Increment the array index for packing the valeVale matrix.
-            currentIndex = currentIndex + 1
+               ! Increment the array index for packing the valeVale matrix.
+               currentIndex = currentIndex + 1
 
-            ! Compute the result.
-            valeValeGamma(j,i) = valeValeGamma(j,i) + sum( &
-                  & valeCoreGamma(1:coreDim,j) * coreValeGamma(1:coreDim,i))
+               ! Compute the result.
+               valeValeGamma(j,i) = valeValeGamma(j,i) + sum( &
+                     & valeCoreGamma(1:coreDim,j) * coreValeGamma(1:coreDim,i))
 
-            ! Pack it.
-            packedValeVale(1,currentIndex) = valeValeGamma(j,i)
+               ! Pack it.
+               packedValeVale(1,currentIndex) = valeValeGamma(j,i)
 
-            ! Check for negligable components and reduce them to 0.
-            if (abs(packedValeVale(1,currentIndex)) < smallThresh10) then
-               packedValeVale(1,currentIndex) = 0.0_double
-            endif
+               ! Check for negligable components and reduce them to 0.
+               if (abs(packedValeVale(1,currentIndex)) < smallThresh10) then
+                  packedValeVale(1,currentIndex) = 0.0_double
+               endif
+            enddo
          enddo
-      enddo
+      else
+         ! Full storage, and not assuming Hermitian
+         do i = 1, valeDim
+            do j = 1, valeDim
+               valeValeGamma(j,i) = valeValeGamma(j,i) + sum( &
+                     & valeCoreGamma(1:coreDim,j) * coreValeGamma(1:coreDim,i))
+            enddo
+         enddo
+      endif
    endif
 end subroutine makeValeValeGamma
 

@@ -286,10 +286,11 @@ subroutine setupSCF
       endif
 #ifndef GAMMA
       if (doMTOP_SCF == 1) then
-         call gaussKOverlap(packedVVDims,atomKOverlap_did,atomKOverlap_aid,&
-               & zeroVectors)
-         call gaussKOverlap(packedVVDims,atomKOverlapPlusG_did,&
-               & atomKOverlapPlusG_aid,recipVectors)
+         call gaussKOverlap(packedVVDims,atomKOverlap_did(:,:,1),&
+               & atomKOverlap_did(:,:,2),atomKOverlap_aid,zeroVectors)
+         call gaussKOverlap(packedVVDims,atomKOverlapPlusG_did(:,:,1),&
+               & atomKOverlapPlusG_did(:,:,2),atomKOverlapPlusG_aid,&
+               & recipVectors)
       endif
 #endif
 
@@ -642,11 +643,12 @@ subroutine intgPSCF
       endif
 #ifndef GAMMA
       if (doMTOP_PSCF == 1) then
-         call gaussKOverlap(packedVVDimsPSCF,atomKOverlapPSCF_did,&
-               & atomKOverlapPSCF_aid,zeroVectors)
+         call gaussKOverlap(packedVVDimsPSCF,atomKOverlapPSCF_did(:,:,1),&
+               & atomKOverlapPSCF_did(:,:,2),atomKOverlapPSCF_aid,zeroVectors)
          call gaussKOverlap(packedVVDimsPSCF,&
-               & atomKOverlapPlusGPSCF_did,atomKOverlapPlusGPSCF_aid,&
-               & recipVectors)
+               & atomKOverlapPlusGPSCF_did(:,:,1),&
+               & atomKOverlapPlusGPSCF_did(:,:,2),&
+               & atomKOverlapPlusGPSCF_aid,recipVectors)
       endif
 #endif
 

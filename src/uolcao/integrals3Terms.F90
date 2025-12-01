@@ -61,7 +61,7 @@ end subroutine allocateIntegrals3Terms
 
 
 ! Three term dipole moment integral.
-subroutine gaussOverlapDM(packedVVDims,did,aid)
+subroutine gaussOverlapDM(valeValeDims,did,aid)
 
    ! Import necessary modules.
    use O_Kinds
@@ -82,7 +82,7 @@ subroutine gaussOverlapDM(packedVVDims,did,aid)
    implicit none
 
    ! Define passed parameters.
-   integer(hsize_t), dimension(2), intent(in) :: packedVVDims
+   integer(hsize_t), dimension(2), intent(in) :: valeValeDims
    integer(hid_t), dimension(numKPoints,3), intent(in) :: did
    integer(hid_t), intent(in) :: aid
 
@@ -496,7 +496,7 @@ subroutine gaussOverlapDM(packedVVDims,did,aid)
 #endif
 
    ! Perform orthogonalization and save the results to disk.
-   call ortho(6,packedVVDims,did,aid)
+   call ortho3Terms(6,valeValeDims,did,did,aid)
 
    ! Make a finishing time stamp.
    call timeStampEnd (29)
@@ -505,7 +505,7 @@ end subroutine gaussOverlapDM
 
 
 ! Three term (xyz) momentum matrix integral.
-subroutine gaussOverlapMM(packedVVDims,did,aid)
+subroutine gaussOverlapMM(valeValeDims,did,aid)
 
    ! Import necessary modules.
    use O_Kinds
@@ -526,7 +526,7 @@ subroutine gaussOverlapMM(packedVVDims,did,aid)
    implicit none
 
    ! Define passed parameters.
-   integer(hsize_t), dimension(2), intent(in) :: packedVVDims
+   integer(hsize_t), dimension(2), intent(in) :: valeValeDims
    integer(hid_t), dimension(numKPoints,3), intent(in) :: did
    integer(hid_t), intent(in) :: aid
 
@@ -940,7 +940,7 @@ subroutine gaussOverlapMM(packedVVDims,did,aid)
 #endif
 
    ! Perform orthogonalization and save the results to disk.
-   call ortho(7,packedVVDims,did,aid)
+   call ortho3Terms(7,valeValeDims,did,did,aid)
 
    ! Make a finishing time stamp.
    call timeStampEnd (12)
@@ -950,7 +950,7 @@ end subroutine gaussOverlapMM
 
 ! Two center K-Overlap integral.
 #ifndef GAMMA
-subroutine gaussKOverlap(packedVVDims,did,aid,plusG)
+subroutine gaussKOverlap(valeValeDims,did1,did2,aid,plusG)
 
    ! Import necessary modules.
    use O_Kinds
@@ -971,8 +971,8 @@ subroutine gaussKOverlap(packedVVDims,did,aid,plusG)
    implicit none
 
    ! Define passed parameters.
-   integer(hsize_t), dimension(2), intent(in) :: packedVVDims
-   integer(hid_t), dimension(numKPoints,3), intent(in) :: did
+   integer(hsize_t), dimension(2), intent(in) :: valeValeDims
+   integer(hid_t), dimension(numKPoints,3), intent(in) :: did1,did2
    integer(hid_t), intent(in) :: aid
    real (kind=double), dimension(3,3), intent(in) :: plusG
 
@@ -1345,7 +1345,7 @@ subroutine gaussKOverlap(packedVVDims,did,aid,plusG)
             call kPointLatticeOriginShift (currentNumTotalStates,&
                   & currentPair(:,:,:,k),latticeVector)
             call saveCurrentPair(i,j,numKPoints,currentPair(:,:,:,k),&
-                  & valeVale(:,:,:,k),coreVale(:,:,:,k),coreCore(:,:,:,k),0)
+                  & valeVale(:,:,:,k),coreVale(:,:,:,k),coreCore(:,:,:,k),1)
          enddo
       enddo ! (Atom loop #2)
    enddo    ! (Atom loop #1)
@@ -1365,9 +1365,9 @@ subroutine gaussKOverlap(packedVVDims,did,aid,plusG)
 
    ! Perform orthogonalization and save the results to disk.
    if (sum(plusG(:,:)) == 0.0_double) then
-      call ortho(8,packedVVDims,did,aid)
+      call ortho3Terms(8,valeValeDims,did1,did2,aid)
    else
-      call ortho(9,packedVVDims,did,aid)
+      call ortho3Terms(9,valeValeDims,did1,did2,aid)
    endif
 
    ! Make a finishing time stamp.
@@ -1377,7 +1377,7 @@ end subroutine gaussKOverlap
 #endif
 
 
-subroutine ortho (opCode,packedVVDims,did,aid)
+subroutine ortho3Terms (opCode,valeValeDims,did1,did2,aid)
 
    ! Use necessary modules.
    use O_Kinds
@@ -1397,8 +1397,8 @@ subroutine ortho (opCode,packedVVDims,did,aid)
 
    ! Define passed dummy parameters.
    integer, intent(in) :: opCode
-   integer(hsize_t), dimension(2), intent(in) :: packedVVDims
-   integer(hid_t), dimension(numKPoints,3), intent(in) :: did
+   integer(hsize_t), dimension(2), intent(in) :: valeValeDims
+   integer(hid_t), dimension(numKPoints,3), intent(in) :: did1,did2
    integer(hid_t), intent(in) :: aid
 
    ! Define local variables.
@@ -1417,8 +1417,14 @@ subroutine ortho (opCode,packedVVDims,did,aid)
          ! Form product of (valeCoreOL)(coreVale) and (valeCore)(coreValeOL).
          !   Subtract both from the target matrix elements (valeVale).
          do j = 1, 3
-            call valeCoreCoreVale (valeDim,coreDim,valeVale(:,:,i,j),&
-                  & coreVale(:,:,i,j),coreValeOL(:,:,i))
+            if ((opCode /= 8) .and. (opCode /= 9)) then
+               call valeCoreCoreVale (valeDim,coreDim,valeVale(:,:,i,j),&
+                     & coreVale(:,:,i,j),coreValeOL(:,:,i),0)
+            else
+               ! Save full matrices for KOverlap non-Hermitian matrics.
+               call valeCoreCoreVale (valeDim,coreDim,valeVale(:,:,i,j),&
+                     & coreVale(:,:,i,j),coreValeOL(:,:,i),1)
+            endif
          enddo
       enddo
 #else
@@ -1426,14 +1432,21 @@ subroutine ortho (opCode,packedVVDims,did,aid)
       !   (coreValeOL).  Subtract both from the target matrix elements
       !   (valeValeGamma).
       do j = 1, 3
-         call valeCoreCoreValeGamma (valeDim,coreDim,&
-               & valeValeGamma(:,:,j),coreValeGamma(:,:,j),&
-               & coreValeOLGamma(:,:))
+         if ((opCode /= 8) .and. (opCode /= 9)) then
+            call valeCoreCoreValeGamma (valeDim,coreDim,&
+                  & valeValeGamma(:,:,j),coreValeGamma(:,:,j),&
+                  & coreValeOLGamma(:,:),0)
+         else
+            call valeCoreCoreValeGamma (valeDim,coreDim,&
+                  & valeValeGamma(:,:,j),coreValeGamma(:,:,j),&
+                  & coreValeOLGamma(:,:),1)
+         endif
       enddo
 #endif
    endif
 
-   ! Allocate space to finish orthogonalization and pack the valeVale matrix.
+   ! Allocate space to finish orthogonalization and pack the valeVale matrix
+   !   or save the full valeVale matrix.
 #ifndef GAMMA
    deallocate (coreVale)
    allocate (valeCore(coreDim,valeDim,3)) ! Pre-transposed format.
@@ -1456,9 +1469,16 @@ subroutine ortho (opCode,packedVVDims,did,aid)
 
             ! Finally compute the product of the above
             !   (valeCore)(coreCore) with coreValeOL.
-            call makeValeVale (valeDim,coreDim,valeDim,valeCore(:,:,j),&
-                  & coreValeOL(:,:,i),valeVale(:,:,i,j),&
-                  & packedValeVale(:,:,j),1,0)
+            if ((opCode /= 8) .and. (opCode /= 9)) then
+               call makeValeVale (valeDim,coreDim,valeDim,valeCore(:,:,j),&
+                     & coreValeOL(:,:,i),valeVale(:,:,i,j),&
+                     & packedValeVale(:,:,j),1,0)
+            else
+               ! Save the full non-Hermitian valeVale
+               call makeValeVale (valeDim,coreDim,valeDim,valeCore(:,:,j),&
+                     & coreValeOL(:,:,i),valeVale(:,:,i,j),&
+                     & packedValeVale(:,:,j),1,1)
+            endif
 #else
             ! Form product of (coreValeOL)(coreCore) in temp matrix (valeCore).
             call coreValeCoreCoreGamma (valeDim,coreDim,valeCoreGamma(:,:,j),&
@@ -1466,9 +1486,16 @@ subroutine ortho (opCode,packedVVDims,did,aid)
 
             ! Finally compute the product of the above
             !   (valeCore)(coreCore) with coreValeOL.
-            call makeValeValeGamma (valeDim,coreDim,valeDim,&
-                  & valeCoreGamma(:,:,j), coreValeOLGamma,&
-                  & valeValeGamma(:,:,j), packedValeVale(:,:,j),1,0)
+            if ((opCode /= 8) .and. (opCode /= 9)) then
+               call makeValeValeGamma (valeDim,coreDim,valeDim,&
+                     & valeCoreGamma(:,:,j), coreValeOLGamma,&
+                     & valeValeGamma(:,:,j), packedValeVale(:,:,j),1,0)
+            else
+               ! Save the full non-symmetric valeVale
+               call makeValeValeGamma (valeDim,coreDim,valeDim,&
+                     & valeCoreGamma(:,:,j), coreValeOLGamma,&
+                     & valeValeGamma(:,:,j), packedValeVale(:,:,j),1,1)
+            endif
 #endif
          enddo
       else
@@ -1499,22 +1526,39 @@ subroutine ortho (opCode,packedVVDims,did,aid)
 #endif
       endif
 
-      ! Write the valeVale term onto disk in HDF5 format.
-      do j = 1, 3
-         call h5dwrite_f(did(i,j),H5T_NATIVE_DOUBLE,packedValeVale(:,:,j),&
-               & packedVVDims,hdferr)
-         select case (opCode)
-         case (6)
-            if (hdferr /= 0) stop 'failed to write dipole moment vale vale'
-         case (7)
-            if (hdferr /= 0) stop 'failed to write momentum matrix vale vale'
-         case (8)
-            if (hdferr /= 0) stop 'failed to write Koverlap vale vale'
-         case (9)
-            if (hdferr /= 0) stop 'failed to write KoverlapPlusG vale vale'
-         end select
-      enddo
-   enddo ! KPoints
+      if ((opCode /= 8) .and. (opCode /= 9)) then
+         ! Write the valeVale term onto disk in HDF5 format.
+         do j = 1, 3
+            call h5dwrite_f(did1(i,j),H5T_NATIVE_DOUBLE,packedValeVale(:,:,j),&
+                  & valeValeDims,hdferr)
+            select case (opCode)
+            case (6)
+               if (hdferr /= 0) stop 'failed to write dipole moment vale vale'
+            case (7)
+               if (hdferr /= 0) stop 'failed to write momentum matrix vale vale'
+            end select
+         enddo
+      else
+         ! Write the valeVale term onto disk in HDF5 format.
+         do j = 1, 3
+#ifndef GAMMA
+            call h5dwrite_f(did1(i,j),H5T_NATIVE_DOUBLE,&
+                  & real(valeVale(:,:,i,j),double),valeValeDims,hdferr)
+            call h5dwrite_f(did2(i,j),H5T_NATIVE_DOUBLE,&
+                  & aimag(valeVale(:,:,i,j)),valeValeDims,hdferr)
+#else
+            call h5dwrite_f(did1(i,j),H5T_NATIVE_DOUBLE,valeValeGamma(:,:,j),&
+                  & valeValeDims,hdferr)
+#endif
+            select case (opCode)
+            case (8)
+               if (hdferr /= 0) stop 'failed to write Koverlap vale vale'
+            case (9)
+               if (hdferr /= 0) stop 'failed to write KoverlapPlusG vale vale'
+            end select
+         enddo
+      endif
+   enddo ! KPoints i
 
 
    ! Record that the calculation is complete.
@@ -1553,7 +1597,7 @@ subroutine ortho (opCode,packedVVDims,did,aid)
 #endif
    deallocate (packedValeVale)
 
-end subroutine ortho
+end subroutine ortho3Terms
 
 
 subroutine cleanUpIntegrals3Terms

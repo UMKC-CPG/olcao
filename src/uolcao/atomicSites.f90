@@ -46,6 +46,7 @@ module O_AtomicSites
 
    ! Ionic data.
    real (kind=double), dimension(dim3) :: xyzIonMoment
+   real (kind=double), dimension(dim3) :: abcIonMoment
 
 
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -152,21 +153,27 @@ subroutine getAtomicSiteImplicitInfo
 end subroutine getAtomicSiteImplicitInfo
 
 
-subroutine computeIonicMoment
+subroutine computeIonicMoment(incChargePerVol)
 
    use O_Kinds
-   use O_Constants, only: eCharge
+   use O_Constants, only: eCharge,pi
    use O_PotTypes, only: potTypes
-   use O_Lattice, only: realCellVolume
+   use O_Lattice, only: getRealmagnitudes,realCellVolume,invRealVectors,realMag
    use O_ElementData, only: coreCharge
 
    implicit none
 
+   ! Define passed parameters.
+   integer, intent(in) :: incChargePerVol
+
    ! Define local variables.
-   integer :: i
+   integer :: i,j,k
    real (kind=double) :: currCoreCharge
 
+   call getRealMagnitudes
+
    xyzIonMoment(:) = 0.0_double
+   abcIonMoment(:) = 0.0_double
 
    do i = 1, numAtomSites
       if (coreDim == 0) then
@@ -176,10 +183,33 @@ subroutine computeIonicMoment
                & int(potTypes(atomSites(i)%atomTypeAssn)%nucCharge)))
       endif
 
-      xyzIonMoment(:) = xyzIonMoment(:) + eCharge / realCellVolume * &
+write(20,*) "eCharge/realCellVol = ", eCharge / realCellVolume
+!         xyzIonMoment(:) = xyzIonMoment(:) + eCharge / realCellVolume * &
+!               & (potTypes(atomSites(i)%atomTypeAssn)%nucCharge - &
+!               & currCoreCharge) * atomSites(i)%cartPos(:)
+      xyzIonMoment(:) = xyzIonMoment(:) + &
             & (potTypes(atomSites(i)%atomTypeAssn)%nucCharge - &
             & currCoreCharge) * atomSites(i)%cartPos(:)
+write(20,*) "Z = ", (potTypes(atomSites(i)%atomTypeAssn)%nucCharge - &
+            & currCoreCharge)
+write(20,*) "xyzPos = ", atomSites(i)%cartPos(:)
+write(20,*) "xyzIonMom = ", xyzIonMoment(:)
    enddo
+
+   if (incChargePerVol == 1) then
+      xyzIonMoment(:) = xyzIonMoment(:) * eCharge / realCellVolume
+   endif
+
+   ! Convert xyz moment into abc coordinates.
+   do j = 1,3 ! abc axes
+      abcIonMoment(j) = 0.0_double
+      do k = 1,3 ! xyz axes
+         abcIonMoment(j) = abcIonMoment(j) + &
+               & xyzIonMoment(k)*invRealVectors(k,j)
+      enddo
+      abcIonMoment(j) = abcIonMoment(j)*realMag(j)
+   enddo
+write(20,*) "abcIonMom = ", abcIonMoment(:)
 
    ! Convert from atomic units of distance (bohr radii).
 

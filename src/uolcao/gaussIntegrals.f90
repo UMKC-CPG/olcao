@@ -129405,7 +129405,7 @@ end if
 
    end subroutine delectron3CIntgCB
 
-   subroutine Koverlap2CIntg(a1,a2,A,B,deltaK,l1l2switch,sh)
+   subroutine KOverlap2CIntg(a1,a2,A,B,deltaK,l1l2switch,sh)
 
    use O_Kinds
    use O_Constants, only: pi
@@ -135099,6 +135099,6 @@ sh(16,16) = 16*pc(17,17) - 4*pc(17,12) - 4*pc(17,19) - 4*pc(12,17) + pc(12,12)&
 end if
 
 
-   end subroutine Koverlap2CIntg
+   end subroutine KOverlap2CIntg
 
 end module O_GaussianIntegrals

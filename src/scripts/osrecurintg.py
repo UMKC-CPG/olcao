@@ -1030,36 +1030,42 @@ def print_head(settings, f, num_sh_intg, num_pc_intg, max_lam):
       inquire(299+unitPlus, OPENED = io_opened)
       if (.not. io_opened) then
          open (299+unitPlus, file=filename, status="unknown")
-
-         ! Print a header line.
-
-         ! Start with the parameters.
-         write (299+unitPlus,fmt="(a)",advance="NO") "IDX SEG STEP "
-         write (299+unitPlus,fmt="(a)",advance="NO") "alpha1 alpha2 alpha3 "
-         write (299+unitPlus,fmt="(a)",advance="NO") "Ax Ay Az "
-         write (299+unitPlus,fmt="(a)",advance="NO") "Bx By Bz "
-         write (299+unitPlus,fmt="(a)",advance="NO") "Cx Cy Cz "
-         write (299+unitPlus,fmt="(a)",advance="NO") "deltaKx deltaKy deltaKz "
-
-         ! Now add the pc names.
-         do j = 1, """ + f"{num_pc_intg}" + """
-            do k = 1, """ + f"{num_pc_intg}" + """
-               write (299+unitPlus,fmt="(4a)",advance="NO") &
-                     & trim(pcName(k)),"_",trim(pcName(j))," "
-            enddo
-         enddo
-
-         ! Now add the sh names.
-         do j = 1, """ + f"{num_sh_intg}" + """
-            do k = 1, """ + f"{num_sh_intg}" + """
-               write (299+unitPlus,fmt="(4a)",advance="NO") &
-                     & trim(shName(k)),"_",trim(shName(j))," "
-            enddo
-         enddo
-
       endif
 
       if ((num_segments > 1) .or. (num_steps > 1)) then
+
+         ! Print a header line.
+         if (curr_line == 1) then
+
+            ! Start with the parameters.
+            write (299+unitPlus,fmt="(a)",advance="NO") "IDX SEG STEP "
+            write (299+unitPlus,fmt="(a)",advance="NO") "alpha1 alpha2 alpha3 "
+            write (299+unitPlus,fmt="(a)",advance="NO") "Ax Ay Az "
+            write (299+unitPlus,fmt="(a)",advance="NO") "Bx By Bz "
+            write (299+unitPlus,fmt="(a)",advance="NO") "Cx Cy Cz "
+            write (299+unitPlus,fmt="(a)",advance="NO") "dltKx dltKy dltKz "
+
+            ! Now add the pc names.
+            do j = 1, """ + f"{num_pc_intg}" + """
+               do k = 1, """ + f"{num_pc_intg}" + """
+                  write (299+unitPlus,fmt="(4a)",advance="NO") &
+                        & trim(pcName(k)),"_",trim(pcName(j))," "
+               enddo
+            enddo
+
+            ! Now add the sh names.
+            do j = 1, """ + f"{num_sh_intg}" + """
+               do k = 1, """ + f"{num_sh_intg}" + """
+                  write (299+unitPlus,fmt="(4a)",advance="NO") &
+                        & trim(shName(k)),"_",trim(shName(j))," "
+               enddo
+            enddo
+
+            ! End the header line.
+            write (299+unitPlus,*)
+         endif
+
+         ! Print the data line.
 
          ! Print the line number.
          write (299+unitPlus,fmt="(i5)",advance="NO") curr_line
@@ -1074,8 +1080,6 @@ def print_head(settings, f, num_sh_intg, num_pc_intg, max_lam):
          ! Print the result difference for the given pc matrix.
          do j = 1, """ + f"{num_pc_intg}" + """
             do k = 1, """ + f"{num_pc_intg}" + """
-               !write (299+unitPlus,fmt="(e16.8)",advance="NO") pc(k,j,1)
-               !write (299+unitPlus,fmt="(e16.8)",advance="NO") pc(k,j,2)
                write (299+unitPlus,fmt="(e16.8)",advance="NO") &
                      & pc(k,j,1) - pc(k,j,2)
             enddo
@@ -1093,7 +1097,7 @@ def print_head(settings, f, num_sh_intg, num_pc_intg, max_lam):
          write (299+unitPlus, *) ""
 
       else
-         write (299+unitPlus,fmt="(2i5)",advance="NO") h, i
+
          write (299+unitPlus,fmt="(3e16.8)",advance="NO") alphas(:)
          write (299+unitPlus,fmt="(3e16.8)",advance="NO") pos(:,1)
          write (299+unitPlus,fmt="(3e16.8)",advance="NO") pos(:,2)
@@ -1103,7 +1107,8 @@ def print_head(settings, f, num_sh_intg, num_pc_intg, max_lam):
          ! Print the result difference for the given pc matrix.
          do j = 1, """ + f"{num_pc_intg}" + """
             do k = 1, """ + f"{num_pc_intg}" + """
-               write (299+unitPlus,fmt="(2a4)") pcName(k), pcName(j)
+               write (299+unitPlus,fmt="(2a4)",advance="NO") &
+                     & pcName(k),pcName(j)
                write (299+unitPlus,fmt="(e16.8)",advance="NO") pc(k,j,1)
                write (299+unitPlus,fmt="(e16.8)",advance="NO") pc(k,j,2)
                write (299+unitPlus,fmt="(e16.8)") &
@@ -1114,7 +1119,8 @@ def print_head(settings, f, num_sh_intg, num_pc_intg, max_lam):
          ! Print the result difference for the given sh matrix.
          do j = 1, """ + f"{num_sh_intg}" + """
             do k = 1, """ + f"{num_sh_intg}" + """
-               write (299+unitPlus,fmt="(2a16)") shName(k), shName(j)
+               write (299+unitPlus,fmt="(2a16)",advance="NO") &
+                     & shName(k),shName(j)
                write (299+unitPlus,fmt="(e16.8)") &
                      & sh(k,j,1) - sh(k,j,2)
             enddo
