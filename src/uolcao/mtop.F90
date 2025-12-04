@@ -77,6 +77,7 @@ integer :: n,m
    real(kind=double), allocatable, dimension(:,:) :: stringPhaseSet_A
    real(kind=double), allocatable, dimension(:,:) :: stringPhaseSet_B
    real(kind=double), allocatable, dimension(:,:) :: stringPhaseSet_C
+complex(kind=double), allocatable, dimension(:,:) :: unitary
 
    complex(kind=double), dimension(2,2) :: ssm
    complex(kind=double), dimension(2,2) :: pma
@@ -230,7 +231,7 @@ write (20,*) "inSCF = ",inSCF
    !   space to hold the results as we compute them.
    allocate (stateStateMat(maxOccupiedState,maxOccupiedState,spin))
    allocate (prodM_A(maxOccupiedState,maxOccupiedState,spin))
-
+allocate (unitary(maxOccupiedState,maxOccupiedState))
    write(20,*) "Expecting ", sum(numStrings(:)), " strings in three groups."
 write(20,*) "maxOccState = ", maxOccupiedState
 
@@ -355,7 +356,10 @@ valeValePsi(:,:,l) = cmplx(0.0_double,0.0_double,double)
                enddo ! k: maxOccupiedStates
             enddo ! j: maxOccupiedStates
 write(20,*) "UNITARY: i,h = ", i,h
-write(20,*) matmul(conjg(transpose(stateStateMat(:,:,1))),stateStatemat(:,:,1))
+unitary = matmul(conjg(transpose(stateStateMat(:,:,1))),stateStatemat(:,:,1))
+do m = 1, maxOccupiedState
+write(23+axis,*) unitary(m,m)
+enddo
 !do m = 1, maxOccupiedState
 !do n = 1, maxOccupiedState
 !write(20,*) "n,m,sSM,pMA = ", n, m, stateStateMat(n,m,1), prodM_A(n,m,1)
@@ -480,6 +484,10 @@ call flush(20)
       write(20,*) 'Dipole Moment C+ = ', xyzIonMoment(:) + xyzP_C(:,i)
       write(20,*) 'Dipole Moment B- = ', xyzIonMoment(:) - xyzP_B(:,i)
       write(20,*) 'Dipole Moment C- = ', xyzIonMoment(:) - xyzP_C(:,i)
+      write(20,*) 'Dipole Moment C/m^2 B+ = ', (xyzIonMoment(:) + xyzP_B(:,i)) * 10.0d0/(bohrRad**2)
+      write(20,*) 'Dipole Moment C/m^2 C+ = ', (xyzIonMoment(:) + xyzP_C(:,i)) * 10.0d0/(bohrRad**2)
+      write(20,*) 'Dipole Moment C/m^2 B- = ', (xyzIonMoment(:) - xyzP_B(:,i)) * 10.0d0/(bohrRad**2)
+      write(20,*) 'Dipole Moment C/m^2 C- = ', (xyzIonMoment(:) - xyzP_C(:,i)) * 10.0d0/(bohrRad**2)
    enddo
 
    xyzP = xyzP_B
@@ -564,7 +572,9 @@ subroutine getAveragePhase(currNumLines,axis,stringPhaseSet,averagePhase)
 
 write(20,*) "Got here 1a"
 call flush(20)
-write(20,*) stringPhaseSet(:,h)
+do i = 1,currNumLines
+write(20+axis,*) stringPhaseSet(i,h),1
+enddo
       ! Sort the string phases and copy the sorted list over the original.
       !call mergeSort(stringPhaseSet(:,h),sortedStringPhaseSet,&
       !      & indexStringPhaseSet,segmentBorders,numSegments)
@@ -631,7 +641,9 @@ write(20,*) "Step4 ", stringPhaseSet(i,h) / pi / spin*realMag(axis)
 !      enddo
 write(20,*) "Got here 2b"
 call flush(20)
-write(20,*) stringPhaseSet(:,h)
+do i = 1,currNumLines
+write(30+axis,*) stringPhaseSet(i,h),1
+enddo
 
       ! Compute the average phase and then ensure that it is >-pi, <+pi.
       averagePhase(axis,h) = sum(stringPhaseSet(1:currNumLines,h)) / &

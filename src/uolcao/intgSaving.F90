@@ -147,8 +147,9 @@ subroutine applyPhaseFactors (currentPair,pairXBasisFn12,statesDim1,statesDim2,&
    integer, intent(in) :: statesDim2
    complex (kind=double), dimension (maxNumStates,maxNumStates,&
          & numKPoints), intent(inout) :: currentPair
-   real (kind=double), dimension (statesDim1,statesDim2), &
-         & intent(in) :: pairXBasisFn12
+   real (kind=double), dimension (:,:), intent(in) :: pairXBasisFn12
+!   real (kind=double), dimension (statesDim1,statesDim2), &
+!         & intent(in) :: pairXBasisFn12
    integer, intent(in) :: k ! Cell loop index
    integer, intent(in) :: runCode
 

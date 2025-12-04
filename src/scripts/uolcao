@@ -21,6 +21,7 @@ sub printHelp
 #              [-field [\$edge]] | [-scffield [\$edge]] |
 #              [-loen] ]
 #              [-serialxyz]
+#              [-valgrind]
 #              -help
 #
 #-help prints this information.
@@ -36,6 +37,8 @@ sub printHelp
 #-serialxyz will cause any optical properties calculation to conserve
 #       memory at the cost of time by computing the x, y, and z components
 #       in serial fashion instead of the default simultanious treatment.
+#-valgrind will cause the fortran programs to be run in a valgrind
+#       environment. The default behavior will include --leak-check.
 #
 #Note: Checkpointing is used internally for the SCF and post-SCF calculations.
 #       Any completed checkpointed calculations will be skipped if found. So,
@@ -131,6 +134,7 @@ my $jobID; # See below
 my $jobName;
 my $spinPol;
 my $serialxyz;
+my $valgrind;
 
 # Information about which job to run for a given $jobID.
 # SCF only = 0
@@ -338,6 +342,7 @@ sub setDefaultVars
    $basisCode_pscf=0;#Code for which scf basis to be use. (Default is none.)
    $basisSet_pscf=0; #Set to 1 if given explicitly on the command line.
    $serialxyz=0;     #Optical jobs will compute x,y,z all at once.
+   $valgrind=0;      #Valgrind will not be used by default.
 }
 
 
@@ -363,6 +368,8 @@ sub parseCLP
       }
       elsif ($ARGV[$number] eq "-serialxyz")
          {$serialxyz = 1;}
+      elsif ($ARGV[$number] eq "-valgrind")
+         {$valgrind = 1;}
       elsif ($ARGV[$number] eq "-scfdos")
       {
          $jobID = 101;
@@ -975,7 +982,10 @@ sub initExes
    #   the user to do two separate calculation explicitly.
 
    # Set the command line execution mechanism.
-   $exeMechanism = "time";
+   if ($valgrind == 0)
+      {$exeMechanism = "time";}
+   else
+      {$exeMechanism = "time valgrind --leak-check=yes";}
 
    # Determine the mechanism for submitting a serial OLCAO job.
    $subMechanism = $OLCAO_EXE;

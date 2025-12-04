@@ -962,7 +962,8 @@ subroutine dimo(inSCF)
    use O_Populate,        only: occupiedEnergy, populateStates
    use O_SecularEquation, only: energyEigenValues, &
          & shiftEnergyEigenValues
-   use O_ValeCharge, only: makeValenceRho
+   !use O_ValeCharge, only: makeValenceRho
+   use O_DIMO,            only: computeDIMO
 
 
    ! Make sure that no funny variables are defined.
@@ -971,9 +972,9 @@ subroutine dimo(inSCF)
    ! Declare passed parameters.
    integer, intent(in) :: inSCF
 
-   ! Open the DOS files that will be written to.  If a spin polarized
-   !   calculation is being done, then 60, 70, 80 hold spin up and 61, 71, 81
-   !   hold spin down.  60,61=TDOS; 70,71= PDOS; 80,81=Localization Index
+   ! Open the DIMO files that will be written to.  If a spin polarized
+   !   calculation is being done, then 74 holds spin up and 75 holds
+   !   spin down.
    open (unit=74,file='fort.74',status='new',form='formatted')
    if (spin == 2) then
       open (unit=75,file='fort.75',status='new',form='formatted')
@@ -987,9 +988,9 @@ subroutine dimo(inSCF)
    ! Shift the energy eigen values according to the highest occupied state.
    call shiftEnergyEigenValues(occupiedEnergy)
 
-   ! Call the DOS subroutine to compute the total and partial density of states
-   !   as well as the localization index.
-   call makeValenceRho(inSCF)
+   ! Call the DIMO subroutine to compute the dipole moment.
+   !call makeValenceRho(inSCF)
+   call computeDIMO(inSCF)
 
    ! Close the output files.
    close(74)
@@ -1321,7 +1322,7 @@ end subroutine cleanUpSCF
 subroutine cleanUpPSCF
 
    ! Use necessary modules.
-   use O_CommandLine, only: doSYBD_PSCF, doMTOP_PSCF
+   use O_CommandLine, only: doSYBD_PSCF, doDIMO_PSCF
    use O_Lattice, only: cleanUpLattice
    use O_Potential, only:  cleanUpPotential
    use O_AtomicSites, only: cleanUpAtomSites
@@ -1347,7 +1348,7 @@ subroutine cleanUpPSCF
    call cleanUpLattice
 
    ! Deallocate if necessary.
-   if (doSYBD_PSCF < 0) then
+   if ((doSYBD_PSCF < 0) .and. (doDIMO_PSCF < 0)) then
       call cleanUpSecularEqn
    endif
 

@@ -882,7 +882,7 @@ sub initDefaults
 
    # Default DOS options
    $eDeltaDOS=0.01;
-   $sigmaDOS=0.1;
+   $sigmaDOS=0.5;
    $eminDOS=-30;
    $emaxDOS=30;
    $detailCodePDOS=0;

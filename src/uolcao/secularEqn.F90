@@ -258,7 +258,7 @@ subroutine secularEqnSCF(spinDirection, numStates)
       ! Write the energy eigenValues onto disk in HDF5 format in a.u.
       call h5dwrite_f (eigenValues_did(i,spinDirection),H5T_NATIVE_DOUBLE,&
             & energyEigenValues(:,i,spinDirection),states,hdferr)
-      if (hdferr /= 0) stop 'Cannot write energy eigen values.'
+      if (hdferr /= 0) stop 'Cannot write energy eigen values SCF.'
 
       ! In the event that we have some atoms with plusUJ terms, we need to
       !   update the terms. The update depends on the charge in each of the
@@ -287,22 +287,22 @@ subroutine secularEqnSCF(spinDirection, numStates)
       call h5dwrite_f(eigenVectors_did(1,i,spinDirection),&
             & H5T_NATIVE_DOUBLE,real(valeVale(:,:numStates,spinDirection),&
             & double),valeStates,hdferr)
-      if (hdferr /= 0) stop 'Cannot write real energy eigen vectors.'
+      if (hdferr /= 0) stop 'Cannot write real energy eigen vectors SCF.'
       call h5dwrite_f(eigenVectors_did(2,i,spinDirection),&
             & H5T_NATIVE_DOUBLE,aimag(valeVale(:,:numStates,spinDirection)),&
             & valeStates,hdferr)
-      if (hdferr /= 0) stop 'Cannot write imag energy eigen vectors.'
+      if (hdferr /= 0) stop 'Cannot write imag energy eigen vectors SCF.'
 #else
       call h5dwrite_f(eigenVectors_did(1,i,spinDirection),&
             & H5T_NATIVE_DOUBLE,valeValeGamma(:,:numStates,spinDirection),&
             & valeStates,hdferr)
-      if (hdferr /= 0) stop 'Cannot write real energy eigen vectors.'
+      if (hdferr /= 0) stop 'Cannot write real energy eigen vectors SCF.'
 #endif
 
       ! Record that this calculation is complete.
       call h5awrite_f(eigenVectors_aid(i,spinDirection),H5T_NATIVE_INTEGER,&
             & 1,attribIntDims,hdferr)
-      if (hdferr /= 0) stop 'Failed to record eigenvector success'
+      if (hdferr /= 0) stop 'Failed to record eigenvector success SCF.'
    enddo ! Loop i over kpoints.
 
    ! Once all kpoints are done, we need to reset the attributes so that the
@@ -310,7 +310,7 @@ subroutine secularEqnSCF(spinDirection, numStates)
    do i = 1, numKPoints
       call h5awrite_f(eigenVectors_aid(i,spinDirection),H5T_NATIVE_INTEGER,&
             & 0,attribIntDims,hdferr)
-      if (hdferr /= 0) stop 'Failed to reset eigenvector success to 0'
+      if (hdferr /= 0) stop 'Failed to reset eigenvector success to 0 SCF.'
    enddo
 
    ! Deallocate unnecessary arrays and matrices.
@@ -431,7 +431,7 @@ subroutine secularEqnPSCF(spinDirection,numStates,numComponents,ol_did,&
          if (hdferr /= 0) stop 'Failed to close eigen vector PSCF status'
          call h5dread_f(eVal_did(i,spinDirection),H5T_NATIVE_DOUBLE,&
                & energyEigenValues(:numStates,i,spinDirection),states,hdferr)
-         if (hdferr /= 0) stop 'Failed to read EVals'
+         if (hdferr /= 0) stop 'Failed to read EVals PSCF'
          cycle
       endif
 
@@ -540,7 +540,7 @@ subroutine secularEqnPSCF(spinDirection,numStates,numComponents,ol_did,&
       ! Write the energy eigenValues onto disk in HDF5 format in a.u.
       call h5dwrite_f (eVal_did(i,spinDirection),H5T_NATIVE_DOUBLE,&
             & energyEigenValues(:,i,spinDirection),states,hdferr)
-      if (hdferr /= 0) stop 'Cannot write energy eigen values.'
+      if (hdferr /= 0) stop 'Cannot write energy eigen values PSCF.'
 
       ! If we have some atoms with plusUJ terms, we need to update the just
       !   obtained eVectors. The update depends on the charge in each of the
@@ -569,16 +569,16 @@ subroutine secularEqnPSCF(spinDirection,numStates,numComponents,ol_did,&
       call h5dwrite_f(eVec_did(1,i,spinDirection),&
             & H5T_NATIVE_DOUBLE,real(valeVale(:,:numStates,spinDirection),&
             & double), valeStatesPSCF,hdferr)
-      if (hdferr /= 0) stop 'Cannot write real energy eigen vectors.'
+      if (hdferr /= 0) stop 'Cannot write real energy eigen vectors PSCF.'
       call h5dwrite_f(eVec_did(2,i,spinDirection),&
             & H5T_NATIVE_DOUBLE,aimag(valeVale(:,:numStates,spinDirection)),&
             & valeStatesPSCF,hdferr)
-      if (hdferr /= 0) stop 'Cannot write imag energy eigen vectors.'
+      if (hdferr /= 0) stop 'Cannot write imag energy eigen vectors PSCF.'
 #else
       call h5dwrite_f(eVec_did(1,i,spinDirection),&
             & H5T_NATIVE_DOUBLE,real(valeValeGamma(:,:numStates,&
             & spinDirection),double),valeStatesPSCF,hdferr)
-      if (hdferr /= 0) stop 'Cannot write real energy eigen vectors.'
+      if (hdferr /= 0) stop 'Cannot write real energy eigen vectors PSCF.'
 #endif
 
       ! Record that this kpoint has been finished.
@@ -595,9 +595,9 @@ subroutine secularEqnPSCF(spinDirection,numStates,numComponents,ol_did,&
       ! Record that this calculation is complete.
       call h5awrite_f(eVec_aid(i,spinDirection),H5T_NATIVE_INTEGER,&
             & 1,attribIntDims,hdferr)
-      if (hdferr /= 0) stop 'Failed to record eigenvector success'
+      if (hdferr /= 0) stop 'Failed to record eigenvector success PSCF.'
       call h5aclose_f(eVec_aid(i,spinDirection),hdferr)
-      if (hdferr /= 0) stop 'Failed to close eigenvector attribute'
+      if (hdferr /= 0) stop 'Failed to close eigenvector attribute PSCF.'
    enddo ! Loop i over kpoints.
 
    ! Deallocate unnecessary arrays and matrices.

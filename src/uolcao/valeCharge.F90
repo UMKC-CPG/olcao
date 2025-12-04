@@ -36,30 +36,29 @@ subroutine makeValenceRho(inSCF)
    ! Import the necessary modules.
    use O_Kinds
    use O_TimeStamps
-   use O_CommandLine, only: doDIMO_SCF, doDIMO_PSCF, doForce_SCF, doForce_PSCF
-   use O_AtomicSites, only: valeDim, computeIonicMoment, xyzIonMoment
+   use O_CommandLine, only: doForce_SCF, doForce_PSCF
+   use O_AtomicSites, only: valeDim
    use O_Input, only: numStates, numElectrons
    use O_KPoints, only: numKPoints
-   use O_Constants, only: smallThresh
+   use O_Constants, only: smallThresh,eCharge
    use O_Potential, only: rel,spin,potDim,potCoeffs,&
          & numPlusUJAtoms, converged
    use O_Populate, only: electronPopulation,cleanUpPopulation
    use O_SCFIntegralsHDF5, only: atomOverlap_did,atomKEOverlap_did, &
-         & atomMVOverlap_did,atomNPOverlap_did,atomDMOverlap_did, &
-         & atomPotOverlap_did,packedVVDims
-   use O_PSCFIntegralsHDF5, only: atomDMOverlapPSCF_did
+         & atomMVOverlap_did,atomNPOverlap_did,atomPotOverlap_did,packedVVDims
+   use O_PSCFIntegralsHDF5, only: atomOverlapPSCF_did,packedVVDimsPSCF
+   use O_Lattice, only: realCellVolume
 #ifndef GAMMA
    use O_BLASZHER
    use O_SecularEquation, only: valeVale,cleanUpSecularEqn,energyEigenValues,&
          & update1UJ, readDataSCF, readDataPSCF
-   use O_MatrixSubs, only: readMatrix,readPackedMatrix,matrixElementMult, &
-         & packMatrix
+   use O_MatrixSubs, only: readPackedMatrix,matrixElementMult,packMatrix
    use O_Force, only: computeForce,valeValeF
 #else
    use O_BLASDSYR
    use O_SecularEquation, only: valeValeGamma, cleanUpSecularEqn, &
          & energyEigenValues, update1UJ, readDataSCF, readDataPSCF
-   use O_MatrixSubs, only: readMatrixGamma,readPackedMatrix, &
+   use O_MatrixSubs, only: readPackedMatrix, &
          & matrixElementMultGamma,packMatrixGamma
    use O_Force, only: computeForceGamma,valeValeFGamma
 #endif
@@ -79,8 +78,6 @@ subroutine makeValenceRho(inSCF)
    real (kind=double), allocatable, dimension (:)     :: tempDensity
    real (kind=double), allocatable, dimension (:)     :: electronEnergy
    real (kind=double), allocatable, dimension (:)     :: currentPopulation
-   real (kind=double), allocatable, dimension (:,:)   :: tempRealValeVale
-   real (kind=double), allocatable, dimension (:,:)   :: tempImagValeVale
    real (kind=double), allocatable, dimension (:,:,:) :: &
          & structuredElectronPopulation
 #ifndef GAMMA
@@ -125,16 +122,24 @@ subroutine makeValenceRho(inSCF)
    ! Allocate space to hold the trace of the charge density, nuclear potential,
    !   kinetic energy, mass velocity, and dipole moment.
    if (inSCF == 1) then
-      allocate (chargeDensityTrace(spin))
       allocate (nucPotTrace(spin))
+      nucPotTrace(:) = 0.0_double
+      allocate (chargeDensityTrace(spin))
+      chargeDensityTrace(:) = 0.0_double
       allocate (kineticEnergyTrace(spin))
+      kineticEnergyTrace(:) = 0.0_double
       if (rel == 1) then
          allocate (massVelocityTrace(spin))
+         massVelocityTrace(:) = 0.0_double
       endif
-   endif
-   if (((doDIMO_SCF == 1) .and. (converged == 1)) .or. &
-         & ((doDIMO_PSCF == 1) .and. (inSCF == 0))) then
-      allocate (dipoleMomentTrace(3, spin))
+   else
+#ifndef GAMMA
+      allocate (valeVale(valeDim,numStates,spin))
+      valeVale(:,:,:) = cmplx(0.0_double,0.0_double,double)
+#else
+      allocate (valeValeGamma(valeDim,numStates,spin))
+      valeValeGamma(:,:,:) = 0.0_double
+#endif
    endif
 
    ! Allocate space to hold the currentPopulation based on spin
@@ -142,23 +147,9 @@ subroutine makeValenceRho(inSCF)
    allocate (electronEnergy (spin))
    allocate (structuredElectronPopulation (numStates,numKPoints,spin))
 
-   ! Initialize variables from data modules.
-   potRho(:,:) = 0.0_double
-   if (inSCF == 1) then
-      nucPotTrace(:) = 0.0_double
-      kineticEnergyTrace(:) = 0.0_double
-      chargeDensityTrace(:) = 0.0_double
-      if (rel == 1) then
-         massVelocityTrace(:) = 0.0_double
-      endif
-   endif
-   if (((doDIMO_SCF == 1) .and. (converged == 1)) .or. &
-         & ((doDIMO_PSCF == 1) .and. (inSCF == 0))) then
-      dipoleMomentTrace(:,:) = 0.0_double
-   endif
-
    ! Initialize local variables
    electronEnergy(:) = 0.0_double
+   potRho(:,:) = 0.0_double
 
 
    ! Fill a matrix of electron populations from the electron population that
@@ -307,8 +298,13 @@ subroutine makeValenceRho(inSCF)
       allocate (packedValeVale(dim1,valeDim*(valeDim+1)/2))
 
       ! Read the overlap matrix into the packedValeVale representation.
-      call readPackedMatrix (atomOverlap_did(i),packedValeVale,&
-            & packedVVDims,dim1,valeDim)
+      if (inSCF == 1) then
+         call readPackedMatrix (atomOverlap_did(i),packedValeVale,&
+               & packedVVDims,dim1,valeDim)
+      else
+         call readPackedMatrix (atomOverlapPSCF_did(i),packedValeVale,&
+               & packedVVDimsPSCF,dim1,valeDim)
+      endif
 
       ! In the case that the calculation is spin polarized (spin=2) then we
       !   need to convert the values in the packedValeValeRho density matrix
@@ -399,30 +395,6 @@ subroutine makeValenceRho(inSCF)
             enddo
          enddo
       endif ! inSCF == 1
-
-      ! If needed, compute the dipole moment.
-      if (((doDIMO_SCF == 1) .and. (converged == 1)) .or. &
-            & ((doDIMO_PSCF == 1) .and. (inSCF == 0))) then
-         do j = 1, 3 ! xyz directions
-
-            if (inSCF == 0) then
-               call readPackedMatrix (atomDMOverlap_did(i,j),packedValeVale,&
-                     & packedVVDims,dim1,valeDim)
-            else
-               call readPackedMatrix (atomDMOverlapPSCF_did(i,j),&
-                     & packedValeVale,packedVVDims,dim1,valeDim)
-            endif
-            do k = 1, spin
-#ifndef GAMMA
-               call matrixElementMult (dipoleMomentTrace(j,k),packedValeVale,&
-                     & packedValeValeRho(:,:,k),dim1,valeDim)
-#else
-               call matrixElementMultGamma (dipoleMomentTrace(j,k),&
-                     & packedValeVale,packedValeValeRho(:,:,k),dim1,valeDim)
-#endif
-            enddo
-         enddo
-      endif
 
       ! If needed, compute the forces
       if (((doForce_SCF == 1) .and. (converged == 1)) .or. &
@@ -527,30 +499,6 @@ subroutine makeValenceRho(inSCF)
                & electronEnergy(2)
          write (20,fmt='(a24,f18.8)') '(DOWN) Electron Sum    = ', &
                & sumElecEnergy
-      endif
-   endif
-
-
-   ! If the dipole moment calculation was requested, then print it. Note that
-   !   the units of the dipole moment are e * a_0 where e is the electronic
-   !   charge and a_0 is the bohr radius.
-   ! The units of the dipole moment calculation are ea0 where e is the number
-   !    of valence electrons and a0 is the bohr radius. 
-   if (((doDIMO_SCF == 1) .and. (converged == 1)) .or. &
-         & ((doDIMO_PSCF == 1) .and. (inSCF == 0))) then
-
-      ! Compute the nuclear contribution to the dipole
-      call computeIonicMoment(1)
-
-      write (74,*) "Electronic Moment (x,y,z): ", dipoleMomentTrace(:,1)
-      write (74,*) "Nuclear Moment (x,y,z):    ", xyzIonMoment(:)
-      write (74,*) "Dipole Moment (x,y,z):    ", (xyzIonMoment(:) - &
-            & dipoleMomentTrace(:,1)) / numElectrons
-      if (spin == 2) then
-         write (75,*) "Electronic Moment (x,y,z): ", dipoleMomentTrace(:,2)
-         write (75,*) "Nuclear Moment (x,y,z):    ", xyzIonMoment(:)
-         write (75,*) "Dipole Moment (x,y,z):    ", (xyzIonMoment(:) - &
-               & dipoleMomentTrace(:,2)) / numElectrons
       endif
    endif
 

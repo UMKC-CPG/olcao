@@ -296,6 +296,11 @@ subroutine readMatrix (datasetIDs,matrix,tempRealMatrix,tempImagMatrix,&
    if (hdferr /= 0) stop 'Failed to read temp imag matrix'
 
    ! Assign the wave function values.
+!write(20,*) "dim1,dim2,matrixDims = ", dim1,dim2,matrixDims(:)
+!write(20,*) "size matrix", size(matrix,1), size(matrix,2)
+!write(20,*) "size tempReal", size(tempRealMatrix,1), size(tempRealMatrix,2)
+!write(20,*) "size tempImag", size(tempImagMatrix,1), size(tempImagMatrix,2)
+!call flush(20)
    matrix(:,:) = cmplx(tempRealMatrix(:,:),tempImagMatrix(:,:),double)
 
 end subroutine readMatrix

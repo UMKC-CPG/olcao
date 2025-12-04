@@ -439,11 +439,14 @@ subroutine gaussOverlapDM(valeValeDims,did,aid)
             !   index is over the number of cells in the superlattice.
             do l = 1, 3
 #ifndef GAMMA
+!               call applyPhaseFactors (currentPair(:,:,:,l),&
+!                     & pairXBasisFn12(1:currentNumTotalStates(1),&
+!                     & 1:currentNumTotalStates(2),l),&
+!                     & currentNumTotalStates(1),currentNumTotalStates(2),&
+!                     & k,0)
                call applyPhaseFactors (currentPair(:,:,:,l),&
-                     & pairXBasisFn12(1:currentNumTotalStates(1),&
-                     & 1:currentNumTotalStates(2),l),&
-                     & currentNumTotalStates(1),currentNumTotalStates(2),&
-                     & k,0)
+                     & pairXBasisFn12(:,:,l),currentNumTotalStates(1),&
+                     & currentNumTotalStates(2),k,0)
 #else
                call applyPhaseFactorsGamma (currentPairGamma(:,:,l),&
                      & pairXBasisFn12(1:currentNumTotalStates(1),&
