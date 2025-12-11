@@ -40,8 +40,8 @@ sub printHelp
 #                 [-pdb] [-cif] [-basisVis]
 #                 [-emu]
 #                 [-nocore]
-#                 [-slurm [-q \$queue] [-t \$time] [-m \$memory] [-n \$cpus]
-#                         [-N \$nodes]]
+#                 [-slurm [-p \$partition] [-a \$account] [-t \$time]
+#                         [-m \$memory] [-n \$cpus] [-N \$nodes]]
 #                 [-help]
 
 ###################################################
@@ -252,6 +252,11 @@ sub printHelp
 #  designated as "core" will be orthogonalized out of the eigen value
 #  problem.
 
+# The -slurm option allows the user to specify certain parameters used in
+#   the slurm submission script. Specifically, the user can specify the
+#   partition, the account to charge, the time needed, the memory needed,
+#   the number of cores requested, and the number of nodes requested.
+
 #The -help option will print all this great useful information.
 
 ##############
@@ -293,8 +298,8 @@ sub printHelp
 #   -basisVis:     No files will be made to help visualize the basis.
 #   -nocore:       All "core" orbitals will be treated as part of the valence.
 #   -slurm:        The default sub parameters are:
-#        \$queue = general, \$time = 00:60:00, \$memory = 10G, \$cpus = 1,
-#        \$nodes = 1
+#        \$partition = general, \$account = <NOT SPECIFIED>,
+#        \$time = 00:60:00, \$memory = 10G, \$cpus = 1, \$nodes = 1
 #   -help:         No help will be printed.
 ENDHELP
    exit(0);
@@ -593,7 +598,8 @@ my $pso_conf;
 my $noCore;
 
 # Variables for the slurm submission script.
-my $queue;
+my $partition;
+my $account;
 my $time;
 my $memory;
 my $cpus;
@@ -980,7 +986,8 @@ sub initDefaults
    $noCore = 0; # This will have core orbitals orthogonalized out.
 
    # Default for slurm submission scripts.
-   $queue = "general";
+   $partition = "rulisp-lab";
+   $account = "rulisp-lab";
    $time = "00:60:00";
    $memory = "10G";
    $cpus = 1;
@@ -1301,8 +1308,10 @@ sub parseCommandLine
 
             $nextTag = $ARGV[++$number];
 
-            if ($nextTag eq "-q")
-               {$queue = $ARGV[++$number];}
+            if ($nextTag eq "-p")
+               {$partition = $ARGV[++$number];}
+            elsif ($nextTag eq "-a")
+               {$account = $ARGV[++$number];}
             elsif ($nextTag eq "-t")
                {$time = $ARGV[++$number];}
             elsif ($nextTag eq "-m")
@@ -3371,8 +3380,10 @@ sub printStructure
    # Insert the primitive vectors determined from the olcao output.
    foreach $axisABC (1..3)
    {
-      printf STRUCTURE "%16.8f%16.8f%16.8f\n",$realLattice_ref->[$axisABC][1],
-            $realLattice_ref->[$axisABC][2],$realLattice_ref->[$axisABC][3];
+      printf STRUCTURE "%26.18f%26.18f%26.18f\n",
+            $realLattice_ref->[$axisABC][1],
+            $realLattice_ref->[$axisABC][2],
+            $realLattice_ref->[$axisABC][3];
    }
 
    # Print the number of atomic sites.
@@ -3391,7 +3402,8 @@ sub printStructure
             $cumulativeNumTypes[$sortedAtomElementID[$atom]]
             [$sortedAtomSpeciesID[$atom]];
 
-      printf STRUCTURE "%5d %5d %18.8f %18.8f %18.8f %2s\n",$atom,$currTypeID,
+      printf STRUCTURE "%5d %5d %20.14f %20.14f %20.14f %2s\n",
+            $atom,$currTypeID,
             $sortedDirectXYZ[$atom][1],
             $sortedDirectXYZ[$atom][2],
             $sortedDirectXYZ[$atom][3],
@@ -3412,7 +3424,8 @@ sub printStructure
             $cumulativeNumTypes[$sortedAtomElementID[$atom]]
             [$sortedAtomSpeciesID[$atom]];
 
-      printf STRUCTURE "%5d %5d %18.8f %18.8f %18.8f %2s\n",$atom,$currTypeID,
+      printf STRUCTURE "%5d %5d %20.14f %20.14f %20.14f %2s\n",
+            $atom,$currTypeID,
             $sortedDirectXYZ[$atom][1],
             $sortedDirectXYZ[$atom][2],
             $sortedDirectXYZ[$atom][3],
@@ -3514,7 +3527,7 @@ sub printOLCAOInput
    # Print data useful for dipole moment calculations.
    print OLCAO "DIPOLE_INPUT_DATA\n";
    print OLCAO "DIPOLE_CENTER\n";
-   print OLCAO "0.5 0.5 0.5    ! FractABC: center about which to compute the dipole.\n";
+   print OLCAO "0.0 0.0 0.0    ! FractABC: center about which to compute the dipole.\n";
 
    # Print data useful for the dos portion of the calculation
    print OLCAO "DOS_INPUT_DATA\n";
@@ -3541,7 +3554,8 @@ sub printOLCAOInput
    # Print data useful for the mtop portion of the calculation.
    print OLCAO "MTOP_INPUT_DATA\n";
    print OLCAO "$kpMesh[2][1] $kpMesh[2][2] $kpMesh[2][3] # PSCF\n";
-   print OLCAO "$kpShift # Shift\n";
+   print OLCAO "0.0 0.0 0.0 # Shift\n";
+   #print OLCAO "$kpShift # Shift\n";
 
    # Print data that is useful for the xanes portion of the calculation.
    print OLCAO "PACS_INPUT_DATA\n";
@@ -4940,15 +4954,19 @@ sub makeSubFile
       open (SUBFILE,">$subDir/$slurm_sub") ||
             die "Cannot open $subDir/$slurm_sub for writing.\n";
       $subHeader[0] = "#!/bin/bash\n";
-      $subHeader[1] = "\#SBATCH -p $queue\n";
-      $subHeader[2] = "\#SBATCH -J $proj_name\n";
-      $subHeader[3] = "\#SBATCH -o $proj_name.o\%J\n";
-      $subHeader[4] = "\#SBATCH -e $proj_name.e\%J\n";
-      $subHeader[5] = "\#SBATCH -n $cpus\n";
-      $subHeader[6] = "\#SBATCH -N $nodes\n";
-      $subHeader[7] = "\#SBATCH -t $time\n";
-      $subHeader[8] = "\#SBATCH --mem=$memory\n";
-      $subHeader[9] = "\#\n";
+      $subHeader[1] = "\#SBATCH -p $partition\n";
+      if ($account ne "")
+         {$subHeader[2] = "\#SBATCH -A $account\n";}
+      else
+         {$subHeader[2] = "";}
+      $subHeader[3] = "\#SBATCH -J $proj_name\n";
+      $subHeader[4] = "\#SBATCH -o $proj_name.o\%J\n";
+      $subHeader[5] = "\#SBATCH -e $proj_name.e\%J\n";
+      $subHeader[6] = "\#SBATCH -n $cpus\n";
+      $subHeader[7] = "\#SBATCH -N $nodes\n";
+      $subHeader[8] = "\#SBATCH -t $time\n";
+      $subHeader[9] = "\#SBATCH --mem=$memory\n";
+      $subHeader[10] = "\#\n";
    }
    else
    {
@@ -4969,10 +4987,13 @@ sub makeSubFile
       print SUBFILE "source $OLCAO_RC/olcaorc\n";
       print SUBFILE "export OMP_NUM_THREADS=1\n";
       print SUBFILE "cd $proj_dir || exit\n";
-      print SUBFILE "\"\$OLCAO_BIN/uolcao\" -dos\n";
-      print SUBFILE "\"\$OLCAO_BIN/uolcao\" -bond\n";
-      print SUBFILE "\"\$OLCAO_BIN/uolcao\" -sybd\n";
-      print SUBFILE "\"\$OLCAO_BIN/uolcao\" -optc\n";
+      print SUBFILE "\"\$OLCAO_BIN/uolcao\" -scf NO -mtop\n";
+      print SUBFILE "\"\$OLCAO_BIN/uolcao\" -scf NO -dimo\n";
+      print SUBFILE "\"\$OLCAO_BIN/uolcao\" -scf NO -bond\n";
+#      print SUBFILE "\"\$OLCAO_BIN/uolcao\" -dos\n";
+#      print SUBFILE "\"\$OLCAO_BIN/uolcao\" -bond\n";
+#      print SUBFILE "\"\$OLCAO_BIN/uolcao\" -sybd\n";
+#      print SUBFILE "\"\$OLCAO_BIN/uolcao\" -optc\n";
 #      print SUBFILE "\"\$OLCAO_BIN/upolcao\" -dos\n";
 #      print SUBFILE "\"\$OLCAO_BIN/upolcao\" -bond\n";
 #      print SUBFILE "\"\$OLCAO_BIN/upolcao\" -sybd\n";

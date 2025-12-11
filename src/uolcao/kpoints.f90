@@ -938,6 +938,19 @@ subroutine makeMTOPIndexMap
       enddo
    enddo
 
+write(20,*) "AXIS1"
+do i = 1,kPointCount
+   write(20,*) "i map kp",i,mtopKPMap(1,i), kPoints(:,i)
+enddo
+write(20,*) "AXIS2"
+do i = 1,kPointCount
+   write(20,*) "i map kp",i,mtopKPMap(2,i), kPoints(:,i)
+enddo
+write(20,*) "AXIS3"
+do i = 1,kPointCount
+   write(20,*) "i map kp",i,mtopKPMap(3,i), kPoints(:,i)
+enddo
+
 end subroutine makeMTOPIndexMap
 
 
@@ -958,8 +971,8 @@ function getIndexFromIndices(a,b,c)
    !   number of full lines on the c-axis we passed to get to the current
    !   b-axis point, followed by nAKP(2)*nAKP(3) times the number of full
    !   c,b planes we passed to get to the current a-axis point.
-   getIndexFromIndices = c + (b-1)*numAxialKPoints(2) + &
-         & (a-1)*numAxialKPoints(2)*numAxialKPoints(1)
+   getIndexFromIndices = c + (b-1)*numAxialKPoints(3) + &
+         & (a-1)*numAxialKPoints(2)*numAxialKPoints(3)
 
 end function getIndexFromIndices
 

@@ -504,7 +504,11 @@ subroutine mainSCF
    ! Compute the final band structure if convergence was achieved or if the
    !   last iteration was done.  (I.e. we are out of the SCF loop.)
    do i = 1, spin
-      call secularEqnSCF(i, numStates)
+      ! If we explicitly requested zero iterations, then do not recompute
+      !   the wave function.
+      if (lastIteration > 0) then
+         call secularEqnSCF(i, numStates)
+      endif
    enddo
 
 end subroutine mainSCF
@@ -1277,7 +1281,7 @@ subroutine cleanUpSCF
    ! Use necessary modules.
    use O_CommandLine, only: doDIMO_SCF, doForce_SCF, doPSCF
    use O_Lattice, only: cleanUpLattice
-   use O_Potential, only:  cleanUpPotential
+   use O_Potential, only:  cleanUpPotential, lastIteration
    use O_AtomicSites, only: cleanUpAtomSites
    use O_AtomicTypes, only: cleanUpAtomTypes
    use O_PotSites, only: cleanUpPotSites
@@ -1309,7 +1313,7 @@ subroutine cleanUpSCF
 
    ! Because we already deallocated in makeValence Rho we only deallocate
    !   if necessary.
-   if ((doDIMO_SCF < 0) .and. (doForce_SCF < 0)) then
+   if ((doDIMO_SCF < 0) .and. (doForce_SCF < 0) .and. (lastIteration > 0)) then
       call cleanUpSecularEqn
    endif
 

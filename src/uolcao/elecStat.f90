@@ -812,6 +812,7 @@ subroutine residualQ
    ! Begin with nested loops over the potential alphas of each potential site.
    do i = 1, numPotSites
       if (potSites(i)%firstPotType == 1) then
+!write(20,*) "FPT:i",i
 
          ! Assign local copies of the potential type assignment of the current
          !   potential site, and the number of alphas for that type.
@@ -837,6 +838,7 @@ subroutine residualQ
          !   only happen when the element changes).
 
          if (lastElement /= currentElement) then
+!write(20,*) "lastElem /= currElem,i",lastElement,currentElement,i
             do j = 1, currentNumAlphas(1)
 
                ! Get the potential alpha overlap between the current alpha and
@@ -907,6 +909,10 @@ subroutine residualQ
          do k = 1, numCellsRecip
             phase(k) = cos(sum(cellDimsRecip(:,k) * potSiteSep(:)))
          enddo
+!write (20,*) "i,j,numCellsRecip ",i,j,numCellsRecip
+!do k = 1, numCellsRecip
+!write (20,*) phase(k)
+!enddo
 
          ! Find the origin (vector) of the superlattice site closest to the
          !   difference between the position vectors of two potential sites.
@@ -919,6 +925,7 @@ subroutine residualQ
          ! Determine the distance between the latticeVector calculated above,
          !   and the potSiteSep vector also calculated above.
          minSepVector(:) = potSiteSep(:) - latticeVector(:)
+!write(20,*) "minSepVec ",minSepVector(:)
 
          do k = 1, currentNumAlphas(1)
 

@@ -131,7 +131,7 @@ subroutine makeValeVale (valeDim,coreDim,packedValeDim,valeCore,coreVale,&
    real    (kind=double), dimension (2,packedValeDim * &
          & (packedValeDim+1)/2) :: packedValeVale
    integer :: storeFlag ! 1=Copy matrix for packed storage, 0=Do not.
-   integer :: fullFlag  ! Only when storeFlag=0.  1=make full matrix, 0=do not.
+   integer :: fullFlag  ! 1=make full matrix (useful for non-Herm.), 0=do not.
 
    ! Define loop control variables
    integer :: i,j
@@ -190,6 +190,14 @@ subroutine makeValeVale (valeDim,coreDim,packedValeDim,valeCore,coreVale,&
                endif
             enddo
          enddo
+do i = 1, valeDim
+do j = 1, valeDim
+valeVale(j,i) = valeVale(i,j)
+if (i > 36) then
+write (30,*) "j,i,vv(j,i)",j,i,valeVale(j,i)
+endif
+enddo
+enddo
       else
          ! Full storage, and not assuming Hermitian
          do i = 1, valeDim

@@ -13,18 +13,19 @@ subroutine computeBond (inSCF)
    ! Import necessary modules.
    use O_Kinds
    use O_TimeStamps
+   use O_Constants,   only: pi, hartree, bigThresh, smallThresh, bohrRad, &
+         & eCharge
    use O_Potential,   only: spin
-   use O_Lattice,     only: realVectors
+   use O_Lattice,     only: realVectors,realCellVolume
    use O_AtomicTypes, only: numAtomTypes, atomTypes, maxNumStates
    use O_KPoints,     only: numKPoints
    use O_Populate,    only: electronPopulation
    use O_AtomicSites, only: coreDim, valeDim, numAtomSites, atomSites
    use O_PotTypes,    only: potTypes
-   use O_Constants,   only: pi, hartree, bigThresh, smallThresh, bohrRad
    use O_ElementData, only: coreCharge
    use O_Input,       only: numStates, sigmaBOND, eminBOND, emaxBOND, &
          & deltaBOND, maxBL, outputCodeBondQ, excitedAtomPACS, &
-         & maxNumNeighbors, numElectrons
+         & maxNumNeighbors
 #ifndef GAMMA
    use O_SecularEquation, only: valeVale, valeValeOL, energyEigenValues, &
          & readDataSCF, readDataPSCF
@@ -935,6 +936,9 @@ subroutine computeBond (inSCF)
                   & atomTypes(currentType)%speciesID
             write (9+h,fmt=200) "TYPE_ID          ", &
                   & atomTypes(currentType)%typeID
+            write (9+h,fmt=300) "NEUT_VALE_CHARGE   ", potTypes(&
+                  & atomSites(i)%atomTypeAssn)%nucCharge - sum(coreCharge(:,&
+                  & int(potTypes(atomSites(i)%atomTypeAssn)%nucCharge)))
             write (9+h,fmt=300) "ATOM_CHARGE      ", atomCharge(i,h)
             numSQN_l = atomTypes(currentType)%numQN_lValeRadialFns(1)
             numPQN_l = atomTypes(currentType)%numQN_lValeRadialFns(2)
@@ -1011,7 +1015,8 @@ subroutine computeBond (inSCF)
             & currCoreCharge) * atomSites(i)%cartPos(:)
    enddo
    write(20,*)
-   write(20,fmt="(a,3e12.4)") "xyzIonMoment(:) = ", xyzIonMoment(:)
+   !write(20,fmt="(a,3e18.8)") "xyzIonMoment = ", xyzIonMoment(:)
+   write(20,*) "xyzIonMoment = ", xyzIonMoment(:)
 
    xyzElecMoment(:) = 0.0_double
    do i = 1, numAtomSites
@@ -1020,14 +1025,19 @@ subroutine computeBond (inSCF)
       else
          currCharge = sum(atomCharge(i,:))
       endif
-         xyzElecMoment(:) = xyzElecMoment(:) + currCharge * &
-               & atomSites(i)%cartPos(:)
+      xyzElecMoment(:) = xyzElecMoment(:) + currCharge * &
+            & atomSites(i)%cartPos(:)
    enddo
    write(20,*)
-   write(20,fmt="(a,3e12.4)") "xyzElecMoment(:) = ", xyzElecMoment(:)
-
-   write (20,fmt="(a,3e12.4)") "I-E(:) = ", &
-         & (xyzIonMoment(:) - xyzElecMoment(:)) / numElectrons
+   write(20,*) "xyzElecMoment = ", xyzElecMoment(:)
+   write(20,*)
+   write (20,*) "Dipole Moment [Debye] = ", 2.541746473 * &
+         & (xyzIonMoment(:) - xyzElecMoment(:))
+   write (20,*) "Total Dipole Moment [Debye] = ", 2.541746473 * &
+         & sqrt(sum((xyzIonMoment(:) - xyzElecMoment(:))**2))
+   write (20,*) "Polarization [C/m^2] = ", eCharge * &
+         & (xyzIonMoment(:) - xyzElecMoment(:)) / realCellVolume * &
+         & 10.0_double / bohrRad**2
 
    ! Deallocate matrices that are no longer needed.
    deallocate (numOrbIndex)

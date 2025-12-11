@@ -85,6 +85,7 @@ complex(kind=double), allocatable, dimension(:,:) :: unitary
    real(kind=double) :: resultA
    real(kind=double) :: resultB
    real(kind=double) :: resultC
+   complex(kind=double) :: tempVar
 
    ! Record the start of the calculation
    call timeStampStart(33)
@@ -93,67 +94,67 @@ complex(kind=double), allocatable, dimension(:,:) :: unitary
    call computeIonicMoment(0)
 
    ! Demonstrate correctness of mathematical operations.
-   write(20,*) "INITIALIZE"
-   ssm = reshape((/(1.0,4.0), (2.0,3.0), (3.0,2.0), (4.0,1.0)/), shape(ssm))
-   write(20,*) "ssm=",ssm(:,:)
-   pma = reshape((/(1.0,0.0), (0.0,0.0), (0.0,0.0), (1.0,0.0)/), shape(pma))
-   write(20,*) "pma=",pma(:,:)
-   psb = (1.0, 0.0)
-   write(20,*) "psb=",psb
-   psc = (0.0, 0.0)
-   write(20,*) "psc=",psc
-
-   write(20,*) "STEP 1"
-   pma = matmul(pma,ssm)
-   psb = psb*matrixDet(ssm)
-   psc = psc + log(matrixDet(ssm))
-   write(20,*) "pma=",pma(:,:)
-   write(20,*) "psb=",psb
-   write(20,*) "psc=",psc
-   write(20,*)
-
-   write(20,*) "NEXT SSM"
-   ssm = reshape((/(2.0,5.0), (1.0,1.0), (7.0,3.0), (8.0,4.0)/), shape(ssm))
-   write(20,*) "ssm=",ssm(:,:)
-
-   write(20,*) "STEP 2"
-   pma = matmul(pma,ssm)
-   psb = psb*matrixDet(ssm)
-   psc = psc + log(matrixDet(ssm))
-   write(20,*) "pma=",pma(:,:)
-   write(20,*) "psb=",psb
-   write(20,*) "psc=",psc
-
-   write(20,*) "RESULT"
-   resultA = -aimag(log(matrixDet(pma)))
-   resultB = -aimag(log(psb))
-   resultC = -aimag(psc)
-   write(20,*) "A ", resultA
-   write(20,*) "B ", resultB
-   write(20,*) "C ", resultC
-
-   write(20,*) "RESULT in -pi to pi"
-   do while (resultA < -pi)
-      resultA = resultA + 2.0d0*pi
-   enddo
-   do while (resultA > pi)
-      resultA = resultA - 2.0d0*pi
-   enddo
-   do while (resultB < -pi)
-      resultB = resultB + 2.0d0*pi
-   enddo
-   do while (resultB > pi)
-      resultB = resultB - 2.0d0*pi
-   enddo
-   do while (resultC < -pi)
-      resultC = resultC + 2.0d0*pi
-   enddo
-   do while (resultC > pi)
-      resultC = resultC - 2.0d0*pi
-   enddo
-   write(20,*) "A ", resultA
-   write(20,*) "B ", resultB
-   write(20,*) "C ", resultC
+!   write(20,*) "INITIALIZE"
+!   ssm = reshape((/(1.0,4.0), (2.0,3.0), (3.0,2.0), (4.0,1.0)/), shape(ssm))
+!   write(20,*) "ssm=",ssm(:,:)
+!   pma = reshape((/(1.0,0.0), (0.0,0.0), (0.0,0.0), (1.0,0.0)/), shape(pma))
+!   write(20,*) "pma=",pma(:,:)
+!   psb = (1.0, 0.0)
+!   write(20,*) "psb=",psb
+!   psc = (0.0, 0.0)
+!   write(20,*) "psc=",psc
+!
+!   write(20,*) "STEP 1"
+!   pma = matmul(pma,ssm)
+!   psb = psb*matrixDet(ssm)
+!   psc = psc + log(matrixDet(ssm))
+!   write(20,*) "pma=",pma(:,:)
+!   write(20,*) "psb=",psb
+!   write(20,*) "psc=",psc
+!   write(20,*)
+!
+!   write(20,*) "NEXT SSM"
+!   ssm = reshape((/(2.0,5.0), (1.0,1.0), (7.0,3.0), (8.0,4.0)/), shape(ssm))
+!   write(20,*) "ssm=",ssm(:,:)
+!
+!   write(20,*) "STEP 2"
+!   pma = matmul(pma,ssm)
+!   psb = psb*matrixDet(ssm)
+!   psc = psc + log(matrixDet(ssm))
+!   write(20,*) "pma=",pma(:,:)
+!   write(20,*) "psb=",psb
+!   write(20,*) "psc=",psc
+!
+!   write(20,*) "RESULT"
+!   resultA = -aimag(log(matrixDet(pma)))
+!   resultB = -aimag(log(psb))
+!   resultC = -aimag(psc)
+!   write(20,*) "A ", resultA
+!   write(20,*) "B ", resultB
+!   write(20,*) "C ", resultC
+!
+!   write(20,*) "RESULT in -pi to pi"
+!   do while (resultA < -pi)
+!      resultA = resultA + 2.0d0*pi
+!   enddo
+!   do while (resultA > pi)
+!      resultA = resultA - 2.0d0*pi
+!   enddo
+!   do while (resultB < -pi)
+!      resultB = resultB + 2.0d0*pi
+!   enddo
+!   do while (resultB > pi)
+!      resultB = resultB - 2.0d0*pi
+!   enddo
+!   do while (resultC < -pi)
+!      resultC = resultC + 2.0d0*pi
+!   enddo
+!   do while (resultC > pi)
+!      resultC = resultC - 2.0d0*pi
+!   enddo
+!   write(20,*) "A ", resultA
+!   write(20,*) "B ", resultB
+!   write(20,*) "C ", resultC
 
    ! Compute the number of strings for each axis and also the maximum number
    !   of strings of all axes.
@@ -168,7 +169,7 @@ complex(kind=double), allocatable, dimension(:,:) :: unitary
    allocate (CKnxt(valeDim,numStates,spin))
    allocate (valeValePsi(valeDim,valeDim,spin))
    allocate (valeValeKO(valeDim,valeDim,3))
-write (20,*) "inSCF = ",inSCF
+!write (20,*) "inSCF = ",inSCF
    if (inSCF == 0) then
       allocate (valeVale(valeDim,numStates,spin))
    endif
@@ -219,10 +220,16 @@ write (20,*) "inSCF = ",inSCF
    do i = 1, numKPoints
       if (sum(structuredElectronPopulation(maxOccupiedState,i,:)) < &
             & smallThresh) then
+         write(20,*) "kpoint ", i
+         write(20,*) "population ", sum(structuredElectronPopulation(&
+               & maxOccupiedState,i,:))
          stop "State index < maxOccupiedState is not occupied enough."
       endif
       if (sum(structuredElectronPopulation(maxOccupiedState+1,i,:)) > &
             & smallThresh) then
+         write(20,*) "kpoint ", i
+         write(20,*) "population ", sum(structuredElectronPopulation(&
+               & maxOccupiedState,i,:))
          stop "State index > maxOccupiedState occupied too much."
       endif
    enddo
@@ -236,6 +243,7 @@ allocate (unitary(maxOccupiedState,maxOccupiedState))
 write(20,*) "maxOccState = ", maxOccupiedState
 
    do axis = 1, 3
+write (20,*) "AXIS=",axis
       kPointCount = 0
       numSteps = numAxialKPoints(axis)
       currNumLines = numStrings(axis)
@@ -341,8 +349,8 @@ valeValePsi(:,:,l) = cmplx(0.0_double,0.0_double,double)
                      !      & cmplx(1.0_double,0.0_double,double),valeVale(:,k,l),1,&
                      !      & CKnxt(:,j,l),1,valeValePsi(:,:,l),valeDim)
                      call zgerc(valeDim,valeDim,cmplx(1.0d0,0.0_double,double),&
-                           & CKnxt(:,j,l),1,valeVale(:,k,l),1,valeValePsi(:,:,l),&
-                           & valeDim)
+                           & CKnxt(:,j,l),1,valeVale(:,k,l),1,&
+                           & valeValePsi(:,:,l),valeDim)
 
 !do m = 1, valeDim
 !do n = 1, valeDim
@@ -358,7 +366,7 @@ valeValePsi(:,:,l) = cmplx(0.0_double,0.0_double,double)
 write(20,*) "UNITARY: i,h = ", i,h
 unitary = matmul(conjg(transpose(stateStateMat(:,:,1))),stateStatemat(:,:,1))
 do m = 1, maxOccupiedState
-write(23+axis,*) unitary(m,m)
+write(23+axis,*) m,unitary(m,m)
 enddo
 !do m = 1, maxOccupiedState
 !do n = 1, maxOccupiedState
@@ -385,8 +393,10 @@ write(20,*) "B matrixDet"
             !   -im(sum(ln(det(M))))
             do j = 1, spin
 write(20,*) "C matrixDet"
+!tempVar = log(matrixDet(stateStateMat(:,:,j)))
                phiString_C(j) = phiString_C(j) + &
                      & log(matrixDet(stateStateMat(:,:,j)))
+!write(20,*) "intermediate phaseC: ", -aimag(tempVar)
             enddo
 
          enddo ! i = 1,numSteps (completing a line)
@@ -435,7 +445,7 @@ call flush(20)
       call getAveragePhase(currNumLines,axis,stringPhaseSet_B,averagePhase_B)
 write(20,*) "Doing C"
 call flush(20)
-      call getAveragePhase(currNumLines,axis,stringPhaseSet_C,averagePhase_C)
+!      call getAveragePhase(currNumLines,axis,stringPhaseSet_C,averagePhase_C)
 
 !      do i = 1, spin
 !!write(20,*) "axis psi currNumLines = ", axis, psi(axis,i), currNumLines
@@ -462,8 +472,8 @@ call flush(20)
 !               & averagePhase_A(axis,h) / pi / spin * realVectors(:,axis)
          xyzP_B(:,h) = xyzP_B(:,h) + (-eCharge/realCellVolume) * &
                & averagePhase_B(axis,h) / pi / spin * realVectors(:,axis)
-         xyzP_C(:,h) = xyzP_C(:,h) + (-eCharge/realCellVolume) * &
-               & averagePhase_C(axis,h) / pi / spin * realVectors(:,axis)
+!         xyzP_C(:,h) = xyzP_C(:,h) + (-eCharge/realCellVolume) * &
+!               & averagePhase_C(axis,h) / pi / spin * realVectors(:,axis)
       enddo
    enddo ! axis
 
@@ -476,18 +486,22 @@ call flush(20)
       !xyzP(:,i) = xyzP(:,i) * (10.0d0/(bohrRad**2))
 !      write(20,*) 'xyzP_A [C/m^2] = ', xyzP_A(:,i)
       write(20,*) 'xyzP_B [C/m^2] = ', xyzP_B(:,i)
-      write(20,*) 'xyzP_C [C/m^2] = ', xyzP_C(:,i)
+!      write(20,*) 'xyzP_C [C/m^2] = ', xyzP_C(:,i)
       write(20,*) 'xyzIonMoment = ', xyzIonMoment(:)
       write(20,*) 'abcIonMoment = ', abcIonMoment(:)
 !      write(20,*) 'Dipole Moment A = ', xyzIonMoment(:) - xyzP_A(:,i)
       write(20,*) 'Dipole Moment B+ = ', xyzIonMoment(:) + xyzP_B(:,i)
-      write(20,*) 'Dipole Moment C+ = ', xyzIonMoment(:) + xyzP_C(:,i)
+!      write(20,*) 'Dipole Moment C+ = ', xyzIonMoment(:) + xyzP_C(:,i)
       write(20,*) 'Dipole Moment B- = ', xyzIonMoment(:) - xyzP_B(:,i)
-      write(20,*) 'Dipole Moment C- = ', xyzIonMoment(:) - xyzP_C(:,i)
-      write(20,*) 'Dipole Moment C/m^2 B+ = ', (xyzIonMoment(:) + xyzP_B(:,i)) * 10.0d0/(bohrRad**2)
-      write(20,*) 'Dipole Moment C/m^2 C+ = ', (xyzIonMoment(:) + xyzP_C(:,i)) * 10.0d0/(bohrRad**2)
-      write(20,*) 'Dipole Moment C/m^2 B- = ', (xyzIonMoment(:) - xyzP_B(:,i)) * 10.0d0/(bohrRad**2)
-      write(20,*) 'Dipole Moment C/m^2 C- = ', (xyzIonMoment(:) - xyzP_C(:,i)) * 10.0d0/(bohrRad**2)
+!      write(20,*) 'Dipole Moment C- = ', xyzIonMoment(:) - xyzP_C(:,i)
+      write(20,*) 'Dipole Moment C/m^2 B+ = ', &
+            & (xyzIonMoment(:) + xyzP_B(:,i)) * 10.0d0/(bohrRad**2)
+!      write(20,*) 'Dipole Moment C/m^2 C+ = ', &
+!            & (xyzIonMoment(:) + xyzP_C(:,i)) * 10.0d0/(bohrRad**2)
+      write(20,*) 'Dipole Moment C/m^2 B- = ', &
+            & (xyzIonMoment(:) - xyzP_B(:,i)) * 10.0d0/(bohrRad**2)
+!      write(20,*) 'Dipole Moment C/m^2 C- = ', &
+!            & (xyzIonMoment(:) - xyzP_C(:,i)) * 10.0d0/(bohrRad**2)
    enddo
 
    xyzP = xyzP_B
@@ -797,8 +811,8 @@ function matrixDet(A)
       matrixDet = -matrixDet
    endif
 
-   !matrixDet = matrixDet / &
-   !      & cmplx(max(abs(matrixDet), tiny), 0.0d0, kind=double) ! unit phasor
+   matrixDet = matrixDet / &
+         & cmplx(max(abs(matrixDet), tiny), 0.0d0, kind=double) ! unit phasor
 
    deallocate(Ac, ipiv, visited)
 end function matrixDet

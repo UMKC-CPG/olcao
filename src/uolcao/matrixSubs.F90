@@ -120,7 +120,7 @@ subroutine fullMatrixElementMult(summation,matrix1,matrix2,dim1)
    implicit none
 
    ! Define the passed parameters.
-   complex (kind=double), intent(inout) :: summation
+   complex (kind=double), intent(out) :: summation
    complex (kind=double), intent(in), dimension (:,:) :: matrix1
    complex (kind=double), intent(in), dimension (:,:) :: matrix2
    integer, intent(in) :: dim1

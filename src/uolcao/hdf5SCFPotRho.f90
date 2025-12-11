@@ -70,6 +70,7 @@ subroutine initSCFPotRhoHDF5 (scf_fid)
    ! Define local variables.
    integer :: i,j
    integer :: hdferr
+   integer :: numIterations
    character*30 :: currentName
 
    ! Initialize data structure dimensions.
@@ -94,15 +95,26 @@ subroutine initSCFPotRhoHDF5 (scf_fid)
 !   call h5pset_shuffle_f(states_plid,hdferr)
    call h5pset_deflate_f   (potRhoCoeffs_plid,1,hdferr)
 
+   !   In the special case of lastIteration==0, we will only compute the
+   !   wave function once with the given potential. We will not compute it a
+   !   second time once the potential has been determined. (See OLCAO.F90
+   !   mainSCF subroutine.) But, we still need to store the first iteration
+   !   of potential output.
+   if (lastIteration > 0) then
+      numIterations = lastIteration
+   else
+      numIterations = 1
+   endif
+
    ! Allocate space to hold the IDs for the datasets in the potRhoCoeffs group.
-   allocate (potCoeffs_did(lastIteration,spin))
-   allocate (totalRhoCoeffs_did(lastIteration))
-   allocate (valeRhoCoeffs_did(lastIteration))
-   allocate (spinDiffRhoCoeffs_did(lastIteration))
+   allocate (potCoeffs_did(numIterations,spin))
+   allocate (totalRhoCoeffs_did(numIterations))
+   allocate (valeRhoCoeffs_did(numIterations))
+   allocate (spinDiffRhoCoeffs_did(numIterations))
 
    ! Create the datasets for the potential coefficients.
    do i = 1, spin
-      do j = 1, lastIteration
+      do j = 1, numIterations
          write (currentName,fmt="(i7.7,i7.7)") i,j
          currentName = trim (currentName)
          call h5dcreate_f(potCoeffs_gid,currentName,H5T_NATIVE_DOUBLE,&
@@ -112,7 +124,7 @@ subroutine initSCFPotRhoHDF5 (scf_fid)
    enddo
 
    ! Create the datasets for the various charge density coeffs.
-   do i = 1, lastIteration
+   do i = 1, numIterations
       write (currentName,fmt="(i7.7)") i
       currentName = trim (currentName)
       call h5dcreate_f(totalRhoCoeffs_gid,currentName,H5T_NATIVE_DOUBLE,&
@@ -150,6 +162,7 @@ subroutine accessSCFPotRhoHDF5 (scf_fid)
    ! Define local variables.
    integer :: i,j
    integer :: hdferr
+   integer :: numIterations
    character*30 :: currentName
 
    ! Initialize data structure dimensions.
@@ -168,15 +181,26 @@ subroutine accessSCFPotRhoHDF5 (scf_fid)
    call h5gopen_f (scf_fid,"alphas",alphas_gid,hdferr)
    if (hdferr /= 0) stop 'Failed to open alphas group.'
 
+   !   In the special case of lastIteration==0, we will only compute the
+   !   wave function once with the given potential. We will not compute it a
+   !   second time once the potential has been determined. (See OLCAO.F90
+   !   mainSCF subroutine.) But, we still need to store the first iteration
+   !   of potential output.
+   if (lastIteration > 0) then
+      numIterations = lastIteration
+   else
+      numIterations = 1
+   endif
+
    ! Allocate space to hold the IDs for the datasets in the potRhoCoeffs group.
-   allocate (potCoeffs_did(lastIteration,spin))
-   allocate (totalRhoCoeffs_did(lastIteration))
-   allocate (valeRhoCoeffs_did(lastIteration))
-   allocate (spinDiffRhoCoeffs_did(lastIteration))
+   allocate (potCoeffs_did(numIterations,spin))
+   allocate (totalRhoCoeffs_did(numIterations))
+   allocate (valeRhoCoeffs_did(numIterations))
+   allocate (spinDiffRhoCoeffs_did(numIterations))
 
    ! Open the datasets for the potential coefficients.
    do i = 1, spin
-      do j = 1, lastIteration
+      do j = 1, numIterations
          write (currentName,fmt="(i7.7,i7.7)") i,j
          currentName = trim (currentName)
          call h5dopen_f(potCoeffs_gid,currentName,potCoeffs_did(j,i),hdferr)
@@ -185,7 +209,7 @@ subroutine accessSCFPotRhoHDF5 (scf_fid)
    enddo
 
    ! Open the datasets for the various charge density coeffs.
-   do i = 1, lastIteration
+   do i = 1, numIterations
       write (currentName,fmt="(i7.7)") i
       currentName = trim (currentName)
       call h5dopen_f(totalRhoCoeffs_gid,currentName,totalRhoCoeffs_did(i),&
@@ -230,21 +254,33 @@ subroutine closeSCFPotRhoHDF5
    ! Declare local loop variables and error control.
    integer :: i,j,k
    integer :: hdferr
+   integer :: numIterations
 
    ! Close the potRhoCoeffs dataspace.
    call h5sclose_f (potRhoCoeffs_dsid,hdferr)
    if (hdferr /= 0) stop 'Failed to close potRhoCoeffs_dsid.'
 
+   !   In the special case of lastIteration==0, we will only compute the
+   !   wave function once with the given potential. We will not compute it a
+   !   second time once the potential has been determined. (See OLCAO.F90
+   !   mainSCF subroutine.) But, we still need to store the first iteration
+   !   of potential output.
+   if (lastIteration > 0) then
+      numIterations = lastIteration
+   else
+      numIterations = 1
+   endif
+
    ! Close the potential coefficient datasets.
    do i = 1, spin
-      do j = 1, lastIteration
+      do j = 1, numIterations
          call h5dclose_f (potCoeffs_did(j,i),hdferr)
          if (hdferr /= 0) stop 'Failed to close potCoeffs_did'
       enddo
    enddo
 
    ! Close the charge density coefficient datasets.
-   do i = 1, lastIteration
+   do i = 1, numIterations
       call h5dclose_f (totalRhoCoeffs_did(i),hdferr)
       if (hdferr /= 0) stop 'Failed to close totalRhoCoeffs_did'
       call h5dclose_f (valeRhoCoeffs_did(i),hdferr)

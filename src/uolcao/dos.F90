@@ -44,8 +44,15 @@ subroutine computeIterationTDOS
       ! Determine the number of energy buckets to be computed for.
       numEnergyPoints = int((emaxDOS - eminDOS ) / deltaDOS)
 
-      ! Allocate memory to hold the data for those points.
-      allocate (tdos(numEnergyPoints,spin,lastIteration))
+      ! Allocate memory to hold the data for those points. The funny-stuff
+      !   with last iteration: If lastIteration is zero, that is a special
+      !   case. We still just compute one iteration, but it is also a signal
+      !   to not re-compute the wave function later.
+      if (lastIteration > 0) then
+         allocate (tdos(numEnergyPoints,spin,lastIteration))
+      else
+         allocate (tdos(numEnergyPoints,spin,1))
+      endif
       allocate (energyScale(numEnergyPoints))
       allocate (currentEnergyValues(numStates))
 

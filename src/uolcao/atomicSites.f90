@@ -57,6 +57,7 @@ module O_AtomicSites
 subroutine readAtomicSites(readUnit,writeUnit)
 
    ! Import necessary subroutine modules.
+   use O_Kinds
    use O_ReadDataSubs
 
    ! Make sure that no funny variables are defined.
@@ -183,17 +184,17 @@ subroutine computeIonicMoment(incChargePerVol)
                & int(potTypes(atomSites(i)%atomTypeAssn)%nucCharge)))
       endif
 
-write(20,*) "eCharge/realCellVol = ", eCharge / realCellVolume
+!write(20,*) "eCharge/realCellVol = ", eCharge / realCellVolume
 !         xyzIonMoment(:) = xyzIonMoment(:) + eCharge / realCellVolume * &
 !               & (potTypes(atomSites(i)%atomTypeAssn)%nucCharge - &
 !               & currCoreCharge) * atomSites(i)%cartPos(:)
       xyzIonMoment(:) = xyzIonMoment(:) + &
             & (potTypes(atomSites(i)%atomTypeAssn)%nucCharge - &
             & currCoreCharge) * atomSites(i)%cartPos(:)
-write(20,*) "Z = ", (potTypes(atomSites(i)%atomTypeAssn)%nucCharge - &
-            & currCoreCharge)
-write(20,*) "xyzPos = ", atomSites(i)%cartPos(:)
-write(20,*) "xyzIonMom = ", xyzIonMoment(:)
+!write(20,*) "Z = ", (potTypes(atomSites(i)%atomTypeAssn)%nucCharge - &
+!            & currCoreCharge)
+!write(20,*) "xyzPos = ", atomSites(i)%cartPos(:)
+!write(20,*) "xyzIonMom = ", xyzIonMoment(:)
    enddo
 
    if (incChargePerVol == 1) then
@@ -209,7 +210,7 @@ write(20,*) "xyzIonMom = ", xyzIonMoment(:)
       enddo
       abcIonMoment(j) = abcIonMoment(j)*realMag(j)
    enddo
-write(20,*) "abcIonMom = ", abcIonMoment(:)
+!write(20,*) "abcIonMom = ", abcIonMoment(:)
 
    ! Convert from atomic units of distance (bohr radii).
 
