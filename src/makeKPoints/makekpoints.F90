@@ -1681,7 +1681,8 @@ module KPointMesh_O
 
       ! Define the threshhold for when two kpoints are symmetry reduced via
       !   point group operations.  (i.e. how close do two kpoints have to be
-      !   when one is folded near the other for them to be considered the same?)
+      !   when one is folded near the other for them to be considered the
+      !   same?)
       kpThresh = 0.00001_double  ! A bit arbitrary!
 
       ! Initialize the weight to 2 always.  (There are 2 electrons per state

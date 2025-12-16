@@ -214,7 +214,7 @@ subroutine cmplxApplyPhaseFactors (currentPair,pairXBasisFn12,statesDim1,&
             enddo
          enddo
       enddo
-   else ! runCore == 1; Include a -i factor.
+   else ! runCode == 1; Include a -i factor.
       do l = 1, numKPoints
          do m = 1, statesDim2
             do n = 1, statesDim1

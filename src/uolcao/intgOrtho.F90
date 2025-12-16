@@ -190,14 +190,14 @@ subroutine makeValeVale (valeDim,coreDim,packedValeDim,valeCore,coreVale,&
                endif
             enddo
          enddo
-do i = 1, valeDim
-do j = 1, valeDim
-valeVale(j,i) = valeVale(i,j)
-if (i > 36) then
-write (30,*) "j,i,vv(j,i)",j,i,valeVale(j,i)
-endif
-enddo
-enddo
+!do i = 1, valeDim
+!do j = 1, valeDim
+!valeVale(j,i) = valeVale(i,j)
+!if (i > 36) then
+!write (30,*) "j,i,vv(j,i)",j,i,valeVale(j,i)
+!endif
+!enddo
+!enddo
       else
          ! Full storage, and not assuming Hermitian
          do i = 1, valeDim

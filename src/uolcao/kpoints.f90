@@ -655,7 +655,7 @@ subroutine initializeKPointMesh(applySymmetry)
             loopIndex(3) = k
 
             ! Compute the current mesh kpoint location.
-            abcMeshKPoints(:,numMeshKPoints) = &
+            abcMeshKPoints(:,numMeshKPoints) = -0.5_double + &
                   & (loopIndex(:)-1.0_double+kPointShift(:)) * abcDelta(:)
 
          enddo  ! k=1,numAxialKPoints(3)
@@ -938,18 +938,18 @@ subroutine makeMTOPIndexMap
       enddo
    enddo
 
-write(20,*) "AXIS1"
-do i = 1,kPointCount
-   write(20,*) "i map kp",i,mtopKPMap(1,i), kPoints(:,i)
-enddo
-write(20,*) "AXIS2"
-do i = 1,kPointCount
-   write(20,*) "i map kp",i,mtopKPMap(2,i), kPoints(:,i)
-enddo
-write(20,*) "AXIS3"
-do i = 1,kPointCount
-   write(20,*) "i map kp",i,mtopKPMap(3,i), kPoints(:,i)
-enddo
+!write(20,*) "AXIS1"
+!do i = 1,kPointCount
+!   write(20,*) "i map kp",i,mtopKPMap(1,i), kPoints(:,i)
+!enddo
+!write(20,*) "AXIS2"
+!do i = 1,kPointCount
+!   write(20,*) "i map kp",i,mtopKPMap(2,i), kPoints(:,i)
+!enddo
+!write(20,*) "AXIS3"
+!do i = 1,kPointCount
+!   write(20,*) "i map kp",i,mtopKPMap(3,i), kPoints(:,i)
+!enddo
 
 end subroutine makeMTOPIndexMap
 

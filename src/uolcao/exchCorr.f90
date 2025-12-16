@@ -471,6 +471,7 @@ subroutine makeECMeshAndOverlap
    ! Allocate space for matrices that will be pointed to by global data
    !   structures later.
    allocate (radialWeight(maxNumRayPoints))
+
    ! When GGA=0 only space for the rho operator is allocated. When GGA=1 space
    !   is also allocated for first and second derivatives of the rho operator.
    if (GGA == 0) then ! Doing LDA
@@ -641,6 +642,12 @@ subroutine makeECMeshAndOverlap
                !   the current ray to the current potential site.
                exchangePointSiteSep(:) = currentRayPoint(:) - &
                      & potSites(l)%cartPos(:)
+!if ((k==1).and.(1==1)) then
+!write(20,*) "ijkl=", i,j,k,l
+!write(20,*) "ePSS=",exchangePointSiteSep(:)
+!write(20,*) "cRP=",currentRayPoint(:)
+!write(20,*) "l potSites(l)%Pos=",l,potSites(l)%cartPos(:)
+!endif
 
                ! If this potential site is the first in a set of equivalent
                !   potential sites then we update certain parameters and
@@ -667,6 +674,9 @@ subroutine makeECMeshAndOverlap
                ! Get the lattice point vector that is closest to the current
                !   exchangePointSiteSep vector.
                call findLatticeVector(exchangePointSiteSep,latticeVector)
+!if ((k==1).and.(1==1)) then
+!write(20,*) "lV=",latticeVector(:)
+!endif
 
                ! Determine the vector which is the exchange point vector - 
                !   the position vector of the current potential site - 
@@ -676,6 +686,10 @@ subroutine makeECMeshAndOverlap
                !   between the potential site and the exchange point over all
                !   the lattice sites in a later loop.
                latticeOffset(:) = exchangePointSiteSep(:) - latticeVector(:)
+!if ((k==1).and.(l==1)) then
+!write(20,*) "ijkl=", i,j,k,l
+!write(20,*) "latOff=",latticeOffset(:)
+!endif
 
                ! Get the square of the magnitude of the latticeOffset vector
                latticeOffsetMagSqrd = sum(latticeOffset(:)**2)
@@ -695,8 +709,12 @@ subroutine makeECMeshAndOverlap
 
                   ! Determine the magnitude of the radial component.
                   radialMagnitude = sum((latticeOffset(:)-cellDimsReal(:,m))**2)
-!write(20,*) "rM=", radialMagnitude, latticeOffset(:), cellDimsReal(:,m)
-!write(20,*) "lkmn=", l, k, m
+!if (k==1) then
+!write(20,*) "ijklm=", i,j,k,l,m
+!write(20,*) "rM,cNL=", radialMagnitude,currentNegligLimit
+!write(20,*) "latOff=", latticeOffset(:)
+!write(20,*) "cellDimReal=", cellDimsReal(:,m)
+!endif
 
                   ! If this particular potential site is beyond the required
                   !   range then we cycle on this loop.

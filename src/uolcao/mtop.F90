@@ -86,6 +86,7 @@ complex(kind=double), allocatable, dimension(:,:) :: unitary
    real(kind=double) :: resultB
    real(kind=double) :: resultC
    complex(kind=double) :: tempVar
+real(kind=double) :: idenDiff, stepCount
 
    ! Record the start of the calculation
    call timeStampStart(33)
@@ -244,6 +245,7 @@ write(20,*) "maxOccState = ", maxOccupiedState
 
    do axis = 1, 3
 write (20,*) "AXIS=",axis
+stepCount = 0
       kPointCount = 0
       numSteps = numAxialKPoints(axis)
       currNumLines = numStrings(axis)
@@ -269,10 +271,10 @@ write (20,*) "AXIS=",axis
                knxt = mtopKPMap(axis,kPointCount-numSteps+1)
             endif
 
-write(20,*) "kcur knxt", kcur, knxt
-write(20,*) "kcur", kPoints(:,kcur)
-write(20,*) "knxt", kPoints(:,knxt)
-write(20,*) "kdiff", kPoints(:,knxt) - kPoints(:,kcur)
+!write(20,*) "i, nS, kcur knxt", i, numSteps, kcur, knxt
+!write(20,*) "kcur", kPoints(:,kcur)
+!write(20,*) "knxt", kPoints(:,knxt)
+!write(20,*) "kdiff", kPoints(:,knxt) - kPoints(:,kcur)
 
             ! Read next kpoint waveFn coefficients and appropriate KOverlap.
             if (i < numSteps) then ! Code 3,4,5
@@ -306,10 +308,12 @@ write(20,*) "kdiff", kPoints(:,knxt) - kPoints(:,kcur)
                end if
             enddo
 
-!write(20,*) "k,j,CKcur,CKnxt"
+!!write(20,*) "k,j,CKcur,CKnxt", 
 !do j = 1, numStates
 !do k = 1, valeDim
-!write(20,*) k,j,valeVale(k,j,1),CKnxt(k,j,1)
+!!write(20,*) k,j,valeVale(k,j,1),CKnxt(k,j,1)
+!write(20,*) k,j,atan2(aimag(valeVale(k,j,1)),real(valeVale(k,j,1),double)),&
+!   & atan2(aimag(CKnxt(k,j,1)),real(CKnxt(k,j,1),double))
 !enddo
 !enddo
 !
@@ -363,11 +367,20 @@ valeValePsi(:,:,l) = cmplx(0.0_double,0.0_double,double)
                   enddo ! spin
                enddo ! k: maxOccupiedStates
             enddo ! j: maxOccupiedStates
+stepCount = stepCount + 1
 write(20,*) "UNITARY: i,h = ", i,h
 unitary = matmul(conjg(transpose(stateStateMat(:,:,1))),stateStatemat(:,:,1))
+! Compute the deviation from the identity matrix.
+idenDiff = 0.0_double
+do m = 1, maxOccupiedState
+idenDiff = idenDiff + sqrt((1.0_double - unitary(m,m))**2)
+enddo
+write(26+axis,*) stepCount, idenDiff
+
 do m = 1, maxOccupiedState
 write(23+axis,*) m,unitary(m,m)
 enddo
+
 !do m = 1, maxOccupiedState
 !do n = 1, maxOccupiedState
 !write(20,*) "n,m,sSM,pMA = ", n, m, stateStateMat(n,m,1), prodM_A(n,m,1)
@@ -378,9 +391,9 @@ enddo
             ! Accumulate this stateStateMat into the final product.
 
             ! (A) Perform the product part of -im(ln(det(prod(M)))).
-!            do j = 1, spin
-!               prodM_A(:,:,j) = matmul(prodM_A(:,:,j),stateStateMat(:,:,j))
-!            enddo
+            do j = 1, spin
+               prodM_A(:,:,j) = matmul(prodM_A(:,:,j),stateStateMat(:,:,j))
+            enddo
 
             ! (B) Perform the product (and determinant) parts of:
             !   -im(ln(prod(det(M))))
@@ -406,7 +419,7 @@ write(20,*) "C matrixDet"
          !   component.
          do i = 1, spin
 write(20,*) "A matrixDet"
-!            stringPhaseSet_A(h,i) = -aimag(log(matrixDet(prodM_A(:,:,i))))
+            stringPhaseSet_A(h,i) = -aimag(log(matrixDet(prodM_A(:,:,i))))
          enddo
 
          ! (B) Take the log and extract the negative of the imaginary
@@ -419,9 +432,9 @@ write(20,*) "A matrixDet"
          do i = 1, spin
             stringPhaseSet_C(h,i) = -aimag(phiString_C(i))
          enddo
-write(20,*) "h, A,B,C Phase", h, stringPhaseSet_A(h,1), &
-      & stringPhaseSet_B(h,1),stringPhaseSet_C(h,1)
-call flush(20)
+!write(20,*) "h, A,B,C Phase", h, stringPhaseSet_A(h,1), &
+!      & stringPhaseSet_B(h,1),stringPhaseSet_C(h,1)
+!call flush(20)
 
          ! Mark the completion of this string.
          !if (mod(h,10) .eq. 0) then
@@ -437,15 +450,15 @@ call flush(20)
       enddo ! h (iterating over the set of lines)
       write(20,*)
 
-!write(20,*) "Doing A"
-!call flush(20)
-!      call getAveragePhase(currNumLines,axis,stringPhaseSet_A,averagePhase_A)
+write(20,*) "Doing A"
+call flush(20)
+      call getAveragePhase(currNumLines,axis,stringPhaseSet_A,averagePhase_A,20)
 write(20,*) "Doing B"
 call flush(20)
-      call getAveragePhase(currNumLines,axis,stringPhaseSet_B,averagePhase_B)
+      call getAveragePhase(currNumLines,axis,stringPhaseSet_B,averagePhase_B,40)
 write(20,*) "Doing C"
 call flush(20)
-!      call getAveragePhase(currNumLines,axis,stringPhaseSet_C,averagePhase_C)
+      call getAveragePhase(currNumLines,axis,stringPhaseSet_C,averagePhase_C,60)
 
 !      do i = 1, spin
 !!write(20,*) "axis psi currNumLines = ", axis, psi(axis,i), currNumLines
@@ -468,12 +481,12 @@ call flush(20)
 
       ! Convert to xyz and apply prefactors and conversions.
       do h = 1, spin
-!         xyzP_A(:,h) = xyzP_A(:,h) + (-eCharge/realCellVolume) * &
-!               & averagePhase_A(axis,h) / pi / spin * realVectors(:,axis)
+         xyzP_A(:,h) = xyzP_A(:,h) + (-eCharge/realCellVolume) * &
+               & averagePhase_A(axis,h) / pi / spin * realVectors(:,axis)
          xyzP_B(:,h) = xyzP_B(:,h) + (-eCharge/realCellVolume) * &
                & averagePhase_B(axis,h) / pi / spin * realVectors(:,axis)
-!         xyzP_C(:,h) = xyzP_C(:,h) + (-eCharge/realCellVolume) * &
-!               & averagePhase_C(axis,h) / pi / spin * realVectors(:,axis)
+         xyzP_C(:,h) = xyzP_C(:,h) + (-eCharge/realCellVolume) * &
+               & averagePhase_C(axis,h) / pi / spin * realVectors(:,axis)
       enddo
    enddo ! axis
 
@@ -484,24 +497,29 @@ call flush(20)
    do i = 1, spin
 !      write(20,*) 'xyzP [C/m^2] = ', xyzP(:,i)
       !xyzP(:,i) = xyzP(:,i) * (10.0d0/(bohrRad**2))
-!      write(20,*) 'xyzP_A [C/m^2] = ', xyzP_A(:,i)
+      write(20,*) 'xyzP_A [C/m^2] = ', xyzP_A(:,i)
       write(20,*) 'xyzP_B [C/m^2] = ', xyzP_B(:,i)
-!      write(20,*) 'xyzP_C [C/m^2] = ', xyzP_C(:,i)
+      write(20,*) 'xyzP_C [C/m^2] = ', xyzP_C(:,i)
       write(20,*) 'xyzIonMoment = ', xyzIonMoment(:)
       write(20,*) 'abcIonMoment = ', abcIonMoment(:)
-!      write(20,*) 'Dipole Moment A = ', xyzIonMoment(:) - xyzP_A(:,i)
+      write(20,*) 'Dipole Moment A+ = ', xyzIonMoment(:) + xyzP_A(:,i)
       write(20,*) 'Dipole Moment B+ = ', xyzIonMoment(:) + xyzP_B(:,i)
-!      write(20,*) 'Dipole Moment C+ = ', xyzIonMoment(:) + xyzP_C(:,i)
+      write(20,*) 'Dipole Moment C+ = ', xyzIonMoment(:) + xyzP_C(:,i)
+      write(20,*) 'Dipole Moment A- = ', xyzIonMoment(:) - xyzP_A(:,i)
       write(20,*) 'Dipole Moment B- = ', xyzIonMoment(:) - xyzP_B(:,i)
-!      write(20,*) 'Dipole Moment C- = ', xyzIonMoment(:) - xyzP_C(:,i)
+      write(20,*) 'Dipole Moment C- = ', xyzIonMoment(:) - xyzP_C(:,i)
+      write(20,*) 'Dipole Moment C/m^2 A+ = ', &
+            & (xyzIonMoment(:) + xyzP_A(:,i)) * 10.0d0/(bohrRad**2)
       write(20,*) 'Dipole Moment C/m^2 B+ = ', &
             & (xyzIonMoment(:) + xyzP_B(:,i)) * 10.0d0/(bohrRad**2)
-!      write(20,*) 'Dipole Moment C/m^2 C+ = ', &
-!            & (xyzIonMoment(:) + xyzP_C(:,i)) * 10.0d0/(bohrRad**2)
+      write(20,*) 'Dipole Moment C/m^2 C+ = ', &
+            & (xyzIonMoment(:) + xyzP_C(:,i)) * 10.0d0/(bohrRad**2)
+      write(20,*) 'Dipole Moment C/m^2 A- = ', &
+            & (xyzIonMoment(:) - xyzP_A(:,i)) * 10.0d0/(bohrRad**2)
       write(20,*) 'Dipole Moment C/m^2 B- = ', &
             & (xyzIonMoment(:) - xyzP_B(:,i)) * 10.0d0/(bohrRad**2)
-!      write(20,*) 'Dipole Moment C/m^2 C- = ', &
-!            & (xyzIonMoment(:) - xyzP_C(:,i)) * 10.0d0/(bohrRad**2)
+      write(20,*) 'Dipole Moment C/m^2 C- = ', &
+            & (xyzIonMoment(:) - xyzP_C(:,i)) * 10.0d0/(bohrRad**2)
    enddo
 
    xyzP = xyzP_B
@@ -526,7 +544,7 @@ call flush(20)
 end subroutine computeMTOPPolarization
 #endif
 
-subroutine getAveragePhase(currNumLines,axis,stringPhaseSet,averagePhase)
+subroutine getAveragePhase(currNumLines,axis,stringPhaseSet,averagePhase,code)
 
    ! Use necessary modules
    use O_Kinds
@@ -543,6 +561,7 @@ subroutine getAveragePhase(currNumLines,axis,stringPhaseSet,averagePhase)
    integer, intent(in) :: axis
    real (kind=double), dimension(:,:), intent(inout) :: stringPhaseSet
    real (kind=double), dimension(3,spin), intent(inout) :: averagePhase
+integer, intent(in) :: code
 
    ! Define local variables.
    integer :: h, i
@@ -587,39 +606,39 @@ subroutine getAveragePhase(currNumLines,axis,stringPhaseSet,averagePhase)
 write(20,*) "Got here 1a"
 call flush(20)
 do i = 1,currNumLines
-write(20+axis,*) stringPhaseSet(i,h),1
+write(code+axis,*) stringPhaseSet(i,h),1
 enddo
       ! Sort the string phases and copy the sorted list over the original.
       !call mergeSort(stringPhaseSet(:,h),sortedStringPhaseSet,&
       !      & indexStringPhaseSet,segmentBorders,numSegments)
       !stringPhaseSet(:,h) = sortedStringPhaseSet(:)
-write(20,*) "Got here 1b: axis abcIon", axis, abcIonMoment(axis)
-call flush(20)
-write(20,*) stringPhaseSet(:,h)
-write(20,*) stringPhaseSet(:,h) / pi / spin * realMag(axis)
+!write(20,*) "Got here 1b: axis abcIon", axis, abcIonMoment(axis)
+!call flush(20)
+!write(20,*) stringPhaseSet(:,h)
+!write(20,*) stringPhaseSet(:,h) / pi / spin * realMag(axis)
 
       ! Shift each phase by +/- 2pi * n with n = 0, 1, 2, 3, ...
       !   The goal is for each phase/pi/spin to be as close as possible to the
       !   abc ionic moment.
       do i = 1, currNumLines
-write(20,*) "line i", i
+!write(20,*) "line i", i
          do while (stringPhaseSet(i,h)/pi/spin*realMag(axis) > abcIonMoment(axis))
             stringPhaseSet(i,h) = stringPhaseSet(i,h) - 2.0_double*pi
-write(20,*) "Step1 ", stringPhaseSet(i,h) / pi / spin*realMag(axis)
+!write(20,*) "Step1 ", stringPhaseSet(i,h) / pi / spin*realMag(axis)
          enddo
          do while (stringPhaseSet(i,h)/pi/spin*realMag(axis) < abcIonMoment(axis))
             stringPhaseSet(i,h) = stringPhaseSet(i,h) + 2.0_double*pi
-write(20,*) "Step2 ", stringPhaseSet(i,h) / pi / spin*realMag(axis)
+!write(20,*) "Step2 ", stringPhaseSet(i,h) / pi / spin*realMag(axis)
          enddo
          if (abs((stringPhaseSet(i,h)+2.0d0*pi)/pi/spin*realMag(axis) - abcIonMoment(axis))&
                & < abs(stringPhaseSet(i,h)/pi/spin*realMag(axis) - abcIonMoment(axis))) then
             stringPhaseSet(i,h) = stringPhaseSet(i,h) + 2.0_double*pi
-write(20,*) "Step3 ", stringPhaseSet(i,h) / pi / spin*realMag(axis)
+!write(20,*) "Step3 ", stringPhaseSet(i,h) / pi / spin*realMag(axis)
          endif
          if (abs((stringPhaseSet(i,h)-2.0d0*pi)/pi/spin*realMag(axis) - abcIonMoment(axis))&
                & < abs(stringPhaseSet(i,h)/pi/spin*realMag(axis) - abcIonMoment(axis))) then
             stringPhaseSet(i,h) = stringPhaseSet(i,h) - 2.0_double*pi
-write(20,*) "Step4 ", stringPhaseSet(i,h) / pi / spin*realMag(axis)
+!write(20,*) "Step4 ", stringPhaseSet(i,h) / pi / spin*realMag(axis)
          endif
 
 !         do while ((stringPhaseSet(i,h) / pi / spin - abcIonMoment(axis)) > pi)
@@ -653,10 +672,10 @@ write(20,*) "Step4 ", stringPhaseSet(i,h) / pi / spin*realMag(axis)
 !            stringPhaseSet(i,h) = stringPhaseSet(i,h) - 2.0_double*pi
 !         endif
 !      enddo
-write(20,*) "Got here 2b"
+!write(20,*) "Got here 2b"
 call flush(20)
 do i = 1,currNumLines
-write(30+axis,*) stringPhaseSet(i,h),1
+write(code+10+axis,*) stringPhaseSet(i,h),1
 enddo
 
       ! Compute the average phase and then ensure that it is >-pi, <+pi.
@@ -669,9 +688,9 @@ write(20,*) "axis, Avg Phase = ", axis, averagePhase(axis,h)
       !do while (averagePhase(axis,h) > pi)
       !   averagePhase(axis,h) = averagePhase(axis,h) - 2.0_double*pi
       !enddo
-write(20,*) "axis, Avg Phase/pi/spin = ", axis, averagePhase(axis,h)/pi/spin*realMag(axis)
-write(20,*) "Got here 3"
-call flush(20)
+!write(20,*) "axis, Avg Phase/pi/spin = ", axis, averagePhase(axis,h)/pi/spin*realMag(axis)
+!write(20,*) "Got here 3"
+!call flush(20)
    enddo
 
    ! Deallocate space for the sorting process.
@@ -811,8 +830,8 @@ function matrixDet(A)
       matrixDet = -matrixDet
    endif
 
-   matrixDet = matrixDet / &
-         & cmplx(max(abs(matrixDet), tiny), 0.0d0, kind=double) ! unit phasor
+!   matrixDet = matrixDet / &
+!         & cmplx(max(abs(matrixDet), tiny), 0.0d0, kind=double) ! unit phasor
 
    deallocate(Ac, ipiv, visited)
 end function matrixDet

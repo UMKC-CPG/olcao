@@ -1284,12 +1284,17 @@ subroutine gaussKOverlap(valeValeDims,did1,did2,aid,plusG)
 
                   ! Loop over each polarization direction.
                   do axis = 1,3
+                     !call KOverlap2CIntg (currentAlphas(alphaIndex(1),1), &
+                     !      & currentAlphas(alphaIndex(2),2), &
+                     !      & currentPosition(:,1), shiftedAtomPos(:), &
+                     !      & (recipVectors(:,axis) / numAxialKPoints(axis)) &
+                     !      & + plusG(:,axis), l1l2Switch, &
+                     !      & oneAlphaSetK(:,:,axis))
                      call KOverlap2CIntg (currentAlphas(alphaIndex(1),1), &
                            & currentAlphas(alphaIndex(2),2), &
                            & currentPosition(:,1), shiftedAtomPos(:), &
-                           & (recipVectors(:,axis) / numAxialKPoints(axis)) &
-                           & + plusG(:,axis), l1l2Switch, &
-                           & oneAlphaSetK(:,:,axis))
+                           & (recipVectors(:,axis) / numAxialKPoints(axis)), &
+                           & l1l2Switch, oneAlphaSetK(:,:,axis))
                   enddo
 
                   ! Collect the results of the overlap of the current alpha
@@ -1318,9 +1323,9 @@ subroutine gaussKOverlap(valeValeDims,did1,did2,aid,plusG)
             !   a product with the atom 1 basis function to give the overlap
             !   integral in a complete basis representation.
             do l = 1, 3
-               call cmplxMultWithBasisFn1 (currentBasisFns,pairXBasisFn2(:,:,:,l),&
-                     & pairXBasisFn12(:,:,l),currentlmIndex,&
-                     & currentNumTotalStates,maxAlpha1Used)
+               call cmplxMultWithBasisFn1 (currentBasisFns,&
+                     & pairXBasisFn2(:,:,:,l),pairXBasisFn12(:,:,l),&
+                     & currentlmIndex,currentNumTotalStates,maxAlpha1Used)
             enddo
 
             ! Collect this atom 1, atom 2 basis function overlap matrix for
