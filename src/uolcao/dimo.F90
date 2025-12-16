@@ -68,15 +68,17 @@ subroutine computeDIMO (inSCF)
 #endif
 
    ! Allocate working space
-   if (inSCF == 0) then
 #ifndef GAMMA
+   if (inSCF == 0) then
       allocate (valeVale(valeDim,numStates,spin))
-      allocate (valeValeRho(valeDim,valeDim,spin))
-#else
-      allocate (valeValeGamma(valeDim,numStates,spin))
-      allocate (valeValeRhoGamma(valeDim,valeDim,spin))
-#endif
    endif
+   allocate (valeValeRho(valeDim,valeDim,spin))
+#else
+   if (inSCF == 0) then
+      allocate (valeValeGamma(valeDim,numStates,spin))
+   endif
+   allocate (valeValeRhoGamma(valeDim,valeDim,spin))
+#endif
    allocate (tempDensity(dim1))
    allocate (currentPopulation (spin))
    allocate (dipoleMomentTrace(3,spin))

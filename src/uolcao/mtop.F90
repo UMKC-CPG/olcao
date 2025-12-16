@@ -86,7 +86,8 @@ complex(kind=double), allocatable, dimension(:,:) :: unitary
    real(kind=double) :: resultB
    real(kind=double) :: resultC
    complex(kind=double) :: tempVar
-real(kind=double) :: idenDiff, stepCount
+integer :: stepCount, stepBandCount
+real(kind=double) :: idenDiff
 
    ! Record the start of the calculation
    call timeStampStart(33)
@@ -246,6 +247,7 @@ write(20,*) "maxOccState = ", maxOccupiedState
    do axis = 1, 3
 write (20,*) "AXIS=",axis
 stepCount = 0
+stepBandCount = 0
       kPointCount = 0
       numSteps = numAxialKPoints(axis)
       currNumLines = numStrings(axis)
@@ -378,7 +380,9 @@ enddo
 write(26+axis,*) stepCount, idenDiff
 
 do m = 1, maxOccupiedState
-write(23+axis,*) m,unitary(m,m)
+stepBandCount = stepBandCount + 1
+write(23+axis,*) stepBandCount,m/real(maxOccupiedState,double),&
+      & real(unitary(m,m),double)
 enddo
 
 !do m = 1, maxOccupiedState

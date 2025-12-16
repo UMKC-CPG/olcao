@@ -1284,17 +1284,17 @@ subroutine gaussKOverlap(valeValeDims,did1,did2,aid,plusG)
 
                   ! Loop over each polarization direction.
                   do axis = 1,3
-                     !call KOverlap2CIntg (currentAlphas(alphaIndex(1),1), &
-                     !      & currentAlphas(alphaIndex(2),2), &
-                     !      & currentPosition(:,1), shiftedAtomPos(:), &
-                     !      & (recipVectors(:,axis) / numAxialKPoints(axis)) &
-                     !      & + plusG(:,axis), l1l2Switch, &
-                     !      & oneAlphaSetK(:,:,axis))
                      call KOverlap2CIntg (currentAlphas(alphaIndex(1),1), &
                            & currentAlphas(alphaIndex(2),2), &
                            & currentPosition(:,1), shiftedAtomPos(:), &
-                           & (recipVectors(:,axis) / numAxialKPoints(axis)), &
-                           & l1l2Switch, oneAlphaSetK(:,:,axis))
+                           & (recipVectors(:,axis) / numAxialKPoints(axis)) &
+                           & + plusG(:,axis), l1l2Switch, &
+                           & oneAlphaSetK(:,:,axis))
+                     !call KOverlap2CIntg (currentAlphas(alphaIndex(1),1), &
+                     !      & currentAlphas(alphaIndex(2),2), &
+                     !      & currentPosition(:,1), shiftedAtomPos(:), &
+                     !      & (recipVectors(:,axis) / numAxialKPoints(axis)), &
+                     !      & l1l2Switch, oneAlphaSetK(:,:,axis))
                   enddo
 
                   ! Collect the results of the overlap of the current alpha
