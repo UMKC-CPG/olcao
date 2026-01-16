@@ -192,15 +192,12 @@ my $precursorDB = "$OLCAO_DATA/precursorDB";
 
 # Assemble the packmol input file and run packmol.
 &runPackmol;
-print STDOUT "Got Here1\n";
 
 # Create LAMMPS data_file, LAMMPS in_file, and the slurm submission file.
 &createLAMMPSFiles;
-print STDOUT "Got Here2\n";
 
 # Make all types and bond types consistent across all files.
 &normalizeTypes;
-print STDOUT "Got Here3\n";
 
 ###############################################
 # End program execution #######################
@@ -440,6 +437,7 @@ print STDOUT "rxnMolName[1][$rxn] $rxnMolName[2][$rxn]\n";
       $rxnBindingPair = $rxnBinding[1][$rxn] . "_" . $rxnBinding[2][$rxn];
       $rxnMolBindingPair = $rxnMolName[1][$rxn] ."_". $rxnBinding[1][$rxn] .
          "_" . $rxnMolName[2][$rxn] . "_" . $rxnBinding[2][$rxn];
+print STDOUT "rxnMolBindingPair = $rxnMolBindingPair\n";
 
       # Copy all the pre- and post- template files.
 print STDOUT "$precursorDB/$currRxnMolPair/rxnTemplates/preRxn.$rxnBindingPair.data\n";
@@ -538,17 +536,17 @@ sub runPackmol
 
    while ($line = <RAW>)
    {
-#      @values = StructureControl::prepLine("",$line,'\s+');
-#      if ($values[0] eq "ATOM")
-#      {
-#         print FIXED substr($line,0,54);
-#         print FIXED "  1.00  0.00";
-#         printf FIXED "%13s", $values[$#values];
-#         print FIXED "\n";
-#      }
-#      else
-#         {print FIXED "$line";}
-      print FIXED "$line";
+      @values = StructureControl::prepLine("",$line,'\s+');
+      if ($values[0] eq "ATOM")
+      {
+         print FIXED substr($line,0,54);
+         print FIXED "  1.00  0.00";
+         printf FIXED "%12s", $values[$#values];
+         print FIXED "\n";
+      }
+      else
+         {print FIXED "$line";}
+      #print FIXED "$line";
    }
 
    close (RAW);
@@ -648,11 +646,8 @@ sub createLAMMPSFiles
    chdir ("lammps");
 
    # Convert the packmol PDB into a skeleton file.
-print STDOUT "Got here 2a\n";
    copy("../packmol/packmol.fixed.pdb","./");
-print STDOUT "Got here 2b\n";
    system("pdb2skl -i packmol.fixed.pdb -o packmol.skl -pdbtypes");
-print STDOUT "Got here 2c\n";
 
    # Read the skeleton file and extract necessary information.
    StructureControl::readInputFile("packmol.skl",1);
@@ -664,7 +659,6 @@ print STDOUT "Got here 2c\n";
    $atomicZ_ref = StructureControl::getAtomicZRef;
    $numElements = StructureControl::getNumElements;
    $numSpecies_ref = StructureControl::getNumSpeciesRef;
-print STDOUT "Got here 2d\n";
 
    # Perform a bond analysis to get bond length and bond angle information.
    system("bondAnalysis -bl -bf 1.1 -i packmol.skl");
@@ -1183,7 +1177,8 @@ ENDLAMMPSTAIL
 
    print SLURM<<ENDSLURM;
 #!/bin/bash
-#SBATCH -p Lewis
+#SBATCH -p rulisp-lab
+#SBATCH -A rulisp-lab
 #SBATCH -J lmp
 #SBATCH -o lmp.o%J
 #SBATCH -e lmp.e%J
@@ -1194,7 +1189,8 @@ ENDLAMMPSTAIL
 #
 export OMP_NUM_THREADS=1
 cd \$SLURM_SUBMIT_DIR
-mpirun $HOME/bin/lmp_mpi_gcc4_intel2016 < lammps.in
+module load lammps/29Aug2024_update3_kokkos_CPU_gcc_12.3.0_openmpi
+mpirun lmp < lammps.in
 ENDSLURM
 
    # Close the slurm file.
