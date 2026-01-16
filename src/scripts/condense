@@ -85,6 +85,7 @@ sub printHelp
 # ch4 Family1 8
 #
 # cell_size 100.0
+# condensation_rate 0.33
 #
 # reactions 6
 # b10c2h12 b-1 b10c2h12 b-1 0.85
@@ -151,6 +152,7 @@ use File::Copy;
 # Declare global variables.
 my $inputFile;
 my $cellSize;
+my $condensation_rate;
 my $numMoleculeTypes;
 my $numReactionTypes;
 my $numUniqueRxnMolPairs;
@@ -293,6 +295,8 @@ sub parseInputFile
       }
       elsif (lc($values[0]) eq "cell_size")
          {$cellSize = $values[1];}
+      elsif (lc($values[0]) eq "condensation_rate")
+         {$condensation_rate = $values[1];}
       elsif (lc($values[0]) eq "reactions")
       {
          # Get the number of different types of reactions.
@@ -1157,7 +1161,8 @@ ENDLAMMPSHEAD
    print LMPIN<<ENDLAMMPSTAIL;
 
 fix energy all nve
-fix squish all deform 500 x scale 0.33 y scale 0.33 z scale 0.33 remap x
+#fix squish all deform 500 x scale 0.33 y scale 0.33 z scale 0.33 remap x
+fix squish all deform 500 x scale $condensation_rate y scale $condensation_rate z scale $condensation_rate remap x
 
 # Run
 
