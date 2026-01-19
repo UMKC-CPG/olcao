@@ -422,6 +422,7 @@ subroutine unpackMatrix (matrix,packedMatrix,dim2,fullFlag)
    ! Initialize the index counter for the packed matrix.
    currentIndex = 0
 
+   ! Iterate over the upper triangle (including the diagonal).
    if (fullFlag == 0) then
       do i = 1, dim2
          do j = 1,i
@@ -431,17 +432,28 @@ subroutine unpackMatrix (matrix,packedMatrix,dim2,fullFlag)
          enddo
       enddo
    else
+      matrix(:,:) = 0.0_double
       do i = 1, dim2
-         do j = 1,i
+         do j = 1,i-1
             currentIndex = currentIndex + 1
             matrix(j,i) = cmplx(packedMatrix(1,currentIndex),&
                              &  packedMatrix(2,currentIndex),double)
             matrix(i,j) = cmplx(packedMatrix(1,currentIndex),&
                              & -packedMatrix(2,currentIndex),double)
          enddo
+         currentIndex = currentIndex + 1
+         matrix(i,i) = cmplx(packedMatrix(1,currentIndex),&
+                             &  packedMatrix(2,currentIndex),double)
 !         matrix(i,i) = matrix(i,i)/2.0_double
       enddo
 !      matrix(:,:) = matrix(:,:) + transpose(conjg(matrix(:,:)))
+
+!do i = 1,dim2
+!do j = 1,dim2
+!write(20,fmt="(a,2i4,2e15.6)") "i,j,mat(j,i): ", i, j, &
+!      & real(matrix(j,i),double), aimag(matrix(j,i))
+!enddo
+!enddo
    endif
 end subroutine unpackMatrix
 
@@ -510,8 +522,9 @@ subroutine packMatrix (matrix,packedMatrix,dim2)
    ! Initialize the index counter for the packed matrix.
    currentIndex = 0
 
-   do i = 1, dim2
-      do j = 1,i
+   ! Iterate over the upper triangle (including the diagonal).
+   do i = 1, dim2 ! Column number
+      do j = 1,i ! Row number
          currentIndex = currentIndex + 1
          packedMatrix(1,currentIndex) =  real(matrix(j,i),double)
          packedMatrix(2,currentIndex) = aimag(matrix(j,i))

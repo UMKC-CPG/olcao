@@ -134,6 +134,9 @@ class ScriptSettings():
 
     def add_parser_arguments(self, parser):
 
+        # Initialize local variables.
+        store_action = False
+
         # Define the selected display library to use.
         parser.add_argument('-d', '--display', dest='display',
                             choices=['mpl', 'veusz'],

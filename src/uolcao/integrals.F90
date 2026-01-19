@@ -254,6 +254,8 @@ subroutine gaussOverlapOL(numComponents,fullCVDims,packedVVDims,did,CVdid,aid)
    ! Define variables for gauss integrals
    integer :: l1l2Switch
    integer, dimension(16) :: powerOfTwo = (/0,1,1,1,2,2,2,2,2,3,3,3,3,3,3,3/)
+!integer, dimension (2) :: coreStateNum
+!integer :: q,r
 
    ! Record the beginning of this phase of the setup calculation.
    call timeStampStart(8)
@@ -345,6 +347,7 @@ subroutine gaussOverlapOL(numComponents,fullCVDims,packedVVDims,did,CVdid,aid)
          !   atom sites.
          call findLatticeVector((currentPosition(:,1)-currentPosition(:,2)),&
                & latticeVector)
+!latticeVector(:) = 0.0_double
 
          ! Determine the square of the minimum seperation distance between the
          !   two atoms.
@@ -355,6 +358,7 @@ subroutine gaussOverlapOL(numComponents,fullCVDims,packedVVDims,did,CVdid,aid)
          !   is considered to be non-negligable.
          currentNegligLimit = alphaDist(1,1,currentElements(1),&
                & currentElements(2))
+!write(20,*) "aSSS,cNL", atomSiteSepSqrd, currentNegligLimit
 
          ! Determine if there are no alpha terms for this atom pair that fall
          !   within the current negligability limit.  Cycle if there are none.
@@ -392,8 +396,11 @@ subroutine gaussOverlapOL(numComponents,fullCVDims,packedVVDims,did,CVdid,aid)
 
             ! Exit the loop when we have exceeded the necessary number of
             !   lattice points based on distance.
+!write (20,*) "ijk,cSR,mLR",i,j,k, cellSizesReal(k),maxLatticeRadius
             if (cellSizesReal(k) > maxLatticeRadius) exit
-
+!if ((i==1) .and. (j==2)) then
+!write (20,*) "Got here 1 k", k
+!endif
             ! Obtain the position of atom #2 shifted by the current lattice.
             shiftedAtomPos(:) = currentPosition(:,2) + latticeVector(:) + &
                   & cellDimsReal(:,k)
@@ -402,11 +409,21 @@ subroutine gaussOverlapOL(numComponents,fullCVDims,packedVVDims,did,CVdid,aid)
             !   between atom 1 and the shifted position of atom 2.
             shiftedAtomSiteSep = sum ((currentPosition(:,1) - &
                   & shiftedAtomPos(:))**2)
+!if ((i==1) .and. (j==2)) then
+!write (20,*) "cP1", currentPosition(:,1)
+!write (20,*) "cP2", currentPosition(:,2)
+!write (20,*) "lV", latticeVector(:)
+!write (20,*) "cDR", cellDimsReal(:,k)
+!write (20,*) "sAP", shiftedAtomPos(:)
+!write (20,*) "Got here 1b sASS cNL", k, shiftedAtomSiteSep, currentNegligLimit
+!endif
 
             ! Determine if this shifted atom position puts it outside of the
             !   above determined negligability limit for this atom pair.
             if (shiftedAtomSiteSep > currentNegligLimit) cycle
-
+!if ((i==1) .and. (j==2)) then
+!write (20,*) "Got here 2 k", k
+!endif
 
             ! Initialize a matrix to hold the product of the overlap integrals
             ! times the atom2 basis functions.
@@ -432,6 +449,9 @@ subroutine gaussOverlapOL(numComponents,fullCVDims,packedVVDims,did,CVdid,aid)
 
             ! The loop must be up to the smaller number of alphas.
             do l = 1, min(currentNumAlphas(1),currentNumAlphas(2))
+!if ((i==1) .and. (j==2)) then
+!write (20,*) "Got here 3 k,l", k,l
+!endif
 
                ! Set the mode to zero to say that we are incrementing through
                !   neither the atom 1 alpha array nor the atom 2 alpha array.
@@ -443,6 +463,9 @@ subroutine gaussOverlapOL(numComponents,fullCVDims,packedVVDims,did,CVdid,aid)
                ! Check if this alpha pair has any non-negligable contribution.
                if (alphaDist(l,l,currentElements(1),currentElements(2)) < &
                      & shiftedAtomSiteSep) exit
+!if ((i==1) .and. (j==2)) then
+!write (20,*) "Got here 4 k,l,aD sASS", k,l,alphaDist(l,l,currentElements(1),currentElements(2)),shiftedAtomSiteSep
+!endif
 
                ! Start looping over atomic alphas looking for a negligable
                !   contribution for each alpha pair.
@@ -518,6 +541,13 @@ subroutine gaussOverlapOL(numComponents,fullCVDims,packedVVDims,did,CVdid,aid)
                         & currentAlphas(alphaIndex(2),2), &
                         & currentPosition(:,1), shiftedAtomPos(:),&
                         & l1l2Switch, oneAlphaPair)
+!if ((i==1) .and. (j<=2) .and. (k==1)) then
+!do q = 1,9
+!do r = 1,9
+!write(20,*) "r,q,oAP",r,q,l1l2Switch,oneAlphaPair(r,q)
+!enddo
+!enddo
+!endif
 
                   ! Collect the results of the overlap of the current alpha
                   !   times the basis functions of atom 2.
@@ -574,10 +604,23 @@ subroutine gaussOverlapOL(numComponents,fullCVDims,packedVVDims,did,CVdid,aid)
 
 #ifndef GAMMA
          ! First we must make a correction for the atom 2 lattice origin shift.
+!write(20,*) "i,j,lV=",i,j,latticeVector(:)
+!if ((i==1) .and. (j==2)) then
+!write(20,*) "cP(5-6,1,2)", currentPair(5,1,2),currentPair(6,1,2)
+!write(20,*) "cP(5-6,1,26)", currentPair(5,1,26),currentPair(6,1,26)
+!endif
          call kPointLatticeOriginShift (currentNumTotalStates,currentPair,&
                & latticeVector)
+!if ((i==1) .and. (j==2)) then
+!write(20,*) "cP(5-6,1,2)", currentPair(5,1,2),currentPair(6,1,2)
+!write(20,*) "cP(5-6,1,26)", currentPair(5,1,26),currentPair(6,1,26)
+!endif
          call saveCurrentPair(i,j,numKPoints,currentPair,valeVale,&
                & coreValeOL,coreCore,0)
+!if ((i==1) .and. (j==2)) then
+!write(20,*) "vV(5-6,10,2)", valeVale(5,10,2), valeVale(6,10,2)
+!write(20,*) "vV(5-6,10,26)", valeVale(5,10,26), valeVale(6,10,26)
+!endif
 #else
          call saveCurrentPairGamma(i,j,currentPairGamma,&
                & valeValeGamma,coreValeOLGamma,coreCoreGamma)

@@ -18,7 +18,7 @@ subroutine computeBond (inSCF)
    use O_Potential,   only: spin
    use O_Lattice,     only: realVectors,realCellVolume
    use O_AtomicTypes, only: numAtomTypes, atomTypes, maxNumStates
-   use O_KPoints,     only: numKPoints
+   use O_KPoints,     only: numKPoints, kPointWeight, kPoints
    use O_Populate,    only: electronPopulation
    use O_AtomicSites, only: coreDim, valeDim, numAtomSites, atomSites
    use O_PotTypes,    only: potTypes
@@ -141,10 +141,11 @@ subroutine computeBond (inSCF)
    !   atomic sites. (This will give a BondQ for each atom and QN_l orbital.)
    numOrbIndex(1) = 0
 
-   ! Loop to record the index number for each type's orbitals.
+   ! Loop to record an index number for each type's orbitals.
    do i = 1, numAtomSites
       numOrbIndex (i+1) = numOrbIndex(i) + &
             & sum(atomTypes(atomSites(i)%atomTypeAssn)%numQN_lValeRadialFns(:))
+!      numOrbIndex (i+1) = numOrbIndex(i) + &
 !         & atomTypes(atomSites(i)%atomTypeAssn)%numQN_lValeRadialFns(1)*1 + &
 !         & atomTypes(atomSites(i)%atomTypeAssn)%numQN_lValeRadialFns(2)*3 + &
 !         & atomTypes(atomSites(i)%atomTypeAssn)%numQN_lValeRadialFns(3)*5 + &
@@ -492,15 +493,17 @@ subroutine computeBond (inSCF)
 
                   ! Store the atom charge contribution from this band (j) and
                   !   kpoint (i).
-!                  atomCharge(k) = atomCharge(k) + oneValeRealAccum * &
+!                  atomCharge(k,h) = atomCharge(k,h) + oneValeRealAccum * &
 !                        & kPointWeight(i) / real(spin,double)
+!write(20,*) "i j k l", i, j, k, l
+!write(20,*) "kPW(i) oVRA aC", kPointWeight(i), oneValeRealAccum, atomCharge(k,h)
                   atomCharge(k,h) = atomCharge(k,h) + oneValeRealAccum * &
                         & electronPopulation(stateSpinKPointIndex)
 
                   ! Store the atom orbital charge contribution.
 !                  atomOrbitalCharge(k,chargeIndex(l)) = &
 !                        & atomOrbitalCharge(k,chargeIndex(l)) + &
-!                        oneValeRealAccum * kPointWeight(i) / real(spin,double)
+!                        & oneValeRealAccum * kPointWeight(i)/real(spin,double)
                   atomOrbitalCharge(k,chargeIndex(l)) = &
                         & atomOrbitalCharge(k,chargeIndex(l)) + &
                         & oneValeRealAccum * &
@@ -708,6 +711,7 @@ subroutine computeBond (inSCF)
 
             ! Initialize the min distance to an impossibly large number.
             minDistMag = bigThresh
+            minDist(:) = bigThresh
 
             ! Loop through 125 cells to find the minimal distance
             do k = -2, 2
@@ -814,7 +818,7 @@ subroutine computeBond (inSCF)
                & atomCharge(i,h)
          numChargedAtoms(currentType) = numChargedAtoms(currentType) + 1
 
-         ! Accumulate the charge for this atom to the total system charge.
+         ! Accumulate the charge for this atom into the total system charge.
          systemCharge = systemCharge + atomCharge(i,h)
 
          ! Begin a second loop over the other atoms.
@@ -936,9 +940,15 @@ subroutine computeBond (inSCF)
                   & atomTypes(currentType)%speciesID
             write (9+h,fmt=200) "TYPE_ID          ", &
                   & atomTypes(currentType)%typeID
-            write (9+h,fmt=300) "NEUT_VALE_CHARGE   ", potTypes(&
-                  & atomSites(i)%atomTypeAssn)%nucCharge - sum(coreCharge(:,&
-                  & int(potTypes(atomSites(i)%atomTypeAssn)%nucCharge)))
+            if (coreDim == 0) then
+               write (9+h,fmt=300) "NEUT_VALE_CHARGE   ", potTypes(&
+                     & atomSites(i)%atomTypeAssn)%nucCharge
+            else
+               write (9+h,fmt=300) "NEUT_VALE_CHARGE   ", potTypes(&
+                     & atomSites(i)%atomTypeAssn)%nucCharge - &
+                     & sum(coreCharge(:,int(potTypes(&
+                     & atomSites(i)%atomTypeAssn)%nucCharge)))
+            endif
             write (9+h,fmt=300) "ATOM_CHARGE      ", atomCharge(i,h)
             numSQN_l = atomTypes(currentType)%numQN_lValeRadialFns(1)
             numPQN_l = atomTypes(currentType)%numQN_lValeRadialFns(2)
@@ -960,9 +970,6 @@ subroutine computeBond (inSCF)
                write (9+h,fmt=320) "f   ", atomOrbitalCharge(i,j)
             enddo
             
-!            do j = 1, numSQN_l + numPQN_l + numDQN_l + numFQN_l
-!               write (9+h,fmt=320) "s", atomOrbitalCharge(i,j)
-!            enddo
             write (9+h,fmt=200) "NUM_BONDED_ATOMS ", numAtomsBonded(i)
             do j = i+1, numAtomSites
                ! Only include bonds that exist in the statistics.

@@ -194,6 +194,7 @@ my $groupControlFile;
 my $bondProfileFile;
 my $requirementsPassed;
 my $scatterPlot;
+my $dipole;
 my $bondProfilePlot;
 my $profileAxis;
 my $systemModelDX;
@@ -441,6 +442,7 @@ sub initEnv
    $scatterPlot = 0;     #Initialize scatter plot to zero, but this will be
                          #   set to one later if none of the other output
                          #   schemes are selected on the command line.
+   $dipole = 0;
    $systemModelDX   = 0; #Assume to not be doing a system model diagram.
    $bo3c            = 0; #Assume to not be doing a 3-center-bond model diagram.
    $systemModelVTK  = 0; #Assume to not be doing a VTK system model diagram.

@@ -273,10 +273,10 @@ stepBandCount = 0
                knxt = mtopKPMap(axis,kPointCount-numSteps+1)
             endif
 
-!write(20,*) "i, nS, kcur knxt", i, numSteps, kcur, knxt
-!write(20,*) "kcur", kPoints(:,kcur)
-!write(20,*) "knxt", kPoints(:,knxt)
-!write(20,*) "kdiff", kPoints(:,knxt) - kPoints(:,kcur)
+write(20,*) "i, nS, kcur knxt", i, numSteps, kcur, knxt
+write(20,*) "kcur", kPoints(:,kcur)
+write(20,*) "knxt", kPoints(:,knxt)
+write(20,*) "kdiff", kPoints(:,knxt) - kPoints(:,kcur)
 
             ! Read next kpoint waveFn coefficients and appropriate KOverlap.
             if (i < numSteps) then ! Code 3,4,5
@@ -381,8 +381,8 @@ write(26+axis,*) stepCount, idenDiff
 
 do m = 1, maxOccupiedState
 stepBandCount = stepBandCount + 1
-write(23+axis,*) stepBandCount,m/real(maxOccupiedState,double),&
-      & real(unitary(m,m),double)
+write(23+axis,*) stepBandCount,real(unitary(m,m),double),&
+      & m/real(maxOccupiedState,double)
 enddo
 
 !do m = 1, maxOccupiedState
@@ -410,10 +410,8 @@ write(20,*) "B matrixDet"
             !   -im(sum(ln(det(M))))
             do j = 1, spin
 write(20,*) "C matrixDet"
-!tempVar = log(matrixDet(stateStateMat(:,:,j)))
                phiString_C(j) = phiString_C(j) + &
                      & log(matrixDet(stateStateMat(:,:,j)))
-!write(20,*) "intermediate phaseC: ", -aimag(tempVar)
             enddo
 
          enddo ! i = 1,numSteps (completing a line)
@@ -506,24 +504,15 @@ call flush(20)
       write(20,*) 'xyzP_C [C/m^2] = ', xyzP_C(:,i)
       write(20,*) 'xyzIonMoment = ', xyzIonMoment(:)
       write(20,*) 'abcIonMoment = ', abcIonMoment(:)
-      write(20,*) 'Dipole Moment A+ = ', xyzIonMoment(:) + xyzP_A(:,i)
-      write(20,*) 'Dipole Moment B+ = ', xyzIonMoment(:) + xyzP_B(:,i)
-      write(20,*) 'Dipole Moment C+ = ', xyzIonMoment(:) + xyzP_C(:,i)
-      write(20,*) 'Dipole Moment A- = ', xyzIonMoment(:) - xyzP_A(:,i)
-      write(20,*) 'Dipole Moment B- = ', xyzIonMoment(:) - xyzP_B(:,i)
-      write(20,*) 'Dipole Moment C- = ', xyzIonMoment(:) - xyzP_C(:,i)
-      write(20,*) 'Dipole Moment C/m^2 A+ = ', &
+      write(20,*) 'Polarization A+ = ', xyzIonMoment(:) + xyzP_A(:,i)
+      write(20,*) 'Polarization B+ = ', xyzIonMoment(:) + xyzP_B(:,i)
+      write(20,*) 'Polarization C+ = ', xyzIonMoment(:) + xyzP_C(:,i)
+      write(20,*) 'Polarization C/m^2 A+ = ', &
             & (xyzIonMoment(:) + xyzP_A(:,i)) * 10.0d0/(bohrRad**2)
-      write(20,*) 'Dipole Moment C/m^2 B+ = ', &
+      write(20,*) 'Polarization C/m^2 B+ = ', &
             & (xyzIonMoment(:) + xyzP_B(:,i)) * 10.0d0/(bohrRad**2)
-      write(20,*) 'Dipole Moment C/m^2 C+ = ', &
+      write(20,*) 'Polarization C/m^2 C+ = ', &
             & (xyzIonMoment(:) + xyzP_C(:,i)) * 10.0d0/(bohrRad**2)
-      write(20,*) 'Dipole Moment C/m^2 A- = ', &
-            & (xyzIonMoment(:) - xyzP_A(:,i)) * 10.0d0/(bohrRad**2)
-      write(20,*) 'Dipole Moment C/m^2 B- = ', &
-            & (xyzIonMoment(:) - xyzP_B(:,i)) * 10.0d0/(bohrRad**2)
-      write(20,*) 'Dipole Moment C/m^2 C- = ', &
-            & (xyzIonMoment(:) - xyzP_C(:,i)) * 10.0d0/(bohrRad**2)
    enddo
 
    xyzP = xyzP_B
@@ -573,6 +562,13 @@ integer, intent(in) :: code
    integer, allocatable, dimension(:) :: segmentBorders
    integer, allocatable, dimension(:) :: indexStringPhaseSet
    real(kind=double), allocatable, dimension(:) :: sortedStringPhaseSet
+   real(kind=double) :: targetMoment
+   real(kind=double) :: groupOneCenter
+   real(kind=double) :: groupTwoCenter
+   real(kind=double) :: currGapSize
+   integer :: currGapStart
+   integer :: currGapEnd
+
 
 
    ! Now that the phase for each line along this axis has been determined,
@@ -612,6 +608,8 @@ call flush(20)
 do i = 1,currNumLines
 write(code+axis,*) stringPhaseSet(i,h),1
 enddo
+
+      targetMoment = abcIonMoment(axis)
       ! Sort the string phases and copy the sorted list over the original.
       !call mergeSort(stringPhaseSet(:,h),sortedStringPhaseSet,&
       !      & indexStringPhaseSet,segmentBorders,numSegments)
@@ -626,25 +624,79 @@ enddo
       !   abc ionic moment.
       do i = 1, currNumLines
 !write(20,*) "line i", i
-         do while (stringPhaseSet(i,h)/pi/spin*realMag(axis) > abcIonMoment(axis))
+         do while (stringPhaseSet(i,h)/pi/spin*realMag(axis) > targetMoment)
             stringPhaseSet(i,h) = stringPhaseSet(i,h) - 2.0_double*pi
 !write(20,*) "Step1 ", stringPhaseSet(i,h) / pi / spin*realMag(axis)
          enddo
-         do while (stringPhaseSet(i,h)/pi/spin*realMag(axis) < abcIonMoment(axis))
+         do while (stringPhaseSet(i,h)/pi/spin*realMag(axis) < targetMoment)
             stringPhaseSet(i,h) = stringPhaseSet(i,h) + 2.0_double*pi
 !write(20,*) "Step2 ", stringPhaseSet(i,h) / pi / spin*realMag(axis)
          enddo
-         if (abs((stringPhaseSet(i,h)+2.0d0*pi)/pi/spin*realMag(axis) - abcIonMoment(axis))&
-               & < abs(stringPhaseSet(i,h)/pi/spin*realMag(axis) - abcIonMoment(axis))) then
+         if (abs((stringPhaseSet(i,h)+2.0d0*pi)/pi/spin*realMag(axis) - targetMoment)&
+               & < abs(stringPhaseSet(i,h)/pi/spin*realMag(axis) - targetMoment)) then
             stringPhaseSet(i,h) = stringPhaseSet(i,h) + 2.0_double*pi
 !write(20,*) "Step3 ", stringPhaseSet(i,h) / pi / spin*realMag(axis)
          endif
-         if (abs((stringPhaseSet(i,h)-2.0d0*pi)/pi/spin*realMag(axis) - abcIonMoment(axis))&
-               & < abs(stringPhaseSet(i,h)/pi/spin*realMag(axis) - abcIonMoment(axis))) then
+         if (abs((stringPhaseSet(i,h)-2.0d0*pi)/pi/spin*realMag(axis) - targetMoment)&
+               & < abs(stringPhaseSet(i,h)/pi/spin*realMag(axis) - targetMoment)) then
             stringPhaseSet(i,h) = stringPhaseSet(i,h) - 2.0_double*pi
 !write(20,*) "Step4 ", stringPhaseSet(i,h) / pi / spin*realMag(axis)
          endif
+      enddo
 
+      ! At this point, the phases are centered about the point that will
+      !   minimize the difference vs. the nuclear moment.
+      
+      ! Now, we need to center them about the center of the actual set of
+      !   phases. Most likely, there will be two groups of phases with a
+      !   gap between them.
+      ! Seek out the gap.
+      ! Sort the phases.
+      ! Traverse the phases and find the largest step between any two.
+      ! Compute the center of the two groups independently.
+      ! Determine which center is closer to the targetMoment.
+      ! Move the phases of the other center into the closer group.
+
+      ! Sort the string phases and copy the sorted list over the original.
+      call mergeSort(stringPhaseSet(:,h),sortedStringPhaseSet,&
+            & indexStringPhaseSet,segmentBorders,numSegments)
+      stringPhaseSet(:,h) = sortedStringPhaseSet(:)
+
+      currGapStart = 1
+      currGapEnd = 2
+      currGapSize = stringPhaseSet(2,h) - stringPhaseSet(1,h)
+      do i = 2, currNumLines-1
+         if ((stringPhaseSet(i+1,h) - stringPhaseSet(i,h)) > currGapSize) then
+            currGapStart = i
+            currGapEnd = i+1
+            currGapSize = stringPhaseSet(i+1,h) - stringPhaseSet(i,h)
+         endif
+      enddo
+
+      groupOneCenter = 0.0_double
+      do i = 1, currGapStart
+         groupOneCenter = groupOneCenter + stringPhaseSet(i,h)
+      enddo
+      groupOneCenter = groupOneCenter / currGapStart
+
+      groupTwoCenter = 0.0_double
+      do i = currGapEnd, currNumLines
+         groupTwoCenter = groupTwoCenter + stringPhaseSet(i,h)
+      enddo
+      groupTwoCenter = groupTwoCenter / (currNumLines - currGapEnd + 1)
+
+      if (abs(targetMoment - groupOneCenter) > &
+            & abs(targetMoment - groupTwoCenter)) then
+         do i = 1, currGapStart
+            stringPhaseSet(i,h) = stringPhaseSet(i,h) + 2.0_double * pi
+         enddo
+      else
+         do i = currGapEnd,currNumLines
+            stringPhaseSet(i,h) = stringPhaseSet(i,h) - 2.0_double * pi
+         enddo
+      endif
+
+!      do i = 1, currNumLines
 !         do while ((stringPhaseSet(i,h) / pi / spin - abcIonMoment(axis)) > pi)
 !            stringPhaseSet(i,h) = stringPhaseSet(i,h) - 2.0_double*pi
 !write(20,*) "Step1 ", stringPhaseSet(i,h) / pi / spin
@@ -663,7 +715,7 @@ enddo
 !            stringPhaseSet(i,h) = stringPhaseSet(i,h) + 2.0_double*pi
 !write(20,*) "Step4 ",stringPhaseSet(i,h) / pi / spin
 !         endif
-      enddo
+!      enddo
 !      ! Shift each phase to be as close as possible but still greater than the
 !      !   first. Then, check if one more shift of 2pi will bring it closer,
 !      !   even if it makes it less than the first phase in the sorted array.
@@ -813,9 +865,9 @@ function matrixDet(A)
    end do
 
 !write(20,*) "Squaring det.", matrixDet
-!   matrixDet = matrixDet * matrixDet
+   matrixDet = matrixDet * matrixDet
 !write(20,*) "Squared det.", matrixDet
-!return
+return
 
 !write(20,*) "ipiv = ",ipiv(:)
    visited = .false.; swaps = 0

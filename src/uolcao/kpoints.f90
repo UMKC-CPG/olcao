@@ -315,7 +315,7 @@ subroutine convertKPointsToXYZ
    ! Do the conversion.  We must use a temp variable since each kpoint
    !   component is used to calculate the other components of that kpoint.
    !   I.e., we are *overwriting* the abc fractional coordinates with
-   !   xyz Cartesian.
+   !   xyz Cartesian. The units are inverse bohr radii.
    write (20,*) 'Kpoints in x,y,z cartesian form in recip space cell are:'
    do i = 1, numKPoints
       kPointX = dot_product(kPoints(:,i),recipVectors(1,:))
@@ -351,10 +351,16 @@ subroutine computePhaseFactors
    allocate (phaseFactor(numKPoints,numCellsReal))
 
    ! Assign the values as the dot product of kpoints and celldims.
+!write(22,*) "Real Imaginary"
+!write(24,*) "Real Imaginary"
    do i = 1, numCellsReal
       do j = 1, numKPoints
          dotProduct = dot_product(kPoints(:,j),cellDimsReal(:,i))
          phaseFactor(j,i) = cmplx(cos(dotProduct),sin(dotProduct),double)
+!if ((j==2) .or. (j==26)) then
+!write(20,*) "i,j",i,j,real(phaseFactor(j,i),double),aimag(phaseFactor(j,i))
+!write(20,*) "cDR",cellDimsReal(:,i)
+!endif
       enddo
    enddo
 

@@ -402,10 +402,10 @@ class Data():
             sum(Data.num_high_symmetry_BZ_points_per_path)):
             for i in range(Data.num_high_symmetry_BZ_paths):
                 for j in range(Data.num_high_symmetry_BZ_points_per_path[i]):
-                    kPointCounter += 1
                     Data.path_kpoints[kPointCounter] = \
                             Data.high_symmetry_BZ_kpoints[i][j]
                     Data.path_kp_mag[kPointCounter] = symKPDistMag[i][j]
+                    kPointCounter += 1
         else:
             average_delta = symKPDistMag[
                     Data.num_high_symmetry_BZ_paths - 1,
@@ -445,9 +445,6 @@ class Data():
 
                             for k in range(numSegmentKPoints):
 
-                                # Increment the kpoint counter.
-                                kPointCounter += 1
-
                                 # Store the position of the next kpoint on
                                 #   this segment by adding the above
                                 #   determined delta to the last known path
@@ -461,14 +458,14 @@ class Data():
                                 Data.path_kp_mag[kPointCounter] = \
                                         Data.path_kp_mag[kPointCounter - 1] \
                                         + m.sqrt(sum(segmentDelta**2))
+
+                                # Increment the kpoint counter.
+                                kPointCounter += 1
                     else:
 
                         # Now, record the j-th high symmetry kpoint. For the
                         #   first kpoint (where i==1 and j==1) this will
                         #   happen first, before the code segment above.
-
-                        # Increment the kpoint counter.
-                        kPointCounter += 1
 
                         # Store the position of the high symmetry kpoint in
                         #   the path array.
@@ -486,6 +483,9 @@ class Data():
                             Data.path_kp_mag[kPointCounter] = \
                                     Data.path_kp_mag[kPointCounter - 1] \
                                     + m.sqrt(sum(segmentDelta**2))
+
+                        # Increment the kpoint counter.
+                        kPointCounter += 1
 
         # Correct the number of path kpoints.
         Data.total_num_BZ_path_KP = kPointCounter
@@ -554,7 +554,7 @@ def main():
 
     # Define the camera.
     cam = dict(
-        pos=(31.9949, 31.9949, 277.797),
+        pos=(4.0000, 4.0000, 25.000),
         focal_point = (0, 0, 0),
         viewup=(0, 1.00000, 0),
         roll=0,

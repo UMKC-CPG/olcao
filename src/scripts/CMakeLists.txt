@@ -11,6 +11,7 @@ dump2skl
 ea_driver_with_ea_loop.py ensembleCondense
 gaussOverlapRT
 getPlane graspElems.py
+hdf5Comp.py
 insert3cbo interFit.py
 lmp2skl.py
 make_veusz_graph.py makeBDB makeBOND makeColorSYBD makeFittedRhoV makeinput

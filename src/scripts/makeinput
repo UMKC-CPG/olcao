@@ -155,8 +155,8 @@ sub printHelp
 
 #The -pscfkp is the same as the -scfkp option except that it applies to the
 #  post-scf calculations (band, bond, dos, optc).  (NOTE that sybd will choose
-#  kpoints given by the path associated with the crystalline cell or the -cell
-#  parameter if it was given to request an explicit path.)
+#  kpoints given by the path associated with the crystalline cell or the
+#  -sybdpath parameter if it was given to request an explicit path.)
 
 #The -kp option will apply the same kpoint selection to the scf, alt, and
 #  post-scf kpoints.
@@ -273,6 +273,7 @@ sub printHelp
 #   -pscfkp:       One general kpoint is used for all pscf calculations.
 #   -kp:           One general kpoint is used for all scf and pscf calculations.
 #   -kpshift:      Use the default shift for each lattice type.
+#   -printbz:      Use the first Brillouin zone and no scaling.
 #   -reduce:       This is off by default.  The default sub parameters are:
 #        \$reduceLevels = 2, \$reduceThick = 0.1 A, \$reduceCutoff = 4.0 A, 
 #        \$reduceOp = species, \$reduceTolerance = 0.05, \$reduceSelection = 0=all.
@@ -4987,9 +4988,7 @@ sub makeSubFile
       print SUBFILE "source $OLCAO_RC/olcaorc\n";
       print SUBFILE "export OMP_NUM_THREADS=1\n";
       print SUBFILE "cd $proj_dir || exit\n";
-      print SUBFILE "\"\$OLCAO_BIN/uolcao\" -scf NO -mtop\n";
-      print SUBFILE "\"\$OLCAO_BIN/uolcao\" -scf NO -dimo\n";
-      print SUBFILE "\"\$OLCAO_BIN/uolcao\" -scf NO -bond\n";
+      print SUBFILE "\"\$OLCAO_BIN/uolcao\" -bond\n";
 #      print SUBFILE "\"\$OLCAO_BIN/uolcao\" -dos\n";
 #      print SUBFILE "\"\$OLCAO_BIN/uolcao\" -bond\n";
 #      print SUBFILE "\"\$OLCAO_BIN/uolcao\" -sybd\n";

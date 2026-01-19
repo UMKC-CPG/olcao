@@ -14,8 +14,8 @@ endif (NOT CMAKE_BUILD_TYPE)
 #option(BUILD_SHARED_LIBS "Build using shared libraries" ON)
 
 # Establish the installation location on the basis of the $OLCAO_DIR
-#   environment variable that is defined in the .olcao file. Make sure that you
-#   source this file (source .olcao) before you try to build.
+#   environment variable that is defined in the .olcaorc file. Make sure that
+#   you source this file (source .olcaorc) before you try to build.
 if (CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
    set (CMAKE_INSTALL_PREFIX $ENV{OLCAO_DIR})
    set_property (CACHE CMAKE_INSTALL_PREFIX PROPERTY VALUE $ENV{OLCAO_DIR})

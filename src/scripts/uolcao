@@ -60,8 +60,9 @@ sub printHelp
 #       includes a bond and Q* (raw) file that needs to be postprocessed by
 #       makeBOND.
 #-dimo and -scfdimo will do a dipole moment calculation using the potential
-#       for the requested edge. The default SCF and post SCF basis is the full
-#       basis. The output include only a total dipole moment output file.
+#       for the requested edge. The default SCF and post SCF basis is the
+#       minimal basis. The output include only a total dipole moment output
+#       file.
 #-mtop and -scfmtop will do a polarization calculation using the potential
 #       for the requested edge. The default SCF and post SCF basis is the full
 #       basis. The output includes only a polarization output file.
@@ -538,10 +539,10 @@ sub parseCLP
          else
             {$edge=$ARGV[++$number];}
          if ($basisSet_pscf == 0)
-            {$basis_pscf = "fb";}  #Full Basis
+            {$basis_pscf = "mb";}  #Minimal Basis
          $basisSet_pscf = 1;
          if ($basisSet_scf == 0)
-            {$basis_scf = "fb";}  #Full Basis
+            {$basis_scf = "mb";}  #Minimal Basis
          $basisSet_scf = 1;
       }
       elsif ($ARGV[$number] eq "-optc")

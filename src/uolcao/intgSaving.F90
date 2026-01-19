@@ -158,12 +158,22 @@ subroutine applyPhaseFactors (currentPair,pairXBasisFn12,statesDim1,statesDim2,&
 
    if (runCode == 0) then
       do l = 1, numKPoints
+!if (l==1) then
+!write(20,*) "pXBF12",pairXBasisFn12(5,1),pairXBasisFn12(6,1)
+!endif
+!if ((l==2) .or. (l==26)) then
+!write(20,*) "l,k,pF",l,k,phaseFactor(l,k)
+!write(20,*) "aPF:cP",l,currentPair(5,1,l),currentPair(6,1,l)
+!endif
          do m = 1, statesDim2
             do n = 1, statesDim1
                currentPair(n,m,l) = currentPair(n,m,l) + &
                      & phaseFactor(l,k) * pairXBasisFn12(n,m)
             enddo
          enddo
+!if ((l==2) .or. (l==26)) then
+!write(20,*) "aPF:cP",l,currentPair(5,1,l),currentPair(6,1,l)
+!endif
       enddo
    else ! runCore == 1; Include a -i factor.
       do l = 1, numKPoints
@@ -233,6 +243,7 @@ subroutine kPointLatticeOriginShift (currentNumTotalStates,currentPair,&
 
    ! Import the necessary modules
    use O_Kinds
+   use O_Constants, only: smallThresh
 
    ! Import the necessary data modules
    use O_KPoints, only: numKPoints, kPoints
@@ -242,10 +253,10 @@ subroutine kPointLatticeOriginShift (currentNumTotalStates,currentPair,&
    implicit none
 
    ! Define variables passed to this subroutine
-   integer, dimension(2) :: currentNumTotalStates
+   integer, dimension(2), intent(in) :: currentNumTotalStates
    complex (kind=double), dimension (maxNumStates,maxNumStates,&
-         & numKPoints) :: currentPair
-   real (kind=double), dimension (3) :: latticeVector
+         & numKPoints), intent(inout) :: currentPair
+   real (kind=double), dimension (3), intent(in) :: latticeVector
 
    ! Define local variables for loop control.
    integer :: i,j,k
@@ -260,10 +271,14 @@ subroutine kPointLatticeOriginShift (currentNumTotalStates,currentPair,&
       kPointShiftDot = sum(kPoints(:,i) * latticeVector(:))
 
       ! Check that the vectors are not perpendicular.
-      if (kPointShiftDot .ne. 0.0_double) then
+      !if (kPointShiftDot .ne. 0.0_double) then
+      if (abs(kPointShiftDot) .ge. smallThresh) then
 
          ! Get the cosine and sine of the dot product
          dotProduct = cmplx(cos(kPointShiftDot),sin(kPointShiftDot),double)
+!if ((i==2) .or. (i==4)) then
+!write(20,*) "dP,lV",dotProduct, latticeVector(:)
+!endif
 
          ! Loop over both atom wave functions.
          do j = 1, currentNumTotalStates(2)
@@ -375,6 +390,7 @@ subroutine saveCurrentPair (i,j,kPointCount,currentPair,&
 
    ! Create the complex conjugate of the relevant currentPair section.
    allocate (currentPairDagger(maxNumStates,maxNumStates,kPointCount))
+currentPairDagger(:,:,:) = 0.0_double
    do kPointCounter = 1, kPointCount
       currentPairDagger(:,:,kPointCounter) = &
             & transpose(conjg(currentPair(:,:,kPointCounter)))
@@ -382,6 +398,10 @@ subroutine saveCurrentPair (i,j,kPointCount,currentPair,&
 !            & coreStateNum(1),i) = &
 !            & transpose(conjg(currentPair(1:valeStateNum(1)+coreStateNum(1),&
 !            & 1:valeStateNum(2)+coreStateNum(2),i)))
+!      currentPairDagger(1:valeStateNum(2)+coreStateNum(2),1:valeStateNum(1) + &
+!            & coreStateNum(1),kPointCounter) = &
+!            & transpose(conjg(currentPair(1:valeStateNum(1)+coreStateNum(1),&
+!            & 1:valeStateNum(2)+coreStateNum(2),kPointCounter)))
    enddo
 
    ! Get the indices for where the states for these atoms should begin to

@@ -195,6 +195,7 @@ subroutine getRecipCellVectors
    !   a' = 2*Pi * (b x c)/(a . b x c); where . = dot product, x = cross product
    !   b' = 2*Pi * (c x a)/(a . b x c)
    !   c' = 2*Pi * (a x b)/(a . b x c)
+   ! The units of the reciprocal primitive lattice are inverse bohr radii.
 
    do i = 1, dim3  ! Reciprocal a,b,c
       realCellVolume = 0
@@ -404,7 +405,7 @@ subroutine initializeLattice (doRecip)
    !   array in nondecreasing order by the sum of the squares of the x,y,z
    !   components.  This job is passed off to a subroutine because it must be
    !   done for both the real space and reciprocal space lattices.
-
+!write(20,*) "Real"
    call getNumCells(primRepsReal,numCellsReal,negligLimitReal,realVectors)
 
    ! Now that we know the array sizes we can allocate space for them.
@@ -418,6 +419,7 @@ subroutine initializeLattice (doRecip)
 
    if (doRecip .eq. 1) then
 
+!write(20,*) "Recip"
       call getNumCells(primRepsRecip,numCellsRecip,negligLimitRecip,&
             & recipVectors)
 
@@ -575,12 +577,12 @@ subroutine makeLattice (primReps,numCells,cellSizes,cellDims,negligLimit,&
    use O_SortSubs ! Subroutines for mergesort sorting.
 
    ! Define the dummy variables passed to this subroutine.
-   integer, dimension(dim3) :: primReps
-   integer :: numCells
-   real (kind=double), dimension (:) :: cellSizes
-   real (kind=double), dimension (:,:) :: cellDims
-   real (kind=double) :: negligLimit
-   real (kind=double), dimension(dim3,dim3) :: vectors
+   integer, dimension(dim3), intent(in) :: primReps
+   integer, intent(inout) :: numCells
+   real (kind=double), dimension (:), intent(out) :: cellSizes
+   real (kind=double), dimension (:,:), intent(out) :: cellDims
+   real (kind=double), intent(in) :: negligLimit
+   real (kind=double), dimension(dim3,dim3), intent(in) :: vectors
 
    ! Define the local variables used in this subroutine.
    integer :: i,j,k,l,m ! Loop variables.  loop1=i, nestedloop2=j ...
@@ -609,6 +611,7 @@ subroutine makeLattice (primReps,numCells,cellSizes,cellDims,negligLimit,&
    !   actual precise size at the same time.  Then copy the results from the
    !   HUGE array into the exact sized array and deallocate the HUGE one.  That
    !   would probably be faster.
+!write(20,*) "negligLimit=",negligLimit
    numCells = 0
    do i = 1, primReps(1)
       currentRep(1) = i - (1 + primReps(1))/2
@@ -623,7 +626,14 @@ subroutine makeLattice (primReps,numCells,cellSizes,cellDims,negligLimit,&
                                     & vectors(m,l) * currentRep(l)
                enddo
             enddo
+
+            ! Calculate the distance squared to that lattice point.
             tempSumOfSquares = sum(tempDimensions(1:dim3)**2)
+
+            ! Check to see if that point is outside the negligability limit.
+            !   If it is, then there are some situations where the cell should
+            !   still be included in the cell list because atoms *in* the cell
+            !   are still within the negligability limit.
             if (tempSumOfSquares > negligLimit) then
 
                ! If the lattice point is outside the negligability limit, then
@@ -645,12 +655,16 @@ subroutine makeLattice (primReps,numCells,cellSizes,cellDims,negligLimit,&
                !   negligability limit then we cycle to avoid including
                !   this cell in the count.
                if (isWithinNegligLimit == 0) then
+!write(20,*) "XXX", i,j,k,numCells,tempSumOfSquares
+!write(20,*) "XXX", tempDimensions(:)
                   cycle
                endif
             endif
             numCells = numCells + 1
             cellSizesTemp(numCells) = tempSumOfSquares
             cellDimsTemp(:dim3,numCells) = tempDimensions
+!write(20,*) i,j,k,numCells,tempSumOfSquares
+!write(20,*) tempDimensions(:)
          enddo
       enddo
    enddo
@@ -664,10 +678,12 @@ subroutine makeLattice (primReps,numCells,cellSizes,cellDims,negligLimit,&
    enddo
 
    call mergeSort (cellSizesTemp,cellSizes,sortOrder,segmentBorders,numCells)
-
+!write(20,*) "After Sort"
    ! Copy the results to the cellDims array
    do i = 1, numCells
       cellDims(:dim3,i) = cellDimsTemp(:dim3,sortOrder(i))
+!write(20,*) i,cellSizes(i)
+!write(20,*) cellDims(:,i)
    enddo
 
    ! Deallocate the unnecessary arrays now.
@@ -687,10 +703,10 @@ subroutine cellBorderCheck (vectors, tempDimensions, negligLimit, &
    use O_Constants, only: dim3
 
    ! Define the dummy variables passed to this subroutine.
-   real (kind=double), dimension(dim3,dim3) :: vectors
-   real (kind=double), dimension(dim3) :: tempDimensions
-   real (kind=double) :: negligLimit
-   integer :: isWithinNegligLimit
+   real (kind=double), dimension(dim3,dim3), intent(in) :: vectors
+   real (kind=double), dimension(dim3), intent(in) :: tempDimensions
+   real (kind=double), intent(in) :: negligLimit
+   integer, intent(out) :: isWithinNegligLimit
 
    ! Define the local variables used in this subroutine.
    integer :: i ! Loop variables
@@ -703,7 +719,7 @@ subroutine cellBorderCheck (vectors, tempDimensions, negligLimit, &
 
    ! Initialize the distances that must be shifted in each direction.
    cellShifts(:) = 0.0_double
-   do i = 1, dim3
+   do i = 1, dim3 ! a,b,c
       cellShifts(:) = cellShifts(:) + vectors(:,i)
    enddo
 
@@ -716,42 +732,49 @@ subroutine cellBorderCheck (vectors, tempDimensions, negligLimit, &
    currentTest(1) = currentTest(1) + cellShifts(1)
    if (sum(currentTest(:)**2) < negligLimit) then
       isWithinNegligLimit = 1
+!write(20,*) "1", sum(currentTest(:)**2)
       return
    endif
 
    currentTest(2) = currentTest(2) + cellShifts(2)
    if (sum(currentTest(:)**2) < negligLimit) then
       isWithinNegligLimit = 1
+!write(20,*) "2", sum(currentTest(:)**2)
       return
    endif
 
    currentTest(1) = currentTest(1) - cellShifts(1)
    if (sum(currentTest(:)**2) < negligLimit) then
       isWithinNegligLimit = 1
+!write(20,*) "3", sum(currentTest(:)**2)
       return
    endif
 
    currentTest(3) = currentTest(3) + cellShifts(3)
    if (sum(currentTest(:)**2) < negligLimit) then
       isWithinNegligLimit = 1
+!write(20,*) "4", sum(currentTest(:)**2)
       return
    endif
 
    currentTest(1) = currentTest(1) + cellShifts(1)
    if (sum(currentTest(:)**2) < negligLimit) then
       isWithinNegligLimit = 1
+!write(20,*) "5", sum(currentTest(:)**2)
       return
    endif
 
    currentTest(2) = currentTest(2) - cellShifts(2)
    if (sum(currentTest(:)**2) < negligLimit) then
       isWithinNegligLimit = 1
+!write(20,*) "6", sum(currentTest(:)**2)
       return
    endif
 
    currentTest(1) = currentTest(1) - cellShifts(1)
    if (sum(currentTest(:)**2) < negligLimit) then
       isWithinNegligLimit = 1
+!write(20,*) "7", sum(currentTest(:)**2)
       return
    endif
 
@@ -815,7 +838,7 @@ subroutine findLatticeVector (arbitraryVector, latticeVector)
    !   current octant of the lattice vector.  If there are more than one
    !   Wigner-Seitz cells for this octant, then the lattice vector must be
    !   checked for each of them to see which is the closest.
-   if (numWignerCellsNeeded(octantNumber) > 1) then
+   if (numWignerCellsNeeded(octantNumber) .ne. 1) then
 
       ! Define the current remainder vector.
       remainderVector = arbitraryVector - latticeVector
@@ -842,7 +865,7 @@ subroutine findLatticeVector (arbitraryVector, latticeVector)
 
       ! If the minimum distance lattice point is not 1 then we must
       !   adjust the value of the nearest lattice point.
-      if (minWignerCell > 1) then
+      if (minWignerCell .ne. 1) then
          latticeVector = latticeVector + cellDimsReal(:,minWignerCell)
       endif
    endif
@@ -1883,9 +1906,6 @@ subroutine getRealPlaneAngles
             asin(dot_product(realUnitNormal(:,i),realUnitVectors(:,i)))
    enddo
 !write (6,*) "planeAngles bc,a ac,b ab,c = ",planeAngles(:)*180.0_double/pi
-
-
-
 end subroutine getRealPlaneAngles
 
 
@@ -1903,6 +1923,5 @@ subroutine cleanUpLattice
    deallocate (overlappingWignerCells)
 
 end subroutine cleanUpLattice
-
 
 end module O_Lattice

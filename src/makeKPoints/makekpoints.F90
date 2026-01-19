@@ -114,7 +114,7 @@ module PointGroupOperations_O
          ! Read the empty line between operations.
          read (fileUnit,*)
 
-         ! Read the space group operation.
+         ! Read the point group operation.
          read (fileUnit,*) pointOps(:,:,i) ![abc contrib][new abc]
 
          ! Read the translation line.
@@ -1723,8 +1723,14 @@ module KPointMesh_O
                loopIndex(3) = k
 
                ! Compute the current mesh kpoint location.
+               !abcMeshKPoints(:,numMeshKPoints) = &
+               !      & (2.0_double*loopIndex(:)-numABCKPoints(:)-1.0_double) /&
+               !      & (2.0_double*numABCKPoints(:))
                abcMeshKPoints(:,numMeshKPoints) = &
-                     & (loopIndex(:)-1.0_double+abcShift(:)) * abcDelta(:)
+                     & (2.0_double*loopIndex(:)-numABCKPoints(:)-1.0_double) /&
+                     & (2.0_double*numABCKPoints(:))
+               !abcMeshKPoints(:,numMeshKPoints) = &
+               !      & (loopIndex(:)-1.0_double+abcShift(:)) * abcDelta(:)
 
             enddo  ! k=1,numABCKPoints(3)
          enddo  ! j=1,numABCKPoints(2)
@@ -1773,12 +1779,13 @@ module KPointMesh_O
 
       ! Define the local variables.
       integer :: i,j
+!integer :: k
       real (kind=double), dimension(3) :: foldedKPoint
 
       ! Allocate space to hold the folded kpoint positions and folded kpoint
       !   weights.  Note that we allocate the same amount of space that is used
       !   to hold the mesh kpoints because we do not yet know how many kpoints
-      !   will be reduced and so this is much faster.  The memory usage will
+      !   will be reduced and so this is much faster. The memory usage will
       !   not be significant.
       allocate (abcFoldedKPoints(3,numMeshKPoints))
       allocate (kPointWeight(numMeshKPoints))
@@ -1844,6 +1851,9 @@ module KPointMesh_O
             do j = 1, numPointOps
 
                ! Fold the kpoint for this point group operation.
+!do k = 1,3
+!write(53,*) abcRecipPointOps(:,k,j)
+!enddo
                call foldKPoint (foldedKPoint,abcRecipPointOps(:,:,j),&
                      & abcMeshKPoints(:,i))
 
@@ -1881,12 +1891,12 @@ module KPointMesh_O
       do i = 1, 3
          foldedKPoint(i) = sum(abcRecipPointOp(i,:) * abcMeshKPoint(:))
 
-         ! Translate the folded kpoint to the interval 0-1.
-         if (foldedKPoint(i) < 0.0_double) then
-            foldedKPoint(i) = foldedKPoint(i) + 1.0_double
-         elseif (foldedKPoint(i) > 1.0_double) then
-            foldedKPoint(i) = foldedKPoint(i) - 1.0_double
-         endif
+         !! Translate the folded kpoint to the interval 0-1.
+         !if (foldedKPoint(i) < 0.0_double) then
+         !   foldedKPoint(i) = foldedKPoint(i) + 1.0_double
+         !elseif (foldedKPoint(i) > 1.0_double) then
+         !   foldedKPoint(i) = foldedKPoint(i) - 1.0_double
+         !endif
       enddo  ! i=1,3
 
    end subroutine foldKPoint
@@ -1932,7 +1942,10 @@ module KPointMesh_O
             enddo
 
             if (isMatch == 1) then
+!write (53,*) "foldedKP=",foldedKPoint(:)
+!write (53,*) "abcMeshKP=",abcMeshKPoints(:,j)
                call saveKPoint(j)
+!write (53,*) "Matched #1"
                cycle
             endif
 
@@ -1948,16 +1961,16 @@ module KPointMesh_O
 !                  exit
 !               endif
 !            enddo
-
+!
 !            if (isMatch == 1) then
-!write (52,*) "foldedKP=",foldedKPoint(:)
-!write (52,*) "abcMeshKP=",abcMeshKPoints(:,j)
+!write (53,*) "foldedKP=",foldedKPoint(:)
+!write (53,*) "abcMeshKP=",abcMeshKPoints(:,j)
 !               call saveKPoint(j)
-!write (52,*) "Matched #2"
+!write (53,*) "Matched #2"
 !               cycle
 !            endif
-
-
+!
+!
 !            ! (3) Is the vector sum negligable?
 !            isMatch = 1  ! Assume a match.
 !            do k = 1,3
@@ -1966,15 +1979,34 @@ module KPointMesh_O
 !                  exit
 !               endif
 !            enddo
-
+!
 !            if (isMatch == 1) then
+!write (53,*) "foldedKP=",foldedKPoint(:)
+!write (53,*) "abcMeshKP=",abcMeshKPoints(:,j)
 !               call saveKPoint(j)
-!write (52,*) "Matched #3"
+!write (53,*) "Matched #3"
 !               cycle
 !            endif
          endif
       enddo
    end subroutine compareKPoints
+
+
+   subroutine shiftMesh
+
+      implicit none
+
+      ! Define local varaibles.
+      integer :: i
+
+      do i = 1, numFoldedKPoints
+         abcFoldedKPoints(:,i) = abcFoldedKPoints(:,i) - &
+               & abcShift(:) * abcDelta(:)
+         !abcFoldedKPoints(:,i) = abcFoldedKPoints(:,i) + &
+         !      & abcShift(:)
+      enddo
+
+   end subroutine shiftMesh
 
 
    subroutine saveKPoint (j)
@@ -1988,7 +2020,6 @@ module KPointMesh_O
             & initWeight
       kPointTracker(j) = -numFoldedKPoints
    end subroutine saveKPoint
-
 
 
    ! This subroutine will print the folded abc kpoint information in a format
@@ -2201,6 +2232,7 @@ program makekpoints
    call readMeshParameters(50)
    call initMesh
    call foldMesh (numPointOps,abcRecipPointOps)
+   call shiftMesh
 
    ! Print the folded kpoints and the tetrahedral parameters.
    call printKPoints(51,doBrillouinZone,recipLattice)

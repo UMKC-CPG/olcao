@@ -47,7 +47,7 @@ class ScriptSettings():
         self.dkinetic = temp_params[7]
         self.dnuclear = temp_params[8]
         self.delectron = temp_params[9]
-        self.Koverlap = temp_params[10]
+        self.KOverlap = temp_params[10]
         # self.e_field = temp_params[5]
         # self.e_grad = temp_params[6]
         # self.ang_mom = temp_params[7]
@@ -114,7 +114,7 @@ def parse_command_line():
                         'overlap integral (3rd term being s-type), which is '+
                         'used for the derivative of the electron repulsion.')
 
-    parser.add_argument('-ko', '--Koverlap', action='store_true',
+    parser.add_argument('-ko', '--KOverlap', action='store_true',
                         default='store_false', help = 'Include the '+
                         'overlap integral with a plane wave term.')
 
@@ -156,8 +156,8 @@ def reconcile(args, settings):
     if (args.delectron == True):
         settings.delectron = True
 
-    if (args.Koverlap == True):
-        settings.Koverlap = True
+    if (args.KOverlap == True):
+        settings.KOverlap = True
 
     # Return settings that incorporate the command line arguments.
     return settings
@@ -556,7 +556,7 @@ def derivative_electronBC():
 # Overlap with an additional plane wave term. We only need to solve it for
 #   one dimension and then we will use string substitutions to extend it
 #   to three dimensions.
-def Koverlap():
+def KOverlap():
     Px = sp.symbols('Px')
     lx1 = sp.symbols('lx1')
     lx2 = sp.symbols('lx2')
@@ -880,8 +880,8 @@ def main():
         f.write("\n\n!<A|B|C> solutions:\n")
         lib.print_cont_string(string, 80, 3, f, True)
 
-    if (settings.Koverlap):
-        string = Koverlap()
+    if (settings.KOverlap):
+        string = KOverlap()
         string = apply_seperable_substitutions(string)
         lib.print_cont_string(string, 80, 3, f, True)
 
