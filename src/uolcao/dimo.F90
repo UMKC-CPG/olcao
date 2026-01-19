@@ -251,18 +251,18 @@ subroutine computeDIMO (inSCF)
       write (73+i,*) "Elec. Polarization (x,y,z) [C/m^2]: ", eCharge * &
             & dipoleMomentTrace(:,i)/realCellVolume * 10.0_double / &
             & bohrRad**2
-      write (74,*) "Nuclear Moment (x,y,z):    ", xyzIonMoment(:)
-      write (74,*) "Dipole Moment (a.u.):    ", (xyzIonMoment(:) - &
+      write (73+i,*) "Nuclear Moment (x,y,z):    ", xyzIonMoment(:)
+      write (73+i,*) "Dipole Moment (a.u.):    ", (xyzIonMoment(:) - &
             & dipoleMomentTrace(:,i))
-      write (74,*) "Dipole Moment (Debye):    ", (xyzIonMoment(:) - &
+      write (73+i,*) "Dipole Moment (Debye):    ", (xyzIonMoment(:) - &
             & dipoleMomentTrace(:,i)) * 2.541746473_double
-      write (74,*) "Total Dipole Moment (Debye):    ", &
+      write (73+i,*) "Total Dipole Moment (Debye):    ", &
             & sqrt(sum((xyzIonMoment(:) - dipoleMomentTrace(:,i))**2)) &
             * 2.541746473_double
-      write (74,*) "Polarization (x,y,z) [C/m^2]:    ", eCharge * &
+      write (73+i,*) "Polarization (x,y,z) [C/m^2]:    ", eCharge * &
             & (xyzIonMoment(:) - dipoleMomentTrace(:,i)) / &
             & realCellVolume * 10.0_double / bohrRad**2
-      write (74,*) "Total Polarization [C/m^2]:    ", eCharge * &
+      write (73+i,*) "Total Polarization [C/m^2]:    ", eCharge * &
             & sqrt(sum((xyzIonMoment(:) - dipoleMomentTrace(:,i))**2)) / &
             & realCellVolume * 10.0_double / bohrRad**2
    enddo
