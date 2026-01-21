@@ -85,7 +85,7 @@ sub printHelp
 # ch4 Family1 8
 #
 # cell_size 100.0
-# condensation_rate 0.33
+# condensationRate 0.33
 #
 # reactions 6
 # b10c2h12 b-1 b10c2h12 b-1 0.85
@@ -152,7 +152,7 @@ use File::Copy;
 # Declare global variables.
 my $inputFile;
 my $cellSize;
-my $condensation_rate;
+my $condensationRate;
 my $numMoleculeTypes;
 my $numReactionTypes;
 my $numUniqueRxnMolPairs;
@@ -209,6 +209,10 @@ sub initEnv
 {
    $inputFile = "condense.in";
    $rxnTemplateDir = "reactionTemplates";
+
+   # Assume cell size and condensation rates.
+   $cellSize = 100.0;
+   $condensationRate = 0.33;
 
    # Initialize the element database.
    ElementData::initElementData;
@@ -295,8 +299,8 @@ sub parseInputFile
       }
       elsif (lc($values[0]) eq "cell_size")
          {$cellSize = $values[1];}
-      elsif (lc($values[0]) eq "condensation_rate")
-         {$condensation_rate = $values[1];}
+      elsif (lc($values[0]) eq "condensationRate")
+         {$condensationRate = $values[1];}
       elsif (lc($values[0]) eq "reactions")
       {
          # Get the number of different types of reactions.
@@ -594,6 +598,7 @@ sub createLAMMPSFiles
    my $atomSpeciesID_ref;
    my $numOrderedSpecies;
    my @orderedSpeciesTag;
+   my @orderedSpeciesElement;
    my @orderedSpeciesID;
    my @orderedSpeciesMasses;
    my @orderedSpeciesPairCoeffs;
@@ -737,6 +742,11 @@ sub createLAMMPSFiles
             $orderedSpeciesTag[$species] =
                "$atomElementName_ref->[$atom] $atomSpeciesID_ref->[$atom] " .
                "$atomMoleculeName[$atom]";
+
+            # Also, create just the element tage for this species. (Useful
+            #   for OVITO visualization.)
+            $orderedSpeciesElement[$species] = ucfirst(
+                  $atomElementName_ref->[$atom];)
 
             # Get the mass of each type of atom.
             $orderedSpeciesMasses[$species] =
@@ -1066,7 +1076,7 @@ print STDOUT "$atom1Z $atom2Z $atom3Z\n";
    open (LMPIN,">lammps.in") || die "Cannot open lammps.in for writing.\n";
 
    # Fill the LAMMPS input file with appropriate header information.
-   print LMPIN<<ENDLAMMPSHEAD;
+   print LMPIN<<ENDLAMMPSHEAD1;
 # A lammps command file for condensing a periodic cell.
 
 # Initialization
@@ -1098,7 +1108,18 @@ timestep 0.001
 
 #restart 50000 restart.fast1.0 restart.fast1.1
 
-dump coords all atom 500 dump.coarse
+dump coords all custom 500 dump.coarse id type element x y z
+ENDLAMMPSHEAD1
+
+   print LMPIN "dump_modify coords element ";
+   foreach $species (1..$numOrderedSpecies)
+      {print LMPIN " $orderedSpeciesElement[$species]";}
+   print LMPIN "\n";
+
+   print LMPIN<<ENDLAMMPSHEAD2;
+dump_modify coords sort id
+
+#dump coords all atom 500 dump.coarse
 #dump_modify coords scale no
 
 #compute bnd all property/local btype batom1 batom2
@@ -1118,7 +1139,7 @@ dump coords all atom 500 dump.coarse
 
 region simcell block EDGE EDGE EDGE EDGE EDGE EDGE units box
 
-ENDLAMMPSHEAD
+ENDLAMMPSHEAD2
 
    # Insert the molecule definitions. There will be eight for every reaction
    #   because there are four phases to a reaction and a pre and post aspect
@@ -1162,7 +1183,7 @@ ENDLAMMPSHEAD
 
 fix energy all nve
 #fix squish all deform 500 x scale 0.33 y scale 0.33 z scale 0.33 remap x
-fix squish all deform 500 x scale $condensation_rate y scale $condensation_rate z scale $condensation_rate remap x
+fix squish all deform 500 x scale $condensationRate y scale $condensationRate z scale $condensationRate remap x
 
 # Run
 
@@ -1194,7 +1215,6 @@ ENDLAMMPSTAIL
 #
 export OMP_NUM_THREADS=1
 cd \$SLURM_SUBMIT_DIR
-module load lammps/29Aug2024_update3_kokkos_CPU_gcc_12.3.0_openmpi
 mpirun lmp < lammps.in
 ENDSLURM
 
