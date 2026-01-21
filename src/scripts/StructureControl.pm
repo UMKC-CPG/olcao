@@ -1577,7 +1577,7 @@ sub readPDB
          # Compute the sine of the angles.
          &getAngleSine(\@angle);
       }
-      elsif ($recordName =~ /ATOM/)
+      elsif (($recordName =~ /ATOM/) || ($recordName =~ /HETATM/))
       {
          # Increment the number of atoms in the system.
          $numAtoms++;
