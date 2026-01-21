@@ -746,11 +746,11 @@ sub createLAMMPSFiles
             # Also, create just the element tage for this species. (Useful
             #   for OVITO visualization.)
             $orderedSpeciesElement[$species] = ucfirst(
-                  $atomElementName_ref->[$atom];)
+                  $atomElementName_ref->[$atom]);
 
             # Get the mass of each type of atom.
             $orderedSpeciesMasses[$species] =
-               $atomicMasses_ref->[$atomicZ_ref->[$atom]];
+                  $atomicMasses_ref->[$atomicZ_ref->[$atom]];
 
             # Get the LJ pair coeffs for each type of atom. This is the first
             #   coeff, the second is recorded next. Note that the true LJ
