@@ -85,7 +85,7 @@ sub printHelp
 # ch4 Family1 8
 #
 # cell_size 100.0
-# condensationRate 0.33
+# squishFactor 0.33
 #
 # reactions 6
 # b10c2h12 b-1 b10c2h12 b-1 0.85
@@ -152,7 +152,7 @@ use File::Copy;
 # Declare global variables.
 my $inputFile;
 my $cellSize;
-my $condensationRate;
+my $squishFactor;
 my $numMoleculeTypes;
 my $numReactionTypes;
 my $numUniqueRxnMolPairs;
@@ -212,7 +212,7 @@ sub initEnv
 
    # Assume cell size and condensation rates.
    $cellSize = 100.0;
-   $condensationRate = 0.33;
+   $squishFactor = 0.33;
 
    # Initialize the element database.
    ElementData::initElementData;
@@ -299,8 +299,17 @@ sub parseInputFile
       }
       elsif (lc($values[0]) eq "cell_size")
          {$cellSize = $values[1];}
-      elsif (lc($values[0]) eq "condensationRate")
-         {$condensationRate = $values[1];}
+      elsif (lc($values[0]) eq "stage")
+      {
+         $numStages++;
+         $squishFactor[$numStages] = $values[1];
+         $squishStepSize[$numStages] = $values[2];
+         $ensembleType[$numStages] = $values[3];
+         $ensembleTStart[$numStages] = $values[4];
+         $ensembleTEnd[$numStages] = $values[5];
+         $ensembleTRate[$numStages] = $values[6];
+         $runSteps[$numStages] = $values[7];
+      }
       elsif (lc($values[0]) eq "reactions")
       {
          # Get the number of different types of reactions.
@@ -1088,7 +1097,7 @@ atom_style full
 pair_style lj/cut 10.0
 bond_style harmonic
 angle_style harmonic
-neigh_modify every 50 delay 0 check yes
+neigh_modify delay 100 every 50 check yes
 #comm_modify mode single cutoff 20.0
 pair_modify shift yes mix sixthpower
 newton on
@@ -1108,30 +1117,31 @@ timestep 0.001
 
 #restart 50000 restart.fast1.0 restart.fast1.1
 
-dump coords all custom 500 dump.coarse id type element x y z
+dump coord_dump all custom 500 dump.coarse id type element x y z
 ENDLAMMPSHEAD1
 
-   print LMPIN "dump_modify coords element ";
+   print LMPIN "dump_modify coord_dump element ";
    foreach $species (1..$numOrderedSpecies)
       {print LMPIN " $orderedSpeciesElement[$species]";}
    print LMPIN "\n";
 
    print LMPIN<<ENDLAMMPSHEAD2;
-dump_modify coords sort id
+dump_modify coord_dump sort id
 
-#dump coords all atom 500 dump.coarse
-#dump_modify coords scale no
 
-#compute bnd all property/local btype batom1 batom2
-#dump bonds all local 500 dump.bond.coarse index c_bnd[1] c_bnd[2] c_bnd[3]
+compute     bond all property/local batom1 batom2 btype
+compute     dist all bond/local dist
+dump        bond_dump all local 500 dump.bond.coarse c_bond[1] c_bond[2] c_bond[3] c_dist
+dump_modify bond_dump &
+              label BONDS &
+              colname 1 batom1 &
+              colname 2 batom2 &
+              colname 3 btype &
+              colname 4 dist
 
-#compute ang all property/local atype aatom1 aatom2 aatom3
+#compute ang all property/local aatom1 aatom2 aatom3 atype
 #dump angles all local 500 dump.angle.coarse index c_ang[1] c_ang[2] c_ang[3] c_ang[4]
 
-# Initial minimization
-
-#minimize 1.0e-15 1.0e-15 1000000 100000000
-#minimize 1.0e-15 1.0e-15 1000 1000000
 
 ########################
 # Coarse run
@@ -1178,19 +1188,54 @@ ENDLAMMPSHEAD2
          {print LMPIN "\n";}
    }
 
-   # Fill the LAMMPS input file with appropriate tail information.
-   print LMPIN<<ENDLAMMPSTAIL;
+   # Fill the LAMMPS input file with requested stages.
+   foreach $stage (1..$numStages)
+   {
+      print LMPIN "# Stage $stage\n";
 
-fix energy all nve
-#fix squish all deform 500 x scale 0.33 y scale 0.33 z scale 0.33 remap x
-fix squish all deform 500 x scale $condensationRate y scale $condensationRate z scale $condensationRate remap x
+      # Turn on the deformation and ensemble fixes as requested.
+      if ($squishFactor[$stage] > 0)
+      {
+         print LMPIN "fix squish all deform $squishStepSize[$stage] " .
+               " x scale $squishFactor[$stage]" .
+               " y scale $squishFactor[$stage]" .
+               " z scale $squishFactor[$stage] remap x\n";
+      }
+      print LMPIN "fix ensemble all $ensembleType[$stage] temp " .
+            "$ensembleTStart[$stage] $ensembleTEnd[$stage] " .
+            "$ensembleTRate[$stage]\n";
 
-# Run
+      # Run the simulation stage.
+      print LMPIN "run $runSteps[$stage]\n";
 
-run 60000
-unfix squish
-run 100000
-ENDLAMMPSTAIL
+      # Turn off the fixes.
+      if ($squishFactor[$stage] > 0)
+         {print LMPIN "unfix squish\n";}
+      print LMPIN "unfix ensemble\n\n";
+   }
+
+   #   print LMPIN<<ENDLAMMPSTAIL;
+   #
+   ## Equilibrate
+   #fix ensemble all nvt temp 500 500 2000
+   #run 50000
+   #unfix ensemble
+   #
+   ## Start squish and T reduction
+   #fix squish all deform 500 x scale $squishFactor y scale $squishFactor z scale $squishFactor remap x
+   #fix ensemble all nvt temp 500 100 2000
+   #run 500000
+   #
+   ## Stop squish and T reduction
+   #unfix squish
+   #unfix ensemble
+   #
+   ## Equilibrate at low T
+   #neigh_modify delay 0 every 1 check yes
+   #fix ensemble all nvt temp 100 100 2000
+   #run 100000
+   #
+   #ENDLAMMPSTAIL
 
    # Close the LAMMPS input file.
    close (LMPIN);
@@ -1203,19 +1248,19 @@ ENDLAMMPSTAIL
 
    print SLURM<<ENDSLURM;
 #!/bin/bash
-#SBATCH -p rulisp-lab
+#SBATCH -p rulisp-lab,general
 #SBATCH -A rulisp-lab
 #SBATCH -J lmp
 #SBATCH -o lmp.o%J
 #SBATCH -e lmp.e%J
 #SBATCH -N 1
-#SBATCH -n 8
+#SBATCH -n 125
 #SBATCH -t 00:15:00
 #SBATCH --mem=2G
 #
 export OMP_NUM_THREADS=1
 cd \$SLURM_SUBMIT_DIR
-mpirun lmp < lammps.in
+mpirun lmp -in lammps.in
 ENDSLURM
 
    # Close the slurm file.

@@ -70,9 +70,13 @@ my $totAtoms;
 my $numAtomTypes;
 my $atomID;
 my @atomTypes;
+my @xyz_idx;
 
 my @elements;
 my @atomCoords;
+my @lattice;
+my $element_idx;
+my $type_idx;
 
 # Cell definition variables
 my $angleA = 90;
@@ -323,10 +327,12 @@ while (my $line = <DUMPFILE>) {
 # Find the total number of atoms
 <DUMPFILE>;
 $totAtoms = <DUMPFILE>;
+#print STDOUT ($totAtoms);
 chomp($totAtoms);
 
 # Move the cursor down to the start of the box bounds section for that timestep
 my $line = <DUMPFILE>;
+#print STDOUT ($line);
 if ($line =~ /abc origin/)
 {
    # Read non-orthogonal box.
@@ -343,16 +349,19 @@ else
 {
    # Read the orthogonal box bounds
    my $line = <DUMPFILE>;
+#print STDOUT ($line);
    @values = split(/\s+/, $line);
    $boxBounds[0][0] = $values[0];
    $boxBounds[0][1] = $values[1];
 
    $line = <DUMPFILE>;
+#print STDOUT ($line);
    @values = split(/\s+/, $line);
    $boxBounds[1][0] = $values[0];
    $boxBounds[1][1] = $values[1];
 
    $line = <DUMPFILE>;
+#print STDOUT ($line);
    @values = split(/\s+/, $line);
    $boxBounds[2][0] = $values[0];
    $boxBounds[2][1] = $values[1];
@@ -367,12 +376,30 @@ else
    $lattice[2][0] = 0.0;
    $lattice[2][1] = 0.0;
    $lattice[2][2] = $boxBounds[2][1] - $boxBounds[2][0];
+#print STDOUT "@{$lattice[0]}\n";
+#print STDOUT "@{$lattice[1]}\n";
+#print STDOUT "@{$lattice[2]}\n";
 }
 
 # Move the cursor to the start of the atom coords section for that timestep
 while (my $line = <DUMPFILE>) {
-   if ($line =~ /\AITEM: ATOMS/) { last; }
+   if ($line =~ /\AITEM: ATOMS/) { @values = split(/\s+/, $line); last; }
 }
+
+# Compute the column numbers for the x,y,z coordinates and element name.
+foreach my $idx (0..$#values) {
+   if ($values[$idx] eq "x")
+      {$xyz_idx[0] = $idx-2;}
+   if ($values[$idx] eq "y")
+      {$xyz_idx[1] = $idx-2;}
+   if ($values[$idx] eq "z")
+      {$xyz_idx[2] = $idx-2;}
+   if ($values[$idx] eq "element")
+      {$element_idx = $idx-2;}
+   if ($values[$idx] eq "type")
+      {$type_idx = $idx-2;}
+}
+
 
 # Read to the end of the timestep
 my $highestID = 0;
@@ -389,13 +416,13 @@ while (my $line = <DUMPFILE>) {
          {$atomTypes[$atom] = -1;}
       $highestID = $atomID;
    }
-   $atomTypes[$atomID] = $values[1];
+   $atomTypes[$atomID] = $values[$type_idx];
 
-   $atomCoords[$atomID][0] = $values[2];
-   $atomCoords[$atomID][1] = $values[3];
-   $atomCoords[$atomID][2] = $values[4];
+   $atomCoords[$atomID][0] = $values[$xyz_idx[0]];
+   $atomCoords[$atomID][1] = $values[$xyz_idx[1]];
+   $atomCoords[$atomID][2] = $values[$xyz_idx[2]];
 }
-print STDOUT "highestID = $highestID\n";
+#print STDOUT "highestID = $highestID\n";
 my $currentID = 1;
 foreach $atomID (1..$highestID)
 {
@@ -408,8 +435,8 @@ foreach $atomID (1..$highestID)
       $currentID++;
    }
 }
-print "currentID = $currentID\n";
-print "totAtoms = $totAtoms\n";
+#print "currentID = $currentID\n";
+#print "totAtoms = $totAtoms\n";
 
 # Close the dump file
 close DUMPFILE;
@@ -430,8 +457,8 @@ $xlo = &minCoord(0);
 $ylo = &minCoord(1);
 $zlo = &minCoord(2);
 
-print STDOUT "HI: $xhi $yhi $zhi\n";
-print STDOUT "LO: $xlo $ylo $zlo\n";
+#print STDOUT "HI: $xhi $yhi $zhi\n";
+#print STDOUT "LO: $xlo $ylo $zlo\n";
 
 # Compare with LAMMPS-defined box bounds and redefine if needed
 if ($boxBounds[0][1] > $xhi) {
@@ -454,8 +481,8 @@ if ($boxBounds[2][0] < $zlo) {
     $zlo = $boxBounds[2][0];
 }
 
-print STDOUT "HI: $xhi $yhi $zhi\n";
-print STDOUT "LO: $xlo $ylo $zlo\n";
+#print STDOUT "HI: $xhi $yhi $zhi\n";
+#print STDOUT "LO: $xlo $ylo $zlo\n";
 
 # If the non-periodic command line argument has been selected, add padding
 # space to the cell to prevent interactions due to periodicity
@@ -476,13 +503,13 @@ $xShift = 0 - $xlo;
 $yShift = 0 - $ylo;
 $zShift = 0 - $zlo;
 
-print STDOUT "SHIFT: $xShift $yShift $zShift\n";
+#print STDOUT "SHIFT: $xShift $yShift $zShift\n";
 
 foreach my $atom (1..$totAtoms) {
     $atomCoords[$atom][0] = $atomCoords[$atom][0] + $xShift;
     $atomCoords[$atom][1] = $atomCoords[$atom][1] + $yShift;
     $atomCoords[$atom][2] = $atomCoords[$atom][2] + $zShift;
-print STDOUT "$atom $atomCoords[$atom][0] $atomCoords[$atom][1] $atomCoords[$atom][2]\n";
+#print STDOUT "$atom $atomCoords[$atom][0] $atomCoords[$atom][1] $atomCoords[$atom][2]\n";
 }
 
 # Redefine max and min coordinates along each axis now that they have

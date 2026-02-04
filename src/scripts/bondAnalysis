@@ -544,8 +544,10 @@ sub initEnv
    $boxBorders[3][2] = "max";
    $zone = 1; #Inside the box.
 
-   # Assume that a histogram will not be created.
+   # Assume that a histogram will not be created, and that if one is asked
+   #   for, that the spacing will be 0.1.
    $doHist = 0;
+   $histDelta = 0.1;
 
    # Assume for the Q^n analysis that the bridging atom is oxygen and that the
    #   main cation is silicon.
@@ -824,6 +826,17 @@ sub openOutput
          {$outFile = $outFile . ".rn";}
    }
 
+   # If making a histogram then open the associated output file.
+   if ($doHist == 1)
+   {
+      # Only applies to certain output types.
+      if (($operation == 2) || ($operation == 3))
+      {
+         open (OUTHIST,">$outFile.hist") ||
+               die "Cannot open $outFile.hist for writing\n";
+      }
+   }
+
    # Only open the outFile if we will not make a different set later.
    if ($operation != 9)
       {open (OUT,">$outFile") || die "Cannot open $outFile for writing\n";}
@@ -1016,10 +1029,16 @@ sub printBondAngles
    my $bond2;
    my $bondedAtom1;
    my $bondedAtom2;
-   my $currentBA;
+   my $currentBACount;
+   my $bondAngle;
+   my $maxBA;
+   my $minBA;
 
    # For each atom print the bond angles between each possible pair of atoms,
-   #   and also print the atom ID numbers for each pair.
+   #   and also print the atom ID numbers for each pair. Also, gather
+   #   statistics that will be useful for printing a histogram if asked.
+   $maxBA = 0.0;
+   $minBA = 360.0;
    foreach $atom (1..$numAtoms)
    {
       # Compare the position of this atom with the box the user defined (or the
@@ -1034,7 +1053,7 @@ sub printBondAngles
       print OUT "$atom Num bond angles:  $numBondAngles_ref->[$atom]\n";
 
       # Initialize a count of the current bond angle.
-      $currentBA = 0;
+      $currentBACount = 0;
 
       foreach $bond1 (1..$numBonds_ref->[$atom]-1)
       {
@@ -1045,7 +1064,7 @@ sub printBondAngles
          foreach $bond2 ($bond1+1..$numBonds_ref->[$atom])
          {
             # Increment the count of the number of bonds.
-            $currentBA++;
+            $currentBACount++;
 
             # Get the central cell atom number of this bonded atom.
             $bondedAtom2 = $ext2CentralItemMap_ref->
@@ -1068,9 +1087,76 @@ sub printBondAngles
             printf OUT "%7d%7d%7d ",$bondedAtom1,$atom,$bondedAtom2;
 
             # Finally, print the bond angle.
-            printf OUT "%16.8f\n",$bondAnglesExt_ref->[$atom][$currentBA];
+            $bondAngle = $bondAnglesExt_ref->[$atom][$currentBACount];
+            printf OUT "%16.8f\n",$bondAngle;
+
+            # Compare this bond angle to the min and max observed so far.
+            if ($bondAngle < $minBA)
+               {$minBA = $bondAngle;}
+            if ($bondAngle > $maxBA)
+               {$maxBA = $bondAngle;}
          }
       }
+   } # $numAtom
+
+   # Once the traditional bond angle list has been created, now we compute the
+   #   histogram if asked.
+   if ($doHist == 1)
+   {
+      # Define the needed variables.
+      my $numPoints;
+      my $bucketNum;
+      my $startPoint;
+      my $currentPoint;
+      my @histogram;
+
+      # Compute the number of points in the histogram.
+      $numPoints = int(($maxBA - $minBA) / $histDelta) + 1;
+
+      # Initialize the histogram.
+      foreach my $point (1..$numPoints)
+         {$histogram[$point] = 0.0;}
+
+      # Revisit all the atoms to produce the histogram of every bond angle.
+      foreach $atom (1..$numAtoms)
+      {
+         # Compare the position of this atom with the box the user defined (or the
+         #   default).  This also considers if the user wanted only atoms inside
+         #   the box or only outside.  The return value is 1 if the atom is out
+         #   of the desired region and it is 0 if the atom is inside the desired
+         #   region.
+         if (StructureControl::itemOutOfBounds($atom,$coords_ref))
+            {next;}
+
+         $currentBACount = 0;
+
+         # Consider one bond.
+         foreach $bond1 (1..$numBonds_ref->[$atom]-1)
+         {
+            # Consider each other bond.
+            foreach $bond2 ($bond1+1..$numBonds_ref->[$atom])
+            {
+               # Get the bond angle of the current bond.
+               $currentBACount++;
+               $bondAngle = $bondAnglesExt_ref->[$atom][$currentBACount];
+
+               # Compute which bucket in the histogram should be incremented.
+               $bucketNum = int(($bondAngle - $minBA) / $histDelta) + 1;
+
+               # Increment the histogram.
+               $histogram[$bucketNum]++;
+            }
+         }
+      } # $numAtoms
+
+      # Now that the histogram has been computed. We print it.
+      foreach my $bucket (1..$numPoints)
+      {
+         $startPoint = int($minBA);
+         $currentPoint = $startPoint + $histDelta*($bucket-1);
+         print OUTHIST "$currentPoint $histogram[$bucket]\n";
+      }
+      close (OUTHIST);
    }
 }
 
@@ -1082,6 +1168,13 @@ sub printBondLengths
    my $species;
    my $bond;
    my $bondedAtom;
+   my $maxBL;
+   my $minBL;
+   my $bondLength;
+
+   # Initialize the min/max BLs for potential use in making a histogram.
+   $minBL = 100.0;
+   $maxBL = 0.0;
 
    foreach $atom (1..$numAtoms)
    {
@@ -1107,16 +1200,78 @@ sub printBondLengths
          $bondedAtom = $ext2CentralItemMap_ref->
                [$bondedExtList_ref->[$atom][$bond]];
 
+         $bondLength = $bondLengthExt_ref->[$atom][$bond];
+
          printf OUT "    %s%s%s%s %8.5f",
                $atomElementName_ref->[$bondedAtom],
-               $atomSpeciesID_ref->[$bondedAtom],"_",$bondedAtom,
-               $bondLengthExt_ref->[$atom][$bond];
+               $atomSpeciesID_ref->[$bondedAtom],"_",$bondedAtom,$bondLength;
 
          if ($bond%4 == 0)
             {print OUT "\n";}
+
+         # Now that the bond has been printed, we compute the bounds needed
+         #   in case a histogram was asked for.
+         if ($bondLength > $maxBL)
+            {$maxBL = $bondLength;}
+         if ($bondLength < $minBL)
+            {$minBL = $bondLength;}
       }
       if ($numBonds_ref->[$atom]%4 != 0)
          {print OUT "\n";}
+   }
+
+   # Once the traditional bond length list has been created, now we compute the
+   #   histogram if asked.
+   if ($doHist == 1)
+   {
+      # Define the needed variables.
+      my $numPoints;
+      my $bucketNum;
+      my $startPoint;
+      my $currentPoint;
+      my @histogram;
+
+      # Compute the number of points in the histogram.
+      $numPoints = int(($maxBL - $minBL) / $histDelta) + 1;
+print STDOUT "min max numPts: $minBL $maxBL $numPoints\n";
+
+      # Initialize the histogram.
+      foreach my $point (1..$numPoints)
+         {$histogram[$point] = 0.0;}
+
+      # Revisit all the atoms to produce the histogram of every bond length.
+      foreach $atom (1..$numAtoms)
+      {
+         # Compare the position of this atom with the box the user defined (or the
+         #   default).  This also considers if the user wanted only atoms inside
+         #   the box or only outside.  The return value is 1 if the atom is out
+         #   of the desired region and it is 0 if the atom is inside the desired
+         #   region.
+         if (StructureControl::itemOutOfBounds($atom,$coords_ref))
+            {next;}
+
+         # Consider one bond.
+         foreach $bond (1..$numBonds_ref->[$atom])
+         {
+            # Get the bond length of the current bond.
+            $bondLength = $bondLengthExt_ref->[$atom][$bond];
+
+            # Compute which bucket in the histogram should be incremented.
+            $bucketNum = int(($bondLength - $minBL) / $histDelta) + 1;
+
+            # Increment the histogram.
+            $histogram[$bucketNum]++;
+         }
+      } # $numAtoms
+
+      # Now that the histogram has been computed. We print it.
+      foreach my $bucket (1..$numPoints)
+      {
+         $startPoint = int($minBL);
+         $currentPoint = $startPoint + $histDelta*($bucket-1);
+         print OUTHIST "$currentPoint $histogram[$bucket]\n";
+      }
+      close (OUTHIST);
    }
 }
 

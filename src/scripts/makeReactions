@@ -132,6 +132,10 @@ sub printHelp
 #    of the atoms that bind are increased. By default this option is off so
 #    that atom types definitions given in the molecule skeleton files will
 #    remain constant throughout the simulation.
+#
+# The -consttypes switch will request that the type numbers assigned to
+#    molecules will be kept constant when combined with other molecues.
+#
 # The -help option gives this help.
 #
 # USAGE: makeReactions -m1 \$inDir1 -m2 \$inDir2
@@ -140,6 +144,7 @@ sub printHelp
 #                      [-d2 \$delTreeDepth2 \$delTreeTarget2]
 #                      [-s \$sElement \$ssDist \$delBothS]
 #                      [-uptypes \$typeStep]
+#                      [-consttypes]
 #                      [-help]
 #
 ENDHELP
@@ -166,6 +171,7 @@ use File::Copy;
 my $pi = 3.1415926535897932384626433832795;
 my $epsilon = 0.00001;
 my $typeStep;     # Increment in type number for bonded atoms and neighbors.
+my $constTypes;   # If given, keep atom types constant from precursor files.
 my $inDir1;       # Directory containing the first molecule.
 my $inDir2;       # Directory containing the second molecule.
 my $rxnDir;       # Directory for the reaction between molecules 1 and 2.
@@ -342,6 +348,13 @@ sub initEnv
    # Assume that once a type is defined for an atom in a molecule it will not
    #   change under any reaction. Hence the typeStep is zero.
    $typeStep = 0;
+
+   # Assume that when molecules are merged, the type numbers of each molecule
+   #   need to be modified. (I.e., consider a C with type 1 on molecule 1 and
+   #   a C with type 1 on molecule 2. When merged with -consttypes given, the
+   #   the combined system will have type 1 for both C. Without -consttypes,
+   #   the C on molecule 2 will become type 2.
+   $constTypes = 0;
 }
 
 sub parseCommandLine
@@ -385,6 +398,8 @@ sub parseCommandLine
       }
       elsif ($ARGV[$number] eq "-uptypes")
          {$typeStep = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-consttypes")
+         {$constTypes = 1;}
       else
       {
          print STDOUT "UNKNOWN COMMAND LINE PARAMETER $ARGV[$number].";
@@ -434,7 +449,7 @@ sub finalizeEnv
    # Copy the molecule skeleton files into the reaction directory. (Note that
    #   if inFile1 and inFile2 are actually the same, then the second one will
    #   be copied over the first. This is okay.)
-   copy ("$inDir1/$inFile1", "$rxnDir");
+   my $err = copy ("$inDir1/$inFile1", "$rxnDir");
    copy ("$inDir2/$inFile2", "$rxnDir");
 
    # Enter into the reaction template directory.
@@ -608,6 +623,11 @@ sub catalogS
    {
       # Check if we found an S atom.
       if ($atomElementName_ref->[$atom] ne $sElement)
+         {next;}
+
+      # If this S atom has more than one bond, then it is not permitted to
+      #   be a surface atom.
+      if ($numBonds_ref->[$atom] > 1)
          {next;}
 
       # If so, increment count of the number of S atoms in this molecule.
@@ -1335,6 +1355,7 @@ sub catalogElemSpecMolID
          foreach $atom (1..$numAtoms)
          {
             # Assign the element name.
+print STDOUT "1: $sAtom1 $sAtom2 $atom $atomElementName_ref->[$atom]\n";
             $mergedAtomElemName[$sAtom1][$sAtom2][$atom]
                   = $atomElementName_ref->[$atom];
 
@@ -1783,6 +1804,8 @@ sub pruneMergedMolecule
                      print PRUNE "$line";
                      $prunedAtomCount++;
                   }
+                  else
+                     {next;}
 
                   # Map the specialty index numbers of atoms in the merged file
                   #   into the pruned counterpart data arrays.
@@ -1820,6 +1843,7 @@ sub pruneMergedMolecule
                         {$prunedDelTree[$sAtom1][$sAtom2][$id] =
                            $prunedAtomCount;}
                   }
+print STDOUT "2: $sAtom1 $sAtom2 $atom $prunedAtomCount $mergedAtomElemName[$sAtom1][$sAtom2][$atom]\n";
                   $prunedAtomElemName[$sAtom1][$sAtom2][$prunedAtomCount]
                         = $mergedAtomElemName[$sAtom1][$sAtom2][$atom];
                   $prunedAtomSpeciesID[$sAtom1][$sAtom2][$prunedAtomCount][1]
@@ -2438,10 +2462,19 @@ sub makeReactionTemplates
          $numUniqueElemSpecMolNames = 0;
          foreach $atom (1..$numAtoms)
          {
-            # Create an identifier for the current atom.
-            $currElemSpecMolName = "$atomElementName_ref->[$atom]" .
-                  "$atomSpeciesID_ref->[$atom] ".
-                  "$prunedAtomMolName[$sAtom1][$sAtom2][$atom]";
+            # Create an identifier for the current atom. If $constTypes is on,
+            #   then we exclude the molecule name discriminator.
+            if ($constTypes == 0)
+            {
+               $currElemSpecMolName = "$atomElementName_ref->[$atom]" .
+                     "$atomSpeciesID_ref->[$atom] ".
+                     "$prunedAtomMolName[$sAtom1][$sAtom2][$atom]";
+            }
+            else
+            {
+               $currElemSpecMolName = "$atomElementName_ref->[$atom]" .
+                     "$atomSpeciesID_ref->[$atom]";
+            }
 
             # Determine if this identifier has been seen before.
             $found = 0;
@@ -2759,7 +2792,8 @@ sub makeReactionTemplates
          $mapFile = "$rxnBindingPair.map";
          $template = "$preOrPost.$rxnBindingPair.data";
 
-         # Open the pre or post-reaction molecule template for this hh pair.
+         # Open the pre or post-reaction molecule template for this pair
+         #   of surface atoms.
          open (OUT,">rxnTemplates/$template")
             || die "Cannot open rxnTemplates/$template for writing.\n";
 

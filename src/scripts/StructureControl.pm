@@ -4039,8 +4039,6 @@ sub computeImplicitInfo
       if ($tempValue > $maxNumValeStates)
          {$maxNumValeStates = $tempValue;}
    }
-
-
 }
 
 
