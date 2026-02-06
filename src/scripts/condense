@@ -152,7 +152,14 @@ use File::Copy;
 # Declare global variables.
 my $inputFile;
 my $cellSize;
-my $squishFactor;
+my $numStages;
+my @squishFactor;
+my @squishStepSize;
+my @ensembleType;
+my @ensembleTStart;
+my @ensembleTEnd;
+my @ensembleTRate;
+my @runSteps;
 my $numMoleculeTypes;
 my $numReactionTypes;
 my $numUniqueRxnMolPairs;
@@ -210,9 +217,11 @@ sub initEnv
    $inputFile = "condense.in";
    $rxnTemplateDir = "reactionTemplates";
 
-   # Assume cell size and condensation rates.
+   # Assume cell size.
    $cellSize = 100.0;
-   $squishFactor = 0.33;
+
+   # Initialize the count of the number of states.
+   $numStages = 0;
 
    # Initialize the element database.
    ElementData::initElementData;
@@ -580,6 +589,7 @@ sub createLAMMPSFiles
    my @values2;
    my $found;
    my $axis;
+   my $stage;
    my $tag;
    my $mol;
    my $molType;
@@ -859,7 +869,7 @@ sub createLAMMPSFiles
 
          # Get the current tag for this bond angle and then extract the atomic
          #   Z numbers for the vertex atom and the non-vertex atoms.
-print STDOUT "$atomElementName_ref->[$atom] $atomSpeciesID_ref->[$atom] $atomMoleculeName[$atom]\n";
+#print STDOUT "$atomElementName_ref->[$atom] $atomSpeciesID_ref->[$atom] $atomMoleculeName[$atom]\n";
          $tagPart2 = "$atomElementName_ref->[$atom] ".
                "$atomSpeciesID_ref->[$atom] $atomMoleculeName[$atom]";
          $tagPart1 =
@@ -878,11 +888,11 @@ print STDOUT "$atomElementName_ref->[$atom] $atomSpeciesID_ref->[$atom] $atomMol
          # Extract the Z numbers by search. (Probably the middle part can be
          #   directly extracted because it should always correspond to $atom.
          @values = StructureControl::prepLine("",$currentTag,'\s+');
-print STDOUT "$currentTag\n";
+#print STDOUT "$currentTag\n";
          $atom1Z = ElementData::getElementZ($values[0]);
          $atom2Z = ElementData::getElementZ($values[3]);
          $atom3Z = ElementData::getElementZ($values[6]);
-print STDOUT "$atom1Z $atom2Z $atom3Z\n";
+#print STDOUT "$atom1Z $atom2Z $atom3Z\n";
 
          # Make sure that $atom1Z < $atom3Z.
          if ($atom1Z > $atom3Z)
@@ -1196,7 +1206,7 @@ ENDLAMMPSHEAD2
       # Turn on the deformation and ensemble fixes as requested.
       if ($squishFactor[$stage] > 0)
       {
-         print LMPIN "fix squish all deform $squishStepSize[$stage] " .
+         print LMPIN "fix squish all deform $squishStepSize[$stage]" .
                " x scale $squishFactor[$stage]" .
                " y scale $squishFactor[$stage]" .
                " z scale $squishFactor[$stage] remap x\n";
