@@ -502,6 +502,22 @@ sub getMaxNumValeStates
 sub setNumAtoms
    {$numAtoms=$_[0];}
 
+sub setLatticeFromMagAngle
+{
+   $mag[1] = $_[0];
+   $mag[2] = $_[1];
+   $mag[3] = $_[2];
+   $angleDeg[1] = $_[3];
+   $angleDeg[2] = $_[4];
+   $angleDeg[3] = $_[5];
+   $angle[1] = $angleDeg[1] * $pi / 180.0;
+   $angle[2] = $angleDeg[2] * $pi / 180.0;
+   $angle[3] = $angleDeg[3] * $pi / 180.0;
+   &getABCVectors;
+   &makeInvOrRecipLattice(\@realLattice,\@realLatticeInv,0);
+   &makeInvOrRecipLattice(\@realLattice,\@recipLattice,1);
+}
+
 sub setLimitDist
 {
    $limitDist = $_[0];
@@ -2954,7 +2970,7 @@ sub rotateAllAtoms
 
    # Make sure that all atoms are inside the simulation box and shifted
    #   properly. This will address (1) and (2) above.
-   &checkBoundingBox(1);
+   &checkBoundingBox(1,1,$numAtoms);
 
    # Repeat the rotation.  (3) from above.
    foreach $atom (1..$numAtoms)
@@ -4048,7 +4064,7 @@ sub computeCrystalParameters
    my $axis;
 
    # Find the maximum and minimum values of all atoms for each x,y,z axis.
-   &getMinMaxXYZ;
+   &getMinMaxXYZ(1,$numAtoms);
 
    # We will assume an orthorhomic box that contains all the atoms
    #   with a buffer on all sides of the system. Even though the box is
@@ -4079,7 +4095,7 @@ sub computeCrystalParameters
 
    # Demand that there be no atoms with negative positions and that the
    #   system be centered.
-   &shiftXYZCenter;
+   &shiftXYZCenter(1,$numAtoms);
 }
 
 
@@ -4551,6 +4567,10 @@ sub makeInvOrRecipLattice
 
 sub getMinMaxXYZ
 {
+   # Define passed parameters.
+   my $atom1 = $_[0];
+   my $atom2 = $_[1];
+
    # Define local variables.
    my $atom;
    my $axis;
@@ -4558,7 +4578,7 @@ sub getMinMaxXYZ
    $maxPos[1] = -$bigReal;  $minPos[1] = $bigReal;  # x
    $maxPos[2] = -$bigReal;  $minPos[2] = $bigReal;  # y
    $maxPos[3] = -$bigReal;  $minPos[3] = $bigReal;  # z
-   foreach $atom (1..$numAtoms)
+   foreach $atom ($atom1..$atom2)
    {
       foreach $axis (1..3)
       {
@@ -4569,6 +4589,8 @@ sub getMinMaxXYZ
       }
    }
 }
+
+
 # Get the direct XYZ coordinates of an atom given the fractional ABC ones.
 sub getDirectXYZ
 {
@@ -4803,6 +4825,10 @@ sub min
 #   axis has been found and is really only applicable to molecular systems.
 sub shiftXYZCenter
 {
+   # Define passed parameters.
+   my $atom1 = $_[0];
+   my $atom2 = $_[1];
+
    # Declare local variables.
    my $atom;
    my $axis;
@@ -4825,7 +4851,7 @@ sub shiftXYZCenter
       {$centerDiff[$axis] = ($centerPos[$axis] - $centerCell[$axis]);}
 
    # Recompute the direct XYZ coordiantes of each atom.
-   foreach $atom (1..$numAtoms)
+   foreach $atom ($atom1..$atom2)
    {
       foreach $axis (1..3)
       {
@@ -4840,24 +4866,26 @@ sub shiftXYZCenter
 sub translateAtoms
 {
    # Define passed parameters.
-   my $translation_ref = $_[0];
+   my $atom1 = $_[0];
+   my $atom2 = $_[1];
+   my $translation_ref = $_[2];
 
    # Declare local variables.
    my $atom;
    my $axis;
 
    # If the translation request uses the special 0 0 0 designation, then shift
-   #   the atoms to the center of the cell. Otherwise, shift that atoms
+   #   the atoms to the center of the cell. Otherwise, shift the atoms
    #   according to the requested translation.
    if (($translation_ref->[1] == 0) && ($translation_ref->[2] == 0) &&
        ($translation_ref->[3] == 0))
    {
       # Find the center and then shift the atoms to the center.
-      &getMinMaxXYZ;
-      &shiftXYZCenter;
+      &getMinMaxXYZ($atom1,$atom2);
+      &shiftXYZCenter($atom1,$atom2);
 
       # Convert to direct a,b,c and then to fractional a,b,c.
-      foreach $atom (1..$numAtoms)
+      foreach $atom ($atom1..$atom2)
       {
          &getDirectABC($atom);
          &getFractABC($atom);
@@ -4865,7 +4893,7 @@ sub translateAtoms
    }
    else
    {
-      foreach $atom (1..$numAtoms)
+      foreach $atom ($atom1..$atom2)
       {
          foreach $axis (1..3)
             {$directXYZ[$atom][$axis] += $translation_ref->[$axis];}
@@ -4877,7 +4905,7 @@ sub translateAtoms
    }
 
    # Make sure that all atoms are inside the simulation box.
-   &checkBoundingBox(0);
+   &checkBoundingBox(0,$atom1,$atom2);
 }
 
 sub insertVacuum
@@ -5217,7 +5245,7 @@ sub makeOrtho
       &getFractABC($atom);
    }
 
-   &checkBoundingBox(0);
+   &checkBoundingBox(0,1,$numAtoms);
 }
 
 sub applyPerturbation
@@ -5258,7 +5286,7 @@ sub applyPerturbation
    }
 
    # Make sure that all atoms are inside the simulation box.
-   &checkBoundingBox(0);
+   &checkBoundingBox(0,1,$numAtoms);
 }
 
 sub applyFilter
@@ -5367,7 +5395,9 @@ print STDOUT "Rejecting $ext2CentralItemMap[$neighborAtom]\n";
 sub checkBoundingBox
 {
    # Define the passed parameters.
-   my $shiftStyle = $_[0];  # 0=translation; 1=rotation.
+   my $atom1 = $_[0];
+   my $atom2 = $_[1];
+   my $shiftStyle = $_[2];  # 0=translation; 1=rotation.
 
    # Define local variables.
    my $atom;
@@ -5386,8 +5416,8 @@ sub checkBoundingBox
    #   The coordinate position to shift is in the directXYZ now and must be
    #   retrieved through the directABC to fractABC first.  Ugly.
 
-   # Check all the atoms.
-   foreach $atom (1..$numAtoms)
+   # Check the requested atoms.
+   foreach $atom ($atom1..$atom2)
    {
       # Assume that the atom will not be moved along any axis.
       @doMove = (0,0,0,0);  # The first index is never used.
@@ -5397,9 +5427,13 @@ sub checkBoundingBox
       foreach $axis (1..3)
       {
          if($fractABC[$atom][$axis] > 1.0)
-            {$doMove[$axis] = 1;}
+            {
+print STDOUT "MOVE A $atom $axis $fractABC[$atom][$axis]\n";
+               $doMove[$axis] = 1;}
          elsif($fractABC[$atom][$axis] < 0.0)
-            {$doMove[$axis] = -1;}
+            {
+print STDOUT "MOVE B $atom $axis $fractABC[$atom][$axis]\n";
+               $doMove[$axis] = -1;}
       }
 
       # For the shiftStyle of 0 we can simply move the atom along each axis

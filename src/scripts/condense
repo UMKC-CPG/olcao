@@ -56,12 +56,21 @@ sub printHelp
 #      a different integer number as part of the <MOLECULENAME>.
 #
 #   (2) Cell:
-#   Keyword: "cell_size";
-#   Required Value: Floating point size of the cell in Angstroms;
+#   Keyword: "cell_size"
+#   Required Value: Floating point size of the cell in Angstroms
 #   Section Definition: Absent. No section information needed.
 #
-#   (3) Reactions:
-#   Keyword: "reactions";
+#   (3) Stages:
+#   Keyword: "stage"
+#   Required Value: Floating point final fractional size of the cell after
+#      squishing; the squish rate; the type of ensemble (nvt/npt); the
+#      starting temperature; the ending temperature; the rate at which the
+#      temperature change should be enacted over; the total number of time
+#      steps for the stage.
+#   The "stage" keyword may be repeated multiple times in the input file.
+#
+#   (4) Reactions:
+#   Keyword: "reactions"
 #   Required Value: Integer number of different kinds of reactions.
 #   Section Definition: One line with 5 components for each type of reaction.
 #      Each line contains a pair of <MOLECULENAME> + element-type designations
@@ -85,7 +94,8 @@ sub printHelp
 # ch4 Family1 8
 #
 # cell_size 100.0
-# squishFactor 0.33
+#
+# stage 0.33 500 nvt 800 800 500 100000
 #
 # reactions 6
 # b10c2h12 b-1 b10c2h12 b-1 0.85
@@ -124,9 +134,13 @@ sub printHelp
 
 # The -i option is used to specify the name of the input file. If this option
 #   is not given then the default value of "condense.in" will be used.
+# The -f option will force the lammps.dat input file to arrange the molecules
+#   such that they are put on a forced collision course near the center of
+#   the cell. If the number of molecules is greater than three, then this
+#   option will not work.
 # The -help option gives this help.
 #
-# USAGE: condense [-i \$inputFile] | [-help]
+# USAGE: condense [-i \$inputFile] [-f] | [-help]
 
 ENDHELP
    exit;
@@ -151,6 +165,7 @@ use File::Copy;
 
 # Declare global variables.
 my $inputFile;
+my $forceCollision;
 my $cellSize;
 my $numStages;
 my @squishFactor;
@@ -214,7 +229,10 @@ my $precursorDB = "$OLCAO_DATA/precursorDB";
 
 sub initEnv
 {
+   # Initialize command line variables.
    $inputFile = "condense.in";
+   $forceCollision = 0;
+
    $rxnTemplateDir = "reactionTemplates";
 
    # Assume cell size.
@@ -258,6 +276,8 @@ sub parseCommandLine
          {&printHelp;}
       elsif ($ARGV[$number] eq "-i")
          {$inputFile = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-f")
+         {$forceCollision = 1;}
       else
       {
          print STDOUT "UNKNOWN COMMAND LINE PARAMETER $ARGV[$number].";
@@ -457,17 +477,17 @@ print STDOUT "numReactionTypes $numReactionTypes\n";
       # For the current reaction, grab the appropriate reaction templates
       #   and store them in the collective $rxnTemplatesDir directory with
       #   appropriate names to distinguish them.
-print STDOUT "rxnBinding[1][$rxn] $rxnBinding[1][$rxn]\n";
-print STDOUT "rxnBinding[2][$rxn] $rxnBinding[2][$rxn]\n";
-print STDOUT "rxnMolName[1][$rxn] $rxnMolName[2][$rxn]\n";
+#print STDOUT "rxnBinding[1][$rxn] $rxnBinding[1][$rxn]\n";
+#print STDOUT "rxnBinding[2][$rxn] $rxnBinding[2][$rxn]\n";
+#print STDOUT "rxnMolName[1][$rxn] $rxnMolName[2][$rxn]\n";
       $rxnBindingPair = $rxnBinding[1][$rxn] . "_" . $rxnBinding[2][$rxn];
       $rxnMolBindingPair = $rxnMolName[1][$rxn] ."_". $rxnBinding[1][$rxn] .
          "_" . $rxnMolName[2][$rxn] . "_" . $rxnBinding[2][$rxn];
-print STDOUT "rxnMolBindingPair = $rxnMolBindingPair\n";
+#print STDOUT "rxnMolBindingPair = $rxnMolBindingPair\n";
 
       # Copy all the pre- and post- template files.
-print STDOUT "$precursorDB/$currRxnMolPair/rxnTemplates/preRxn.$rxnBindingPair.data\n";
-print STDOUT "$precursorDB/$currRxnMolPair/rxnTemplates/postRxn.$rxnBindingPair.data\n";
+#print STDOUT "$precursorDB/$currRxnMolPair/rxnTemplates/preRxn.$rxnBindingPair.data\n";
+#print STDOUT "$precursorDB/$currRxnMolPair/rxnTemplates/postRxn.$rxnBindingPair.data\n";
       copy("$precursorDB/$currRxnMolPair/rxnTemplates/preRxn." .
          "$rxnBindingPair.data","preRxn.$rxnMolBindingPair.data");
       copy("$precursorDB/$currRxnMolPair/rxnTemplates/postRxn." .
@@ -594,6 +614,7 @@ sub createLAMMPSFiles
    my $mol;
    my $molType;
    my $atom;
+   my $nextMolAtom;
    my $bond;
    my $bondCount;
    my $uniqueBond;
@@ -658,7 +679,8 @@ sub createLAMMPSFiles
    my $numAnglesTotal;
    my $directXYZ_ref;
    my $maxVelocity;
-   my @randVel;
+   my @velocity;
+   my @transDist;
    my $randSeed;
    my $randProb;
    my $numReactionMols;
@@ -677,8 +699,14 @@ sub createLAMMPSFiles
    copy("../packmol/packmol.fixed.pdb","./");
    system("pdb2skl -i packmol.fixed.pdb -o packmol.skl -pdbtypes");
 
-   # Read the skeleton file and extract necessary information.
+   # Read the skeleton file.
    StructureControl::readInputFile("packmol.skl",1);
+
+   # Adjust the StructureControl real and reciprocal cell vector magnitudes.
+   StructureControl::setLatticeFromMagAngle($cellSize,$cellSize,$cellSize,
+         90.0,90.0,90.0);
+
+   # Extract necessary information after reading the input.
    $numAtoms = StructureControl::getNumAtoms;
    $directXYZ_ref = StructureControl::getDirectXYZRef;
    $atomElementName_ref = StructureControl::getAtomElementNameRef;
@@ -1019,6 +1047,54 @@ sub createLAMMPSFiles
          "# $uniqueAngleTags[$angle]\n";
    }
 
+   # If we are going to force a collision, we first translate the molecules
+   #   into position before printing.
+   if ($forceCollision == 1)
+   {
+      $currentMol = 0;
+      foreach $atom (1..$numAtoms)
+      {
+         # Identify that we have found the next molecule and then set the
+         #   position for every atom of that molecule.
+         if ($atomMoleculeID[$atom] != $currentMol)
+         {
+            # Note the current molecule now.
+            $currentMol = $atomMoleculeID[$atom];
+
+            # Find the atom that starts the next molecule after this one.
+            $nextMolAtom = $atom;
+            foreach my $nextAtom ($atom+1..$numAtoms)
+            {
+               $nextMolAtom = $nextAtom;
+               if ($atomMoleculeID[$nextAtom] != $currentMol)
+                  {$nextMolAtom--; last;}
+            }
+
+            # Start by shifting the molecule into the center.
+            StructureControl::getMinMaxXYZ($atom,$nextMolAtom);
+            StructureControl::shiftXYZCenter($atom,$nextMolAtom);
+
+            # Compute the x-axis distance to shift
+            if ($currentMol == 1)
+               {$transDist[1] = 0.0;}
+            elsif ($currentMol == 2)
+               {$transDist[1] = $cellSize * -0.25;}
+            elsif ($currentMol == 3)
+               {$transDist[1] = $cellSize * 0.25;}
+            else
+            {
+               print STDOUT "Force doesn't work for more than 3 molecules.\n";
+               exit(1);
+            }
+
+            # y- and z-axis shifts are always zero.
+            $transDist[2] = 0.0;
+            $transDist[3] = 0.0;
+            StructureControl::translateAtoms($atom,$nextMolAtom,\@transDist);
+         }
+      }
+   }
+
    # Print the atom information.
    print LMPDAT "\nAtoms\n\n";
    foreach $atom (1..$numAtoms)
@@ -1034,20 +1110,56 @@ sub createLAMMPSFiles
    # Print the initial velocities for the molecules.
    print LMPDAT "\nVelocities\n\n";
    $currentMol = 0;
+   $maxVelocity = 0.5;
    foreach $atom (1..$numAtoms)
    {
-      # Create random velocities between +,- maxVelocity for each molecule.
-      #   Note that the assumption is that all atoms of the same molecule
-      #   appear next to each other in the list of atoms. Otherwise this does
-      #   not work.
-      $maxVelocity = 0.5;
+      # Identify that we have found the next molecule and then set the
+      #   velocity for every atom of that molecule.
       if ($atomMoleculeID[$atom] != $currentMol)
       {
-         foreach $axis (1..3)
-            {$randVel[$axis] = rand($maxVelocity*2)-$maxVelocity;}
+         # Note the current molecule now.
          $currentMol = $atomMoleculeID[$atom];
+
+         # If we are not forcing a collision, then we create random velocities
+         #   for all atoms of this molecule.
+         if ($forceCollision == 0)
+         {
+            # Create random velocities between +,- maxVelocity for each
+            #   molecule. Note that the assumption is that all atoms of the
+            #   same molecule appear next to each other in the list of atoms.
+            #   Otherwise this does not work.
+            foreach $axis (1..3)
+               {$velocity[$axis] = rand($maxVelocity*2)-$maxVelocity;}
+         }
+         else # We will force a collision.
+         {
+            if ($currentMol == 1)
+            {
+               foreach $axis (1..3)
+                  {$velocity[$axis] = 0.0;}
+            }
+            elsif ($currentMol == 2)
+            {
+               $velocity[1] = 1.0;
+               $velocity[2] = 0.0;
+               $velocity[3] = 0.0;
+            }
+            elsif ($currentMol == 3)
+            {
+               $velocity[1] = -0.7;
+               $velocity[2] = 0.0;
+               $velocity[3] = 0.0;
+            }
+            else
+            {
+               print STDOUT "Force doesn't work for more than 3 molecules.\n";
+               exit(1);
+            }
+         }
       }
-      print LMPDAT "$atom $randVel[1] $randVel[2] $randVel[3] ";
+
+      # Print the data for this atom.
+      print LMPDAT "$atom $velocity[1] $velocity[2] $velocity[3] ";
       print LMPDAT " # $atomElementName_ref->[$atom] " .
          "$atomSpeciesID_ref->[$atom] $atomMoleculeName[$atom]\n";
    }
