@@ -2970,7 +2970,7 @@ sub rotateAllAtoms
 
    # Make sure that all atoms are inside the simulation box and shifted
    #   properly. This will address (1) and (2) above.
-   &checkBoundingBox(1,1,$numAtoms);
+   &checkBoundingBox(1,$numAtoms,1);
 
    # Repeat the rotation.  (3) from above.
    foreach $atom (1..$numAtoms)
@@ -4905,7 +4905,7 @@ sub translateAtoms
    }
 
    # Make sure that all atoms are inside the simulation box.
-   &checkBoundingBox(0,$atom1,$atom2);
+   &checkBoundingBox($atom1,$atom2,0);
 }
 
 sub insertVacuum
@@ -5245,7 +5245,7 @@ sub makeOrtho
       &getFractABC($atom);
    }
 
-   &checkBoundingBox(0,1,$numAtoms);
+   &checkBoundingBox(1,$numAtoms,0);
 }
 
 sub applyPerturbation
@@ -5286,7 +5286,7 @@ sub applyPerturbation
    }
 
    # Make sure that all atoms are inside the simulation box.
-   &checkBoundingBox(0,1,$numAtoms);
+   &checkBoundingBox(1,$numAtoms,0);
 }
 
 sub applyFilter
