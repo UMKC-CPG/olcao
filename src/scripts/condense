@@ -1336,6 +1336,33 @@ ENDLAMMPSHEAD2
       print LMPIN "unfix ensemble\n\n";
    }
 
+   # Final density calculation
+   variable final_density equal density
+   print "\${final_density}" append density_evolve
+
+# Total energy calculation
+# ##--------------------Define Settings------------------------------
+compute eng all pe/atom
+compute eatoms all reduce sum c_eng
+#
+###---------------------Run Minimization-----------------------------
+reset_timestep 0
+timestep 0.00001
+thermo 1
+thermo_style custom step pe lx ly lz press pxx pyy pzz c_eatoms density
+dump 2 all custom 1 md.lammpstrj id type x y z
+min_style cg
+minimize 1e-18 1e-18 50000 100000
+variable natoms equal "count(all)"
+variable teng equal "c_eatoms"
+print "\${teng}" append totE_evolve
+variable length equal "lx"
+#variable ecoh equal "v_teng/v_natoms"
+#
+print "system_total_energy \${teng};"
+print "Number of atoms is \${natoms};"
+print "Lattice constant (Angstrom) is \${length};"
+
    #   print LMPIN<<ENDLAMMPSTAIL;
    #
    ## Equilibrate

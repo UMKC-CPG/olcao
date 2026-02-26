@@ -2496,7 +2496,7 @@ sub groupReduce
       else
          {next;}
 
-      # Recode the current atom number, element name, and new species ID.
+      # Record the current atom number, element name, and new species ID.
       print REDUCE "---------------------------------------\n";
       print REDUCE "$atom $atomElementName[$atom]$tempAtomSpeciesID[$atom]\n";
 

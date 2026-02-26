@@ -7,8 +7,7 @@ set (SCRIPTS
 ab2pf.py addAtoms appendCol atomPosDX
 batchChange batchClean batchSub bondAnalysis
 cif2skl collectSpectra condense
-dump2skl
-ea_driver_with_ea_loop.py ensembleCondense
+dead-md.py dump2skl
 gaussOverlapRT
 getPlane graspElems.py
 hdf5Comp.py
