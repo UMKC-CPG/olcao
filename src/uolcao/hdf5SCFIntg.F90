@@ -382,6 +382,9 @@ subroutine initSCFIntegralHDF5 (scf_fid, attribInt_dsid, attribIntDims)
       if (hdferr /= 0) stop 'Failed to create nuclear overlap did SCF'
 
       do j = 1, 3
+         write (currentName,fmt="(i7.7)") i
+         currentName = trim (currentName)
+
          call h5dcreate_f (atomDMxyzOL_gid(j),currentName,&
                & H5T_NATIVE_DOUBLE,packedVV_dsid,atomDMOverlap_did(i,j),&
                & hdferr,packedVV_plid)
