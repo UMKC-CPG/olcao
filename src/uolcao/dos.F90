@@ -1115,7 +1115,7 @@ integer :: m
       ! Record the results to disk as the localization index for each state,
       !   converting the energy scale to eV.
       do i = 1, numStates
-         write (79+h,fmt="(1x,f14.8,2x,f14.8)") energyValuesAvg(i) * hartree,&
+         write (79+h,fmt="(1x,f24.8,2x,f24.8)") energyValuesAvg(i) * hartree,&
                & localizationIndex(i)
       enddo
    enddo ! (h spin)
