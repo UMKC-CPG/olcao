@@ -60,7 +60,12 @@ sub printHelp
 #   Required Value: Floating point size of the cell in Angstroms
 #   Section Definition: Absent. No section information needed.
 #
-#   (3) Stages:
+#   (3) Max molecule speed: 
+#   Keyword: "max_speed"
+#   Required Value: Floating point maximum speed of each molecule
+#   Section Definition: Absent. No section information needed.
+#
+#   (4) Stages:
 #   Keyword: "stage"
 #   Required Value: Floating point final fractional size of the cell after
 #      squishing; the squish rate; the type of ensemble (nvt/npt); the
@@ -69,7 +74,7 @@ sub printHelp
 #      steps for the stage.
 #   The "stage" keyword may be repeated multiple times in the input file.
 #
-#   (4) Reactions:
+#   (5) Reactions:
 #   Keyword: "reactions"
 #   Required Value: Integer number of different kinds of reactions.
 #   Section Definition: One line with 5 components for each type of reaction.
@@ -94,6 +99,7 @@ sub printHelp
 # ch4 Family1 8
 #
 # cell_size 100.0
+# max_speed 5.0
 #
 # stage 0.33 500 nvt 800 800 500 100000
 #
@@ -167,6 +173,7 @@ use File::Copy;
 my $inputFile;
 my $forceCollision;
 my $cellSize;
+my $maxSpeed;
 my $numStages;
 my @squishFactor;
 my @squishStepSize;
@@ -237,6 +244,9 @@ sub initEnv
 
    # Assume cell size.
    $cellSize = 100.0;
+
+   # Assume maximum speed.
+   $maxSpeed = 10.0;
 
    # Initialize the count of the number of states.
    $numStages = 0;
@@ -312,7 +322,8 @@ sub parseInputFile
    {
       @values = StructureControl::prepLine("",$line,'\s+');
 
-      # Look for "composition", "cell_size", and "reactions" key words.
+      # Look for "composition", "cell_size", "max_speed", and
+      #   "reactions" key words.
       if (lc($values[0]) eq "composition")
       {
          $numMoleculeTypes = $values[1];
@@ -328,6 +339,8 @@ sub parseInputFile
       }
       elsif (lc($values[0]) eq "cell_size")
          {$cellSize = $values[1];}
+      elsif (lc($values[0]) eq "max_speed")
+         {$maxSpeed = $values[1];}
       elsif (lc($values[0]) eq "stage")
       {
          $numStages++;
@@ -583,6 +596,7 @@ sub runPackmol
    while ($line = <RAW>)
    {
       @values = StructureControl::prepLine("",$line,'\s+');
+      $values[$#values] =~ s/[^a-zA-Z]//g;
       if ($values[0] eq "ATOM")
       {
          print FIXED substr($line,0,54);
@@ -678,7 +692,6 @@ sub createLAMMPSFiles
    my @uniqueAngleTags;
    my $numAnglesTotal;
    my $directXYZ_ref;
-   my $maxVelocity;
    my @velocity;
    my @transDist;
    my $randSeed;
@@ -1110,7 +1123,6 @@ sub createLAMMPSFiles
    # Print the initial velocities for the molecules.
    print LMPDAT "\nVelocities\n\n";
    $currentMol = 0;
-   $maxVelocity = 0.5;
    foreach $atom (1..$numAtoms)
    {
       # Identify that we have found the next molecule and then set the
@@ -1124,12 +1136,12 @@ sub createLAMMPSFiles
          #   for all atoms of this molecule.
          if ($forceCollision == 0)
          {
-            # Create random velocities between +,- maxVelocity for each
+            # Create random velocities between +,- maxSpeed for each
             #   molecule. Note that the assumption is that all atoms of the
             #   same molecule appear next to each other in the list of atoms.
             #   Otherwise this does not work.
             foreach $axis (1..3)
-               {$velocity[$axis] = rand($maxVelocity*2)-$maxVelocity;}
+               {$velocity[$axis] = rand($maxSpeed*2)-$maxSpeed;}
          }
          else # We will force a collision.
          {
@@ -1335,10 +1347,14 @@ ENDLAMMPSHEAD2
          {print LMPIN "unfix squish\n";}
       print LMPIN "unfix ensemble\n\n";
    }
+   print LMPIN<<ENDLAMMPSTAIL;
 
-   # Final density calculation
-   variable final_density equal density
-   print "\${final_density}" append density_evolve
+undump coord_dump
+undump bond_dump
+
+# Final density calculation
+variable final_density equal density
+print "\${final_density}" append density_evolve
 
 # Total energy calculation
 # ##--------------------Define Settings------------------------------
@@ -1350,7 +1366,7 @@ reset_timestep 0
 timestep 0.00001
 thermo 1
 thermo_style custom step pe lx ly lz press pxx pyy pzz c_eatoms density
-dump 2 all custom 1 md.lammpstrj id type x y z
+#dump 2 all custom 1 md.lammpstrj id type x y z
 min_style cg
 minimize 1e-18 1e-18 50000 100000
 variable natoms equal "count(all)"
@@ -1363,28 +1379,7 @@ print "system_total_energy \${teng};"
 print "Number of atoms is \${natoms};"
 print "Lattice constant (Angstrom) is \${length};"
 
-   #   print LMPIN<<ENDLAMMPSTAIL;
-   #
-   ## Equilibrate
-   #fix ensemble all nvt temp 500 500 2000
-   #run 50000
-   #unfix ensemble
-   #
-   ## Start squish and T reduction
-   #fix squish all deform 500 x scale $squishFactor y scale $squishFactor z scale $squishFactor remap x
-   #fix ensemble all nvt temp 500 100 2000
-   #run 500000
-   #
-   ## Stop squish and T reduction
-   #unfix squish
-   #unfix ensemble
-   #
-   ## Equilibrate at low T
-   #neigh_modify delay 0 every 1 check yes
-   #fix ensemble all nvt temp 100 100 2000
-   #run 100000
-   #
-   #ENDLAMMPSTAIL
+ENDLAMMPSTAIL
 
    # Close the LAMMPS input file.
    close (LMPIN);

@@ -114,8 +114,8 @@ def initialize_population():
                 lamps_input_file.write(f"{mol} family1 {num}\n")
              
             lamps_input_file.write(f"\ncell_size {population[member - 1][2]}\n\n")
-            lamps_input_file.write(f"condensation_rate {population[member - 1][3]}\n\n")
-            lamps_input_file.write(f"target_density {population[member - 1][1]}\n\n")
+            lamps_input_file.write(f"stage {population[member - 1][3]} 100 nvt 800 800 100 500000\n\n")
+            #lamps_input_file.write(f"target_density {population[member - 1][1]}\n\n")
             
             lamps_input_file.write(f"reactions {reactions_num}\n")
 
@@ -166,7 +166,7 @@ def run_lammps_simulations(population_size, num_cores):
         os.chdir(str(member))
         subprocess.run("condense", shell=True, check=True)
         os.chdir("lammps")
-        subprocess.run(f"srun -N 1 -c {num_cores} lmp < lammps.in", shell=True, check=True)
+        subprocess.run(f"srun -N 1 -c {num_cores} lmp -in lammps.in", shell=True, check=True)
         #subprocess.run("mpirun -np 2 lmp < lammps.in", shell=True, check=True)
 
         print(f" I am in directory {member}\n")
@@ -200,7 +200,7 @@ def fitness_function(population_size):
 
         total_energy = read_last_value(totE_file)
         density = read_last_value(density_file)
-        element_pct  = read_last_value(element_pct_file)
+        element_pct = read_last_value(element_pct_file)
 
         fitness = total_energy + density + element_pct
         fitnesses.append(fitness)

@@ -1,31 +1,104 @@
 #!/usr/bin/env python3
 
+"""interFit.py -- Gaussian fitting of Grasp2K relativistic orbitals.
+
+Reads relativistic orbital data from Grasp2K (via org_radwavefn), performs a
+parameter sweep over maximum Gaussian exponent and number of terms per angular
+momentum channel, and finds the expansion with the lowest weighted RMSE.
+
+The fitting uses a geometric series of Gaussian exponents (alphas) and solves
+the minimum-norm least squares system  A^T A x = A^T B  via pivotless LU
+decomposition, where A[i,j] = exp(-alpha_j * r_i^2) and B is the matrix of
+orbital function values on the radial grid.
+
+Usage::
+
+    interFit.py -comp 1              # single-component (averaged j)
+    interFit.py -comp 2              # two-component (separate j)
+    interFit.py -comp 4              # four-component (large + small)
+    interFit.py -comp 1 -shrink 5 1  # with shrinking function (rc=5, sigma=1)
+    interFit.py -tol 1e-4            # tighter fitting tolerance
+
+Performance notes
+-----------------
+The following optimizations have been identified but not yet implemented:
+
+1. **Vectorize get_A**: Replace the nested Python loop with numpy broadcasting:
+   ``np.exp(-alphas[np.newaxis,:] * grid[:,np.newaxis]**2)``.
+   The same applies to the RMSE summation in get_prefactor_coefficients.
+
+2. **Vectorize pivotless_lu_decomp**:
+   - Replace ``copy.deepcopy(A)`` with ``A.copy()`` (deepcopy pickles/unpickles
+     numpy arrays, which is far slower than a direct memory copy).
+   - Move the ``U[j,j]==0`` guard before the division (currently the division
+     executes first, silently producing inf/nan).
+   - Fold L into U in-place rather than allocating a separate L and adding at
+     the end (L's diagonal is zero and the two triangles don't overlap).
+   - Wrap the function with ``@numba.njit``.  The matrix is small (max 25x25)
+     but the function is called ~360,000 times; Numba eliminates the Python
+     loop overhead and typically gives 50-100x speedup for this pattern.
+   - Note: scipy.linalg.lu_factor cannot be used as a replacement because it
+     always applies partial pivoting (LAPACK dgetrf), which would disrupt the
+     specific structure of the A^T A matrix in this application.
+
+3. **Avoid unnecessary deep copies**: In get_prefactor_coefficients, the
+   ``copy.deepcopy`` calls on numpy arrays (alphas, A, ATA, AT, functions)
+   should use ``.copy()``.  The B matrix deep copy on the caller side
+   (fitting_procedure) is also redundant since get_prefactor_coefficients
+   already copies it.
+
+4. **Parallelize the outer alpha loop**: The ``for maximum_alpha in
+   self.loop_max_alpha`` loop is the natural parallelization target.  The
+   itct early-exit counter resets per alpha value, so each alpha iteration is
+   nearly independent.  The only cross-iteration dependency is the global
+   best_RMSE/best_weight used for pruning; without it, workers do slightly
+   more work but the result is correct.  Approach: split loop_max_alpha into
+   N chunks (one per core), run each chunk with multiprocessing.Pool or
+   concurrent.futures.ProcessPoolExecutor, then merge results by picking the
+   global best across all workers.
+
+Decoupling s and p term counts
+------------------------------
+Historically, s and p channels have always shared the same number of Gaussian
+terms (the ``sp`` variable in fitting_procedure).  There is no physical reason
+for this constraint, and allowing them to differ may improve fitting quality.
+The constraint should be s >= p >= d >= f >= g.
+
+Analysis of what would need to change:
+
+- **Solver (get_prefactor_coefficients)**: Already l-aware.  ``num_terms[l]``
+  is used per orbital (line ~564, ~576) and the LU solve block operates per-l
+  with ``num_terms[i]``.  No changes needed.
+
+- **Output (write_olcao_atom_type)**: Already writes s and p counts separately
+  via ``num_terms[0]`` and ``num_terms[1]``.  No changes needed.
+
+- **Sweep loop (fitting_procedure)**: Currently ``sp`` controls both s and p
+  and drives the A matrix / LU construction.  With decoupled counts, p becomes
+  an inner loop (p ranges from s down to min_num_terms).  The A matrix and LU
+  decomposition depend only on s (the largest term count), so they do NOT need
+  rebuilding when only p changes — only when s changes.
+
+- **Weight function**: ``4*sp`` would split into separate s and p terms, e.g.
+  ``2*s + 2*p`` (or another weighting to be determined).
+
+- **_generate_term_sweeps**: p would become the outermost sweep channel
+  (between s and d), maintaining s >= p >= d >= f >= g.
+
+- **Search space**: Adding a separate p loop introduces up to 18 additional
+  iterations per s value (~18x more work).  This makes the parallelization
+  improvements (item 4 above) and the vectorization / Numba improvements
+  (items 1-3) significantly more important.
+
+- **RMSE loop concern**: In get_prefactor_coefficients (line ~587), the RMSE
+  summation uses ``range(num_terms[0])`` (the s count) for ALL orbitals.  With
+  s >= p this doesn't break, but the intent is unclear — it may be summing
+  residuals over only the first s grid points rather than the full grid.  This
+  should be verified against expected RMSE values before the s/p decoupling is
+  implemented, as it may be a latent bug.
 """
-Author:  Patrick Ryan Thomas
-         UMKC - CPG
-         prtnpb@mail.umkc.edu
 
-Purpose: The purpose of this script is take in relativistic
-         orbital data from grasp2K and perform the following:
-
-         1) WEIGTHED LINEAR INTERPOLATE all orbitals (large and small)
-              to be expressed on the same radial grid.
-
-         2) PARARMETER SWEEP over the maximum exponential coefficient
-              and number of terms for each l quantum number type.
-
-            a) A single LU DECOMPOSITION can be used to solve
-                 all orbitals in a single set.
-
-            b) Exponential coefficients are determined via
-                 geometric series by maximum, minimum, and
-                 number of terms.
-
-         3) Output orbitals in a format usable by OLCAO.
-
-"""
-
-
+import argparse as ap
 import numpy as np
 import scipy
 import time
@@ -34,47 +107,197 @@ import os
 import sys
 import math
 import pandas as pd
-import make_veusz_graph
+from datetime import datetime
+try:
+    import make_veusz_graph
+except ImportError:
+    make_veusz_graph = None
 import org_radwavefn
-import plotly.express as px
 
-from scipy.linalg import lu_solve 
+from element_data import ElementData
+from org_radwavefn import lktol, sktol, ltosk, ltok, ltolsym
+
+from scipy.linalg import lu_solve
 
 start=time.time()
+
+
+# Define the main class that holds script data structures and settings.
+class ScriptSettings():
+    """The instance variables of this object are the user settings that
+       control the program. The variable values are pulled from a list
+       that is created within a resource control file and that are then
+       reconciled with command line parameters."""
+
+
+    def __init__(self):
+        """Define default values for the parameters by pulling them
+        from the resource control file in the default location:
+        $OLCAO_RC/interFitrc.py or from the current working directory
+        if a local copy of interFitrc.py is present."""
+
+        # Read default variables from the resource control file.
+        rc_dir = os.getenv('OLCAO_RC')
+        if not rc_dir:
+            sys.exit("Error: $OLCAO_RC is not set. See instructions.")
+        sys.path.insert(1, rc_dir)
+        from interFitrc import parameters_and_defaults
+        default_rc = parameters_and_defaults()
+
+        # Assign values to the settings from the rc defaults file.
+        self.assign_rc_defaults(default_rc)
+
+        # Parse the command line.
+        args = self.parse_command_line()
+
+        # Reconcile the command line arguments with the rc file.
+        self.reconcile(args)
+
+        # At this point, the command line parameters are set and accepted.
+        #   When this initialization subroutine returns the script will
+        #   start running. So, we use this as a good spot to record the
+        #   command line parameters that were used.
+        self.recordCLP()
+
+
+    def assign_rc_defaults(self, default_rc):
+
+        # Component mode default.
+        self.number_components = default_rc["comp"]
+
+        # Shrinking function defaults.
+        self.shrink_rc = default_rc["shrink_rc"]
+        self.shrink_sig = default_rc["shrink_sig"]
+        self.tolerance = default_rc["tolerance"]
+
+
+    def parse_command_line(self):
+
+        # Create the parser tool.
+        prog_name = "interFit.py"
+
+        description_text = """
+Gaussian fitting of Grasp2K relativistic orbitals for OLCAO.
+
+Reads relativistic orbital data from Grasp2K (via org_radwavefn), performs a
+parameter sweep over maximum Gaussian exponent and number of terms per angular
+momentum channel, and finds the expansion with the lowest weighted RMSE.
+
+The fitting uses a geometric series of Gaussian exponents (alphas) and solves
+the minimum-norm least squares system  A^T A x = A^T B  via pivotless LU
+decomposition, where A[i,j] = exp(-alpha_j * r_i^2) and B is the matrix of
+orbital function values on the radial grid.
+
+Operation modes:
+
+  -comp 1/2/4
+    Designates the amount of components to generate
+     one, two, or four.
+    1: Averages together to large components into a
+       single orbital.
+       -comp 1
+    2: Fits only the large components.
+       -comp 2
+    3: Fits all four components.
+       -comp 4
+
+  -shrink rc sig
+    Performs a shrinking function operation where rc
+     is the critical radii and sig is the shrinking
+     parameter.
+
+           |          2
+           |    (r-rc)
+           |    ------
+           |         2
+           |    2*sig
+     s(r)= |1-e         r .leq. rc
+           |0           r > rc
+
+     A file (shrink.inf) must be present with a list
+      of all orbitals and corresponding rc sig in comma
+      delimited columns.
+"""
+
+        epilog_text = """
+Examples:
+    interFit.py -comp 1              # single-component (averaged j)
+    interFit.py -comp 2              # two-component (separate j)
+    interFit.py -comp 4              # four-component (large + small)
+    interFit.py -comp 1 -shrink 5 1  # with shrinking function (rc=5, sigma=1)
+    interFit.py -tol 1e-4            # tighter fitting tolerance
+
+Originally written by Ryan Thomas.
+Please contact Paul Rulis (rulisp@umkc.edu) regarding questions.
+Defaults are given in ./interFitrc.py or $OLCAO_RC/interFitrc.py.
+"""
+
+        parser = ap.ArgumentParser(prog = prog_name,
+                formatter_class=ap.RawDescriptionHelpFormatter,
+                description = description_text,
+                epilog = epilog_text)
+
+        # Add arguments to the parser.
+        self.add_parser_arguments(parser)
+
+        # Parse the arguments and return the results.
+        return parser.parse_args()
+
+
+    def add_parser_arguments(self, parser):
+
+        # Define the component argument.
+        parser.add_argument('-comp', dest='number_components',
+                            type=int, default=self.number_components,
+                            choices=[1, 2, 4],
+                            help='Number of components to generate: '
+                            '1=averaged j, 2=large components only, '
+                            f'4=all four components. '
+                            f'Default: {self.number_components}')
+
+        # Define the shrinking function argument.
+        parser.add_argument('-shrink', nargs=2, dest='shrink',
+                            type=float, default=None,
+                            metavar=('RC', 'SIG'),
+                            help='Apply shrinking function with critical '
+                            'radius RC and sigma SIG. '
+                            f'Default: {self.shrink_rc} {self.shrink_sig}')
+
+        # Define the tolerance argument.
+        parser.add_argument('-tol', dest='tolerance',
+                            type=float, default=self.tolerance,
+                            metavar='TOL',
+                            help='RMSE tolerance for fitting acceptance. '
+                            f'Default: {self.tolerance}')
+
+
+    def reconcile(self, args):
+        self.number_components = args.number_components
+        self.tolerance = args.tolerance
+
+        if args.shrink is not None:
+            self.shrink_rc = args.shrink[0]
+            self.shrink_sig = args.shrink[1]
+            self.apply_shrink = True
+        else:
+            self.apply_shrink = (self.shrink_rc != 0.0
+                                 or self.shrink_sig != 0.0)
+
+
+    def recordCLP(self):
+        with open("command", "a") as cmd:
+            now = datetime.now()
+            formatted_dt = now.strftime("%b. %d, %Y: %H:%M:%S")
+            cmd.write(f"Date: {formatted_dt}\n")
+            cmd.write(f"Cmnd:")
+            for argument in sys.argv:
+                cmd.write(f" {argument}")
+            cmd.write("\n\n")
+
 
 #==========================
 # PRINTING FUNCTIONS:
 #==========================
-
-def print_help():
-  print("\n=====================")
-  print("HELP FOR INTERFIT.PY")
-  print("=====================\n")
-  print("Operation modes:")
-  print( "  -shrink rc sig")
-  print( "    Performs a shrinking function operation where rc")
-  print("     is the critical radii and sig is the shrinking")
-  print("     parameter.\n")
-  print("           |          2")
-  print("           |    (r-rc) ")
-  print("           |    ------ ")
-  print("           |         2 ")
-  print("           |    2*sig  ")
-  print("     s(r)= |1-e         r .leq. rc ")
-  print("           |0           r > rc\n")
-  print("     A file (shrink.inf) must be present with a list")
-  print("      of all orbitals and corresponding rc sig in comma")
-  print("      delimited columns.\n\n")
-  print( "  -comp 1/2/4")
-  print("    Designates the amount of components to generate")
-  print("     one, two, or four.")
-  print("    1: Averages together to large components into a")
-  print("       single orbital.")
-  print("       -comp 1")
-  print("    2: Fits only the large components.")
-  print("       -comp 2")
-  print("    3: Fits all four components.")
-  print("       -comp 4\n")
 
 def print_line(number_lines):
   for i in range(number_lines):
@@ -94,667 +317,85 @@ def printProgress(minAlpha,maxAlpha,currentA,step):
   perc=((float(currentA)-float(minAlpha))/(float(maxAlpha)-float(minAlpha)))*100.0
   if perc%10==0:
     print(str("%.2f"%perc)+"%\t("+str(minAlpha)+"\t- "+str(currentA)+" -\t"+str(maxAlpha)+")")
-  
- 
+
 
 #==========================
 # ELEMENT INFO FUNCTIONS:
 #==========================
-def getAtomNum(symb):
-  elems={'H': 1 , 'He': 2, 'Li': 3, 'Be': 4, 'B': 5, 'C': 6, 'N': 7, 'O': 8, 'F': 9, 'Ne': 10, 'Na': 11, 'Mg': 12, 'Al': 13, 'Si': 14, 'P': 15, 'S': 16, 'Cl': 17, 'Ar': 18, 'K': 19, 'Ca': 20, 'Sc': 21, 'Ti': 22, 'V': 23, 'Cr': 24, 'Mn': 25, 'Fe': 26, 'Co': 27, 'Ni': 28, 'Cu': 29, 'Zn': 30, 'Ga': 31, 'Ge': 32, 'As': 33, 'Se': 34, 'Br': 35, 'Kr': 36, 'Rb': 37, 'Sr': 38, 'Y': 39, 'Zr': 40, 'Nb': 41, 'Mo': 42, 'Tc': 43, 'Ru': 44, 'Rh': 45, 'Pd': 46, 'Ag': 47, 'Cd': 48, 'In': 49, 'Sn': 50, 'Sb': 51, 'Te': 52, 'I': 53, 'Xe': 54, 'Cs': 55, 'Ba': 56, 'La': 57, 'Ce': 58, 'Pr': 59, 'Nd': 60, 'Pm': 61, 'Sm': 62, 'Eu': 63, 'Gd': 64, 'Tb': 65, 'Dy': 66, 'Ho': 67, 'Er': 68, 'Tm': 69, 'Yb': 70, 'Lu': 71, 'Hf': 72, 'Ta': 73, 'W': 74, 'Re': 75, 'Os': 76, 'Ir': 77, 'Pt': 78, 'Au': 79, 'Hg': 80, 'Tl': 81, 'Pb': 82, 'Bi': 83, 'Po': 84, 'At': 85, 'Rn': 86, 'Fr': 87, 'Ra': 88, 'Ac': 89, 'Th': 90, 'Pa': 91, 'U': 92, 'Np': 93, 'Pu': 94, 'Am': 95, 'Cm': 96, 'Bk': 97, 'Cf': 98, 'Es': 99, 'Fm': 100, 'Md': 101, 'No': 102, 'Lr': 103, 'Rf': 104, 'Db': 105, 'Sg': 106, 'Bh': 107, 'Hs': 108, 'Mt': 109}
-  return elems[symb]
-
-def lktol(k):
-  if k<0:
-    return (-1*k)-1
-  else:
-    return k
-
-def sktol(k):
-  if k<0:
-    return k*-1
-  else:
-    return k-1
-
-def ltosk(l):
-  if l==0:
-    return 1,1
-  else:
-    return -1*l,l+1
-
-def ltok(l):
-  if l==0:
-    return -1,-1
-  else:
-    return l,-1*(l+1)
-
-def ltolsym(l):
-  if l==0:
-    return "s"
-  elif l==1:
-    return "p"
-  elif l==2:
-    return "d"
-  elif l==3:
-    return "f"
-  elif l==4:
-    return "g"
-
 def get_max_alpha(Z):
+  """Return the maximum Gaussian exponent (alpha) for relativistic fitting.
+
+  This table is specific to Grasp2K → OLCAO relativistic fitting and differs
+  from the non-relativistic max_term_wf values in elements.dat.  Values
+  increase with Z because heavier atoms have more tightly bound core orbitals
+  requiring steeper Gaussians.
+  """
   alphas={'1': 10000.0, '2': 10000.0, '3': 50000.0, '4': 50000.0, '5': 50000.0, '6': 50000.0, '7': 50000.0, '8': 50000.0, '9': 50000.0, '10': 50000.0, '11': 100000.0, '12': 100000.0, '13': 100000.0, '14': 200000.0, '15': 100000.0, '16': 100000.0, '17': 100000.0, '18': 100000.0, '19': 500000.0, '20': 500000.0, '21': 500000.0, '22': 500000.0, '23': 500000.0, '24': 500000.0, '25': 500000.0, '26': 500000.0, '27': 500000.0, '28': 500000.0, '29': 500000.0, '30': 1000000.0, '31': 1000000.0, '32': 1000000.0, '33': 1000000.0, '34': 1000000.0, '35': 1000000.0, '36': 1000000.0, '37': 5000000.0, '38': 5000000.0, '39': 5000000.0, '40': 5000000.0, '41': 5000000.0, '42': 5000000.0, '43': 5000000.0, '44': 5000000.0, '45': 5000000.0, '46': 5000000.0, '47': 5000000.0, '48': 5000000.0, '49': 5000000.0, '50': 5000000.0, '51': 5000000.0, '52': 5000000.0, '53': 5000000.0, '54': 5000000.0, '55': 10000000.0, '56': 10000000.0, '57': 10000000.0, '58': 10000000.0, '59': 10000000.0, '60': 10000000.0, '61': 10000000.0, '62': 10000000.0, '63': 10000000.0, '64': 10000000.0, '65': 10000000.0, '66': 10000000.0, '67': 10000000.0, '68': 10000000.0, '69': 10000000.0, '70': 10000000.0, '71': 50000000.0, '72': 50000000.0, '73': 50000000.0, '74': 50000000.0, '75': 50000000.0, '76': 50000000.0, '77': 50000000.0, '78': 50000000.0, '79': 50000000.0, '80': 50000000.0, '81': 50000000.0, '82': 50000000.0, '83': 50000000.0, '84': 50000000.0, '85': 50000000.0, '86': 50000000.0, '87': 50000000.0, '88': 50000000.0, '89': 50000000.0, '90': 50000000.0, '91': 50000000.0, '92': 50000000.0, '93': 50000000.0, '94': 50000000.0, '95': 50000000.0, '96': 50000000.0, '97': 50000000.0, '98': 50000000.0, '99': 50000000.0, '100': 50000000.0, '101': 50000000.0, '102': 50000000.0, '103': 50000000.0,}
 
   return alphas[str(Z)]
 
-#==========================
-# FILE OPERATION FUNCTIONS:
-#==========================
-
-
-def getFileList(ext):
-  # This function returns a list of files names in the current directory
-  #  ending with the desired file extension.
-  inFiles=[]
-  inFiles+=[each for each in os.listdir('.') if each.endswith(str(ext))]
-  return inFiles
-
-
-def getFileContents(filename):
-  f=open(filename,'r')
-  content=f.readlines()
-  f.close()
-  return content
-
-def parseFileName(filename):
-  k=(((filename.split('.'))[0]).split('_'))[4]
-  n=(((filename.split('.'))[0]).split('_'))[2]
-  atomSym=(((filename.split('.'))[0]).split('_'))[0]
-  return atomSym,n,k
-
-
-
 
 #==========================
-# INTERPOLATION FUNCTIONS:
-#==========================
-def intNewCalc(x1,x2,y1,y2,xn):
-  """
-  This function calculates the linearly interpolated y-value 
-  of a given point (xn) on a line between points, (x1,y1)
-  and (x2,y2) Utilized point slope form of a line, i.e.,
-     (y2 - y1)
-  yn=--------- (xn - x1) + y1    
-     (x2 - x1)
-  """
-  return float(((y2-y1)/(x2-x1))*(xn-x1)+y1)  
-
-
-def getPoints(rval,Rvals):
-  """
-  This function takes in a radial grid value (rval) that does not
-  exits in the original list (Rvals). Starting in the middle
-  of the list, Rvals, we check to see if rval is greater
-  than the middle value of list. If it is, we check to see
-  if it is less than the next value in the list. If it is,
-  we've found the lower value needed. If it is not, perform
-  the same check on the next item in the list. However, if we
-  reach the end of the list, use the previous value.
-  """
-
-  # Make a copy of the passed list.
-  RO=copy.deepcopy(Rvals)
-
-  #Initialize output variable
-  xval=0
-  #Initialize marker to be at middle of the list.
-  v=int(len(RO)/2)
-
-  # Loop until RO[v]<rval<RO[v+1]    
-  while(1):
-    """
-    If we are at the end of the list, use the previous
-    value.
-    """
-    if v==len(RO)-1:
-      xval=v-1
-      break
-
-    # Check if value is bigger than midpoint
-    if rval>RO[v]:
-      #Check if value is less than midpoint + 1. If yes, done.
-      if rval<RO[v+1]:
-        xval=v
-        break
-        #If the value is not less than midpoint, increment by one.
-      else:
-        v+=1
-    #If not bigger than the midpoint, decrease position by one.
-    else:
-      v=v-1              
-  return xval
-
-
-def doInterp(R,LDR,SDR):
-  """
-  This function will take a set of radial values in
-  the global R list and create the corresponding common
-  list of all radial positions for interpolation. Then,
-  using the values in the global LDR and SDR lists, the function
-  will compute a linear interpolation on the points and
-  return lists of new radial values and new large and
-  small component values that have been interpolated on the
-  new radial grid.
-  """
-  # Create a temp arrays to hold the new values
-  r=[]
-  l=[]
-  s=[]
-  tl=[]
-  ts=[]
-  interpTime=time.time()  
-
-  # For set of radial values, add it to the temp
-  #  list.
-  for i in range(len(R)):
-    r.extend(R[i])
-  # Remove duplicate values.
-  r=list(set(r))
-  
-  # Sort the values
-  r.sort()
-  
-  
-  # loop through each large and small component
-  #  corresponding to a particular radial grid to generate
-  #  new values.
-  tl=[None]*len(r)
-  ts=[None]*len(r)
-  n=0
-  print_line(1)
-  print ("BEGINNING INTERPOLATION:\nThere are " + str(len(R)) +
-         " pairs of orbitals to be interpolated and " + str(len(r)) +
-         " points in the new grid.")
-
-  # Loop through each pair of radial grid, large divided by r,
-  #   and small divided by r.
-  for i in range(len(R)):
-    # Loop through each newly calculated radial grid point.
-    for j in range(len(r)):
-      # If the new grid value is in the original grid,
-      #   put the corresponding large and small components
-      #   in the temporary lists.
-      if r[j] in R[i]:
-        tl[j]=LDR[i][R[i].index(r[j])]
-        ts[j]=SDR[i][R[i].index(r[j])]
-      # If the new grid value is not in the original grid,
-      #   we perform a linear interpolation using original grid
-      #   values on either side of the new value.
-      else:
-        n=getPoints(r[j],R[i])
-        tl[j]=intNewCalc(R[i][n],R[i][n+1],LDR[i][n],LDR[i][n+1],r[j])
-        ts[j]=intNewCalc(R[i][n],R[i][n+1],SDR[i][n],SDR[i][n+1],r[j])
-      
-    # Append the temp arrays to the returnable arrays
-    l.append(copy.deepcopy(tl))
-    s.append(copy.deepcopy(ts))
-      
-    # Re-initalize the temp arrays to empty.
-    tl=[None]*len(r)
-    ts=[None]*len(r)
-  print ("Interpolation Complete: ("+str(time.time()-interpTime)+"s).\n")
-  return r,l,s
-
-  
-#==========================
-# FITTING FUNCTIONS:      
+# FORMATTING FUNCTIONS:
 #==========================
 
-def getAlphaList(amin,amax,n,mode):
+def fortran_e(v):
+  """Format a float in Fortran E18.8 style (e.g. '    0.12000000E+00').
+
+  Produces the same output format as Fortran's E18.8 descriptor:
+  a leading-zero mantissa (0.dddddddd) with an explicit exponent.
+  The result is right-justified to 18 characters, matching the
+  column layout used by the contract program's waveFn.dat writer.
+
+  Parameters
+  ----------
+  v : float
+      Value to format.
+
+  Returns
+  -------
+  str
+      18-character right-justified Fortran-style E-notation string.
   """
-  This function makes a geometric series of alphas
-  given n (number of terms) and (amin,amax) which 
-  are the minimum and maximum alpha in the series
-  respectively.
-  """
-  a=[]
-  
-  if mode==1: 
-    for i in range(1,n+1):
-      r=amin*((float(amax/amin))**((i-1.0)/(n-1.0)))
-      a.append(r)
-    return a
-  elif mode==2:
-    diff=float((amax-amin)/(n-1))
-    for i in range(0,n):
-      r=amin+(diff*i)
-      a.append(r)
-    return a
-
-def LUDecomp(A):
-  """
-  This function performs a pivotless LU Decomposition of matrix A
-  and returns LU (top triangle U, bottom triangle L) which is the format
-  required by scipy.linalg.lu_solve.
-  """
-  # Define L and U matrices respectively.
-  L=np.zeros((len(A),len(A)),dtype="d")
-  U=copy.deepcopy(A)
-  
-  # Loop through all of the columns.
-  for j in range(len(A)-1):
-    # Loop through values in the lowerr diagonal.
-    for i in range(j,len(A)-1):
-      
-      tc=(U[i+1][j]/U[j][j])
-      if U[j][j]==0 or tc==0:
-        continue
-      else:
-        U[i+1][:]=U[i+1][:]-tc*U[j][:]
-        L[i+1][j]=tc
-      
-      # If a traditional LU Decomp is needed uncomment the next two
-      #  lines and the subtraction by identity.
-      #L[i][i]=1
-      #L[i+1][i+1]=1
-
-  LU=(L+U)#-np.identity(len(A))
-  
-  return LU
-
-
-def getA(numS,radialGrid,GCoeffs):
-  """
-  As part of the least norm squares solution to Ax=B, we define
-                         2
-           -alpha[j]*r[i]
-  A[i][j]=e
-  """
-
-  AMAT=np.zeros((len(radialGrid),numS),dtype="d")
-  for i in range(numS):
-    for j in range(len(radialGrid)):
-      AMAT[j][i]=np.exp(-1.0*GCoeffs[i]*(radialGrid[j]**2.0))
-
-  return AMAT
-
-
-def getCoeffs(ATA,A,AT,B,angVals,als,numSP,numD,numF,numG,numOrbs):
-  """
-  This function solves for the minimal norm
-  least squares solution:
-
-      A^T*Ax=A^TB
-      
-  where B consists of all orbital function values
-  arranged in columns.
-  
-  As part of the process, when we multiply A^T and
-  B, we only use enough rows of A^T to equal the number
-  of terms used in the fitting. The rest of the column
-  will be left as zeros.
-  
-  If the g-type orbitals are being fitted with ten terms, then we
-  take the ten by ten block of LU found from LU Decomposition and
-  lu_solve with said matrix and the corresponding block of g-type
-  solutions but not the zeros at the bottom of the columns.
-  """
-  # Make copies to be sure we aren't editing original values.
-  fn=copy.deepcopy(B)
-  alphas=copy.deepcopy(als)
-  ludc=copy.deepcopy(ATA)
-  amat=copy.deepcopy(A)
-  atmat=copy.deepcopy(AT)
-  angVals=map(int,angVals)
-  numterms=[0]*len(angVals)
-  termlist=[0,0,0,0,0]
-  termlist[0]=numSP
-  termlist[1]=numSP
-  termlist[2]=numD
-  termlist[3]=numF
-  termlist[4]=numG  
-
-  for i in range(len(angVals)):
-    if angVals[i]==0 or angVals[i]==1:
-      numterms[i]=numSP
-    elif angVals[i]==2:
-      numterms[i]=numD
-    elif angVals[i]==3:
-      numterms[i]=numF
-    elif angVals[i]==4:
-      numterms[i]=numG
-
-
-  # Make a new matrix such that we only multiply
-  #  the rows corresponding to number of terms
-  #  that we want to fit with. Note that a vector
-  #  will need to be made that has
-  #  the corresponding number of terms for each orbital
-  #  or the logic altered.
-  Cmat=np.zeros((len(alphas),len(numterms)),dtype="d")
-
-  for j in range(len(numterms)):
-    for i in range(numterms[j]):
-      Cmat[i][j]=np.dot(atmat[i,:],fn[:,j])
-
-
-  # Based on the maximum angular momentum of the 
-  #  of the orbitals being fitted, we solve
-  #  the corresponding systems and save the coefficients
-  #  in the coefficients matrix. 
-  coeffs=np.zeros((len(alphas),len(numterms)),dtype="d") 
-
-  for i in range(len(numOrbs)-1,-1,-1):
-    if numOrbs[i]!=0:
-      x=termlist[i]
-      y1=sum(numOrbs[i:])-numOrbs[i]
-      y2=y1+numOrbs[i]
-      PIV=np.matrix(list(xrange(x)))
-      coeffs[:x,y1:y2]=scipy.linalg.lu_solve((ludc[:x,:x],PIV),Cmat[:x,y1:y2])
-
-  RMSE=[0]*len(numterms)
-  testMat=np.dot(amat,coeffs)
-  RM=np.dot(amat,coeffs)-fn
-
-  
-  for j in range(len(numterms)):
-    for i in range(numSP):
-      RMSE[j]+=RM[i,j]**2.0
-    RMSE[j]=np.sqrt(RMSE[j])
- 
-  return coeffs,RMSE
-
-def checkLess(c,l):
-  tol=10**-2
-  for i in range(len(c)):
-    if c[i]-l[i]>0 and abs(c[i]-l[i])>tol:
-      return False
-  return True
-
-#==========================
-# SWEEPING FUNCTIONS
-#==========================
-"""
-This function performs a sweep over the number of terms in
-  the expansion for each angular momementum type as well
-  as the maximum alpha in the geometric series (or other
-  method, see function getAlphaList(amin,amax,n,mode).
-  
-  Key concepts:
-  * Checking for improvement:
-      1) The methodolgy has two checks, first the RMSE
-      for each orbital must either decrease or decrease
-      within the specified tolerance (see checkLess(c,l)).
-
-      2) Because the number of terms in the cartesian
-      expansion of the orbitals increases with an increase
-      in angular momentum, we want to weight the improvement
-      by a reduction in terms.
-
-      weight = numTerm_g*9+numTerm_f*7+numTerm_d*5+numTerms_sp*4
-
-  Key variables to customize sweeping are:
-  1) stepSize: Changing the decimal multiplied by
-               maxAlpha will change resolution of the
-               parameter sweep. Because of the large
-               difference in size between reference
-               maximum alphas, percentages make
-               a more logical choice.
-
-  2) uM,lM: These variables stand for lower multiplier
-            and upper multiplier. Again, these work as
-            percentages of the reference maximum alpha
-            value.
-
-  3) maxNT,minNT: These variables specify the maximum starting
-                  number of terms and the lowest to go.
-"""
-def doSweep(R,B,orbs,lvals,numls):
-  sweeptime=time.time()  # Start the sweeping clock
-  minAlpha=0.12          # This comes from OLCAO standard (numerical stability)
-  maxAlpha=float(get_max_alpha(Z)) #Get the OLCAO stand. maximum alpha
-  stepSize=int(maxAlpha*0.01)    #Calculate the stepsize
-  cA=[]              # Current list of coefficients
-  fA=[]              # Best list of coefficients
-  cAlpha=[]          # Current list of exponential alphas
-  fAlpha=[]          # Best list of exponential alphas
-  cRMSE=0.0          # Current RMSE
-  fRMSE=0.0          # Best RMSE
-  cWght=0            # Current weight
-  fWght=1000000000   # Best weight (start extremely high for first run)
-  nT=[0,0,0,0,0]     # Number of terms
-  maxNT=20           # Maximum number of terms in every orbital
-  minNT=8            # Minimum number of terms in every orbital
-  uM=10              # Upper multiplier
-  lM=0.3            # Lower multiplier
-  uB=int(uM*maxAlpha) # Upper bound for maxa loop
-  lB=int(lM*maxAlpha) # Lower bound for maxa loop
-  maxl=int(lvals[0]) # Get the maximum l in the set of orbitals
-  itNum=0               # Variable to track number of iterations
-  bMat=np.transpose(np.matrix(B)) #Make a copy of the functions values list.
-  noImprove=0        # Variable to see if the reduction of terms is working.
-
-  impCount=0         # Count number of improvements.
-
-  print ("\t\tC  A  L  C  U  L  A  T  I  O  N  S")
-  print_line(1)
-  print("BEGINNING SWEEPING:")
-  print("Maximum Alpha Range: " + str(int(lM*maxAlpha)) + " to " +
-        str(int(uM*maxAlpha)) + " (Step size: " + str(stepSize) + ")")
-
-  # If the maximum is g-type
-  if maxl==4:
-    print("Max. l Quantum Num.: g-type")
-    print_line(1)
-    # Loop over maximum alpha values
-    for mA in range(lB,uB,stepSize):
-      printProgress(lB,uB,mA,stepSize)
-      #Loop over s- and p- orbital values
-      for sp in range(maxNT,minNT,-1):
-        # Get the list of exponential alphas.
-        cAlpha=getAlphaList(minAlpha,mA,sp,1)
-        # Get the MNLSS solution A
-        A=getA(sp,R,cAlpha)
-        # Get the transpose of A.
-        AT=np.transpose(copy.deepcopy(A))
-        # Dot product of transpose of A and A.
-        ATA=np.dot(AT,A)
-        # Perform an LU decomposition of ATA.
-        #  This is key because as long as the number of terms
-        #   for s- an p-type orbitals don't change, we can
-        #   use the same LU decomposition to solve.
-        LU=LUDecomp(ATA)
-        # Loop over d,f, and g number of terms:
-        for d in range(sp,minNT,-1):
-          for f in range(d,minNT,-1):
-            for g in range(f,minNT,-1):
-              # Calculate the current weight.
-              cWght=4*sp+5*d+7*f+9*g
-              # If two reductions in the number of terms don't make
-              #  an improvement, break the loop and try for the next.
-              if noImprove==2:
-                noImprove=0
-                break
-              if cWght>fWght:
-                continue
-              # Solve for the new coefficients and RMSE
-              cA,cRMSE=getCoeffs(LU,A,AT,bMat,lvals,cAlpha,sp,d,f,g,numls)
-              # Check to see if the RMSE has been initialized
-              #  or if there is an improvement.
-              if fRMSE==0.0 or checkLess(cRMSE,fRMSE):
-                # Make the current weight, RMSE, coefficents,
-                #  and exponential alphas the best. Store
-                #  the corresponding number of terms.
-                #  re-initialize improvement check.
-                fWght=cWght
-                fRMSE=copy.deepcopy(cRMSE)
-                fA=copy.deepcopy(cA)
-                fAlpha=copy.deepcopy(cAlpha)
-                nT[0]=sp
-                nT[1]=sp
-                nT[2]=d
-                nT[3]=f
-                nT[4]=g
-                noImprove=0
-                impCount+=1
-              else:
-                noImprove+=1
-              itNum+=1
-
-  elif maxl==3:
-    print("Max. l Quantum Num.: f-type")
-    print_line(1)
-    for mA in range(lB,uB,stepSize):
-      printProgress(lB,uB,mA,stepSize)
-      for sp in range(maxNT,minNT,-1):
-        cAlpha=getAlphaList(minAlpha,mA,sp,1)
-        A=getA(sp,R,cAlpha)
-        AT=np.transpose(copy.deepcopy(A))
-        LU=LUDecomp(np.dot(AT,A))
-        for d in range(sp,minNT,-1):
-          for f in range(d,minNT,-1):
-            if noImprove==2:
-              noImprove=0
-              break
-            cWght=4*sp+5*d+7*f
-            if cWght>fWght:
-              continue
-            cA,cRMSE=getCoeffs(LU,A,AT,bMat,lvals,cAlpha,sp,d,f,0,numls)
-            if fRMSE==0.0 or checkLess(cRMSE,fRMSE):
-              fWght=cWght
-              fRMSE=copy.deepcopy(cRMSE)
-              fA=copy.deepcopy(cA)
-              fAlpha=copy.deepcopy(cAlpha)
-              nT[0]=sp
-              nT[1]=sp
-              nT[2]=d
-              nT[3]=f
-              noImprove=0
-              impCount+=1
-            else:
-              noImprove+=1
-            itNum+=1
-
-  elif maxl==2:
-    print("Max. l Quantum Num.: d-type")
-    print_line(1)
-    for mA in range(lB,uB,stepSize):
-      printProgress(lB,uB,mA,stepSize)
-      for sp in range(maxNT,minNT,-1):
-        cAlpha=getAlphaList(minAlpha,mA,sp,1)
-        A=getA(sp,R,cAlpha)
-        AT=np.transpose(copy.deepcopy(A))
-        LU=LUDecomp(np.dot(AT,A))
-        for d in range(sp,minNT,-1):
-          if noImprove==2:
-            noImprove=0
-            break
-          cWght=4*sp+5*d
-          if cWght>fWght:
-            continue
-          cA,cRMSE=getCoeffs(LU,A,AT,bMat,lvals,cAlpha,sp,d,0,0,numls)
-          if fRMSE==0.0 or checkLess(cRMSE,fRMSE):
-            fWght=cWght
-            fRMSE=copy.deepcopy(cRMSE)
-            fA=copy.deepcopy(cA)
-            fAlpha=copy.deepcopy(cAlpha)
-            nT[0]=sp
-            nT[1]=sp
-            nT[2]=d
-            noImprove=0
-            impCount+=1
-          else:
-            noImprove+=1
-          itNum+=1
-
-  elif maxl==1 or maxl==0:
-    print("Max. l Quantum Num.: s- or p-type")
-    print_line(1)
-    for mA in range(lB,uB,stepSize):
-      printProgress(lB,uB,mA,stepSize)
-      for sp in range(maxNT,minNT,-1):
-        cAlpha=getAlphaList(minAlpha,mA,sp,1)
-        A=getA(sp,R,cAlpha)
-        AT=np.transpose(copy.deepcopy(A))
-        LU=LUDecomp(np.dot(AT,A))
-        cWght=4*sp
-        if cWght>fWght:
-          continue
-        cA,cRMSE=getCoeffs(LU,A,AT,bMat,lvals,cAlpha,sp,0,0,0,numls)
-
-        if fRMSE==0.0 or checkLess(cRMSE,fRMSE):
-          fWght=cWght
-          fRMSE=copy.deepcopy(cRMSE)
-          fA=copy.deepcopy(cA)
-          fAlpha=copy.deepcopy(cAlpha)
-          nT[0]=sp
-          nT[1]=sp
-          impCount+=1
-        itNum+=1
-
-  print_line(1)
-  print("Max. Alpha\ts\tp\td\tf\tg\tWeight")
-  printStats(fAlpha[len(fAlpha)-1],nT,fWght)
-  print("Total Iterations: "+str(itNum))
-  print("Sweeping Complete: ("+str(time.time()-sweeptime)+")")
-  print_line(1)
-  return fA,fAlpha,fRMSE,nT
+  if v == 0.0:
+    return '0.00000000E+00'.rjust(18)
+  sign = '-' if v < 0 else ''
+  av = abs(v)
+  exp = int(math.floor(math.log10(av))) + 1
+  mantissa = av / (10.0 ** exp)
+  mstr = f'{mantissa:.8f}'
+  # Guard against rounding producing mantissa >= 1.0
+  if float(mstr) >= 1.0:
+    exp += 1
+    mantissa /= 10.0
+    mstr = f'{mantissa:.8f}'
+  return f'{sign}{mstr}E{exp:+03d}'.rjust(18)
 
 
 #==========================
-# OPERATIONAL  FUNCTIONS:      
+# FITTING FUNCTIONS:
 #==========================
 
-
-def graphFunctions(orbitals,lvalues,coeffs,alphas):
-  q=open('equations.dat','w')
-  temptext=""
-  for i in range(len(orbitals)):
-    temptext=str(orbitals[i])+' '
-    for j in range(len(alphas)):
-      temptext = temptext + "((" + str('%.8E'%coeffs[j,i]) + ")*(x**(" + \
-          str(lvalues[i]) + "))*e**(-(" + str('%.8E'%alphas[j]) + ")*x**2))"
-      if j == (len(alphas)-1):
-        temptext=temptext + '\n'
-      else:
-        temptext=temptext + '+'
-    q.write(temptext)
-    q.write('\n')
-
-  q.close()
-
-
-def writeFunctions(orbitals,lvalues,coeffs,alphas):
-  h=open('orbitals.txt','a')
-  h.write('Exponential Alphas\n')
-  for i in range(0,len(alphas)):
-    h.write(str('%.8E'%alphas[i]))
-    if (i+1)%4==0 and i+1>=4:
-      h.write('\n')
-    else:
-      h.write('\t')
-
-  h.write('\n\n')
-
-  h.write("Orbitals\n")
-  for i in range(len(orbitals)-1,-1,-1):
-    h.write(str(orbitals[i])+'\n')
-    for j in range(len(alphas)):
-      h.write(str('%.8E'%coeffs[j,i]))
-      if ((j+1)%4==0 and j+1>=4) or j+1==len(alphas):
-        h.write('\n')
-      else:
-        h.write('\t')
-  h.close()
-
-
-
-
-# The function returns a geometic series of exponental
-#  coefficients.
 def get_alpha_list(amin,amax,n,mode):
+  """Generate a geometric series of Gaussian exponents from amin to amax.
 
+  Parameters
+  ----------
+  amin : float
+      Minimum exponent value.
+  amax : float
+      Maximum exponent value.
+  n : int
+      Number of terms in the series.
+  mode : str
+      Series type; currently only 'geometric' is supported.
+
+  Returns
+  -------
+  list of float
+      Exponent values: amin * (amax/amin)^((i-1)/(n-1)) for i=1..n.
+  """
   a=[]
-  # If the mode passed is geometric, create a list from
-  #  amin to amax with n number of terms.
   if mode=='geometric':
     for i in range(1,n+1):
       r=amin*((float(amax/amin))**((i-1.0)/(n-1.0)))
@@ -762,9 +403,23 @@ def get_alpha_list(amin,amax,n,mode):
     return a
 
 
-# Function to create A matrix for AX=B
 def get_A(numS,radialGrid,GCoeffs):
+  """Construct the A matrix for least squares: A[i,j] = exp(-alpha_j * r_i^2).
 
+  Parameters
+  ----------
+  numS : int
+      Number of Gaussian terms (columns).
+  radialGrid : list of float
+      Radial grid points (rows).
+  GCoeffs : list of float
+      Gaussian exponent values (alphas).
+
+  Returns
+  -------
+  numpy.ndarray
+      Matrix of shape (len(radialGrid), numS).
+  """
   AMAT=np.zeros((len(radialGrid),numS),dtype="d")
 
   for j in range(numS):
@@ -774,10 +429,24 @@ def get_A(numS,radialGrid,GCoeffs):
   return AMAT
 
 
-# Function to do a pivotless LU decomposition for scipy's
-#  lu_solve routine.
 def pivotless_lu_decomp(A):
+  """Pivotless LU decomposition returning L+U combined matrix.
 
+  Performs Gaussian elimination without pivoting.  The result is a single
+  matrix containing both L (lower triangle, unit diagonal implicit) and U
+  (upper triangle), suitable for use with scipy.linalg.lu_solve when
+  paired with a trivial pivot vector.
+
+  Parameters
+  ----------
+  A : numpy.ndarray
+      Square matrix to decompose.
+
+  Returns
+  -------
+  numpy.ndarray
+      Combined L+U matrix.
+  """
   dim=np.shape(A)[0]
 
   L=np.zeros((dim,dim),dtype="d")
@@ -800,12 +469,29 @@ def pivotless_lu_decomp(A):
 
 
 class orbital_fitting:
+  """Gaussian fitting of Grasp2K relativistic orbitals to OLCAO basis functions.
 
-  def __init__(self):
-    self.apply_shrink=False
-    self.shrink_critical_radius=0.0
-    self.shrink_sigma=0.0
-    self.number_components=0
+  Performs a parameter sweep over the maximum Gaussian exponent and number of
+  terms per angular momentum channel (s/p, d, f, g) to find the expansion
+  that minimizes the total weighted RMSE.
+
+  After fitting, results are stored as:
+
+  - ``best_coefficients``: numpy matrix of fitted Gaussian coefficients
+  - ``best_alphas``: list of Gaussian exponent values
+  - ``best_num_terms``: [sp, sp, d, f, g] term counts
+  - ``best_orbital_RMSEs``: per-orbital RMSE values
+  - ``best_total_RMSE``: total weighted RMSE
+  """
+
+  def __init__(self, settings):
+    self.apply_shrink=settings.apply_shrink
+    self.shrink_critical_radius=settings.shrink_rc
+    self.shrink_sigma=settings.shrink_sig
+    self.number_components=settings.number_components
+
+    self.element_data = ElementData()
+    self.element_data.init_element_data()
 
     self.grasp_description=org_radwavefn.atomic_system('isodata', 'rwfn.out')
 
@@ -824,7 +510,7 @@ class orbital_fitting:
     self.number_terms=[0,0,0,0,0]
     self.fitted_max_alpha=0
 
-    self.orb_fit_tolerance=10**-3
+    self.orb_fit_tolerance=settings.tolerance
     self.alpha_step_size=int(self.max_alpha*0.001)
 
     self.loop_max_alpha=np.arange(0.3*self.max_alpha,
@@ -833,35 +519,12 @@ class orbital_fitting:
     self.max_num_terms=25
     self.min_num_terms=7
 
-
-  def parse_input(self):
-
-    parse_time=time.time()
-
-    if len(sys.argv)==1:
-      print("No options were selected. Please try again or -help.\n")
-      sys.exit()
-
-    else:
-      #Check for help
-      if "-help" in sys.argv:
-        print_help()
-        if sys.argv[1]=="-help":
-          print_help()
-          sys.exit()
-      #Check for -comp 1/2/4
-      if '-comp' in sys.argv:
-        self.number_components=int(sys.argv[int(sys.argv.index('-comp'))+1])
-
-      #Check for -shrink rc sig
-      if '-shrink' in sys.argv:
-        self.shrink_critical_radius=float(sys.argv[int(sys.argv.index('-shrink'))+1])
-        self.shrink_sigma=float(sys.argv[int(sys.argv.index('-shrink'))+2])
-        self.apply_shrink=True
-
-    print("  Parsing Input Complete:\t" +
-          str('%.8E'%(time.time()-parse_time)) + "s. / " +
-          str('%.8E'%(time.time()-start)) + "s.")
+    # Best-fit results (populated by fitting_procedure)
+    self.best_coefficients = None
+    self.best_alphas = []
+    self.best_num_terms = [0,0,0,0,0]
+    self.best_orbital_RMSEs = []
+    self.best_total_RMSE = 0.0
 
 
   def organize_orbitals(self):
@@ -875,7 +538,7 @@ class orbital_fitting:
       self.grasp_description.orbital_info.four_component()
 
     if self.apply_shrink:
-      shrinking_time=time.time()      
+      shrinking_time=time.time()
       self.grasp_description.orbital_info.apply_shrinking_function(self.shrink_critical_radius,self.shrink_sigma)
       print("  Shrinking Orbitals Complete:\t"+str('%.8E'%(time.time()-shrinking_time))+"s. / "+str('%.8E'%(time.time()-start))+"s.")
     else:
@@ -889,16 +552,38 @@ class orbital_fitting:
   def setup_calculation(self):
     calc_time=time.time()
     print(' Calculation Setup:')
-    self.parse_input()
     self.organize_orbitals()
     print(" Calculation Setup Complete:\t"+str('%.8E'%(time.time()-calc_time))+"s. / "+str('%.8E'%(time.time()-start))+"s.")
 
 
-
-
   def get_prefactor_coefficients(self,LU_matrix,A_matrix,AT_matrix,B_matrix,num_terms,alpha_list):
-    prefactor_time=time.time()
+    """Solve the minimum-norm least squares system A^T A x = A^T B via LU.
 
+    Each column of B is one orbital's function values on the radial grid.
+    The system is solved block-wise: orbitals sharing the same l use the
+    same number of Gaussian terms (and thus the same LU sub-block).
+
+    Parameters
+    ----------
+    LU_matrix : numpy.ndarray
+        LU decomposition of A^T A.
+    A_matrix : numpy.ndarray
+        The A matrix (Gaussians evaluated on the grid).
+    AT_matrix : numpy.ndarray
+        Transpose of A.
+    B_matrix : numpy.ndarray
+        Matrix of orbital function values (columns = orbitals).
+    num_terms : list of int
+        [sp, sp, d, f, g] number of terms per l-channel.
+    alpha_list : list of float
+        Gaussian exponent values.
+
+    Returns
+    -------
+    tuple
+        (coefficient_matrix, total_RMSE, per_orbital_RMSE, elapsed_time)
+    """
+    prefactor_time=time.time()
 
     alphas=copy.deepcopy(alpha_list)
     A=copy.deepcopy(A_matrix)
@@ -909,13 +594,9 @@ class orbital_fitting:
 
     RMSE=[]
 
-
-    #print(self.grasp_description.orbital_info.fitting_lvals)
-
     function_number_terms=[]
 
     for l in self.grasp_description.orbital_info.fitting_l_list:
-
       function_number_terms.append(num_terms[l])
 
     AT_B=np.zeros((len(alphas),len(function_number_terms)),dtype="d")
@@ -924,9 +605,7 @@ class orbital_fitting:
       for i in range(function_number_terms[j]):
         AT_B[i,j]=np.dot(AT[i,:],functions[:,j])
 
-
-
-    coefficient_matrix=np.zeros((len(alphas),len(function_number_terms)),dtype="d") 
+    coefficient_matrix=np.zeros((len(alphas),len(function_number_terms)),dtype="d")
 
     for i in range(len(num_orbitals)-1,-1,-1):
       if num_orbitals[i]!=0:
@@ -938,20 +617,8 @@ class orbital_fitting:
         coefficient_matrix[:x,y1:y2]=scipy.linalg.lu_solve((ATA[:x,:x],PIV),AT_B[:x,y1:y2])
 
     RMSE=[0]*len(function_number_terms)
-    #testMat=np.dot(amat,coeffs)
     RM=np.dot(A,coefficient_matrix)-functions
 
-    
-    '''
-    with open('RM_matrix.txt','a') as f:
-      matshape=np.shape(RM)
-
-      for i in range(matshape[0]):
-        for j in range(matshape[1]):
-          f.write(str('%.1E'%RM[i,j])+" ")
-        f.write('\n')
-      f.write('\n\n')
-    '''
     for j in range(len(function_number_terms)):
       for i in range(num_terms[0]):
         RMSE[j]+=RM[i,j]**2.0
@@ -962,338 +629,432 @@ class orbital_fitting:
     for i in range(len(RMSE)):
       total_RMSE+=self.weight_factors[self.grasp_description.orbital_info.fitting_l_list[i]]*RMSE[i]
 
-    #print('%.8E'%total_RMSE)
-
     return (coefficient_matrix,total_RMSE,RMSE,time.time()-prefactor_time)
 
 
+  def _generate_term_sweeps(self, sp, fitting_max_l):
+    """Generate all valid (d, f, g) term count combinations.
+
+    Yields tuples of (d, f, g) where each is between sp (or previous
+    channel) and min_num_terms, maintaining d >= f >= g.  For lower
+    fitting_max_l, unused channels yield 0.
+
+    Parameters
+    ----------
+    sp : int
+        Number of terms for s and p channels.
+    fitting_max_l : int
+        Maximum angular momentum to fit (0=s, 1=p, 2=d, 3=f, 4=g).
+
+    Yields
+    ------
+    tuple of (int, int, int)
+        (d_terms, f_terms, g_terms)
+    """
+    if fitting_max_l <= 1:
+      yield (0, 0, 0)
+    elif fitting_max_l == 2:
+      for d in range(sp, self.min_num_terms, -1):
+        yield (d, 0, 0)
+    elif fitting_max_l == 3:
+      for d in range(sp, self.min_num_terms, -1):
+        for f in range(d, self.min_num_terms, -1):
+          yield (d, f, 0)
+    elif fitting_max_l >= 4:
+      for d in range(sp, self.min_num_terms, -1):
+        for f in range(d, self.min_num_terms, -1):
+          for g in range(f, self.min_num_terms, -1):
+            yield (d, f, g)
 
 
   def fitting_procedure(self):
+    """Sweep over max alpha and term counts to find optimal Gaussian expansion.
+
+    Performs a parameter sweep over:
+    1. Maximum alpha in the geometric series (0.3x to 20x of reference max_alpha)
+    2. Number of terms for s/p channel (shared), then d, f, g channels
+
+    The weight function penalizes more terms in higher-l channels:
+    weight = 4*sp + 5*d + 7*f + 9*g.  Early-exit after 5 non-improving
+    iterations per alpha value.
+
+    Results are stored in self.best_coefficients, self.best_alphas,
+    self.best_num_terms, self.best_orbital_RMSEs, and self.best_total_RMSE.
+    """
     sweep_time=time.time()
 
     best_weight=self.weight
-    current_weight=0.0
-
     best_RMSE=self.RMSE
-    current_RMSE=0.0
-    total_RMSE=0.0
-    
-    convergence_reached=False
-
-    current_num_terms=[]
-    best_num_terms=[]
-
     orbital_RMSEs=[]
 
-    itct=0
+    fitting_max_l = self.grasp_description.orbital_info.fitting_max_l
+
+    # Channel display names
+    channel_names = ['s', 'p', 'd', 'f', 'g']
+    active_channels = channel_names[:fitting_max_l + 1]
 
     print_line(1)
     print(' Fitting Procedure:')
     print_line(1)
-
-    if self.grasp_description.orbital_info.fitting_max_l==4:
-      print('Fitted Orbitals: s,p,d,f,g')
-
-    elif self.grasp_description.orbital_info.fitting_max_l==3:
-      print('Fitted Orbitals: s,p,d,f')
-      print('Number of Orbitals:'
-            + " s:" + str(self.grasp_description.orbital_info.fitting_lvals[0])
-            + " p:" + str(self.grasp_description.orbital_info.fitting_lvals[1])
-            + " d:" + str(self.grasp_description.orbital_info.fitting_lvals[2])
-            + " f:" + str(self.grasp_description.orbital_info.fitting_lvals[3]))
-
-      while(not convergence_reached):
-        for maximum_alpha in self.loop_max_alpha:
-
-          itct=0
-          for sp in range(self.max_num_terms,self.min_num_terms,-1):
-
-
-            fit_loop_time=time.time()
-
-            if itct>=5:
-              continue
-
-            alphas=get_alpha_list(self.min_alpha,maximum_alpha,sp,'geometric')
-            A=get_A(sp, self.grasp_description.orbital_info.interpolated_radial_grid,alphas)
-            AT=np.transpose(A)
-            ATA=np.dot(AT,A)
-            LU=pivotless_lu_decomp(ATA)
-            B=np.transpose(np.matrix(copy.deepcopy(
-                self.grasp_description.orbital_info.fitting_functions)))
-
-            for d in range(sp,self.min_num_terms,-1):
-              if itct>=5:
-                break
-
-              for f in range(d,self.min_num_terms,-1):
-                if itct>=5:
-                  break
-                
-
-                
-
-                current_weight=7*f+5*d+4*sp
-
-                if current_weight > best_weight:
-                  continue
-
-                current_num_terms=[sp,sp,d,f,0]
-
-                coefficients,total_RMSE,current_RMSE,fit_loop_time = \
-                        self.get_prefactor_coefficients(LU,A,AT,B,current_num_terms,alphas)
-
-
-                orbital_RMSEs.append(current_RMSE)
-
-                
-                if total_RMSE < best_RMSE or abs(total_RMSE - best_RMSE) <= self.orb_fit_tolerance:
-                  if round((maximum_alpha/max(self.loop_max_alpha))*100,2)%20==0:
-                    print(str('%.2f'%((maximum_alpha/max(self.loop_max_alpha))*100))+
-                          '%',maximum_alpha,max(self.loop_max_alpha),sp,d,f,'%.5E'%total_RMSE)
-                  best_weight=current_weight
-                  best_RMSE=total_RMSE
-                  self.fitted_max_alpha=maximum_alpha
-                  self.number_terms=current_num_terms
-                  itct=0
-                else:
-                  itct+=1
-
-                
-                #'min_alpha','max_alpha','num_terms','num_s','num_p','num_d','num_f','num_g','weight','RMSE','time'
-
-
-
-                self.fits.append([0.12,maximum_alpha,sp,sp,sp,d,f,0,
-                                  current_weight,total_RMSE,current_RMSE,
-                                  time.time()-fit_loop_time])
-
-
-        orb_frame_RMSE=pd.DataFrame(data=orbital_RMSEs,
-            columns=self.grasp_description.orbital_info.fitting_orbital_names)
-        orb_frame_RMSE.to_csv('RMSE.csv',index=False)
-        self.fitting_results=pd.DataFrame(data=self.fits,
-                                          columns=self.fitting_columns)
-
-        fig=px.box(self.fitting_results, x="max_alpha", y="total_RMSE",
-                   color="weight",points="all")
-        fig.show()
-
-
-        print(self.fitting_results)
-        convergence_reached=True
-    elif self.grasp_description.orbital_info.fitting_max_l==2:
-      print('Fitted Orbitals: s,p,d')
-      print('Number of Orbitals:'
-            + " s:" + str(self.grasp_description.orbital_info.fitting_lvals[0])
-            + " p:" + str(self.grasp_description.orbital_info.fitting_lvals[1])
-            + " d:" + str(self.grasp_description.orbital_info.fitting_lvals[2])
-            + " f:" + str(self.grasp_description.orbital_info.fitting_lvals[3]))
-
-      while(not convergence_reached):
-        for maximum_alpha in self.loop_max_alpha:
-
-          itct=0
-          for sp in range(self.max_num_terms,self.min_num_terms,-1):
-
-
-            fit_loop_time=time.time()
-
-            if itct>=5:
-              continue
-
-            alphas=get_alpha_list(self.min_alpha,maximum_alpha,sp,'geometric')
-            A=get_A(sp, self.grasp_description.orbital_info.interpolated_radial_grid,alphas)
-            AT=np.transpose(A)
-            ATA=np.dot(AT,A)
-            LU=pivotless_lu_decomp(ATA)
-            B=np.transpose(np.matrix(copy.deepcopy(
-                self.grasp_description.orbital_info.fitting_functions)))
-
-            for d in range(sp,self.min_num_terms,-1):
-              if itct>=5:
-                break
-
-              current_weight = 5*d + 4*sp
-
-              if current_weight > best_weight:
-                continue
-
-              current_num_terms=[sp,sp,d,0,0]
-
-              coefficients,total_RMSE,current_RMSE, \
-                      fit_loop_time=self.get_prefactor_coefficients(
-                              LU,A,AT,B,current_num_terms,alphas)
-
-
-              orbital_RMSEs.append(current_RMSE)
-
-              
-              if total_RMSE < best_RMSE or abs(total_RMSE - best_RMSE) <= self.orb_fit_tolerance:
-                if round((maximum_alpha/max(self.loop_max_alpha))*100,2)%20==0:
-                  print(str('%.2f'%((maximum_alpha/max(self.loop_max_alpha))*100))+'%',
-                        maximum_alpha,max(self.loop_max_alpha),sp,d,'%.5E'%total_RMSE)
-                best_weight=current_weight
-                best_RMSE=total_RMSE
-                self.fitted_max_alpha=maximum_alpha
-                self.number_terms=current_num_terms
-                itct=0
-              else:
-                itct+=1
-
-              
-              #'min_alpha','max_alpha','num_terms','num_s','num_p','num_d','num_f','num_g','weight','RMSE','time'
-
-
-
-              self.fits.append([0.12,maximum_alpha,sp,sp,sp,d,0,0,
-                                current_weight,total_RMSE,current_RMSE,
-                                time.time()-fit_loop_time])
-
-
-        orb_frame_RMSE=pd.DataFrame(data=orbital_RMSEs,
-                columns=self.grasp_description.orbital_info.fitting_orbital_names)
-        orb_frame_RMSE.to_csv('RMSE.csv',index=False)
-        self.fitting_results=pd.DataFrame(data=self.fits,columns=self.fitting_columns)
-
-        print ("coefficients")
-        print (coefficients)
-        print ("alphas")
-        print (alphas)
-        #fig=px.box(self.fitting_results, x="max_alpha", y="total_RMSE", color="weight",points="all")
-        #fig.show()
-
-
-        print(self.fitting_results)
-        convergence_reached=True
-    elif self.grasp_description.orbital_info.fitting_max_l==1 or \
-            self.grasp_description.orbital_info.fitting_max_l==0:
-      print('Fitted Orbitals: s,p')
-      print('Number of Orbitals:'
-            + " s:" + str(self.grasp_description.orbital_info.fitting_lvals[0])
-            + " p:" + str(self.grasp_description.orbital_info.fitting_lvals[1])
-            + " d:" + str(self.grasp_description.orbital_info.fitting_lvals[2])
-            + " f:" + str(self.grasp_description.orbital_info.fitting_lvals[3]))
-
-      #print ("self.loop_max_alpha", self.loop_max_alpha)
-      while(not convergence_reached):
-        for maximum_alpha in self.loop_max_alpha:
-
-          #print("max_num_terms min_num_terms", self.max_num_terms, self.min_num_terms)
-          itct=0
-          for sp in range(self.max_num_terms,self.min_num_terms,-1):
-
-
-            fit_loop_time=time.time()
-
-            #print ("itct sp", itct, sp)
-            if itct>=5:
-              break
-
-            alphas=get_alpha_list(self.min_alpha,maximum_alpha,sp,'geometric')
-            A=get_A(sp, self.grasp_description.orbital_info.interpolated_radial_grid,alphas)
-            AT=np.transpose(A)
-            ATA=np.dot(AT,A)
-            LU=pivotless_lu_decomp(ATA)
-            B=np.transpose(np.matrix(copy.deepcopy(
-                self.grasp_description.orbital_info.fitting_functions)))
-
-            current_weight = 4*sp
-
-            if current_weight > best_weight:
-              continue
-
-            current_num_terms=[sp,sp,0,0,0]
-
-            coefficients,total_RMSE,current_RMSE, \
-                    fit_loop_time = self.get_prefactor_coefficients(
-                            LU,A,AT,B,current_num_terms,alphas)
-
-
-            orbital_RMSEs.append(current_RMSE)
-
-            #print("totRMSE bestRMSE fitTol", total_RMSE, best_RMSE, self.orb_fit_tolerance)
-            
-            if total_RMSE < best_RMSE or abs(total_RMSE - best_RMSE) <= self.orb_fit_tolerance:
-              #print ("maxAlpha maxLoopAlpha", maximum_alpha, max(self.loop_max_alpha))
-              if round((maximum_alpha/max(self.loop_max_alpha))*100,2)%20==0:
-                print(str('%.2f'%((maximum_alpha/max(self.loop_max_alpha))*100))+
-                      '%',maximum_alpha,max(self.loop_max_alpha),sp,'%.5E'%total_RMSE)
-              best_weight=current_weight
-              best_RMSE=total_RMSE
-              self.fitted_max_alpha=maximum_alpha
-              self.number_terms=current_num_terms
-              itct=0
-            else:
-              itct+=1
-
-           
-            #'min_alpha','max_alpha','num_terms','num_s','num_p','num_d','num_f','num_g','weight','RMSE','time'
-
-
-
-            self.fits.append([0.12,maximum_alpha,sp,sp,sp,0,0,0,
-                              current_weight,total_RMSE,current_RMSE,
-                              time.time()-fit_loop_time])
-
-
-        orb_frame_RMSE=pd.DataFrame(data=orbital_RMSEs,
-            columns=self.grasp_description.orbital_info.fitting_orbital_names)
-        orb_frame_RMSE.to_csv('RMSE.csv',index=False)
-        self.fitting_results=pd.DataFrame(data=self.fits,
-                                          columns=self.fitting_columns)
-
-        print ("coefficients")
-        print (coefficients)
-        print ("alphas")
-        print (alphas)
-        #fig=px.box(self.fitting_results, x="max_alpha", y="total_RMSE", color="weight",points="all")
-        #fig.show()
-
-
-        print(self.fitting_results)
-        convergence_reached=True
-
+    print(f'Fitted Orbitals: {",".join(active_channels)}')
+    print('Number of Orbitals:'
+          + ''.join(f' {channel_names[l]}:{self.grasp_description.orbital_info.fitting_lvals[l]}'
+                    for l in range(min(fitting_max_l + 1, 5))))
+
+    best_coefficients = None
+    best_alphas = []
+
+    for maximum_alpha in self.loop_max_alpha:
+
+      itct=0
+      for sp in range(self.max_num_terms,self.min_num_terms,-1):
+
+        fit_loop_time=time.time()
+
+        if itct>=5:
+          # For s/p-only (fitting_max_l<=1) the original code used 'break'.
+          # For higher l the original used 'continue' on sp but 'break' on
+          # inner loops.  Using 'break' here is equivalent since itct stays
+          # >= 5 for all remaining sp values anyway.
+          break
+
+        alphas=get_alpha_list(self.min_alpha,maximum_alpha,sp,'geometric')
+        A=get_A(sp, self.grasp_description.orbital_info.interpolated_radial_grid,alphas)
+        AT=np.transpose(A)
+        ATA=np.dot(AT,A)
+        LU=pivotless_lu_decomp(ATA)
+        B=np.transpose(np.array(copy.deepcopy(
+            self.grasp_description.orbital_info.fitting_functions)))
+
+        for d, f, g in self._generate_term_sweeps(sp, fitting_max_l):
+          if itct>=5:
+            break
+
+          current_weight=4*sp+5*d+7*f+9*g
+
+          if current_weight > best_weight:
+            continue
+
+          current_num_terms=[sp,sp,d,f,g]
+
+          coefficients,total_RMSE,current_RMSE,fit_loop_time = \
+                  self.get_prefactor_coefficients(LU,A,AT,B,current_num_terms,alphas)
+
+          orbital_RMSEs.append(current_RMSE)
+
+          if total_RMSE < best_RMSE or abs(total_RMSE - best_RMSE) <= self.orb_fit_tolerance:
+            if round((maximum_alpha/max(self.loop_max_alpha))*100,2)%20==0:
+              progress_args = [str('%.2f'%((maximum_alpha/max(self.loop_max_alpha))*100))+'%',
+                    maximum_alpha, max(self.loop_max_alpha), sp]
+              if fitting_max_l >= 2:
+                progress_args.append(d)
+              if fitting_max_l >= 3:
+                progress_args.append(f)
+              if fitting_max_l >= 4:
+                progress_args.append(g)
+              progress_args.append('%.5E'%total_RMSE)
+              print(*progress_args)
+            best_weight=current_weight
+            best_RMSE=total_RMSE
+            self.fitted_max_alpha=maximum_alpha
+            self.number_terms=current_num_terms
+            best_coefficients=coefficients
+            best_alphas=copy.deepcopy(alphas)
+            itct=0
+          else:
+            itct+=1
+
+          self.fits.append([0.12,maximum_alpha,sp,sp,sp,d,f,g,
+                            current_weight,total_RMSE,current_RMSE,
+                            time.time()-fit_loop_time])
+
+    # Store best results
+    self.best_coefficients = best_coefficients
+    self.best_alphas = best_alphas
+    self.best_num_terms = self.number_terms
+    self.best_orbital_RMSEs = orbital_RMSEs[-1] if orbital_RMSEs else []
+    self.best_total_RMSE = best_RMSE
+
+    # Write RMSE data
+    if orbital_RMSEs:
+      orb_frame_RMSE=pd.DataFrame(data=orbital_RMSEs,
+          columns=self.grasp_description.orbital_info.fitting_orbital_names)
+      orb_frame_RMSE.insert(0, 'iteration', range(1, len(orb_frame_RMSE) + 1))
+      orb_frame_RMSE.to_csv('RMSE.plot', index=False, sep=' ')
+
+    self.fitting_results=pd.DataFrame(data=self.fits,
+                                      columns=self.fitting_columns)
+
+    self.fitting_results.to_csv('fitting_results.plot', index=False, sep=' ')
+
+    print(self.fitting_results.describe())
+
+    if best_coefficients is not None:
+      print("coefficients")
+      print(best_coefficients)
+      print("alphas")
+      print(best_alphas)
 
     print(" Fitting Orbitals Complete:\t"+str('%.8E'%(time.time()-sweep_time))+"s. / "+str('%.8E'%(time.time()-start))+"s.")
 
 
+  #==========================
+  # OLCAO OUTPUT WRITER:
+  #==========================
 
+  def _parse_orbital_info(self):
+    """Parse fitting results into structured orbital metadata.
+
+    Returns a list of dicts sorted by (l ascending, n ascending) to match
+    the olcao.dat orbital ordering used by the contract program.  Each
+    dict has keys: 'name', 'n', 'l', 'coeff_index'.
+
+    Returns
+    -------
+    list of dict
+    """
+    orbitals = []
+    names = self.grasp_description.orbital_info.fitting_orbital_names
+    l_list = self.grasp_description.orbital_info.fitting_l_list
+
+    for idx, (name, l) in enumerate(zip(names, l_list)):
+      # Names are like "1s", "2p", "3d", "10s" — everything up to the
+      # last character is n, the last character is the l symbol.
+      n = int(name[:-1])
+      orbitals.append({'name': name, 'n': n, 'l': l, 'coeff_index': idx})
+
+    orbitals.sort(key=lambda o: (o['l'], o['n']))
+    return orbitals
+
+
+  def _classify_orbitals(self, orbitals, Z):
+    """Classify orbitals as core or valence and assign basis codes.
+
+    Uses element_data core_orbitals[Z] to determine which orbitals are
+    core (basisCode=1, present in all basis sets) and which are valence.
+    Valence orbitals are assigned basis codes 1 (MB), 2 (FB), or 3 (EB)
+    based on element_data vale_orbitals counts.
+
+    Parameters
+    ----------
+    orbitals : list of dict
+        Sorted orbital info from _parse_orbital_info.
+    Z : int
+        Atomic number.
+
+    Returns
+    -------
+    tuple of (list of dict, list of dict)
+        (core_orbitals, valence_orbitals), each with added 'basis_code'.
+    """
+    ed = self.element_data
+    core_counts = ed.core_orbitals[Z]  # [n_s, n_p, n_d, n_f]
+
+    l_seen = {}
+    core_orbs = []
+    vale_orbs = []
+
+    for orb in orbitals:
+      l = orb['l']
+      l_seen[l] = l_seen.get(l, 0) + 1
+
+      if l <= 3 and l_seen[l] <= core_counts[l]:
+        orb['basis_code'] = 1
+        core_orbs.append(orb)
+      else:
+        # Determine basis code from vale_orbitals counts
+        vale_idx = l_seen[l] - (core_counts[l] if l <= 3 else 0)
+        mb = ed.vale_orbitals[1][Z][l] if l <= ed.max_qn_l else 0
+        fb = ed.vale_orbitals[2][Z][l] if l <= ed.max_qn_l else 0
+        if vale_idx <= mb:
+          orb['basis_code'] = 1
+        elif vale_idx <= mb + fb:
+          orb['basis_code'] = 2
+        else:
+          orb['basis_code'] = 3
+        vale_orbs.append(orb)
+
+    return core_orbs, vale_orbs
+
+
+  def write_olcao_atom_type(self, f):
+    """Write the OLCAO atom type section to a file object.
+
+    Writes NUM_ATOM_TYPES, ATOM_TYPE_ID, ATOM_TYPE_LABEL, NUM_ALPHA_S_P_D_F,
+    ALPHAS, core radial functions, and valence radial functions in the format
+    expected by atomicTypes.f90.  Quantum number encoding follows
+    contract/printResults.f90: QN_2j = 2*l (non-relativistic/single-component),
+    numStates = (2l+1)*2, componentIndex = 1.
+
+    Parameters
+    ----------
+    f : file-like object
+        Open file to write to.
+    """
+    Z = self.grasp_description.atomic_info.atomic_number
+    ed = self.element_data
+    elem_name = ed.element_names[Z]
+    num_terms = self.best_num_terms  # [sp, sp, d, f, g]
+    alphas = self.best_alphas
+
+    orbitals = self._parse_orbital_info()
+    core_orbs, vale_orbs = self._classify_orbitals(orbitals, Z)
+
+    # Header
+    f.write("NUM_ATOM_TYPES\n")
+    f.write("1    \n")
+    f.write("ATOM_TYPE_ID__SEQUENTIAL_NUMBER\n")
+    f.write("1     1     1         1\n")
+    f.write("ATOM_TYPE_LABEL\n")
+    f.write(f"{elem_name}1_1\n")
+
+    # Alpha counts: s, p, d, f (drop g; lAngMomCount=4 in Fortran)
+    f.write("NUM_ALPHA_S_P_D_F\n")
+    f.write(f"{num_terms[0]:>8}{num_terms[1]:>8}{num_terms[2]:>8}{num_terms[3]:>8}\n")
+
+    # Alphas (4 per line, Fortran E18.8 format)
+    f.write("ALPHAS\n")
+    for i in range(0, len(alphas), 4):
+      chunk = alphas[i:i+4]
+      f.write("".join(fortran_e(a) for a in chunk) + "\n")
+
+    # Core radial functions
+    nc = len(core_orbs)
+    f.write("NUM_CORE_RADIAL_FNS\n")
+    f.write(f"{nc:>8}{nc:>8}{nc:>8}\n")
+
+    if nc > 0:
+      f.write("NL_RADIAL_FUNCTIONS\n")
+      for orb in core_orbs:
+        n, l = orb['n'], orb['l']
+        f.write(f"{1:>8}{orb['basis_code']:>8}\n")
+        f.write(f"{n:>8}{l:>8}{2*l:>8}{(2*l+1)*2:>8}{1:>8}\n")
+        nc_l = num_terms[l]
+        idx = orb['coeff_index']
+        coeffs = [float(self.best_coefficients[j, idx]) for j in range(nc_l)]
+        for ci in range(0, len(coeffs), 4):
+          chunk = coeffs[ci:ci+4]
+          f.write("".join(fortran_e(c) for c in chunk) + "\n")
+
+    # Valence radial functions (cumulative counts per basis level)
+    mb_vale = sum(1 for o in vale_orbs if o['basis_code'] <= 1)
+    fb_vale = sum(1 for o in vale_orbs if o['basis_code'] <= 2)
+    eb_vale = len(vale_orbs)
+    f.write("NUM_VALE_RADIAL_FNS\n")
+    f.write(f"{mb_vale:>8}{fb_vale:>8}{eb_vale:>8}\n")
+
+    if eb_vale > 0:
+      f.write("NL_RADIAL_FUNCTIONS\n")
+      for orb in vale_orbs:
+        n, l = orb['n'], orb['l']
+        f.write(f"{1:>8}{orb['basis_code']:>8}\n")
+        f.write(f"{n:>8}{l:>8}{2*l:>8}{(2*l+1)*2:>8}{1:>8}\n")
+        nc_l = num_terms[l]
+        idx = orb['coeff_index']
+        coeffs = [float(self.best_coefficients[j, idx]) for j in range(nc_l)]
+        for ci in range(0, len(coeffs), 4):
+          chunk = coeffs[ci:ci+4]
+          f.write("".join(fortran_e(c) for c in chunk) + "\n")
+
+
+  def write_olcao_pot_type(self, f):
+    """Write the OLCAO potential type section to a file object.
+
+    Writes NUM_POTENTIAL_TYPES, POTENTIAL_TYPE_ID, POTENTIAL_TYPE_LABEL,
+    NUCLEAR_CHARGE__ALPHA, COVALENT_RADIUS, NUM_ALPHAS, and ALPHAS in the
+    format expected by potTypes.f90.  The nuclear alpha is always 20.0
+    (standard OLCAO convention).  Potential alpha range and count come from
+    element_data (num_terms_pot, min_term_pot, max_term_pot).
+
+    Parameters
+    ----------
+    f : file-like object
+        Open file to write to.
+    """
+    Z = self.grasp_description.atomic_info.atomic_number
+    ed = self.element_data
+    elem_name = ed.element_names[Z]
+
+    f.write("NUM_POTENTIAL_TYPES\n")
+    f.write("1    \n")
+    f.write("POTENTIAL_TYPE_ID__SEQUENTIAL_NUMBER\n")
+    f.write("1     1     1         1\n")
+    f.write("POTENTIAL_TYPE_LABEL\n")
+    f.write(f"{elem_name}1_1\n")
+    f.write("NUCLEAR_CHARGE__ALPHA\n")
+    f.write(f"{float(Z):f} {20.0:f}\n")
+    f.write("COVALENT_RADIUS\n")
+    f.write(f"{ed.coval_radii[Z]:f}\n")
+    f.write("NUM_ALPHAS\n")
+    f.write(f"{ed.num_terms_pot[Z]}\n")
+    f.write("ALPHAS\n")
+    f.write(f"{ed.min_term_pot[Z]:e} {ed.max_term_pot[Z]:e}\n")
+
+
+  def write_olcao_snippet(self, filename=None):
+    """Write combined atom type + potential type sections.
+
+    This is the primary output method: it produces a file containing the
+    atomic basis function and potential type data in the format read by
+    OLCAO's atomicTypes.f90 and potTypes.f90.
+
+    Parameters
+    ----------
+    filename : str, optional
+        Output file path.  If None, writes to stdout.
+
+    Raises
+    ------
+    RuntimeError
+        If called before fitting_procedure has completed.
+    """
+    if self.best_coefficients is None:
+      raise RuntimeError(
+          "No fitting results available. Run fitting_procedure first.")
+
+    if filename:
+      with open(filename, 'w') as f:
+        self.write_olcao_atom_type(f)
+        self.write_olcao_pot_type(f)
+      print(f"  OLCAO snippet written to {filename}")
+    else:
+      self.write_olcao_atom_type(sys.stdout)
+      self.write_olcao_pot_type(sys.stdout)
 
 
 #==========================
-# PROGRAM OPERATIONS:      
+# PROGRAM OPERATIONS:
 #==========================
 
-if __name__=="__main__":
-  print_line(1)
-  print_callout("\t\tI N T E R F I T    F I T T I N G    P R O G R A M")
-  print_line(1)
+def main():
+
+    # Get script settings from a combination of the resource control file
+    #   and parameters given by the user on the command line.
+    settings = ScriptSettings()
+
+    print_line(1)
+    print_callout("\t\tI N T E R F I T    F I T T I N G    P R O G R A M")
+    print_line(1)
+
+    # Start executing the main activities of the program.
+    element_system=orbital_fitting(settings)
+
+    element_system.setup_calculation()
+
+    element_system.fitting_procedure()
+
+    element_system.write_olcao_snippet('waveFn.dat')
+
+    # Finalize the program activities and quit.
+    print_callout("Total Time: "+str('%.8E'%(time.time()-start))+"s.")
+    print_line(1)
+    print_line(1)
 
 
-  element_system=orbital_fitting()
-
-  element_system.setup_calculation()
-
-  element_system.fitting_procedure()
-  
-  '''
-  # Set up the orbitals for calculation
-  radialGrid,functionVals,orbList,lCounts,numLV=setUpCalc()
-
-  # Perform parameter sweep:
-  coeffVals,alphaList,RMSE,numTerms=doSweep(radialGrid,functionVals,orbList,lCounts,numLV)
-
-  # Print out the values
-  print ("Orbital\tl\tRMSE")
-  for i in range(len(orbList)):
-    print(str(orbList[i])+"\t"+str(lCounts[i])+"\t"+str("%.8E"%RMSE[i]))
-
-  graphFunctions(orbList,lCounts,coeffVals,alphaList)
-  writeFunctions(orbList,lCounts,coeffVals,alphaList)
-  '''
- 
-  print_callout("Total Time: "+str('%.8E'%(time.time()-start))+"s.")
-  print_line(1)
-  print_line(1)
+if __name__ == '__main__':
+    # Everything before this point was a subroutine definition or a request
+    #   to import information from external modules. Only now do we actually
+    #   start running the program. The purpose of this is to allow another
+    #   python program to import *this* script and call its functions
+    #   internally.
+    main()

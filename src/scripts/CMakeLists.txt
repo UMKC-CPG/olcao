@@ -8,6 +8,7 @@ ab2pf.py addAtoms appendCol atomPosDX
 batchChange batchClean batchSub bondAnalysis
 cif2skl collectSpectra condense
 dead-md.py dump2skl
+element_pct.py
 gaussOverlapRT
 getPlane graspElems.py
 hdf5Comp.py
