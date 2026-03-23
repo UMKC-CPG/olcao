@@ -47,7 +47,7 @@ from datetime import datetime
 
 
 # ------------------------------------------------------------------ #
-#                     File Name Components                            #
+#                     File Name Components                           #
 # ------------------------------------------------------------------ #
 
 class FileNames:

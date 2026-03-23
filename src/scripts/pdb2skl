@@ -10,7 +10,7 @@ sub printHelp
 #          mapping between the pdb file atoms and the skl atoms.
 #
 #USAGE:  pdb2skl [-i \$pdbInputFile] [-o \$sklOutputFile] [-m \$mapFile]
-#                 [-pdbtypes] [-help]
+#                [-b $buffer] [-pdbtypes][-help]
 #
 #The -i option is used to request that a specific input file be used for the
 #   conversion.  If this option is not given, then the default value for the
@@ -20,6 +20,8 @@ sub printHelp
 #   for the output file is skl.dat.
 #The -m option is used to request that the mapping between the pdb and skl
 #   files be stored in the file named \$mapFile.
+#The -b option allows the user to define the size of the buffer if the pdb
+#   file does not define a cell size. Default = 0 A.
 #The -pdbtypes option will require that the skl.dat file use the types as
 #   defined in the pdb file.  The default is to have no types assigned.
 #   
@@ -43,6 +45,7 @@ my $pdbTypes;
 my $pdbFile;
 my $sklFile;
 my $mapFile;
+my $buffer;
 
 # Set default values for various file names.
 &setDefaults;
@@ -71,6 +74,9 @@ sub setDefaults
    $sklFile  = "olcao.skl";
    $mapFile  = "skl2PDB.map";
 
+   # Assume a buffer of 0.
+   $buffer = 0;
+
    # Assign default behavior for types assignment.
    $pdbTypes = 0;
 }
@@ -85,20 +91,13 @@ sub parseCommandLine
    while ($number < scalar(@ARGV))
    {
       if ($ARGV[$number] eq "-i")
-      {
-         $pdbFile = $ARGV[$number+1];
-         $number++;
-      }
+         {$pdbFile = $ARGV[++$number];}
       elsif ($ARGV[$number] eq "-o")
-      {
-         $sklFile = $ARGV[$number+1];
-         $number++;
-      }
+         {$sklFile = $ARGV[++$number];}
       elsif ($ARGV[$number] eq "-m")
-      {
-         $mapFile = $ARGV[$number+1];
-         $number++;
-      }
+         {$mapFile = $ARGV[++$number];}
+      elsif ($ARGV[$number] eq "-b")
+         {$buffer = $ARGV[++$number];}
       elsif ($ARGV[$number] eq "-pdbtypes")
          {$pdbTypes = 1;}
       elsif ($ARGV[$number] eq "-help")

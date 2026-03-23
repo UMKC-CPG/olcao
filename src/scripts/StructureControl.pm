@@ -152,7 +152,7 @@ my @supercell;       # Definition of a supercell request.
 my @scMirror;        # Flags to request mirroring of cells in a supercell.
 my @negBit;          # Num. of replicated cells needed in the -abc directions.
 my @posBit;          # Num. of replicated cells needed in the +abc directions.
-my $buffer=10;       # Buffer space between the system and the simulation box
+my $buffer=0;       # Buffer space between the system and the simulation box
                      #   for the case of non-periodic systems (bio-molecules).
 
 # References to elemental data from the database and implicit data about the
@@ -795,7 +795,7 @@ sub reset
    undef @sineAngle;
    undef @negBit;
    undef @posBit;
-   $buffer=10;
+   $buffer=0;
    undef $elementNames_ref;
    undef $elementFullNames_ref;
    undef $elementMasses_ref;
@@ -2228,6 +2228,49 @@ sub reorderLatticeParameters
    my $abcAxis;
    my $xyzAxis;
    my @tempLattice;
+
+   #● The bug is in how Perl's array slice assignment changes the indexing. Here's the specific sequence:
+   #
+   #  Before the sort, @angle is 1-indexed — indices 0..3 exist, with 0 unused:
+   #  $angle[0] = undef  (placeholder)
+   #  $angle[1] = alpha
+   #  $angle[2] = beta
+   #  $angle[3] = gamma
+   #
+   #  The sort line:
+   #  @sortedLatIndices = sort{$angle[$a] <=> $angle[$b]} 1..3;
+   #  This sorts the list (1, 2, 3) by the angle values, producing e.g. (2, 3, 1) — still 3 elements.
+   #
+   #  The slice assignment:
+   #  @angle = @angle[@sortedLatIndices];
+   #  @angle[(2,3,1)] produces a 3-element list: ($angle[2], $angle[3], $angle[1]).
+   #  Assigning that back to @angle replaces the entire array with those 3 elements:
+   #  $angle[0] = old $angle[2]   ← formerly unused slot now holds real data
+   #  $angle[1] = old $angle[3]
+   #  $angle[2] = old $angle[1]
+   #  $angle[3] = undef           ← truncated away
+   #
+   #  Bug 1 — all subsequent $angle[3] references hit undef:
+   #  if ((abs($angle[1] - $angle[2]) < $epsilon) &&
+   #      (abs($angle[2] - $angle[3]) < $epsilon))   # $angle[3] is undef → 0
+   #  abs($angle[2] - 0) is the actual angle value itself — never near $epsilon for any real lattice. So the "all three equal"
+   #  branch can never be entered.
+   #
+   #  Bug 2 — in the else branch, $angle[3] is also undef:
+   #  if ((abs($angle[1] - $angle[3]) < $epsilon) && ($mag[1] > $mag[3]))
+   #  Again $angle[3] = 0, and $mag[3] = undef → 0. These comparisons are nonsensical.
+   #
+   #  Bug 3 — in the all-equal branch (unreachable, but wrong anyway):
+   #  @sortedLatIndices = sort{$mag[$a] <=> $mag[$b]} @sortedLatIndices[1..3];
+   #  @sortedLatIndices was also re-sliced to 3 elements (0..2), so $sortedLatIndices[3] = undef → 0. Sorting
+   #  ($sortedLatIndices[1], $sortedLatIndices[2], 0) would introduce axis index 0 (invalid) into the permutation.
+   #
+   #  In practice the bug is mostly harmless because reorderLatticeParameters is only called from readOLCAOSkl, where angles are
+   #  read in order and the sort happens to leave them with indices 1,2,3 intact — so the "already sorted" case @sortedLatIndices
+   #  = (1,2,3) is common, and the pair-comparison logic in the else branch does the right thing for the first two checks even
+   #  with the shifted indices, since $angle[1] and $angle[2] (which became 0-indexed positions 0 and 1) happen to be the values
+   #  you'd want to compare. But it's still genuinely wrong in the general case.
+   #
 
    # Find the order of the angles from smallest to largest via a stable sort.
    use sort 'stable';

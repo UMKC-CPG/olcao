@@ -26,6 +26,9 @@ export GRASP_BIN="$GRASP_DIR/bin"
 #Location of data files.
 export OLCAO_DATA="$OLCAO_DIR/share"
 
+#Location of python modules.
+export PYTHONPATH=$OLCAO_BIN:$PYTHONPATH
+
 #Location for all intermediate directories.
 if [ -z ${1+foo} ]; then
    export OLCAO_TEMP="$HOME/data/scratch/$OLCAO_BRANCH" # Default
