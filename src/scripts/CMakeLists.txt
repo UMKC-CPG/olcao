@@ -39,7 +39,7 @@ set (RC_FILES
    esviewrc.py
    hdf5Comprc.py
    graspElemsrc.py
-   insert3cborc.py
+   insert3cborc.py interFitrc.py
    makeBDBrc.py makeBONDrc.py makeFittedRhoVrc.py
    makeinputrc.py makePDOSrc.py makePotDBrc.py makeReactionsrc.py
    makeSYBDrc.py modStructrc.py
