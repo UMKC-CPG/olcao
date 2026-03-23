@@ -1,93 +1,227 @@
 #!/usr/bin/env python3
 
-# PROGRAM: makeGraspScripts
+# PROGRAM: graspElems
 # AUTHOR:  Patrick Ryan Thomas  (prtnpb@mail.umkc.edu)
+# CONTACT: Paul Rulis (rulisp@umkc.edu)
 #
-# The following script will take in command line inputs
-#   and generate the necessary bash scripts to run
-#   Grasp calculation.
+# Runs the Grasp2K pipeline for specified elements and basis sets,
+# or generates SBATCH scripts for cluster submission (--batch mode).
 #
+# Usage:
+#   Direct execution (default):
+#     graspElems.py C MB
+#     graspElems.py total FB
+#     graspElems.py F MB H EB
+#     graspElems.py C all
 #
-# Example Inputs:
-#   1) All elements all bases:
-#      ./makeGraspScripts total
-#
-#   2) All elements specific basis:
-#      ./makeGraspScripts total MB
-#      ./makeGraspScripts total FB
-#      ./makeGraspScripts total EB
-#
-#   3) Specific atom specific basis
-#      ./makeGraspScripts F MB H EB
-#
+#   Batch/script generation:
+#     graspElems.py --batch C MB
+#     graspElems.py --batch -nc 16 total
 
-import numpy as np
-import time
+import argparse as ap
 import os
 import sys
-import copy
+import subprocess
+import re
 from datetime import datetime
 
-def getAtomNum(symb):
-    elems={'H': 1 , 'He': 2, 'Li': 3, 'Be': 4, 'B': 5, 'C': 6, 'N': 7, 'O': 8, 'F': 9, 'Ne': 10, 'Na': 11, 'Mg': 12, 'Al': 13, 'Si': 14, 'P': 15, 'S': 16, 'Cl': 17, 'Ar': 18, 'K': 19, 'Ca': 20, 'Sc': 21, 'Ti': 22, 'V': 23, 'Cr': 24, 'Mn': 25, 'Fe': 26, 'Co': 27, 'Ni': 28, 'Cu': 29, 'Zn': 30, 'Ga': 31, 'Ge': 32, 'As': 33, 'Se': 34, 'Br': 35, 'Kr': 36, 'Rb': 37, 'Sr': 38, 'Y': 39, 'Zr': 40, 'Nb': 41, 'Mo': 42, 'Tc': 43, 'Ru': 44, 'Rh': 45, 'Pd': 46, 'Ag': 47, 'Cd': 48, 'In': 49, 'Sn': 50, 'Sb': 51, 'Te': 52, 'I': 53, 'Xe': 54, 'Cs': 55, 'Ba': 56, 'La': 57, 'Ce': 58, 'Pr': 59, 'Nd': 60, 'Pm': 61, 'Sm': 62, 'Eu': 63, 'Gd': 64, 'Tb': 65, 'Dy': 66, 'Ho': 67, 'Er': 68, 'Tm': 69, 'Yb': 70, 'Lu': 71, 'Hf': 72, 'Ta': 73, 'W': 74, 'Re': 75, 'Os': 76, 'Ir': 77, 'Pt': 78, 'Au': 79, 'Hg': 80, 'Tl': 81, 'Pb': 82, 'Bi': 83, 'Po': 84, 'At': 85, 'Rn': 86, 'Fr': 87, 'Ra': 88, 'Ac': 89, 'Th': 90, 'Pa': 91, 'U': 92, 'Np': 93, 'Pu': 94, 'Am': 95, 'Cm': 96, 'Bk': 97, 'Cf': 98, 'Es': 99, 'Fm': 100, 'Md': 101, 'No': 102, 'Lr': 103}
-    return elems[symb]
+from element_data import ElementData
 
+_ed = ElementData()
+_ed.init_element_data()
+
+
+# --------------------------------------------------------------------------- #
+#                           Script Settings                                    #
+# --------------------------------------------------------------------------- #
+
+class ScriptSettings():
+    """The instance variables of this object are the user settings that
+       control the program. The variable values are pulled from a list
+       that is created within a resource control file and that are then
+       reconciled with command line parameters."""
+
+
+    def __init__(self):
+        """Define default values for the parameters by pulling them
+        from the resource control file in the default location:
+        $OLCAO_RC/graspElemsrc.py or from the current working directory
+        if a local copy of graspElemsrc.py is present."""
+
+        # Read default variables from the resource control file.
+        rc_dir = os.getenv('OLCAO_RC')
+        if not rc_dir:
+            sys.exit("Error: $OLCAO_RC is not set. See instructions.")
+        sys.path.insert(1, rc_dir)
+        from graspElemsrc import parameters_and_defaults
+        default_rc = parameters_and_defaults()
+
+        # Assign values to the settings from the rc defaults file.
+        self.assign_rc_defaults(default_rc)
+
+        # Parse the command line.
+        args = self.parse_command_line()
+
+        # Reconcile the command line arguments with the rc file.
+        self.reconcile(args)
+
+        # Record the command line parameters that were used.
+        self.recordCLP()
+
+
+    def assign_rc_defaults(self, default_rc):
+
+        # Execution mode.
+        self.batch = default_rc["batch"]
+
+        # SBATCH grouping.
+        self.num_cores = default_rc["num_cores"]
+
+
+    def parse_command_line(self):
+
+        # Create the parser tool.
+        prog_name = "graspElems"
+
+        description_text = """
+Run the Grasp2K atomic structure pipeline (rnucleus, csl, rangular,
+rwfnestimate, rmcdhf, readrwf) for specified elements and basis sets.
+
+By default, programs are executed directly via subprocess. Use --batch
+to generate runC/runRSCF bash scripts and SBATCH job files instead.
+
+Element specifications:
+  ELEM BASIS      Run one element with one basis (e.g. C MB)
+  ELEM all        Run one element with all bases (MB, FB, EB)
+  total           Run all elements with all bases
+  total BASIS     Run all elements with one basis
+"""
+
+        epilog_text = """
+Originally written by Patrick Ryan Thomas (prtnpb@mail.umkc.edu)
+Please contact Paul Rulis (rulisp@umkc.edu) regarding questions.
+Defaults are given in ./graspElemsrc.py or $OLCAO_RC/graspElemsrc.py.
+"""
+
+        parser = ap.ArgumentParser(prog = prog_name,
+                formatter_class=ap.RawDescriptionHelpFormatter,
+                description = description_text,
+                epilog = epilog_text)
+
+        # Add arguments to the parser.
+        self.add_parser_arguments(parser)
+
+        # Parse the arguments and return the results.
+        return parser.parse_args()
+
+
+    def add_parser_arguments(self, parser):
+
+        # Define the batch argument.
+        parser.add_argument('-b', '--batch', dest='batch',
+                            action='store_true', default=self.batch,
+                            help='Generate SBATCH scripts instead of running '
+                                 f'directly. Default: {self.batch}')
+
+        # Define the num_cores argument.
+        parser.add_argument('-nc', '--num-cores', dest='num_cores',
+                            type=int, default=self.num_cores,
+                            help='Number of cores for SBATCH job grouping '
+                                 f'(batch mode only). Default: {self.num_cores}')
+
+        # Define the positional arguments (element/basis specifications).
+        parser.add_argument('specs', nargs='+', metavar='SPEC',
+                            help='Element/basis specifications: '
+                                 '"ELEM BASIS", "ELEM all", "total", '
+                                 'or "total BASIS"')
+
+
+    def reconcile(self, args):
+        self.batch = args.batch
+        self.num_cores = args.num_cores
+        self.comm_list = build_comm_list(args.specs)
+
+
+    def recordCLP(self):
+        with open("command", "a") as cmd:
+            now = datetime.now()
+            formatted_dt = now.strftime("%b. %d, %Y: %H:%M:%S")
+            cmd.write(f"Date: {formatted_dt}\n")
+            cmd.write(f"Cmnd:")
+            for argument in sys.argv:
+                cmd.write(f" {argument}")
+            cmd.write("\n\n")
+
+
+# --------------------------------------------------------------------------- #
+#                         Atom / Element Lists                                 #
+# --------------------------------------------------------------------------- #
 
 def getAtomList():
-    l=['H','He','Li','Be','B','C','N','O','F','Ne','Na','Mg','Al','Si','P','S','Cl','Ar','K','Ca','Sc','Ti','V','Cr','Mn','Fe','Co','Ni','Cu','Zn','Ga','Ge','As','Se','Br','Kr','Rb','Sr','Y','Zr','Nb','Mo','Tc','Ru','Rh','Pd','Ag','Cd','In','Sn','Sb','Te','I','Xe','Cs','Ba','La','Ce','Pr','Nd','Pm','Sm','Eu','Gd','Tb','Dy','Ho','Er','Tm','Yb','Lu','Hf','Ta','W','Re','Os','Ir','Pt','Au','Hg','Tl','Pb','Bi','Po','At','Rn','Fr','Ra','Ac','Th','Pa','U','Np','Pu','Am','Cm','Bk','Cf','Es','Fm','Md','No','Lr']
+    l=['H','He','Li','Be','B','C','N','O','F','Ne','Na','Mg','Al','Si',
+       'P','S','Cl','Ar','K','Ca','Sc','Ti','V','Cr','Mn','Fe','Co','Ni',
+       'Cu','Zn','Ga','Ge','As','Se','Br','Kr','Rb','Sr','Y','Zr','Nb',
+       'Mo','Tc','Ru','Rh','Pd','Ag','Cd','In','Sn','Sb','Te','I','Xe',
+       'Cs','Ba','La','Ce','Pr','Nd','Pm','Sm','Eu','Gd','Tb','Dy','Ho',
+       'Er','Tm','Yb','Lu','Hf','Ta','W','Re','Os','Ir','Pt','Au','Hg',
+       'Tl','Pb','Bi','Po','At','Rn','Fr','Ra','Ac','Th','Pa','U','Np',
+       'Pu','Am','Cm','Bk','Cf','Es','Fm','Md','No','Lr']
     return l
 
 
-def parseInputs():
-    tmparr=[]
-    basis=['MB','FB','EB']
-    elem_list=getAtomList()
-    commandout=[]
-    global numCore
-    numCore=0
+def build_comm_list(specs):
+    """Convert the positional specs list into element/basis pairs.
 
-    if "-nc" in sys.argv:
-        numCore=int(sys.argv[sys.argv.index("-nc")+1])
-    else:
-        numCore=1
+    Accepts the same specification conventions as the original parseInputs:
+      ['total']            -> all elements, all bases
+      ['total', 'MB']      -> all elements, one basis
+      ['C', 'MB']          -> one element, one basis
+      ['C', 'all']         -> one element, all bases
+      ['F', 'MB', 'H', 'EB'] -> multiple element/basis pairs
+    """
+    elem_list = getAtomList()
+    all_bases = ['MB', 'FB', 'EB']
+    tmparr = []
 
-    for i in range(1,len(sys.argv)):
-        commandout=[]
-        if(sys.argv[i]=='total'):
-            try:
-                sys.argv[i+1]
-            except IndexError:
-                for j in range(0,len(elem_list)):
-                    commandout=[elem_list[j],'MB',elem_list[j],'FB',elem_list[j],'EB']
-                    tmparr.extend(commandout)
-                return tmparr
+    i = 0
+    while i < len(specs):
+        token = specs[i]
+
+        if token == 'total':
+            # Check if a basis follows.
+            if i + 1 < len(specs) and specs[i+1] in all_bases:
+                basis = specs[i+1]
+                for elem in elem_list:
+                    tmparr.extend([elem, basis])
+                i += 2
             else:
-                if sys.argv[i+1]=="-nc":
-                    for j in range(0,len(elem_list)):
-                        commandout=[elem_list[j],'MB',elem_list[j],'FB',elem_list[j],'EB']
-                        tmparr.extend(commandout)
-                    return tmparr
-                else:
-                    for j in range(0,len(elem_list)):
-                        commandout=[elem_list[j],sys.argv[i+1]]
-                        tmparr.extend(commandout)
-                    return tmparr
-        elif(sys.argv[i] in elem_list):
-            try:
-                sys.argv[i+1]
-            except IndexError:
-                print('Incorrect Submission')
-                break
+                for elem in elem_list:
+                    for basis in all_bases:
+                        tmparr.extend([elem, basis])
+                i += 1
+
+        elif token in elem_list:
+            if i + 1 >= len(specs):
+                sys.exit(f"Error: element '{token}' given without a basis.")
+            basis = specs[i+1]
+            if basis == 'all':
+                for b in all_bases:
+                    tmparr.extend([token, b])
             else:
-                if(sys.argv[i+1]=='all'):
-                    commandout=[sys.argv[i],'MB',sys.argv[i],'FB',sys.argv[i],'EB']
-                    tmparr.extend(commandout)
-                else:
-                    commandout=[sys.argv[i],sys.argv[i+1]]
-                    tmparr.extend(commandout)
+                tmparr.extend([token, basis])
+            i += 2
+
+        else:
+            # Skip tokens that are neither 'total' nor an element
+            # (e.g. a basis that was already consumed).
+            i += 1
 
     return tmparr
 
+
+# --------------------------------------------------------------------------- #
+#                         Isotope / Element Data                               #
+# --------------------------------------------------------------------------- #
 
 def getFileContents(filename):
     f=open(filename,'r')
@@ -119,7 +253,6 @@ class elemData:
         self.quadMoment=[]
 
 
-
     def getElemData(self):
         #Open the isotope data file.
         filename = os.getenv('OLCAO_DIR') + "/share/isotopes.dat"
@@ -132,7 +265,7 @@ class elemData:
                 n+=1
 
                 self.atomSyms.append(line[1])
-                self.atomNums.append((atomInfo[i+1].split())[1]) 
+                self.atomNums.append((atomInfo[i+1].split())[1])
                 self.coreAtoms.append(atomInfo[i+3].strip())
                 self.mbValAtoms.append(atomInfo[i+5].strip())
                 self.fbValAtoms.append(atomInfo[i+6].strip())
@@ -167,7 +300,147 @@ class elemData:
                     self.quadMoment.append(line2[5])
 
 
-def makeExecs(commList):
+# --------------------------------------------------------------------------- #
+#                       Grasp2K Execution Helpers                              #
+# --------------------------------------------------------------------------- #
+
+def count_blocks(rcsf_path):
+    """Count unique J/parity blocks in an rcsf.inp file."""
+    with open(rcsf_path) as f:
+        content = f.read()
+    blocks = set(re.findall(r'\b(\d+[+-])\s*$', content, re.MULTILINE))
+    return len(blocks)
+
+
+def run_grasp(program, stdin_text, cwd):
+    """Run a Grasp2K program with the given stdin text."""
+    grasp_bin = os.environ.get('GRASP_BIN',
+                               os.path.join(os.environ['GRASP_DIR'], 'bin'))
+    exe = os.path.join(grasp_bin, program)
+    print(f"  Running {program}...", flush=True)
+    result = subprocess.run(
+        [exe],
+        input=stdin_text, text=True,
+        capture_output=True, cwd=cwd
+    )
+    if result.returncode != 0:
+        print(f"ERROR running {program} in {cwd}:\n{result.stderr}",
+              file=sys.stderr)
+        sys.exit(1)
+    return result
+
+
+def get_val_atoms(atomDat, basis, atNum):
+    """Return the valence atom string for the given basis."""
+    if basis == "MB":
+        return atomDat.mbValAtoms[atNum-1]
+    elif basis == "FB":
+        return atomDat.fbValAtoms[atNum-1]
+    elif basis == "EB":
+        return atomDat.ebValAtoms[atNum-1]
+
+
+def get_num_subs(atomDat, basis, atNum):
+    """Return the numSubs string for the given basis."""
+    if basis == "MB":
+        return atomDat.mbNumSubs[atNum-1]
+    elif basis == "FB":
+        return atomDat.fbNumSubs[atNum-1]
+    elif basis == "EB":
+        return atomDat.ebNumSubs[atNum-1]
+
+
+# --------------------------------------------------------------------------- #
+#                        Direct Execution Mode                                 #
+# --------------------------------------------------------------------------- #
+
+def run_element(element, basis, atomDat):
+    """Run the full Grasp2K pipeline for one element/basis pair."""
+    atNum = _ed.get_element_z(element)
+    orig_dir = os.getcwd()
+
+    # Create directory structure.
+    os.makedirs(os.path.join(basis, element), exist_ok=True)
+    work_dir = os.path.join(orig_dir, basis, element)
+
+    print(f"Processing {element} {basis} in {work_dir}")
+
+    # 1) rnucleus
+    isotope_str = atomDat.isotopes[atNum-1].replace(element, '')
+    rnucleus_stdin = (
+        f"{atNum}\n"
+        f"{isotope_str}\n"
+        f"n\n"
+        f"{atomDat.atomicMass[atNum-1]}\n"
+        f"{atomDat.spin[atNum-1]}\n"
+        f"{atomDat.magMoment[atNum-1]}\n"
+        f"{atomDat.quadMoment[atNum-1]}\n"
+        f"n\n"
+    )
+    print (rnucleus_stdin)
+    run_grasp('rnucleus', rnucleus_stdin, work_dir)
+
+    # 2) csl
+    val_atoms = get_val_atoms(atomDat, basis, atNum)
+    num_subs = get_num_subs(atomDat, basis, atNum)
+    csl_stdin = (
+        f"y\n"
+        f"{atomDat.coreAtoms[atNum-1]}\n"
+        f"{val_atoms}\n"
+        f"n\nn\n"
+        f"{atomDat.occAtoms[atNum-1]}\n"
+        f"\n\n"
+        f"{num_subs}\n"
+    )
+    run_grasp('csl', csl_stdin, work_dir)
+
+    # 3) mv rcsl.out -> rcsf.inp
+    os.rename(os.path.join(work_dir, 'rcsl.out'),
+              os.path.join(work_dir, 'rcsf.inp'))
+
+    # 4) rangular
+    run_grasp('rangular', "y\n", work_dir)
+
+    # 5) rwfnestimate
+    run_grasp('rwfnestimate', "y\n2\n*\n", work_dir)
+
+    # 6) Count J/parity blocks from rcsf.inp
+    n_blocks = count_blocks(os.path.join(work_dir, 'rcsf.inp'))
+    print(f"  Found {n_blocks} J/parity block(s)")
+
+    # 7) rmcdhf
+    rmcdhf_stdin = "y\ny\n" + "1\n" * n_blocks + "*\n\n100000\n"
+    run_grasp('rmcdhf', rmcdhf_stdin, work_dir)
+
+    # 8) Rename wave function files.
+    os.rename(os.path.join(work_dir, 'rwfn.inp'),
+              os.path.join(work_dir, 'rwfn-orig.inp'))
+    os.rename(os.path.join(work_dir, 'rwfn.out'),
+              os.path.join(work_dir, 'rwfn.inp'))
+
+    # 9) readrwf
+    run_grasp('readrwf', "1\nrwfn.inp\nrwfn.out\n", work_dir)
+
+    print(f"  Done: {element} {basis}")
+
+
+def run_pipeline(commList):
+    """Run the Grasp2K pipeline directly for each element/basis pair."""
+    elem_list = getAtomList()
+    atomDat = elemData()
+    atomDat.getElemData()
+
+    for i in range(len(commList)):
+        if commList[i] in elem_list:
+            run_element(commList[i], commList[i+1], atomDat)
+
+
+# --------------------------------------------------------------------------- #
+#                        Batch / Script Generation Mode                        #
+# --------------------------------------------------------------------------- #
+
+def make_scripts(commList, num_cores):
+    """Generate runC/runRSCF bash scripts and SBATCH job files."""
     elem_list=getAtomList()
     atomDat=elemData()
     atomDat.getElemData()
@@ -209,14 +482,14 @@ cd "$WORK/ELEM_FILES/graspElems"
                 jobFile.write(batchHead[i].strip()+str(batchFileNum)+".o%j\n")
                 jobFile2.write(batchHead[i].strip()+str(batchFileNum)+"RSCF.o%j\n")
             else:
-                jobFile.write(batchHead[i]) 
-                jobFile2.write(batchHead[i]) 
+                jobFile.write(batchHead[i])
+                jobFile2.write(batchHead[i])
         jobFile.write("\n")
         jobFile2.write("\n")
 
     for i in range(len(commList)):
         if commList[i] in elem_list:
-          
+
           if os.path.isdir(commList[i+1]):
               os.mkdir(commList[i+1]+"/"+commList[i])
               os.chdir(commList[i+1]+"/"+commList[i])
@@ -227,7 +500,7 @@ cd "$WORK/ELEM_FILES/graspElems"
               os.chdir(commList[i+1]+"/"+commList[i])
 
           if os.path.exists("../../SBATCHhead"):
-              if elemCount%numCore==0 and elemCount !=1:
+              if elemCount%num_cores==0 and elemCount !=1:
                   jobFile.write("\nwait\n")
                   jobFile2.write("\nwait\n")
                   batchFileNum+=1
@@ -243,8 +516,8 @@ cd "$WORK/ELEM_FILES/graspElems"
                           jobFile.write(batchHead[k].strip()+str(batchFileNum)+".o%j\n")
                           jobFile2.write(batchHead[k].strip()+str(batchFileNum)+"RSCF.o%j\n")
                       else:
-                          jobFile.write(batchHead[k]) 
-                          jobFile2.write(batchHead[k]) 
+                          jobFile.write(batchHead[k])
+                          jobFile2.write(batchHead[k])
 
               jobFile.write("cd "+commList[i+1]+"/"+commList[i]+"\n")
               jobFile.write("./run"+commList[i]+" > "+commList[i]+"out &\n")
@@ -254,7 +527,7 @@ cd "$WORK/ELEM_FILES/graspElems"
               jobFile2.write("./runRSCF > "+commList[i]+"RSCFout &\n")
               jobFile2.write("cd ../..\n")
 
-          atNum=getAtomNum(commList[i])
+          atNum=_ed.get_element_z(commList[i])
 
           #ISOTOPE
           g=open("run"+commList[i],'w')
@@ -268,7 +541,6 @@ cd "$WORK/ELEM_FILES/graspElems"
           g.write(atomDat.spin[atNum-1]+'\n')
           g.write(atomDat.magMoment[atNum-1]+'\n')
           g.write(atomDat.quadMoment[atNum-1]+'\n')
-          #g.write('\nn\n')
           g.write('n\n')
           g.write('S1\n\n')
 
@@ -307,31 +579,6 @@ cd "$WORK/ELEM_FILES/graspElems"
           g.write("*\n")
           g.write("S1\n\n")
 
-          ##JSPLIT
-          #g.write("$GRASP_BIN/jsplit <<S1\n")
-          #g.write("y\n")
-          #g.write("S1\n\n")
-
-          #g.write('rm rcsl.inp\n')
-          #g.write('mv rcsl.out rcsl.inp\n\n')
-
-          ##MCP3
-          #g.write("$GRASP_BIN/mcp3 <<S1\n")
-          #g.write("y\n")
-          #g.write("S1\n\n")
-
-          ##ERWF
-          #g.write("$GRASP_BIN/erwf <<S1\n")
-          #g.write("y\n") 
-          #if commList[i+1]=="MB":
-          #    g.write(atomDat.mbERWF[atNum-1]+"\n")
-          #elif commList[i+1]=="FB":
-          #    g.write(atomDat.fbERWF[atNum-1]+"\n")
-          #elif commList[i+1]=="EB":
-          #    g.write(atomDat.ebERWF[atNum-1]+"\n")
-          #g.write("*\n")
-          #g.write("S1\n")      
-
           g.close()
           comm="chmod +x run"+commList[i]
           os.system(comm)
@@ -342,8 +589,7 @@ cd "$WORK/ELEM_FILES/graspElems"
           g.write("set -x\n")
 
           g.write("$GRASP_BIN/rmcdhf <<S1\n")
-          g.write("y\ny\n#BLOCKS AS 1's\n")
-          g.write("*\n\n100000\nS1\n\n")
+          g.write("y\ny\n1\n*\n\n100000\nS1\n\n")
 
           g.write("mv rwfn.inp rwfn-orig.inp\n")
           g.write("mv rwfn.out rwfn.inp\n\n")
@@ -353,19 +599,6 @@ cd "$WORK/ELEM_FILES/graspElems"
           g.write("rwfn.inp\n")
           g.write("rwfn.out\n")
           g.write("S1\n")
-
-          #g.write("$GRASP_BIN/rscf2 <<S1\n")
-          #g.write("y\ny\n#BLOCKS AS 1's\n")
-          #g.write("*\n\n100000\nS1\n\n")
-
-          #g.write("mv rwfn.inp rwfn-orig.inp\n")
-          #g.write("mv rwfn.out rwfn.inp\n\n")
-
-          #g.write("$GRASP_BIN/readrwf <<S1\n")
-          #g.write("1\n")
-          #g.write("rwfn.inp\n")
-          #g.write("rwfn.out\n")
-          #g.write("S1\n")
 
           g.close()
           comm="chmod +x runRSCF"
@@ -379,14 +612,28 @@ cd "$WORK/ELEM_FILES/graspElems"
     jobFile.close()
     jobFile2.close()
 
-with open("command", "a") as cmd:
-    now = datetime.now()
-    formatted_dt = now.strftime("%b. %d, %Y: %H:%M:%S")
-    cmd.write(f"Date: {formatted_dt}\n")
-    cmd.write(f"Cmnd:")
-    for argument in sys.argv:
-        cmd.write(f" {argument}")
-    cmd.write("\n\n")
 
-elemComs=parseInputs()
-makeExecs(elemComs)
+# --------------------------------------------------------------------------- #
+#                              Main Program                                    #
+# --------------------------------------------------------------------------- #
+
+def main():
+
+    # Get script settings from a combination of the resource control file
+    #   and parameters given by the user on the command line.
+    settings = ScriptSettings()
+
+    # Execute based on mode.
+    if settings.batch:
+        make_scripts(settings.comm_list, settings.num_cores)
+    else:
+        run_pipeline(settings.comm_list)
+
+
+if __name__ == '__main__':
+    # Everything before this point was a subroutine definition or a request
+    #   to import information from external modules. Only now do we actually
+    #   start running the program. The purpose of this is to allow another
+    #   python program to import *this* script and call its functions
+    #   internally.
+    main()

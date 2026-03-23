@@ -164,13 +164,13 @@ def run_lammps_simulations(population_size, num_cores):
     """
     for member in range(1, population_size + 1):
         os.chdir(str(member))
-        subprocess.run("condense", shell=True, check=True)
+        subprocess.run("condense.py", shell=True, check=True)
         os.chdir("lammps")
         subprocess.run(f"srun -N 1 -c {num_cores} lmp -in lammps.in", shell=True, check=True)
         #subprocess.run("mpirun -np 2 lmp < lammps.in", shell=True, check=True)
 
         print(f" I am in directory {member}\n")
-        subprocess.run("dump2skl -d dump.coarse -a lammps.dat -f=-1", shell=True, check=True)
+        subprocess.run("dump2skl.py -d dump.coarse -a lammps.dat -f=-1", shell=True, check=True)
         # Calculate elemental percentage
         pct = get_element_percentage("olcao.skl", target_element)
         with open("element_evolve", "a") as f_elmnt:

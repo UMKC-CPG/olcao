@@ -13,11 +13,6 @@ class ScriptSettings():
        that is created within a resource control file and that are then
        reconciled with command line parameters."""
 
-       # Declare class variables.
-       a_list = 0
-       b_list = 0
-       c = 0
-
 
     def __init__(self):
         """Define default values for the graph parameters by pulling them
@@ -26,7 +21,10 @@ class ScriptSettings():
         copy of XYZrc.py is present."""
 
         # Read default variables from the resource control file.
-        sys.path.insert(1, os.getenv('OLCAO_RC'))
+        rc_dir = os.getenv('OLCAO_RC')
+        if not rc_dir:
+            sys.exit("Error: $OLCAO_RC is not set. See instructions.")
+        sys.path.insert(1, rc_dir)
         from XYZrc import parameters_and_defaults
         default_rc = parameters_and_defaults()
 
@@ -49,14 +47,14 @@ class ScriptSettings():
     def assign_rc_defaults(self, default_rc):
 
         # First group of default variables.
-        a_list = [default_rc["some"], default_rc["thing"]]
+        self.a_list = [default_rc["some"], default_rc["thing"]]
 
         # Second group of default variables.
-        b_list = [default_rc["more"], default_rc["other"],
+        self.b_list = [default_rc["more"], default_rc["other"],
                 default_rc["things"]]
 
         # Third group of default variables.
-        c = default_rc["final_thing"]
+        self.c = default_rc["final_thing"]
 
 
     def parse_command_line(self):
@@ -90,17 +88,17 @@ Defaults are given in ./XYZrc.py or $OLCAO_RC/XYZrc.py.
     
         # Define the XYZa_list argument.
         parser.add_argument('-x', '--XYZx', nargs=2, dest='a_list',
-                            type=str, default=a_list,
+                            type=str, default=self.a_list,
                             help=f'Argument a_list. Default: {a_list}')
     
         # Define the XYZb_list argument.
         parser.add_argument('-y', '--XYZb', nargs=3, dest='b_list',
-                            type=float, default=b_list,
+                            type=float, default=self.b_list,
                             help=f'Argument b_list. Default: {b_list}')
     
         # Define the XYZc argument.
         parser.add_argument('-c', '--XYZc', dest='c', type=float,
-                            default=c, help=f'Argument c. Default: {c}')
+                            default=self.c, help=f'Argument c. Default: {c}')
     
         # Define the positional arguments.
         parser.add_argument('filename', 
@@ -108,9 +106,9 @@ Defaults are given in ./XYZrc.py or $OLCAO_RC/XYZrc.py.
 
 
     def reconcile(self, args):
-        a_list = args.a_list.deepcopy()
-        b_list = args.b_list.deepcopy()
-        c = args.c
+        self.a_list = args.a_list.deepcopy()
+        self.b_list = args.b_list.deepcopy()
+        self.c = args.c
 
 
     def recordCLP(self):

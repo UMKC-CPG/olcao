@@ -1,3 +1,21 @@
+"""Parser for Grasp2K Dirac 4-component relativistic wavefunctions (rwfn.out).
+
+Reads Grasp2K output (rwfn.out) containing numerical radial wavefunctions
+P(r) (large component) and Q(r) (small component) on a log-linear grid,
+and organizes them for Gaussian fitting.  Also parses the companion
+``isodata`` file for nuclear charge-distribution parameters.
+
+The module provides three fitting modes that trade off relativistic
+detail for simplicity:
+
+- **single_component**: averages j-split pairs into one orbital per (n,l)
+- **two_component**: keeps each j-component separate
+- **four_component**: fits both large and small Dirac components per j
+
+A Gaussian damping / shrinking function can be applied before fitting to
+ensure the orbitals vanish at a finite cutoff radius.
+"""
+
 import time
 import numpy as np
 import math
@@ -11,33 +29,86 @@ el_num_dict={'H': 1 , 'He': 2, 'Li': 3, 'Be': 4, 'B': 5, 'C': 6, 'N': 7, 'O': 8,
 el_syb_dict={'1': 'H', '2': 'He', '3': 'Li', '4': 'Be', '5': 'B', '6': 'C', '7': 'N', '8': 'O', '9': 'F', '10': 'Ne', '11': 'Na', '12': 'Mg', '13': 'Al', '14': 'Si', '15': 'P', '16': 'S', '17': 'Cl', '18': 'Ar', '19': 'K', '20': 'Ca', '21': 'Sc', '22': 'Ti', '23': 'V', '24': 'Cr', '25': 'Mn', '26': 'Fe', '27': 'Co', '28': 'Ni', '29': 'Cu', '30': 'Zn', '31': 'Ga', '32': 'Ge', '33': 'As', '34': 'Se', '35': 'Br', '36': 'Kr', '37': 'Rb', '38': 'Sr', '39': 'Y', '40': 'Zr', '41': 'Nb', '42': 'Mo', '43': 'Tc', '44': 'Ru', '45': 'Rh', '46': 'Pd', '47': 'Ag', '48': 'Cd', '49': 'In', '50': 'Sn', '51': 'Sb', '52': 'Te', '53': 'I', '54': 'Xe', '55': 'Cs', '56': 'Ba', '57': 'La', '58': 'Ce', '59': 'Pr', '60': 'Nd', '61': 'Pm', '62': 'Sm', '63': 'Eu', '64': 'Gd', '65': 'Tb', '66': 'Dy', '67': 'Ho', '68': 'Er', '69': 'Tm', '70': 'Yb', '71': 'Lu', '72': 'Hf', '73': 'Ta', '74': 'W', '75': 'Re', '76': 'Os', '77': 'Ir', '78': 'Pt', '79': 'Au', '80': 'Hg', '81': 'Tl', '82': 'Pb', '83': 'Bi', '84': 'Po', '85': 'At', '86': 'Rn', '87': 'Fr', '88': 'Ra', '89': 'Ac', '90': 'Th', '91': 'Pa', '92': 'U', '93': 'Np', '94': 'Pu', '95': 'Am', '96': 'Cm', '97': 'Bk', '98': 'Cf', '99': 'Es', '100': 'Fm', '101': 'Md', '102': 'No', '103': 'Lr', '104': 'Rf', '105': 'Db', '106': 'Sg', '107': 'Bh', '108': 'Hs', '109': 'Mt'}
 
 
-# Functions to convert k quantum numbers to l for small and large
-#  components.
+# Functions to convert between the Dirac kappa quantum number and
+# angular momentum l. In the Dirac equation, each non-relativistic
+# orbital with angular momentum l splits into two states with total
+# angular momentum j = l +/- 1/2. The kappa quantum number encodes
+# both l and j:
+#   kappa = -(l+1)  for j = l + 1/2
+#   kappa =  l      for j = l - 1/2
+# The large and small components of the Dirac spinor have different
+# angular momentum: if the large component has l, the small component
+# has l' = l +/- 1 (depending on the sign of kappa).
+
+
 def lktol(k):
+  """Convert Dirac kappa to angular momentum l for the large component.
+
+  For kappa < 0 (j = l + 1/2): l = |kappa| - 1
+  For kappa > 0 (j = l - 1/2): l = kappa
+
+  Examples: kappa=-1 -> l=0 (s), kappa=1 -> l=1 (p1/2),
+            kappa=-2 -> l=1 (p3/2), kappa=2 -> l=2 (d3/2)
+  """
   if k<0:
     return (-1*k)-1
   else:
     return k
 
 def sktol(k):
+  """Convert Dirac kappa to angular momentum l for the small component.
+
+  The small component of the Dirac spinor has angular momentum that
+  differs from the large component by one unit:
+    For kappa < 0: l_small = |kappa|     (= l_large + 1)
+    For kappa > 0: l_small = kappa - 1   (= l_large - 1)
+
+  Examples: kappa=-1 -> l_small=1 (small comp of 1s is p-like),
+            kappa=1 -> l_small=0 (small comp of 2p1/2 is s-like)
+  """
   if k<0:
     return k*-1
   else:
     return k-1
 
 def ltosk(l):
+  """Convert angular momentum l to both kappa values for the small component.
+
+  Returns the two kappa values whose small component has angular
+  momentum l. For l=0, only kappa=-1 has an s-like small component,
+  so (1, 1) is returned (both map to the same state). For l>0,
+  returns (kappa1, kappa2) = (-l, l+1).
+
+  Returns:
+      tuple: (kappa1, kappa2) where sktol(kappa_i) == l.
+  """
   if l==0:
     return 1,1
   else:
     return -1*l,l+1
 
 def ltok(l):
+  """Convert angular momentum l to both kappa values for the large component.
+
+  Returns the two kappa values whose large component has angular
+  momentum l. For l=0 (s orbitals), only kappa=-1 exists (j=1/2),
+  so (-1, -1) is returned. For l>0, returns (kappa1, kappa2):
+    kappa1 = l       (j = l - 1/2)
+    kappa2 = -(l+1)  (j = l + 1/2)
+
+  Returns:
+      tuple: (kappa1, kappa2) where lktol(kappa_i) == l.
+  """
   if l==0:
     return -1,-1
   else:
     return l,-1*(l+1)
 
 def ltolsym(l):
+  """Convert angular momentum quantum number l to spectroscopic symbol.
+
+  Mapping: 0->'s', 1->'p', 2->'d', 3->'f', 4->'g'
+  """
   if l==0:
     return "s"
   elif l==1:
@@ -49,22 +120,23 @@ def ltolsym(l):
   elif l==4:
     return "g"
 
-def ltolsym(l):
-  if l==0:
-    return "s"
-  elif l==1:
-    return "p"
-  elif l==2:
-    return "d"
-  elif l==3:
-    return "f"
-  elif l==4:
-    return "g"
 
-
-# Class containing information about the atom from the
-#  isodata file.
 class isodata_file:
+  """Nuclear charge distribution parameters from a Grasp2K isodata file.
+
+  Parses the ``isodata`` file produced by Grasp2K, which describes the
+  Fermi-model nuclear charge distribution.  Key parameters:
+
+  - **fermi_dist_param_a**: diffuseness parameter *a* (fm) of the Fermi
+    distribution rho(r) = rho0 / (1 + exp((r - c) / a)).
+  - **fermi_dist_param_c**: half-density radius *c* (fm), the radius at
+    which the nuclear charge density drops to half its central value.
+
+  Also records: atomic number *Z*, mass number *A*, nuclear mass (amu),
+  nuclear spin *I* (units of hbar), magnetic dipole moment (nuclear
+  magnetons), and electric quadrupole moment (barns).
+  """
+
   def parse_file(self,fname):
     with open(fname,'r') as f:
       file=f.readlines()
@@ -92,11 +164,31 @@ class isodata_file:
 
     self.parse_file(fname)
 
-# Class containing orbital information from rwfn.out
 class orbital_file:
+  """Relativistic orbital wavefunctions parsed from a Grasp2K rwfn.out file.
 
-  # Function to parse the rwfn.out file.
+  Reads the numerical radial wavefunctions (large component P(r) and small
+  component Q(r)) for every orbital on the Grasp2K log-linear grid.  After
+  parsing, provides interpolated data on a unified grid suitable for
+  Gaussian fitting.
+  """
+
   def parse_file(self,fname):
+    """Parse a Grasp2K ``rwfn.out`` file and populate orbital data.
+
+    File format:
+      - Header line: ``"G92RWF"`` (ignored).
+      - For each orbital: a 4-field header ``n  kappa  eigenvalue  num_points``,
+        followed by a ZORA coefficient on the next line, then three blocks of
+        *num_points* values: P(r) large component, Q(r) small component, and
+        the radial grid points r.
+      - Fortran ``'D'`` exponents are converted to ``'E'`` for Python parsing.
+      - The first grid point (r = 0) is dropped because subsequent processing
+        divides by r.
+
+    After parsing, interpolated arrays on a merged radial grid and
+    component-divided-by-r arrays are constructed for all orbitals.
+    """
 
     # Open the file and store lines as a list.
     with open(fname,'r') as f:
@@ -134,14 +226,14 @@ class orbital_file:
         #  those lists. Also, each one starts with a 0.000000 which is
         #  problematic for dividing by r so we jettison that value here
         #  and start on the next non-zero value.
-        n=self.numerical_points[len(self.numerical_points)-1]
+        n=self.numerical_points[-1]
 
         bounds=[i+1,(n+i)-1,(n+i)+1,2*n+i-1,2*n+i+1,3*n+i-1]
 
         self.large_comps.append([float(x) for x in rwfn[bounds[0]:bounds[1]]])
         self.small_comps.append([float(x) for x in rwfn[bounds[2]:bounds[3]]])
         self.radial_comps.append([float(x) for x in rwfn[bounds[4]:bounds[5]]])
-        self.numerical_points[len(self.numerical_points)-1]=self.numerical_points[len(self.numerical_points)-1]-1
+        self.numerical_points[-1]=self.numerical_points[-1]-1
         
 
       else:
@@ -192,6 +284,13 @@ class orbital_file:
           self.interpolated_sdivr_components[i]])
 
   def single_component(self):
+    """Scalar-relativistic approximation: average j=l+1/2 and j=l-1/2
+    large components into one non-relativistic-like orbital per (n,l).
+
+    For l=0 (s orbitals), there is only one j=1/2 component so no
+    averaging is needed.  Populates fitting_functions, fitting_lvals,
+    fitting_l_list, and fitting_orbital_names.
+    """
     self.fitting_max_l=self.max_l
     for j in range(self.max_l,-1,-1):
       for i in range(self.max_n,0,-1):
@@ -218,6 +317,12 @@ class orbital_file:
 
   
   def two_component(self):
+    """Two-component fitting: keeps each j-component separate.
+
+    For example, 2p_1/2 and 2p_3/2 are fitted individually, preserving
+    spin-orbit splitting information.  Each j-component's large-component
+    P(r) is added to the fitting list as a separate function.
+    """
     self.fitting_max_l=self.max_l
     for j in range(self.max_l,-1,-1):
       for i in range(self.max_n,0,-1):
@@ -244,6 +349,13 @@ class orbital_file:
             self.fitting_l_list.append(j)
 
   def four_component(self):
+    """Full Dirac 4-component: fits both P(r) large and Q(r) small
+    components for each j, giving a complete relativistic description.
+
+    Small components are prefixed with 's_' and large with 'l_' in the
+    fitting orbital names.  The fitting_max_l is set to the maximum
+    small-component angular momentum.
+    """
     self.fitting_max_l=self.max_small_l
     for j in range(self.max_small_l,-1,-1):
       for i in range(self.max_n,0,-1):
@@ -295,7 +407,20 @@ class orbital_file:
             self.fitting_l_list.append(j)
 
   def apply_shrinking_function(self,rc,sigma):
+    """Apply Gaussian damping to ensure orbitals vanish at finite radius.
 
+    For r > rc, the orbital value is set to zero.  For r <= rc, the
+    orbital is multiplied by a damping factor (1 - exp(-(r-rc)^2 / (2*sigma^2))).
+    The orbital is also divided by r^l to extract the radial part for
+    Gaussian fitting.
+
+    Parameters
+    ----------
+    rc : float
+        Critical radius (Bohr) beyond which the orbital is zeroed.
+    sigma : float
+        Width parameter for the Gaussian damping envelope.
+    """
     for i in range(len(self.fitting_orbital_names)):
       for j in range(len(self.fitting_functions[i])):
         if self.interpolated_radial_grid[j] > rc:
@@ -303,7 +428,7 @@ class orbital_file:
         else:
           self.fitting_functions[i][j] = \
               self.fitting_functions[i][j]*(
-                  1-math.exp((-0.5*(self.interpolated_radial_grid[i]-rc)**2.0) /
+                  1-math.exp((-0.5*(self.interpolated_radial_grid[j]-rc)**2.0) /
                   (2.0*sigma**2.0)))
           self.fitting_functions[i][j] = \
               self.fitting_functions[i][j] / \
@@ -353,7 +478,18 @@ class orbital_file:
 # Class that has the element symbol and automatically parses isodata
 #   and rwfn.out files for contents.
 class atomic_system:
-  
+  """Convenience class combining isodata and rwfn.out for a single element.
+
+  Attributes
+  ----------
+  orbital_info : orbital_file
+      Parsed relativistic orbital wavefunctions.
+  atomic_info : isodata_file
+      Nuclear charge distribution parameters.
+  element : str
+      Chemical symbol (e.g. 'C', 'Si').
+  """
+
   def __init__(self,isofile,wavefile):
     self.orbital_info=orbital_file(wavefile)
     self.atomic_info=isodata_file(isofile)
