@@ -1,0 +1,45 @@
+[tool.pytest.ini_options]
+# ---------------------------------------------------------------------------
+# Test discovery
+# ---------------------------------------------------------------------------
+testpaths = ["src/tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+
+# ---------------------------------------------------------------------------
+# Default output
+# ---------------------------------------------------------------------------
+addopts = ["-ra", "--tb=short"]
+
+# ---------------------------------------------------------------------------
+# Custom markers
+# ---------------------------------------------------------------------------
+# Use -m <marker> to select a subset of tests, e.g.:
+#   pytest -m unit          -- fast, pure-computation tests
+#   pytest -m integration   -- file I/O and multi-step pipeline tests
+#   pytest -m regression    -- reference-file comparisons
+#   pytest -m "not fortran" -- everything except slow Fortran program tests
+markers = [
+    "unit: pure computation; no fixture files read beyond the element database",
+    "integration: reads/writes structure files from the fixtures directory",
+    "regression: compares output against stored reference files",
+    "fortran: requires compiled OLCAO Fortran binaries (slow; skipped by default)",
+    "slow: takes more than a few seconds",
+]
+
+# ---------------------------------------------------------------------------
+# How to run
+# ---------------------------------------------------------------------------
+# 1. Activate the virtualenv:
+#      source /cluster/VAST/rulisp-lab/cpg/virtual_envs/olcao/bin/activate
+#
+# 2. Export the data directory:
+#      export OLCAO_DATA=/home/rulisp/olcao/share
+#
+# 3. Run from the repository root:
+#      python src/tests/test_o.py                    # all tests
+#      python src/tests/test_o.py -m unit            # only unit tests
+#      python src/tests/test_o.py -m "not fortran"   # skip Fortran tests
+#      python src/tests/test_o.py -v                 # verbose output
+#      python src/tests/test_o.py --tb=long          # full tracebacks
