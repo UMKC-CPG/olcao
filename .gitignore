@@ -20,6 +20,11 @@ bin/
 # Ignore any __pycache__ files (in the .olcao directory).
 __pycache__
 
+# RC files in .olcao/ are installed from src/scripts/ by "make install"
+# and may be edited by the user after installation.  They must not be
+# tracked here; the canonical versions live in src/scripts/.
+.olcao/*rc.py
+
 # ignore the external folder. This is a uniform place to put all the
 # things external to OLCAO but are meant to be used with olcao.
 /external
