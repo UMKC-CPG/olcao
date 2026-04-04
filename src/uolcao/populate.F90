@@ -24,8 +24,22 @@ module O_Populate
          ! This array holds all the energy eigen values of all kpoints and all
          ! spin states in sorted order from lowest to highest.
    real (kind=double), allocatable, dimension (:) :: electronPopulation
-         ! This array holds the number of electrons in each of the kpoint, 
+         ! This array holds the number of electrons in each of the kpoint,
          !   spin states of the original unsorted energy eigen values.
+   real (kind=double), allocatable, dimension (:,:,:) :: &
+         & electronPopulation_LAT
+         ! LAT (Linear Analytic Tetrahedron) analog of electronPopulation.
+         !   Each entry gives the fractional electron occupation of state
+         !   (band, kpoint, spin) as determined by the Bloechl tetrahedron
+         !   method (PRB 49, 16223, 1994). This replaces electronPopulation
+         !   when the LAT integration method is active (kPointIntgCode==1).
+         !   While electronPopulation uses Gaussian broadening and Fermi
+         !   filling to assign weights, this array uses analytic corner
+         !   integration weights that decompose each tetrahedron's occupied
+         !   volume among its four corner k-points. The result is a
+         !   broadening-parameter-free occupation weight for each state.
+         !   Dimensions: (numStates, numKPoints, spin).
+         !   Allocated and filled by computeElectronPopulation_LAT.
    integer, allocatable, dimension (:) :: indexEnergyEigenValues
          ! This array holds a mapping between the original energy eigen values
          ! and a sorted list of the energy eigen values.  The index number in
@@ -738,6 +752,422 @@ subroutine initCoreStateStructures
 end subroutine initCoreStateStructures
 
 
+! Compute the LAT (Linear Analytic Tetrahedron) analog of the
+!   electronPopulation array. While the standard electronPopulation
+!   uses Gaussian broadening and Fermi filling to assign a BZ-
+!   integration weight to each state (band, kpoint, spin), this
+!   subroutine uses the Bloechl tetrahedron method (PRB 49, 16223,
+!   1994) to determine these weights analytically.
+!
+! The physical question both arrays answer is: "how occupied is this
+!   state, weighted for Brillouin zone integration?" For the standard
+!   method, the answer depends on kPointWeight and the Fermi function.
+!   For the LAT method, the answer comes from the Bloechl corner
+!   integration weights, which decompose each tetrahedron's occupied
+!   volume among its four corners based on the geometry of the linear
+!   eigenvalue interpolation within the tetrahedron.
+!
+! The resulting array electronPopulation_LAT(n, k, spin) can replace
+!   electronPopulation in the bond order and effective charge
+!   computations, providing a broadening-parameter-free alternative
+!   for these integrated properties.
+!
+! PRECONDITION: This subroutine must be called AFTER the call to
+!   shiftEnergyEigenValues(occupiedEnergy), so that the Fermi level
+!   sits at E = 0 in the shifted eigenvalue spectrum.
+!
+! Algorithm (see PSEUDOCODE.md sections 3 and 3a for derivation):
+!   For each band n and each tetrahedron T:
+!   1. Look up eigenvalues at the four corners via fullToIBZMap
+!      (unfolding the IBZ to the full mesh).
+!   2. Sort the four eigenvalues ascending; track the permutation
+!      so we can map corner weights back to the correct k-points.
+!   3. Compute corner integration weights at E_Fermi = 0 using the
+!      Bloechl formulas. Four cases arise depending on where E_Fermi
+!      falls among the sorted eigenvalues (see Case comments below).
+!   4. Accumulate each corner's weight into the output array, using
+!      the sort permutation to attribute weight to the correct
+!      k-point.
+subroutine computeElectronPopulation_LAT
+
+   ! Import the necessary modules.
+   use O_Kinds
+   use O_Potential,       only: spin
+   use O_Input,           only: numStates
+   use O_KPoints,         only: numKPoints, &
+         & numTetrahedra, tetraVol, tetrahedra, &
+         & fullToIBZMap
+   use O_SecularEquation, only: energyEigenValues
+
+   ! Make sure that no variables are declared accidentally.
+   implicit none
+
+   ! -------------------------------------------------
+   ! Local variable declarations.
+   ! -------------------------------------------------
+
+   ! Loop indices: h = spin orientation, n = band (state),
+   !   t = tetrahedron, i and j = corner indices used for
+   !   eigenvalue lookup and sorting.
+   integer :: h, n, t, i, j
+
+   ! Index of the minimum eigenvalue during the selection sort of
+   !   the four corner eigenvalues.
+   integer :: minIdx
+
+   ! The IBZ k-point index of a given corner, obtained by following
+   !   the sort permutation back to the original corner and then
+   !   through the fullToIBZMap.
+   integer :: ibzKP
+
+   ! Temporary variables for swapping values during the selection
+   !   sort (real for eigenvalues, integer for the permutation).
+   real (kind=double) :: tempVal
+   integer :: tempInt
+
+   ! Tolerance for detecting degenerate tetrahedra where two or more
+   !   corner eigenvalues coincide. When denominators in the Bloechl
+   !   formulas fall below this threshold, the tetrahedron's
+   !   contribution is treated as negligible and skipped.
+   real (kind=double), parameter :: tol = 1.0d-12
+
+   ! After shiftEnergyEigenValues, the Fermi level sits at exactly
+   !   zero in the shifted spectrum. All Bloechl corner weights are
+   !   evaluated at this energy.
+   real (kind=double), parameter :: eFermi = 0.0_double
+
+   ! The four sorted corner eigenvalues in ascending order. Named
+   !   e1..e4 matching the notation in PSEUDOCODE.md sections 2
+   !   and 3a.
+   real (kind=double) :: e1, e2, e3, e4
+
+   ! Occupied fraction f (volume of the occupied sub-region divided
+   !   by the tetrahedron volume), unoccupied fraction f_un
+   !   (complement, used in Case 3), and denom (denominator for
+   !   degenerate guards).
+   real (kind=double) :: f, f_un, denom
+
+   ! Case 1 edge-intersection parameters. Each t_j measures how far
+   !   along edge 1->j the iso-energy surface E_Fermi cuts, as a
+   !   fraction from 0 to 1. The occupied sub-tetrahedron near
+   !   corner 1 has volume ratio f = t2 * t3 * t4.
+   real (kind=double) :: t2, t3, t4
+
+   ! Case 3 edge-intersection parameters. Each s_j measures how far
+   !   along edge 4->j the iso-energy surface cuts. The unoccupied
+   !   sub-tetrahedron near corner 4 has volume f_un = s1 * s2 * s3.
+   real (kind=double) :: s1, s2, s3
+
+   ! Case 2 (middle range) intersection parameters. The iso-energy
+   !   surface cuts four edges of the tetrahedron:
+   !     a on edge 1->3,  b on edge 1->4,
+   !     c on edge 2->3,  d on edge 2->4.
+   !   These are fractions in [0,1] giving the location of the
+   !   intersection points A, B, C, D that bound the pentahedral
+   !   occupied region.
+   real (kind=double) :: a, b, c, d
+
+   ! Eigenvalue differences used as denominators in the Case 2
+   !   intersection parameters. Named to match the PSEUDOCODE
+   !   notation: e31 = e3 - e1, e41 = e4 - e1, e32 = e3 - e2,
+   !   e42 = e4 - e2.
+   real (kind=double) :: e31, e41, e32, e42
+
+   ! Case 2 sub-tetrahedra volume ratios. The occupied pentahedron
+   !   decomposes into three sub-tetrahedra (see PSEUDOCODE.md
+   !   section 3a for the geometric construction and derivation):
+   !     T_I   = (corner1, corner2, A, B)
+   !     T_II  = (corner2, A, B, D)
+   !     T_III = (corner2, A, C, D)
+   real (kind=double) :: v_I, v_II, v_III
+
+   ! The four corner eigenvalues in their original (unsorted) order,
+   !   before the selection sort. One per tetrahedron corner.
+   real (kind=double), dimension(4) :: cornerEigenVals
+
+   ! The IBZ k-point index for each of the four tetrahedron corners,
+   !   obtained by mapping the full-mesh tetrahedron corner index
+   !   through fullToIBZMap.
+   integer, dimension(4) :: ibzCorner
+
+   ! Sort permutation array. After sorting, sortPerm(i) gives the
+   !   original corner index (1-4) of the i-th smallest eigenvalue.
+   !   This is essential for mapping the sorted corner weights back
+   !   to the correct k-points in the accumulation step.
+   integer, dimension(4) :: sortPerm
+
+   ! The four Bloechl corner integration weights computed for one
+   !   tetrahedron. cornerWeights(i) is the fraction of the
+   !   tetrahedron's occupied volume attributed to the i-th sorted
+   !   corner. These four values sum to f(E_Fermi), the total
+   !   occupied fraction of the tetrahedron for this band.
+   real (kind=double), dimension(4) :: cornerWeights
+
+   ! -------------------------------------------------
+   ! Allocate and initialize the output array.
+   ! -------------------------------------------------
+   ! Dimensions: (band, kpoint, spin). Each entry will accumulate
+   !   contributions from every tetrahedron that shares that k-point
+   !   as a corner.
+
+   if (allocated(electronPopulation_LAT)) &
+         & deallocate(electronPopulation_LAT)
+   allocate(electronPopulation_LAT( &
+         & numStates, numKPoints, spin))
+   electronPopulation_LAT(:,:,:) = 0.0_double
+
+   write (20, *) "Computing LAT electron population."
+   call flush(20)
+
+   ! -------------------------------------------------
+   ! Main loop: spin x bands x tetrahedra.
+   ! -------------------------------------------------
+   ! For each (band, tetrahedron) pair, we compute the Bloechl
+   !   corner integration weights at the Fermi energy. These weights
+   !   determine how much of the tetrahedron's occupied volume should
+   !   be attributed to each of the four corner k-points. The weights
+   !   are accumulated into the output array, building up the total
+   !   occupation for each (band, kpoint, spin) triple.
+
+   do h = 1, spin
+
+      do n = 1, numStates
+
+         do t = 1, numTetrahedra
+
+            ! ----------------------------------------
+            ! Step 1: Look up corner eigenvalues.
+            ! ----------------------------------------
+            ! The tetrahedra array stores full-mesh k-point indices
+            !   (1..numFullMeshKP). We map each corner to its IBZ
+            !   representative via fullToIBZMap, then look up the
+            !   eigenvalue for this band and spin. The sort
+            !   permutation is initialized to the identity.
+            do i = 1, 4
+               ibzCorner(i) = fullToIBZMap( &
+                     & tetrahedra(i, t))
+               cornerEigenVals(i) = &
+                     & energyEigenValues( &
+                     & n, ibzCorner(i), h)
+               sortPerm(i) = i
+            enddo
+
+            ! ----------------------------------------
+            ! Step 2: Sort eigenvalues ascending.
+            ! ----------------------------------------
+            ! We need the four eigenvalues in sorted order for the
+            !   Bloechl formulas. The sort permutation tracks which
+            !   original corner each sorted position came from, so
+            !   that the corner weights can be mapped back to the
+            !   correct k-points. Selection sort is used (optimal
+            !   for exactly 4 elements).
+            do i = 1, 3
+               minIdx = i
+               do j = i + 1, 4
+                  if (cornerEigenVals(j) < &
+                        & cornerEigenVals(minIdx)) &
+                        & then
+                     minIdx = j
+                  endif
+               enddo
+               if (minIdx /= i) then
+                  ! Swap eigenvalues.
+                  tempVal = cornerEigenVals(i)
+                  cornerEigenVals(i) = &
+                        & cornerEigenVals(minIdx)
+                  cornerEigenVals(minIdx) = tempVal
+                  ! Swap permutation indices.
+                  tempInt = sortPerm(i)
+                  sortPerm(i) = sortPerm(minIdx)
+                  sortPerm(minIdx) = tempInt
+               endif
+            enddo
+
+            e1 = cornerEigenVals(1)
+            e2 = cornerEigenVals(2)
+            e3 = cornerEigenVals(3)
+            e4 = cornerEigenVals(4)
+
+            ! ----------------------------------------
+            ! Step 3: Compute Bloechl corner weights
+            !   at E_Fermi = 0.
+            ! ----------------------------------------
+            ! The Bloechl formulas decompose the tetrahedron's
+            !   occupied volume into four corner contributions.
+            !   Four cases arise depending on where E_Fermi falls
+            !   relative to the sorted corner eigenvalues
+            !   e1 <= e2 <= e3 <= e4. See PSEUDOCODE.md section 3a
+            !   for the full derivation from the vertex-averaging
+            !   property of linear functions over tetrahedra.
+
+            ! Case 0a: Fermi level below all corners. No states in
+            !   this tetrahedron are occupied for this band -- skip.
+            if (eFermi < e1) cycle
+
+            ! Case 0b: Fermi level above all corners. The entire
+            !   tetrahedron is occupied for this band. By the vertex
+            !   averaging property, the integral of each barycentric
+            !   coordinate over the full tetrahedron is V_T/4, so
+            !   each corner gets an equal share of 1/4.
+            if (eFermi >= e4) then
+               cornerWeights(:) = 0.25_double
+
+            ! Case 1: e1 <= E_Fermi < e2. Only corner 1 lies below
+            !   the Fermi level. The occupied region is a small sub-
+            !   tetrahedron with apex at corner 1. The iso-energy
+            !   surface epsilon = E_F cuts the three edges from
+            !   corner 1 at fractional distances t2, t3, t4. The
+            !   sub-tet volume ratio is f = t2*t3*t4, and the corner
+            !   weights follow from vertex averaging over the four
+            !   vertices of the sub-tetrahedron.
+            elseif (eFermi < e2) then
+               denom = (e2-e1) * (e3-e1) * (e4-e1)
+               if (abs(denom) < tol) cycle
+               t2 = (eFermi - e1) / (e2 - e1)
+               t3 = (eFermi - e1) / (e3 - e1)
+               t4 = (eFermi - e1) / (e4 - e1)
+               f = t2 * t3 * t4
+               cornerWeights(2) = &
+                     & f * t2 / 4.0_double
+               cornerWeights(3) = &
+                     & f * t3 / 4.0_double
+               cornerWeights(4) = &
+                     & f * t4 / 4.0_double
+               cornerWeights(1) = f &
+                     & - cornerWeights(2) &
+                     & - cornerWeights(3) &
+                     & - cornerWeights(4)
+
+            ! Case 2: e2 <= E_Fermi < e3 (middle range). Corners 1
+            !   and 2 lie below the Fermi level; corners 3 and 4 lie
+            !   above. The iso-energy surface cuts four edges,
+            !   creating a pentahedral occupied region with vertices
+            !   at corners 1 and 2 plus the four intersection points
+            !   A, B, C, D. This pentahedron decomposes into three
+            !   sub-tetrahedra (T_I, T_II, T_III) with volume ratios
+            !   v_I, v_II, v_III. The corner weights come from
+            !   applying vertex averaging to each sub-tet and summing.
+            elseif (eFermi < e3) then
+               e31 = e3 - e1
+               e41 = e4 - e1
+               e32 = e3 - e2
+               e42 = e4 - e2
+               if (e31 * e41 < tol .or. &
+                     & e32 * e42 < tol) cycle
+
+               ! Intersection parameters: fractional positions where
+               !   the iso-energy surface cuts each edge.
+               a = (eFermi - e1) / e31
+               b = (eFermi - e1) / e41
+               c = (eFermi - e2) / e32
+               d = (eFermi - e2) / e42
+
+               ! Sub-tetrahedra volume ratios (as fractions of the
+               !   full tetrahedron volume).
+               v_I   = a * b
+               v_II  = a * d * (1.0_double - b)
+               v_III = (1.0_double - a) * c * d
+
+               ! Corner weights from vertex averaging over the three
+               !   sub-tetrahedra. For each sub-tet, we sum the
+               !   barycentric coordinate lambda_j at its four
+               !   vertices, multiply by v_k/4, and add contributions
+               !   from all three sub-tetrahedra.
+               cornerWeights(1) = ( &
+                     & v_I * (3.0_double - a - b) &
+                     & + v_II*(2.0_double - a - b) &
+                     & + v_III * (1.0_double - a) &
+                     & ) / 4.0_double
+               cornerWeights(2) = ( &
+                     & v_I &
+                     & + v_II*(2.0_double - d) &
+                     & + v_III*(3.0_double-c-d) &
+                     & ) / 4.0_double
+               cornerWeights(3) = ( &
+                     & v_I * a + v_II * a &
+                     & + v_III * (a + c) &
+                     & ) / 4.0_double
+               cornerWeights(4) = ( &
+                     & v_I * b &
+                     & + v_II * (b + d) &
+                     & + v_III * d &
+                     & ) / 4.0_double
+
+            ! Case 3: e3 <= E_Fermi < e4. Only corner 4 lies above
+            !   the Fermi level. The unoccupied region is a small
+            !   sub-tetrahedron near corner 4 (complement of Case 1).
+            !   The occupied weights are the whole-tetrahedron weights
+            !   (1/4 each) minus the unoccupied sub-tet contributions.
+            else
+               denom = (e4-e1) * (e4-e2) * (e4-e3)
+               if (abs(denom) < tol) then
+                  cornerWeights(:) = 0.25_double
+               else
+                  s1 = (e4-eFermi) / (e4-e1)
+                  s2 = (e4-eFermi) / (e4-e2)
+                  s3 = (e4-eFermi) / (e4-e3)
+                  f_un = s1 * s2 * s3
+                  cornerWeights(1) = 0.25_double &
+                        & - f_un*s1 / 4.0_double
+                  cornerWeights(2) = 0.25_double &
+                        & - f_un*s2 / 4.0_double
+                  cornerWeights(3) = 0.25_double &
+                        & - f_un*s3 / 4.0_double
+                  cornerWeights(4) = &
+                        & (1.0_double - f_un) &
+                        & - cornerWeights(1) &
+                        & - cornerWeights(2) &
+                        & - cornerWeights(3)
+               endif
+            endif
+
+            ! ----------------------------------------
+            ! Step 4: Accumulate into the output.
+            ! ----------------------------------------
+            ! The sort permutation maps each sorted position i back
+            !   to its original corner index sortPerm(i). The IBZ
+            !   k-point for that corner is ibzCorner(sortPerm(i)).
+            !   Multiple tetrahedra sharing a k-point accumulate
+            !   their contributions additively, building the total
+            !   occupation weight for each (band, kpoint, spin).
+            do i = 1, 4
+               ibzKP = ibzCorner(sortPerm(i))
+               electronPopulation_LAT(n,ibzKP,h) &
+                     & = electronPopulation_LAT( &
+                     & n, ibzKP, h) &
+                     & + cornerWeights(i) * tetraVol
+            enddo
+
+         enddo ! t (tetrahedra)
+
+         ! Progress indicator for long computations.
+         if (mod(n, 50) == 0) then
+            write (20, ADVANCE="NO", &
+                  & FMT="(a1)") "."
+            call flush(20)
+         endif
+
+      enddo ! n (states/bands)
+
+   enddo ! h (spin)
+
+   write (20, *) ""
+
+   ! Diagnostic: print total occupation per spin. For a fully
+   !   occupied band, the sum over all k-points equals 1.0. The
+   !   total over all occupied bands and spins should be consistent
+   !   with the electron count from populateStates.
+   do h = 1, spin
+      write (20, fmt="(a,i1,a,f12.6)") &
+            & "  LAT electron pop spin ", h, &
+            & " total: ", &
+            & sum(electronPopulation_LAT(:,:,h))
+   enddo
+   call flush(20)
+
+end subroutine computeElectronPopulation_LAT
+
+
 subroutine cleanUpPopulation
 
    implicit none
@@ -745,6 +1175,13 @@ subroutine cleanUpPopulation
    deallocate (electronPopulation)
    deallocate (sortedEnergyEigenValues)
    deallocate (indexEnergyEigenValues)
+
+   ! The LAT population array is only allocated when the LAT
+   !   integration method was active (kPointIntgCode == 1). Guard
+   !   the deallocation with an allocated() check.
+   if (allocated(electronPopulation_LAT)) then
+      deallocate(electronPopulation_LAT)
+   endif
 
 end subroutine cleanUpPopulation
 

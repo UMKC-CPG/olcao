@@ -18,8 +18,10 @@ subroutine computeBond (inSCF)
    use O_Potential,   only: spin
    use O_Lattice,     only: realVectors,realCellVolume
    use O_AtomicTypes, only: numAtomTypes, atomTypes, maxNumStates
-   use O_KPoints,     only: numKPoints, kPointWeight, kPoints
-   use O_Populate,    only: electronPopulation
+   use O_KPoints,     only: numKPoints, kPointWeight, &
+         & kPoints, kPointIntgCode
+   use O_Populate,    only: electronPopulation, &
+         & electronPopulation_LAT
    use O_AtomicSites, only: coreDim, valeDim, numAtomSites, atomSites
    use O_PotTypes,    only: potTypes
    use O_ElementData, only: coreCharge
@@ -75,6 +77,11 @@ subroutine computeBond (inSCF)
    integer :: numEnergyPoints
    integer :: stateSpinKPointIndex
    real (kind=double) :: oneValeRealAccum
+   real (kind=double) :: statePopulation ! BZ-integration
+         ! occupation weight for the current state. Set from
+         ! electronPopulation_LAT (tetrahedron method) or
+         ! electronPopulation (Gaussian broadening) depending
+         ! on kPointIntgCode.
    real (kind=double) :: systemCharge
    real (kind=double) :: systemBondOrder
    real (kind=double) :: minDistMag
@@ -264,7 +271,33 @@ subroutine computeBond (inSCF)
          do j = 1, numStates
 
             ! Compute the stateSpinKPoint index number.
-            stateSpinKPointIndex = (i-1)*spin*numStates + (h-1)*numStates + j
+            stateSpinKPointIndex = (i-1)*spin*numStates &
+                  & + (h-1)*numStates + j
+
+            ! Determine the BZ-integration occupation weight
+            !   for this state. When LAT integration is active
+            !   (kPointIntgCode == 1), use the Bloechl tetrahedron
+            !   weights computed by computeElectronPopulation_LAT.
+            !   Otherwise, use the standard Gaussian broadening +
+            !   Fermi filling weights from populateStates.
+            !
+            !   Convention note: electronPopulation uses the
+            !   kPointWeight convention where weights sum to 2.0
+            !   (encoding spin degeneracy for non-polarized
+            !   calculations). electronPopulation_LAT holds pure
+            !   BZ volume fractions summing to 1.0 per occupied
+            !   band per spin. The factor 2/spin converts between
+            !   these conventions so that charge and bond order
+            !   totals are consistent.
+            if (kPointIntgCode == 1) then
+               statePopulation = &
+                     & electronPopulation_LAT(j, i, h) &
+                     & * 2.0_double &
+                     & / real(spin, double)
+            else
+               statePopulation = electronPopulation( &
+                     & stateSpinKPointIndex)
+            endif
 
             ! Initialize the bond order for energy dependency.
             bondOrderEnergyDep (:) = 0.0_double
@@ -415,7 +448,7 @@ subroutine computeBond (inSCF)
                         bondOrderEnergyDep(bondedAtomCounter) = &
                               & bondOrderEnergyDep(bondedAtomCounter) + &
                               & oneValeRealAccum * &
-                              & electronPopulation(stateSpinKPointIndex)
+                              & statePopulation
 
                         ! Store the atom pair bond order contribution.
 !                        bondOrderAllEnergy(bondedAtomCounter) = &
@@ -425,7 +458,7 @@ subroutine computeBond (inSCF)
                         bondOrderAllEnergy(bondedAtomCounter) = &
                               & bondOrderAllEnergy(bondedAtomCounter) + &
                               & oneValeRealAccum * &
-                              & electronPopulation(stateSpinKPointIndex)
+                              & statePopulation
 
                      enddo
                   endif
@@ -498,7 +531,7 @@ subroutine computeBond (inSCF)
 !write(20,*) "i j k l", i, j, k, l
 !write(20,*) "kPW(i) oVRA aC", kPointWeight(i), oneValeRealAccum, atomCharge(k,h)
                   atomCharge(k,h) = atomCharge(k,h) + oneValeRealAccum * &
-                        & electronPopulation(stateSpinKPointIndex)
+                        & statePopulation
 
                   ! Store the atom orbital charge contribution.
 !                  atomOrbitalCharge(k,chargeIndex(l)) = &
@@ -507,7 +540,7 @@ subroutine computeBond (inSCF)
                   atomOrbitalCharge(k,chargeIndex(l)) = &
                         & atomOrbitalCharge(k,chargeIndex(l)) + &
                         & oneValeRealAccum * &
-                        & electronPopulation(stateSpinKPointIndex)
+                        & statePopulation
                enddo ! basis index l
 
                ! Initialize the indices of the second atom. (1)=init, (2)=fin
@@ -616,7 +649,7 @@ subroutine computeBond (inSCF)
 !                        bondOrder(k,l) = bondOrder(k,l) + oneValeRealAccum * &
 !                              & kPointWeight(i) / real(spin,double)
                         bondOrder(k,l) = bondOrder(k,l) + oneValeRealAccum * &
-                              & electronPopulation(stateSpinKPointIndex)
+                              & statePopulation
 
                      enddo
                   endif

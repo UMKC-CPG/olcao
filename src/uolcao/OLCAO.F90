@@ -829,8 +829,8 @@ subroutine dos(inSCF)
    ! Use necessary modules.
    use O_TimeStamps
    use O_Potential,       only: spin
-   use O_DOS,             only: computeDOS
-   use O_KPoints,         only: numKPoints
+   use O_DOS,             only: computeDOS, computeTDOS_LAT
+   use O_KPoints,         only: numKPoints, kPointIntgCode
    use O_Input,           only: numStates
    use O_Populate,        only: occupiedEnergy, populateStates
    use O_SecularEquation, only: energyEigenValues, &
@@ -863,9 +863,16 @@ subroutine dos(inSCF)
    ! Shift the energy eigen values according to the highest occupied state.
    call shiftEnergyEigenValues(occupiedEnergy)
 
-   ! Call the DOS subroutine to compute the total and partial density of states
-   !   as well as the localization index.
-   call computeDOS(inSCF)
+   ! Dispatch to the appropriate DOS method. When the LAT
+   !   integration method is active, compute the TDOS using
+   !   tetrahedra (eigenvalues only; PDOS is not yet
+   !   supported via LAT). Otherwise, use the standard
+   !   Gaussian broadening path for TDOS + PDOS.
+   if (kPointIntgCode == 1) then
+      call computeTDOS_LAT
+   else
+      call computeDOS(inSCF)
+   endif
 
    ! Close the output files.
    close(60)
@@ -888,7 +895,9 @@ subroutine bond (inSCF, doBond)
    use O_Potential,       only: spin
    use O_Bond,            only: computeBond
    use O_Bond3C,          only: computeBond3C
-   use O_Populate,        only: occupiedEnergy, populateStates
+   use O_Populate,        only: occupiedEnergy, populateStates, &
+         & computeElectronPopulation_LAT
+   use O_KPoints,         only: kPointIntgCode
    use O_Input,           only: thermalSigma, numStates
    use O_SecularEquation, only: shiftEnergyEigenValues
 
@@ -929,6 +938,13 @@ subroutine bond (inSCF, doBond)
 
    ! Shift the energy eigen values according to the highest occupied state.
    call shiftEnergyEigenValues(occupiedEnergy)
+
+   ! When LAT integration is active, precompute the tetrahedron-based
+   !   occupation weights before the bond/charge calculation. These
+   !   replace the Gaussian-broadened electronPopulation weights.
+   if (kPointIntgCode == 1) then
+      call computeElectronPopulation_LAT
+   endif
 
    ! Call the bond subroutine to compute the bond order and effective charge.
    call computeBond(inSCF)
