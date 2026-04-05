@@ -229,6 +229,19 @@ class ScriptSettings:
         self.print_bz = rc["print_bz"]
         self.scale_factor = rc["scale_factor"]
         self.kp_note = ["", "(General)", "(General)"]  # [0]=unused, [1]=scf, [2]=pscf
+        # Density-based k-point mode.  When use_kp_density is
+        # True, the makeKPoints program is bypassed and style-
+        # code-2 k-point files are written directly.  The
+        # density values are stored per group (1=SCF, 2=PSCF).
+        self.use_kp_density = False
+        self.kp_density = [0.0, 0.0, 0.0]  # [0]=unused
+
+        # K-point integration method code per group.
+        # 0 = Gaussian/histogram (default), 1 = LAT
+        # (linear analytic tetrahedron).  Future methods
+        # may use higher integers.  Index convention:
+        # [0]=unused, [1]=SCF, [2]=PSCF.
+        self.kp_intg_code = [0, 0, 0]
 
         # Basis / potential substitution lists (populated by CLI).
         self.basis_sub_out = []
@@ -335,6 +348,44 @@ OPTIONS EXPLANATIONS
             explicit path.
 
 -kp         Apply the same kpoint selection to the SCF and post-SCF kpoints.
+
+-scfkpd     Specify the k-point volume density for the SCF
+            calculation as a single number (kpoints per unit
+            reciprocal-space volume, in Bohr^-3).  The total
+            kpoint count will be density * V_BZ, distributed
+            as uniformly as possible across the three axes.
+            Instead of giving explicit mesh dimensions, the
+            program writes a style-code-2 k-point file and
+            lets OLCAO compute the per-axis mesh counts from
+            the reciprocal cell geometry at runtime.  This
+            bypasses the makeKPoints program entirely.
+
+-pscfkpd    Same as -scfkpd but for the post-SCF calculations
+            (band, bond, dos, optc).
+
+-kpd        Apply the same k-point volume density to both SCF
+            and post-SCF.  If any density option is given,
+            density mode is used for both groups (an unset
+            group defaults to density 1).  Density options
+            are mutually exclusive with explicit mesh options
+            (-kp, -scfkp, -pscfkp); if both are given,
+            density mode wins and a warning is printed.
+
+-scfkpint   Select the k-point integration method for the SCF
+            calculation.  M is an integer: 0 = Gaussian/histogram
+            (default), 1 = LAT (linear analytic tetrahedron).
+            Higher integers are reserved for future methods.
+            This value is written into the KPOINT_INTG_CODE field
+            of the k-point input file.  Non-Gaussian methods
+            currently require density mode (-kpd/-scfkpd/-pscfkpd);
+            the legacy makeKPoints program does not support them.
+
+-pscfkpint  Same as -scfkpint but for post-SCF calculations
+            (band, bond, dos, optc).
+
+-kpint      Apply the same integration method to both SCF and
+            post-SCF.  Per-group flags (-scfkpint, -pscfkpint)
+            override this if also given.
 
 -kpshift    Force a specific shift to the kpoint mesh by the given fractional
             a, b, c amounts.
@@ -462,6 +513,12 @@ DEFAULTS
   -scfkp:        One general kpoint is used for all SCF calculations.
   -pscfkp:       One general kpoint is used for all post-SCF calculations.
   -kp:           One general kpoint is used for all SCF and post-SCF calcs.
+  -scfkpd:       No density-based SCF k-points by default.
+  -pscfkpd:      No density-based post-SCF k-points by default.
+  -kpd:          No density-based k-points by default.
+  -scfkpint:     Gaussian/histogram (0) by default.
+  -pscfkpint:    Gaussian/histogram (0) by default.
+  -kpint:        Gaussian/histogram (0) by default.
   -kpshift:      Use the default shift for each lattice type.
   -printbz:      Use the first Brillouin zone and no scaling.
   -reduce:       Off by default.  Sub-parameter defaults:
@@ -576,6 +633,64 @@ Defaults are given in ./makeinputrc.py or $OLCAO_RC/makeinputrc.py.
         parser.add_argument("-kp", dest="kp", nargs=3, type=int,
                             metavar=("A", "B", "C"), default=None,
                             help="K-point mesh for both SCF and post-SCF.")
+        # The -scfkpd option specifies a k-point volume
+        # density for the SCF calculation.  The value is
+        # the number of kpoints per unit reciprocal-space
+        # volume (Bohr^-3).  Total kpoints = D * V_BZ.
+        # OLCAO distributes them as uniformly as possible
+        # across the three axes at runtime.  This bypasses
+        # the makeKPoints program entirely.
+        parser.add_argument(
+            "-scfkpd", dest="scfkpd", type=float,
+            metavar="D", default=None,
+            help="SCF k-point volume density "
+                 "(kpoints/Bohr^-3).  Total kpoints "
+                 "= D * V_BZ.  Bypasses makeKPoints.")
+        # The -pscfkpd option is the same but for post-SCF.
+        parser.add_argument(
+            "-pscfkpd", dest="pscfkpd", type=float,
+            metavar="D", default=None,
+            help="Post-SCF k-point volume density.  "
+                 "Same semantics as -scfkpd but for "
+                 "band/bond/dos/optc.")
+        # The -kpd option sets the same density for both
+        # SCF and post-SCF.  Density options are mutually
+        # exclusive with explicit mesh options.
+        parser.add_argument(
+            "-kpd", dest="kpd", type=float,
+            metavar="D", default=None,
+            help="K-point volume density for both "
+                 "SCF and post-SCF (kpoints/Bohr^-3)."
+                 "  Mutually exclusive with "
+                 "-kp/-scfkp/-pscfkp.")
+        # The -scfkpint option selects the k-point
+        # integration method for the SCF calculation.
+        # 0 = Gaussian/histogram (default), 1 = LAT
+        # (linear analytic tetrahedron).  Higher integers
+        # are reserved for future methods.  This value is
+        # written into the KPOINT_INTG_CODE field of the
+        # k-point input file.
+        parser.add_argument(
+            "-scfkpint", dest="scfkpint", type=int,
+            metavar="M", default=None,
+            help="SCF k-point integration method.  "
+                 "0 = Gaussian (default), 1 = LAT.")
+        # The -pscfkpint option is the same but for
+        # post-SCF calculations.
+        parser.add_argument(
+            "-pscfkpint", dest="pscfkpint", type=int,
+            metavar="M", default=None,
+            help="Post-SCF k-point integration method."
+                 "  Same semantics as -scfkpint but "
+                 "for band/bond/dos/optc.")
+        # The -kpint option sets the same integration
+        # method for both SCF and post-SCF.
+        parser.add_argument(
+            "-kpint", dest="kpint", type=int,
+            metavar="M", default=None,
+            help="K-point integration method for both "
+                 "SCF and post-SCF.  0 = Gaussian "
+                 "(default), 1 = LAT.")
         # The -kpshift option forces a specific fractional shift on the
         # k-point mesh.
         parser.add_argument("-kpshift", dest="kpshift", nargs=3, type=float,
@@ -802,26 +917,115 @@ Defaults are given in ./makeinputrc.py or $OLCAO_RC/makeinputrc.py.
                 self.pot_sub_out.append(out_val)
                 self.pot_sub_in.append(in_val)
 
-        # K-points.
-        if args.kp is not None:
-            self.kp_mesh_scf = list(args.kp)
-            self.kp_mesh_pscf = list(args.kp)
-            if args.kp == [1, 1, 1]:
-                self.kp_note[1] = "(Gamma)"
-                self.kp_note[2] = "(Gamma)"
-        if args.scfkp is not None:
-            self.kp_mesh_scf = list(args.scfkp)
-            if args.scfkp == [1, 1, 1]:
-                self.kp_note[1] = "(Gamma)"
-        if args.pscfkp is not None:
-            self.kp_mesh_pscf = list(args.pscfkp)
-            if args.pscfkp == [1, 1, 1]:
-                self.kp_note[2] = "(Gamma)"
+        # K-points -- density mode vs. explicit mesh mode.
+        # Check whether any density option was given.
+        has_density = (args.kpd is not None
+                       or args.scfkpd is not None
+                       or args.pscfkpd is not None)
+        has_mesh = (args.kp is not None
+                    or args.scfkp is not None
+                    or args.pscfkp is not None)
+
+        if has_density:
+            # Density mode is all-or-nothing.  If any
+            # density flag is set, both groups use density.
+            self.use_kp_density = True
+            if has_mesh:
+                print("WARNING: Both density (-kpd/"
+                      "-scfkpd/-pscfkpd) and explicit "
+                      "mesh (-kp/-scfkp/-pscfkp) options "
+                      "were given.  Density mode wins; "
+                      "explicit mesh options are ignored.")
+
+            # Default density is 1 for any unset group.
+            self.kp_density[1] = 1.0
+            self.kp_density[2] = 1.0
+
+            # Apply the user's density values.
+            if args.kpd is not None:
+                self.kp_density[1] = args.kpd
+                self.kp_density[2] = args.kpd
+            if args.scfkpd is not None:
+                self.kp_density[1] = args.scfkpd
+            if args.pscfkpd is not None:
+                self.kp_density[2] = args.pscfkpd
+
+            # Update kp_note to reflect density mode.
+            self.kp_note[1] = "(Density)"
+            self.kp_note[2] = "(Density)"
+
+            # Warn if -printbz was requested; it requires
+            # the makeKPoints executable which is bypassed
+            # in density mode.
+            if args.printbz is not None:
+                print("NOTE: -printbz is being skipped. "
+                      "Brillouin zone visualization only "
+                      "works with an explicit k-point "
+                      "mesh (-kp/-scfkp/-pscfkp).")
+        else:
+            # Explicit mesh mode (original behavior).
+            if args.kp is not None:
+                self.kp_mesh_scf = list(args.kp)
+                self.kp_mesh_pscf = list(args.kp)
+                if args.kp == [1, 1, 1]:
+                    self.kp_note[1] = "(Gamma)"
+                    self.kp_note[2] = "(Gamma)"
+            if args.scfkp is not None:
+                self.kp_mesh_scf = list(args.scfkp)
+                if args.scfkp == [1, 1, 1]:
+                    self.kp_note[1] = "(Gamma)"
+            if args.pscfkp is not None:
+                self.kp_mesh_pscf = list(args.pscfkp)
+                if args.pscfkp == [1, 1, 1]:
+                    self.kp_note[2] = "(Gamma)"
+            if args.printbz is not None:
+                self.print_bz = int(args.printbz[0])
+                self.scale_factor = float(
+                    args.printbz[1])
+
+        # K-point integration method.  Apply the combined
+        # flag first, then let per-group flags override.
+        if args.kpint is not None:
+            self.kp_intg_code[1] = args.kpint
+            self.kp_intg_code[2] = args.kpint
+        if args.scfkpint is not None:
+            self.kp_intg_code[1] = args.scfkpint
+        if args.pscfkpint is not None:
+            self.kp_intg_code[2] = args.pscfkpint
+
+        # Non-Gaussian integration methods (e.g. LAT)
+        # require density mode because the makeKPoints
+        # Fortran program hardcodes KPOINT_INTG_CODE = 0.
+        # Once mesh generation moves into OLCAO proper
+        # this restriction will be lifted.
+        has_nonzero_intg = (
+            self.kp_intg_code[1] != 0
+            or self.kp_intg_code[2] != 0)
+        if has_nonzero_intg and not self.use_kp_density:
+            intg_names = {0: "Gaussian", 1: "LAT"}
+            scf_name = intg_names.get(
+                self.kp_intg_code[1],
+                str(self.kp_intg_code[1]))
+            pscf_name = intg_names.get(
+                self.kp_intg_code[2],
+                str(self.kp_intg_code[2]))
+            print(
+                f"ERROR: -kpint/-scfkpint/-pscfkpint "
+                f"with a non-Gaussian method "
+                f"(SCF={scf_name}, PSCF={pscf_name}) "
+                f"requires density mode (-kpd/-scfkpd/"
+                f"-pscfkpd).  The legacy makeKPoints "
+                f"program does not support alternative "
+                f"integration methods.  Use density "
+                f"mode or omit the -kpint flag.")
+            sys.exit(1)
+
+        # Shift applies to both mesh and density modes.
         if args.kpshift is not None:
-            self.kp_shift = f"{args.kpshift[0]} {args.kpshift[1]} {args.kpshift[2]}"
-        if args.printbz is not None:
-            self.print_bz = int(args.printbz[0])
-            self.scale_factor = float(args.printbz[1])
+            self.kp_shift = (
+                f"{args.kpshift[0]} "
+                f"{args.kpshift[1]} "
+                f"{args.kpshift[2]}")
 
         # Exchange correlation.
         if args.xccode is not None:
@@ -3106,11 +3310,19 @@ def print_olcao(settings, sc):
         # 5f. Copy k-point files into the inputs directory.
         _get_kp()
 
-        # 5g. Compute memory estimates for each basis type and write them.
-        _compute_and_print_mem(
-            settings, sc, h, num_total_core_states, num_total_vale_states,
-            total_num_types, num_atoms_of_type, max_num_atom_alphas,
-            pot_dim, nuc_charge)
+        # 5g. Compute memory estimates for each basis type
+        # and write them.  In density mode the k-point count
+        # is not known at this stage so we skip memory
+        # estimation entirely.
+        if not settings.use_kp_density:
+            _compute_and_print_mem(
+                settings, sc, h,
+                num_total_core_states,
+                num_total_vale_states,
+                total_num_types,
+                num_atoms_of_type,
+                max_num_atom_alphas,
+                pot_dim, nuc_charge)
 
         # 5h. (Non-XANES only) Write olcao.mi skeleton files.
         if h == 0:
@@ -3234,52 +3446,214 @@ def _convert_a_to_au(settings, sc):
 def _make_kp(settings, sc):
     """Generate k-point files for SCF and post-SCF meshes.
 
-    For each k-point group (1 = SCF, 2 = post-SCF) this function:
-      1. Writes the ``kpSpecs.dat`` input file that the ``makekpoints``
-         program requires: lattice vectors (in Bohr), space-group symmetry
-         operations, mesh parameters, shift, and a gamma flag.
-      2. Runs the external ``makekpoints`` executable.
-      3. Counts the generated k-points (lines minus the 9-line header).
-      4. Moves the output file to ``.inputTemp/kp-scf.dat`` or
-         ``.inputTemp/kp-pscf.dat``.
+    Two modes are supported:
 
-    The k-point count for each group is stored on ``settings.kp_num``
-    (a list indexed [0]=unused, [1]=SCF, [2]=PSCF) for later use by
-    memory estimation and the summary.
+    **Mesh mode** (default, ``use_kp_density`` is False):
+      For each k-point group (1 = SCF, 2 = post-SCF):
+        1. Writes ``kpSpecs.dat`` for the ``makekpoints`` program.
+        2. Runs ``makekpoints`` to produce an explicit list.
+        3. Counts the generated k-points (lines minus 9-line header).
+        4. Moves the output to ``.inputTemp/kp-scf.dat`` or
+           ``.inputTemp/kp-pscf.dat``.
+
+    **Density mode** (``use_kp_density`` is True):
+      Bypasses ``makekpoints`` entirely.  For each group, writes
+      a style-code-2 k-point file directly into ``.inputTemp/``.
+      The file contains the density value and shift; OLCAO
+      computes the per-axis mesh at runtime from the reciprocal
+      cell geometry.
 
     Parameters
     ----------
     settings : ScriptSettings
     sc : StructureControl
     """
-    import subprocess
-
-    print("      Generating KPoints.")
 
     kp_group_file = ["", KP_SCF, KP_PSCF]  # 1-indexed
-    kp_mesh = [None, settings.kp_mesh_scf, settings.kp_mesh_pscf]
-    settings.kp_num = [0, 0, 0]  # will hold the kpoint counts
+    settings.kp_num = [0, 0, 0]
 
-    for kp_group in range(1, 3):
-        # Write the makekpoints input file.
-        _print_kp_in_file(settings, sc, kp_mesh[kp_group], kp_group)
+    if settings.use_kp_density:
+        # Density mode: write style-code-2 files directly.
+        print("      Generating KPoints (density mode).")
 
-        # Run the makekpoints executable.
-        cmd = f"{settings.makekpoints_exec} {settings.print_bz} {settings.scale_factor}"
-        subprocess.run(cmd, shell=True, check=True)
+        # Extract the point group operations from the space
+        # group database.  These are embedded in the kpoint
+        # file so that OLCAO can perform IBZ reduction at
+        # runtime without needing the database itself.
+        point_ops = _extract_point_ops(settings)
 
-        # Count the number of k-points generated.  The output file has a
-        # 9-line header, so the number of k-points is (total lines − 9).
-        with open(KP_OUT_FILE, "r") as f:
-            num_lines = sum(1 for _ in f)
-        settings.kp_num[kp_group] = num_lines - 9
+        for kp_group in range(1, 3):
+            dest = os.path.join(
+                INPUT_TEMP, kp_group_file[kp_group])
+            _write_density_kp_file(
+                dest,
+                settings.kp_density[kp_group],
+                settings.kp_shift,
+                point_ops,
+                settings.kp_intg_code[kp_group])
+        # No kpSpecs.dat is produced in density mode.
+    else:
+        # Mesh mode: call the makeKPoints executable.
+        import subprocess
+        print("      Generating KPoints.")
 
-        # Move the output to .inputTemp.
-        _safe_move(KP_OUT_FILE,
-                   os.path.join(INPUT_TEMP, kp_group_file[kp_group]))
+        kp_mesh = [
+            None,
+            settings.kp_mesh_scf,
+            settings.kp_mesh_pscf]
 
-    # Move the last kpSpecs.dat into .inputTemp for archival.
-    _safe_move(KP_IN_FILE, os.path.join(INPUT_TEMP, KP_IN_FILE))
+        for kp_group in range(1, 3):
+            # Write the makekpoints input file.
+            _print_kp_in_file(
+                settings, sc,
+                kp_mesh[kp_group], kp_group)
+
+            # Run the makekpoints executable.
+            cmd = (
+                f"{settings.makekpoints_exec}"
+                f" {settings.print_bz}"
+                f" {settings.scale_factor}")
+            subprocess.run(cmd, shell=True, check=True)
+
+            # Count k-points (output has a 9-line header).
+            with open(KP_OUT_FILE, "r") as f:
+                num_lines = sum(1 for _ in f)
+            settings.kp_num[kp_group] = num_lines - 9
+
+            # Move output to .inputTemp.
+            _safe_move(
+                KP_OUT_FILE,
+                os.path.join(
+                    INPUT_TEMP,
+                    kp_group_file[kp_group]))
+
+        # Archive the last kpSpecs.dat.
+        _safe_move(
+            KP_IN_FILE,
+            os.path.join(INPUT_TEMP, KP_IN_FILE))
+
+
+def _extract_point_ops(settings):
+    """Extract point group operations from the space group database.
+
+    The space group database file has this format:
+      - Line 1: description (e.g. ``"F Fm3~m"``)
+      - Line 2: root space group number, sub-number
+      - Line 3: numSpaceOps, numShifts
+      - Then for each of the numSpaceOps operations:
+          blank line, 3x3 rotation matrix (3 lines),
+          translation vector (1 line)
+
+    The first ``numSpaceOps / numShifts`` operations are
+    the pure point group operations (no extra translations
+    from centering shifts).  We extract only these.
+
+    Parameters
+    ----------
+    settings : ScriptSettings
+        Must have ``space_db`` and ``space_group_name`` set.
+
+    Returns
+    -------
+    list of list[list[float]]
+        Each element is a 3x3 matrix (list of 3 rows, each
+        row a list of 3 floats).
+    """
+    sg_path = os.path.join(
+        settings.space_db, settings.space_group_name)
+    with open(sg_path, "r") as f:
+        # Skip description line.
+        f.readline()
+        # Skip root space group number line.
+        f.readline()
+        # Read number of space ops and number of shifts.
+        parts = f.readline().split()
+        num_space_ops = int(parts[0])
+        num_shifts = int(parts[1])
+        num_point_ops = num_space_ops // num_shifts
+
+        # Read each point group operation.
+        point_ops = []
+        for i in range(num_point_ops):
+            # Skip blank line between operations.
+            f.readline()
+            # Read the 3x3 rotation matrix (3 lines).
+            matrix = []
+            for row in range(3):
+                vals = f.readline().split()
+                matrix.append(
+                    [float(v) for v in vals[:3]])
+            # Skip the translation line.
+            f.readline()
+            point_ops.append(matrix)
+
+    return point_ops
+
+
+def _write_density_kp_file(dest_path, density,
+                           kp_shift, point_ops,
+                           intg_code=0):
+    """Write a style-code-2 k-point file for density mode.
+
+    This file is read by ``readKPoints`` in ``kpoints.f90``.
+    It tells OLCAO to compute the per-axis k-point mesh
+    internally using ``computeAxialKPoints``, based on the
+    minimum k-point volume density and the reciprocal cell
+    geometry.  It also embeds the point group operations so
+    that OLCAO can perform IBZ symmetry reduction at runtime.
+
+    The file format matches the style-code-2 branch of
+    ``readKPoints``:
+      - ``KPOINT_STYLE_CODE`` = 2
+      - ``KPOINT_INTG_CODE``  = integration method
+        (0 = Gaussian/histogram, 1 = LAT, etc.)
+      - ``MIN_KP_LINE_DENSITY`` = the volume density
+        (label is historical; the value is kpoints per
+        unit reciprocal-space volume in Bohr^-3)
+      - ``KP_SHIFT_A_B_C`` = the a, b, c shift values
+      - ``NUM_POINT_OPS`` = number of point group operations
+      - ``POINT_OPS`` label, then one 3x3 matrix per
+        operation (3 lines each, blank-line separated)
+
+    Parameters
+    ----------
+    dest_path : str
+        Full path to the output file (e.g.
+        ``.inputTemp/kp-scf.dat``).
+    density : float
+        The minimum k-point volume density (kpoints per
+        unit reciprocal-space volume, Bohr^-3).
+    kp_shift : str
+        Space-separated shift values
+        (e.g. ``"0.5 0.5 0.5"``).
+    point_ops : list of list[list[float]]
+        Point group rotation matrices from
+        ``_extract_point_ops``.
+    intg_code : int, optional
+        K-point integration method code.  0 = Gaussian
+        /histogram (default), 1 = LAT (linear analytic
+        tetrahedron).  Higher integers are reserved for
+        future methods.
+    """
+    with open(dest_path, "w") as f:
+        f.write("KPOINT_STYLE_CODE\n")
+        f.write("2\n")
+        f.write("KPOINT_INTG_CODE\n")
+        f.write(f"{intg_code}\n")
+        f.write("MIN_KP_LINE_DENSITY\n")
+        f.write(f"{density}\n")
+        f.write("KP_SHIFT_A_B_C\n")
+        f.write(f"{kp_shift}\n")
+        f.write("NUM_POINT_OPS\n")
+        f.write(f"{len(point_ops)}\n")
+        f.write("POINT_OPS\n")
+        for i, matrix in enumerate(point_ops):
+            if i > 0:
+                f.write("\n")
+            for row in matrix:
+                f.write(f"  {row[0]:12.8f}"
+                        f"  {row[1]:12.8f}"
+                        f"  {row[2]:12.8f}\n")
 
 
 def _print_kp_in_file(settings, sc, kp_mesh_request, kp_group):
@@ -5214,18 +5588,48 @@ def print_summary(settings, sc):
                 f" {num_states_used[2]}"
                 f" {num_states_used[3]}\n")
 
-        # K-point information.
-        w = kp_index_space
-        f.write(f"Number of SCF KPoints  =  "
-                f"{settings.kp_num[1]:<4d} {settings.kp_note[1]:>9s}  "
+        # K-point information.  In density mode the exact
+        # count and mesh dimensions are unknown at this stage
+        # (they are computed by OLCAO at runtime), so we print
+        # the density value instead.
+        intg_names = {0: "Gaussian", 1: "LAT"}
+        scf_intg = intg_names.get(
+            settings.kp_intg_code[1],
+            str(settings.kp_intg_code[1]))
+        pscf_intg = intg_names.get(
+            settings.kp_intg_code[2],
+            str(settings.kp_intg_code[2]))
+        if settings.use_kp_density:
+            f.write(
+                f"SCF KPoints            =  "
+                f"density={settings.kp_density[1]}"
+                f"  {settings.kp_note[1]}\n")
+            f.write(
+                f"PSCF KPoints           =  "
+                f"density={settings.kp_density[2]}"
+                f"  {settings.kp_note[2]}\n")
+        else:
+            w = kp_index_space
+            f.write(
+                f"Number of SCF KPoints  =  "
+                f"{settings.kp_num[1]:<4d}"
+                f" {settings.kp_note[1]:>9s}  "
                 f"[{settings.kp_mesh_scf[0]:>{w}d}"
                 f" {settings.kp_mesh_scf[1]:>{w}d}"
                 f" {settings.kp_mesh_scf[2]:>{w}d}]\n")
-        f.write(f"Number of PSCF KPoints =  "
-                f"{settings.kp_num[2]:<4d} {settings.kp_note[2]:>9s}  "
+            f.write(
+                f"Number of PSCF KPoints =  "
+                f"{settings.kp_num[2]:<4d}"
+                f" {settings.kp_note[2]:>9s}  "
                 f"[{settings.kp_mesh_pscf[0]:>{w}d}"
                 f" {settings.kp_mesh_pscf[1]:>{w}d}"
                 f" {settings.kp_mesh_pscf[2]:>{w}d}]\n")
+        f.write(
+            f"SCF KP Integration     =  "
+            f"{scf_intg}\n")
+        f.write(
+            f"PSCF KP Integration    =  "
+            f"{pscf_intg}\n")
 
         # Execution parameters.
         f.write(f"Convergence Limit       =  {settings.converg_main}\n")
