@@ -1,0 +1,11 @@
+title
+BeO wurtzite hexagonal.
+end
+cell
+2.69400 2.69400 4.39300 90 90 120
+fract 2
+Be  0.33333  0.66667  0.50000
+O   0.33333  0.66667  0.87500
+space 186
+supercell 1 1 1
+full
