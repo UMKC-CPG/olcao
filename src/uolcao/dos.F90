@@ -1148,4 +1148,222 @@ integer :: m
 end subroutine computeDOS
 
 
+! Compute the total density of states using the Linear
+!   Analytic Tetrahedron (LAT) method (Bloechl, Jepsen,
+!   & Andersen, PRB 49, 16223, 1994). This approach
+!   decomposes the Brillouin zone into tetrahedra and
+!   integrates the DOS analytically within each one,
+!   eliminating the need for a broadening parameter.
+!
+!   The algorithm loops over bands and tetrahedra. For
+!   each tetrahedron, the four corner eigenvalues are
+!   looked up via the fullToIBZMap (which maps full-mesh
+!   kpoint indices to IBZ kpoint indices), sorted, and
+!   the Bloechl analytic formulas are applied to each
+!   energy grid point.
+!
+!   Output is written to the same TDOS file (unit 60/61)
+!   in the same format as the Gaussian broadening path.
+!   PDOS is not computed in this subroutine (future work).
+subroutine computeTDOS_LAT
+
+   ! Import the necessary modules.
+   use O_Kinds
+   use O_TimeStamps
+   use O_Potential, only: spin
+   use O_KPoints, only: numKPoints, numTetrahedra, &
+         & tetraVol, tetrahedra, fullToIBZMap
+   use O_Constants, only: hartree
+   use O_Input, only: numStates, eminDOS, emaxDOS, &
+         & deltaDOS
+   use O_SecularEquation, only: energyEigenValues
+
+   ! Make sure that no funny variables are used.
+   implicit none
+
+   ! Define local variables.
+   integer :: h         ! Spin loop index.
+   integer :: n         ! Band (state) loop index.
+   integer :: t         ! Tetrahedron loop index.
+   integer :: iE        ! Energy grid loop index.
+   integer :: corner    ! Corner loop index.
+   integer :: ibzK      ! IBZ kpoint index for a corner.
+   integer :: minIdx    ! Index of minimum for sorting.
+   real (kind=double) :: energy ! Current energy grid pt.
+   real (kind=double) :: dosContrib ! DOS from one tetra.
+   real (kind=double) :: integratedArea
+   real (kind=double) :: e1, e2, e3, e4
+   real (kind=double) :: e21, e31, e41, e32, e42
+   real (kind=double) :: denom, denom1, denom2, x
+   real (kind=double) :: tempVal
+   real (kind=double), parameter :: tol = 1.0d-12
+   real (kind=double), allocatable, dimension(:) :: &
+         & totalSystemDos
+   real (kind=double), dimension(4) :: eps
+   integer, dimension(4) :: kCorners
+
+   ! Log the date and time we start.
+   call timeStampStart (19)
+
+   ! Determine the number of energy grid points.
+   numEnergyPoints = int((emaxDOS - eminDOS) / deltaDOS)
+
+   ! Allocate and fill the energy scale.
+   if (allocated(energyScale)) deallocate(energyScale)
+   allocate (energyScale(numEnergyPoints))
+   do iE = 1, numEnergyPoints
+      energyScale(iE) = eminDOS + (iE - 1) * deltaDOS
+   enddo
+
+   ! Allocate the TDOS accumulation array.
+   allocate (totalSystemDos(numEnergyPoints))
+
+   ! Loop over spin orientations.
+   do h = 1, spin
+
+      ! Initialize the TDOS array.
+      totalSystemDos(:) = 0.0_double
+
+      ! Record which calculation is being done.
+      if (spin == 2) then
+         if (h == 1) then
+            write (20,*) "Computing spin up LAT TDOS."
+         else
+            write (20,*) "Computing spin dn LAT TDOS."
+         endif
+      endif
+
+      ! Loop over bands (states).
+      do n = 1, numStates
+
+         ! Loop over tetrahedra.
+         do t = 1, numTetrahedra
+
+            ! Look up the four corner kpoint indices from
+            !   the tetrahedra array (full mesh indices)
+            !   and map them to IBZ kpoint indices.
+            do corner = 1, 4
+               ibzK = fullToIBZMap(tetrahedra(corner, t))
+               eps(corner) = &
+                     & energyEigenValues(n, ibzK, h)
+            enddo
+
+            ! Sort the four eigenvalues in ascending order
+            !   using a simple selection sort (4 elements).
+            do corner = 1, 3
+               minIdx = corner
+               do ibzK = corner + 1, 4
+                  if (eps(ibzK) < eps(minIdx)) then
+                     minIdx = ibzK
+                  endif
+               enddo
+               if (minIdx /= corner) then
+                  tempVal = eps(corner)
+                  eps(corner) = eps(minIdx)
+                  eps(minIdx) = tempVal
+               endif
+            enddo
+
+            e1 = eps(1)
+            e2 = eps(2)
+            e3 = eps(3)
+            e4 = eps(4)
+
+            ! Loop over the energy grid and accumulate
+            !   the DOS contribution from this tetrahedron.
+            do iE = 1, numEnergyPoints
+               energy = energyScale(iE)
+
+               ! Skip if outside the eigenvalue range.
+               if (energy < e1 .or. energy >= e4) cycle
+
+               ! Compute the Bloechl DOS contribution.
+               if (energy < e2) then
+                  ! Range: e1 <= E < e2
+                  denom = (e2 - e1) * (e3 - e1) &
+                        & * (e4 - e1)
+                  if (abs(denom) < tol) cycle
+                  dosContrib = 3.0_double &
+                        & * (energy - e1)**2 / denom
+
+               elseif (energy < e3) then
+                  ! Range: e2 <= E < e3 (middle range)
+                  e21 = e2 - e1
+                  e31 = e3 - e1
+                  e41 = e4 - e1
+                  e32 = e3 - e2
+                  e42 = e4 - e2
+                  denom1 = e31 * e41
+                  denom2 = e32 * e42
+                  if (abs(denom1) < tol .or. &
+                        & abs(denom2) < tol) cycle
+                  x = energy - e2
+                  dosContrib = (1.0_double / denom1) &
+                        & * (3.0_double * e21 &
+                        & + 6.0_double * x &
+                        & - 3.0_double * (e31 + e42) &
+                        & * x**2 / denom2)
+
+               else
+                  ! Range: e3 <= E < e4
+                  denom = (e4 - e1) * (e4 - e2) &
+                        & * (e4 - e3)
+                  if (abs(denom) < tol) cycle
+                  dosContrib = 3.0_double &
+                        & * (e4 - energy)**2 / denom
+               endif
+
+               ! Accumulate into the TDOS. The tetraVol
+               !   factor (1/numTetrahedra) is the BZ
+               !   fraction for one tetrahedron. The
+               !   1/spin factor accounts for spin
+               !   degeneracy. The 1/hartree factor
+               !   converts states/Hartree to states/eV.
+               totalSystemDos(iE) = &
+                     & totalSystemDos(iE) &
+                     & + dosContrib * tetraVol &
+                     & / real(spin, double) / hartree
+
+            enddo ! iE (energy grid)
+         enddo ! t (tetrahedra)
+
+         ! Progress indicator.
+         if (mod(n, 50) == 0) then
+            write (20, ADVANCE="NO", FMT="(a1)") "."
+            call flush(20)
+         endif
+
+      enddo ! n (states)
+
+      write (20, *) ""
+
+      ! Compute the integrated area under the TDOS curve
+      !   using the trapezoidal rule.
+      integratedArea = sum( &
+            & totalSystemDos(1:numEnergyPoints - 1) &
+            & + totalSystemDos(2:numEnergyPoints)) &
+            & * deltaDOS * 0.5_double
+      write (20, *) "LAT TDOS integrated area: ", &
+            & integratedArea
+
+      ! Write the TDOS to file (same format as Gaussian).
+      write (59+h, fmt="(a14,a14)") &
+            & "    ENERGY(eV)", "          TDOS"
+      do iE = 1, numEnergyPoints
+         write (59+h, fmt="(f14.4,f14.6)") &
+               & energyScale(iE) * hartree, &
+               & totalSystemDos(iE)
+      enddo
+
+   enddo ! h (spin)
+
+   ! Clean up.
+   deallocate (totalSystemDos)
+
+   ! Log the date and time we end.
+   call timeStampEnd (19)
+
+end subroutine computeTDOS_LAT
+
+
 end module O_DOS

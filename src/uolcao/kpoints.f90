@@ -58,10 +58,11 @@ module O_KPoints
    integer, allocatable, dimension (:,:) :: mtopKPMap ! Map between the
          !   desired sequence of kpoints for MTOP calculations and the one-
          !   dimensional list of kpoints.
-   real (kind=double) :: minKPointDensity ! The number of kpoints along each
-         !   a,b,c axis divided by the magnitude of that axis must be greater
-         !   than or equal to the value of minKPointDensity. This is only used
-         !   if the kPointStyleCode equals 2.
+   real (kind=double) :: minKPointDensity ! The minimum number of kpoints per
+         !   unit reciprocal-space volume (Bohr^-3). The total kpoint count is
+         !   at least minKPointDensity * recipCellVolume, distributed as
+         !   uniformly as possible across the three axes. Only used when
+         !   kPointStyleCode equals 2.
    real (kind=double), dimension (dim3) :: kPointShift ! Fractional amount to
          !   shift the kpoint mesh by along each of the a,b,c axes. This is
          !   only used if the kPointStyleCode equals 1 or 2.
@@ -86,6 +87,36 @@ module O_KPoints
          !   real space superlattice vector.
    character*1, allocatable, dimension (:,:) :: highSymKPChar ! The characters
          !   that identify each point on the high symmetry kpoint paths.
+   integer :: numPointOps ! Number of point group operations for IBZ
+         !   symmetry reduction. These are read from the kpoint input file
+         !   when kPointStyleCode equals 2. They are the rotational parts of
+         !   the space group operations (translations stripped away) and are
+         !   given in fractional (abc) coordinates.
+   real (kind=double), allocatable, dimension (:,:,:) :: abcPointOps
+         !   The 3x3 rotation matrices for each point group operation, stored
+         !   in fractional (abc) coordinates. Dimensions: (3,3,numPointOps).
+   real (kind=double), allocatable, dimension (:,:,:) :: abcRecipPointOps
+         !   The point group operations converted to reciprocal-space abc
+         !   coordinates using the real and reciprocal lattice vectors.
+         !   Computed by computeRecipPointOps. Dims: (3,3,numPointOps).
+   integer :: numFullMeshKP ! The total number of kpoints in the full
+         !   uniform mesh BEFORE IBZ reduction. This is the product of
+         !   numAxialKPoints(1) * numAxialKPoints(2) * numAxialKPoints(3).
+         !   Only set when the mesh is built internally (style codes 1, 2).
+   integer, allocatable, dimension (:) :: fullToIBZMap
+         !   Maps each full-mesh kpoint index (1..numFullMeshKP) to its
+         !   IBZ representative kpoint index (1..numKPoints). Used by
+         !   LAT integration to unfold eigenvalues from the IBZ to the
+         !   full mesh: eigenValues(band, fullToIBZMap(k), spin).
+         !   Only allocated when IBZ reduction is performed.
+   integer :: numTetrahedra ! The total number of tetrahedra tiling the
+         !   reciprocal cell. Equal to 6 * nA * nB * nC.
+   real (kind=double) :: tetraVol ! The BZ fraction
+         !   for each tetrahedron: 1 / numTetrahedra.
+   integer, allocatable, dimension (:,:) :: tetrahedra
+         !   The four corner kpoint indices for each tetrahedron.
+         !   Dimensions: (4, numTetrahedra). Indices reference the full
+         !   uniform mesh (1..numFullMeshKP), NOT the IBZ-reduced list.
 
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    ! Begin list of module subroutines.!
@@ -170,28 +201,61 @@ subroutine readKPoints(readUnit, writeUnit)
       !   such as the reciprocal lattice has been obtained.
 
    elseif (KPointStyleCode == 2) then
-      ! Read fractional minimum kpoint separation and a shift.
+      ! Read density-based kpoint specification: a minimum volume density,
+      !   a shift, and the point group operations needed for IBZ symmetry
+      !   reduction.
 
-      ! Read the minimum line density required of kpoints along all axes.
+      ! Read the minimum volume density of kpoints (kpoints per unit reciprocal-
+      !   space volume). Note: the file label says LINE_DENSITY for historical
+      !   reasons but the value is actually a volume density.
       call readData(readUnit,writeUnit,minKPointDensity,&
-            & len('MIN_KP_LINE_DENSITY'),'MIN_KP_LINE_DENSITY')
+            & len('MIN_KP_LINE_DENSITY'),&
+            & 'MIN_KP_LINE_DENSITY')
 
-      ! Read the fractional distance that the uniform mesh should be shifted
-      !   away from the origin along each a,b,c axis.
-      call readData(readUnit,writeUnit,3,kPointShift,len('KP_SHIFT_A_B_C'),&
+      ! Read the fractional shift for the mesh along each
+      !   a,b,c axis.
+      call readData(readUnit,writeUnit,3,kPointShift,&
+            & len('KP_SHIFT_A_B_C'),&
             & 'KP_SHIFT_A_B_C')
+
+      ! Read the number of point group operations for IBZ reduction. These
+      !   are the rotational parts of the space group symmetry operations
+      !   (translations stripped) and are given in fractional (abc) coords.
+      call readData(readUnit,writeUnit,numPointOps,&
+            & len('NUM_POINT_OPS'),'NUM_POINT_OPS')
+
+      ! Read the point group operation matrices. Each is a 3x3 rotation matrix
+      !   in abc coordinates. The file may contain blank lines between
+      !   operations for readability, so we read one row (column of the
+      !   Fortran array) per line and skip blank lines between operations.
+      allocate (abcPointOps(3,3,numPointOps))
+      call readAndCheckLabel(readUnit,writeUnit,&
+            & len('POINT_OPS'),'POINT_OPS')
+      do i = 1, numPointOps
+         ! Skip any blank line before this operation. The first operation
+         !   has no blank line before it, but subsequent ones do.
+         if (i > 1) read (readUnit,*)
+         ! Read each row of the matrix from one file line. Each line fills
+         !   one column of the Fortran array (column-major storage).
+         read (readUnit,*) abcPointOps(:,1,i)
+         read (readUnit,*) abcPointOps(:,2,i)
+         read (readUnit,*) abcPointOps(:,3,i)
+         do counter = 1, 3
+            write (writeUnit,fmt="(3f14.8)") &
+                  & abcPointOps(:,counter,i)
+         enddo
+         write (writeUnit,*)
+      enddo
+      call flush (writeUnit)
 
       ! The kpoint mesh will be constructed later, once implicit information
       !   such as the reciprocal lattice has been obtained.
    endif
 
 
-   ! Set up additional information depending on type of integration method.
-   if (KPointIntgCode == 0) then
-      return
-   elseif (KPointIntgCode == 1) then
-      call generateTetrahedra ! Linear Analytic Tetrahedral (LAT) method.
-   endif
+   ! Note: tetrahedra generation for LAT (kPointIntgCode==1) is deferred to
+   !   initializeKPoints, after the mesh is built and numAxialKPoints is
+   !   fully determined.
 
 end subroutine readKPoints
 
@@ -605,123 +669,203 @@ subroutine initializeKPointMesh(applySymmetry)
    ! Define passed parameters.
    integer, intent (in) :: applySymmetry
 
-   ! Define local variables
-   integer :: i, j, k
+   ! Define local variables.
+   integer :: i, j, k, m, n
    integer :: numMeshKPoints
+   integer :: numFoldedKPoints
+   integer :: isMatch
    integer, dimension (3) :: loopIndex
-   !integer, allocatable, dimension(:) :: kPointTracker
-   real (kind=double) :: kpThresh ! Threshhold for which two kpoints are
-         ! considered to be symmetricly the same via point group operations.
-   real (kind=double) :: weightSum ! Sum of initial weights of all kpoints.
-         ! weightSum = 1 for relativistic; 2 for non-relativistic
+   integer, allocatable, dimension(:) :: kPointTracker
+   real (kind=double) :: kpThresh
+   real (kind=double) :: weightSum
+   real (kind=double) :: initWeight
    real (kind=double), dimension(3) :: abcDelta
-   real (kind=double), allocatable, dimension(:,:) :: abcMeshKPoints
-   !real (kind=double), allocatable, dimension(:,:) :: abcFoldedKPoints
+   real (kind=double), dimension(3) :: foldedKPoint
+   real (kind=double), allocatable, dimension(:,:) :: &
+         & abcMeshKPoints
+   real (kind=double), allocatable, dimension(:) :: &
+         & foldedWeight
+   real (kind=double), allocatable, dimension(:,:) :: &
+         & abcFoldedKPoints
 
-   ! Define the threshhold for when two kpoints are symmetry reduced via
-   !   point group operations.  (i.e. how close do two kpoints have to be
-   !   when one is folded near the other for them to be considered the same?)
-   kpThresh = 0.00001_double  ! A bit arbitrary!
+   ! Define the threshold for when two kpoints are considered symmetrically
+   !   equivalent under point group operations.
+   kpThresh = 0.00001_double
 
-   ! Compute the number of uniform mesh points in order to allocate space to
-   !   hold the kpoints.
+   ! Compute the number of uniform mesh points.
    numMeshKPoints = product(numAxialKPoints(:))
 
-   ! Initialize the weight to 2 always.  (There are 2 electrons per state
-   !   by default.  If a spin-polarized calculation is done, then the 1 e-
-   !   per state is accounted for in the olcao fortran program itself.)
+   ! Initialize the total weight to 2. (Two electrons per state by default.
+   !   Spin-polarized calculations account for the single electron per state
+   !   separately via the 'spin' variable.)
    weightSum = 2.0_double
 
-   ! Compute the mesh points separation step size in fractional units.
+   ! Compute the mesh step size in fractional units.
    abcDelta(:) = 1.0_double / numAxialKPoints(:)
 
-   ! Allocate necessary space.
-   !allocate (kPointTracker(numMeshKPoints))
+   ! Allocate space for the uniform mesh.
    allocate (abcMeshKPoints(3,numMeshKPoints))
 
-   ! Loop over abc axial kpoints numbers to create the initial uniform mesh in
-   !   fractional units of the abc reciprocal space cell.
+   ! Create the initial uniform mesh in fractional units
+   !   of the abc reciprocal space cell.
    numMeshKPoints = 0
    do i = 1, numAxialKPoints(1)
-
-      ! Store the i loop index.
       loopIndex(1) = i
-
       do j = 1, numAxialKPoints(2)
-
-         ! Store the j loop index.
          loopIndex(2) = j
-
          do k = 1, numAxialKPoints(3)
-
-            ! Increment the number of uniform mesh kpoints.
             numMeshKPoints = numMeshKPoints + 1
-
-            ! Store the k loop index.
             loopIndex(3) = k
+            abcMeshKPoints(:,numMeshKPoints) = &
+                  & -0.5_double + (loopIndex(:) &
+                  & - 1.0_double + kPointShift(:)) &
+                  & * abcDelta(:)
+         enddo
+      enddo
+   enddo
 
-            ! Compute the current mesh kpoint location.
-            abcMeshKPoints(:,numMeshKPoints) = -0.5_double + &
-                  & (loopIndex(:)-1.0_double+kPointShift(:)) * abcDelta(:)
-
-         enddo  ! k=1,numAxialKPoints(3)
-      enddo  ! j=1,numAxialKPoints(2)
-   enddo  ! i=1,numAxialKPoints(1)
-
-   ! There are a variety of ways to traverse the linear list of kPoints:
-   !   Shorthand:
-   !      nAKP(q) is numAxialKPoints(q) with q = a,b,c.
-   !      nAKP(q,s) is numAxialKPoints(q,s) with q=a,b,c and s being
-   !         the step size.
-   !   Given a loop structure over the a,b,c nAKP, the specific kpoint
-   !       in the linear array can be found as loop_c*1 + loop_b*len_c
-   !       + loop_a*len_b*len_c.
-   !
-   !   (1) Iterating a counter using a loop structure along the lines of
-   !       nAKP(1,1)->nAKP(2,1)->nAKP(3,1) will visit all mesh points
-   !       in a series of strings of length numAxialKPoints(3) along the c
-   !       axis. Because all incremental step sizes are one, this sequence
-   !       will exactly and sequentially visit all elements in the kpoints
-   !       array.
-   !   (2) Iterating a counter using a loop structure along the lines of
-   !       nAKP(1,1)->nAKP(3,1)->nAKP(2,nAKP(3)) will visit all mesh
-   !       points in a series of strings of length numAxialKPoints(2) along
-   !       the b axis.
-   !   (3) Iterating a counter using a loop structure along the lines of
-   !       nAKP(2,1)->nAKP(3,1)->nAKP(1,nAKP(2)*nAKP(3)) will visit all
-   !       mesh points in a series of strings of length numAxialKPoins(1)
-   !       along the a axis.
-
-   ! Presently, we just make the full mesh here and do not reduce by symmetry.
-   !   In the future, we will do symmetry reductions here. Until then, we just
-   !   copy the abcMeshKPoints into the list of kPoints.
-
-   ! At this point we have the mesh in abcMeshKPoints and the total number of
-   !   kPoints in numMeshKPoints. If we are here it is because we are not using
-   !   the kPoints given explicitly in the kPoints input file. So, we need to
-   !   manage the allocation of space to hold the weights and kpoints.
+   ! Deallocate any previously allocated kpoint arrays.
    if (allocated(kPoints)) then
       deallocate(kPoints)
       deallocate(kPointWeight)
    endif
+   if (allocated(fullToIBZMap)) then
+      deallocate(fullToIBZMap)
+   endif
 
-   ! Once deallocated (or if they were never allocated to begin with), we can
-   !   allocate space to hold the kpoints and their weights.
-   allocate(kPoints(3,numMeshKPoints))
-   allocate(kPointWeight(numMeshKPoints))
+   ! Record the full mesh size for tetrahedra generation
+   !   and eigenvalue unfolding.
+   numFullMeshKP = numMeshKPoints
 
-   ! Now, finally, we can copy the kPoints until we add the symmetry part
-   !   later. Also, we can initialize the weights.
-   kPoints(:,:) = abcMeshKPoints(:,:)
-   kPointWeight(:) = weightSum/real(numMeshKPoints,double)
-   numKPoints = numMeshKPoints
-
-   deallocate(abcMeshKPoints)
-
-   ! If we don't need symmetry, then return.
+   ! If symmetry reduction is not requested, copy the full mesh directly.
+   !   Build an identity mapping (every point is its own IBZ representative).
    if (applySymmetry == 0) then
+      allocate(kPoints(3,numMeshKPoints))
+      allocate(kPointWeight(numMeshKPoints))
+      kPoints(:,:) = abcMeshKPoints(:,:)
+      kPointWeight(:) = weightSum &
+            & / real(numMeshKPoints,double)
+      numKPoints = numMeshKPoints
+      allocate(fullToIBZMap(numMeshKPoints))
+      do i = 1, numMeshKPoints
+         fullToIBZMap(i) = i
+      enddo
+      deallocate(abcMeshKPoints)
       return
    endif
+
+   ! -----------------------------------------------
+   ! IBZ symmetry reduction (fold the mesh).
+   ! -----------------------------------------------
+   ! The algorithm applies each point group operation to each mesh kpoint.
+   !   If the rotated kpoint matches another mesh kpoint (within kpThresh),
+   !   those two points are symmetry-equivalent. The matching point is
+   !   removed from further consideration and its weight is added to the
+   !   irreducible representative.
+
+   ! Allocate working arrays for the folding process. We allocate the full
+   !   mesh size because we do not yet know how many irreducible points
+   !   there will be.
+   allocate (kPointTracker(numMeshKPoints))
+   allocate (abcFoldedKPoints(3,numMeshKPoints))
+   allocate (foldedWeight(numMeshKPoints))
+
+   ! Compute the initial weight of each uniform mesh
+   !   kpoint.
+   initWeight = weightSum / real(numMeshKPoints,double)
+
+   ! Initialize the kpoint tracker. Each mesh point starts as its own
+   !   representative (tracker(i) == i). When a point is found to be equivalent
+   !   to an earlier one, its tracker is set to the negative of the IBZ
+   !   index of that representative.
+   do i = 1, numMeshKPoints
+      kPointTracker(i) = i
+   enddo
+
+   ! Initialize the count of irreducible kpoints.
+   numFoldedKPoints = 0
+
+   ! Consider each mesh kpoint in turn.
+   do i = 1, numMeshKPoints
+
+      ! Skip points already matched to an earlier IBZ
+      !   representative.
+      if (kPointTracker(i) /= i) cycle
+
+      ! This is a new irreducible kpoint.
+      numFoldedKPoints = numFoldedKPoints + 1
+      kPointTracker(i) = -numFoldedKPoints
+      foldedWeight(numFoldedKPoints) = initWeight
+      abcFoldedKPoints(:,numFoldedKPoints) = &
+            & abcMeshKPoints(:,i)
+
+      ! If this is the last mesh point, no further
+      !   comparisons are needed.
+      if (i == numMeshKPoints) cycle
+
+      ! Apply each point group operation to this kpoint and look for matches
+      !   among the remaining unmatched mesh points.
+      do m = 1, numPointOps
+
+         ! Compute the folded (rotated) kpoint by
+         !   applying point group operation m.
+         do n = 1, 3
+            foldedKPoint(n) = &
+                  & sum(abcRecipPointOps(n,:,m) &
+                  & * abcMeshKPoints(:,i))
+         enddo
+
+         ! Compare against remaining unmatched points.
+         do j = i + 1, numMeshKPoints
+            if (kPointTracker(j) /= j) cycle
+
+            ! Check if the difference is negligible
+            !   along all three axes.
+            isMatch = 1
+            do k = 1, 3
+               if (abs(foldedKPoint(k) &
+                     & - abcMeshKPoints(k,j)) &
+                     & > kpThresh) then
+                  isMatch = 0
+                  exit
+               endif
+            enddo
+
+            ! If matched, absorb this point's weight
+            !   and mark it as folded.
+            if (isMatch == 1) then
+               foldedWeight(numFoldedKPoints) = &
+                     & foldedWeight(numFoldedKPoints) &
+                     & + initWeight
+               kPointTracker(j) = -numFoldedKPoints
+            endif
+
+         enddo ! j (remaining mesh points)
+      enddo ! m (point group operations)
+   enddo ! i (mesh points)
+
+   ! Copy the irreducible kpoints into the module-level
+   !   kPoints and kPointWeight arrays.
+   allocate(kPoints(3,numFoldedKPoints))
+   allocate(kPointWeight(numFoldedKPoints))
+   kPoints(:,1:numFoldedKPoints) = &
+         & abcFoldedKPoints(:,1:numFoldedKPoints)
+   kPointWeight(1:numFoldedKPoints) = &
+         & foldedWeight(1:numFoldedKPoints)
+   numKPoints = numFoldedKPoints
+
+   ! Build the full-to-IBZ mapping from kPointTracker. kPointTracker(i) ==
+   !   -ibzIndex for every mesh point. Convert to positive IBZ indices.
+   allocate(fullToIBZMap(numFullMeshKP))
+   do i = 1, numFullMeshKP
+      fullToIBZMap(i) = -kPointTracker(i)
+   enddo
+
+   ! Clean up working arrays.
+   deallocate(abcMeshKPoints)
+   deallocate(kPointTracker)
+   deallocate(abcFoldedKPoints)
+   deallocate(foldedWeight)
 
 end subroutine initializeKPointMesh
 
@@ -803,8 +947,19 @@ subroutine initializeKPoints (inSCF)
       call convertKPointsToXYZ
    elseif (kPointStyleCode == 2) then
       call computeAxialKPoints
+      call computeRecipPointOps
       call initializeKPointMesh(1) ! Apply symmetry to reduce KP.
       call convertKPointsToXYZ
+   endif
+
+   ! If the LAT integration method was requested, generate the tetrahedra
+   !   and compute the BZ integration weight per tetrahedron. This must
+   !   happen after the mesh is built (so that numAxialKPoints is set).
+   !   Tetrahedra reference the full uniform mesh, not the IBZ-reduced
+   !   kpoints.
+   if (kPointIntgCode == 1) then
+      call generateTetrahedra
+      call computeTetraVol
    endif
 
    ! Compute the phase factors.
@@ -827,13 +982,13 @@ subroutine computeAxialKPoints
    real (kind=double) :: numKPointsEstimate
    real (kind=double), dimension (dim3) :: fractionalPoints
 
-   ! To determine the number of axial KPoints needed to achieve the desired
-   !   kpoint density, we first estimate the total number of kpoints needed.
+   ! The user specifies a volume density (kpoints per unit reciprocal-space
+   !   volume in Bohr^-3). Multiply by the reciprocal cell volume to get the
+   !   target total number of kpoints in the full mesh.
    numKPointsEstimate = minKPointDensity * recipCellVolume
 
-   ! The number of kpoints along each axis should be such that the spacing
-   !   is nearly equal (one axis vs. another) and the product of the number
-   !   of kpoints along each axis is as close to the estimate as possible.
+   ! Distribute the total count across the three axes so that the spacing is
+   !   as uniform as possible (equal step size along each axis).
 
    ! To force the step sizes to be equal for each axis, the ratio of the
    !   axial magnitude and the number of kpoints along that axis should be
@@ -983,40 +1138,162 @@ function getIndexFromIndices(a,b,c)
 end function getIndexFromIndices
 
 
+! Generate the tetrahedra that tile the reciprocal cell.
+!   The uniform Monkhorst-Pack mesh defines a grid of nA x nB x nC
+!   parallelepipeds. Each parallelepiped has 8 corners and is decomposed
+!   into exactly 6 tetrahedra that share the main diagonal M1-M8 (Bloechl
+!   1994). The mesh is periodic, so indices wrap with modular arithmetic.
+!
+!   Parallelepiped corners at grid position (a, b, c):
+!     M1 = (a,   b,   c  )  M5 = (a+1, b+1, c  )
+!     M2 = (a+1, b,   c  )  M6 = (a+1, b,   c+1)
+!     M3 = (a,   b+1, c  )  M7 = (a,   b+1, c+1)
+!     M4 = (a,   b,   c+1)  M8 = (a+1, b+1, c+1)
+!
+!   Six tetrahedra sharing diagonal M1-M8:
+!     T1: M1, M2, M5, M8   T4: M1, M4, M7, M8
+!     T2: M1, M3, M5, M8   T5: M1, M4, M6, M8
+!     T3: M1, M3, M7, M8   T6: M1, M2, M6, M8
+!
+!   The tetrahedra indices reference the full uniform
+!   mesh (1..numFullMeshKP), not the IBZ-reduced list.
 subroutine generateTetrahedra
 
-   ! Include the modules we need
+   implicit none
+
+   ! Define local variables.
+   integer :: a, b, c, t
+   integer :: nA, nB, nC
+   integer :: M1, M2, M3, M4, M5, M6, M7, M8
+
+   ! Local shorthand for the axial kpoint counts.
+   nA = numAxialKPoints(1)
+   nB = numAxialKPoints(2)
+   nC = numAxialKPoints(3)
+
+   ! Compute the total number of tetrahedra: 6 per
+   !   parallelepiped, one parallelepiped per grid cell.
+   numTetrahedra = 6 * nA * nB * nC
+
+   ! Allocate the tetrahedra array.
+   if (allocated(tetrahedra)) deallocate(tetrahedra)
+   allocate (tetrahedra(4, numTetrahedra))
+
+   ! Build the tetrahedra by iterating over every grid
+   !   cell and decomposing it into 6 tetrahedra.
+   t = 0
+   do a = 1, nA
+      do b = 1, nB
+         do c = 1, nC
+
+            ! Compute the 8 corner indices of this
+            !   parallelepiped with periodic wrapping.
+            M1 = getIndexFromIndices( &
+                  & a, b, c)
+            M2 = getIndexFromIndices( &
+                  & mod(a, nA) + 1, b, c)
+            M3 = getIndexFromIndices( &
+                  & a, mod(b, nB) + 1, c)
+            M4 = getIndexFromIndices( &
+                  & a, b, mod(c, nC) + 1)
+            M5 = getIndexFromIndices( &
+                  & mod(a, nA) + 1, &
+                  & mod(b, nB) + 1, c)
+            M6 = getIndexFromIndices( &
+                  & mod(a, nA) + 1, &
+                  & b, mod(c, nC) + 1)
+            M7 = getIndexFromIndices( &
+                  & a, mod(b, nB) + 1, &
+                  & mod(c, nC) + 1)
+            M8 = getIndexFromIndices( &
+                  & mod(a, nA) + 1, &
+                  & mod(b, nB) + 1, &
+                  & mod(c, nC) + 1)
+
+            ! Six tetrahedra sharing diagonal M1-M8.
+            tetrahedra(:, t+1) = (/M1, M2, M5, M8/)
+            tetrahedra(:, t+2) = (/M1, M3, M5, M8/)
+            tetrahedra(:, t+3) = (/M1, M3, M7, M8/)
+            tetrahedra(:, t+4) = (/M1, M4, M7, M8/)
+            tetrahedra(:, t+5) = (/M1, M4, M6, M8/)
+            tetrahedra(:, t+6) = (/M1, M2, M6, M8/)
+            t = t + 6
+
+         enddo ! c
+      enddo ! b
+   enddo ! a
+
+end subroutine generateTetrahedra
+
+
+! Compute the BZ integration weight for each tetrahedron. All tetrahedra tile
+!   the BZ uniformly, so each one represents an equal fraction 1/numTetrahedra
+!   of the full zone.
+subroutine computeTetraVol
+
    use O_Kinds
 
    implicit none
 
-   ! Passed parameters
+   tetraVol = 1.0_double &
+         & / real(numTetrahedra, double)
 
-   ! Define the local variables used in this subroutine.
+end subroutine computeTetraVol
 
-   ! The list of kpoints is structured as a regular mesh that matches the
-   !   reciprocal space lattice (angles and magnitudes). The distances between
-   !   kpoints along each a, b, c axis may be different, but, along any given
-   !   axis the distances are constant. One could envision the mesh as a set of
-   !   exactly equal parallelepipeds that are stacked to form the reciprocal
-   !   space cell. The corners (vertices) of the parallelepipeds are the set
-   !   of kpoints.
 
-   ! From that set of kpoints we must generate tetrahedra. The tricky thing is
-   !   that the kpoints are generated using three nested loops so that indexing
-   !   the vertices of a given parallelepiped requires careful counting of
-   !   the position in the one dimensional the kpoint array.
+! Convert the abc-coordinate point group operations into reciprocal-space
+!   abc-coordinate operations. This is needed for IBZ symmetry reduction
+!   of the kpoint mesh. The transformation uses the real and reciprocal
+!   lattice vectors: R_recip = R^T * R_real * R_recip_lattice, where the
+!   dot product between real and reciprocal lattice vectors provides the
+!   metric. The resulting abcRecipPointOps can be applied directly to kpoints
+!   expressed in fractional reciprocal coordinates.
+subroutine computeRecipPointOps
 
-   ! The 
-   
-   !vertices. it as a set of equal sized Each orthorhombic
-   !   parallelpiped consists of eight vertices that we will label M1 through
-   !   M8. The tricky thing of course is that the kpoints are created by
-   !   looping through a, b, c axis steps (in that order). In other words the
+   ! Import necessary modules.
+   use O_Kinds
+   use O_Constants, only: pi
+   use O_Lattice, only: realVectors, recipVectors
 
-   
+   ! Make sure no funny variables are defined.
+   implicit none
 
-end subroutine generateTetrahedra
+   ! Define local variables.
+   integer :: i, j, k, l
+   real (kind=double), dimension (3,3) :: tempPointOp
+
+   ! Allocate storage for the reciprocal-space operations.
+   allocate (abcRecipPointOps(3,3,numPointOps))
+
+   do i = 1, numPointOps
+
+      ! Initialize the accumulator for this operation.
+      tempPointOp(:,:) = 0.0_double
+
+      ! Transform the abc real-space point group operation
+      !   into an abc reciprocal-space operation using the
+      !   real and reciprocal lattice vectors.
+      do j = 1, 3    ! x,y,z of the real lattice
+         do k = 1, 3 ! x,y,z of the reciprocal lattice
+            do l = 1, 3 ! a,b,c of the reciprocal lattice
+
+               ! Array-loop over real a,b,c.
+               tempPointOp(:,l) = tempPointOp(:,l) &
+                     & + realVectors(j,:) &
+                     & * abcPointOps(j,k,i) &
+                     & * recipVectors(k,l) &
+                     & / (2.0_double * pi)
+
+            enddo ! l (recip a,b,c)
+         enddo ! k (recip x,y,z)
+      enddo ! j (real x,y,z)
+
+      ! Save the transformed operation.
+      abcRecipPointOps(:,:,i) = tempPointOp(:,:)
+
+   enddo ! i (operations)
+
+end subroutine computeRecipPointOps
 
 
 subroutine cleanUpKPoints
@@ -1041,6 +1318,26 @@ subroutine cleanUpKPoints
    ! Only allocated for MTOP.
    if (allocated(mtopKPMap)) then
       deallocate (mtopKPMap)
+   endif
+
+   ! Only allocated for density-based kpoint input
+   !   (kPointStyleCode == 2).
+   if (allocated(abcPointOps)) then
+      deallocate (abcPointOps)
+   endif
+   if (allocated(abcRecipPointOps)) then
+      deallocate (abcRecipPointOps)
+   endif
+
+   ! Only allocated when the mesh is built internally
+   !   (style codes 1, 2) with or without IBZ reduction.
+   if (allocated(fullToIBZMap)) then
+      deallocate (fullToIBZMap)
+   endif
+
+   ! Only allocated when kPointIntgCode == 1 (LAT).
+   if (allocated(tetrahedra)) then
+      deallocate (tetrahedra)
    endif
 
 end subroutine cleanUpKPoints

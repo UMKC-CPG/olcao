@@ -1298,11 +1298,25 @@ subroutine cleanUpSecularEqn
    ! Make sure that no funny variables are defined.
    implicit none
 
-   deallocate (energyEigenValues)
+   ! Guard each deallocation because this subroutine
+   !   is called from multiple program paths (SCF
+   !   cleanup, PSCF cleanup) where the allocation
+   !   state depends on which code path ran. For
+   !   example, secularEqnPSCF deallocates valeVale
+   !   after writing eigenvectors to HDF5, but the
+   !   LAT TDOS path never re-allocates it (unlike
+   !   the Gaussian PDOS path which does).
+   if (allocated(energyEigenValues)) then
+      deallocate (energyEigenValues)
+   endif
 #ifndef GAMMA
-   deallocate (valeVale)
+   if (allocated(valeVale)) then
+      deallocate (valeVale)
+   endif
 #else
-   deallocate (valeValeGamma)
+   if (allocated(valeValeGamma)) then
+      deallocate (valeValeGamma)
+   endif
 #endif
 
 end subroutine cleanUpSecularEqn
