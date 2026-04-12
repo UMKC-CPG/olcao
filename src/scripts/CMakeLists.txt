@@ -14,9 +14,9 @@ set (SCRIPTS
    insert3cbo interFit.py
    lmp2skl.py
    make_veusz_graph.py makeBDB makeBDB.py makeBOND makeColorSYBD makeFittedRhoV
-   makeinput makePDOS makePotDB makePotDB.py makeReactions makeReactions.py
-   makeSGDB makeSYBD makeSYBD.py massGather massPrep massSubmit modStruct
-   makeinput.py modStruct.py
+   makeinput makePDOS makePDOS.py makePotDB makePotDB.py
+   makeReactions makeReactions.py makeSGDB makeSYBD makeSYBD.py massGather
+   massPrep massSubmit modStruct makeinput.py modStruct.py
    nanoTube.py normalize
    olcao olcaoCompare olcaoObject.py olcao.py olcaoStructures.py
    org_radwavefn.py osrecurintg.py osrecurintgana.py osrecurintgnum.py

@@ -736,17 +736,19 @@ class StructureControl:
         Parameters
         ----------
         mags : sequence of float
-            [|a|, |b|, |c|] lattice vector magnitudes in Angstroms
-            (0-indexed, i.e. mags[0] = |a|).
+            1-indexed: [None, |a|, |b|, |c|] lattice vector
+            magnitudes in Angstroms (mags[1] = |a|, etc.).
         angles_deg : sequence of float
-            [alpha, beta, gamma] in degrees (0-indexed).
+            1-indexed: [None, alpha, beta, gamma] in degrees.
         """
-        # Convert 0-indexed input sequences to the internal 1-indexed arrays.
-        # angles are stored in both degrees (for output) and radians (for math).
+        # Both input sequences use the 1-indexed convention
+        # that is standard throughout the codebase. Angles
+        # are stored in both degrees (for output) and radians
+        # (for math).
         for i in range(1, 4):
-            self.mag[i] = mags[i - 1]
-            self.angle_deg[i] = angles_deg[i - 1]
-            self.angle[i] = angles_deg[i - 1] * PI / 180.0
+            self.mag[i] = mags[i]
+            self.angle_deg[i] = angles_deg[i]
+            self.angle[i] = angles_deg[i] * PI / 180.0
 
         # Build the Cartesian lattice vectors from magnitudes and angles, then
         # derive the direct-space inverse and the reciprocal lattice matrix.
@@ -5176,47 +5178,53 @@ class StructureControl:
             handles that internally.
 
         Note on displacement indexing:
-            The Perl caller passes a 1-indexed array reference (indices 1..3).
-            The Python interface accepts a plain 0-indexed sequence [dx, dy, dz]
-            of length 3.  The enumerate(displacement, start=1) call in the
-            implementation maps displacement[0..2] onto axis indices 1..3 when
-            updating direct_xyz.
+            The displacement is 1-indexed: [None, dx, dy, dz], consistent
+            with the Perl original and the rest of the codebase's coordinate
+            arrays (direct_xyz, direct_abc, fract_abc).
 
-        After either branch, check_bounding_box() is called to wrap any atom
-        that drifted outside [0, 1) in fractional coordinates back into the
-        simulation cell via periodic boundary conditions.  The Perl original
-        passed atom1/atom2 to checkBoundingBox; the Python version runs on all
-        atoms as a simplification.
+        After either branch, check_bounding_box(atom1, atom2) is called to
+        wrap any atom that drifted outside [0, 1) in fractional coordinates
+        back into the simulation cell via periodic boundary conditions.  Only
+        atoms in the translated range are wrapped, matching the Perl original.
 
         Parameters
         ----------
         atom1, atom2 : int
             Inclusive 1-indexed atom range to translate.
-        displacement : sequence of float
-            [dx, dy, dz] translation in Angstroms (0-indexed, length 3).
-            Pass [0.0, 0.0, 0.0] to center the atom cloud in the cell.
+        displacement : list of float
+            1-indexed translation in Angstroms:
+            [None, dx, dy, dz].  Pass [None, 0.0, 0.0, 0.0]
+            to center the atom cloud in the cell.
         """
-        if displacement[0] == 0.0 and displacement[1] == 0.0 and displacement[2] == 0.0:
-            # Special 0 0 0 designation: center the atom cloud in the cell.
-            # shift_xyz_center computes get_min_max_xyz internally, then shifts
-            # direct_xyz and re-derives direct_abc / fract_abc for each atom.
+        if (displacement[1] == 0.0
+                and displacement[2] == 0.0
+                and displacement[3] == 0.0):
+            # Special 0 0 0 designation: center the atom
+            # cloud in the cell.  shift_xyz_center computes
+            # get_min_max_xyz internally, then shifts
+            # direct_xyz and re-derives direct_abc /
+            # fract_abc for each atom.
             self.shift_xyz_center(atom1, atom2)
         else:
             for atom in range(atom1, atom2 + 1):
-                # Add the requested XYZ displacement to each atom's direct
-                # Cartesian coordinates.  enumerate(start=1) maps the
-                # 0-indexed displacement sequence onto 1-indexed axes.
-                for axis, delta in enumerate(displacement, start=1):
-                    self.direct_xyz[atom][axis] += delta
+                # Add the requested XYZ displacement to
+                # each atom's direct Cartesian coordinates.
+                for axis in range(1, 4):
+                    self.direct_xyz[atom][axis] += (
+                        displacement[axis]
+                    )
 
                 # Re-derive direct_abc and fract_abc from the updated direct_xyz
                 # so all three coordinate representations stay in sync.
                 self.get_direct_abc(atom)
                 self.get_fract_abc(atom)
 
-        # Wrap any atom that ended up outside the simulation cell back inside
-        # using periodic boundary conditions (fract_abc wrapping).
-        self.check_bounding_box()
+        # Wrap any atom that ended up outside the simulation
+        # cell back inside using periodic boundary conditions
+        # (fract_abc wrapping).  Only wrap the atoms that were
+        # just translated — wrapping all atoms would disturb
+        # molecules that were previously placed correctly.
+        self.check_bounding_box(atom1, atom2)
 
     def insert_vacuum(self, vac_axis, vac_amt):
         """Insert a vacuum region by expanding a lattice vector magnitude.
@@ -5639,44 +5647,36 @@ class StructureControl:
             self.atom_element_id[atom]   = atom_element_id_local[atom]
             self.atom_species_id[atom]   = atom_species_id_local[atom]
 
-    def check_bounding_box(self):
-        """Wrap atoms outside [0, 1) in fractional coordinates back into the
-        simulation cell via periodic boundary conditions.
+    def check_bounding_box(self, atom1=None, atom2=None):
+        """Wrap atoms outside [0, 1) in fractional coordinates
+        back into the simulation cell via periodic boundary
+        conditions.
 
-        This is the translation-style wrapping (shiftStyle=0 in the Perl
-        original).  The Perl subroutine checkBoundingBox also supported a
-        rotation style (shiftStyle=1) that handled a qualitatively different
-        scenario: an atom that had been *rotated* outside the box, not merely
-        translated.  In that case the Perl caller had already restored
-        direct_xyz to the pre-rotation Cartesian position; checkBoundingBox
-        would then re-derive fract_abc from that saved position via
-        get_direct_abc + get_fract_abc *before* applying the ±1 shifts.  The
-        idea was that shifting the pre-rotation fractional coordinate ensures
-        that when the rotation is reapplied the atom lands inside the box.
-        The Perl comments describe this as "ugly" and "annoying".  The Python
-        port does not need this path because rotate_all_atoms handles the
-        rotation case differently.
+        Parameters
+        ----------
+        atom1, atom2 : int, optional
+            Inclusive 1-indexed atom range to check.  When
+            omitted, all atoms (1..num_atoms) are processed.
 
-        The Perl signature was checkBoundingBox(atom1, atom2, shiftStyle),
-        operating on the half-open range [atom1..atom2].  Python simplifies to
-        no parameters and always processes all atoms (equivalent to atom1=1,
-        atom2=num_atoms, shiftStyle=0).
+        This is the translation-style wrapping (shiftStyle=0
+        in the Perl original).  The Perl subroutine also
+        supported a rotation style (shiftStyle=1) that is not
+        needed here because rotate_all_atoms handles that case
+        differently.
 
         Algorithm (translation style):
-          For each atom, check all three fractional-coordinate axes:
-            - fract_abc > 1.0  →  subtract 1 (atom slipped off the +face)
-            - fract_abc < 0.0  →  add 1     (atom slipped off the -face)
-          If any axis was shifted, re-propagate the full coordinate triplet
-          get_direct_xyz → get_direct_abc → get_fract_abc from the corrected
-          fract_abc so that direct_xyz and direct_abc stay consistent.
-
-        Note: the Perl original contained leftover debug print statements
-        ("MOVE A" / "MOVE B") that wrote to STDOUT whenever an atom was
-        shifted.  These were never removed from the production code and reveal
-        that out-of-box atoms were an occasional real occurrence during
-        development.
+          For each atom, check all three fractional axes:
+            - fract_abc > 1.0 -> subtract 1 (off +face)
+            - fract_abc < 0.0 -> add 1      (off -face)
+          If any axis was shifted, re-propagate the full
+          coordinate triplet so that direct_xyz and direct_abc
+          stay consistent with the corrected fract_abc.
         """
-        for atom in range(1, self.num_atoms + 1):
+        if atom1 is None:
+            atom1 = 1
+        if atom2 is None:
+            atom2 = self.num_atoms
+        for atom in range(atom1, atom2 + 1):
             moved = False
             for axis in range(1, 4):
                 if self.fract_abc[atom][axis] > 1.0:
@@ -6259,6 +6259,7 @@ class StructureControl:
         # Define the angles (all 90 degrees = orthorhombic).
         for axis in range(1, 4):
             self.angle[axis] = PI / 2.0
+            self.angle_deg[axis] = 90.0
 
         # Compute the sine of each angle.
         self.get_angle_sine()
@@ -7030,10 +7031,10 @@ class StructureControl:
 
         Hexagonal cell schematic (c is out of the screen)::
 
-            b-----
-             \   .\
-              \    \
-               c----a
+               b-----
+              /    ./ 
+             /     /
+            c-----a
 
         The distance to the cell wall in the a direction is greater than the
         distance perpendicular to the wall.  If the limit distance is just the
@@ -7790,7 +7791,7 @@ class StructureControl:
         the desired region."
 
         The Perl implementation collected element names into @bondedElem then
-        called getUniqueArray(\@bondedElem, 0, 1) with flag 0 = compare by
+        called getUniqueArray(\\@bondedElem, 0, 1) with flag 0 = compare by
         ASCII characters and flag 1 = sort the unique elements by those ASCII
         characters.  The Python dict + sorted() reproduces this exactly.
 

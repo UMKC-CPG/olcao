@@ -1152,10 +1152,12 @@ class BondAnalysis:
         # Set the border so that we include only the requested
         # atoms.
         sc.set_border(
-            s.zone, s.coord_type,
-            s.box_borders[1][1], s.box_borders[2][1],
-            s.box_borders[3][1], s.box_borders[1][2],
-            s.box_borders[2][2], s.box_borders[3][2],
+            s.zone,
+            [s.box_borders[1][1], s.box_borders[2][1],
+             s.box_borders[3][1]],
+            [s.box_borders[1][2], s.box_borders[2][2],
+             s.box_borders[3][2]],
+            s.coord_type,
         )
 
     # ---------------------------------------------------------------
@@ -1396,7 +1398,7 @@ class BondAnalysis:
                     # Get the central cell atom number of this
                     # bonded atom.
                     bonded_atom1 = (
-                        sc.ext2central_item_map[
+                        sc.ext_to_central_item_map[
                             sc.bonded_ext[atom][bond1]
                         ]
                     )
@@ -1409,7 +1411,7 @@ class BondAnalysis:
                         # Get the central cell atom number of
                         # this bonded atom.
                         bonded_atom2 = (
-                            sc.ext2central_item_map[
+                            sc.ext_to_central_item_map[
                                 sc.bonded_ext[atom][bond2]
                             ]
                         )
@@ -1561,7 +1563,7 @@ class BondAnalysis:
                     # Obtain the central cell atom number for the
                     # atom at the other end of the current bond.
                     bonded_atom = (
-                        sc.ext2central_item_map[
+                        sc.ext_to_central_item_map[
                             sc.bonded_ext[atom][bond]
                         ]
                     )
@@ -3045,8 +3047,8 @@ class BondAnalysis:
             # in the bond order list, make sure this bond is one
             # of them.
             if s.use_olcao_bo:
-                c1 = sc.ext2central_item_map[a1]
-                c2 = sc.ext2central_item_map[a2]
+                c1 = sc.ext_to_central_item_map[a1]
+                c2 = sc.ext_to_central_item_map[a2]
                 found = False
                 for bo_a1, bo_a2 in bond_bo_list:
                     if c1 == bo_a1 and c2 == bo_a2:

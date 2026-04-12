@@ -352,8 +352,10 @@ Defaults are given in ./modStructrc.py or $OLCAO_RC/modStructrc.py.
                 })
 
             elif flag == "-trans":
-                # -trans TX TY TZ
+                # -trans TX TY TZ (1-indexed for
+                #   translate_atoms)
                 trans = [
+                    None,
                     float(argv[n + 1]),
                     float(argv[n + 2]),
                     float(argv[n + 3]),
@@ -381,8 +383,9 @@ Defaults are given in ./modStructrc.py or $OLCAO_RC/modStructrc.py.
                 )
                 rot = [r / mag for r in rot]
 
-                # Default origin is (0, 0, 0).
-                origin = [0.0, 0.0, 0.0]
+                # Default origin is (0,0,0) (1-indexed
+                #   for translate_atoms).
+                origin = [None, 0.0, 0.0, 0.0]
 
                 # Check for the -orig sub-option (up to 2
                 # passes, matching original Perl logic).
@@ -391,6 +394,7 @@ Defaults are given in ./modStructrc.py or $OLCAO_RC/modStructrc.py.
                             and argv[n + 1] == "-orig"):
                         n += 1
                         origin = [
+                            None,
                             float(argv[n + 1]),
                             float(argv[n + 2]),
                             float(argv[n + 3]),
@@ -451,8 +455,9 @@ Defaults are given in ./modStructrc.py or $OLCAO_RC/modStructrc.py.
                     / math.pi
                 )
 
-                # Default origin is (0, 0, 0).
-                origin = [0.0, 0.0, 0.0]
+                # Default origin is (0,0,0) (1-indexed
+                #   for translate_atoms).
+                origin = [None, 0.0, 0.0, 0.0]
 
                 # Check for sub-options (up to 3 passes,
                 # matching original Perl logic).
@@ -466,6 +471,7 @@ Defaults are given in ./modStructrc.py or $OLCAO_RC/modStructrc.py.
                             and argv[n + 1] == "-orig"):
                         n += 1
                         origin = [
+                            None,
                             float(argv[n + 1]),
                             float(argv[n + 2]),
                             float(argv[n + 3]),
@@ -816,31 +822,43 @@ def do_rotate(op, sc):
 
     Args:
         op: Operation dict with keys 'rot' ([rx,ry,rz]),
-            'angle' (radians), and 'origin' ([ox,oy,oz]).
+            'angle' (radians), and 'origin'
+            ([None,ox,oy,oz], 1-indexed).
         sc: StructureControl instance.
     """
     origin = op["origin"]
     axis = op["rot"]
     angle_rad = op["angle"]
 
-    # Convert radians to degrees for define_rot_matrix which
-    # expects degrees.
+    # Convert radians to degrees for define_rot_matrix
+    # which expects degrees.
     angle_deg = angle_rad * 180.0 / math.pi
 
-    # If the origin is not (0,0,0), translate all atoms so the
-    # rotation origin becomes the coordinate origin.
-    has_origin = any(abs(o) > 1e-12 for o in origin)
+    # If the origin is not (0,0,0), translate all atoms
+    # so the rotation origin becomes the coordinate
+    # origin.  Check axes 1..3 (origin is 1-indexed).
+    has_origin = any(
+        abs(origin[ax]) > 1e-12 for ax in range(1, 4)
+    )
     if has_origin:
-        neg_origin = [-o for o in origin]
-        sc.translate_atoms(1, sc.num_atoms, neg_origin)
+        neg_origin = [
+            None,
+            -origin[1], -origin[2], -origin[3],
+        ]
+        sc.translate_atoms(
+            1, sc.num_atoms, neg_origin
+        )
 
-    # Build the rotation matrix and apply it to all atoms.
+    # Build the rotation matrix and apply it to all
+    # atoms.
     sc.define_rot_matrix(axis, angle_deg)
     sc.rotate_all_atoms()
 
     # Translate back if we shifted the origin.
     if has_origin:
-        sc.translate_atoms(1, sc.num_atoms, origin)
+        sc.translate_atoms(
+            1, sc.num_atoms, origin
+        )
 
 
 def do_filter(op, sc):
