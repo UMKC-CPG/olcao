@@ -48,6 +48,34 @@ module O_AtomicSites
    real (kind=double), dimension(dim3) :: xyzIonMoment
    real (kind=double), dimension(dim3) :: abcIonMoment
 
+   ! Atom permutation table for IBZ unfolding.
+   integer, allocatable, dimension (:,:) :: atomPerm
+         !   For each point group operation R and atom
+         !   site A, atomPerm(R, A) = B gives the atom
+         !   site B that operation R maps A onto. Used by
+         !   computeBond to distribute eigenvector-dependent
+         !   properties (effective charge, bond order) across
+         !   the star of each IBZ k-point via the atom
+         !   permutation fix (DESIGN 2.4). Built by
+         !   buildAtomPerm after point group operations and
+         !   atom positions are both available. Dimensions:
+         !   (numPointOps, numAtomSites). Only allocated for
+         !   k-point style codes 1 and 2.
+
+   ! Inverse atom permutation for IBZ unfolding.
+   integer, allocatable, dimension (:,:) :: invAtomPerm
+         !   For each point group operation R and atom
+         !   site B, invAtomPerm(R, B) = A gives the atom
+         !   site A such that atomPerm(R, A) = B, i.e.,
+         !   A = R^{-1}(B). Used during LAT PDOS tetrahedron
+         !   corner assembly to map channel indices from
+         !   full-mesh k-points back to their IBZ
+         !   representatives (DESIGN 1.4, PSEUDOCODE 4a).
+         !   Built by buildInvAtomPerm immediately after
+         !   buildAtomPerm. Dimensions: (numPointOps,
+         !   numAtomSites). Only allocated when atomPerm
+         !   is allocated.
+
 
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    ! Begin list of module subroutines.!
@@ -217,11 +245,212 @@ subroutine computeIonicMoment(incChargePerVol)
 end subroutine computeIonicMoment
 
 
+subroutine buildAtomPerm
+
+   ! Build the atom permutation table atomPerm(R, A) = B, which records that
+   ! point group operation R maps atom A onto atom B. This is the single piece
+   ! of infrastructure needed for correct IBZ unfolding of all shell-summed
+   ! quantities: effective charge (Q*), bond order, and PDOS modes 0-2. See
+   ! PSEUDOCODE section 4 and DESIGN section 2.4.
+   !
+   ! The algorithm works in fractional (abc) coordinates because the point
+   ! group operations are stored in that basis. Cartesian atom positions are
+   ! converted to fractional using invRealVectors (= recipVectors / 2*pi).
+   ! For each operation R and each atom A, the rotation is applied to A's
+   ! fractional position, the result is wrapped into [0,1), and the matching
+   ! atom B of the same species is identified by minimum-image comparison.
+
+   ! Import the point group rotation matrices and the fractional translation
+   !   vectors needed for IBZ symmetry reduction and real-space atom mapping.
+   use O_KPoints, only: numPointOps, abcPointOps, abcFracTrans
+
+   ! Import the inverse real-space lattice vectors for the Cartesian-to-
+   !   fractional coordinate conversion: abc = invRealVectors * xyz.
+   use O_Lattice, only: invRealVectors
+
+   ! Make sure no accidental variables are defined.
+   implicit none
+
+   ! Tolerance for fractional coordinate matching. Atoms whose wrapped
+   !   fractional positions differ by less than this threshold on every
+   !   axis are considered the same crystallographic site.
+   real (kind=double), parameter :: posTol = 1.0e-5_double
+
+   ! Define local variables.
+   integer :: opIdx      ! Loop index over point group operations.
+   integer :: atomA      ! Loop index: source atom being rotated.
+   integer :: atomB      ! Loop index: candidate target atom.
+   integer :: axis       ! Loop index over fractional coordinate axes.
+   logical :: matchFound ! True when atom B matching R(atomA) is found.
+
+   ! Fractional (abc) coordinates of every atom site, converted from the
+   !   Cartesian positions stored in atomSites(:)%cartPos. The conversion
+   !   uses the same convention as computeIonicMoment: abc(i) = sum_j
+   !   invRealVectors(i,j) * xyz(j). Dimensions: (3, numAtomSites).
+   real (kind=double), allocatable, dimension (:,:) :: abcAtomPos
+
+   ! The fractional position of atom A after the full space group operation
+   !   {R|t}: rotPos(i) = sum_j abcPointOps(i,j,R) * abcAtomPos(j,A) +
+   !   abcFracTrans(i,R).
+   real (kind=double), dimension (dim3) :: rotPos
+
+   ! Difference between the rotated position and a candidate atom's
+   !   fractional position, wrapped into [-0.5, 0.5) via nint to enforce
+   !   the minimum-image convention under periodic boundaries.
+   real (kind=double), dimension (dim3) :: diff
+
+   ! -----------------------------------------------------------------
+   ! Step 1: Convert all atom positions from Cartesian (xyz) to
+   !   fractional (abc) coordinates. The transformation is:
+   !     abcAtomPos(i, A) = sum_j invRealVectors(i,j) * cartPos(j)
+   !   This is the same convention used in computeIonicMoment.
+   ! -----------------------------------------------------------------
+
+   allocate (abcAtomPos(dim3, numAtomSites))
+
+   do atomA = 1, numAtomSites
+      do axis = 1, dim3
+         abcAtomPos(axis, atomA) = &
+               & sum(invRealVectors(axis,:) &
+               &     * atomSites(atomA)%cartPos(:))
+      enddo
+   enddo
+
+   ! -----------------------------------------------------------------
+   ! Step 2: Allocate the permutation table. Each entry will be filled
+   !   in Step 3. The table has one row per point group operation and
+   !   one column per atom site.
+   ! -----------------------------------------------------------------
+
+   allocate (atomPerm(numPointOps, numAtomSites))
+
+   ! -----------------------------------------------------------------
+   ! Step 3: For each operation R and each atom A, apply R to the
+   !   fractional position of A, wrap the result into [0,1), and find
+   !   the matching atom B of the same species. Point group operations
+   !   preserve species (they are pure rotations/reflections of the
+   !   crystal), so only atoms sharing the same atomTypeAssn can match.
+   ! -----------------------------------------------------------------
+
+   do opIdx = 1, numPointOps
+      do atomA = 1, numAtomSites
+
+         ! Apply the full space group operation {R|t} in fractional coordinates:
+         !   rotPos = R*abc + t (R = rotation matrix, t = fractional translation).
+         do axis = 1, dim3
+            rotPos(axis) = &
+                  & sum(abcPointOps(axis,:,opIdx) &
+                  &     * abcAtomPos(:,atomA)) &
+                  & + abcFracTrans(axis, opIdx)
+         enddo
+
+         ! Wrap the rotated position into [0, 1). The Fortran modulo
+         !   intrinsic correctly handles negative arguments (unlike mod).
+         do axis = 1, dim3
+            rotPos(axis) = modulo(rotPos(axis), 1.0_double)
+         enddo
+
+         ! Search for the atom at the rotated position. Only atoms of
+         !   the same type can match (species is conserved by symmetry).
+         matchFound = .false.
+         do atomB = 1, numAtomSites
+
+            ! Skip atoms of a different species.
+            if (atomSites(atomB)%atomTypeAssn /= &
+                  & atomSites(atomA)%atomTypeAssn) cycle
+
+            ! Compute the minimum-image difference on each fractional
+            !   axis: subtract, then wrap into [-0.5, 0.5) via nint.
+            do axis = 1, dim3
+               diff(axis) = rotPos(axis) &
+                     & - abcAtomPos(axis, atomB)
+               diff(axis) = diff(axis) &
+                     & - nint(diff(axis))
+            enddo
+
+            ! Check whether all components fall within tolerance.
+            if (all(abs(diff(:)) < posTol)) then
+               atomPerm(opIdx, atomA) = atomB
+               matchFound = .true.
+               exit
+            endif
+
+         enddo ! atomB
+
+         ! Safety check: every atom must map to exactly one partner
+         !   under every point group operation. A missing match means
+         !   the point group operations and the atom positions are
+         !   inconsistent -- this is a fatal error.
+         if (.not. matchFound) then
+            write (20,*) 'ERROR in buildAtomPerm:'
+            write (20,*) '  No matching atom for site ', &
+                  & atomA, ' under operation ', opIdx
+            write (20,*) '  Rotated fractional pos = ', &
+                  & rotPos(:)
+            stop 'buildAtomPerm: no atom match found'
+         endif
+
+      enddo ! atomA
+   enddo ! opIdx
+
+   ! Clean up the temporary fractional coordinate array.
+   deallocate (abcAtomPos)
+
+end subroutine buildAtomPerm
+
+
+! Build the inverse atom permutation table. For each
+!   point group operation R and atom site B,
+!   invAtomPerm(R, B) = A where atomPerm(R, A) = B.
+!   This gives A = R^{-1}(B): the atom at the IBZ
+!   k-point whose image under R is atom B at the
+!   full-mesh k-point. Required for LAT PDOS channel
+!   permutation (DESIGN 1.4, PSEUDOCODE 4a).
+!
+!   Must be called after buildAtomPerm, which
+!   populates the forward table atomPerm. The inverse
+!   is constructed by scanning atomPerm and swapping
+!   the role of A and B.
+subroutine buildInvAtomPerm
+
+   use O_KPoints, only: numPointOps
+
+   implicit none
+
+   ! Local loop indices.
+   integer :: opIdx  ! Point group operation index.
+   integer :: atomA  ! Source atom (forward map).
+   integer :: atomB  ! Target atom (forward map).
+
+   ! Allocate the inverse table with the same shape
+   !   as atomPerm: (numPointOps, numAtomSites).
+   allocate (invAtomPerm(numPointOps, numAtomSites))
+
+   ! Invert: if atomPerm(R, A) = B then
+   !   invAtomPerm(R, B) = A.
+   do opIdx = 1, numPointOps
+      do atomA = 1, numAtomSites
+         atomB = atomPerm(opIdx, atomA)
+         invAtomPerm(opIdx, atomB) = atomA
+      enddo
+   enddo
+
+end subroutine buildInvAtomPerm
+
+
 subroutine cleanUpAtomSites
 
    implicit none
 
    deallocate (atomSites)
+
+   ! Only allocated for k-point style codes 1 and 2.
+   if (allocated(atomPerm)) then
+      deallocate (atomPerm)
+   endif
+   if (allocated(invAtomPerm)) then
+      deallocate (invAtomPerm)
+   endif
 
 end subroutine cleanUpAtomSites
 

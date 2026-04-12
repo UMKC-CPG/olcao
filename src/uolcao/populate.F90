@@ -778,7 +778,7 @@ end subroutine initCoreStateStructures
 !
 ! Algorithm (see PSEUDOCODE.md sections 3 and 3a for derivation):
 !   For each band n and each tetrahedron T:
-!   1. Look up eigenvalues at the four corners via fullToIBZMap
+!   1. Look up eigenvalues at the four corners via fullKPToIBZKPMap
 !      (unfolding the IBZ to the full mesh).
 !   2. Sort the four eigenvalues ascending; track the permutation
 !      so we can map corner weights back to the correct k-points.
@@ -796,7 +796,7 @@ subroutine computeElectronPopulation_LAT
    use O_Input,           only: numStates
    use O_KPoints,         only: numKPoints, &
          & numTetrahedra, tetraVol, tetrahedra, &
-         & fullToIBZMap
+         & fullKPToIBZKPMap
    use O_SecularEquation, only: energyEigenValues
 
    ! Make sure that no variables are declared accidentally.
@@ -817,7 +817,7 @@ subroutine computeElectronPopulation_LAT
 
    ! The IBZ k-point index of a given corner, obtained by following
    !   the sort permutation back to the original corner and then
-   !   through the fullToIBZMap.
+   !   through the fullKPToIBZKPMap.
    integer :: ibzKP
 
    ! Temporary variables for swapping values during the selection
@@ -887,7 +887,7 @@ subroutine computeElectronPopulation_LAT
 
    ! The IBZ k-point index for each of the four tetrahedron corners,
    !   obtained by mapping the full-mesh tetrahedron corner index
-   !   through fullToIBZMap.
+   !   through fullKPToIBZKPMap.
    integer, dimension(4) :: ibzCorner
 
    ! Sort permutation array. After sorting, sortPerm(i) gives the
@@ -940,11 +940,11 @@ subroutine computeElectronPopulation_LAT
             ! ----------------------------------------
             ! The tetrahedra array stores full-mesh k-point indices
             !   (1..numFullMeshKP). We map each corner to its IBZ
-            !   representative via fullToIBZMap, then look up the
+            !   representative via fullKPToIBZKPMap, then look up the
             !   eigenvalue for this band and spin. The sort
             !   permutation is initialized to the identity.
             do i = 1, 4
-               ibzCorner(i) = fullToIBZMap( &
+               ibzCorner(i) = fullKPToIBZKPMap( &
                      & tetrahedra(i, t))
                cornerEigenVals(i) = &
                      & energyEigenValues( &

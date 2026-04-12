@@ -131,7 +131,9 @@ subroutine setupSCF
          & elecPotGaussOverlap, cleanUpIntegrals, &
          & secondCleanUpIntegrals
    use O_Integrals3Terms ! Use all so we can exclude gaussKOverlap
-   use O_AtomicSites, only: coreDim, valeDim, cleanUpAtomSites
+   use O_AtomicSites, only: coreDim, valeDim, &
+         & cleanUpAtomSites, buildAtomPerm, &
+         & buildInvAtomPerm
    use O_AtomicTypes, only: cleanUpRadialFns, cleanUpAtomTypes
    use O_PotSites, only: cleanUpPotSites
    use O_PotTypes, only: cleanUpPotTypes
@@ -201,6 +203,20 @@ subroutine setupSCF
 
    ! Compute the desired set of kpoints.
    call initializeKPoints (1) ! inSCF == 1
+
+
+   ! Build the atom permutation table for IBZ
+   !   unfolding of effective charge, bond order, and
+   !   PDOS. For style codes 1 and 2 this maps atoms
+   !   under the crystal point group; for style code 0
+   !   it builds a trivial identity table (each atom
+   !   maps to itself under the single identity op).
+   call buildAtomPerm
+
+   ! Build the inverse atom permutation table for LAT
+   !   PDOS channel permutation (DESIGN 1.4). Must
+   !   follow buildAtomPerm.
+   call buildInvAtomPerm
 
 
    ! Renormalize the basis functions
@@ -537,12 +553,15 @@ subroutine intgPSCF
          & atomKOverlapPSCF_aid, atomKOverlapPlusGPSCF_aid,&
          & numComponents,fullCVDimsPSCF,packedVVDimsPSCF
    use O_Lattice, only: initializeLattice, initializeFindVec, recipVectors
-   use O_KPoints, only: numKPoints, makePathKPoints, initializeKPoints
+   use O_KPoints, only: numKPoints, makePathKPoints, &
+         & initializeKPoints
    use O_GaussianRelations, only: makeAlphaDist, makeAlphaNucDist,&
          & makeAlphaPotDist, cleanUpGaussRelations
-   use O_AtomicSites, only: coreDim, valeDim
+   use O_AtomicSites, only: coreDim, valeDim, &
+         & buildAtomPerm, buildInvAtomPerm
 
-   ! Make sure that there are not accidental variable declarations.
+   ! Make sure that there are not accidental
+   !   variable declarations.
    implicit none
 
    ! Define local variables.
@@ -551,33 +570,55 @@ subroutine intgPSCF
    ! Initialize local variables.
    zeroVectors(:,:) = 0.0_double
 
-   ! Open the potential file that will be read from in this program.
-   open (unit=8,file='fort.8',status='old',form='formatted')
+   ! Open the potential file that will be read from
+   !   in this program.
+   open (unit=8, file='fort.8', status='old', &
+         & form='formatted')
 
 
-   ! Read in the input to initialize all the key data structure variables.
+   ! Read in the input to initialize all the key data
+   !   structure variables.
    call parseInput(0) ! inSCF=0
 
 
-   ! Find specific computational parameters not EXPLICITLY given in the input
-   !   file, but which can, however, be easily determined from the input file.
+   ! Find specific computational parameters not
+   !   EXPLICITLY given in the input file, but which
+   !   can be easily determined from the input file.
    call getImplicitInfo
 
 
-   ! Create real-space super lattice out of the primitive lattice.  These
-   !   "supercells" must be big enough so as to include all the points within
-   !   sphere bounded by the negligability limit.  Points outside the sphere
-   !   are considered negligable and are ignored.
+   ! Create real-space super lattice out of the
+   !   primitive lattice. These "supercells" must be
+   !   big enough to include all the points within a
+   !   sphere bounded by the negligibility limit.
+   !   Points outside the sphere are considered
+   !   negligible and are ignored.
    call initializeLattice (1)
 
 
-   ! Setup the necessary data structures so that we can easily find the lattice
-   !   vector that is closest to any other arbitrary vector.
+   ! Setup the necessary data structures so that we
+   !   can easily find the lattice vector that is
+   !   closest to any other arbitrary vector.
    call initializeFindVec
 
 
-   ! Initialize the kpoints according to any input control parameters.
+   ! Initialize the kpoints according to any input
+   !   control parameters.
    call initializeKPoints(0) ! inSCF == 0
+
+
+   ! Build the atom permutation table for IBZ
+   !   unfolding of effective charge, bond order, and
+   !   PDOS. For style codes 1 and 2 this maps atoms
+   !   under the crystal point group; for style code 0
+   !   it builds a trivial identity table (each atom
+   !   maps to itself under the single identity op).
+   call buildAtomPerm
+
+   ! Build the inverse atom permutation table for LAT
+   !   PDOS channel permutation (DESIGN 1.4). Must
+   !   follow buildAtomPerm.
+   call buildInvAtomPerm
 
 
    ! Renormalize the basis functions.
@@ -863,16 +904,18 @@ subroutine dos(inSCF)
    ! Shift the energy eigen values according to the highest occupied state.
    call shiftEnergyEigenValues(occupiedEnergy)
 
-   ! Dispatch to the appropriate DOS method. When the LAT
-   !   integration method is active, compute the TDOS using
-   !   tetrahedra (eigenvalues only; PDOS is not yet
-   !   supported via LAT). Otherwise, use the standard
-   !   Gaussian broadening path for TDOS + PDOS.
+   ! Dispatch to the DOS methods. When the LAT
+   !   integration method is active, compute the TDOS
+   !   via tetrahedra first (eigenvalues only, written
+   !   to fort.60/61). Then call computeDOS, which
+   !   handles PDOS (fort.70/71) and localization
+   !   index (fort.80/81) for both LAT and Gaussian
+   !   paths -- it branches internally on
+   !   kPointIntgCode (DESIGN 1.4).
    if (kPointIntgCode == 1) then
       call computeTDOS_LAT
-   else
-      call computeDOS(inSCF)
    endif
+   call computeDOS(inSCF)
 
    ! Close the output files.
    close(60)

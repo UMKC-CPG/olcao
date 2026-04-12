@@ -19,10 +19,13 @@ subroutine computeBond (inSCF)
    use O_Lattice,     only: realVectors,realCellVolume
    use O_AtomicTypes, only: numAtomTypes, atomTypes, maxNumStates
    use O_KPoints,     only: numKPoints, kPointWeight, &
-         & kPoints, kPointIntgCode
+         & kPoints, kPointIntgCode, &
+         & fullKPToIBZKPMap, fullKPToIBZOpMap, &
+         & numFullMeshKP
    use O_Populate,    only: electronPopulation, &
          & electronPopulation_LAT
-   use O_AtomicSites, only: coreDim, valeDim, numAtomSites, atomSites
+   use O_AtomicSites, only: coreDim, valeDim, numAtomSites, &
+         & atomSites, atomPerm
    use O_PotTypes,    only: potTypes
    use O_ElementData, only: coreCharge
    use O_Input,       only: numStates, sigmaBOND, eminBOND, emaxBOND, &
@@ -116,6 +119,19 @@ subroutine computeBond (inSCF)
 #else
    real (kind=double), allocatable, dimension (:)    :: waveFnSqrdGamma
 #endif
+
+   ! IBZ unfolding buffers: per-atom and per-atom-orbital projections
+   !   accumulated over bands for one IBZ k-point, then distributed
+   !   across the star via atomPerm.
+   real (kind=double), allocatable, dimension (:)   :: ibzAtomProj
+   real (kind=double), allocatable, dimension (:,:) :: ibzOrbProj
+   real (kind=double), allocatable, dimension (:,:) :: ibzBondProj
+   integer :: starSize   ! Number of full-mesh k-points in the star
+   integer :: fullIdx    ! Loop index over full-mesh k-points
+   integer :: opIdx      ! Point group operation index for star member
+   integer :: permAtom   ! Permuted atom index: atomPerm(opIdx, k)
+   integer :: permAtom2  ! Permuted second atom for bond order pairs
+   integer :: numOrbs    ! Number of QN_l orbitals for current atom
 
    ! Log the date and time we start.
    call timeStampStart (22)
@@ -223,6 +239,14 @@ subroutine computeBond (inSCF)
    allocate (bondLength         (numAtomSites,numAtomSites))
    allocate (atomCharge         (numAtomSites,spin))
    allocate (atomOrbitalCharge  (numAtomSites,maxNumStates))
+
+   ! IBZ unfolding buffers: accumulate per-atom projections and per-pair
+   !   bond order over bands for one IBZ k-point before distributing
+   !   across the star.
+   allocate (ibzAtomProj (numAtomSites))
+   allocate (ibzOrbProj  (numAtomSites, maxNumStates))
+   allocate (ibzBondProj (numAtomSites, numAtomSites))
+
    if (excitedAtomPACS .ne. 0) then
       allocate (energyScale         (numEnergyPoints))
       allocate (bondCompleteAtom    (numEnergyPoints,maxNumNeighbors))
@@ -267,6 +291,12 @@ subroutine computeBond (inSCF)
             ! Read necessary data from post SCF (intg,band) data structures.
             call readDataPSCF(h,i,numStates,1) ! 1 = Overlap matrixCode
          endif
+
+         ! Zero the IBZ-kpoint projection buffers before
+         !   accumulating over bands for this kpoint.
+         ibzAtomProj(:) = 0.0_double
+         ibzOrbProj(:,:) = 0.0_double
+         ibzBondProj(:,:) = 0.0_double
 
          do j = 1, numStates
 
@@ -524,23 +554,20 @@ subroutine computeBond (inSCF)
                         & valeValeOLGamma(:valeDim,l))
 #endif
 
-                  ! Store the atom charge contribution from this band (j) and
-                  !   kpoint (i).
-!                  atomCharge(k,h) = atomCharge(k,h) + oneValeRealAccum * &
-!                        & kPointWeight(i) / real(spin,double)
-!write(20,*) "i j k l", i, j, k, l
-!write(20,*) "kPW(i) oVRA aC", kPointWeight(i), oneValeRealAccum, atomCharge(k,h)
-                  atomCharge(k,h) = atomCharge(k,h) + oneValeRealAccum * &
-                        & statePopulation
+                  ! Buffer the per-atom charge projection for this band
+                  !   and kpoint. The buffer will be distributed across
+                  !   the star of this IBZ k-point after all bands are
+                  !   processed.
+                  ibzAtomProj(k) = ibzAtomProj(k) &
+                        & + oneValeRealAccum &
+                        & * statePopulation
 
-                  ! Store the atom orbital charge contribution.
-!                  atomOrbitalCharge(k,chargeIndex(l)) = &
-!                        & atomOrbitalCharge(k,chargeIndex(l)) + &
-!                        & oneValeRealAccum * kPointWeight(i)/real(spin,double)
-                  atomOrbitalCharge(k,chargeIndex(l)) = &
-                        & atomOrbitalCharge(k,chargeIndex(l)) + &
-                        & oneValeRealAccum * &
-                        & statePopulation
+                  ! Buffer the per-atom orbital charge projection (same
+                  !   star distribution, extra QN_l orbital dimension).
+                  ibzOrbProj(k, chargeIndex(l)) = &
+                        & ibzOrbProj(k, chargeIndex(l)) &
+                        & + oneValeRealAccum &
+                        & * statePopulation
                enddo ! basis index l
 
                ! Initialize the indices of the second atom. (1)=init, (2)=fin
@@ -645,17 +672,88 @@ subroutine computeBond (inSCF)
                               & atom2Index(2),m))
 #endif
 
-                        ! Store the atom pair bond order contribution.
-!                        bondOrder(k,l) = bondOrder(k,l) + oneValeRealAccum * &
-!                              & kPointWeight(i) / real(spin,double)
-                        bondOrder(k,l) = bondOrder(k,l) + oneValeRealAccum * &
-                              & statePopulation
+                        ! Buffer the atom pair bond order projection
+                        !   for this band and kpoint. Distributed across
+                        !   the star after all bands are processed
+                        !   after all bands are processed.
+                        ibzBondProj(k,l) = ibzBondProj(k,l) &
+                              & + oneValeRealAccum &
+                              & * statePopulation
 
                      enddo
                   endif
                enddo ! (l atom2)
             enddo ! (k atom1)
          enddo ! (j states)
+
+         ! -------------------------------------------------------
+         ! Distribute the buffered per-atom charge projections
+         !   across the star of this IBZ k-point using the atom
+         !   permutation table. For
+         !   style codes 1 and 2 the star may contain multiple
+         !   full-mesh k-points; for style code 0 (identity IBZ
+         !   maps) each star has size 1 and the permutation is
+         !   identity, so this reduces to direct accumulation.
+         ! -------------------------------------------------------
+
+         ! Count the star size: number of full-mesh k-points
+         !   that fold onto IBZ k-point i.
+         starSize = 0
+         do fullIdx = 1, numFullMeshKP
+            if (fullKPToIBZKPMap(fullIdx) == i) then
+               starSize = starSize + 1
+            endif
+         enddo
+
+         ! Loop over every full-mesh k-point in the star and
+         !   distribute the per-atom and per-pair projections
+         !   into the permuted atom indices. Dividing by starSize
+         !   ensures totals are preserved: the sum across star
+         !   members recovers the original projection exactly.
+         do fullIdx = 1, numFullMeshKP
+            if (fullKPToIBZKPMap(fullIdx) /= i) cycle
+            opIdx = fullKPToIBZOpMap(fullIdx)
+
+            do k = 1, numAtomSites
+               permAtom = atomPerm(opIdx, k)
+
+               ! Distribute atom charge.
+               atomCharge(permAtom, h) = &
+                     & atomCharge(permAtom, h) &
+                     & + ibzAtomProj(k) &
+                     & / real(starSize, double)
+
+               ! Distribute orbital-resolved charge with
+               !   the same permutation. The QN_l orbital
+               !   indices are identical for the original
+               !   and permuted atoms because atomPerm maps
+               !   atoms of the same type (same orbital
+               !   structure).
+               numOrbs = numOrbIndex(k+1) &
+                     & - numOrbIndex(k)
+               do l = 1, numOrbs
+                  atomOrbitalCharge(permAtom, l) = &
+                        & atomOrbitalCharge(permAtom, l) &
+                        & + ibzOrbProj(k, l) &
+                        & / real(starSize, double)
+               enddo
+
+               ! Distribute bond order for every pair
+               !   involving atom k. Both atom indices in
+               !   the pair are permuted by the same
+               !   operation R, preserving bond topology
+               !   under symmetry.
+               do l = 1, numAtomSites
+                  if (ibzBondProj(k, l) == 0.0_double) &
+                        & cycle
+                  permAtom2 = atomPerm(opIdx, l)
+                  bondOrder(permAtom, permAtom2) = &
+                        & bondOrder(permAtom, permAtom2) &
+                        & + ibzBondProj(k, l) &
+                        & / real(starSize, double)
+               enddo
+            enddo ! k (atoms)
+         enddo ! fullIdx (star members)
 
          ! Record that this kpoint has been finished.
          if (mod(i,10) .eq. 0) then
@@ -1088,6 +1186,9 @@ subroutine computeBond (inSCF)
    deallocate (bondLength)
    deallocate (atomCharge)
    deallocate (atomOrbitalCharge)
+   deallocate (ibzAtomProj)
+   deallocate (ibzOrbProj)
+   deallocate (ibzBondProj)
 #ifndef GAMMA
    deallocate (waveFnSqrd)
    if (inSCF == 0) then
