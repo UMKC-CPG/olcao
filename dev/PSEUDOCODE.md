@@ -47,108 +47,256 @@ function idx(a, b, c):
 
 ## 2. LAT TDOS (DESIGN 1.3)
 
+The TDOS at each energy grid point is the sum of per-
+corner DOS weights from `bloechlCornerDOSWt` (section
+2a), summed over all bands and tetrahedra. The per-corner
+weights are also used individually by the PDOS (section
+8.3).
+
 ```
 function computeTDOS_LAT(eigenValues, tetrahedra,
-                         numTetrahedra, tetraVol,
-                         energyGrid, numEnergyPoints,
-                         numStates, numSpins):
+        numTetrahedra, tetraVol,
+        energyGrid, numEnergyPoints,
+        numStates, numSpins,
+        fullKPToIBZKPMap):
     allocate tdos(numEnergyPoints, numSpins) = 0.0
 
     for spin = 1 to numSpins:
         for n = 1 to numStates:
             for T = 1 to numTetrahedra:
-                k1,k2,k3,k4 = tetrahedra(1:4, T)
-                eps(1:4) = sort([
-                    eigenValues(n, k1, spin),
-                    eigenValues(n, k2, spin),
-                    eigenValues(n, k3, spin),
-                    eigenValues(n, k4, spin)])
+                # Map full-mesh corners to IBZ
+                # eigenvalues.
+                for c = 1 to 4:
+                    kFull = tetrahedra(c, T)
+                    kIBZ = fullKPToIBZKPMap(kFull)
+                    eps(c) = eigenValues(
+                        n, kIBZ, spin)
+
+                # Sort eigenvalues ascending.
+                sortedEps = sort(eps)
 
                 for iE = 1 to numEnergyPoints:
                     E = energyGrid(iE)
+                    if E < sortedEps(1) or
+                            E >= sortedEps(4):
+                        cycle
+
+                    # Per-corner DOS weights. The
+                    # TDOS uses only their sum.
+                    cornerDOSWt_LAT(1:4) =
+                        bloechlCornerDOSWt(
+                            E, sortedEps)
+
                     tdos(iE, spin) +=
-                        bloechlDOS(E, eps) * tetraVol
+                        sum(cornerDOSWt_LAT)
+                        * tetraVol / spin
+                        / hartree
+
+    # Diagnostic: integrated area should equal
+    # the number of spin states in the energy
+    # range. Use deltaDOS * hartree because
+    # deltaDOS is in Hartree but the TDOS is
+    # in states/eV.
+    integratedArea = trapezoid(tdos)
+        * deltaDOS * hartree
 
     return tdos
+```
 
+---
 
-function bloechlDOS(E, eps):
-    # eps = [e1, e2, e3, e4] sorted ascending
-    # Returns DOS contribution per unit BZ volume
-    # for one tetrahedron at energy E.
+## 2a. Bloechl Corner DOS Weights (DESIGN 1.3)
 
-    e1, e2, e3, e4 = eps(1), eps(2), eps(3), eps(4)
+`bloechlCornerDOSWt` computes the per-corner DOS
+density weights `cornerDOSWt_LAT(1:4)` for one
+tetrahedron at energy E. These are the energy
+derivatives of the cumulative corner integration
+weights `cornerIntgWt_LAT` (section 3a):
 
-    if E < e1 or E >= e4:
-        return 0.0
+  cornerDOSWt_LAT(c) = d/dE [ cornerIntgWt_LAT(c) ]
 
-    # Guard against degenerate corners
+Their sum equals the total per-tetrahedron DOS
+(the `bloechlDOS` value from the original TDOS
+implementation). This identity provides a built-in
+self-consistency check.
+
+The derivation follows from the product rule applied
+to the cumulative weight expressions in section 3a.
+For each case, we reuse the same intermediate
+variables (t_j, s_j, a, b, c, d, v_I, v_II, v_III)
+and also compute the total DOS `gTotal`, then
+decompose it across the four corners.
+
+```
+function bloechlCornerDOSWt(E, eps):
+    # eps = [e1, e2, e3, e4] sorted ascending.
+    # Returns cornerDOSWt_LAT(1:4): the per-corner
+    # DOS density weights at energy E.
+    #
+    # cornerDOSWt_LAT(c) is the spectral density
+    # (units: 1/energy) attributed to sorted
+    # corner c. Their sum equals the total DOS
+    # per unit BZ volume for this tetrahedron.
+
+    e1 = eps(1);  e2 = eps(2)
+    e3 = eps(3);  e4 = eps(4)
     tol = 1.0e-12
 
+    # Case 0: outside eigenvalue range.
+    if E < e1 or E >= e4:
+        return [0, 0, 0, 0]
+
+    # ------------------------------------------
+    # Case 1: e1 <= E < e2
+    # ------------------------------------------
+    # From section 3a, the cumulative weights are:
+    #   w(j) = f * t_j / 4     for j = 2,3,4
+    #   w(1) = f - w(2) - w(3) - w(4)
+    # where f = t2*t3*t4, t_j = (E-e1)/(e_j-e1).
+    #
+    # Applying the product rule:
+    #   d(f*t_j)/dE = df/dE * t_j + f * dt_j/dE
+    #               = gTotal * t_j + f/(e_j - e1)
+    # where gTotal = df/dE = 3*(E-e1)^2 / denom
+    #   is the total DOS for this case.
+    #
     if E < e2:
         denom = (e2-e1) * (e3-e1) * (e4-e1)
-        if abs(denom) < tol: return 0.0
-        return 3.0 * (E - e1)**2 / denom
+        if abs(denom) < tol:
+            return [0, 0, 0, 0]
+        t2 = (E - e1) / (e2 - e1)
+        t3 = (E - e1) / (e3 - e1)
+        t4 = (E - e1) / (e4 - e1)
+        f = t2 * t3 * t4
+        gTotal = 3.0 * (E - e1)**2 / denom
 
+        g(2) = (gTotal*t2 + f/(e2-e1)) / 4
+        g(3) = (gTotal*t3 + f/(e3-e1)) / 4
+        g(4) = (gTotal*t4 + f/(e4-e1)) / 4
+        g(1) = gTotal - g(2) - g(3) - g(4)
+        return g
+
+    # ------------------------------------------
+    # Case 2: e2 <= E < e3 (middle range)
+    # ------------------------------------------
+    # From section 3a, the cumulative weights use
+    # three sub-tetrahedra volumes v_I, v_II,
+    # v_III with intersection parameters a, b,
+    # c, d. Their derivatives are:
+    #
+    #   da/dE = 1/e31,  db/dE = 1/e41
+    #   dc/dE = 1/e32,  dd/dE = 1/e42
+    #
+    #   dv_I/dE   = da*b + a*db
+    #             = b/e31 + a/e41
+    #   dv_II/dE  = da*d*(1-b) + a*dd*(1-b)
+    #             + a*d*(-db)
+    #             = d*(1-b)/e31 + a*(1-b)/e42
+    #             - a*d/e41
+    #   dv_III/dE = (-da)*c*d + (1-a)*dc*d
+    #            + (1-a)*c*dd
+    #             = -c*d/e31 + (1-a)*d/e32
+    #             + (1-a)*c/e42
+    #
+    # Each cumulative weight w(j) is a linear
+    # combination of v_I, v_II, v_III with
+    # coefficients that also depend on a, b, c, d.
+    # Applying the product rule to each term
+    # and collecting:
+    #
     if E < e3:
-        # Middle range: e2 <= E < e3
-        # Standard Lehmann-Taut / Bloechl formulation.
-        # The DOS in this range is the derivative of the
-        # integrated DOS (fraction of tetrahedron volume
-        # below energy E). The integrated DOS in this
-        # range is:
-        #
-        #   f = f_12 + f_middle
-        #
-        # where f_12 = (e2-e1)^2 / [(e3-e1)(e4-e1)]
-        # captures the contribution from the e1<=E<e2
-        # sub-tetrahedron evaluated at E=e2, and
-        # f_middle adds the middle-range volume.
-        #
-        # The DOS g(E) = df/dE is given by:
-        #
-        #   g(E) = 1/[(e3-e1)(e4-e1)] *
-        #     [ 3*(e2-e1)
-        #     + 6*(E-e2)
-        #     - 3*(e4-e1+e3-e2) * (E-e2)^2
-        #       / ((e3-e2)(e4-e2)) ]
-        #
-        # Equivalently, decomposing into partial terms:
-        #
-        #   e31 = e3 - e1;  e41 = e4 - e1
-        #   e32 = e3 - e2;  e42 = e4 - e2
-        #
-        #   denom1 = e31 * e41
-        #   denom2 = e32 * e42
-        #
-        #   g(E) = (1 / denom1) *
-        #     [ 3*e21 + 6*(E-e2)
-        #       - 3*(e31 + e42) * (E-e2)^2
-        #         / denom2 ]
-        #
-        # where e21 = e2 - e1.
-        #
-        # Guard: if denom1 or denom2 is near zero, the
-        # tetrahedron is degenerate and contributes 0.
+        e31 = e3-e1;  e41 = e4-e1
+        e32 = e3-e2;  e42 = e4-e2
+        if e31*e41 < tol or e32*e42 < tol:
+            return [0, 0, 0, 0]
 
-        e21 = e2 - e1
-        e31 = e3 - e1;  e41 = e4 - e1
-        e32 = e3 - e2;  e42 = e4 - e2
-        denom1 = e31 * e41
-        denom2 = e32 * e42
+        a = (E-e1) / e31
+        b = (E-e1) / e41
+        c_var = (E-e2) / e32
+        d_var = (E-e2) / e42
 
-        if abs(denom1) < tol or abs(denom2) < tol:
-            return 0.0
+        # Sub-tetrahedra volumes.
+        v_I   = a * b
+        v_II  = a * d_var * (1 - b)
+        v_III = (1 - a) * c_var * d_var
 
-        x = E - e2
-        return (1.0 / denom1) * (
-            3.0*e21 + 6.0*x
-            - 3.0*(e31 + e42) * x**2 / denom2)
+        # Volume derivatives.
+        dv_I   = b/e31 + a/e41
+        dv_II  = d_var*(1-b)/e31
+                 + a*(1-b)/e42
+                 - a*d_var/e41
+        dv_III = -c_var*d_var/e31
+                 + (1-a)*d_var/e32
+                 + (1-a)*c_var/e42
 
-    # e3 <= E < e4
+        # Parameter derivatives.
+        da = 1/e31;  db = 1/e41
+        dc = 1/e32;  dd = 1/e42
+
+        # Corner 1: w(1) = [v_I*(3-a-b)
+        #   + v_II*(2-a-b) + v_III*(1-a)] / 4
+        g(1) = (dv_I*(3-a-b)
+                + v_I*(-da - db)
+                + dv_II*(2-a-b)
+                + v_II*(-da - db)
+                + dv_III*(1-a)
+                + v_III*(-da)) / 4
+
+        # Corner 2: w(2) = [v_I + v_II*(2-d)
+        #   + v_III*(3-c-d)] / 4
+        g(2) = (dv_I
+                + dv_II*(2-d_var)
+                + v_II*(-dd)
+                + dv_III*(3-c_var-d_var)
+                + v_III*(-dc - dd)) / 4
+
+        # Corner 3: w(3) = [v_I*a + v_II*a
+        #   + v_III*(a+c)] / 4
+        g(3) = (dv_I*a + v_I*da
+                + dv_II*a + v_II*da
+                + dv_III*(a+c_var)
+                + v_III*(da + dc)) / 4
+
+        # Corner 4: w(4) = [v_I*b
+        #   + v_II*(b+d) + v_III*d] / 4
+        g(4) = (dv_I*b + v_I*db
+                + dv_II*(b+d_var)
+                + v_II*(db + dd)
+                + dv_III*d_var
+                + v_III*dd) / 4
+
+        return g
+
+    # ------------------------------------------
+    # Case 3: e3 <= E < e4
+    # ------------------------------------------
+    # From section 3a, the cumulative weights use
+    # the unoccupied sub-tet fraction f_un and
+    # parameters s_j = (e4-E)/(e4-e_j). Their
+    # derivatives are:
+    #   ds_j/dE = -1/(e4-e_j)
+    #   df_un/dE = -gTotal  (where gTotal is the
+    #     total DOS for this case)
+    #
+    # Applying the product rule to
+    #   w(j) = 1/4 - f_un*s_j/4 for j=1,2,3:
+    #   dw(j)/dE = -(df_un*s_j + f_un*ds_j)/4
+    #            = (gTotal*s_j + f_un/(e4-e_j))/4
+    #
     denom = (e4-e1) * (e4-e2) * (e4-e3)
-    if abs(denom) < tol: return 0.0
-    return 3.0 * (e4 - E)**2 / denom
+    if abs(denom) < tol:
+        return [0, 0, 0, 0]
+    s1 = (e4 - E) / (e4 - e1)
+    s2 = (e4 - E) / (e4 - e2)
+    s3 = (e4 - E) / (e4 - e3)
+    f_un = s1 * s2 * s3
+    gTotal = 3.0 * (e4 - E)**2 / denom
+
+    g(1) = (gTotal*s1 + f_un/(e4-e1)) / 4
+    g(2) = (gTotal*s2 + f_un/(e4-e2)) / 4
+    g(3) = (gTotal*s3 + f_un/(e4-e3)) / 4
+    g(4) = gTotal - g(1) - g(2) - g(3)
+    return g
 ```
 
 ---
@@ -412,10 +560,13 @@ The formulas are continuous at the case boundaries:
 ### Derivative consistency with TDOS
 
 The energy derivative of sum(w_j) must equal the
-TDOS formula g(E) already implemented in section 2.
-This was verified numerically for the middle range:
-with e1=0, e2=1, e3=3, e4=5, both the derivative
-of f = v_I + v_II + v_III and the TDOS formula give
+total per-tetrahedron DOS. This relationship is now
+built into `bloechlCornerDOSWt` (section 2a): the
+four `cornerDOSWt_LAT` values are defined so that
+`sum(cornerDOSWt_LAT) = gTotal`. This was verified
+numerically for the middle range: with e1=0, e2=1,
+e3=3, e4=5, both the derivative of
+f = v_I + v_II + v_III and the TDOS formula give
 g(2) = 51/120.
 
 ### Pseudocode
@@ -497,26 +648,497 @@ function bloechlCornerWeights(E, eps):
 
 ---
 
-## 4. Bond Order with IBZ Correction (DESIGN 2.3)
+## 4. Build Atom Permutation Table (DESIGN 2.4)
+
+The atom permutation table records, for each point group
+operation R and each atom A, which atom B = R(A) the
+operation maps A to.  This is the single piece of
+infrastructure needed for correct IBZ unfolding of all
+shell-summed quantities (Q*, bond order, PDOS modes 0-2).
+
+The algorithm works in fractional (abc) coordinates
+because the point group operations are stored in that
+basis.  Cartesian atom positions are converted to
+fractional using invRealVectors (= recipVectors / 2*pi).
 
 ```
-function computeBondOrder_IBZ_corrected(
-        b_raw, atomPerm, starOps, numIBZ):
-    # b_raw(A, B, k_ibz): raw bond order contribution
-    #     at each IBZ k-point (eigenvector-dependent)
-    # atomPerm(R, A): which atom A maps to under R
-    # starOps(k_ibz): list of symmetry ops in the star
+function buildAtomPerm(numPointOps, abcPointOps,
+                       numAtomSites, atomSites,
+                       invRealVectors):
+    # Returns atomPerm(numPointOps, numAtomSites)
+    #   where atomPerm(R, A) = B means operation R
+    #   maps atom A to atom B.
 
-    allocate bondOrder(numAtoms, numAtoms) = 0.0
+    allocate atomPerm(numPointOps, numAtomSites)
 
-    for k = 1 to numIBZ:
-        for each R in starOps(k):
-            for A = 1 to numAtoms:
-                for B = 1 to numAtoms:
-                    A_rot = atomPerm(R, A)
-                    B_rot = atomPerm(R, B)
-                    bondOrder(A_rot, B_rot) +=
-                        b_raw(A, B, k) / N_total
+    # Convert all atom positions from Cartesian (xyz)
+    # to fractional (abc) coordinates.
+    allocate abcAtomPos(3, numAtomSites)
+    for A = 1 to numAtomSites:
+        for i = 1 to 3:
+            abcAtomPos(i, A) =
+                sum(invRealVectors(i,:)
+                    * atomSites(A)%cartPos(:))
 
-    return bondOrder
+    # For each operation and atom, apply R to the
+    # fractional position and find the matching atom.
+    for R = 1 to numPointOps:
+        for A = 1 to numAtomSites:
+
+            # Apply the point group rotation to atom
+            # A's fractional position.
+            for i = 1 to 3:
+                rotPos(i) =
+                    sum(abcPointOps(i,:,R)
+                        * abcAtomPos(:,A))
+
+            # Wrap the rotated position into [0,1).
+            for i = 1 to 3:
+                rotPos(i) = modulo(rotPos(i), 1.0)
+
+            # Search for the atom at the rotated
+            # position. R preserves species, so only
+            # atoms of the same type can match.
+            atomPerm(R, A) = -1  # sentinel
+            for B = 1 to numAtomSites:
+                if atomType(B) != atomType(A):
+                    cycle
+
+                # Compute the difference, wrapped
+                # into [-0.5, 0.5) on each axis.
+                for i = 1 to 3:
+                    diff(i) = rotPos(i)
+                             - abcAtomPos(i, B)
+                    diff(i) = diff(i)
+                             - nint(diff(i))
+
+                if all(|diff(:)| < threshold):
+                    atomPerm(R, A) = B
+                    exit  # found the match
+
+            # Safety check: every atom must have a
+            # match. If not, the point group or the
+            # atom positions are inconsistent.
+            if atomPerm(R, A) == -1:
+                error("No match for atom", A,
+                      "under operation", R)
+
+    deallocate abcAtomPos
+    return atomPerm
 ```
+
+---
+
+## 4a. Build Inverse Atom Permutation (DESIGN 1.4, 2.4)
+
+The inverse atom permutation invAtomPerm(R, B) gives
+the atom A such that atomPerm(R, A) = B, i.e.,
+A = R^{-1}(B). It is used during LAT PDOS tetrahedron
+corner assembly to map channel indices from full-mesh
+k-points back to their IBZ representatives (see
+section 8). Built in O_AtomicSites alongside atomPerm.
+
+```
+function buildInvAtomPerm(numPointOps,
+                          numAtomSites,
+                          atomPerm):
+    allocate invAtomPerm(numPointOps,
+                         numAtomSites)
+
+    for R = 1 to numPointOps:
+        for A = 1 to numAtomSites:
+            B = atomPerm(R, A)
+            invAtomPerm(R, B) = A
+
+    return invAtomPerm
+```
+
+---
+
+## 5. Save fullKPToIBZOpMap (DESIGN 2.4)
+
+This augments the existing IBZ folding loop in
+`initializeKPointMesh`.  The current code saves
+`fullKPToIBZKPMap(k_full) = k_IBZ` (which IBZ point
+does this full-mesh point fold onto).  We additionally
+save `fullKPToIBZOpMap(k_full) = R` (which point group
+operation maps the IBZ representative to k_full, in
+the forward direction: R(k_IBZ) = k_full).
+
+The change is a single integer store at the point where
+a match is found, plus identity for the IBZ
+representative itself.
+
+```
+# Inside initializeKPointMesh, after allocating
+# fullKPToIBZOpMap(numFullMeshKP):
+
+# When a new IBZ representative i is found:
+    fullKPToIBZOpMap(i) = identityOpIndex
+
+# When mesh point j matches IBZ point i under
+# operation m (the existing isMatch==1 branch):
+    fullKPToIBZOpMap(j) = m
+```
+
+**Identity operation index.**  The space group
+database guarantees that the identity is always the
+first point group operation (verified across all 759
+space group files in share/spaceDB).  Therefore
+`identityOpIndex = 1` -- no runtime search is needed.
+
+---
+
+## 6. Corrected Effective Charge (DESIGN 2.4)
+
+The current code accumulates Q* directly into
+`atomCharge(A)` using only the IBZ k-point's Mulliken
+projection.  The fix loops over the star of each IBZ
+k-point and distributes the projection into the
+permuted atom index.
+
+The star of IBZ k-point k_IBZ is the set of full-mesh
+k-points that fold onto it.  This set is not stored
+explicitly -- it is traversed by scanning
+fullKPToIBZKPMap.
+
+The key change is in the innermost accumulation.
+The outer loop structure (spin h, kpoint i, band j,
+basis function l, atom k) remains the same.  The
+Mulliken projection `oneValeRealAccum` for atom k at
+IBZ k-point i is computed exactly as before.  The
+difference is where it is accumulated.
+
+```
+# Current code (incorrect with IBZ):
+#   atomCharge(k, h) += oneValeRealAccum
+#                       * statePopulation
+
+# Corrected code:
+#
+# After the band loop (j) completes for kpoint i,
+# we have accumulated per-atom projections for
+# this kpoint:
+#   ibzAtomProj(k) = sum over bands of
+#       oneValeRealAccum(k,j) * statePopulation(j)
+#
+# Count the star size (number of full-mesh points
+# that fold to this IBZ kpoint):
+#   starSize = count(fullKPToIBZKPMap(:) == i)
+#
+# Distribute across the star:
+#   for each full-mesh kpoint f where
+#           fullKPToIBZKPMap(f) == i:
+#       R = fullKPToIBZOpMap(f)
+#       for A = 1 to numAtomSites:
+#           atomCharge(atomPerm(R, A), h) +=
+#               ibzAtomProj(A) / starSize
+
+# The normalizer is starSize, not numFullMeshKP.
+# statePopulation already encodes the full BZ-
+# integration weight for the star of kpoint i
+# (kPointWeight for Gaussian, or the summed
+# tetrahedron corner weights for LAT -- both
+# proportional to starSize).  ibzAtomProj is
+# therefore the total contribution from kpoint i.
+# Dividing by starSize distributes this total
+# equally among the star members.  The sum across
+# the star recovers ibzAtomProj, preserving the
+# total charge.
+```
+
+**Alternative (equivalent, avoids scanning):**  The
+same result can be achieved within the existing
+kpoint loop by changing only the accumulation target.
+Instead of accumulating at index k, accumulate at
+atomPerm(R, k) for each operation R in the star.
+But the star is implicit -- it requires collecting
+all full-mesh k-points for IBZ index i.
+
+The cleanest implementation collects the per-atom
+projection for one IBZ k-point, then distributes it
+in a separate inner loop over the star.
+
+---
+
+## 7. Corrected Bond Order (DESIGN 2.4)
+
+The same star-distribution pattern applies to bond
+order.  The Mulliken overlap between atoms A and B
+at IBZ k-point i is computed as before.  The
+correction distributes it into the permuted atom
+pair.
+
+```
+# Current code (incorrect with IBZ):
+#   bondOrder(A_bonded, k) +=
+#       oneValeRealAccum * statePopulation
+
+# Corrected code:
+#
+# After computing bondOrderRaw(A, B) for IBZ
+# kpoint i (accumulated over bands j):
+#
+#   starSize = count(fullKPToIBZKPMap(:) == i)
+#
+#   for each full-mesh kpoint f where
+#           fullKPToIBZKPMap(f) == i:
+#       R = fullKPToIBZOpMap(f)
+#       for each bonded pair (A, B):
+#           A_rot = atomPerm(R, A)
+#           B_rot = atomPerm(R, B)
+#           bondOrder(A_rot, B_rot) +=
+#               bondOrderRaw(A, B) / starSize
+```
+
+**Integration with existing loop structure.**  The
+current `computeBond` accumulates bond order inside
+the band loop (j) interleaved with charge
+accumulation.  The IBZ correction requires a second
+pass over the star after all bands are processed for
+a given IBZ k-point.  This suggests restructuring:
+
+  1. For each IBZ kpoint i:
+     a. Read eigenvectors and overlap (unchanged)
+     b. Loop over bands j, accumulate raw per-atom
+        charge ibzAtomProj(A) and raw per-pair bond
+        order ibzBondRaw(A, B) at IBZ indices
+     c. Distribute ibzAtomProj and ibzBondRaw across
+        the star of i using atomPerm
+
+Step (c) is the only new code.  Steps (a) and (b)
+are the existing computation, with the accumulation
+target changed from the final arrays to temporary
+per-IBZ-kpoint buffers.
+
+**Weight convention.**  The raw projection is
+weighted by statePopulation (from either
+electronPopulation_LAT or electronPopulation).
+Both already encode the full star-weighted BZ-
+integration weight for each IBZ kpoint:
+
+- Gaussian: statePopulation includes
+  kPointWeight(i) = 2 * starSize(i) /
+  numFullMeshKP, so ibzAtomProj and ibzBondRaw
+  are proportional to starSize.
+- LAT: statePopulation includes
+  electronPopulation_LAT(j,i,h), which sums
+  tetrahedron corner weights from all full-mesh
+  points in the star, again proportional to
+  starSize.
+
+The star distribution divides by starSize to
+extract the per-full-mesh-point contribution, then
+deposits it at the permuted atom (or atom pair).
+The sum across starSize members recovers the
+original ibzAtomProj (or ibzBondRaw), so the
+overall charge and bond order totals are preserved.
+
+---
+
+## 8. LAT PDOS (DESIGN 1.4)
+
+The LAT PDOS requires Mulliken projections at all four
+corners of each tetrahedron simultaneously. Since
+eigenvectors exist only at IBZ k-points, a two-pass
+design is required: first compute and store projections
+at IBZ k-points, then integrate over tetrahedra with
+on-the-fly IBZ unfolding of the channel index.
+
+### 8.1 Channel Permutation Table
+
+For efficiency the channel permutation is precomputed
+as a lookup table channelPermTable(R, alpha) so the
+inner loop avoids repeated decode/encode. Mode 0
+needs no permutation. Mode 1 uses invAtomPerm
+directly. Mode 2 remaps the atom index while
+preserving the l-shell offset within the atom.
+
+```
+function buildChannelPermTable(
+        detailCodePDOS, numPointOps,
+        cumulDOSTotal, cumulNumDOS,
+        numAtomSites, invAtomPerm):
+
+    allocate channelPermTable(numPointOps,
+                              cumulDOSTotal)
+
+    if detailCodePDOS == 0:
+        # Per-type, per-l: identity (type-level
+        # sums are invariant under R).
+        for R = 1 to numPointOps:
+            for alpha = 1 to cumulDOSTotal:
+                channelPermTable(R, alpha) = alpha
+        return channelPermTable
+
+    if detailCodePDOS == 1:
+        # Per-atom total: channel = atom index.
+        for R = 1 to numPointOps:
+            for A = 1 to numAtomSites:
+                channelPermTable(R, A) =
+                    invAtomPerm(R, A)
+        return channelPermTable
+
+    if detailCodePDOS == 2:
+        # Per-atom, per-l: remap atom index,
+        # preserve l-shell offset.
+        for R = 1 to numPointOps:
+            for A = 1 to numAtomSites:
+                permA = invAtomPerm(R, A)
+                baseOld = cumulNumDOS(A)
+                baseNew = cumulNumDOS(permA)
+                nOrbitals = cumulNumDOS(A+1)
+                          - cumulNumDOS(A)
+                for off = 1 to nOrbitals:
+                    channelPermTable(R,
+                        baseOld + off) =
+                        baseNew + off
+        return channelPermTable
+```
+
+### 8.2 Pass 1: Compute Projections
+
+Stream through IBZ k-points, read eigenvectors and
+overlap from HDF5, compute Mulliken projections, and
+store into projArray(channel, band, kIBZ). The
+Mulliken computation is identical to the existing code
+in computeDOS (waveFnSqrd, oneValeRealAccum).
+
+```
+function computeProjections(inSCF, h,
+        numKPoints, numStates, numAtomSites,
+        numAtomStates, pdosIndex, valeDim,
+        cumulDOSTotal, spin):
+    allocate projArray(cumulDOSTotal,
+                       numStates, numKPoints)
+    projArray = 0.0
+
+    for i = 1 to numKPoints:
+        # Read eigenvectors + overlap for this
+        # IBZ kpoint and spin orientation.
+        readData(h, i, numStates, overlapCode=1)
+
+        for j = 1 to numStates:
+            valeDimIndex = 0
+            for k = 1 to numAtomSites:
+                for l = 1 to numAtomStates(k):
+                    valeDimIndex += 1
+
+                    # Compute Mulliken projection
+                    # (existing waveFnSqrd *
+                    # valeValeOL dot product).
+                    oneValeRealAccum =
+                        mullikenProjection(
+                            valeDimIndex, j)
+
+                    # Accumulate into the channel
+                    # determined by pdosIndex.
+                    ch = pdosIndex(valeDimIndex)
+                    projArray(ch, j, i) +=
+                        oneValeRealAccum
+                        / real(spin)
+
+    return projArray
+```
+
+### 8.3 Pass 2: Tetrahedron Integration
+
+Loop over bands and tetrahedra. For each tetrahedron,
+sort corner eigenvalues with tracked permutation,
+compute `bloechlCornerDOSWt` at each energy point,
+and accumulate weighted projections into pdosComplete.
+The channel permutation table handles IBZ unfolding of
+the projection index.
+
+Note: this uses `bloechlCornerDOSWt` (section 2a),
+which returns per-corner DOS density weights (units:
+1/energy). The cumulative corner weights from
+`bloechlCornerWeights` (section 3a) are NOT used here
+-- those are for integrated properties only (section
+3, `electronPopulation_LAT`).
+
+```
+function integratePDOS_LAT(projArray,
+        channelPermTable,
+        eigenValues, tetrahedra,
+        numTetrahedra, tetraVol,
+        fullKPToIBZKPMap, fullKPToIBZOpMap,
+        energyScale, numEnergyPoints,
+        numStates, cumulDOSTotal, spin):
+    allocate pdosComplete(cumulDOSTotal,
+                          numEnergyPoints)
+    pdosComplete = 0.0
+
+    for n = 1 to numStates:
+        for T = 1 to numTetrahedra:
+            # Look up corner info from the full
+            # mesh, mapping to IBZ eigenvalues.
+            for c = 1 to 4:
+                kFull(c) = tetrahedra(c, T)
+                kIBZ(c) =
+                    fullKPToIBZKPMap(kFull(c))
+                opIdx(c) =
+                    fullKPToIBZOpMap(kFull(c))
+                eps(c) =
+                    eigenValues(n, kIBZ(c), h)
+
+            # Sort eigenvalues ascending, tracking
+            # permutation: sigma(i) = original
+            # corner index in sorted position i.
+            sigma = argsort(eps)
+            sortedEps = eps(sigma)
+
+            for iE = 1 to numEnergyPoints:
+                E = energyScale(iE)
+
+                # Skip if outside eigenvalue range.
+                if E < sortedEps(1) or
+                        E >= sortedEps(4):
+                    cycle
+
+                # Per-corner DOS density weights
+                # for the sorted eigenvalues.
+                cornerDOSWt_LAT(1:4) =
+                    bloechlCornerDOSWt(
+                        E, sortedEps)
+
+                # Accumulate weighted projections
+                # into pdosComplete. Each sorted
+                # corner c maps back to original
+                # corner sigma(c), whose IBZ kpoint
+                # and operation index determine the
+                # projection lookup.
+                for c = 1 to 4:
+                    orig = sigma(c)
+                    R = opIdx(orig)
+                    kIc = kIBZ(orig)
+
+                    for alpha = 1 to cumulDOSTotal:
+                        permA =
+                            channelPermTable(
+                                R, alpha)
+                        pdosComplete(alpha, iE) +=
+                            cornerDOSWt_LAT(c)
+                            * tetraVol / hartree
+                            * projArray(
+                                permA, n, kIc)
+
+    return pdosComplete
+```
+
+### 8.4 Normalization
+
+For the LAT path, the corner DOS weights from
+`bloechlCornerDOSWt` provide exact BZ integration
+(no broadening artifacts). The electronFactor ratio
+(currentPopulation / totalElectronsComputed) should
+be ≈ 1.0. Compute and log it as a diagnostic but do
+not apply it to pdosComplete. A ratio significantly
+different from 1.0 signals an integration bug.
+
+The "Spin States Calculated" diagnostic (integral of
+totalSystemDos over the energy grid) must use
+`deltaDOS * hartree` in the trapezoidal rule because
+deltaDOS is stored in Hartree while the DOS is in
+states/eV. This applies to both the Gaussian and LAT
+paths.

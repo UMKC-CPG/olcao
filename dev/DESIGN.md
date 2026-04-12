@@ -73,16 +73,17 @@ integer :: numFullMeshKP
 real(kind=double) :: tetraVol
 integer, allocatable, dimension(:,:) :: tetrahedra
     ! (4, numTetrahedra) -- indices into the full mesh
-integer, allocatable, dimension(:) :: fullToIBZMap
+integer, allocatable, dimension(:) :: fullKPToIBZKPMap
     ! (numFullMeshKP) -- maps each full mesh kpoint
     ! to its IBZ representative index
 ```
 
-The `fullToIBZMap` is produced by the IBZ folding in
+The `fullKPToIBZKPMap` is produced by the IBZ folding in
 `initializeKPointMesh` (from the `kPointTracker` array).
-For each full-mesh index i, `fullToIBZMap(i)` gives the
-IBZ kpoint index. Eigenvalue lookup for the TDOS becomes:
-  `eigenValues(band, fullToIBZMap(fullMeshIndex), spin)`
+For each full-mesh index i, `fullKPToIBZKPMap(i)` gives
+the IBZ kpoint index. Eigenvalue lookup for the TDOS
+becomes:
+  `eigenValues(band, fullKPToIBZKPMap(fullMeshIdx), spin)`
 
 ### 1.3 LAT TDOS (Eigenvalues Only)
 
@@ -118,33 +119,104 @@ formulas must include guards: `if (abs(e2-e1) < eps) then ...`.
 
 **Units:** Eigenvalues are in Hartree. The DOS output is in
 states/eV. The Bloechl formulas give DOS in units of
-1/(energy units of e), so a Hartree-to-eV conversion factor is
-needed in the output, consistent with the current code's use of
-`sigmaSqrtPi / hartree`.
+1/(energy units of e), so a Hartree-to-eV conversion factor
+is needed in the output, consistent with the current code's
+use of `sigmaSqrtPi / hartree`.
+
+**Unified corner DOS subroutine.** The per-tetrahedron TDOS
+g(E) is the *sum* of four per-corner density weights
+dw_c/dE (the energy derivatives of the Bloechl cumulative
+corner weights, eqs. 18-21). These per-corner derivatives
+are the more fundamental quantity: the TDOS needs only
+their sum, but the PDOS (section 1.4) needs them
+individually to weight each corner's Mulliken projection.
+
+A single subroutine
+`bloechlCornerDOSWt(E, eps, cornerDOSWt_LAT)` computes
+the four dw_c/dE values. It serves both paths:
+
+  TDOS:  dosContrib = sum(cornerDOSWt_LAT(1:4))
+  PDOS:  pdosComp(alpha) += cornerDOSWt_LAT(c)
+         * V_T * proj(alpha, n, k_c)
+
+This eliminates duplicated case logic. The inline
+dosContrib formulas in `computeTDOS_LAT` are replaced by
+a call to `bloechlCornerDOSWt` + sum. The subroutine
+follows the same case structure (Cases 0-3) as
+`bloechlCornerWeights` but returns the energy derivative
+of each corner weight (the per-corner spectral density)
+rather than the cumulative value.
+
+The identity
+`sum(cornerDOSWt_LAT) == dosContrib` provides a built-in
+self-consistency check.
+
+**Distinction from `bloechlCornerWeights`.** The
+cumulative corner integration weights `cornerIntgWt_LAT`
+(returned by `bloechlCornerWeights`) give the fraction of
+the tetrahedron's occupation attributed to each corner up
+to energy E. They are dimensionless and are the correct
+quantity for integrated properties like
+`electronPopulation_LAT` (section 1.5), which evaluates
+them at a single energy (the Fermi level). The corner DOS
+weights `cornerDOSWt_LAT` (returned by
+`bloechlCornerDOSWt`) have units of 1/energy and are the
+correct quantity for the energy-resolved DOS density.
+Both subroutines share the same case structure and
+intermediate variables; only the final expressions
+differ.
+
+**Diagnostic integral unit fix.** The trapezoidal integral
+that computes "Spin States Calculated" (the integrated
+area under the TDOS) multiplies the TDOS (in states/eV)
+by deltaDOS (stored in Hartree). This produces
+states/27.211 instead of states. The integral must include
+a hartree conversion factor: `deltaDOS * hartree`. This
+same fix applies to the integrated-area diagnostic in
+both `computeTDOS_LAT` and `computeDOS`.
+
+**BZ weight normalization.** The Gaussian DOS path uses
+`kPointWeight` as its BZ integration weight. By
+convention, `kPointWeight` sums to 2.0 (set as
+`weightSum` in kpoints.f90). This factor of 2 accounts
+for the two electron spin states per band in a
+spin-unpolarized calculation: each band contributes
+`sum(kPointWeight)/spin` = 2/1 = 2 spin states. The
+tetrahedron BZ integration uses `tetraVol`, which sums
+to 1.0 (just the geometric BZ fraction). To produce
+DOS values on the same scale as the Gaussian path, the
+LAT accumulation must include `sum(kPointWeight)` as a
+multiplicative factor alongside `tetraVol`. Both
+`computeTDOS_LAT` and `integratePDOS_LAT` require this
+factor. For spin-polarized calculations (spin=2), the
+factor becomes 2/2 = 1 spin state per band, which is
+also correct.
 
 ### 1.4 LAT PDOS (Energy-Resolved Partial DOS)
 
-The Bloechl corner integration weights `cornerIntgWt_LAT(i)`
-(eqs. 18-21) determine how much of each corner's partial-DOS
-projection to include at energy E. These weights are
-occupation-independent: they distribute spectral density
-among the four tetrahedron corners at any energy, whether
-occupied or unoccupied. They are the LAT replacement for the
-Gaussian broadening + `kPointWeight` mechanism used in the
-current PDOS path.
+The corner DOS weights `cornerDOSWt_LAT` returned by
+`bloechlCornerDOSWt` (section 1.3) determine how much of
+each corner's partial-DOS projection to include at energy
+E. These weights are occupation-independent: they
+distribute spectral density among the four tetrahedron
+corners at any energy, whether occupied or unoccupied.
+They are the LAT replacement for the Gaussian broadening
++ `kPointWeight` mechanism used in the current PDOS path.
 
 The PDOS contribution from tetrahedron T, band n is:
 
-  dPDOS_alpha(E) = (V_T/V_BZ) * sum_{i=1..4}
-      cornerIntgWt_LAT(i) * p_alpha(k_sigma(i), n)
+  dPDOS_alpha(E) = (V_T/V_BZ) * sum_{c=1..4}
+      cornerDOSWt_LAT(c) * p_alpha(k_sigma(c), n)
 
-where p_alpha(k, n) is the Mulliken projection of channel
-alpha onto band n at k-point k (`oneValeRealAccum` in the
-current code), and sigma is the permutation that sorts
-eigenvalues. The `cornerIntgWt_LAT` values depend on E, the
-four sorted corner eigenvalues, and the corner index i --
-they are recomputed for every (tetrahedron, band, energy
-point) combination and never stored as a module-level array.
+where `cornerDOSWt_LAT(c)` is the Bloechl corner DOS
+weight from `bloechlCornerDOSWt`, p_alpha(k, n) is the
+Mulliken projection of channel alpha onto band n at
+k-point k (`oneValeRealAccum` in the current code), and
+sigma is the permutation that sorts eigenvalues. The
+`cornerDOSWt_LAT` values depend on E, the four sorted
+corner eigenvalues, and the corner index c -- they are
+recomputed for every (tetrahedron, band, energy point)
+combination and never stored as a module-level array.
 
 **The fundamental constraint:** p_alpha is needed at all 4
 corner k-points of each tetrahedron simultaneously. The
@@ -158,19 +230,117 @@ immediately discards them. This forces a two-pass design:
 
 **Pass 2 -- tetrahedron integration:**
   For each band and tetrahedron, sort corner eigenvalues,
-  compute `cornerIntgWt_LAT`, accumulate weighted projections
-  into PDOS.
+  compute `bloechlCornerDOSWt`, accumulate weighted
+  projections into PDOS.
 
-**Memory considerations:**
-- Moderate system (200 channels, 500 states, 2000 kpts):
-  ~1.6 GB -- feasible in memory.
-- Large system (5000 channels, 500 states, 5000 kpts):
-  ~100 GB -- requires band-by-band HDF5 re-read strategy
-  (memory = numChannels x numKPoints per band, but reads
-  eigenvectors numStates times instead of once).
+**Memory strategy (resolved D1):** Store projections
+only at IBZ k-points: P(alpha, band, k_IBZ). When
+assembling tetrahedron corners, look up the IBZ
+representative via fullKPToIBZKPMap and apply atom
+permutation on-the-fly to map the channel index:
 
-**Open question (D1):** Which memory strategy to use --
-all-in-memory, scratch HDF5, or band-by-band re-read?
+  P(alpha, n, k_full) =
+      P(permuted_alpha, n, fullKPToIBZKPMap(k_full))
+
+where the channel permutation follows from atomPerm
+and the operation stored in fullKPToIBZOpMap(k_full).
+For mode 0 (per atom-type, per l-shell), R preserves
+species, so no channel permutation is needed.
+
+This reduces memory by the IBZ reduction factor
+(typically 4-48x depending on point group symmetry):
+- Moderate system (200 channels, 500 states, 500 IBZ
+  kpts from 2000 full): ~0.4 GB
+- Large system (5000 channels, 500 states, 1000 IBZ
+  kpts from 5000 full): ~20 GB
+
+The atom permutation infrastructure (atomPerm,
+fullKPToIBZOpMap) is shared with the Q* and bond order
+fix (section 2.4). One additional array is introduced:
+invAtomPerm (section 2.4, item 4), which provides the
+inverse mapping R^{-1}(A) for backward channel
+permutation during tetrahedron corner assembly.
+
+**Inverse atom permutation.** The channel permutation
+for modes 1-2 requires R^{-1}(A) where R is the forward
+operation (k_IBZ → k_full) stored in fullKPToIBZOpMap.
+Since atomPerm stores R(A), we build invAtomPerm(R, B)
+= A where atomPerm(R, A) = B, giving R^{-1}(B)
+directly. It is built in O_AtomicSites alongside
+atomPerm, with array shape (numPointOps, numAtomSites).
+
+**Per-mode channel permutation rules:**
+
+  Mode  Channel           Permutation rule
+  ───────────────────────────────────────────────────
+  0     per-type, per-l   None: type-level sum is
+                          invariant under R
+  1     per-atom total    invAtomPerm(R, atomIdx)
+  2     per-atom, per-l   invAtomPerm remaps atom;
+                          l-shell offset unchanged
+                          (same species ⇒ same
+                          orbital structure)
+  3     per-atom, per-lm  Not supported: requires
+                          D^l(R) rotation matrices
+  ───────────────────────────────────────────────────
+
+For modes 1-2 a precomputed channelPermTable(R, alpha)
+avoids repeated index decode/encode in the inner loop.
+Mode 0 needs no table (identity mapping). Mode 2
+decodes alpha into (atom, l-offset), permutes the atom
+via invAtomPerm, and re-encodes using the permuted
+atom's cumulative offset in cumulNumDOS.
+
+**Mode 3 restriction.** When kPointIntgCode == 1 and
+detailCodePDOS == 3, the program stops with a clear
+error message. Individual Cartesian Gaussian projections
+(px, py, pz separately) mix under rotation via D^l(R)
+(section 2.3). Atom permutation alone does not suffice
+and the full rotation matrices are not available.
+
+**Refactored computeDOS structure.** computeDOS gains
+an internal branch on kPointIntgCode inside the spin
+loop. The setup phase (pdosIndex construction,
+cumulNumDOS, allocations) and output phase (file
+writing, normalization) are shared between Gaussian and
+LAT. Only the computation phase -- filling
+pdosComplete -- differs:
+
+  computeDOS(inSCF):
+    Setup (shared, unchanged)
+    do h = 1, spin
+      if kPointIntgCode == 1:
+        LAT two-pass → fills pdosComplete
+      else:
+        Gaussian single-pass → fills pdosComplete
+      endif
+      Output (shared): normalization, file writing
+    enddo
+
+The Gaussian single-pass is unchanged, preserving its
+memory efficiency (no projection array needed).
+
+**OLCAO.F90 dispatch.** The calling sequence becomes:
+
+  if (kPointIntgCode == 1) then
+    call computeTDOS_LAT
+  endif
+  call computeDOS(inSCF)
+
+computeTDOS_LAT remains the validated eigenvalue-only
+TDOS writer (fort.60/61). Inside computeDOS, the LAT
+branch writes PDOS (fort.70/71) and localization index
+(fort.80/81) but skips TDOS output (already written).
+The Gaussian branch writes all three as before.
+
+**Normalization.** The Gaussian path normalizes
+pdosComplete by electronFactor (ratio of exact electron
+count to Gaussian-broadened count) to correct for
+broadening-tail truncation. For LAT, tetrahedron corner
+weights provide exact BZ integration, so electronFactor
+≈ 1.0. The LAT branch computes and logs this ratio as a
+diagnostic (to fort.20) but does not apply it to
+pdosComplete.
 
 ### 1.5 electronPopulation_LAT for Integrated Properties
 
@@ -188,13 +358,12 @@ LAT method instead of Gaussian broadening + Fermi filling.
 
   electronPopulation_LAT(n, k) =
       sum over all tetrahedra T containing corner k {
-          (V_T / V_BZ) * cornerIntgWt_LAT(i, at E_Fermi)
+          (V_T / V_BZ) * w_c(E_Fermi)
       }
 
-where `cornerIntgWt_LAT(i, at E_Fermi)` is the Bloechl
-corner integration weight for occupied-state integration
-(Bloechl eqs. 18-21 evaluated as the integral from -infinity
-to the Fermi level). Size: numStates x numKPoints x spin --
+where w_c(E_Fermi) is the cumulative Bloechl corner
+weight from `bloechlCornerWeights` (eqs. 18-21 evaluated
+at the Fermi energy). Size: numStates x numKPoints x spin --
 for 500 bands, 2000 kpts: ~8 MB.
 
 **Naming convention:** The `_LAT` suffix identifies the
@@ -212,7 +381,7 @@ with:
 This unification means:
 - Bond order loop: structure unchanged, swap weight source
 - Effective charge loop: same
-- Energy-resolved PDOS: `cornerIntgWt_LAT` (two-pass,
+- Energy-resolved PDOS: `bloechlCornerDOSWt` (two-pass,
   occupation-independent; see section 1.4)
 - TDOS: simplest case, eigenvalues only
 
@@ -220,17 +389,24 @@ The integration method (Gaussian vs. LAT) becomes a
 pluggable parameter in a common projection-then-weight
 framework.
 
-**Distinction from `cornerIntgWt_LAT`:** The corner
-integration weights (section 1.4) are energy-resolved,
-occupation-independent, and transient (recomputed per
-tetrahedron per energy point). `electronPopulation_LAT` is
-occupation-integrated (summed to E_Fermi), stored as a
+**Distinction from `bloechlCornerDOSWt`.** The corner
+DOS weights `cornerDOSWt_LAT` (sections 1.3-1.4) are
+energy-resolved, occupation-independent, and transient
+(recomputed per tetrahedron per energy point).
+`electronPopulation_LAT` uses the cumulative corner
+integration weights `cornerIntgWt_LAT` from
+`bloechlCornerWeights`, evaluated once at the Fermi
+energy; it is occupation-integrated, stored as a
 module-level array, and has the same lifecycle as
 `electronPopulation`.
 
-**Open question (D2):** Does replacing
-`electronPopulation` with `electronPopulation_LAT` cover
-bond order accumulation correctly in all cases?
+**Resolved (D2):** Replacing `electronPopulation` with
+`electronPopulation_LAT` provides the correct occupation
+weight, but does not by itself cover bond order
+accumulation correctly. The accumulation loop must also
+apply atom permutation to distribute each IBZ k-point's
+contribution correctly. See section 2.5 for the full
+analysis.
 
 ---
 
@@ -326,53 +502,330 @@ but differ for each O atom when using IBZ-reduced k-points.
 This is incorrect -- the crystal symmetry requires them to be
 identical.
 
-### 2.3 Root Cause
+### 2.3 Root Cause: Eigenvector Transformation Law
 
-The current code multiplies each IBZ k-point's eigenvector-
-dependent contribution (Mulliken overlap, orbital projections)
-by the star multiplicity weight. This is correct for eigenvalue-
-dependent quantities (e_n(k) = e_n(Rk) by symmetry), but wrong
-for eigenvector-dependent quantities.
+The root cause of the IBZ bug is that eigenvector-dependent
+quantities do not simply scale with the star multiplicity.
+This subsection develops the transformation rules needed to
+determine which quantities are safe and which are not.
 
-The eigenvectors at Rk are related to those at k by a unitary
-transformation that mixes orbital coefficients according to the
-point-group operation R. Simply scaling the IBZ representative's
-projection by the star weight implicitly assumes all star
-members have identical projections -- they do not.
+**LCAO wavefunctions and Mulliken projections.** In LCAO
+the wavefunction for band n at k-point k is:
 
-This affects: PDOS, bond order, effective charge -- any quantity
-that depends on wavefunction expansion coefficients.
+  psi_n(k) = sum_mu  c_mu(n,k) * phi_mu(k)
+
+where mu indexes every orbital on every atom in the unit
+cell. The coefficients c_mu(n,k) are the eigenvector
+components (`valeVale` in OLCAO). The Mulliken population
+of orbital mu in state (n,k) partitions the state's
+electron count among basis functions:
+
+  p_mu(n,k) = Re[ c_mu*(n,k)
+                * sum_nu c_nu(n,k) * S_{mu,nu}(k) ]
+
+where S is the overlap matrix. These satisfy the partition
+sum_mu p_mu(n,k) = 1. Every property of interest --
+effective charge Q*, bond order, PDOS -- is built from
+sums of p_mu over specific index ranges (per atom, per
+atom pair, per angular momentum shell). The Mulliken
+overlap (bond order contribution) between orbitals mu on
+atom A and nu on atom B is similarly:
+
+  b_{mu,nu}(n,k) = Re[ c_mu*(n,k)
+                      * c_nu(n,k) * S_{mu,nu}(k) ]
+
+**How a symmetry operation transforms the eigenvector.**
+A point-group operation R acts on three things at once:
+
+  (a) Atoms: R maps atom A to atom R(A), preserving
+      species and basis function types.
+  (b) Orbitals: angular parts transform by the
+      representation matrix D^l(R) for each l-shell.
+      Example -- 90-degree rotation around z on p-orbs:
+
+              [ 0  -1   0 ]
+     D(R)  = [ 1   0   0 ]   px -> -py
+              [ 0   0   1 ]   py -> px, pz -> pz
+
+  (c) K-points: k maps to Rk in the Brillouin zone.
+
+The complete eigenvector transformation is:
+
+  C_n(Rk) = D(R) * C_n(k)                          (1)
+
+where D(R) is block-diagonal: one block per atom, each
+block being D^l(R) for that atom's orbital set. The
+overlap matrix transforms consistently:
+
+  S(Rk) = D(R) * S(k) * D(R)^dagger                (2)
+
+**The Mulliken vector argument.** Define the Mulliken
+vector M(n,k) = S(k) * C_n(k), so that the population
+is p_mu(n,k) = Re[ c_mu*(n,k) * M_mu(n,k) ].
+
+Under R, both the eigenvector and the Mulliken vector
+transform by the same matrix:
+
+  C_n(Rk) = D(R) * C_n(k)                  [from (1)]
+
+  M(n,Rk) = S(Rk) * C_n(Rk)
+           = [D(R) S(k) D(R)^dag] [D(R) C_n(k)]
+           = D(R) * S(k) * C_n(k)
+           = D(R) * M(n,k)                         (3)
+
+The cancellation D(R)^dag D(R) = I in the middle step
+is the key identity -- it ensures that eigenvectors and
+their overlap-weighted counterparts transform in lockstep.
+
+**Shell-sum invariance (proof).** The Mulliken population
+of orbital mu at the symmetry-related point Rk is:
+
+  p_mu(n,Rk) = Re[ sum_{a,b}  D(R)*_{mu,a} c_a*
+                             * D(R)_{mu,b}  M_b    ]
+
+(suppressing (n,k) arguments for brevity). Now sum over
+all mu in a complete l-shell on atom R(A). These mu are
+the images of the l-shell on atom A under D(R), so the
+sum invokes the unitarity of D(R) within that subspace:
+
+  sum_mu  D(R)*_{mu,a} * D(R)_{mu,b} = delta_{a,b}
+
+The off-diagonal terms (a != b) vanish, giving:
+
+  sum_{mu in l-shell on R(A)}  p_mu(n, Rk)
+
+      = Re[ sum_a  c_a*(n,k) * M_a(n,k) ]
+
+      = sum_{a in l-shell on A}  p_a(n, k)         (4)
+
+The l-shell-summed Mulliken population on atom R(A) at
+Rk equals the l-shell-summed population on atom A at k.
+Atom totals obey the same relation by summing all shells.
+Bond order between atom pairs follows by the same proof
+applied to the two-atom coefficient product:
+
+  B(R(A), R(B), n, Rk) = B(A, B, n, k)             (5)
+
+In every case, no explicit rotation matrices are needed
+-- only the atom relabeling A -> R(A).
+
+**Why individual orbitals break the pattern.** For a
+single orbital mu (not summed over a shell), the Mulliken
+population at Rk is:
+
+  p_mu(n,Rk) = Re[ sum_{a,b}  D(R)*_{mu,a} D(R)_{mu,b}
+                             * c_a* * M_b              ]
+
+Without a sum over mu, unitarity cannot be invoked and
+the cross terms (a != b) persist. The individual-orbital
+projection depends on the full D(R) matrix, not simply
+on which atom mu belongs to.
+
+Example: p-orbitals under 90-degree rotation around z.
+Suppose the coefficients at k for one band are c_px=0.5,
+c_py=0.3, c_pz=0.1. Applying D(R) gives at Rk:
+c_px = -0.3, c_py = 0.5, c_pz = 0.1.
+
+Simplified Mulliken projections (|c|^2):
+
+  At  k:  |c_px|^2 = 0.25   |c_py|^2 = 0.09
+  At Rk:  |c_px|^2 = 0.09   |c_py|^2 = 0.25
+
+The px and py projections swap -- they are NOT related
+by a simple atom permutation. But the p-shell sum is
+0.35 at both k and Rk, preserved by ||c||^2 = ||Dc||^2.
+This is why PDOS modes that sum over complete l-shells
+(detailCodePDOS 0-2) work with atom permutation, while
+individual-orbital PDOS (detailCodePDOS 3) does not.
+
 
 ### 2.4 The Atom Permutation Fix
 
-For the total bond order between atoms A and B, summed over all
-orbitals on each atom:
+From equation (4), the fix for any quantity that sums
+Mulliken projections over a complete l-shell or over an
+entire atom does not require rotating eigenvectors -- it
+requires only knowing which atom maps to which under each
+symmetry operation: the atom permutation table.
 
-  B(A,B) at k-point Rk = B(R^{-1}A, R^{-1}B) at k-point k
+**Corrected accumulation.** For each IBZ k-point k_i,
+instead of multiplying the projection by the star
+multiplicity, loop over each operation R_s in the star
+of k_i and accumulate into the permuted atom indices:
 
-This holds exactly because the Wigner rotation matrices are
-unitary and the sum over a complete angular momentum shell is
-rotation-invariant. No explicit eigenvector transformation is
-needed -- the fix is purely about atom permutation.
+  Effective charge:
+    chargeContrib(R_s(A)) += p_A(n,k_i) * f(n,k_i)
 
-**Corrected accumulation:** For each IBZ k-point k_i, instead
-of multiplying `bondOrder(A,B)` by the star multiplicity w_i,
-loop over each symmetry operation R_s in the star of k_i and
-accumulate:
+  Bond order:
+    bondContrib(R_s(A), R_s(B)) += b(A,B,n,k_i)
+                                 * f(n,k_i)
 
-  bondOrder(R_s(A), R_s(B)) += b(A, B, k_i) * (1/N_total)
+where f(n,k_i) is the occupation weight.
+
+**Example 1: charge in a mirror-symmetric 1D chain.**
+Two atoms per cell (A, B), related by mirror m that
+swaps A with B. Each has one s-orbital. The IBZ contains
+one k-point; the star is {k, mk} with size 2.
+
+Eigenvectors at k for the bonding band:
+
+  c_A = 0.8,  c_B = 0.6
+
+At the mirror image mk, D(m) swaps coefficients:
+
+  c_A = 0.6,  c_B = 0.8   (same eigenvalue)
+
+Simplified Mulliken projections (|c|^2):
+
+  At  k:   p_A = 0.64    p_B = 0.36
+  At mk:   p_A = 0.36    p_B = 0.64
+
+Note the atom permutation: p_A(mk) = p_B(k).
+
+Naive IBZ weighting (WRONG -- this is the KNbO3 bug):
+
+  charge(A) = 2 * 0.64 = 1.28
+  charge(B) = 2 * 0.36 = 0.72    symmetry violated
+
+Atom permutation (CORRECT):
+
+  From identity: charge(A) += 0.64  charge(B) += 0.36
+  From mirror:   charge(B) += 0.64  charge(A) += 0.36
+
+  Result:  charge(A) = 1.00,  charge(B) = 1.00
+
+**Example 2: bond order with C3 rotation symmetry.**
+Three atoms A, B, C with 120-degree rotation symmetry.
+R1 (120 deg): A->B, B->C, C->A. R2 (240 deg): A->C,
+B->A, C->B. The IBZ k-point has star size 3.
+
+Mulliken overlaps at k_1 for one occupied band:
+
+  b(A,B) = 0.15    b(A,C) = 0.10    b(B,C) = 0.20
+
+Naive star-weight multiplication (WRONG):
+
+  BO(A,B) = 3*0.15 = 0.45
+  BO(A,C) = 3*0.10 = 0.30
+  BO(B,C) = 3*0.20 = 0.60          C3 violated
+
+Atom permutation (CORRECT):
+
+  R0: BO(A,B)+=0.15  BO(A,C)+=0.10  BO(B,C)+=0.20
+  R1: BO(B,C)+=0.15  BO(B,A)+=0.10  BO(C,A)+=0.20
+  R2: BO(C,A)+=0.15  BO(C,B)+=0.10  BO(A,B)+=0.20
+
+Collecting (BO is symmetric):
+
+  BO(A,B) = 0.15 + 0.10 + 0.20 = 0.45
+  BO(B,C) = 0.20 + 0.15 + 0.10 = 0.45
+  BO(A,C) = 0.10 + 0.20 + 0.15 = 0.45     C3 OK
 
 **Required infrastructure:**
-1. For each symmetry operation R, a table: atomPerm(R, A) = B
-2. For each IBZ k-point, the list of symmetry operations in
-   its star
 
-### 2.5 Relation to LAT and Pragmatic Options
+1. `atomPerm(numOps, numAtomSites)`: atom permutation
+   table. atomPerm(R, A) = B means operation R maps atom
+   A to atom B.
+2. `fullKPToIBZOpMap(numFullMeshKP)`: for each full-
+   mesh k-point i, the index of the symmetry operation
+   R such that R(k_IBZ) = k_full(i) -- i.e., the
+   operation that maps the IBZ representative to the
+   full-mesh k-point. Currently `fullKPToIBZKPMap`
+   gives only the IBZ index, not which operation did
+   the mapping. For an IBZ k-point itself, the stored
+   operation is the identity.
+3. Star decomposition: for each IBZ k-point, the set
+   of operations in its star. This falls naturally out
+   of `fullKPToIBZOpMap` by collecting all full-mesh
+   k-points that share the same IBZ representative.
+4. `invAtomPerm(numOps, numAtomSites)`: inverse atom
+   permutation. invAtomPerm(R, B) = A where
+   atomPerm(R, A) = B, i.e., R^{-1}(B) = A. Built
+   in O_AtomicSites alongside atomPerm. Required for
+   LAT PDOS channel unfolding (section 1.4): when
+   assembling projections at full-mesh corner k_f
+   mapped from IBZ point k_i by forward operation R,
+   the channel index must be transformed by R^{-1}
+   to reference the stored IBZ-kpoint projection.
 
-LAT requires the full mesh by construction (tetrahedra need all
-8 parallelepiped corners), so the IBZ issue is moot for LAT
-integration. However, the Gaussian PDOS/bond order path has the
-same bug regardless of whether LAT is implemented.
+
+### 2.5 Per-Quantity Implications
+
+The table below summarizes what each computed quantity
+requires for correct IBZ unfolding, based on the shell-
+sum invariance (4) and bond order invariance (5):
+
+  Quantity                  Needed            Why
+  ────────────────────────────────────────────────────
+  TDOS (eigenvalues)        fullKPToIBZKPMap  e(Rk)=e(k)
+  Q* (effective charge)     atom perm         eq. (4)
+  Bond order                atom perm         eq. (5)
+  PDOS mode 0 (type, l)    nothing extra      *
+  PDOS mode 1 (atom total) atom perm         eq. (4)
+  PDOS mode 2 (atom, l)    atom perm         eq. (4)
+  PDOS mode 3 (atom, lm)   D^l(R) matrices   **
+  ────────────────────────────────────────────────────
+
+*Mode 0 sums projections over all atoms of the same
+type. Since point-group operations permute atoms only
+within the same species, the type-level sum is
+automatically invariant -- no correction needed.
+
+**Mode 3 resolves individual Cartesian Gaussian
+components (px, py, pz separately). Under rotation these
+mix via D^l(R), so atom permutation alone does not
+suffice. Correct unfolding requires the full
+representation matrices for each l-shell. This is
+deferred -- mode 3 is rarely used in practice.
+
+**Resolution of D2.** The open question asked whether
+replacing electronPopulation with electronPopulation_LAT
+covers bond order accumulation correctly. The answer is
+no. The occupation weight from electronPopulation_LAT is
+correct (it properly sums tetrahedron contributions for
+each IBZ k-point), but the Mulliken projection is
+computed only at the IBZ representative. Multiplying a
+correct weight by a non-permuted projection distributes
+charge incorrectly among symmetry-equivalent atoms.
+
+The fix has two parts that work together:
+
+  (a) electronPopulation_LAT provides the correct
+      occupation weight per (band, kpoint, spin).
+  (b) The accumulation loop distributes each IBZ
+      k-point's contribution across atom pairs using
+      the atom permutation table (section 2.4).
+
+Together, (a) and (b) give correct per-atom Q* and per-
+pair bond order. Either alone is insufficient. Note that
+total charge summed over all atoms IS correct with (a)
+alone -- the error is only in the per-atom distribution.
+
+### 2.6 Relation to LAT and Pragmatic Options
+
+Both the LAT and Gaussian integration paths share the same
+IBZ symmetry issue. LAT does not bypass it -- eigenvectors
+still come only from IBZ k-points regardless of how the
+occupation weights are computed. The distinction between
+the two paths is purely in the weight calculation, not in
+how projections must be unfolded.
+
+**LAT-specific note on PDOS.** For LAT PDOS (section
+1.4), the tetrahedron integration needs Mulliken
+projections at all four corners of each tetrahedron
+simultaneously. The corners are full-mesh k-point indices.
+If we only diagonalize at IBZ k-points, each full-mesh
+corner's projection must be "unfolded" from its IBZ
+representative via atom permutation. Concretely, if
+full-mesh corner k_f maps to IBZ point k_i via operation
+R (stored in fullKPToIBZOpMap). Because R maps k_IBZ
+to k_f (forward direction: R(k_IBZ) = k_f), the
+inverse R^{-1} maps atoms at k_f back to those at
+k_IBZ:
+
+  p_{atom A, l-shell}(k_f, n) =
+      p_{atom R^{-1}(A), l-shell}(k_i, n)
+
+This is equation (4) applied to corner unfolding.
 
 **Decided approach (Option A):** Use IBZ for SCF
 diagonalization, unfold eigenvalues (and eventually
@@ -392,18 +845,18 @@ Supported combinations involving LAT:
 1. SCF with IBZ → DOS/bond with LAT (within SCF phase,
    same kpoints): The SCF diagonalizes at IBZ points. When
    `doDOS_SCF=1` and `kPointIntgCode=1`, the DOS routine
-   unfolds eigenvalues to the full mesh via `fullToIBZMap`
+   unfolds eigenvalues to the full mesh via `fullKPToIBZKPMap`
    and uses tetrahedra for integration.
 2. SCF with IBZ → PSCF with LAT (different, typically
    denser mesh): The PSCF reads its own kpoint file, builds
    its own mesh, IBZ reduces it, builds its own tetrahedra
-   and `fullToIBZMap`. The PSCF diagonalizes at its IBZ
+   and `fullKPToIBZKPMap`. The PSCF diagonalizes at its IBZ
    points, then LAT DOS unfolds to its full mesh.
 3. SCF with IBZ → PSCF with Gaussian (standard current
    behavior): No tetrahedra needed. IBZ kpoints and weights
    used directly.
 
-The `fullToIBZMap`, `tetrahedra`, `numTetrahedra`, and
+The `fullKPToIBZKPMap`, `tetrahedra`, `numTetrahedra`, and
 `tetraVol` are per-kpoint-set data stored in `O_KPoints`.
 They are rebuilt each time `initializeKPoints` runs (once
 for SCF, once for PSCF). When `kPointIntgCode == 0`
@@ -415,29 +868,56 @@ passed in from O_KPoints as arguments.
 **Implementation strategy:**
 
 - The IBZ folding in `initializeKPointMesh` saves the
-  full-to-IBZ mapping as `fullToIBZMap(numFullMeshKP)`.
-  For each full-mesh index i, `fullToIBZMap(i)` gives the
-  IBZ kpoint index whose eigenvalues are identical.
+  full-to-IBZ mapping as
+  `fullKPToIBZKPMap(numFullMeshKP)`. For each full-mesh
+  index i, `fullKPToIBZKPMap(i)` gives the IBZ kpoint
+  index whose eigenvalues are identical.
+- `fullKPToIBZOpMap(numFullMeshKP)` (new): for each
+  full-mesh index i, the index of the point group
+  operation R such that R(k_IBZ) = k_full(i). The
+  folding loop applies each operation to the IBZ
+  representative and checks for matches among full-mesh
+  k-points; the matching operation is stored. For an
+  IBZ k-point itself, the identity operation is stored.
+  Saved alongside `fullKPToIBZKPMap` during IBZ folding
+  in `initializeKPointMesh`.
+- `atomPerm(numPointOps, numAtomSites)` (new): for each
+  point-group operation and atom, the index of the image
+  atom. Built once during `initializeKPoints` from the
+  point-group operations and atomic positions.
 - `generateTetrahedra` uses `numAxialKPoints` to build
   tetrahedra referencing full-mesh indices (1 to
-  `numFullMeshKP`). Called from `initializeKPoints` after
-  the mesh is constructed.
+  `numFullMeshKP`). Called from `initializeKPoints`
+  after the mesh is constructed.
 - `tetraVol = 1 / numTetrahedra`, computed in
   `initializeKPoints` after tetrahedra are generated.
 - For TDOS, eigenvalue lookup at full-mesh corner k is:
-    `eigenValues(band, fullToIBZMap(k), spin)`
-- For PDOS (future), eigenvector unfolding will also
-  require the symmetry operation index that maps each
-  full-mesh point to its IBZ representative.
-- **Warning:** Detect when any kPointWeight(i) differs
-  significantly from 2.0/numKPoints and emit a warning that
-  partial properties may be incorrect with IBZ-reduced
-  k-points.
+    `eigenValues(band, fullKPToIBZKPMap(k), spin)`
+- For PDOS, projection at full-mesh corner k for an
+  l-shell channel on atom A is:
+    `p(R^{-1}(A), l, band, fullKPToIBZKPMap(k))`
+  where R = operation(fullKPToIBZOpMap(k)) maps the
+  IBZ representative to k (forward direction). See
+  section 2.3 equation (4).
+- **Style code 0 warning (resolved D3):** When
+  `kPointStyleCode == 0` (explicit k-point list), OLCAO
+  does not build the full mesh internally and therefore
+  cannot construct `fullKPToIBZKPMap`, `fullKPToIBZOpMap`,
+  or `atomPerm`. Emit a prominent warning at initialization
+  that decomposition properties (effective charge, bond
+  order, PDOS) will not be correct unless the user has
+  taken extreme care to provide a symmetric k-point mesh.
+  For style codes 1 and 2, OLCAO builds the full mesh
+  and all symmetry maps internally, so the atom permutation
+  fix works for both Gaussian and LAT integration paths.
+  makeinput.py no longer produces style code 0 files;
+  mesh mode (`-kp`) now writes style code 1.
 
-Note: `kPointWeight` is irrelevant for LAT integration -- the
-DOS contribution is determined entirely by the analytic formula
-over each tetrahedron. The weight array still matters for SCF
-electron counting (charge density integration).
+Note: `kPointWeight` is irrelevant for LAT integration --
+the DOS contribution is determined entirely by the
+analytic formula over each tetrahedron. The weight array
+still matters for SCF electron counting (charge density
+integration).
 
 ---
 
@@ -552,10 +1032,14 @@ inside `uolcao`). Two consequences:
 
 ## References
 
-P. E. Bloechl, O. Jepsen, O. K. Andersen, "Improved tetrahedron
-method for Brillouin-zone integrations," Phys. Rev. B 49, 16223
-(1994). Key equations:
-- Eqs. 14-16: analytic DOS formulas
-- Eqs. 18-21: corner integration weights
-  (`cornerIntgWt_LAT`) for partial properties
+P. E. Bloechl, O. Jepsen, O. K. Andersen, "Improved
+tetrahedron method for Brillouin-zone integrations,"
+Phys. Rev. B 49, 16223 (1994). Key equations:
+- Eqs. 14-16: analytic DOS formulas (total per
+  tetrahedron)
+- Eqs. 18-21: corner weights. Cumulative form
+  `cornerIntgWt_LAT` from `bloechlCornerWeights` for
+  integrated properties; energy derivatives
+  `cornerDOSWt_LAT` from `bloechlCornerDOSWt` for
+  energy-resolved DOS/PDOS
 - Eqs. 22-24: correction terms for improved accuracy
