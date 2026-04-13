@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-"""modStructrc.py -- Default parameters for modStruct.py.
+"""mod_structrc.py -- Default parameters for mod_struct.py.
 
 This resource control file provides a single function that returns a
 dictionary of all default parameters used by modStruct.  Users may

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-"""modStruct.py -- Modify an atomic structure input file.
+"""mod_struct.py -- Modify an atomic structure input file.
 
 This is the Python port of the Perl ``modStruct`` script.  It reads
 an OLCAO structure file (olcao.skl by default) and applies a
@@ -10,7 +10,7 @@ insertion, sphere/block cutting, orthorhombic conversion, perturbation,
 and surface preparation.
 
 The script follows the XYZ.py / XYZrc.py pattern:
-  1. Load defaults from modStructrc.py ($OLCAO_RC or cwd).
+  1. Load defaults from mod_structrc.py ($OLCAO_RC or cwd).
   2. Parse the command line with argparse.
   3. Reconcile CLI args with rc defaults.
   4. Execute the main workflow.
@@ -156,7 +156,7 @@ class ScriptSettings:
     """Holds all user-controllable parameters for modStruct.
 
     On construction the object:
-      1. Reads defaults from modStructrc.py.
+      1. Reads defaults from mod_structrc.py.
       2. Parses the command line (argparse).
       3. Reconciles CLI values with rc defaults.
       4. Records the command line to the ``command`` file.
@@ -182,11 +182,11 @@ class ScriptSettings:
 
     @staticmethod
     def _load_rc():
-        """Import modStructrc and return its parameter dictionary.
+        """Import mod_structrc and return its parameter dictionary.
 
         Search order: cwd first (local override), then $OLCAO_RC.
         """
-        cwd_rc = os.path.join(os.getcwd(), "modStructrc.py")
+        cwd_rc = os.path.join(os.getcwd(), "mod_structrc.py")
         if os.path.isfile(cwd_rc):
             sys.path.insert(0, os.getcwd())
         else:
@@ -194,11 +194,11 @@ class ScriptSettings:
             if not rc_dir:
                 sys.exit(
                     "Error: $OLCAO_RC is not set and no local "
-                    "modStructrc.py found. See instructions."
+                    "mod_structrc.py found. See instructions."
                 )
             sys.path.insert(0, rc_dir)
 
-        from modStructrc import parameters_and_defaults
+        from mod_structrc import parameters_and_defaults
         return parameters_and_defaults()
 
     # --------------------------------------------------------------
@@ -241,7 +241,7 @@ class ScriptSettings:
         """
 
         # --- simple flags via argparse ---
-        prog_name = "modStruct"
+        prog_name = "mod_struct.py"
 
         description_text = """\
 Modify an atomic structure input file.
@@ -255,7 +255,7 @@ of times and are applied in the order given on the command line.
 """
 
         epilog_text = """\
-Defaults are given in ./modStructrc.py or $OLCAO_RC/modStructrc.py.
+Defaults are given in ./mod_structrc.py or $OLCAO_RC/mod_structrc.py.
 """
 
         parser = ap.ArgumentParser(
@@ -989,7 +989,7 @@ def do_cutsphere(op, sc):
 # ------------------------------------------------------------------
 
 def main():
-    print("\n\nmodStruct.py script executing.\n")
+    print("\n\nmod_struct.py script executing.\n")
 
     # Parse command line and load defaults.
     ts = datetime.now().strftime("%b %d, %Y: %H:%M:%S")
@@ -1034,7 +1034,7 @@ def main():
     # Done.
     ts = datetime.now().strftime("%b %d, %Y: %H:%M:%S")
     print(
-        f"\nmodStruct.py script complete at......{ts}.\n"
+        f"\nmod_struct.py script complete at......{ts}.\n"
     )
 
 

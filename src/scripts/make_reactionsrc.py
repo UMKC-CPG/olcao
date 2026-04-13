@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
-"""makeReactionsrc.py -- Resource control file for makeReactions.py.
+"""make_reactionsrc.py -- Resource control file for make_reactions.py.
 
-This file defines the default parameter values for the makeReactions.py
+This file defines the default parameter values for the make_reactions.py
 script.  Users can override these defaults via command line arguments.
 A local copy of this file (in the current working directory) takes
 precedence over the copy in $OLCAO_RC.
@@ -13,7 +13,7 @@ it relates to the physical / algorithmic behaviour of the script.
 
 
 def parameters_and_defaults():
-    """Return a dictionary of default parameters for makeReactions.py.
+    """Return a dictionary of default parameters for make_reactions.py.
 
     Returns
     -------

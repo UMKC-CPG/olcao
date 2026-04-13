@@ -15,8 +15,8 @@ set (SCRIPTS
    lmp2skl.py
    make_veusz_graph.py makeBDB makeBDB.py makeBOND makeColorSYBD makeFittedRhoV
    makeinput makePDOS makePDOS.py makePotDB makePotDB.py
-   makeReactions makeReactions.py makeSGDB makeSYBD makeSYBD.py massGather
-   massPrep massSubmit modStruct makeinput.py modStruct.py
+   makeReactions make_reactions.py makeSGDB makeSYBD makeSYBD.py massGather
+   massPrep massSubmit modStruct makeinput.py mod_struct.py
    nanoTube.py normalize
    olcao olcaoCompare olcaoObject.py olcao.py olcaoStructures.py
    org_radwavefn.py osrecurintg.py osrecurintgana.py osrecurintgnum.py
@@ -41,8 +41,8 @@ set (RC_FILES
    graspElemsrc.py
    insert3cborc.py interFitrc.py
    makeBDBrc.py makeBONDrc.py makeFittedRhoVrc.py
-   makeinputrc.py makePDOSrc.py makePotDBrc.py makeReactionsrc.py
-   makeSYBDrc.py modStructrc.py
+   makeinputrc.py makePDOSrc.py makePotDBrc.py make_reactionsrc.py
+   makeSYBDrc.py mod_structrc.py
    osrecurintg_makenumrc.py osrecurintgrc.py
    pdb2sklrc.py plotgraphrc.py porosityrc.py pot2plotrc.py processPOPTCrc.py
    runIsoAtomsrc.py

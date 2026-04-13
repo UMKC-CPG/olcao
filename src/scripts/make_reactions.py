@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
-"""makeReactions.py -- Create reaction templates for LAMMPS bond/react.
+"""make_reactions.py -- Create reaction templates for LAMMPS bond/react.
 
-PROGRAM: makeReactions.py
+PROGRAM: make_reactions.py
 PURPOSE: To create a set of pre- and post-reaction molecule files
    along with a mapping file for a bond/react based LAMMPS
    calculation.
@@ -76,12 +76,12 @@ REQUIREMENTS:
    - structure_control.py (StructureControl class)
    - element_data.py (ElementData class)
    - bond_analysis.py (BondAnalysis class)
-   - modStruct.py (for molecular transformations)
+   - mod_struct.py (for molecular transformations)
    - $OLCAO_DATA/angles.dat (Hooke angle database)
-   - $OLCAO_RC/makeReactionsrc.py (default parameters)
+   - $OLCAO_RC/make_reactionsrc.py (default parameters)
 
 USAGE:
-   makeReactions.py -m1 DIR1 -m2 DIR2
+   make_reactions.py -m1 DIR1 -m2 DIR2
                     [-c1 CHAIN_LEN1] [-c2 CHAIN_LEN2]
                     [-d1 DEPTH TARGET] [-d2 DEPTH TARGET]
                     [-s ELEMENT DIST DEL_BOTH]
@@ -215,14 +215,14 @@ class ScriptSettings:
     are then reconciled with command line parameters.
 
     Following the XYZ.py pattern, defaults come from the rc file
-    ($OLCAO_RC/makeReactionsrc.py or ./makeReactionsrc.py) and
+    ($OLCAO_RC/make_reactionsrc.py or ./make_reactionsrc.py) and
     are then overridden by any command line arguments.
     """
 
     def __init__(self):
         """Define default values by pulling them from the resource
         control file in the default location:
-        $OLCAO_RC/makeReactionsrc.py or from the current working
+        $OLCAO_RC/make_reactionsrc.py or from the current working
         directory if a local copy is present."""
 
         # Read default variables from the resource control file.
@@ -231,7 +231,7 @@ class ScriptSettings:
             sys.exit("Error: $OLCAO_RC is not set. "
                      "See installation instructions.")
         sys.path.insert(1, rc_dir)
-        from makeReactionsrc import parameters_and_defaults
+        from make_reactionsrc import parameters_and_defaults
         default_rc = parameters_and_defaults()
 
         # Assign values from the rc defaults file.
@@ -253,7 +253,7 @@ class ScriptSettings:
         Parameters
         ----------
         rc : dict
-            Dictionary from makeReactionsrc.parameters_and_defaults
+            Dictionary from make_reactionsrc.parameters_and_defaults
         """
 
         # Chain length parameters: number of bond-hops from the
@@ -290,10 +290,10 @@ class ScriptSettings:
         argparse.Namespace
             Parsed command line arguments.
         """
-        prog_name = "makeReactions.py"
+        prog_name = "make_reactions.py"
 
         description_text = """\
-makeReactions.py -- Create reaction templates for LAMMPS
+make_reactions.py -- Create reaction templates for LAMMPS
 bond/react.
 
 Creates pre- and post-reaction molecule template files and a
@@ -307,8 +307,8 @@ Cartesian coordinates.
 """
 
         epilog_text = """\
-Defaults are given in ./makeReactionsrc.py or
-$OLCAO_RC/makeReactionsrc.py.
+Defaults are given in ./make_reactionsrc.py or
+$OLCAO_RC/make_reactionsrc.py.
 """
 
         parser = ap.ArgumentParser(
@@ -1396,7 +1396,7 @@ class MakeReactions:
                     )
 
                 # Build the plane coords for the -rotP option
-                #   of modStruct.py.
+                #   of mod_struct.py.
                 plane_coords = [
                     self.s_atom_coords1[s1][1],
                     self.s_atom_coords1[s1][2],
@@ -1426,10 +1426,10 @@ class MakeReactions:
                 ]
 
                 # Apply the translation, rotation, translation
-                #   sequence using modStruct.py (Python
+                #   sequence using mod_struct.py (Python
                 #   replacement for the Perl modStruct program).
                 cmd = [
-                    "modStruct.py",
+                    "mod_struct.py",
                     "-i",
                     os.path.join(
                         "centered", self.in_file_cent2
@@ -3084,7 +3084,7 @@ class MakeReactions:
 # Main entry point
 # ================================================================
 def main():
-    """Main entry point for makeReactions.py.
+    """Main entry point for make_reactions.py.
 
     Get script settings from a combination of the resource
     control file and parameters given by the user on the
