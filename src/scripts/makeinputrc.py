@@ -100,8 +100,12 @@ def parameters_and_defaults():
         "cell_name":        "",
 
         # ---- K-point defaults ----
-        "kp_mesh_scf":      [1, 1, 1],
-        "kp_mesh_pscf":     [1, 1, 1],
+        # Each mesh is stored in the 1-indexed layout used throughout
+        # the OLCAO Python scripts: slot 0 is an unused None sentinel,
+        # slot 1 is the a-axis count, slot 2 the b-axis, slot 3 the
+        # c-axis.  This mirrors Perl's ``@kpMesh[$group][1..3]``.
+        "kp_mesh_scf":      [None, 1, 1, 1],
+        "kp_mesh_pscf":     [None, 1, 1, 1],
         "kp_weight_sum":    2,
         "kp_shift":         "-1 -1 -1",
         "print_bz":         0,

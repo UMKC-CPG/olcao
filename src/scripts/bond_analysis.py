@@ -1150,12 +1150,16 @@ class BondAnalysis:
             )
 
         # Set the border so that we include only the requested
-        # atoms.
+        # atoms.  Both low- and high-bound triples are passed as
+        # 1-indexed [None, v1, v2, v3] lists to match the set_border
+        # parameter convention.
         sc.set_border(
             s.zone,
-            [s.box_borders[1][1], s.box_borders[2][1],
+            [None,
+             s.box_borders[1][1], s.box_borders[2][1],
              s.box_borders[3][1]],
-            [s.box_borders[1][2], s.box_borders[2][2],
+            [None,
+             s.box_borders[1][2], s.box_borders[2][2],
              s.box_borders[3][2]],
             s.coord_type,
         )
@@ -2578,35 +2582,34 @@ class BondAnalysis:
         out.write("module bondsAndVectors()\n{\n")
         out.write("   union()\n   {\n")
 
-        # Create a scaled set of rods that define the cell.
-        for abc in range(3):
+        # Create a scaled set of rods that define the cell.  The two
+        # endpoint vectors are built in the 1-indexed [None, a, b, c]
+        # layout that get_direct_xyz_point expects so that the modular
+        # axis-rotation trick below can be expressed with 1-indexed
+        # axis values directly.
+        for abc in range(1, 4):
             for i in range(2):
                 for j in range(2):
-                    # This will make ABC fractional points
-                    # for all cell edges.
-                    p1_abc = [0.0, 0.0, 0.0]
-                    p2_abc = [0.0, 0.0, 0.0]
-                    p1_abc[(abc + 0) % 3] = 0
-                    p1_abc[(abc + 1) % 3] = i
-                    p1_abc[(abc + 2) % 3] = j
-                    p2_abc[(abc + 0) % 3] = 1
-                    p2_abc[(abc + 1) % 3] = i
-                    p2_abc[(abc + 2) % 3] = j
+                    # This will make ABC fractional points for all cell
+                    # edges.  The (abc + k) % 3 formula cycles through
+                    # the three axes; we translate the 0-based cycle back
+                    # into 1-indexed slots by adding one.
+                    p1_abc = [None, 0.0, 0.0, 0.0]
+                    p2_abc = [None, 0.0, 0.0, 0.0]
+                    p1_abc[((abc - 1 + 0) % 3) + 1] = 0
+                    p1_abc[((abc - 1 + 1) % 3) + 1] = i
+                    p1_abc[((abc - 1 + 2) % 3) + 1] = j
+                    p2_abc[((abc - 1 + 0) % 3) + 1] = 1
+                    p2_abc[((abc - 1 + 1) % 3) + 1] = i
+                    p2_abc[((abc - 1 + 2) % 3) + 1] = j
 
                     # Convert from ABC fractional to XYZ
-                    # cartesian.
-                    p1_xyz = (
-                        sc.get_direct_xyz_point(
-                            p1_abc
-                        )
-                    )
-                    p2_xyz = (
-                        sc.get_direct_xyz_point(
-                            p2_abc
-                        )
-                    )
+                    # cartesian.  get_direct_xyz_point now takes and
+                    # returns 1-indexed [None, v1, v2, v3] vectors.
+                    p1_xyz = sc.get_direct_xyz_point(p1_abc)
+                    p2_xyz = sc.get_direct_xyz_point(p2_abc)
 
-                    # Scale the locations.
+                    # Scale the locations (slots 1..3 hold the xyz data).
                     for xyz in range(1, 4):
                         p1_xyz[xyz] *= s.c_scale
                         p2_xyz[xyz] *= s.c_scale

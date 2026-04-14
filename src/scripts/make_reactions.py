@@ -1272,20 +1272,28 @@ class MakeReactions:
             #   translation vector first. That is the reason that
             #   we ultimately produce trans_vector2 instead of
             #   trans_vector1.
-            diff_vector1 = [0.0, 0.0, 0.0]
-            for axis in range(3):
+            # Store diff_vector1 in the 1-indexed [None, dx, dy, dz]
+            # layout so it can be passed directly to the 1-indexed
+            # vector helpers (get_vector_angle, etc.) further below.
+            diff_vector1 = [None, 0.0, 0.0, 0.0]
+            for axis in range(1, 4):
                 diff_vector1[axis] = (
-                    self.s_atom_coords1[s1][axis + 1]
-                    - self.trigger_coords1[s1][axis + 1]
+                    self.s_atom_coords1[s1][axis]
+                    - self.trigger_coords1[s1][axis]
                 )
-            diff1_mag = math.sqrt(sum(
-                d ** 2 for d in diff_vector1
-            ))
-            for axis in range(3):
+            diff1_mag = math.sqrt(
+                diff_vector1[1] ** 2 +
+                diff_vector1[2] ** 2 +
+                diff_vector1[3] ** 2
+            )
+            for axis in range(1, 4):
                 diff_vector1[axis] /= diff1_mag
+            # trans_vector2 stays 0-indexed: it is consumed immediately
+            # below as a Cartesian shift by atom-building code that
+            # indexes with ``ax + 1`` into other 1-indexed arrays.
             trans_vector2 = [
                 diff_vector1[ax] * self.s.ss_dist
-                for ax in range(3)
+                for ax in range(1, 4)
             ]
 
             # Iterate over all S atoms of the second molecule.
@@ -1325,7 +1333,10 @@ class MakeReactions:
                 unique_bonded_names.append(curr_bonded_name)
 
                 # The translation vector that will bring the two
-                #   S atoms coincident with each other.
+                #   S atoms coincident with each other.  trans_vector1
+                #   is consumed by the command-line builder further
+                #   down (which reads ``trans_vector1[0..2]``), so it
+                #   stays 0-indexed.
                 trans_vector1 = [
                     self.s_atom_coords1[s1][ax + 1]
                     - self.s_atom_coords2[s2][ax + 1]
@@ -1348,33 +1359,39 @@ class MakeReactions:
                 #   non-colinear position.
 
                 # Compute the final coordinate assuming non-
-                #   colinear atoms.
-                final_coord = [
+                #   colinear atoms.  Stored 1-indexed so it can
+                #   later be fed to the 1-indexed cross-product
+                #   helper without any reshaping.
+                final_coord = [None] + [
                     trans_vector1[ax]
                     + self.trigger_coords2[s2][ax + 1]
                     for ax in range(3)
                 ]
 
                 # Check if the atoms are colinear by comparing
-                #   normalized difference vectors.
-                diff_vector2 = [
-                    self.s_atom_coords1[s1][ax + 1]
-                    - final_coord[ax]
-                    for ax in range(3)
+                #   normalised difference vectors.  Both diff vectors
+                #   use the 1-indexed [None, dx, dy, dz] layout.
+                diff_vector2 = [None] + [
+                    self.s_atom_coords1[s1][axis]
+                    - final_coord[axis]
+                    for axis in range(1, 4)
                 ]
-                diff2_mag = math.sqrt(sum(
-                    d ** 2 for d in diff_vector2
-                ))
-                diff_vector2 = [
-                    d / diff2_mag for d in diff_vector2
+                diff2_mag = math.sqrt(
+                    diff_vector2[1] ** 2 +
+                    diff_vector2[2] ** 2 +
+                    diff_vector2[3] ** 2
+                )
+                diff_vector2 = [None] + [
+                    diff_vector2[axis] / diff2_mag
+                    for axis in range(1, 4)
                 ]
 
                 # Assume colinear. If any direction differs by
                 #   more than epsilon, they are not colinear.
                 not_colinear = False
-                for ax in range(3):
-                    if (abs(abs(diff_vector1[ax])
-                            - abs(diff_vector2[ax]))
+                for axis in range(1, 4):
+                    if (abs(abs(diff_vector1[axis])
+                            - abs(diff_vector2[axis]))
                             > self.EPSILON):
                         not_colinear = True
 
@@ -1383,11 +1400,13 @@ class MakeReactions:
                     # Create a vector not parallel to diff2 by
                     #   scaling components differently.
                     temp_vector = [
-                        diff_vector2[0] * 2.0,
-                        diff_vector2[1] * 3.0,
-                        diff_vector2[2] * 4.0,
+                        None,
+                        diff_vector2[1] * 2.0,
+                        diff_vector2[2] * 3.0,
+                        diff_vector2[3] * 4.0,
                     ]
-                    # Use a temporary SC for the cross product.
+                    # Use a temporary SC for the cross product; it
+                    # returns a 1-indexed vector directly.
                     sc_tmp = self.StructureControl()
                     final_coord = (
                         sc_tmp.normalized_cross_product(
@@ -1404,9 +1423,9 @@ class MakeReactions:
                     self.trigger_coords1[s1][1],
                     self.trigger_coords1[s1][2],
                     self.trigger_coords1[s1][3],
-                    final_coord[0],
                     final_coord[1],
                     final_coord[2],
+                    final_coord[3],
                 ]
 
                 # Compute the rotation angle.

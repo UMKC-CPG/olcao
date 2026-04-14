@@ -27,126 +27,146 @@ import pytest
 # ===========================================================================
 
 class TestNormalizedCrossProduct:
-    """normalized_cross_product(a, b) → unit vector parallel to a × b."""
+    """normalized_cross_product(a, b) → unit vector parallel to a × b.
+
+    All vector helpers use the 1-indexed ``[None, x, y, z]`` convention
+    that mirrors Perl's ``@vector[1..3]``.  Slot 0 is a ``None``
+    sentinel so axis indices 1, 2, 3 map directly to x, y, z.
+    """
 
     pytestmark = pytest.mark.unit
 
     def test_x_cross_y_is_z(self, fresh_sc):
-        n = fresh_sc.normalized_cross_product([1, 0, 0], [0, 1, 0])
-        assert n == pytest.approx([0, 0, 1], abs=1e-12)
+        n = fresh_sc.normalized_cross_product([None, 1, 0, 0],
+                                              [None, 0, 1, 0])
+        assert n[1:] == pytest.approx([0, 0, 1], abs=1e-12)
 
     def test_result_is_unit_vector(self, fresh_sc):
-        a = [1.0, 2.0, 3.0]
-        b = [4.0, 5.0, 6.0]
+        a = [None, 1.0, 2.0, 3.0]
+        b = [None, 4.0, 5.0, 6.0]
         n = fresh_sc.normalized_cross_product(a, b)
-        mag = math.sqrt(n[0]**2 + n[1]**2 + n[2]**2)
+        mag = math.sqrt(n[1]**2 + n[2]**2 + n[3]**2)
         assert mag == pytest.approx(1.0, rel=1e-10)
 
     def test_parallel_to_cross_product(self, fresh_sc):
-        a = [2.0, 1.0, 0.0]
-        b = [0.0, 3.0, 1.0]
+        a = [None, 2.0, 1.0, 0.0]
+        b = [None, 0.0, 3.0, 1.0]
         n = fresh_sc.normalized_cross_product(a, b)
         c = fresh_sc.cross_product(a, b)
-        c_mag = math.sqrt(sum(x**2 for x in c))
-        c_unit = [x / c_mag for x in c]
-        assert n == pytest.approx(c_unit, rel=1e-10)
+        c_mag = math.sqrt(c[1]**2 + c[2]**2 + c[3]**2)
+        c_unit = [c[axis] / c_mag for axis in range(1, 4)]
+        assert n[1:] == pytest.approx(c_unit, rel=1e-10)
 
     def test_orthogonal_to_both_inputs(self, fresh_sc):
-        a = [1.0, 0.0, 0.0]
-        b = [0.0, 1.0, 1.0]
+        a = [None, 1.0, 0.0, 0.0]
+        b = [None, 0.0, 1.0, 1.0]
         n = fresh_sc.normalized_cross_product(a, b)
         assert fresh_sc.dot_product(n, a) == pytest.approx(0.0, abs=1e-12)
         assert fresh_sc.dot_product(n, b) == pytest.approx(0.0, abs=1e-12)
 
     def test_anticommutative_direction(self, fresh_sc):
-        a = [1.0, 2.0, 3.0]
-        b = [4.0, 5.0, 6.0]
+        a = [None, 1.0, 2.0, 3.0]
+        b = [None, 4.0, 5.0, 6.0]
         n_ab = fresh_sc.normalized_cross_product(a, b)
         n_ba = fresh_sc.normalized_cross_product(b, a)
-        for i in range(3):
-            assert n_ab[i] == pytest.approx(-n_ba[i], rel=1e-10)
+        for axis in range(1, 4):
+            assert n_ab[axis] == pytest.approx(-n_ba[axis], rel=1e-10)
 
 
 class TestGetVectorAngle:
-    """get_vector_angle(a, b) → angle in radians."""
+    """get_vector_angle(a, b) → angle in radians.
+
+    Inputs are 1-indexed ``[None, x, y, z]`` vectors.
+    """
 
     pytestmark = pytest.mark.unit
 
     def test_parallel_is_zero(self, fresh_sc):
-        assert fresh_sc.get_vector_angle([1, 0, 0], [1, 0, 0]) == pytest.approx(0.0, abs=1e-12)
+        assert fresh_sc.get_vector_angle(
+                [None, 1, 0, 0], [None, 1, 0, 0]) == pytest.approx(
+                        0.0, abs=1e-12)
 
     def test_antiparallel_is_pi(self, fresh_sc):
-        assert fresh_sc.get_vector_angle([1, 0, 0], [-1, 0, 0]) == pytest.approx(math.pi, rel=1e-10)
+        assert fresh_sc.get_vector_angle(
+                [None, 1, 0, 0], [None, -1, 0, 0]) == pytest.approx(
+                        math.pi, rel=1e-10)
 
     def test_perpendicular_x_y_is_half_pi(self, fresh_sc):
-        assert fresh_sc.get_vector_angle([1, 0, 0], [0, 1, 0]) == pytest.approx(math.pi / 2.0, rel=1e-10)
+        assert fresh_sc.get_vector_angle(
+                [None, 1, 0, 0], [None, 0, 1, 0]) == pytest.approx(
+                        math.pi / 2.0, rel=1e-10)
 
     def test_perpendicular_x_z_is_half_pi(self, fresh_sc):
-        assert fresh_sc.get_vector_angle([1, 0, 0], [0, 0, 1]) == pytest.approx(math.pi / 2.0, rel=1e-10)
+        assert fresh_sc.get_vector_angle(
+                [None, 1, 0, 0], [None, 0, 0, 1]) == pytest.approx(
+                        math.pi / 2.0, rel=1e-10)
 
     def test_45_degrees(self, fresh_sc):
         # [1,1,0] and [0,1,0]: dot = 1, |a|=sqrt(2), |b|=1 → angle = pi/4
-        angle = fresh_sc.get_vector_angle([1, 1, 0], [0, 1, 0])
+        angle = fresh_sc.get_vector_angle([None, 1, 1, 0], [None, 0, 1, 0])
         assert angle == pytest.approx(math.pi / 4.0, rel=1e-8)
 
     def test_scale_invariant(self, fresh_sc):
         """Scaling a vector should not change the angle."""
-        angle1 = fresh_sc.get_vector_angle([1, 0, 0], [0, 1, 0])
-        angle2 = fresh_sc.get_vector_angle([5, 0, 0], [0, 3, 0])
+        angle1 = fresh_sc.get_vector_angle([None, 1, 0, 0], [None, 0, 1, 0])
+        angle2 = fresh_sc.get_vector_angle([None, 5, 0, 0], [None, 0, 3, 0])
         assert angle1 == pytest.approx(angle2, rel=1e-10)
 
     def test_commutative(self, fresh_sc):
-        a = [1.0, 2.0, 3.0]
-        b = [4.0, 5.0, 6.0]
+        a = [None, 1.0, 2.0, 3.0]
+        b = [None, 4.0, 5.0, 6.0]
         assert fresh_sc.get_vector_angle(a, b) == pytest.approx(
             fresh_sc.get_vector_angle(b, a), rel=1e-10)
 
     def test_result_in_range_0_pi(self, fresh_sc):
-        angle = fresh_sc.get_vector_angle([1, 2, 3], [4, -1, 2])
+        angle = fresh_sc.get_vector_angle([None, 1, 2, 3], [None, 4, -1, 2])
         assert 0.0 <= angle <= math.pi
 
 
 class TestSphericalAngles:
-    """spherical_angles(vector) → (theta, phi) in radians."""
+    """spherical_angles(vector) → (theta, phi) in radians.
+
+    Input vector is 1-indexed ``[None, x, y, z]``.
+    """
 
     pytestmark = pytest.mark.unit
 
     def test_z_axis_theta_zero(self, fresh_sc):
-        theta, phi = fresh_sc.spherical_angles([0, 0, 1])
+        theta, phi = fresh_sc.spherical_angles([None, 0, 0, 1])
         assert theta == pytest.approx(0.0, abs=1e-12)
 
     def test_z_axis_phi_zero(self, fresh_sc):
-        theta, phi = fresh_sc.spherical_angles([0, 0, 1])
+        theta, phi = fresh_sc.spherical_angles([None, 0, 0, 1])
         assert phi == pytest.approx(0.0, abs=1e-12)
 
     def test_neg_z_axis_theta_pi(self, fresh_sc):
-        theta, phi = fresh_sc.spherical_angles([0, 0, -1])
+        theta, phi = fresh_sc.spherical_angles([None, 0, 0, -1])
         assert theta == pytest.approx(math.pi, abs=1e-12)
 
     def test_x_axis_theta_half_pi(self, fresh_sc):
-        theta, phi = fresh_sc.spherical_angles([1, 0, 0])
+        theta, phi = fresh_sc.spherical_angles([None, 1, 0, 0])
         assert theta == pytest.approx(math.pi / 2.0, abs=1e-12)
 
     def test_x_axis_phi_zero(self, fresh_sc):
-        theta, phi = fresh_sc.spherical_angles([1, 0, 0])
+        theta, phi = fresh_sc.spherical_angles([None, 1, 0, 0])
         assert phi == pytest.approx(0.0, abs=1e-12)
 
     def test_y_axis_theta_half_pi(self, fresh_sc):
-        theta, phi = fresh_sc.spherical_angles([0, 1, 0])
+        theta, phi = fresh_sc.spherical_angles([None, 0, 1, 0])
         assert theta == pytest.approx(math.pi / 2.0, abs=1e-12)
 
     def test_y_axis_phi_half_pi(self, fresh_sc):
-        theta, phi = fresh_sc.spherical_angles([0, 1, 0])
+        theta, phi = fresh_sc.spherical_angles([None, 0, 1, 0])
         assert phi == pytest.approx(math.pi / 2.0, abs=1e-12)
 
     def test_neg_x_axis_phi_pi(self, fresh_sc):
-        theta, phi = fresh_sc.spherical_angles([-1, 0, 0])
+        theta, phi = fresh_sc.spherical_angles([None, -1, 0, 0])
         assert abs(phi) == pytest.approx(math.pi, abs=1e-12)
 
     def test_scaling_does_not_change_angles(self, fresh_sc):
         """Multiplying the vector by a positive scalar should not change angles."""
-        t1, p1 = fresh_sc.spherical_angles([1, 1, 1])
-        t2, p2 = fresh_sc.spherical_angles([3, 3, 3])
+        t1, p1 = fresh_sc.spherical_angles([None, 1, 1, 1])
+        t2, p2 = fresh_sc.spherical_angles([None, 3, 3, 3])
         assert t1 == pytest.approx(t2, rel=1e-10)
         assert p1 == pytest.approx(p2, rel=1e-10)
 
@@ -155,67 +175,32 @@ class TestSphericalAngles:
 # Utility functions — unit tests
 # ===========================================================================
 
-class TestStableSort:
-    """stable_sort(values, keys) → indices sorted by keys (stable on ties)."""
-
-    pytestmark = pytest.mark.unit
-
-    def test_already_sorted(self, fresh_sc):
-        values = ['a', 'b', 'c']
-        keys   = [1, 2, 3]
-        result = fresh_sc.stable_sort(values, keys)
-        assert result == [0, 1, 2]
-
-    def test_reverse_order(self, fresh_sc):
-        values = ['a', 'b', 'c']
-        keys   = [3, 2, 1]
-        result = fresh_sc.stable_sort(values, keys)
-        assert result == [2, 1, 0]
-
-    def test_general_permutation(self, fresh_sc):
-        # keys: [3, 1, 4, 2] → sorted order of indices: 1, 3, 0, 2
-        values = ['a', 'b', 'c', 'd']
-        keys   = [3, 1, 4, 2]
-        result = fresh_sc.stable_sort(values, keys)
-        assert result == [1, 3, 0, 2]
-
-    def test_stable_on_ties(self, fresh_sc):
-        """Equal keys must preserve relative order of the tied items."""
-        values = ['a', 'b', 'c']
-        keys   = [1, 1, 2]
-        result = fresh_sc.stable_sort(values, keys)
-        # Both 'a' (idx 0) and 'b' (idx 1) have key=1; original order preserved.
-        assert result == [0, 1, 2]
-
-    def test_tie_at_end(self, fresh_sc):
-        values = ['a', 'b', 'c', 'd']
-        keys   = [2, 1, 3, 3]
-        result = fresh_sc.stable_sort(values, keys)
-        # key=1→idx 1, key=2→idx 0, key=3 tied→ 2 before 3 (stable)
-        assert result == [1, 0, 2, 3]
-
-    def test_single_element(self, fresh_sc):
-        assert fresh_sc.stable_sort(['x'], [99]) == [0]
-
-    def test_returns_all_indices(self, fresh_sc):
-        values = list(range(10))
-        keys   = list(reversed(range(10)))
-        result = fresh_sc.stable_sort(values, keys)
-        assert sorted(result) == list(range(10))
+# The ``stable_sort`` helper is no longer part of structure_control.py
+# (see the comment in that module explaining the deletion).  The prior
+# TestStableSort class has been removed accordingly.
 
 
 class TestGaussianBroaden:
-    """gaussian_broaden(data, sigma) — Gaussian smoothing of a 1-D array."""
+    """gaussian_broaden(data, sigma) — Gaussian smoothing of a 1-D array.
+
+    Inputs and outputs use the ``[None, v1, v2, ..., vN]`` 1-indexed
+    convention.
+    """
 
     pytestmark = pytest.mark.unit
 
+    @staticmethod
+    def _live(values):
+        """Return the live (non-sentinel) slots 1..N of a 1-indexed list."""
+        return values[1:]
+
     def test_all_zeros_stays_zero(self, fresh_sc):
-        data = [0.0] * 50
+        data = [None] + [0.0] * 50
         result = fresh_sc.gaussian_broaden(data, 0.05)
-        assert all(v == pytest.approx(0.0) for v in result)
+        assert all(v == pytest.approx(0.0) for v in self._live(result))
 
     def test_output_same_length(self, fresh_sc):
-        data = [0.0] * 30
+        data = [None] + [0.0] * 30
         data[15] = 1.0
         result = fresh_sc.gaussian_broaden(data, 0.05)
         assert len(result) == len(data)
@@ -223,15 +208,15 @@ class TestGaussianBroaden:
     def test_peak_at_spike_location(self, fresh_sc):
         """Result maximum must coincide with the input spike."""
         n = 101
-        data = [0.0] * n
+        data = [None] + [0.0] * n
         data[50] = 1.0
         result = fresh_sc.gaussian_broaden(data, 0.05)
-        assert result[50] == max(result)
+        assert result[50] == max(self._live(result))
 
     def test_symmetric_around_spike(self, fresh_sc):
         """Broadened result must be symmetric around the spike index."""
         n = 101
-        data = [0.0] * n
+        data = [None] + [0.0] * n
         data[50] = 1.0
         result = fresh_sc.gaussian_broaden(data, 0.05)
         for k in range(1, 15):
@@ -247,22 +232,22 @@ class TestGaussianBroaden:
         where bin_width = 0.01 Å (implicit in the formula).
         """
         n = 201
-        data = [0.0] * n
+        data = [None] + [0.0] * n
         data[100] = 1.0
         sigma = 0.05
         result = fresh_sc.gaussian_broaden(data, sigma)
         bin_width = 0.01  # Å (fixed by the formula in the implementation)
-        area_in  = sum(data)              # Dirac weight of the spike
-        area_out = sum(result) * bin_width  # integral of the broadened Gaussian
+        area_in  = sum(self._live(data))              # Dirac weight of the spike
+        area_out = sum(self._live(result)) * bin_width  # integral of the Gaussian
         assert area_out == pytest.approx(area_in, rel=0.02)
 
     def test_wider_sigma_lower_peak(self, fresh_sc):
         """A larger sigma should produce a shorter, wider peak."""
         n = 201
-        data = [0.0] * n
+        data = [None] + [0.0] * n
         data[100] = 1.0
-        peak_narrow = max(fresh_sc.gaussian_broaden(data, 0.02))
-        peak_wide   = max(fresh_sc.gaussian_broaden(data, 0.10))
+        peak_narrow = max(self._live(fresh_sc.gaussian_broaden(data, 0.02)))
+        peak_wide   = max(self._live(fresh_sc.gaussian_broaden(data, 0.10)))
         assert peak_narrow > peak_wide
 
 
@@ -271,12 +256,16 @@ class TestGaussianBroaden:
 # ===========================================================================
 
 class TestDefineRotMatrix:
-    """define_rot_matrix(axis, angle_deg) stores a 3×3 rotation matrix."""
+    """define_rot_matrix(axis, angle_deg) stores a 3×3 rotation matrix.
+
+    The ``axis`` parameter is a 1-indexed unit vector
+    ``[None, x, y, z]`` matching the rest of the module's convention.
+    """
 
     pytestmark = pytest.mark.unit
 
     def test_identity_at_zero_degrees(self, fresh_sc):
-        fresh_sc.define_rot_matrix([0, 0, 1], 0.0)
+        fresh_sc.define_rot_matrix([None, 0, 0, 1], 0.0)
         for i in range(1, 4):
             for j in range(1, 4):
                 expected = 1.0 if i == j else 0.0
@@ -284,14 +273,14 @@ class TestDefineRotMatrix:
 
     def test_90_deg_about_z_maps_x_to_y(self, fresh_sc):
         """90° about z: (1,0,0) row-maps to (0,1,0)."""
-        fresh_sc.define_rot_matrix([0, 0, 1], 90.0)
+        fresh_sc.define_rot_matrix([None, 0, 0, 1], 90.0)
         # First row of rot_matrix should be approx [0, 1, 0]
         assert fresh_sc.rot_matrix[1][1] == pytest.approx(0.0, abs=1e-12)
         assert fresh_sc.rot_matrix[1][2] == pytest.approx(1.0, abs=1e-12)
         assert fresh_sc.rot_matrix[1][3] == pytest.approx(0.0, abs=1e-12)
 
     def test_180_deg_about_z_negates_x_and_y(self, fresh_sc):
-        fresh_sc.define_rot_matrix([0, 0, 1], 180.0)
+        fresh_sc.define_rot_matrix([None, 0, 0, 1], 180.0)
         # M should be diag(-1, -1, 1) approximately
         assert fresh_sc.rot_matrix[1][1] == pytest.approx(-1.0, abs=1e-12)
         assert fresh_sc.rot_matrix[2][2] == pytest.approx(-1.0, abs=1e-12)
@@ -300,7 +289,7 @@ class TestDefineRotMatrix:
     def test_matrix_is_orthogonal(self, fresh_sc):
         """R^T R = I for any rotation matrix.  Axis must be a unit vector."""
         s = math.sqrt(2)
-        fresh_sc.define_rot_matrix([1/s, 1/s, 0], 73.0)
+        fresh_sc.define_rot_matrix([None, 1/s, 1/s, 0], 73.0)
         M = fresh_sc.rot_matrix
         for i in range(1, 4):
             for j in range(1, 4):
@@ -310,7 +299,7 @@ class TestDefineRotMatrix:
 
     def test_matrix_has_determinant_plus_one(self, fresh_sc):
         """det(R) = +1 for a proper rotation."""
-        fresh_sc.define_rot_matrix([1, 0, 0], 45.0)
+        fresh_sc.define_rot_matrix([None, 1, 0, 0], 45.0)
         M = fresh_sc.rot_matrix
         det = (M[1][1] * (M[2][2]*M[3][3] - M[2][3]*M[3][2])
              - M[1][2] * (M[2][1]*M[3][3] - M[2][3]*M[3][1])
@@ -319,50 +308,54 @@ class TestDefineRotMatrix:
 
 
 class TestRotateOnePoint:
-    """rotate_one_point(point) applies rot_matrix to a single point."""
+    """rotate_one_point(point) applies rot_matrix to a single point.
+
+    Both the input ``point`` and the returned rotated point are
+    1-indexed ``[None, x, y, z]`` vectors.
+    """
 
     pytestmark = pytest.mark.unit
 
     def test_identity_leaves_point_unchanged(self, fresh_sc):
-        fresh_sc.define_rot_matrix([0, 0, 1], 0.0)
-        pt = [3.0, 4.0, 5.0]
+        fresh_sc.define_rot_matrix([None, 0, 0, 1], 0.0)
+        pt = [None, 3.0, 4.0, 5.0]
         result = fresh_sc.rotate_one_point(pt)
-        assert result == pytest.approx(pt, rel=1e-10)
+        assert result[1:] == pytest.approx(pt[1:], rel=1e-10)
 
     def test_90_deg_z_maps_x_hat_to_y_hat(self, fresh_sc):
-        fresh_sc.define_rot_matrix([0, 0, 1], 90.0)
-        result = fresh_sc.rotate_one_point([1.0, 0.0, 0.0])
-        assert result == pytest.approx([0.0, 1.0, 0.0], abs=1e-12)
+        fresh_sc.define_rot_matrix([None, 0, 0, 1], 90.0)
+        result = fresh_sc.rotate_one_point([None, 1.0, 0.0, 0.0])
+        assert result[1:] == pytest.approx([0.0, 1.0, 0.0], abs=1e-12)
 
     def test_90_deg_z_maps_y_hat_to_neg_x_hat(self, fresh_sc):
-        fresh_sc.define_rot_matrix([0, 0, 1], 90.0)
-        result = fresh_sc.rotate_one_point([0.0, 1.0, 0.0])
-        assert result == pytest.approx([-1.0, 0.0, 0.0], abs=1e-12)
+        fresh_sc.define_rot_matrix([None, 0, 0, 1], 90.0)
+        result = fresh_sc.rotate_one_point([None, 0.0, 1.0, 0.0])
+        assert result[1:] == pytest.approx([-1.0, 0.0, 0.0], abs=1e-12)
 
     def test_90_deg_z_leaves_z_invariant(self, fresh_sc):
-        fresh_sc.define_rot_matrix([0, 0, 1], 90.0)
-        result = fresh_sc.rotate_one_point([0.0, 0.0, 7.0])
-        assert result == pytest.approx([0.0, 0.0, 7.0], abs=1e-12)
+        fresh_sc.define_rot_matrix([None, 0, 0, 1], 90.0)
+        result = fresh_sc.rotate_one_point([None, 0.0, 0.0, 7.0])
+        assert result[1:] == pytest.approx([0.0, 0.0, 7.0], abs=1e-12)
 
     def test_180_deg_x_negates_y_and_z(self, fresh_sc):
-        fresh_sc.define_rot_matrix([1, 0, 0], 180.0)
-        result = fresh_sc.rotate_one_point([0.0, 2.0, 3.0])
-        assert result == pytest.approx([0.0, -2.0, -3.0], abs=1e-12)
+        fresh_sc.define_rot_matrix([None, 1, 0, 0], 180.0)
+        result = fresh_sc.rotate_one_point([None, 0.0, 2.0, 3.0])
+        assert result[1:] == pytest.approx([0.0, -2.0, -3.0], abs=1e-12)
 
     def test_rotation_preserves_vector_length(self, fresh_sc):
         s = math.sqrt(3)
-        fresh_sc.define_rot_matrix([1/s, 1/s, 1/s], 57.0)
-        pt = [2.0, -1.0, 3.5]
+        fresh_sc.define_rot_matrix([None, 1/s, 1/s, 1/s], 57.0)
+        pt = [None, 2.0, -1.0, 3.5]
         result = fresh_sc.rotate_one_point(pt)
-        mag_before = math.sqrt(sum(x**2 for x in pt))
-        mag_after  = math.sqrt(sum(x**2 for x in result))
+        mag_before = math.sqrt(pt[1]**2 + pt[2]**2 + pt[3]**2)
+        mag_after  = math.sqrt(result[1]**2 + result[2]**2 + result[3]**2)
         assert mag_after == pytest.approx(mag_before, rel=1e-10)
 
     def test_360_deg_returns_original_point(self, fresh_sc):
-        fresh_sc.define_rot_matrix([0, 1, 0], 360.0)
-        pt = [1.2, 3.4, 5.6]
+        fresh_sc.define_rot_matrix([None, 0, 1, 0], 360.0)
+        pt = [None, 1.2, 3.4, 5.6]
         result = fresh_sc.rotate_one_point(pt)
-        assert result == pytest.approx(pt, abs=1e-10)
+        assert result[1:] == pytest.approx(pt[1:], abs=1e-10)
 
 
 # ===========================================================================
@@ -380,12 +373,12 @@ class TestRotateArbAxis:
 
     def test_atom_count_unchanged(self, sc_c2):
         n_before = sc_c2.num_atoms
-        sc_c2.rotate_arb_axis([0, 0, 1], 45.0)
+        sc_c2.rotate_arb_axis([None, 0, 0, 1], 45.0)
         assert sc_c2.num_atoms == n_before
 
     def test_element_names_unchanged(self, sc_c2):
         names_before = [sc_c2.atom_element_name[i] for i in range(1, sc_c2.num_atoms + 1)]
-        sc_c2.rotate_arb_axis([1, 0, 0], 90.0)
+        sc_c2.rotate_arb_axis([None, 1, 0, 0], 90.0)
         names_after  = [sc_c2.atom_element_name[i] for i in range(1, sc_c2.num_atoms + 1)]
         assert names_after == names_before
 
@@ -393,7 +386,7 @@ class TestRotateArbAxis:
         """A full-circle rotation must leave every atom in its original place."""
         xyz_before = [[sc_c2.direct_xyz[a][k] for k in range(1, 4)]
                       for a in range(1, sc_c2.num_atoms + 1)]
-        sc_c2.rotate_arb_axis([0, 0, 1], 360.0)
+        sc_c2.rotate_arb_axis([None, 0, 0, 1], 360.0)
         for i, atom in enumerate(range(1, sc_c2.num_atoms + 1)):
             for k in range(3):
                 assert sc_c2.direct_xyz[atom][k + 1] == pytest.approx(
@@ -406,7 +399,7 @@ class TestRotateArbAxis:
                 (sc.direct_xyz[a][k] - sc.direct_xyz[b][k])**2
                 for k in range(1, 4)))
         d_before = dist(sc_c2, 1, 2)
-        sc_c2.rotate_arb_axis([1, 1, 0], 73.0)
+        sc_c2.rotate_arb_axis([None, 1, 1, 0], 73.0)
         d_after = dist(sc_c2, 1, 2)
         assert d_after == pytest.approx(d_before, rel=1e-8)
 
@@ -415,7 +408,7 @@ class TestRotateArbAxis:
         sc = make_sc('si_diamond.skl')
         sc.abc_alpha_beta_gamma()
         mags_before = [sc.mag[i] for i in range(1, 4)]
-        sc.rotate_arb_axis([1, 0, 0], 37.0)
+        sc.rotate_arb_axis([None, 1, 0, 0], 37.0)
         sc.abc_alpha_beta_gamma()
         for i in range(3):
             assert sc.mag[i + 1] == pytest.approx(mags_before[i], rel=1e-10)

@@ -133,15 +133,22 @@ def _get_plane_normal(p1, p2, p3):
     Computes the cross product of (p2-p1) x (p3-p1).  The result
     is NOT normalised to unit length; the caller must normalise.
 
+    Follows the module-wide 1-indexed convention so the resulting
+    vector can be handed straight to ``sc.define_rot_matrix`` or
+    ``sc.cross_product`` without any offset translation.
+
     Args:
-        p1, p2, p3: Lists of three floats [x, y, z].
+        p1, p2, p3: 0-indexed ``[x, y, z]`` points (the command-line
+            parser produces them in this form; the caller keeps them
+            local until passed here).
 
     Returns:
-        List of three floats [nx, ny, nz].
+        1-indexed ``[None, nx, ny, nz]`` normal vector.
     """
     d1 = [p2[i] - p1[i] for i in range(3)]
     d2 = [p3[i] - p1[i] for i in range(3)]
     return [
+        None,
         d1[1] * d2[2] - d1[2] * d2[1],
         d1[2] * d2[0] - d1[0] * d2[2],
         d1[0] * d2[1] - d1[1] * d2[0],
@@ -368,7 +375,11 @@ Defaults are given in ./mod_structrc.py or $OLCAO_RC/mod_structrc.py.
 
             elif flag == "-rotA":
                 # -rotA RX RY RZ ANGLE [-orig OX OY OZ]
+                # The rotation axis is stored in the 1-indexed
+                # [None, rx, ry, rz] layout so it can be handed
+                # straight to sc.define_rot_matrix without offsets.
                 rot = [
+                    None,
                     float(argv[n + 1]),
                     float(argv[n + 2]),
                     float(argv[n + 3]),
@@ -377,11 +388,12 @@ Defaults are given in ./mod_structrc.py or $OLCAO_RC/mod_structrc.py.
                 angle_rad = angle_deg * math.pi / 180.0
                 n += 4
 
-                # Normalize the rotation axis to a unit vector.
+                # Normalize the rotation axis to a unit vector.  Slots
+                # 1..3 hold the live components; slot 0 is the sentinel.
                 mag = math.sqrt(
-                    rot[0] ** 2 + rot[1] ** 2 + rot[2] ** 2
+                    rot[1] ** 2 + rot[2] ** 2 + rot[3] ** 2
                 )
-                rot = [r / mag for r in rot]
+                rot = [None] + [rot[axis] / mag for axis in range(1, 4)]
 
                 # Default origin is (0,0,0) (1-indexed
                 #   for translate_atoms).
@@ -430,14 +442,16 @@ Defaults are given in ./mod_structrc.py or $OLCAO_RC/mod_structrc.py.
 
                 # Compute the plane normal (axis of rotation)
                 # using the cross product of (p2-p1) x (p3-p1).
-                # This will be normalized below.
+                # ``_get_plane_normal`` returns a 1-indexed
+                # [None, nx, ny, nz] vector; the magnitude and the
+                # normalisation therefore read slots 1..3 directly.
                 rot = _get_plane_normal(p1, p2, p3)
 
                 # Normalize the rotation axis to a unit vector.
                 mag = math.sqrt(
-                    rot[0] ** 2 + rot[1] ** 2 + rot[2] ** 2
+                    rot[1] ** 2 + rot[2] ** 2 + rot[3] ** 2
                 )
-                rot = [r / mag for r in rot]
+                rot = [None] + [rot[axis] / mag for axis in range(1, 4)]
 
                 # Default angle: computed as the angle between
                 # the 2nd and 3rd points.  Rotations are positive

@@ -963,20 +963,24 @@ Defaults are given in ./makeinputrc.py or $OLCAO_RC/makeinputrc.py.
                       "requires the legacy makeKPoints "
                       "program, which is no longer used.")
         else:
-            # Explicit mesh mode (original behavior).
+            # Explicit mesh mode (original behavior).  argparse delivers
+            # the mesh triples as plain three-element Python lists (e.g.
+            # ``[1, 1, 1]``).  The module-wide convention is 1-indexed
+            # ``[None, nx, ny, nz]``, so each CLI value is promoted with
+            # a ``[None] + ...`` prefix before it is stored.
             if args.kp is not None:
-                self.kp_mesh_scf = list(args.kp)
-                self.kp_mesh_pscf = list(args.kp)
-                if args.kp == [1, 1, 1]:
+                self.kp_mesh_scf = [None] + list(args.kp)
+                self.kp_mesh_pscf = [None] + list(args.kp)
+                if list(args.kp) == [1, 1, 1]:
                     self.kp_note[1] = "(Gamma)"
                     self.kp_note[2] = "(Gamma)"
             if args.scfkp is not None:
-                self.kp_mesh_scf = list(args.scfkp)
-                if args.scfkp == [1, 1, 1]:
+                self.kp_mesh_scf = [None] + list(args.scfkp)
+                if list(args.scfkp) == [1, 1, 1]:
                     self.kp_note[1] = "(Gamma)"
             if args.pscfkp is not None:
-                self.kp_mesh_pscf = list(args.pscfkp)
-                if args.pscfkp == [1, 1, 1]:
+                self.kp_mesh_pscf = [None] + list(args.pscfkp)
+                if list(args.pscfkp) == [1, 1, 1]:
                     self.kp_note[2] = "(Gamma)"
             if args.printbz is not None:
                 print(
@@ -1834,34 +1838,41 @@ def prepare_targets(settings, sc):
     print("      Preparing Targets for Inclusion in Distance Matrix")
 
     for t in settings.targets:
+        # All cached coordinate vectors in t["fract_abc"] / t["direct_xyz"]
+        # use the 1-indexed [None, v1, v2, v3] layout so they can be handed
+        # to StructureControl helpers and the per-atom arrays without any
+        # offset bookkeeping.
         if t["loc_type"] == 1:
             # Target is an atom number — copy that atom's coordinates.
             atom_idx = t["loc"]
-            t["fract_abc"] = list(sc.fract_abc[atom_idx])    # [a, b, c]
-            t["direct_xyz"] = list(sc.direct_xyz[atom_idx])  # [x, y, z]
+            t["fract_abc"] = list(sc.fract_abc[atom_idx])
+            t["direct_xyz"] = list(sc.direct_xyz[atom_idx])
 
         elif t["loc_type"] == 2:
-            # Target given in Cartesian x, y, z.
-            xyz = t["loc"]   # [x, y, z] already parsed as floats
-            t["direct_xyz"] = list(xyz)
+            # Target given in Cartesian x, y, z (parsed as a 3-element list
+            # of floats by the command-line parser).  Promote it to the
+            # 1-indexed convention before calling the helper.
+            raw_xyz = t["loc"]
+            xyz = [None, raw_xyz[0], raw_xyz[1], raw_xyz[2]]
+            t["direct_xyz"] = xyz
 
-            # Convert xyz → direct_abc (fractional × mag), then ÷ mag → fract.
-            # Use direct_xyz2fract_abc which gives pure fractional coords.
-            fract = sc.direct_xyz2fract_abc(xyz)
-            t["fract_abc"] = fract
+            # Convert xyz → fractional abc via the 1-indexed helper.
+            t["fract_abc"] = sc.direct_xyz2fract_abc(xyz)
 
         elif t["loc_type"] == 3:
             # Target given in fractional a, b, c.
             # The Perl code divides the input values by mag to get fractional
             # coordinates, meaning the input is actually in direct-space abc
-            # (Angstroms projected along lattice vectors).
-            abc_input = t["loc"]   # [a, b, c] as floats
-            fract = [abc_input[i] / sc.mag[i + 1] for i in range(3)]
+            # (Angstroms projected along lattice vectors).  Build a
+            # 1-indexed fractional vector directly from that calculation so
+            # the 1-indexed converter can consume it without any reshaping.
+            abc_input = t["loc"]
+            fract = [None] + [abc_input[axis - 1] / sc.mag[axis]
+                              for axis in range(1, 4)]
             t["fract_abc"] = fract
 
             # Convert fractional → Cartesian xyz.
-            xyz = sc.fract_abc2direct_xyz(fract)
-            t["direct_xyz"] = xyz
+            t["direct_xyz"] = sc.fract_abc2direct_xyz(fract)
 
     settings._targets_prepared = True
 
@@ -1890,12 +1901,15 @@ def make_min_dist_matrices(settings, sc):
         Provides ``fract_abc``, ``direct_xyz``, and the matrix builder.
     """
     # Build 1-indexed target coordinate arrays for the second item group.
+    # Each target entry is itself a 1-indexed [None, v1, v2, v3] vector
+    # built in prepare_targets, so the resulting two-level list is
+    # 1-indexed on both the outer (target index) and inner (axis) axes.
     num_targets = len(settings.targets)
     target_fract_abc = [None]
     target_direct_xyz = [None]
     for t in settings.targets:
-        target_fract_abc.append(t["fract_abc"])    # [a, b, c] 0-indexed entry
-        target_direct_xyz.append(t["direct_xyz"])  # [x, y, z] 0-indexed entry
+        target_fract_abc.append(t["fract_abc"])
+        target_direct_xyz.append(t["direct_xyz"])
 
     # Call StructureControl's matrix builder.  Group 1 = atoms (defaults),
     # group 2 = target points.
@@ -2134,21 +2148,26 @@ def group_block(settings, sc, block_idx):
         borders[dim][0] = float(borders[dim][0])
 
     # Check each atom to determine its position relative to the block
-    # borders.  direct_abc[atom] is [a, b, c] (0-indexed within entry).
+    # borders.  ``sc.direct_abc[atom]`` is a 1-indexed row
+    # ``[None, a, b, c]`` inherited from StructureControl; axis 1 is
+    # the a coordinate, axis 2 is b, axis 3 is c.  The ``borders``
+    # local is a local bookkeeping structure with 0-indexed outer
+    # (axis) and inner (from/to) dimensions, so we bridge with
+    # ``axis - 1`` on every border lookup.  This preserves Perl's
+    # 1-indexed access into ``$directABC_ref->[$atom][1..3]``.
     for atom in range(1, settings.num_atoms + 1):
-        abc = sc.direct_abc[atom]   # [a, b, c]
+        abc = sc.direct_abc[atom]  # [None, a, b, c]
 
         # An atom is inside the block if its a, b, c coordinates all
         # fall within the from/to range (inclusive, with epsilon tolerance).
-        if (abc[0] >= borders[0][0] - epsilon and
-            abc[0] <= borders[0][1] + epsilon and
-            abc[1] >= borders[1][0] - epsilon and
-            abc[1] <= borders[1][1] + epsilon and
-            abc[2] >= borders[2][0] - epsilon and
-            abc[2] <= borders[2][1] + epsilon):
-            status = 1
-        else:
-            status = 0
+        inside = True
+        for axis in range(1, 4):
+            lo = borders[axis - 1][0] - epsilon
+            hi = borders[axis - 1][1] + epsilon
+            if not (lo <= abc[axis] <= hi):
+                inside = False
+                break
+        status = 1 if inside else 0
 
         compare_status_and_request(settings, status, zone, relation, op,
                                    atom, track_flag)
@@ -3622,8 +3641,9 @@ def _write_mesh_kp_file(dest_path, kp_mesh,
         Full path to the output file (e.g.
         ``.inputTemp/kp-scf.dat``).
     kp_mesh : list of int
-        Three integers [na, nb, nc] giving the number
-        of k-points along each reciprocal axis.
+        1-indexed axial counts ``[None, na, nb, nc]`` giving the
+        number of k-points along each reciprocal axis.  Slot 0 is an
+        unused sentinel matching the module-wide convention.
     kp_shift : str
         Space-separated shift values
         (e.g. ``"0.5 0.5 0.5"``).
@@ -3645,8 +3665,8 @@ def _write_mesh_kp_file(dest_path, kp_mesh,
         f.write("KPOINT_INTG_CODE\n")
         f.write(f"{intg_code}\n")
         f.write("NUM_KP_A_B_C\n")
-        f.write(f"{kp_mesh[0]} {kp_mesh[1]}"
-                f" {kp_mesh[2]}\n")
+        f.write(f"{kp_mesh[1]} {kp_mesh[2]}"
+                f" {kp_mesh[3]}\n")
         f.write("KP_SHIFT_A_B_C\n")
         f.write(f"{kp_shift}\n")
         _write_point_ops_block(
@@ -3779,15 +3799,18 @@ def _print_kp_in_file(settings, sc, kp_mesh_request, kp_group):
     settings : ScriptSettings
     sc : StructureControl
     kp_mesh_request : list of int
-        Three integers [nx, ny, nz] for the mesh in this group.
+        1-indexed axial counts ``[None, nx, ny, nz]`` for the mesh in
+        this group.
     kp_group : int
         1 = SCF, 2 = PSCF.
     """
 
     # Determine if this is a gamma-only calculation.  The condition is
     # that the mesh is 1×1×1 AND the user explicitly set the k-points
-    # on the command line (captured by kp_note being "(Gamma)").
-    if (kp_mesh_request == [1, 1, 1] and
+    # on the command line (captured by kp_note being "(Gamma)").  The
+    # request is 1-indexed, so compare slots 1..3.
+    if (kp_mesh_request[1] == 1 and kp_mesh_request[2] == 1 and
+            kp_mesh_request[3] == 1 and
             settings.kp_note[kp_group] == "(Gamma)"):
         do_gamma = 1
     else:
@@ -3805,9 +3828,10 @@ def _print_kp_in_file(settings, sc, kp_mesh_request, kp_group):
         with open(sg_path, "r") as sg:
             kp.write(sg.read())
 
-        # Mesh parameters.
-        kp.write(f" {kp_mesh_request[0]} {kp_mesh_request[1]}"
-                 f" {kp_mesh_request[2]}\n")
+        # Mesh parameters (read from slots 1..3 of the 1-indexed
+        # request list).
+        kp.write(f" {kp_mesh_request[1]} {kp_mesh_request[2]}"
+                 f" {kp_mesh_request[3]}\n")
         kp.write(f"{settings.kp_shift}\n")
         kp.write(f"{do_gamma}\n")
 
@@ -4419,10 +4443,11 @@ def _print_olcao_input(settings, sc, file_set,
     olcao_fh.write("SYBD_INPUT_DATA\n")
     _process_sybd_path(settings, sc, olcao_fh)
 
-    # MTOP input data.
+    # MTOP input data.  kp_mesh_pscf is 1-indexed; the three mesh
+    # counts live in slots 1..3.
     olcao_fh.write("MTOP_INPUT_DATA\n")
-    olcao_fh.write(f"{settings.kp_mesh_pscf[0]} {settings.kp_mesh_pscf[1]}"
-                   f" {settings.kp_mesh_pscf[2]} # PSCF\n")
+    olcao_fh.write(f"{settings.kp_mesh_pscf[1]} {settings.kp_mesh_pscf[2]}"
+                   f" {settings.kp_mesh_pscf[3]} # PSCF\n")
     olcao_fh.write("0.0 0.0 0.0 # Shift\n")
 
     # PACS (XANES/ELNES) input data.
@@ -4628,14 +4653,23 @@ def _print_basis_set(settings, sc, file_set, olcao_fh,
                 else:
                     num_core_states = [0, 0, 0, 0]
 
-                # Skip past core orbital data to get to valence.
-                # We need to find the valence count line.  After the core
-                # orbitals header line, there's an NL_RADIAL_FUNCTIONS header,
-                # then the orbital data for each core orbital.
-                skip = _count_orbital_lines(
-                    basis_lines, line_idx + 1, num_core_orbitals,
-                    num_term_lines)
-                line_idx += 1 + skip  # past NL_RADIAL_FUNCTIONS header + data
+                # Skip past core orbital data to get to valence.  When there
+                # is at least one core orbital, the file layout after the
+                # NUM_CORE_RADIAL_FNS count line is:
+                #     NL_RADIAL_FUNCTIONS  (header)
+                #     <per-orbital data lines>
+                #     NUM_VALE_RADIAL_FNS  (header)
+                # Elements with zero core orbitals (e.g. hydrogen) omit the
+                # NL_RADIAL_FUNCTIONS header entirely and jump straight from
+                # the NUM_CORE_RADIAL_FNS count line to NUM_VALE_RADIAL_FNS,
+                # so the skip in that case is just the single count line.
+                if num_core_orbitals > 0:
+                    skip = _count_orbital_lines(
+                        basis_lines, line_idx + 1, num_core_orbitals,
+                        num_term_lines)
+                    line_idx += 1 + skip  # past NL_RADIAL_FUNCTIONS + data
+                else:
+                    line_idx += 1  # step past the "0 0 0" count line only
 
                 # Valence orbitals header + count
                 line_idx += 1  # header line
@@ -5647,9 +5681,10 @@ def print_summary(settings, sc):
 
     num_xanes_atoms = len(settings.xanes_atoms)
 
-    # Determine the spacing for k-point mesh formatting.
+    # Determine the spacing for k-point mesh formatting.  The mesh
+    # lists are 1-indexed, so iterate over axis slots 1..3.
     kp_index_space = 1
-    for axis in range(3):
+    for axis in range(1, 4):
         if settings.kp_mesh_scf[axis] >= 10:
             kp_index_space = 2
         if settings.kp_mesh_pscf[axis] >= 10:
@@ -5716,17 +5751,18 @@ def print_summary(settings, sc):
                 f"  {settings.kp_note[2]}\n")
         else:
             w = kp_index_space
+            # Mesh lists are 1-indexed; axis counts live in slots 1..3.
             f.write(
                 f"SCF KPoint Mesh        =  "
-                f"[{settings.kp_mesh_scf[0]:>{w}d}"
-                f" {settings.kp_mesh_scf[1]:>{w}d}"
-                f" {settings.kp_mesh_scf[2]:>{w}d}]"
+                f"[{settings.kp_mesh_scf[1]:>{w}d}"
+                f" {settings.kp_mesh_scf[2]:>{w}d}"
+                f" {settings.kp_mesh_scf[3]:>{w}d}]"
                 f"  {settings.kp_note[1]}\n")
             f.write(
                 f"PSCF KPoint Mesh       =  "
-                f"[{settings.kp_mesh_pscf[0]:>{w}d}"
-                f" {settings.kp_mesh_pscf[1]:>{w}d}"
-                f" {settings.kp_mesh_pscf[2]:>{w}d}]"
+                f"[{settings.kp_mesh_pscf[1]:>{w}d}"
+                f" {settings.kp_mesh_pscf[2]:>{w}d}"
+                f" {settings.kp_mesh_pscf[3]:>{w}d}]"
                 f"  {settings.kp_note[2]}\n")
         f.write(
             f"SCF KP Integration     =  "

@@ -139,14 +139,15 @@ class TestCoordConsistency:
     def _check_consistency(self, sc):
         sc.abc_alpha_beta_gamma()
         for atom in range(1, sc.num_atoms + 1):
-            frac = [sc.fract_abc[atom][k] for k in range(1, 4)]
-            xyz_from_frac = sc.fract_abc2direct_xyz(frac)
-            xyz_stored = [sc.direct_xyz[atom][k] for k in range(1, 4)]
-            for k in range(3):
-                assert xyz_from_frac[k] == pytest.approx(xyz_stored[k], abs=1e-6), (
-                    f'atom {atom} coord {k}: '
-                    f'from_frac={xyz_from_frac[k]:.8f}, '
-                    f'stored={xyz_stored[k]:.8f}'
+            # fract_abc[atom] is itself a 1-indexed [None, a, b, c] row,
+            # so pass it straight into the 1-indexed converter.
+            xyz_from_frac = sc.fract_abc2direct_xyz(sc.fract_abc[atom])
+            for axis in range(1, 4):
+                assert xyz_from_frac[axis] == pytest.approx(
+                    sc.direct_xyz[atom][axis], abs=1e-6), (
+                    f'atom {atom} axis {axis}: '
+                    f'from_frac={xyz_from_frac[axis]:.8f}, '
+                    f'stored={sc.direct_xyz[atom][axis]:.8f}'
                 )
 
     def test_bn_cubic(self, sc_bn_cubic):

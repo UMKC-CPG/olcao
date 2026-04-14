@@ -514,8 +514,11 @@ class StructureControl:
         # Q^n network analysis
         # ------------------------------------------------------------------
         self.atom_qn = [None]              # 1-indexed
-        self.absolute_sys_qn = [None]      # 1-indexed
-        self.fractional_sys_qn = [None]    # 1-indexed
+        # The Q^n histograms are 0-indexed (index 0 holds the Q^0 count)
+        # to match Perl's @absoluteSysQn[0..8] convention.  n is
+        # literally the index, so there is no sentinel slot.
+        self.absolute_sys_qn = []
+        self.fractional_sys_qn = []
         self.num_qn_atoms = 0
         self.net_conn_qn = 0.0
 
@@ -799,23 +802,34 @@ class StructureControl:
     def set_border(self, zone, low, high, coord_system='xyz'):
         """Define an atom-selection border region.
 
+        Perl's ``setBorder`` received the six boundary values as
+        positional arguments and stored them into ``@borderLow[1..3]``
+        and ``@borderHigh[1..3]``.  The Python port groups each triple
+        into a list but keeps the 1-indexed layout used everywhere else
+        in this module, so axis 1 reads ``low[1]`` just like the stored
+        ``self.border_low[1]`` does — no offset bookkeeping at the
+        interface.
+
         Parameters
         ----------
         zone : int
             0 = no constraint, 1 = atoms inside border only,
             2 = atoms outside border only.
         low : sequence of float
-            Lower [v1, v2, v3] boundary (0-indexed).
+            Lower boundary as ``[None, v1, v2, v3]`` (1-indexed,
+            ``v1..v3`` match the a/b/c or x/y/z axes depending on
+            ``coord_system``).
         high : sequence of float
-            Upper [v1, v2, v3] boundary (0-indexed).
+            Upper boundary in the same 1-indexed layout as ``low``.
         coord_system : str
             'xyz' for direct Cartesian, 'abc' for direct abc,
             'frac' for fractional abc.
         """
         self.border_zone = zone
-        # Caller passes 0-indexed [v1, v2, v3]; prepend None to make 1-indexed.
-        self.border_low  = [None] + list(low)
-        self.border_high = [None] + list(high)
+        # Both input sequences are already 1-indexed [None, v1, v2, v3];
+        # copy them into the 1-indexed border storage slot-by-slot.
+        self.border_low  = [None, low[1],  low[2],  low[3]]
+        self.border_high = [None, high[1], high[2], high[3]]
         # Record which coordinate system the boundary values are expressed in
         # so that cut_block / apply_filter can convert atom positions correctly.
         self.border_coord_type = coord_system
@@ -897,9 +911,11 @@ class StructureControl:
         num_points : int, optional
             Number of evenly spaced points along the scan line (line only).
         start_xyz : list of float, optional
-            Cartesian start coordinates [x, y, z], 0-indexed (line only).
+            Cartesian start coordinates ``[None, x, y, z]``, 1-indexed
+            (line only).
         end_xyz : list of float, optional
-            Cartesian end coordinates [x, y, z], 0-indexed (line only).
+            Cartesian end coordinates ``[None, x, y, z]``, 1-indexed
+            (line only).
         """
         if do_mesh == 0:
             # Obtain the variables describing the end points and the number of
@@ -907,18 +923,21 @@ class StructureControl:
             self.num_scan_points = num_points
 
             # Compute the delta necessary in each direction to move from start
-            # to end in exactly num_points steps.
-            delta = [0.0] * 3
-            for axis in range(3):
+            # to end in exactly num_points steps.  Delta, start, and end are
+            # all 1-indexed [None, x, y, z] so the axis loop reads the same
+            # slot from each of them without any offset.
+            delta = [None, 0.0, 0.0, 0.0]
+            for axis in range(1, 4):
                 delta[axis] = (end_xyz[axis] - start_xyz[axis]) / (num_points - 1)
 
             # Compute the position of each point along the path.
             # Build 1-indexed list; inner coords are also 1-indexed [None,x,y,z].
             self.scan_points = [None]
             for point in range(1, num_points + 1):
-                coords = [None]
-                for axis in range(3):
-                    coords.append(start_xyz[axis] + (point - 1) * delta[axis])
+                coords = [None, 0.0, 0.0, 0.0]
+                for axis in range(1, 4):
+                    coords[axis] = (start_xyz[axis] +
+                                    (point - 1) * delta[axis])
                 self.scan_points.append(coords)
 
         else:
@@ -3909,11 +3928,9 @@ class StructureControl:
         atom : int
             Atom index (1-indexed).
         """
-        fract = [self.fract_abc[atom][1], self.fract_abc[atom][2], self.fract_abc[atom][3]]
-        xyz = self.get_direct_xyz_point(fract)
-        self.direct_xyz[atom][1] = xyz[0]
-        self.direct_xyz[atom][2] = xyz[1]
-        self.direct_xyz[atom][3] = xyz[2]
+        xyz = self.get_direct_xyz_point(self.fract_abc[atom])
+        for axis in range(1, 4):
+            self.direct_xyz[atom][axis] = xyz[axis]
 
     def get_direct_xyz_point(self, fract):
         """Convert a single fractional coordinate to Cartesian via lattice matrix multiply.
@@ -3932,17 +3949,22 @@ class StructureControl:
         Parameters
         ----------
         fract : sequence of float
-            0-indexed [a, b, c] fractional coordinate (length 3).
+            1-indexed [None, a, b, c] fractional coordinate.  Slot 0 is
+            an unused sentinel matching the convention used everywhere in
+            this module and mirrors Perl's ``@fractABC[1..3]``.
 
         Returns
         -------
         list of float
-            0-indexed [x, y, z] Cartesian coordinate (length 3).
+            1-indexed [None, x, y, z] Cartesian coordinate.  Slot 0 is a
+            None sentinel so that callers index directly with axis values
+            1, 2, 3 without an offset.
         """
-        xyz = [0.0, 0.0, 0.0]
-        for xyz_axis in range(3):
-            for abc_axis in range(3):
-                xyz[xyz_axis] += fract[abc_axis] * self.real_lattice[abc_axis + 1][xyz_axis + 1]
+        xyz = [None, 0.0, 0.0, 0.0]
+        for xyz_axis in range(1, 4):
+            for abc_axis in range(1, 4):
+                xyz[xyz_axis] += (fract[abc_axis] *
+                                  self.real_lattice[abc_axis][xyz_axis])
         return xyz
 
     def get_direct_abc(self, atom):
@@ -3999,18 +4021,23 @@ class StructureControl:
 
         Parameters
         ----------
-        xyz : sequence of float, length 3, 0-indexed
-            Cartesian coordinates in Angstroms: xyz[0]=x, xyz[1]=y, xyz[2]=z.
+        xyz : sequence of float
+            1-indexed Cartesian coordinates in Angstroms:
+            ``xyz[1]`` = x, ``xyz[2]`` = y, ``xyz[3]`` = z; slot 0 is
+            an unused sentinel matching Perl's ``@Pxyz[1..3]``.
 
         Returns
         -------
-        list of float, length 3, 0-indexed
-            Fractional (dimensionless) coordinates: [a, b, c].
+        list of float
+            1-indexed fractional (dimensionless) coordinates
+            ``[None, a, b, c]`` so callers read ``result[1..3]``
+            directly.
         """
-        abc = [0.0, 0.0, 0.0]
-        for abc_axis in range(3):
-            for xyz_axis in range(3):
-                abc[abc_axis] += xyz[xyz_axis] * self.real_lattice_inv[xyz_axis + 1][abc_axis + 1]
+        abc = [None, 0.0, 0.0, 0.0]
+        for abc_axis in range(1, 4):
+            for xyz_axis in range(1, 4):
+                abc[abc_axis] += (xyz[xyz_axis] *
+                                  self.real_lattice_inv[xyz_axis][abc_axis])
         return abc
 
     def direct_xyz2direct_abc(self, xyz):
@@ -4034,19 +4061,22 @@ class StructureControl:
 
         Parameters
         ----------
-        xyz : sequence of float, length 3, 0-indexed
-            Cartesian coordinates in Angstroms: xyz[0]=x, xyz[1]=y, xyz[2]=z.
+        xyz : sequence of float
+            1-indexed Cartesian coordinates in Angstroms
+            ``[None, x, y, z]``, matching the convention used by every
+            other coordinate routine in this module.
 
         Returns
         -------
-        list of float, length 3, 0-indexed
-            Direct-space abc coordinates in Angstroms (projected along lattice
-            vectors, NOT fractional).
+        list of float
+            1-indexed direct-space abc coordinates in Angstroms
+            ``[None, a, b, c]`` (projected along lattice vectors, NOT
+            fractional).
         """
         abc = self.direct_xyz2fract_abc(xyz)
         # Scale fractional coords by lattice magnitudes to get direct-space ABC (Å).
-        for abc_axis in range(3):
-            abc[abc_axis] *= self.mag[abc_axis + 1]
+        for abc_axis in range(1, 4):
+            abc[abc_axis] *= self.mag[abc_axis]
         return abc
 
     def fract_abc2direct_xyz(self, fract):
@@ -4066,17 +4096,18 @@ class StructureControl:
 
         This is the inverse of directXYZ2fractABC.  The actual matrix multiply
         is delegated to get_direct_xyz_point, which accepts and returns
-        0-indexed sequences.
+        1-indexed sequences with slot 0 used as a sentinel.
 
         Parameters
         ----------
         fract : sequence of float
-            0-indexed [a, b, c] fractional coordinates (length 3).
+            1-indexed fractional coordinates ``[None, a, b, c]``.
 
         Returns
         -------
         list of float
-            0-indexed [x, y, z] Cartesian coordinates in Angstroms (length 3).
+            1-indexed Cartesian coordinates in Angstroms
+            ``[None, x, y, z]``.
         """
         return self.get_direct_xyz_point(fract)
 
@@ -4582,12 +4613,16 @@ class StructureControl:
             1-indexed Miller index list [None, h, k, l].
         """
         # Pre-compute the diagonal of the current cell (used later as
-        # a culling distance for replicated cells).
-        diagonal = [0.0, 0.0, 0.0]  # 0-indexed [x, y, z]
+        # a culling distance for replicated cells).  The diagonal is a
+        # 1-indexed vector [None, x, y, z] to match the surrounding
+        # coordinate convention.
+        diagonal = [None, 0.0, 0.0, 0.0]
         for abc_axis in range(1, 4):
             for xyz_axis in range(1, 4):
-                diagonal[xyz_axis - 1] += self.real_lattice[abc_axis][xyz_axis]
-        diagonal_mag = math.sqrt(sum(v**2 for v in diagonal))
+                diagonal[xyz_axis] += self.real_lattice[abc_axis][xyz_axis]
+        diagonal_mag = math.sqrt(diagonal[1]**2 +
+                                 diagonal[2]**2 +
+                                 diagonal[3]**2)
 
         # Compute the least common multiple of the non-zero hkl values.
         # An hkl value of zero means the real-space plane will not intersect
@@ -4636,12 +4671,15 @@ class StructureControl:
         # This is the real-space lattice vector that is normal to the plane
         # defined by hkl and that points to an actual lattice site (its
         # components are integral multiples of the real-lattice vectors).
-        # It will become the new a-axis of the surface cell.
-        uvw_normal = [0.0, 0.0, 0.0]  # 0-indexed [x, y, z]
+        # It will become the new a-axis of the surface cell.  Stored
+        # 1-indexed [None, x, y, z] to feed the 1-indexed vector helpers.
+        uvw_normal = [None, 0.0, 0.0, 0.0]
         for abc_axis in range(1, 4):
             for xyz_axis in range(1, 4):
-                uvw_normal[xyz_axis - 1] += uvw_normal_lattice[abc_axis][xyz_axis]
-        uvw_mag = math.sqrt(sum(v**2 for v in uvw_normal))
+                uvw_normal[xyz_axis] += uvw_normal_lattice[abc_axis][xyz_axis]
+        uvw_mag = math.sqrt(uvw_normal[1]**2 +
+                            uvw_normal[2]**2 +
+                            uvw_normal[3]**2)
 
         # Set spiral search limits per axis.  For a zero hkl index the lattice
         # vector in that direction is unchanged, so only a small neighbourhood
@@ -4653,7 +4691,9 @@ class StructureControl:
             max_rep[i] = 5 if hkl[i] == 0 else 100
 
         # Enumerate all lattice points of the uvwRealLattice within the spiral
-        # search box.  Each point is the (distance-from-origin, [x,y,z]) pair.
+        # search box.  Each point is the (distance-from-origin, 1-indexed
+        # [None, x, y, z]) pair so it can be fed directly to dot_product
+        # and cross_product_mag without any offset translation.
         # The loop centers each axis on zero by subtracting half the max range.
         cell_data = []
         for i in range(max_rep[1] + 2):
@@ -4663,11 +4703,11 @@ class StructureControl:
                 for k in range(max_rep[3] + 2):
                     rep3 = k - (1 + max_rep[3]) // 2
                     reps = [None, rep1, rep2, rep3]
-                    lp = [0.0, 0.0, 0.0]
+                    lp = [None, 0.0, 0.0, 0.0]
                     for l in range(1, 4):
                         for m in range(1, 4):
-                            lp[m - 1] += uvw_real_lattice[l][m] * reps[l]
-                    dist = math.sqrt(sum(v**2 for v in lp))
+                            lp[m] += uvw_real_lattice[l][m] * reps[l]
+                    dist = math.sqrt(lp[1]**2 + lp[2]**2 + lp[3]**2)
                     cell_data.append((dist, lp))
 
         # Sort lattice points by distance from the origin so we can scan in
@@ -4687,29 +4727,24 @@ class StructureControl:
         new_mag          = [None, 0.0, 0.0, 0.0]
         new_real_lattice = [[None] * 4 for _ in range(4)]
         for cell in range(2, num_cells + 1):  # skip cell 1 = (0,0,0)
-            tv = cell_points[cell]
+            tv = cell_points[cell]  # already [None, x, y, z]
             if abs(self.dot_product(tv, uvw_normal)) < EPSILON:
                 if new_mag[2] == 0.0:
-                    new_mag[2]          = cell_dist[cell]
-                    new_real_lattice[2][1] = tv[0]
-                    new_real_lattice[2][2] = tv[1]
-                    new_real_lattice[2][3] = tv[2]
+                    new_mag[2] = cell_dist[cell]
+                    for axis in range(1, 4):
+                        new_real_lattice[2][axis] = tv[axis]
                 else:
-                    rl2 = [new_real_lattice[2][1],
-                           new_real_lattice[2][2],
-                           new_real_lattice[2][3]]
+                    rl2 = new_real_lattice[2]  # already 1-indexed row
                     if abs(self.cross_product_mag(tv, rl2)) > EPSILON:
-                        new_mag[3]          = cell_dist[cell]
-                        new_real_lattice[3][1] = tv[0]
-                        new_real_lattice[3][2] = tv[1]
-                        new_real_lattice[3][3] = tv[2]
+                        new_mag[3] = cell_dist[cell]
+                        for axis in range(1, 4):
+                            new_real_lattice[3][axis] = tv[axis]
                         break
 
         # The a-axis is the surface normal (uvwNormal).
-        new_mag[1]          = uvw_mag
-        new_real_lattice[1][1] = uvw_normal[0]
-        new_real_lattice[1][2] = uvw_normal[1]
-        new_real_lattice[1][3] = uvw_normal[2]
+        new_mag[1] = uvw_mag
+        for axis in range(1, 4):
+            new_real_lattice[1][axis] = uvw_normal[axis]
 
         # Install the new lattice into self and recompute derived quantities now,
         # even though much of the code below still references new_real_lattice
@@ -4736,28 +4771,35 @@ class StructureControl:
         #   4. For each candidate atom, compute the vector from each face center
         #      to the atom.  If the dot product with any outward normal is
         #      positive (> epsilon) the atom is outside.
-        # Cell center (0-indexed [x, y, z]).
-        new_cell_center = [
-            (new_real_lattice[1][j] +
-             new_real_lattice[2][j] +
-             new_real_lattice[3][j]) / 2.0
-            for j in range(1, 4)
+        # Every geometric vector in this block is 1-indexed
+        # [None, x, y, z] to match the helper interface.
+        new_cell_center = [None] + [
+            (new_real_lattice[1][axis] +
+             new_real_lattice[2][axis] +
+             new_real_lattice[3][axis]) / 2.0
+            for axis in range(1, 4)
         ]
 
-        # Face centers (1-indexed list of 0-indexed [x, y, z]).
+        # Face centers (1-indexed list of 1-indexed [None, x, y, z] vectors).
         face_center    = [None] * 7
-        face_center[1] = [(new_real_lattice[1][j] + new_real_lattice[2][j]) / 2.0
-                          for j in range(1, 4)]
-        face_center[2] = [face_center[1][j - 1] + new_real_lattice[3][j]
-                          for j in range(1, 4)]
-        face_center[3] = [(new_real_lattice[1][j] + new_real_lattice[3][j]) / 2.0
-                          for j in range(1, 4)]
-        face_center[4] = [face_center[3][j - 1] + new_real_lattice[2][j]
-                          for j in range(1, 4)]
-        face_center[5] = [(new_real_lattice[2][j] + new_real_lattice[3][j]) / 2.0
-                          for j in range(1, 4)]
-        face_center[6] = [face_center[5][j - 1] + new_real_lattice[1][j]
-                          for j in range(1, 4)]
+        face_center[1] = [None] + [
+                (new_real_lattice[1][axis] + new_real_lattice[2][axis]) / 2.0
+                for axis in range(1, 4)]
+        face_center[2] = [None] + [
+                face_center[1][axis] + new_real_lattice[3][axis]
+                for axis in range(1, 4)]
+        face_center[3] = [None] + [
+                (new_real_lattice[1][axis] + new_real_lattice[3][axis]) / 2.0
+                for axis in range(1, 4)]
+        face_center[4] = [None] + [
+                face_center[3][axis] + new_real_lattice[2][axis]
+                for axis in range(1, 4)]
+        face_center[5] = [None] + [
+                (new_real_lattice[2][axis] + new_real_lattice[3][axis]) / 2.0
+                for axis in range(1, 4)]
+        face_center[6] = [None] + [
+                face_center[5][axis] + new_real_lattice[1][axis]
+                for axis in range(1, 4)]
 
         # Face normals: compute via cross-product from the origin for three
         # unique faces, negate for the three opposite faces.  Each normal is
@@ -4766,25 +4808,32 @@ class StructureControl:
         # if its dot product with the face normal is positive, both vectors
         # point in the same inward direction and the normal must be negated.
         # Finally normalise to unit length.
-        origin_v = [0.0, 0.0, 0.0]
-        rl1 = [new_real_lattice[1][j] for j in range(1, 4)]
-        rl2 = [new_real_lattice[2][j] for j in range(1, 4)]
-        rl3 = [new_real_lattice[3][j] for j in range(1, 4)]
+        origin_v = [None, 0.0, 0.0, 0.0]
+        # Each new_real_lattice row is itself already 1-indexed, so they
+        # can be passed directly as [None, x, y, z] vectors.
+        rl1 = new_real_lattice[1]
+        rl2 = new_real_lattice[2]
+        rl3 = new_real_lattice[3]
         face_normal    = [None] * 7
         face_normal[1] = self.get_plane_normal(origin_v, rl1, rl2)
         face_normal[3] = self.get_plane_normal(origin_v, rl1, rl3)
         face_normal[5] = self.get_plane_normal(origin_v, rl2, rl3)
-        face_normal[2] = [-v for v in face_normal[1]]
-        face_normal[4] = [-v for v in face_normal[3]]
-        face_normal[6] = [-v for v in face_normal[5]]
+        face_normal[2] = [None] + [-face_normal[1][axis] for axis in range(1, 4)]
+        face_normal[4] = [None] + [-face_normal[3][axis] for axis in range(1, 4)]
+        face_normal[6] = [None] + [-face_normal[5][axis] for axis in range(1, 4)]
 
         # Ensure face normals point outward, then normalize to unit length.
         for face in range(1, 7):
-            f2c = [new_cell_center[i] - face_center[face][i] for i in range(3)]
+            f2c = [None] + [new_cell_center[axis] - face_center[face][axis]
+                            for axis in range(1, 4)]
             if self.dot_product(face_normal[face], f2c) > 0.0:
-                face_normal[face] = [-v for v in face_normal[face]]
-            norm = math.sqrt(sum(v**2 for v in face_normal[face]))
-            face_normal[face] = [v / norm for v in face_normal[face]]
+                face_normal[face] = [None] + [-face_normal[face][axis]
+                                              for axis in range(1, 4)]
+            norm = math.sqrt(face_normal[face][1]**2 +
+                             face_normal[face][2]**2 +
+                             face_normal[face][3]**2)
+            face_normal[face] = [None] + [face_normal[face][axis] / norm
+                                          for axis in range(1, 4)]
 
         # --- Fill the new cell with atoms from replicated original cells ---
         # Iterate over the distance-sorted list of super-lattice cells.  Cells
@@ -4800,20 +4849,20 @@ class StructureControl:
         for cell in range(1, num_cells + 1):
             if cell_dist[cell] > diagonal_mag:
                 continue
-            cp = cell_points[cell]
+            cp = cell_points[cell]  # already [None, x, y, z]
             for atom in range(1, self.num_atoms + 1):
                 new_xyz = [None,
-                           self.direct_xyz[atom][1] + cp[0],
-                           self.direct_xyz[atom][2] + cp[1],
-                           self.direct_xyz[atom][3] + cp[2]]
+                           self.direct_xyz[atom][1] + cp[1],
+                           self.direct_xyz[atom][2] + cp[2],
+                           self.direct_xyz[atom][3] + cp[3]]
 
                 # Outside test: dot product of (face_center → atom) with each
                 # outward unit normal.  A positive value (> epsilon) means the
                 # atom is on the outer side of that face → outside the cell.
                 outside = False
                 for face in range(1, 7):
-                    f2a = [new_xyz[ax] - face_center[face][ax - 1]
-                           for ax in range(1, 4)]
+                    f2a = [None] + [new_xyz[axis] - face_center[face][axis]
+                                    for axis in range(1, 4)]
                     if self.dot_product(face_normal[face], f2a) > EPSILON:
                         outside = True
                         break
@@ -4823,10 +4872,10 @@ class StructureControl:
                 # On-face test: an atom at fractional coordinate ±1 is the
                 # periodic image of the atom at frac=0 on the opposite face;
                 # keeping it would create a duplicate.  Eliminate it here.
-                temp_fract = self.direct_xyz2fract_abc(
-                        [new_xyz[1], new_xyz[2], new_xyz[3]])
-                if any(abs(abs(temp_fract[i]) - 1.0) < EPSILON
-                       for i in range(3)):
+                # direct_xyz2fract_abc now takes/returns [None, a, b, c].
+                temp_fract = self.direct_xyz2fract_abc(new_xyz)
+                if any(abs(abs(temp_fract[axis]) - 1.0) < EPSILON
+                       for axis in range(1, 4)):
                     continue
 
                 # Discard exact duplicates of already-kept atoms.
@@ -4865,12 +4914,15 @@ class StructureControl:
         # uvwNormal (i.e. their cross-product, computed via get_plane_normal).
         # If the two vectors are already co-linear, get_plane_normal returns
         # (0,0,0): normaliser=0, so no rotation is needed and the angle is
-        # set to zero (which produces the identity rotation matrix).
-        x_axis   = [1.0, 0.0, 0.0]
+        # set to zero (which produces the identity rotation matrix).  All
+        # three vectors are stored as [None, x, y, z] to feed the
+        # 1-indexed vector helpers directly.
+        x_axis   = [None, 1.0, 0.0, 0.0]
         rot_axis = self.get_plane_normal(origin_v, x_axis, uvw_normal)
-        norm     = math.sqrt(sum(v**2 for v in rot_axis))
+        norm     = math.sqrt(rot_axis[1]**2 + rot_axis[2]**2 + rot_axis[3]**2)
         if norm != 0.0:
-            rot_axis      = [v / norm for v in rot_axis]
+            rot_axis = [None] + [rot_axis[axis] / norm
+                                 for axis in range(1, 4)]
             rot_angle_deg = math.degrees(
                     self.get_vector_angle(uvw_normal, x_axis))
         else:
@@ -4879,17 +4931,18 @@ class StructureControl:
         # If uvwNormal points into the positive-y half-space, the rotation as
         # computed would swing it *away* from x, so invert the rotation axis
         # to sweep it back toward the x-axis instead.
-        if uvw_normal[1] > 0.0:
-            rot_axis = [-v for v in rot_axis]
+        if uvw_normal[2] > 0.0:
+            rot_axis = [None] + [-rot_axis[axis] for axis in range(1, 4)]
 
         self.define_rot_matrix(rot_axis, rot_angle_deg)
 
-        # Rotate the three lattice vectors.
+        # Rotate the three lattice vectors in place (each row is already
+        # 1-indexed, so the rotate_one_point output can be copied back
+        # slot-by-slot without any offset bookkeeping).
         for abc_axis in range(1, 4):
-            pt  = [self.real_lattice[abc_axis][j] for j in range(1, 4)]
-            rpt = self.rotate_one_point(pt)
-            for j in range(3):
-                self.real_lattice[abc_axis][j + 1] = rpt[j]
+            rpt = self.rotate_one_point(self.real_lattice[abc_axis])
+            for xyz_axis in range(1, 4):
+                self.real_lattice[abc_axis][xyz_axis] = rpt[xyz_axis]
         for abc_axis in range(1, 4):
             for xyz_axis in range(1, 4):
                 if abs(self.real_lattice[abc_axis][xyz_axis]) < EPSILON:
@@ -4897,10 +4950,9 @@ class StructureControl:
 
         # Rotate all atoms.
         for atom in range(1, self.num_atoms + 1):
-            pt  = [self.direct_xyz[atom][j] for j in range(1, 4)]
-            rpt = self.rotate_one_point(pt)
-            for j in range(3):
-                self.direct_xyz[atom][j + 1] = rpt[j]
+            rpt = self.rotate_one_point(self.direct_xyz[atom])
+            for xyz_axis in range(1, 4):
+                self.direct_xyz[atom][xyz_axis] = rpt[xyz_axis]
 
         # --- Rotation 2: align b-axis into the Cartesian xy plane ---
         # Rotation axis is the current a-axis, which after rotation 1 is
@@ -4910,31 +4962,37 @@ class StructureControl:
         # b itself and the y-axis.  If b were already in the xy plane but not
         # aligned with y, that computation would yield a bogus non-zero angle
         # and we would incorrectly rotate b.  Instead, project b onto the yz
-        # plane (yz_proj = [0, b_y, b_z]) and compute the angle between that
-        # projection and y.  This gives exactly the out-of-plane tilt that
-        # needs to be removed.  If the yz-projection points in the positive-z
-        # half-space, invert the rotation axis to sweep back toward y.
-        rot_axis = [1.0, 0.0, 0.0]
+        # plane (yz_proj = [None, 0, b_y, b_z]) and compute the angle between
+        # that projection and y.  This gives exactly the out-of-plane tilt
+        # that needs to be removed.  If the yz-projection points in the
+        # positive-z half-space, invert the rotation axis to sweep back toward
+        # y.
+        rot_axis = [None, 1.0, 0.0, 0.0]
         # Project the b-axis onto the yz plane; rotate this projection to y.
-        yz_proj = [0.0,
+        # The 1-indexed slot layout is [None, x=0, y=b_y, z=b_z] so the
+        # vector helper sees a conventional [None, x, y, z] vector with
+        # x forced to zero.
+        yz_proj = [None,
+                   0.0,
                    self.real_lattice[2][2],
                    self.real_lattice[2][3]]
-        y_axis        = [0.0, 1.0, 0.0]
+        y_axis        = [None, 0.0, 1.0, 0.0]
         rot_angle_deg = math.degrees(self.get_vector_angle(yz_proj, y_axis))
 
-        # If the yz-projection points in the positive-z half-space, the naive
-        # rotation would sweep away from y; invert the rotation axis to correct.
-        if yz_proj[1] > 0.0:
-            rot_axis = [-1.0, 0.0, 0.0]
+        # If the yz-projection points in the positive-y half-space, the naive
+        # rotation would sweep away from y; invert the rotation axis to
+        # correct.  (Perl's commentary referenced "positive z quadrant" but
+        # the code checks the y-component; we preserve that behavior.)
+        if yz_proj[2] > 0.0:
+            rot_axis = [None, -1.0, 0.0, 0.0]
 
         self.define_rot_matrix(rot_axis, rot_angle_deg)
 
-        # Rotate the three lattice vectors.
+        # Rotate the three lattice vectors in place.
         for abc_axis in range(1, 4):
-            pt  = [self.real_lattice[abc_axis][j] for j in range(1, 4)]
-            rpt = self.rotate_one_point(pt)
-            for j in range(3):
-                self.real_lattice[abc_axis][j + 1] = rpt[j]
+            rpt = self.rotate_one_point(self.real_lattice[abc_axis])
+            for xyz_axis in range(1, 4):
+                self.real_lattice[abc_axis][xyz_axis] = rpt[xyz_axis]
         for abc_axis in range(1, 4):
             for xyz_axis in range(1, 4):
                 if abs(self.real_lattice[abc_axis][xyz_axis]) < EPSILON:
@@ -4942,10 +5000,9 @@ class StructureControl:
 
         # Rotate all atoms.
         for atom in range(1, self.num_atoms + 1):
-            pt  = [self.direct_xyz[atom][j] for j in range(1, 4)]
-            rpt = self.rotate_one_point(pt)
-            for j in range(3):
-                self.direct_xyz[atom][j + 1] = rpt[j]
+            rpt = self.rotate_one_point(self.direct_xyz[atom])
+            for xyz_axis in range(1, 4):
+                self.direct_xyz[atom][xyz_axis] = rpt[xyz_axis]
 
         # Recompute derived lattice quantities after the two rotations.
         self.make_inv_or_recip_lattice(make_recip=True)
@@ -5701,10 +5758,11 @@ class StructureControl:
         would then be sorted, and the mapping between the data structure and
         the atom arrays would be lost.
 
-        The sort key is atom_element_name (lowercase).  The stable-sort
-        technique here is the same approach used for cellSizes/cellDims in
-        stable_sort: build a list of (key, original_index) pairs, sort them,
-        then extract the permutation and apply it via apply_sort.
+        The sort key is atom_element_name (lowercase).  Python's built-in
+        ``sorted`` is stable (Timsort) so the (key, original_index) pair
+        technique used by Perl's ``stableSort`` is implemented here with
+        a plain call — then the resulting permutation is passed to
+        ``apply_sort``.
         """
         # Build 0-indexed list of element names for sorting.
         element_names = [self.atom_element_name[atom].lower()
@@ -5783,14 +5841,15 @@ class StructureControl:
         Parameters
         ----------
         axis : sequence of float
-            [x, y, z] rotation axis vector (need not be unit length;
-            normalisation is done internally).
+            1-indexed rotation axis vector ``[None, x, y, z]`` (need
+            not be unit length; normalisation is done internally).
         angle_deg : float
             Rotation angle in degrees (positive = right-hand rule about
             the axis direction).
         """
-        mag = math.sqrt(sum(v*v for v in axis))
-        unit = [v / mag for v in axis]
+        # Magnitude sums over slots 1..3 (slot 0 is the sentinel).
+        mag = math.sqrt(axis[1]**2 + axis[2]**2 + axis[3]**2)
+        unit = [None] + [axis[axis_idx] / mag for axis_idx in range(1, 4)]
         self.define_rot_matrix(unit, angle_deg)
         self.rotate_all_atoms()
 
@@ -5820,9 +5879,9 @@ class StructureControl:
         Parameters
         ----------
         axis : sequence of float
-            [x, y, z] unit rotation axis (0-indexed, length 3).
-            Must already be normalised; call :meth:`rotate_arb_axis`
-            for automatic normalisation.
+            1-indexed unit rotation axis ``[None, x, y, z]``.  Must
+            already be normalised; call :meth:`rotate_arb_axis` for
+            automatic normalisation.
         angle_deg : float
             Rotation angle in degrees.
         """
@@ -5830,7 +5889,9 @@ class StructureControl:
         c = math.cos(angle_rad)
         s = math.sin(angle_rad)
         t = 1.0 - c
-        x, y, z = axis[0], axis[1], axis[2]
+        # Read the axis components from the 1-indexed storage slots so the
+        # interface matches every other coordinate-accepting method.
+        x, y, z = axis[1], axis[2], axis[3]
 
         # rot_matrix is already allocated in __init__ as a 4×4 list
         self.rot_matrix[1][1] = t*x*x + c
@@ -5861,7 +5922,9 @@ class StructureControl:
         omitted from the body for clarity.
 
         Perl's ``rotateOnePoint`` mutated the point in-place via a
-        reference.  This Python version returns a new list instead.
+        reference.  This Python version returns a new list instead so
+        callers do not need to worry about aliasing surprises — a
+        Python-side non-mutation improvement.
 
         The Perl module also had a commented-out ``Math::MatrixReal``
         version (``$rotPointVector = $pointVector->multiply($rotMatrix)``);
@@ -5870,23 +5933,25 @@ class StructureControl:
         Parameters
         ----------
         point : sequence of float
-            [x, y, z] coordinates to rotate (0-indexed, length 3).
+            1-indexed Cartesian point ``[None, x, y, z]``.
 
         Returns
         -------
         list of float
-            Rotated [x, y, z] (0-indexed).
+            1-indexed rotated point ``[None, x', y', z']``.
         """
         # Origin is (0,0,0), so pointVector = point (translate step is a no-op).
-        px, py, pz = point[0], point[1], point[2]
+        # Read directly from the 1-indexed slots to mirror the surrounding code.
+        px, py, pz = point[1], point[2], point[3]
 
         # Apply rotation matrix: (pV_x, pV_y, pV_z) x rM(3x3).
-        # rot_matrix is 1-indexed; k+1 maps 0-based loop variable to 1-based index.
-        result = [0.0, 0.0, 0.0]
-        for k in range(3):
-            result[k] = (px * self.rot_matrix[1][k+1] +
-                         py * self.rot_matrix[2][k+1] +
-                         pz * self.rot_matrix[3][k+1])
+        # Both the axis loop and rot_matrix access use the 1-indexed
+        # convention directly, eliminating the previous +1 offset bridge.
+        result = [None, 0.0, 0.0, 0.0]
+        for k in range(1, 4):
+            result[k] = (px * self.rot_matrix[1][k] +
+                         py * self.rot_matrix[2][k] +
+                         pz * self.rot_matrix[3][k])
 
         # Origin is (0,0,0), so translate-back step is also a no-op.
         return result
@@ -5940,13 +6005,9 @@ class StructureControl:
                 direct_xyz_copy[atom][ax] = self.direct_xyz[atom][ax]
 
         for atom in range(1, self.num_atoms + 1):
-            pt = [self.direct_xyz[atom][1],
-                  self.direct_xyz[atom][2],
-                  self.direct_xyz[atom][3]]
-            rpt = self.rotate_one_point(pt)
-            self.direct_xyz[atom][1] = rpt[0]
-            self.direct_xyz[atom][2] = rpt[1]
-            self.direct_xyz[atom][3] = rpt[2]
+            rpt = self.rotate_one_point(self.direct_xyz[atom])
+            for ax in range(1, 4):
+                self.direct_xyz[atom][ax] = rpt[ax]
             self.get_direct_abc(atom)
             self.get_fract_abc(atom)
 
@@ -5984,13 +6045,9 @@ class StructureControl:
 
         # --- Pass 2: re-rotate all atoms ----------------------------------
         for atom in range(1, self.num_atoms + 1):
-            pt = [self.direct_xyz[atom][1],
-                  self.direct_xyz[atom][2],
-                  self.direct_xyz[atom][3]]
-            rpt = self.rotate_one_point(pt)
-            self.direct_xyz[atom][1] = rpt[0]
-            self.direct_xyz[atom][2] = rpt[1]
-            self.direct_xyz[atom][3] = rpt[2]
+            rpt = self.rotate_one_point(self.direct_xyz[atom])
+            for ax in range(1, 4):
+                self.direct_xyz[atom][ax] = rpt[ax]
             self.get_direct_abc(atom)
             self.get_fract_abc(atom)
 
@@ -6265,8 +6322,21 @@ class StructureControl:
         self.get_angle_sine()
 
         # Define the cell dimensions: span of atom positions plus buffer.
+        # The extra face_safety_margin (0.01 Angstroms per axis) prevents
+        # atoms on the positive face of the bounding box from landing at
+        # fractional coordinate exactly 1.0 after shift_xyz_center recentres
+        # the atom cloud inside the cell.  Such an atom would otherwise be
+        # folded back to fractional 0.0 by any subsequent apply_space_group
+        # call (even for P1), which detaches the atom from its molecule and
+        # corrupts later per-molecule bounding box computations.  The fold
+        # tolerance inside applySpaceGroup is smallThresh*100 = 1e-6 in
+        # fractional units, so the absolute safety margin must satisfy
+        # (margin / 2) / mag > 1e-6; using 0.01 Angstroms keeps us well above
+        # that threshold for cells up to several thousand Angstroms.
+        face_safety_margin = 0.01
         for axis in range(1, 4):
-            self.mag[axis] = self.max_pos[axis] - self.min_pos[axis] + self.buffer
+            self.mag[axis] = (self.max_pos[axis] - self.min_pos[axis]
+                              + self.buffer + face_safety_margin)
 
         # Define the real lattice parameters (a,b,c) in x,y,z vector form.
         self.get_abc_vectors()
@@ -7524,11 +7594,13 @@ class StructureControl:
             # Initialize q_bar for each atom.  q_bar is a complex
             # multi-component vector that accumulates the sum of the spherical
             # harmonics Ylm for each bonded neighbour.  Real and imaginary
-            # parts are stored separately (index 0=real, 1=imag) to avoid
-            # relying on a complex number type.
-            # q_bar[item][m_idx] = [real, imag];  m_idx in 1..2*l+1
+            # parts are stored separately (index 1=real, 2=imag) to match
+            # Perl's ``@qBar[$atom][$k][1..2]`` convention; slot 0 is an
+            # unused sentinel so the module-wide 1-indexed style is kept
+            # even at the innermost level.
+            # q_bar[item][m_idx] = [None, real, imag];  m_idx in 1..2*l+1.
             self.q_bar = [None] + [
-                [None] + [[0.0, 0.0] for _ in range(m)]
+                [None] + [[None, 0.0, 0.0] for _ in range(m)]
                 for _ in range(num_items1)
             ]
             # Initialize the coefficients for the Ylm.
@@ -7653,8 +7725,9 @@ class StructureControl:
                 # for a bond orientational order calculation.)
                 self.bonded_ext[item1].append(item2)
                 # Get the spherical angles theta and phi from the diff vector.
-                theta, phi = self.spherical_angles(
-                    [diff[1], diff[2], diff[3]])
+                # diff is already 1-indexed [None, dx, dy, dz], so pass it
+                # directly to the 1-indexed spherical_angles helper.
+                theta, phi = self.spherical_angles(diff)
                 # Accumulate the values of q_bar for the central-cell atom.
                 self.accumulate_q_bar(item1, theta, phi)
 
@@ -7733,10 +7806,12 @@ class StructureControl:
             pass  # nothing to do
 
         elif interaction_type == 3:
-            # Apply Gaussian broadening to the raw RPDF points.
+            # Apply Gaussian broadening to the raw RPDF points.  self.rpdf
+            # is already a 1-indexed ``[None, v1, ..., v1000]`` list so it
+            # can be handed straight to the 1-indexed ``gaussian_broaden``
+            # without any slice-and-shift bridging.
             sigma = 0.01
-            raw = [self.rpdf[p] for p in range(1, 1001)]
-            broadened = self.gaussian_broaden(raw, sigma)
+            broadened = self.gaussian_broaden(self.rpdf, sigma)
 
             # Divide by r^2 to account for the effect of more atoms being
             # present at each greater distance.  To divide by r^2 we divide
@@ -7744,8 +7819,7 @@ class StructureControl:
             # greater than the distances (r = point * 0.01).
             for point in range(1, 1001):
                 r = point * 0.01
-                self.rpdf[point] = (broadened[point - 1]
-                                    / (num_items1 * r * r))
+                self.rpdf[point] = broadened[point] / (num_items1 * r * r)
 
         elif interaction_type == 4:
             # Divide the q_bar for each atom by the number of bonds for
@@ -7907,16 +7981,18 @@ class StructureControl:
         --------------------
         atom_qn : list (1-indexed)
             Q^n value for each atom.  -1 for non-ion or out-of-bounds atoms.
-        absolute_sys_qn : list (1-indexed, length 10)
-            absolute_sys_qn[n+1] = number of ions with Q^n == n, for n=0..8.
-            (Index 0 is the None placeholder; Perl stored these 0-indexed
-            directly by n, but Python uses the standard 1-indexed convention.)
-        fractional_sys_qn : list (1-indexed, length 10)
-            fractional_sys_qn[n+1] = absolute_sys_qn[n+1] / num_qn_atoms.
+        absolute_sys_qn : list (0-indexed, length 9)
+            ``absolute_sys_qn[n]`` = number of ions with Q^n == n, for
+            n = 0..8.  The index *is* the Q^n value n, following Perl's
+            ``$absoluteSysQn[0..8]`` convention — a deliberate 0-indexed
+            exception to the surrounding 1-indexed style because ``n``
+            here is literally the array index, not an atom/axis label.
+        fractional_sys_qn : list (0-indexed, length 9)
+            ``fractional_sys_qn[n]`` = absolute_sys_qn[n] / num_qn_atoms.
         num_qn_atoms : int
             Total number of participating (non-skipped) ions.
         net_conn_qn : float
-            Overall network connectivity: sum_n { n * fractional_sys_qn[n] }.
+            Overall network connectivity: ``sum_n { n * fractional_sys_qn[n] }``.
 
         Parameters
         ----------
@@ -7979,10 +8055,12 @@ class StructureControl:
         # the absolute and fractional Q^n for the whole system.  (Obviously,
         # we consider the targeted ions only.)
 
-        # We assume that the Q^n value is zero for n in the range 0..8.
-        # absolute_sys_qn is 1-indexed (None at [0]); Q^n value n is stored
-        # at index n+1, unlike Perl which indexed directly by n from [0..8].
-        self.absolute_sys_qn = [None] + [0] * 9
+        # Allocate the Q^n histogram using Perl's 0-indexed convention:
+        # absolute_sys_qn[n] = number of atoms with Q^n value n, for
+        # n in 0..8.  Here n *is* the index — there is no atom/axis
+        # sentinel — so using slot 0 as a live data entry matches Perl's
+        # @absoluteSysQn[0..8] exactly.
+        self.absolute_sys_qn = [0] * 9
 
         # Now, accumulate Q^n from each atom and count the total number of
         # participating ions.
@@ -7991,20 +8069,20 @@ class StructureControl:
             if self.atom_qn[atom] == -1:  # Ignore non-target atoms.
                 continue
             self.num_qn_atoms += 1
-            self.absolute_sys_qn[self.atom_qn[atom] + 1] += 1
+            self.absolute_sys_qn[self.atom_qn[atom]] += 1
 
         # Once the absolute Q^n has been computed, we can easily obtain the
-        # fractional Q^n.
-        self.fractional_sys_qn = [None] + [0.0] * 9
+        # fractional Q^n, using the same 0-indexed layout.
+        self.fractional_sys_qn = [0.0] * 9
         if self.num_qn_atoms > 0:
             for n in range(9):
-                self.fractional_sys_qn[n + 1] = (
-                    self.absolute_sys_qn[n + 1] / self.num_qn_atoms)
+                self.fractional_sys_qn[n] = (
+                    self.absolute_sys_qn[n] / self.num_qn_atoms)
 
         # From the fractional Q^n, we can compute the overall network
         # connectivity.
         self.net_conn_qn = sum(
-            n * self.fractional_sys_qn[n + 1] for n in range(9))
+            n * self.fractional_sys_qn[n] for n in range(9))
 
     def compute_ring_distribution(self, min_ring_len, max_ring_len):
         """Identify rings in the bonding network and tabulate their sizes.
@@ -8555,64 +8633,69 @@ class StructureControl:
         Parameters
         ----------
         p1, p2, p3 : sequence of float
-            Three non-collinear points, each [x, y, z] (0-indexed).
-            Perl used 1-indexed [None, x, y, z] refs; Python uses plain lists.
+            Three non-collinear points, each 1-indexed
+            ``[None, x, y, z]``.  Perl stored these as
+            ``@p[1..3]``; Python preserves that convention with a
+            ``None`` sentinel at slot 0.
 
         Returns
         -------
         list of float
-            Normal vector [nx, ny, nz] (not unit length).
+            1-indexed normal vector ``[None, nx, ny, nz]`` (not unit
+            length).
         """
-        # First vector: difference between p2 and p1.
-        d1 = [p2[i] - p1[i] for i in range(3)]
-        # Second vector: difference between p3 and p1.
-        d2 = [p3[i] - p1[i] for i in range(3)]
+        # Build the two edge vectors in 1-indexed form so they can be fed
+        # directly into cross_product without offset bookkeeping.
+        d1 = [None] + [p2[axis] - p1[axis] for axis in range(1, 4)]
+        d2 = [None] + [p3[axis] - p1[axis] for axis in range(1, 4)]
         return self.cross_product(d1, d2)
 
     def dot_product(self, a, b):
         """Return the scalar dot product of two 3-vectors.
 
-        Perl equivalent: dotProduct (line 8282), which operated on 1-indexed
-        array references ($vector_ref->[1..3]). Here a and b are plain
-        0-indexed Python lists or sequences.
+        Perl equivalent: dotProduct (line 8282), which operated on
+        1-indexed array references ``$vector_ref->[1..3]``.  The Python
+        port preserves that convention so the same mathematical
+        expression reads identically in either language.
 
         Parameters
         ----------
         a, b : sequence of float
-            Input vectors [x, y, z] (0-indexed).
+            Input vectors in 1-indexed form ``[None, x, y, z]``.
 
         Returns
         -------
         float
         """
-        return a[0]*b[0] + a[1]*b[1] + a[2]*b[2]
+        return a[1]*b[1] + a[2]*b[2] + a[3]*b[3]
 
     def cross_product(self, a, b):
         """Return the cross product a x b.
 
-        Computes the standard right-hand-rule cross product of two 3-vectors.
+        Computes the standard right-hand-rule cross product of two
+        3-vectors using the 1-indexed convention established throughout
+        this module (``v[1]`` = x, ``v[2]`` = y, ``v[3]`` = z).
 
         Parameters
         ----------
         a, b : sequence of float
-            0-indexed input vectors [x, y, z].
+            1-indexed input vectors ``[None, x, y, z]``.
 
         Returns
         -------
         list of float
-            0-indexed result [cx, cy, cz].
+            1-indexed result ``[None, cx, cy, cz]``.  Slot 0 is a
+            sentinel (``None``) matching Perl's ``$product[0] = 0.0``.
 
         Notes
         -----
         Perl equivalent: crossProduct (StructureControl.pm).
-        The Perl version used 1-indexed arrays (index 0 was an unused 0.0
-        placeholder) and returned a 4-element array; Python uses 0-indexed
-        lists throughout.
         """
         return [
-            a[1]*b[2] - a[2]*b[1],   # cx = ay*bz - az*by
-            a[2]*b[0] - a[0]*b[2],   # cy = az*bx - ax*bz
-            a[0]*b[1] - a[1]*b[0],   # cz = ax*by - ay*bx
+            None,
+            a[2]*b[3] - a[3]*b[2],   # cx = ay*bz - az*by
+            a[3]*b[1] - a[1]*b[3],   # cy = az*bx - ax*bz
+            a[1]*b[2] - a[2]*b[1],   # cz = ax*by - ay*bx
         ]
 
     def cross_product_mag(self, a, b):
@@ -8621,7 +8704,7 @@ class StructureControl:
         Parameters
         ----------
         a, b : sequence of float
-            0-indexed input vectors [x, y, z].
+            1-indexed input vectors ``[None, x, y, z]``.
 
         Returns
         -------
@@ -8630,12 +8713,12 @@ class StructureControl:
 
         Notes
         -----
-        Perl equivalent: crossProductMag (StructureControl.pm).
-        The Perl version used 1-indexed arrays and summed components [1..3];
-        Python uses 0-indexed lists throughout.
+        Perl equivalent: crossProductMag (StructureControl.pm). Like
+        the Perl original this routine sums components ``[1..3]`` of the
+        cross-product result.
         """
         c = self.cross_product(a, b)
-        return math.sqrt(c[0]**2 + c[1]**2 + c[2]**2)
+        return math.sqrt(c[1]**2 + c[2]**2 + c[3]**2)
 
     def normalized_cross_product(self, a, b):
         """Return the unit vector in the direction of a x b.
@@ -8648,24 +8731,26 @@ class StructureControl:
         Parameters
         ----------
         a, b : sequence of float
-            Input vectors [x, y, z] (0-indexed).
+            1-indexed input vectors ``[None, x, y, z]``.
 
         Returns
         -------
         list of float
-            Unit cross product vector [x, y, z] (0-indexed).
+            1-indexed unit cross product vector
+            ``[None, x, y, z]``.
 
         Notes
         -----
-        The Perl version (normalizedCrossProduct) used 1-indexed arrays with a
-        0.0 placeholder at index [0]; components were at indices [1..3].
-        Python uses 0-indexed lists throughout.
+        Perl equivalent: normalizedCrossProduct.  The Perl original used
+        1-indexed arrays with a 0.0 placeholder at index [0]; Python
+        mirrors that layout with a ``None`` placeholder.
         """
         c = self.cross_product(a, b)
-        # Magnitude of the cross product vector.
-        mag = math.sqrt(c[0]**2 + c[1]**2 + c[2]**2)
-        # Divide each component by the magnitude to normalize.
-        return [c[i] / mag for i in range(3)]
+        # Magnitude of the cross product vector (sum over slots 1..3).
+        mag = math.sqrt(c[1]**2 + c[2]**2 + c[3]**2)
+        # Divide each component by the magnitude to normalize, preserving
+        # the [None, x, y, z] sentinel layout.
+        return [None] + [c[axis] / mag for axis in range(1, 4)]
 
     def get_vector_angle(self, a, b):
         """Return the angle in radians between vectors a and b.
@@ -8678,29 +8763,28 @@ class StructureControl:
         than infinity.  If the computed angle is within EPSILON of pi/2 it is
         snapped to exactly pi/2.
 
-        Note: the Perl original uses 1-indexed array references; here a and b
-        are 0-indexed sequences [x, y, z].  The cosine is also clamped to
-        [-1, 1] before acos to guard against floating-point rounding outside
-        that domain (not present in the Perl version).
+        The cosine is clamped to [-1, 1] before ``acos`` to guard against
+        floating-point rounding outside that domain (a Python-side
+        robustness improvement over the Perl original).
 
         Parameters
         ----------
         a, b : sequence of float
-            Input vectors [x, y, z] (0-indexed).
+            1-indexed input vectors ``[None, x, y, z]``.
 
         Returns
         -------
         float
             Angle in radians in [0, pi].
         """
-        # Compute the magnitudes of the two vectors.
-        mag_a = math.sqrt(a[0]**2 + a[1]**2 + a[2]**2)
-        mag_b = math.sqrt(b[0]**2 + b[1]**2 + b[2]**2)
+        # Compute the magnitudes of the two vectors (sum over slots 1..3).
+        mag_a = math.sqrt(a[1]**2 + a[2]**2 + a[3]**2)
+        mag_b = math.sqrt(b[1]**2 + b[2]**2 + b[3]**2)
 
         # Compute the angle between the vectors from:
         #   theta = arccos(v1 . v2) / (|v1| |v2|).
         # Clamp to [-1, 1] to guard against floating-point rounding (Python addition).
-        cos_t = (a[0]*b[0] + a[1]*b[1] + a[2]*b[2]) / (mag_a * mag_b)
+        cos_t = (a[1]*b[1] + a[2]*b[2] + a[3]*b[3]) / (mag_a * mag_b)
         angle = math.acos(max(-1.0, min(1.0, cos_t)))
 
         # Correct for slight deviations from 90 degrees which may occur because
@@ -8710,50 +8794,16 @@ class StructureControl:
             angle = PI / 2.0
         return angle
 
-    def get_unique_array(self, values):
-        """Return a sorted list of unique values from the input.
-
-        Perl analogue: getUniqueArray (StructureControl.pm ~8403).
-
-        The Perl version accepted three arguments:
-          $array_ref  -- reference to a 1-indexed array (index 0 unused)
-          $dataForm   -- 0 = compare by character (cmp); 1 = compare numerically (==)
-          $doSort     -- 0 = preserve insertion order; 1 = sort before returning
-
-        It returned *two* 1-indexed arrays:
-          @uniqueData   -- the unique elements, sorted when $doSort == 1
-          @uniqueCount  -- the number of times each unique element appeared
-
-        The Perl implementation walked the input array from index 1 to $#array_ref,
-        treating index 0 as an unused sentinel.  For each element it performed a
-        linear scan of @uniqueData to check membership (character eq or numeric ==
-        depending on $dataForm).  When $doSort was set it built an index array via
-        sort{cmp} or sort{<=>}, reordered both @uniqueData and @uniqueCount in
-        parallel, then unshifted "" onto both to restore 1-indexing.
-
-        Python simplification: callers that needed per-element counts replaced the
-        two-return-value contract with an inline dict (e.g. in create_coordination_list
-        and create_coordination_summary), so this method only needs to return the
-        sorted unique values.  The input is treated as 0-indexed (standard Python
-        list), and sorting is always applied (matching the $doSort == 1 callers).
-
-        Parameters
-        ----------
-        values : list
-            Input list (may contain duplicates).  0-indexed, unlike the Perl
-            1-indexed convention.
-
-        Returns
-        -------
-        list
-            Sorted unique values (character/lexicographic order, matching Perl's
-            $dataForm == 0 character-sort path used by all known callers).
-        """
-        seen = []
-        for v in values:
-            if v not in seen:
-                seen.append(v)
-        return sorted(seen)
+    # Perl's ``getUniqueArray`` has been removed from the Python port.
+    # It was dead code in this module and everywhere in the converted
+    # scripts: ``create_coordination_list`` and ``create_coordination_summary``
+    # reimplement the unique-with-counts logic inline with a Python dict,
+    # and no external script (makeinput, pdb2skl, condense, bond_analysis,
+    # make_reactions, mod_struct) called it.  Preserving it only as a
+    # lexicographic uniqueifier also silently dropped Perl's count-return
+    # contract.  Any future caller that wants the sorted unique values of
+    # a list should use ``sorted(set(values))`` directly; callers needing
+    # per-element counts should use ``collections.Counter``.
 
     def spherical_angles(self, vector):
         """Convert a Cartesian vector to spherical angles (theta, phi).
@@ -8763,14 +8813,17 @@ class StructureControl:
         by the real spherical harmonic Y_l^m(theta, phi).
 
         Perl counterpart: sphericalAngles (StructureControl.pm ~8077).
-        The Perl version accepts a 1-indexed reference [$x,$y,$z] and
-        clamps in-place; here we clamp via a list comprehension so the
-        caller's array is unchanged.
+        The Perl version accepts a 1-indexed reference ``[$x,$y,$z]``
+        and clamps in-place.  The Python port keeps the same 1-indexed
+        input convention so the caller can pass a bond difference vector
+        directly without any 0-to-1 offset translation, and builds a
+        local clamped copy so the caller's original vector is left
+        untouched (a Python-side non-mutation improvement).
 
         Parameters
         ----------
         vector : sequence of float
-            [x, y, z] Cartesian difference vector (0-indexed).
+            1-indexed Cartesian difference vector ``[None, x, y, z]``.
 
         Returns
         -------
@@ -8790,7 +8843,12 @@ class StructureControl:
         original we return phi = 0.0 in that case.
         """
         # Correct for numerical error (Perl: "foreach $axis (1..3) { if abs < epsilon }").
-        x, y, z = [0.0 if abs(v) < EPSILON else v for v in vector]
+        # Build a fresh clamped copy in 1-indexed form so the caller's
+        # vector is not mutated and the axis bindings read the same as
+        # the surrounding 1-indexed code.
+        clamped = [None] + [0.0 if abs(vector[axis]) < EPSILON else vector[axis]
+                            for axis in range(1, 4)]
+        x, y, z = clamped[1], clamped[2], clamped[3]
 
         # Compute theta: polar angle from +z.
         theta = math.atan2(math.sqrt(x**2 + y**2), z)
@@ -8875,7 +8933,11 @@ class StructureControl:
         Array layout
         ------------
         q_bar[atom] is a 1-indexed list.  Each entry q_bar[atom][k] is a
-        two-element list [real, imag] (Python indices 0/1; Perl used 1/2).
+        1-indexed real/imag pair ``[None, real, imag]``: slot 1 is the
+        real component and slot 2 is the imaginary component, matching
+        Perl's ``$qBar[$atom][$k][1..2]`` layout exactly.  Slot 0 is an
+        unused ``None`` sentinel so the module-wide 1-indexed convention
+        is honoured at every nesting level.
         Index k runs from 1 to 2*l+1; the corresponding magnetic quantum number
         is m = k - (l+1), i.e. k=1 → m=-l, k=l+1 → m=0, k=2l+1 → m=+l.
 
@@ -8908,18 +8970,18 @@ class StructureControl:
 
         if self.ylm_l == 0:
             # l=0: Y_0^0 = c[1] (isotropic); imaginary component is always zero
-            qb[1][0] += c[1]
-            qb[1][1] += 0.0
+            qb[1][1] += c[1]
+            qb[1][2] += 0.0
 
         elif self.ylm_l == 1:
             # REAL parts (cos(m*phi) * angular factor)
-            qb[1][0] += c[1] * math.cos(-1.0 * phi) * st
-            qb[2][0] += c[2] * ct
-            qb[3][0] += c[3] * math.cos( 1.0 * phi) * st
+            qb[1][1] += c[1] * math.cos(-1.0 * phi) * st
+            qb[2][1] += c[2] * ct
+            qb[3][1] += c[3] * math.cos( 1.0 * phi) * st
             # IMAGINARY parts (sin(m*phi) * angular factor; m=0 term is zero)
-            qb[1][1] += c[1] * math.sin(-1.0 * phi) * st
-            qb[2][1] += 0.0
-            qb[3][1] += c[3] * math.sin( 1.0 * phi) * st
+            qb[1][2] += c[1] * math.sin(-1.0 * phi) * st
+            qb[2][2] += 0.0
+            qb[3][2] += c[3] * math.sin( 1.0 * phi) * st
 
         elif self.ylm_l == 6:
             ct2 = ct**2; ct3 = ct**3; ct4 = ct**4; ct5 = ct**5; ct6 = ct**6
@@ -8943,17 +9005,18 @@ class StructureControl:
                 st6,                                       # k=13 m=+6
             ]
             # Phi frequency: m = k - 7 (k=1→-6, k=7→0, k=13→+6)
-            # REAL component uses cos(m*phi); IMAGINARY uses sin(m*phi).
-            # Exception at k=7 (m=0): Perl assigned poly*coeff to both real and
-            # imaginary (sin(0)=0 so imaginary should be 0; Perl bug preserved).
+            # REAL component (slot 1) uses cos(m*phi); IMAGINARY (slot 2)
+            # uses sin(m*phi).  Exception at k=7 (m=0): Perl assigned
+            # poly*coeff to both real and imaginary (sin(0)=0 so
+            # imaginary should be 0; Perl bug preserved).
             for k in range(1, 14):
                 m = float(k - 7)
                 if k == 7:  # m=0: replicate Perl (both components get poly*coeff)
-                    qb[k][0] += c[k] * poly[k]
                     qb[k][1] += c[k] * poly[k]
+                    qb[k][2] += c[k] * poly[k]
                 else:
-                    qb[k][0] += c[k] * math.cos(m * phi) * poly[k]  # REAL
-                    qb[k][1] += c[k] * math.sin(m * phi) * poly[k]  # IMAGINARY
+                    qb[k][1] += c[k] * math.cos(m * phi) * poly[k]  # REAL
+                    qb[k][2] += c[k] * math.sin(m * phi) * poly[k]  # IMAGINARY
 
         else:
             raise ValueError(f'accumulate_q_bar: unsupported ylm_l={self.ylm_l}')
@@ -8967,30 +9030,33 @@ class StructureControl:
             2. q_bar_normalize     — normalize the averaged vector
             3. q_bar_correlation   — accumulate the correlation factor
 
-        q_bar[atom][ylm_m] holds a 2-element list [real, imag] (0-indexed,
-        corresponding to Perl's 1-indexed [1] and [2]).  After this call each
-        component is the per-bond average of the accumulated Ylm sums from
-        accumulate_q_bar.
+        q_bar[atom][ylm_m] holds a 1-indexed ``[None, real, imag]`` pair
+        where slot 1 is the real component and slot 2 is the imaginary
+        component (matching Perl's ``@qBar[$atom][$Ylm_m][1..2]``).
+        After this call each component is the per-bond average of the
+        accumulated Ylm sums from accumulate_q_bar.
 
         Perl debug prints (commented out in the original) bracketed the inner
         loop to show q_bar values before and after the division; they are
         preserved here as a reminder of the data layout:
             # print(f"num_bonds[{atom}] = {self.num_bonds[atom]}")
-            # print(self.q_bar[atom][1][0], self.q_bar[atom][2][0], ...)
+            # print(self.q_bar[atom][1][1], self.q_bar[atom][2][1], ...)
         """
         for atom in range(1, self.num_atoms + 1):
             for ylm_m in range(1, 2 * self.ylm_l + 2):
-                self.q_bar[atom][ylm_m][0] /= self.num_bonds[atom]  # real part
-                self.q_bar[atom][ylm_m][1] /= self.num_bonds[atom]  # imag part
+                # Slots 1/2 hold the real/imag components; divide each
+                # separately to average over the bond count.
+                for part in range(1, 3):
+                    self.q_bar[atom][ylm_m][part] /= self.num_bonds[atom]
 
     def q_bar_normalize(self):
         """Normalize each atom's q_bar complex vector in-place.
 
-        q_bar[atom][ylm_m] holds a complex number stored as a two-element
-        list [real, imag] (index 0 = real, index 1 = imaginary).  The full
-        vector for one atom has 2*(2*l+1) real-valued components (real and
-        imaginary parts for each of the 2l+1 magnetic quantum numbers
-        m = -l … +l).
+        q_bar[atom][ylm_m] holds a complex number stored as a 1-indexed
+        ``[None, real, imag]`` pair (slot 1 = real, slot 2 = imaginary,
+        slot 0 = sentinel).  The full vector for one atom has
+        2*(2*l+1) real-valued components (real and imaginary parts for
+        each of the 2l+1 magnetic quantum numbers m = -l … +l).
 
         The magnitude is the Euclidean norm of that real-valued vector:
             magnitude = sqrt( sum_{m=1}^{2l+1} ( re_m^2 + im_m^2 ) )
@@ -9013,18 +9079,19 @@ class StructureControl:
             # Initialize the magnitude for accumulation.
             magnitude = 0.0
 
-            # Accumulate the sum of squares of the vector components.
+            # Accumulate the sum of squares of the vector components
+            # (slot 1 = real, slot 2 = imag).
             for ylm_m in range(1, 2 * self.ylm_l + 2):
-                magnitude += (self.q_bar[atom][ylm_m][0] ** 2
-                              + self.q_bar[atom][ylm_m][1] ** 2)
+                magnitude += (self.q_bar[atom][ylm_m][1] ** 2
+                              + self.q_bar[atom][ylm_m][2] ** 2)
 
             # Obtain the magnitude of the vector in complex space.
             magnitude = math.sqrt(magnitude)
 
             # Divide each component by the magnitude to make it a normalized vector.
             for ylm_m in range(1, 2 * self.ylm_l + 2):
-                self.q_bar[atom][ylm_m][0] /= magnitude
-                self.q_bar[atom][ylm_m][1] /= magnitude
+                for part in range(1, 3):
+                    self.q_bar[atom][ylm_m][part] /= magnitude
 
     def q_bar_correlation(self):
         """Compute the bond orientational order parameter correlation for every atom.
@@ -9055,11 +9122,11 @@ class StructureControl:
           + qBar[atom][m][2]  *  qBar[bonded][m][1]    # Im_a * Re_c
           + qBar[atom][m][2]  *  qBar[bonded][m][2]    # Im_a * Im_c
 
-        where Perl's [1] = Re component, [2] = Im component (1-indexed);
-        Python uses [0] = Re, [1] = Im (0-indexed).  Expanded: a*c - a*d +
-        b*c + b*d.  Note this differs from the standard complex inner product
-        (which would be a*c + b*d); this specific formula is preserved
-        verbatim from the Perl original.
+        The Python port uses the same slot layout: slot 1 = real, slot 2
+        = imaginary.  Expanded: a*c - a*d + b*c + b*d.  Note this differs
+        from the standard complex inner product (which would be
+        a*c + b*d); this specific formula is preserved verbatim from the
+        Perl original.
 
         A commented-out debug print in the Perl (omitted here)::
 
@@ -9082,92 +9149,78 @@ class StructureControl:
             for bond in range(1, self.num_bonds[atom] + 1):
                 bonded_atom = self.bonded[atom][bond]
                 for ylm_m in range(1, 2 * self.ylm_l + 2):
-                    a = self.q_bar[atom][ylm_m][0]        # Re(atom)
-                    b = self.q_bar[atom][ylm_m][1]        # Im(atom)
-                    c = self.q_bar[bonded_atom][ylm_m][0] # Re(bonded)
-                    d = self.q_bar[bonded_atom][ylm_m][1] # Im(bonded)
+                    a = self.q_bar[atom][ylm_m][1]        # Re(atom)
+                    b = self.q_bar[atom][ylm_m][2]        # Im(atom)
+                    c = self.q_bar[bonded_atom][ylm_m][1] # Re(bonded)
+                    d = self.q_bar[bonded_atom][ylm_m][2] # Im(bonded)
                     self.q_order[atom] += a*c - a*d + b*c + b*d
 
             # Divide by the total number of bonded atoms.
             self.q_order[atom] /= self.num_bonds[atom]
 
-    def stable_sort(self, values, keys):
-        """Return the indices that sort keys, preserving relative order of ties.
-
-        The Perl original used a simple insertion sort, with the comment: "Will
-        improve the algorithm if it becomes a performance issue.  The important
-        thing is that the sort must be stable, and the indexMap must be created
-        via swapping since it may not be in sequential order when it arrives in
-        this subroutine."  Python's built-in sort (Timsort) is already stable,
-        so the insertion sort is replaced by a one-liner.
-
-        Note: the Perl code contained a bug — the loop bound used $numAtoms (a
-        module global) instead of the $numItems parameter that was passed in.
-        That bug is not replicated here.
-
-        Parameters
-        ----------
-        values : list
-            Values to be ordered (not modified).
-        keys : list
-            Sort keys corresponding to each value (may arrive in non-sequential
-            order).
-
-        Returns
-        -------
-        list of int
-            Sorted indices.
-        """
-        return [i for i, _ in sorted(enumerate(values), key=lambda x: keys[x[0]])]
+    # Perl's ``stableSort`` helper has been removed from the Python port.
+    # It was dead code: nothing inside structure_control.py, or anywhere in
+    # the converted scripts (makeinput, pdb2skl, condense, bond_analysis,
+    # make_reactions, mod_struct), called it.  The single in-file consumer
+    # — ``sort_atoms`` — builds its own inline ``sorted(...)`` call, and
+    # the 0-indexed signature of the previous port diverged from Perl's
+    # 1-indexed in-place convention.  Rather than carry a silently
+    # drifted public API, the method is deleted.  Any future caller that
+    # genuinely needs a stable sort should call Python's built-in
+    # ``sorted`` (which is stable by construction — Timsort).
 
     def gaussian_broaden(self, data, sigma):
-        """Apply Gaussian broadening to a 1-D data array.
+        """Apply Gaussian broadening to a 1-indexed 1-D data array.
 
-        Each element of `data` is treated as a delta-function spike centred at
-        its index position.  A normalised Gaussian of width `sigma` is placed
-        at each spike and accumulated into the output array, giving a smoothed
-        spectrum.
+        Each element of ``data`` is treated as a delta-function spike
+        centred at its index position.  A normalised Gaussian of width
+        ``sigma`` is placed at each spike and accumulated into the
+        output array, giving a smoothed spectrum.
 
-        The broadening formula is:
+        The broadening formula is::
 
             result[gv] += data[point] * exp(-expTerm) / (sigma * sqrt(pi))
 
-        where expTerm = ((point - gv) / 100.0)^2 / sigma^2.
+        where ``expTerm = ((point - gv) / 100.0)^2 / sigma^2``.
 
-        The /100.0 factor converts the integer index difference into Angstrom
-        units (the caller's bin width is 0.01 Å — see compute_rpdf).
+        The /100.0 factor converts the integer index difference into
+        Angstrom units (the caller's bin width is 0.01 Å — see
+        ``compute_rpdf``).
 
-        Contributions where expTerm >= 20 are skipped as negligible
-        (exp(-20) ≈ 2e-9).  1/(sigma*sqrt(pi)) is the normalisation constant
-        so the integrated area is preserved.
+        Contributions where ``expTerm >= 20`` are skipped as negligible
+        (``exp(-20) ≈ 2e-9``).  ``1 / (sigma*sqrt(pi))`` is the
+        normalisation constant so the integrated area is preserved.
 
-        Perl note: the original `gaussianBroaden` (line 8908) accepted explicit
-        `$start`/`$end` loop bounds and a separate `$graph_ref` accumulator
-        (written back in place).  The Python version operates on the full array
-        and returns a new list, which is simpler and avoids aliasing issues.
-        Callers should ensure no indices need to be skipped before calling, as
-        the Perl comment warns: "make sure there aren't any [points] that need
-        to be skipped."
+        Perl note: the original ``gaussianBroaden`` accepted explicit
+        ``$start`` / ``$end`` loop bounds and a separate ``$graph_ref``
+        accumulator (written back in place).  The Python version drops
+        the bound parameters and instead consumes the whole array, but
+        preserves Perl's 1-indexed layout (slot 0 is an unused
+        sentinel) so callers can hand it ``self.rpdf`` or any other
+        per-bin list built with the module-wide convention directly.
+        Callers that need a subset should copy the slice into a fresh
+        1-indexed list before calling.
 
         Parameters
         ----------
         data : list of float
-            Input spike values.  Every element is broadened; pass a slice if
-            only a sub-range should be processed.
+            1-indexed spike values ``[None, v1, v2, ..., vN]``.  Slot 0
+            is ignored; slots 1..N carry the data.
         sigma : float
             Gaussian broadening width (standard deviation) in Angstroms.
 
         Returns
         -------
         list of float
-            Broadened data of the same length as `data`.
+            1-indexed broadened data ``[None, b1, b2, ..., bN]`` of the
+            same length as ``data`` (slot 0 left as ``None``).
         """
-        n = len(data)
+        n = len(data) - 1  # number of live bins (slot 0 is sentinel)
         sigma_sqrt_pi = sigma * math.sqrt(PI)
-        result = [0.0] * n
-        for point in range(n):
+        result = [None] + [0.0] * n
+        for point in range(1, n + 1):
             curr = data[point]
-            for gv in range(n):
+            for gv in range(1, n + 1):
                 # Determine the difference between the point in question and
                 # each place on the graph scale (bin width = 0.01 Å).
                 diff = (point - gv) / 100.0
