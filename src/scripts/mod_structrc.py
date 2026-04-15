@@ -22,8 +22,12 @@ def parameters_and_defaults():
         # These define how the lattice vectors (a,b,c) map to
         # Cartesian axes (x,y,z).  The defaults cause a to align
         # with x, b to be in the xy plane, and c to be arbitrary.
-        "abc_order": [1, 2, 3],  # a=1, b=2, c=3
-        "xyz_order": [1, 2, 3],  # x=1, y=2, z=3
+        # Stored in the 1-indexed layout used everywhere else in
+        # the OLCAO Python scripts: slot 0 is an unused None
+        # sentinel, slots 1..3 hold the three axis labels, matching
+        # Perl's ``@abc[1..3]`` / ``@xyz[1..3]`` convention.
+        "abc_order": [None, 1, 2, 3],  # slot 1=a, 2=b, 3=c
+        "xyz_order": [None, 1, 2, 3],  # slot 1=x, 2=y, 3=z
     }
     return param_dict
 

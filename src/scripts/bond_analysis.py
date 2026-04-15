@@ -3024,17 +3024,24 @@ class BondAnalysis:
                     a1, a2 = bonded_atom2, bonded_atom1
 
                 # Record bond length info for this bond pair.
+                # The inner entry is 1-indexed ``[None, a1, a2,
+                # bl]`` to match Perl's
+                # ``$bondInfoExtTemp1[$i][1..3]`` convention.
+                # The outer dimension remains 0-indexed because
+                # the ``.append()`` / sort machinery both operate
+                # on the list-of-lists wholesale and Perl's
+                # counterpart starts at slot 0 too.
                 bond_info_temp.append(
-                    [a1, a2,
+                    [None, a1, a2,
                      sc.bond_length_ext[atom][bond]]
                 )
 
         # Sort the bonds according to the second bonded atom
         # followed by a stable sort according to the first
         # bonded atom so that bonds that are between identical
-        # atom pairs are next door.
+        # atom pairs are next door.  Slot 2 is a2, slot 1 is a1.
+        bond_info_temp.sort(key=lambda x: x[2])
         bond_info_temp.sort(key=lambda x: x[1])
-        bond_info_temp.sort(key=lambda x: x[0])
 
         # Now we need to remove duplicate bonds by simply
         # recording any non-dups.  At the same time, we will
@@ -3044,7 +3051,9 @@ class BondAnalysis:
         reduced_num_bonds = 0
 
         for entry in bond_info_temp:
-            a1, a2, bl = entry
+            # Skip the slot-0 sentinel; slots 1..3 carry a1, a2,
+            # and bl.
+            a1, a2, bl = entry[1], entry[2], entry[3]
 
             # If we are limited only to bonds that are present
             # in the bond order list, make sure this bond is one

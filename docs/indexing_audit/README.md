@@ -92,6 +92,29 @@ convention, severity, recommended fix.
 | 1.15 | Getters (`get*Ref` methods) | OK — API removed, direct attribute access |
 | [Passes 2–4](sc_pass2_3_4.md) | Cross-method + slot-0 + loop-bounds sweeps | 0 new findings, 1 additional bridge site (1.9.e) |
 
+## Resource-control (rc) file audit summary
+
+Each priority-1–7 script has a companion `*rc.py` resource-
+control file.  Checked individually for indexing-sensitive
+defaults:
+
+| rc file | Findings | Status |
+|---|---|---|
+| `makeinputrc.py` | `kp_mesh_scf`/`kp_mesh_pscf` default was `[1, 1, 1]` (0-indexed inner); Perl `@kpMesh[$grp][1..3]` is 1-indexed | **Fixed** during makeinput Cluster MI-B → `[None, 1, 1, 1]` |
+| `pdb2sklrc.py` | Scalars only (file names, float buffer, bool) | OK |
+| `condenserc.py` | Scalars only (str, bool, float) | OK |
+| `bond_analysisrc.py` | Two flat element-name lists (`bridges`, `ions`) consumed as unordered sets by `sc.compute_qn`; box borders exposed as scalar keys (`box_min1..3`, `box_max1..3`) and reassembled into the 1-indexed `box_borders` at construction time | OK |
+| `make_reactionsrc.py` | Pure scalars (int, str, float, bool) | OK |
+| `mod_structrc.py` | `abc_order`/`xyz_order` default was `[1, 2, 3]` (0-indexed, mismatched with `sc.set_abc_xyz_assignment_order` which reads `[1..3]`); critical crash on every invocation | **Fixed** during mod_struct Cluster MS-D → `[None, 1, 2, 3]` |
+
+Two rc files had list defaults that silently crossed a
+`StructureControl` call boundary expecting 1-indexed input.
+Both are now fixed.  The other four rc files either store
+scalars only or assemble their list-valued settings into
+1-indexed layouts at construction time.
+
+---
+
 ### `makeinput.py`
 
 - [Pass 1 + gap coverage](mi_pass1.md) — 1 BUG, 1 DRIFT, all other
@@ -113,6 +136,66 @@ convention, severity, recommended fix.
   its own.  No fix phase required.  Two pre-existing non-indexing
   observations flagged for a separate follow-up: `-b`/`--buffer`
   is parsed but never applied, and there is minor docstring drift.
+
+### `mod_struct.py`
+
+- [Pass 1](mod_struct_pass1.md) — **4 BUGs, 1 DRIFT, all
+  fixed**.
+  The findings are:
+  - **MS-A** (BUG): `hkl` passed to `sc.prep_surface` as a
+    0-indexed 3-element list; prep_surface expects
+    1-indexed `[None, h, k, l]`.
+  - **MS-B** (BUG): `block_border` passed to
+    `sc.cut_block` as a doubly-0-indexed 3×2 list;
+    cut_block expects doubly-1-indexed.
+  - **MS-C** (BUG): `sphere_loc` passed to
+    `sc.cut_sphere` as a 0-indexed 3-element list;
+    cut_sphere expects 1-indexed.
+  - **MS-D** (BUG): `abc_order` / `xyz_order` passed to
+    `sc.set_abc_xyz_assignment_order` as 0-indexed
+    `[1, 2, 3]` from the rc defaults.  **Critical**: this
+    call happens unconditionally at the start of `main()`,
+    so every invocation of `mod_struct.py` crashes with
+    `IndexError` *before any operation runs*.  Confirmed
+    with a live smoke test.
+  - **MS-E** (DRIFT): `op["sc"]` / `op["mirror"]` inner
+    layout is 0-indexed; `do_supercell` bridges via
+    `i + 1`.  Functional but diverges from Perl's
+    1-indexed convention.
+  No tests exercise `mod_struct.py`; the critical MS-D bug
+  has been latent since the initial port.
+  `make_reactions.py` invokes `mod_struct.py` as a
+  subprocess in its condense pipeline, so this crash would
+  break that pipeline too.
+
+### `make_reactions.py`
+
+- [Pass 1](make_reactions_pass1.md) — **zero findings**.  The
+  ~3130-line file is noticeably more disciplined than the
+  earlier ports: every nested-list data structure (per-atom,
+  per-S-atom, per-bond, per-angle) uses the `[None]`-sentinel
+  1-indexed layout on every dimension; every
+  `StructureControl` call-boundary matches the post-Cluster-A
+  interfaces; and `AngleData.hooke_angle_coeffs` is already
+  built with the 1-indexed inner layout that `condense.py`
+  needed Cluster CD-B to retrofit.  Four transient
+  0-indexed scratch buffers (`trans_vector1`/`2`,
+  `plane_coords`, `origin`, `angle_set`) were verified
+  against the Perl original and are legitimate 0-indexed
+  subprocess-argv / local scratch structures — matches Perl.
+  No fix phase required.
+
+### `bond_analysis.py`
+
+- [Pass 1](bond_analysis_pass1.md) — 0 BUGs, 1 DRIFT, **fixed**.
+  The single finding (Cluster BA-A) was the `bond_info_temp`
+  inner 3-element layout in `_get_bonds_to_show` (Perl
+  1-indexed `[1..3]`, Python 0-indexed).  Three touch points
+  updated in one function; every other subsystem in the
+  ~3429-line file preserves Perl 1-indexed conventions.  No
+  test coverage exists for `bond_analysis.py`; post-fix
+  verification by inspection + full `structure_control`
+  suite (295 passed, 23 skipped — unchanged).
 
 ### `condense.py`
 

@@ -341,12 +341,19 @@ Defaults are given in ./mod_structrc.py or $OLCAO_RC/mod_structrc.py.
 
             if flag == "-sc":
                 # -sc SC1 SC2 SC3 MIRROR1 MIRROR2 MIRROR3
+                # Stored 1-indexed ``[None, v1, v2, v3]`` to match
+                # Perl's ``@sc[$op][1..3]`` / ``@mirror[$op][1..3]``
+                # layout and to let ``do_supercell`` read the values
+                # via the same 1-indexed axis loop used to write
+                # ``sc.supercell`` / ``sc.sc_mirror``.
                 sc_vals = [
+                    None,
                     int(argv[n + 1]),
                     int(argv[n + 2]),
                     int(argv[n + 3]),
                 ]
                 mirror_vals = [
+                    None,
                     int(argv[n + 4]),
                     int(argv[n + 5]),
                     int(argv[n + 6]),
@@ -504,7 +511,11 @@ Defaults are given in ./mod_structrc.py or $OLCAO_RC/mod_structrc.py.
 
             elif flag == "-rothkl":
                 # -rothkl H K L
+                # Build hkl in the 1-indexed ``[None, h, k, l]``
+                # layout so it can be passed straight to
+                # ``sc.prep_surface``, which reads slots 1..3.
                 hkl = [
+                    None,
                     float(argv[n + 1]),
                     float(argv[n + 2]),
                     float(argv[n + 3]),
@@ -551,13 +562,20 @@ Defaults are given in ./mod_structrc.py or $OLCAO_RC/mod_structrc.py.
                 #   <-xyz FROMX TOX FROMY TOY FROMZ TOZ |
                 #    -abc FROMA TOA FROMB TOB FROMC TOC>
 
-                # Default zone is "in" (0).
+                # Default zone is "in" (0).  ``block_border`` is
+                # built doubly 1-indexed so it can be passed
+                # straight to ``sc.cut_block``, which reads
+                # slots ``[axis][1]`` / ``[axis][2]`` for
+                # ``axis in 1..3``.  Slot 0 on every level is an
+                # unused sentinel matching Perl's
+                # ``@blockBorder[1..3][1..2]``.
                 zone = 0
                 abcxyz_flag = 1  # Default to xyz.
                 block_border = [
-                    [0.0, 0.0],
-                    [0.0, 0.0],
-                    [0.0, 0.0],
+                    None,
+                    [None, 0.0, 0.0],
+                    [None, 0.0, 0.0],
+                    [None, 0.0, 0.0],
                 ]
 
                 # Scan sub-options (up to 3 passes,
@@ -576,11 +594,12 @@ Defaults are given in ./mod_structrc.py or $OLCAO_RC/mod_structrc.py.
                             and argv[n + 1] == "-xyz"):
                         abcxyz_flag = 1
                         block_border = [
-                            [float(argv[n + 2]),
+                            None,
+                            [None, float(argv[n + 2]),
                              float(argv[n + 3])],
-                            [float(argv[n + 4]),
+                            [None, float(argv[n + 4]),
                              float(argv[n + 5])],
-                            [float(argv[n + 6]),
+                            [None, float(argv[n + 6]),
                              float(argv[n + 7])],
                         ]
                         n += 7
@@ -589,11 +608,12 @@ Defaults are given in ./mod_structrc.py or $OLCAO_RC/mod_structrc.py.
                             and argv[n + 1] == "-abc"):
                         abcxyz_flag = 0
                         block_border = [
-                            [float(argv[n + 2]),
+                            None,
+                            [None, float(argv[n + 2]),
                              float(argv[n + 3])],
-                            [float(argv[n + 4]),
+                            [None, float(argv[n + 4]),
                              float(argv[n + 5])],
-                            [float(argv[n + 6]),
+                            [None, float(argv[n + 6]),
                              float(argv[n + 7])],
                         ]
                         n += 7
@@ -610,12 +630,14 @@ Defaults are given in ./mod_structrc.py or $OLCAO_RC/mod_structrc.py.
                 #             -atabc A B C]
                 #            [-radius R] [-zone in|out]
 
-                # Defaults.
+                # Defaults.  ``sphere_loc`` is built 1-indexed
+                # ``[None, x, y, z]`` so it can be passed straight
+                # to ``sc.cut_sphere``, which reads slots 1..3.
                 zone = 0          # "in"
                 target_atom = 0   # No specific atomic site.
                 sphere_rad = 4.0  # Default radius.
                 abcxyz_flag = 1   # Default to xyz.
-                sphere_loc = [0.0, 0.0, 0.0]
+                sphere_loc = [None, 0.0, 0.0, 0.0]
 
                 # Scan sub-options (up to 3 passes,
                 # matching original Perl logic).
@@ -643,6 +665,7 @@ Defaults are given in ./mod_structrc.py or $OLCAO_RC/mod_structrc.py.
                             and argv[n + 1] == "-atxyz"):
                         abcxyz_flag = 1
                         sphere_loc = [
+                            None,
                             float(argv[n + 2]),
                             float(argv[n + 3]),
                             float(argv[n + 4]),
@@ -653,6 +676,7 @@ Defaults are given in ./mod_structrc.py or $OLCAO_RC/mod_structrc.py.
                             and argv[n + 1] == "-atabc"):
                         abcxyz_flag = 0
                         sphere_loc = [
+                            None,
                             float(argv[n + 2]),
                             float(argv[n + 3]),
                             float(argv[n + 4]),
@@ -714,19 +738,25 @@ Defaults are given in ./mod_structrc.py or $OLCAO_RC/mod_structrc.py.
         # Title.
         self.title = args.title
 
-        # ABC-XYZ axis assignment order.
+        # ABC-XYZ axis assignment order.  The stored lists are
+        # 1-indexed ``[None, axis1, axis2, axis3]`` to match the
+        # ``sc.set_abc_xyz_assignment_order`` interface and Perl's
+        # ``@abc[1..3]`` / ``@xyz[1..3]`` convention.  argparse
+        # delivers ``args.abcxyz`` as a flat 4-element 0-indexed
+        # list ``[abc1, xyz1, abc2, xyz2]`` so we bridge via the
+        # obvious element-wise assignments.
         if args.abcxyz is not None:
-            self.abc_order[0] = args.abcxyz[0]
-            self.xyz_order[0] = args.abcxyz[1]
-            self.abc_order[1] = args.abcxyz[2]
-            self.xyz_order[1] = args.abcxyz[3]
+            self.abc_order[1] = args.abcxyz[0]
+            self.xyz_order[1] = args.abcxyz[1]
+            self.abc_order[2] = args.abcxyz[2]
+            self.xyz_order[2] = args.abcxyz[3]
             # The third axis is determined by the first two:
             # |1+2-6|=3; |1+3-6|=2; |2+3-6|=1
-            self.abc_order[2] = abs(
-                self.abc_order[0] + self.abc_order[1] - 6
+            self.abc_order[3] = abs(
+                self.abc_order[1] + self.abc_order[2] - 6
             )
-            self.xyz_order[2] = abs(
-                self.xyz_order[0] + self.xyz_order[1] - 6
+            self.xyz_order[3] = abs(
+                self.xyz_order[1] + self.xyz_order[2] - 6
             )
 
     # --------------------------------------------------------------
@@ -794,16 +824,18 @@ def do_supercell(op, sc):
 
     Sets the supercell and mirror parameters on the StructureControl
     instance and then calls apply_supercell().  The supercell and
-    sc_mirror arrays are 1-indexed (index 0 is a placeholder).
+    sc_mirror arrays are 1-indexed (index 0 is a placeholder), and
+    so are the ``op["sc"]`` / ``op["mirror"]`` source lists built
+    by the ``-sc`` parser.
 
     Args:
-        op: Operation dict with keys 'sc' ([sc1,sc2,sc3]) and
-            'mirror' ([m1,m2,m3]).
+        op: Operation dict with keys 'sc' ([None, sc1, sc2, sc3])
+            and 'mirror' ([None, m1, m2, m3]).
         sc: StructureControl instance.
     """
-    for i in range(3):
-        sc.supercell[i + 1] = op["sc"][i]
-        sc.sc_mirror[i + 1] = op["mirror"][i]
+    for axis in range(1, 4):
+        sc.supercell[axis] = op["sc"][axis]
+        sc.sc_mirror[axis] = op["mirror"][axis]
     sc.apply_supercell()
 
 
