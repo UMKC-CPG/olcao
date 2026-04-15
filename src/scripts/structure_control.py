@@ -1665,13 +1665,22 @@ class StructureControl:
                     # skip the fallback compute_crystal_parameters() call below.
                     explicit_abc = True
                     # Extract a,b,c magnitudes and alpha,beta,gamma angles.
-                    # Angles arrive in degrees; store in radians.
+                    # The PDB file carries angles in degrees; we store both
+                    # the degree form (used by print_olcao and other output
+                    # writers) and the radian form (used by get_abc_vectors
+                    # and all downstream trigonometric math).  Keeping both
+                    # populated here mirrors compute_crystal_parameters(),
+                    # which also sets both representations whenever it is
+                    # the one providing the lattice angles.
                     self.mag[1] = float(line[6:15])
                     self.mag[2] = float(line[15:24])
                     self.mag[3] = float(line[24:33])
-                    self.angle[1] = PI / 180.0 * float(line[33:40])
-                    self.angle[2] = PI / 180.0 * float(line[40:47])
-                    self.angle[3] = PI / 180.0 * float(line[47:54])
+                    self.angle_deg[1] = float(line[33:40])
+                    self.angle_deg[2] = float(line[40:47])
+                    self.angle_deg[3] = float(line[47:54])
+                    self.angle[1] = PI / 180.0 * self.angle_deg[1]
+                    self.angle[2] = PI / 180.0 * self.angle_deg[2]
+                    self.angle[3] = PI / 180.0 * self.angle_deg[3]
                     # Convert a,b,c + angles into x,y,z vector lattice format.
                     self.get_abc_vectors()
                     self.get_angle_sine()

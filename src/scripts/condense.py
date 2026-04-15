@@ -922,6 +922,23 @@ class Condense:
 
         with open(raw_pdb, 'r') as raw, \
                 open(fixed_pdb, 'w') as fixed:
+            # Write a CRYST1 record carrying the requested cubic cell_size.
+            # Packmol does not emit one on its own.  Without this line the
+            # downstream pdb2skl.py reader would fall through to a call to
+            # compute_crystal_parameters(), which fits a tight bounding box
+            # around the atoms and then calls shift_xyz_center().  The net
+            # effect is that packmol.skl inherits a fabricated lattice
+            # (often far smaller than the requested cell) and every atom is
+            # physically translated away from where packmol placed it.
+            # Writing a CRYST1 record here forces read_pdb() to take its
+            # explicit_abc branch and skip both the fake lattice and the
+            # recentering shift.  The CRYST1 fixed-column layout that we
+            # emit here is documented in structure_control.py read_pdb().
+            cs = self.cell_size
+            fixed.write(
+                f"CRYST1{cs:9.3f}{cs:9.3f}{cs:9.3f}"
+                f"{90.0:7.2f}{90.0:7.2f}{90.0:7.2f} P 1           1\n"
+            )
             for line in raw:
                 values = line.strip().split()
                 if not values:
@@ -1633,13 +1650,22 @@ region simcell block EDGE EDGE EDGE EDGE EDGE EDGE units box
                     vz = random.uniform(-ms, ms)
                 else:
                     # Force collision mode: aim molecules toward each other
-                    # along x-axis.
+                    # along the x-axis.  The magnitudes are derived from
+                    # max_speed rather than hardcoded hypersonic values, so
+                    # a user-tunable, finite speed is used and the NVT
+                    # thermostat can absorb the excess kinetic energy over
+                    # a reasonable relaxation window instead of slamming
+                    # the molecules to a halt.  Molecule 2 gets the full
+                    # max_speed along +x; molecule 3 gets 0.7*max_speed
+                    # along -x, preserving the asymmetric sequential-
+                    # collision geometry (mol 2 reaches the central mol 1
+                    # first, then mol 3 arrives into the aggregate).
                     if mol == 1:
                         vx, vy, vz = 0.0, 0.0, 0.0
                     elif mol == 2:
-                        vx, vy, vz = 1.0, 0.0, 0.0
+                        vx, vy, vz = ms, 0.0, 0.0
                     elif mol == 3:
-                        vx, vy, vz = -0.7, 0.0, 0.0
+                        vx, vy, vz = -0.7 * ms, 0.0, 0.0
                     else:
                         print("Force collision mode does not work for more "
                             "than three molecules.")
@@ -1653,7 +1679,14 @@ region simcell block EDGE EDGE EDGE EDGE EDGE EDGE units box
                     f"group mol_tmp delete\n"
                 )
                 current_atom += n_atoms
-            lmpin.write("\n")
+
+            # Zero the net linear momentum of the whole system before the
+            # stages begin.  Without this, any residual COM drift from the
+            # per-molecule velocity assignments above causes the whole cell
+            # to translate through the periodic box, and the Nose-Hoover
+            # thermostat then has to spend energy fighting that drift in
+            # addition to whatever other equilibration it is doing.
+            lmpin.write("velocity all zero linear\n\n")
 
             # Fill the LAMMPS input file with the requested stages.  Each stage
             # specifies an ensemble type (nve or nvt) and optional box
@@ -1742,7 +1775,7 @@ print "Lattice constant (Angstrom) is ${length};"
         # ------------------------------------------------
         slurm_file = "slurm"
         with open(slurm_file, 'w') as slurm:
-            slurm.write("""
+            slurm.write("""\
 #!/bin/bash
 #SBATCH -p rulisp-lab,general
 #SBATCH -A rulisp-lab
