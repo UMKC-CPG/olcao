@@ -1597,7 +1597,25 @@ region simcell block EDGE EDGE EDGE EDGE EDGE EDGE units box
 
             # Insert the bond reactions.
             lmpin.write("\n# Bond Reactions\n")
-            lmpin.write("fix reaction all bond/react " "stabilization no &\n")
+            # Stabilization is essential: when a reaction fires, the
+            # newly-formed bond is created at whatever inter-atom
+            # distance triggered the reaction (typically several Å),
+            # but its harmonic rest length is ~1.45 Å. The resulting
+            # spring potential energy is enormous and would launch the
+            # newly-bonded atoms out of the simulation box within a few
+            # timesteps under plain nve. With stabilization yes,
+            # bond/react automatically attaches an internal nve/limit
+            # to the recently-reacted atoms (group bond_react_MASTER_
+            # group), capping their per-step displacement at the value
+            # given here (0.05 Å) until the spring energy bleeds off.
+            # It also creates a dynamic group statted_grp_REACT
+            # containing every atom NOT currently being stabilized;
+            # the main integrator below uses that group so stabilized
+            # atoms are not double-integrated.
+            lmpin.write(
+                "fix reaction all bond/react "
+                "stabilization yes statted_grp 0.05 &\n"
+            )
             for rxn in range(1, self.num_reaction_types + 1):
                 # Prepare the map file and print the react command for each
                 # reaction.
@@ -1612,7 +1630,7 @@ region simcell block EDGE EDGE EDGE EDGE EDGE EDGE units box
                 prob = self.rxn_probability[rxn]
                 line = (
                     f"  react RXN{rxn} all 100 0.0 "
-                    f"3.0 MOLpre{rxn} MOLpost{rxn} "
+                    f"5.0 MOLpre{rxn} MOLpost{rxn} "
                     f"{map_file} prob {prob} "
                     f"{rand_seed}"
                 )
@@ -1708,17 +1726,26 @@ region simcell block EDGE EDGE EDGE EDGE EDGE EDGE units box
                         f" z scale {sf} remap x\n"
                     )
 
-                # Write the ensemble fix.
+                # Write the ensemble fix.  The integrator group is
+                # statted_grp_REACT (auto-created by the bond/react
+                # stabilization machinery above) rather than 'all', so
+                # atoms recently involved in a reaction are integrated
+                # only by bond/react's internal nve/limit and not also
+                # by this fix.  Before any reaction fires, the group
+                # contains every atom and the behavior is identical to
+                # using 'all'.
                 ens = self.ensemble_type[stage].lower()
                 if ens == "nve":
-                    lmpin.write("fix ensemble all nve\n")
+                    lmpin.write(
+                        "fix ensemble statted_grp_REACT nve\n"
+                    )
                 elif ens == "nvt":
                     t_start = self.ensemble_temp_start[stage]
                     t_end = self.ensemble_temp_end[stage]
                     t_damp = self.ensemble_temp_damp[stage]
                     lmpin.write(
-                        f"fix ensemble all nvt temp"
-                        f" {t_start} {t_end}"
+                        f"fix ensemble statted_grp_REACT nvt"
+                        f" temp {t_start} {t_end}"
                         f" {t_damp}\n"
                     )
                 else:
