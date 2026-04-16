@@ -207,6 +207,33 @@
   symmetry-equivalent atoms produce identical Q* and
   bond order -- confirmed correct
 
+### Phase G -- UFF bond parameter database (DESIGN 4)
+
+- [x] C32. Create bond_parameters.dat with UFF per-element
+  parameters for Z=1-54 (DESIGN 4.4)
+- [x] C33. Rewrite BondData class in condense.py to read
+  bond_parameters.dat and compute K_ij, r_ij via
+  get_bond_params() (DESIGN 4.6 items 1-3)
+- [x] C34. Add bond_parameter_scale to condenserc.py,
+  ScriptSettings, Condense.__init__, and
+  parse_input_file (DESIGN 4.5, 4.6 item 5)
+- [x] C35. Replace linear bond scans in create_lammps_files
+  and normalize_types with get_bond_params() calls,
+  applying bond_parameter_scale (DESIGN 4.6 items 3-5)
+- [x] C36. Update CMakeLists.txt to install
+  bond_parameters.dat instead of bonds.dat
+  (DESIGN 4.7)
+- [ ] C37. Validate: run a condense.py job end-to-end and
+  verify that LAMMPS Bond Coeffs contain realistic
+  UFF force constants and bond lengths
+
+### Future -- Angle parameter improvements (DESIGN 4.8)
+
+- [ ] D5. Evaluate angle parameter improvements: expand
+  element coverage in angles.dat, replace uniform
+  k = 500.0 with triplet-dependent values, add
+  angle_parameter_scale keyword (DESIGN 4.8)
+
 ---
 
 ## ARCHIVE

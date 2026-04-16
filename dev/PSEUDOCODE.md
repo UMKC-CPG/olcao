@@ -1142,3 +1142,127 @@ totalSystemDos over the energy grid) must use
 deltaDOS is stored in Hartree while the DOS is in
 states/eV. This applies to both the Gaussian and LAT
 paths.
+
+---
+
+## 9. UFF Bond Parameter Computation (DESIGN 4.2)
+
+Given two atomic numbers, compute the UFF equilibrium
+bond length and harmonic force constant.  The per-element
+parameters (covalent radius r_i, effective charge Zstar_i,
+GMP electronegativity chi_i) are read once from
+`bond_parameters.dat` and stored in arrays indexed by
+atomic number Z.
+
+The prefactor 332.06 = 664.12 / 2 converts from the UFF
+spring constant convention E = (1/2) k (r-r0)^2 to the
+LAMMPS `bond_style harmonic` convention E = K (r-r0)^2.
+
+```
+# -------------------------------------------------
+# Data structures (populated once by init_bond_data
+# from bond_parameters.dat):
+#
+#   num_uff_elements : int
+#       Number of elements in the table
+#       (= maximum Z covered).
+#   uff_r(Z)     : covalent radius (Angstroms)
+#   uff_Zstar(Z) : effective charge
+#   uff_chi(Z)   : GMP electronegativity (eV)
+#
+# These arrays are indexed by atomic number Z
+# (1-based: uff_r(1) = hydrogen, etc.).
+#
+# The reader uses the Z column on each data line
+# as the array index (not the sequential row
+# number).  This makes the file order-independent.
+# -------------------------------------------------
+
+UFF_K_PREFACTOR = 332.06
+
+function get_bond_params(z1, z2):
+    # Compute UFF equilibrium bond length and
+    # LAMMPS harmonic force constant for the
+    # element pair (z1, z2).
+    #
+    # Inputs:
+    #   z1, z2 : atomic numbers (order irrelevant;
+    #            the formula is symmetric)
+    #
+    # Returns:
+    #   K_ij : force constant (kcal/mol/A^2)
+    #   r_ij : equilibrium bond length (Angstroms)
+    #
+    # Requires uff_r, uff_Zstar, uff_chi arrays
+    # to be initialized from bond_parameters.dat.
+
+    # --- Validate element coverage ---
+    if z1 < 1 or z1 > num_uff_elements:
+        error("Element Z =", z1,
+              "not in bond_parameters.dat")
+    if z2 < 1 or z2 > num_uff_elements:
+        error("Element Z =", z2,
+              "not in bond_parameters.dat")
+
+    # --- Look up per-element parameters ---
+    r1    = uff_r(z1)
+    r2    = uff_r(z2)
+    Zs1   = uff_Zstar(z1)
+    Zs2   = uff_Zstar(z2)
+    chi1  = uff_chi(z1)
+    chi2  = uff_chi(z2)
+
+    # --- Electronegativity correction ---
+    # r_EN shortens the bond between elements of
+    # unequal electronegativity.  For homonuclear
+    # bonds (chi1 == chi2), r_EN = 0 and the bond
+    # length is simply r1 + r2.
+    denom_EN = chi1 * r1 + chi2 * r2
+    if denom_EN > 0:
+        r_EN = r1 * r2
+               * (sqrt(chi1) - sqrt(chi2))**2
+               / denom_EN
+    else:
+        r_EN = 0.0
+
+    # --- Equilibrium bond length ---
+    r_ij = r1 + r2 - r_EN
+
+    # --- Force constant ---
+    # Guard against zero or near-zero bond length
+    # (should not occur for physical elements, but
+    # protects against corrupt data).
+    if r_ij <= 0:
+        error("Non-positive bond length for Z =",
+              z1, z2, "; check bond_parameters.dat")
+
+    K_ij = UFF_K_PREFACTOR * Zs1 * Zs2
+           / r_ij**3
+
+    return K_ij, r_ij
+```
+
+**Usage in create_lammps_files and normalize_types.**
+Both output paths contain a linear scan over
+`hooke_bond_coeffs` to match element pairs to force
+constants.  Both are replaced by a direct call to
+`get_bond_params`:
+
+```
+# Current code (linear scan, in both paths):
+#   for hb = 1 to num_hooke_bonds:
+#       if atom1_z == hbc[hb][1]
+#              and atom2_z == hbc[hb][2]:
+#           k  = hbc[hb][3]
+#           r0 = hbc[hb][4]
+#
+# New code (direct computation, both paths):
+    K_ij, r_ij = bond_data.get_bond_params(
+                     atom1_z, atom2_z)
+    K_ij = K_ij * self.bond_parameter_scale
+```
+
+The `bond_parameter_scale` multiplier (default 1.0,
+defined in `condenserc.py`, overridable in condense.in)
+is applied after the UFF computation in **both**
+output paths.  It scales only K_ij, not r_ij.

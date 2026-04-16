@@ -1030,6 +1030,308 @@ inside `uolcao`). Two consequences:
 
 ---
 
+## 4. UFF Bond Parameter Database
+
+### 4.1 Motivation
+
+The current `bonds.dat` enumerates specific element pairs
+with hand-tuned force constants and rest bond lengths.  It
+covers only six elements (H, B, C, N, O, Si) across 14 bond
+types.  Every force constant is a uniform 5000.0 kcal/mol/A^2
+-- roughly 15 times stiffer than physically realistic values
+for typical covalent bonds.  Expanding coverage to 36 or more
+elements in the pair-listing format is impractical: 36
+elements yield up to 666 unique pairs, and 54 elements
+yield 1,485.
+
+A scalable alternative stores per-element parameters and
+computes the equilibrium bond length and harmonic force
+constant for any pair on the fly, using the Universal Force
+Field (UFF) formulas (Rappe et al. 1992).  The new file is
+named `bond_parameters.dat` to distinguish it from the legacy
+`bonds.dat` format.
+
+### 4.2 UFF Bond Stretching Model
+
+The UFF describes bond stretching with a harmonic potential:
+
+  E = K_ij * (r - r_ij)^2
+
+where K_ij is the force constant (kcal/mol/A^2) and r_ij
+is the equilibrium bond length (Angstroms).  The LAMMPS
+`bond_style harmonic` uses this same convention: the K
+parameter absorbs the factor of 1/2 that appears in the
+physics textbook form E = (1/2) k x^2.
+
+For any element pair (i, j), UFF defines:
+
+**Equilibrium bond length:**
+
+  r_ij = r_i + r_j - r_EN
+
+  r_EN = r_i * r_j * (sqrt(chi_i) - sqrt(chi_j))^2
+         / (chi_i * r_i + chi_j * r_j)
+
+where r_i and r_j are single-bond covalent radii
+(Angstroms) and r_EN is an electronegativity correction
+that shortens bonds between elements of unequal
+electronegativity.  For homonuclear bonds (same element),
+chi_i = chi_j so r_EN = 0 and the equilibrium length
+reduces to r_ij = 2 * r_i.
+
+**Force constant (LAMMPS harmonic convention):**
+
+  K_ij = 332.06 * Zstar_i * Zstar_j / r_ij^3
+
+The prefactor 332.06 = 664.12 / 2 absorbs the 1/2 that
+converts from the UFF convention E = (1/2) k (r-r0)^2 to
+the LAMMPS convention E = K (r-r0)^2.  Zstar_i and Zstar_j
+are the UFF effective charges (dimensionless).  The 664.12
+constant carries units of kcal*A/mol and encodes the
+fundamental relationship between bond stiffness, effective
+nuclear charges, and bond length.
+
+Each element requires only three tabulated parameters:
+
+  Parameter  Meaning                       Units
+  --------------------------------------------------
+  r_i        Single-bond covalent radius   Angstroms
+  Zstar_i    Effective charge              (none)
+  chi_i      GMP electronegativity         eV
+
+The formula is symmetric in i and j, so the computed values
+are independent of element ordering.  However, the calling
+code continues to enforce the Z_1 <= Z_2 convention used
+throughout the codebase (bond analysis output, tag
+construction, pair matching).  The `get_bond_params` method
+accepts Z arguments in any order but the callers in
+`create_lammps_files` canonicalize to Z_1 <= Z_2 before
+constructing bond tags, exactly as the current code does.
+
+**Validation against established force fields.**  UFF-derived
+values agree with AMBER within 10-20 %, which is typical
+inter-force-field variation for single bonds:
+
+  Bond   UFF K       UFF r0   AMBER K     AMBER r0
+         (kcal/      (A)      (kcal/      (A)
+         mol/A^2)             mol/A^2)
+  ----------------------------------------------------
+  C-H    ~331        1.11     ~340        1.09
+  C-C    ~350        1.51     ~310        1.53
+  C-N    ~360        1.44     ~337        1.47
+  O-H    ~540        0.98     ~553        0.96
+  Si-O   ~285        1.63     --          1.61
+
+### 4.3 Element Coverage
+
+The UFF provides parameters for every element from Z = 1
+through Z = 103.  The initial database covers Z = 1 through
+Z = 54 (hydrogen through xenon), spanning:
+
+- All main-group elements through the 5th period
+- All 3d transition metals (Sc through Zn)
+- All 4d transition metals (Y through Cd)
+- Halogens, chalcogens, and pnictogens
+- Noble gases (He, Ne, Ar, Kr, Xe)
+
+Noble gases are included for table completeness.  Their very
+small effective charges yield negligible force constants, so
+they will not produce meaningful bonds in practice.
+
+**Contiguity requirement.**  The table must contain every
+element from Z = 1 through `NUM_UFF_ELEMENTS` with no gaps.
+The validation check in `get_bond_params` tests
+`z > num_uff_elements`, so a gap would leave an uninitialized
+slot that could silently produce wrong results.  Extension
+beyond Z = 54 requires appending rows for every Z up to the
+new maximum -- no code changes are needed.
+
+### 4.4 New bond_parameters.dat File Format
+
+The new file `bond_parameters.dat` replaces `bonds.dat`.  Its
+format changes from pair-enumeration to a per-element parameter
+table.  Comment lines (beginning with `#`) are permitted and
+skipped by the reader.  The tagged-section structure is
+preserved for consistency with other OLCAO data files:
+
+```
+# UFF bond stretching parameters.
+#
+# Source: Rappe, A. K.; Casewit, C. J.; Colwell, K. S.;
+#   Goddard, W. A., III; Skiff, W. M.
+#   J. Am. Chem. Soc. 1992, 114, 10024-10035.
+#   DOI: 10.1021/ja00051a040
+#
+# For any element pair (i, j):
+#   r_ij = r_i + r_j - r_EN
+#   r_EN = r_i r_j (sqrt(chi_i) - sqrt(chi_j))^2
+#          / (chi_i r_i + chi_j r_j)
+#   K_ij = 332.06 Zstar_i Zstar_j / r_ij^3
+#          (kcal/mol/A^2, LAMMPS harmonic convention)
+NUM_UFF_ELEMENTS
+54
+UFF_BOND_PARAMS
+#  Z    r_i     Zstar_i  chi_i    Element
+   1   0.3540  0.7120   4.5280  # H
+   2   0.8490  0.0980   9.6600  # He
+   3   1.3360  1.0260   3.0060  # Li
+  ...
+  54   ...                       # Xe
+```
+
+Each data line provides: the atomic number Z, the covalent
+radius r_i (Angstroms), the effective charge Zstar_i, and the
+GMP electronegativity chi_i (eV).  The element comment at the
+end of each line is optional but aids readability.
+
+**Reader semantics.**  The Z column on each row is used as
+the array index: the reader stores the parameters at
+position Z in the arrays, not at the sequential row number.
+This makes the file order-independent and robust against
+accidental reordering.  If a Z value appears that is outside
+the range 1..`NUM_UFF_ELEMENTS`, the reader exits with an
+error.
+
+### 4.5 Bond Scale Factor
+
+A new parameter `bond_parameter_scale` provides a global
+multiplier for all bond force constants.  Its default value
+(1.0) is defined in `condenserc.py`, loaded into the
+`Condense` object by `assign_rc_defaults()`, and can be
+overridden by a `bond_parameter_scale` keyword in the
+condense.in input file (read by `parse_input_file()`):
+
+  bond_parameter_scale 0.9
+
+The value is dimensionless and multiplies every computed K_ij
+before writing the LAMMPS Bond Coeffs section.  Values below
+1.0 loosen all bonds; values above 1.0 stiffen them.
+
+Only K_ij is scaled -- the equilibrium bond length r_ij is
+left unchanged.  This lets the user tune overall bond rigidity
+while preserving the equilibrium geometry of the system.  The
+motivation is that UFF force constants are approximate by
+nature (10-20 % inter-force-field variation is typical), so a
+global rescaling provides a simple empirical knob for tuning
+the dynamic behavior of the condensation simulation without
+modifying the underlying database.
+
+### 4.6 Impact on condense.py
+
+The `BondData` class is restructured:
+
+1. **Reading.**  `init_bond_data()` reads the per-element
+   parameter table (r_i, Zstar_i, chi_i) and stores it in
+   arrays indexed by atomic number Z.  This replaces the
+   pair-enumerated `hooke_bond_coeffs` list.
+
+2. **Querying.**  A new method `get_bond_params(z1, z2)`
+   computes and returns (K_ij, r_ij) for any element pair
+   using the UFF formulas from section 4.2.  Argument order
+   does not matter (the formula is symmetric).
+
+3. **Bond lookup in create_lammps_files.**  The existing
+   linear scan over `hooke_bond_coeffs` is replaced by a
+   single call to `get_bond_params(z1, z2)` -- O(1) per
+   lookup instead of O(n).
+
+4. **Bond lookup in normalize_types.**  The same linear
+   scan appears a second time in `normalize_types()`,
+   where unique bond types are matched to coefficients
+   for rewriting LAMMPS files with unified type indices.
+   This scan is replaced by `get_bond_params(z1, z2)` in
+   exactly the same way as item 3.
+
+5. **Scale factor plumbing.**  The default value of
+   `bond_parameter_scale` (1.0) is defined in
+   `condenserc.py` and loaded by `assign_rc_defaults()`.
+   It can then be overridden by the `bond_parameter_scale`
+   keyword in condense.in (read by `parse_input_file()`).
+   The multiplier is applied to K_ij in **both** output
+   paths: `create_lammps_files` (initial LAMMPS data file)
+   and `normalize_types` (rewritten LAMMPS data file with
+   unified type indices).  Both paths must produce the
+   same scaled force constants.
+
+6. **Error handling.**  If either Z exceeds the range of
+   the parameter table, print the element symbol and Z
+   number and exit with a clear message directing the user
+   to extend the bond_parameters.dat table.
+
+### 4.7 Backward Compatibility
+
+The new `bond_parameters.dat` is not readable by the Perl
+`BondData.pm` module, which expects the old `bonds.dat`
+pair-listing format.  Since `condense.py` is the active
+development path and `BondData.pm` belongs to the deprecated
+Perl toolchain, this is accepted.  Users who still need the
+Perl `condense` script can retain a local copy of the old
+`bonds.dat` file.
+
+**Build system.**  `src/data/CMakeLists.txt` must be updated
+to install `bond_parameters.dat` instead of `bonds.dat` in
+the DATABASES list.  The old `bonds.dat` is removed from the
+install set.
+
+### 4.8 Future Work: Angle Parameters
+
+The `angles.dat` file is not changed by this work.  An
+analysis of whether the per-element UFF strategy used for
+bonds (section 4.2) can be applied to angles reveals that
+the angle case is fundamentally different.  The following
+considerations should be revisited in a future session.
+
+**Why per-element UFF does not transfer directly to angles.**
+
+1. **Multiple rest angles per triplet.**  The same element
+   triplet (e.g., C-C-C) appears in angles.dat with several
+   distinct equilibrium angles (60 deg for cyclopropane,
+   108 deg for cyclopentane, 180 deg for linear chains).
+   The tolerance column exists to match the *observed* angle
+   from the bond analysis to the correct database entry.  A
+   per-element UFF lookup gives one natural angle per vertex
+   atom type (e.g., C_3 = 109.47 deg), which cannot
+   distinguish these chemical environments.
+
+2. **UFF angle potential form mismatch.**  The UFF angle
+   bending potential is a cosine Fourier series (Rappe
+   eq. 8), not a simple harmonic.  LAMMPS `angle_style
+   harmonic` uses E = K (theta - theta_0)^2.  Adopting
+   UFF angle parameters would require either approximating
+   the cosine form as harmonic near theta_0 or switching
+   to a different LAMMPS angle style -- both are significant
+   changes beyond the data file.
+
+3. **Complex force constant formula.**  The UFF angle force
+   constant K_IJK (Rappe eq. 13) depends on the bond lengths
+   of both arms (r_IJ and r_JK), all three effective charges,
+   and the vertex atom's natural angle.  This is considerably
+   more involved than the clean two-element bond formula
+   K_ij = 332.06 * Zstar_i * Zstar_j / r_ij^3.
+
+**What CAN be improved within the existing format.**
+
+The triplet-enumeration + tolerance structure is well-suited
+to the underlying physics (multiple angles per triplet is
+physically real).  The improvements are in coverage and
+parameter quality, not format:
+
+1. Expand element coverage beyond H, B, C, N, O, Si by
+   adding triplet entries for common bonding environments
+   of additional elements, using UFF natural angles
+   (theta_0 from Table 1) as rest angles for the most
+   common hybridizations.
+
+2. Replace the uniform k = 500.0 with more realistic,
+   triplet-dependent force constants derived from UFF or
+   from the literature.
+
+3. Add an `angle_parameter_scale` keyword in condense.in,
+   following the same pattern as `bond_parameter_scale`
+   (section 4.5).
+
+---
+
 ## References
 
 P. E. Bloechl, O. Jepsen, O. K. Andersen, "Improved
@@ -1043,3 +1345,14 @@ Phys. Rev. B 49, 16223 (1994). Key equations:
   `cornerDOSWt_LAT` from `bloechlCornerDOSWt` for
   energy-resolved DOS/PDOS
 - Eqs. 22-24: correction terms for improved accuracy
+
+A. K. Rappe, C. J. Casewit, K. S. Colwell, W. A.
+Goddard III, W. M. Skiff, "UFF, a Full Periodic Table
+Force Field for Molecular Mechanics and Molecular
+Dynamics Simulations," J. Am. Chem. Soc. 1992, 114,
+10024-10035.  DOI: 10.1021/ja00051a040
+- Table 1: per-element parameters (r_i, Zstar_i,
+  chi_i) used for bond stretching (section 4)
+- Eq. 3: bond stretching force constant formula
+- Eq. 2: natural bond length with electronegativity
+  correction

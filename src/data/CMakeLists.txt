@@ -5,7 +5,7 @@ message("At the set of databases.")
 
 set (DATABASES
 angles.dat atomicBDB.tgz atomicPDB.tgz
-bonds.dat
+bond_parameters.dat
 elements.dat
 isotopes.dat
 curve_colors.dat curve_marks.dat curve_styles.dat precursorDB.tgz

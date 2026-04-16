@@ -155,6 +155,7 @@ USAGE: condense.py [-i $inputFile] [-f] | [-help]
 
 import argparse as ap
 import glob
+import math
 import os
 import random
 import re
@@ -165,50 +166,124 @@ from datetime import datetime
 
 
 # ================================================================
-# BondData: Read Hooke bond force constants from bonds.dat
+# BondData: UFF bond parameters from bond_parameters.dat
 # ================================================================
+#
+# The Universal Force Field (UFF) provides a set of per-element
+# parameters from which the equilibrium bond length and harmonic
+# force constant for *any* element pair can be computed.  This
+# replaces the old pair-enumeration approach (bonds.dat) which
+# required a hand-tuned entry for every specific element pair.
+#
+# Reference:
+#   Rappe, A. K.; Casewit, C. J.; Colwell, K. S.;
+#   Goddard, W. A., III; Skiff, W. M.
+#   J. Am. Chem. Soc. 1992, 114, 10024-10035.
+#   DOI: 10.1021/ja00051a040
+#
+# Each element needs only three tabulated values:
+#   r_i      -- single-bond covalent radius (Angstroms)
+#   Zstar_i  -- effective charge (dimensionless)
+#   chi_i    -- GMP electronegativity (eV)
+#
+# From these, the equilibrium bond length between elements
+# i and j is (Rappe eq. 2):
+#
+#   r_ij = r_i + r_j - r_EN
+#
+# where r_EN is an electronegativity correction that shortens
+# bonds between elements of unequal electronegativity:
+#
+#   r_EN = r_i * r_j * (sqrt(chi_i) - sqrt(chi_j))^2
+#          / (chi_i * r_i + chi_j * r_j)
+#
+# For homonuclear bonds (chi_i == chi_j), r_EN = 0 and the
+# bond length is simply 2 * r_i.
+#
+# The harmonic force constant is (Rappe eq. 3, converted to
+# the LAMMPS bond_style harmonic convention E = K(r-r0)^2):
+#
+#   K_ij = 332.06 * Zstar_i * Zstar_j / r_ij^3
+#
+# The 332.06 prefactor equals 664.12 / 2.  The 664.12 comes
+# from the UFF paper (units: kcal*A/mol) and encodes the
+# relationship between bond stiffness, effective nuclear
+# charges, and bond length.  The division by 2 converts from
+# the physics convention E = (1/2) k x^2 to the LAMMPS
+# convention E = K x^2 where K already absorbs the 1/2.
+#
+# The resulting K_ij is in kcal/mol/A^2 and r_ij is in
+# Angstroms -- both are the units expected by LAMMPS
+# bond_style harmonic with "units real".
+
+UFF_K_PREFACTOR = 332.06
+
 
 class BondData:
-    """Stores Hooke bond force constants from $OLCAO_DATA/bonds.dat.
+    """Per-element UFF bond parameters from
+    $OLCAO_DATA/bond_parameters.dat.
 
-    This class reads the bond data file which contains spring constant and rest
-    bond length information for pairs of elements identified by their atomic Z
-    numbers.
+    Stores the covalent radius, effective charge, and GMP
+    electronegativity for each element (indexed by atomic
+    number Z).  The equilibrium bond length and harmonic
+    force constant for any element pair are computed on
+    the fly by ``get_bond_params()`` using the UFF
+    formulas described above.
+
+    The old pair-enumeration format (bonds.dat) listed
+    specific (Z1, Z2, k, r0) entries and required a
+    linear scan to match each bond.  This per-element
+    approach covers all pairs automatically -- including
+    pairs that the old file did not contain -- and the
+    lookup is O(1) per pair.
 
     Attributes
     ----------
-    num_hooke_bonds : int
-        The number of Hooke bond entries in the database.
-    hooke_bond_coeffs : list of list
-        Doubly 1-indexed.  ``hooke_bond_coeffs[bond]`` is itself a
-        1-indexed list ``[None, Z1, Z2, k, r0]`` where slot 1 is the
-        atomic number of the first element, slot 2 the second, slot 3
-        the spring constant, and slot 4 the rest bond length in
-        Angstroms.  Slot 0 on every level is the unused sentinel
-        matching Perl's ``$hookeBondCoeffs[$bond][1..4]`` layout.
+    num_uff_elements : int
+        Maximum atomic number Z covered by the table.
+        The table must be contiguous from Z=1 through
+        this value.
+    uff_r : list of float
+        Covalent radius r_i (Angstroms), indexed by Z.
+        Slot 0 is unused.
+    uff_zstar : list of float
+        Effective charge Zstar_i (dimensionless),
+        indexed by Z.  Slot 0 is unused.
+    uff_chi : list of float
+        GMP electronegativity chi_i (eV), indexed by Z.
+        Slot 0 is unused.
     """
 
     def __init__(self):
-        self.num_hooke_bonds = 0
-        # 1-indexed: hooke_bond_coeffs[bond] = [None, Z1, Z2, k, r0]
-        self.hooke_bond_coeffs = [None]
+        self.num_uff_elements = 0
+        # Indexed by atomic number Z (slot 0 unused).
+        self.uff_r = [0.0]
+        self.uff_zstar = [0.0]
+        self.uff_chi = [0.0]
         self._init_data = False
 
     def init_bond_data(self):
-        """Read the bond data file.
+        """Read the UFF bond parameter file.
 
-        The file is located at $OLCAO_DATA/bonds.dat and is
-        structured with tagged sections:
-          NUM_HOOKE_BONDS
+        The file is $OLCAO_DATA/bond_parameters.dat.
+        Comment lines (starting with #) are skipped.
+        Tagged sections:
+          NUM_UFF_ELEMENTS
           <count>
-          HOOKE_BOND_COEFFS
-          <Z1> <Z2> <k> <r0>  (one line per bond)
+          UFF_BOND_PARAMS
+          <Z> <r_i> <Zstar_i> <chi_i>  (one per element)
 
-        This method is safe to call multiple times; subsequent calls return
-        immediately.
+        The Z column on each data line is used as the
+        array index (not the sequential row number),
+        making the file order-independent and robust
+        against accidental reordering.  The table must
+        be contiguous from Z=1 through NUM_UFF_ELEMENTS
+        with no gaps.
+
+        Safe to call multiple times; subsequent calls
+        return immediately.
         """
 
-        # Skip if already initialized.
         if self._init_data:
             return
         self._init_data = True
@@ -216,45 +291,185 @@ class BondData:
         olcao_data = os.environ.get('OLCAO_DATA')
         if not olcao_data:
             sys.exit("Error: $OLCAO_DATA is not set.")
-        fn = os.path.join(olcao_data, "bonds.dat")
+        fn = os.path.join(
+            olcao_data, "bond_parameters.dat"
+        )
 
         with open(fn, 'r') as f:
-            # Read the number of bonds.
+            # Read the element count tag.
             values = self._prep_line(f)
-            if values[0] != "NUM_HOOKE_BONDS":
-                sys.exit(f"Expecting NUM_HOOKE_BONDS tag in {fn}")
+            if values[0] != "NUM_UFF_ELEMENTS":
+                sys.exit(
+                    "Expecting NUM_UFF_ELEMENTS tag"
+                    f" in {fn}"
+                )
             values = self._prep_line(f)
-            self.num_hooke_bonds = int(values[0])
+            self.num_uff_elements = int(values[0])
 
-            # Read the Hooke bond coefficients.
+            # Pre-allocate arrays indexed by Z.  Slot 0
+            # is unused; valid indices are 1..N.
+            self.uff_r = (
+                [0.0] * (self.num_uff_elements + 1)
+            )
+            self.uff_zstar = (
+                [0.0] * (self.num_uff_elements + 1)
+            )
+            self.uff_chi = (
+                [0.0] * (self.num_uff_elements + 1)
+            )
+
+            # Read the parameter tag.
             values = self._prep_line(f)
-            if values[0] != "HOOKE_BOND_COEFFS":
-                sys.exit(f"Expecting HOOKE_BOND_COEFFS tag in {fn}")
-            for bond in range(1, self.num_hooke_bonds + 1):
+            if values[0] != "UFF_BOND_PARAMS":
+                sys.exit(
+                    "Expecting UFF_BOND_PARAMS tag"
+                    f" in {fn}"
+                )
+
+            # Read one line per element.  The Z column
+            # on each line is used as the array index
+            # so that file order does not matter.
+            for _ in range(self.num_uff_elements):
                 values = self._prep_line(f)
-                # 1-indexed inner: slot 0 is the None sentinel, slots
-                # 1..4 carry [Z1, Z2, k, r0] to match Perl's
-                # ``$hookeBondCoeffs[$bond][1..4]`` convention.
-                self.hooke_bond_coeffs.append([
-                    None,
-                    int(values[0]),    # Z of first element (slot 1)
-                    int(values[1]),    # Z of second element (slot 2)
-                    float(values[2]),  # k spring constant (slot 3)
-                    float(values[3]),  # Rest bond length (slot 4)
-                ])
+                z = int(values[0])
+                if z < 1 or z > self.num_uff_elements:
+                    sys.exit(
+                        f"Z = {z} out of range"
+                        f" 1..{self.num_uff_elements}"
+                        f" in {fn}"
+                    )
+                self.uff_r[z] = float(values[1])
+                self.uff_zstar[z] = float(values[2])
+                self.uff_chi[z] = float(values[3])
+
+    def get_bond_params(self, z1, z2):
+        """Compute UFF bond length and force constant.
+
+        Given two atomic numbers, this method computes
+        the equilibrium bond length r_ij and the harmonic
+        force constant K_ij using the UFF formulas:
+
+          r_ij = r_i + r_j - r_EN        (Rappe eq. 2)
+          K_ij = 332.06 * Z*_i * Z*_j    (Rappe eq. 3,
+                 / r_ij^3                  LAMMPS conv.)
+
+        where r_EN is the electronegativity correction:
+
+          r_EN = r_i * r_j
+                 * (sqrt(chi_i) - sqrt(chi_j))^2
+                 / (chi_i * r_i + chi_j * r_j)
+
+        The electronegativity correction shortens the
+        bond when the two elements have different
+        electronegativities.  For homonuclear bonds
+        (same element), r_EN = 0 because the numerator
+        vanishes, and r_ij simplifies to 2 * r_i.
+
+        The formula is symmetric in (z1, z2), so the
+        caller may pass the arguments in any order.
+
+        Parameters
+        ----------
+        z1, z2 : int
+            Atomic numbers of the two bonded elements.
+
+        Returns
+        -------
+        k_ij : float
+            Harmonic force constant (kcal/mol/A^2) in
+            the LAMMPS convention E = K(r - r0)^2.
+        r_ij : float
+            Equilibrium bond length (Angstroms).
+        """
+
+        # Validate that both elements are within the
+        # range covered by bond_parameters.dat.
+        if (z1 < 1 or z1 > self.num_uff_elements
+                or z2 < 1
+                or z2 > self.num_uff_elements):
+            sys.exit(
+                f"Element Z = {z1} or {z2} is outside"
+                f" the bond_parameters.dat range"
+                f" (1..{self.num_uff_elements})."
+                f" Extend the table to cover this"
+                f" element."
+            )
+
+        # Look up the three per-element parameters
+        # for each atom in the bond.
+        r1 = self.uff_r[z1]
+        r2 = self.uff_r[z2]
+        zs1 = self.uff_zstar[z1]
+        zs2 = self.uff_zstar[z2]
+        chi1 = self.uff_chi[z1]
+        chi2 = self.uff_chi[z2]
+
+        # Electronegativity correction r_EN (Rappe
+        # eq. 2).  This term shortens bonds between
+        # elements of unequal electronegativity.  For
+        # homonuclear bonds (chi1 == chi2) the
+        # numerator (sqrt(chi1) - sqrt(chi2))^2 is
+        # zero, so r_EN = 0 and the bond length
+        # reduces to r1 + r2.
+        denom_en = chi1 * r1 + chi2 * r2
+        if denom_en > 0.0:
+            r_en = (
+                r1 * r2
+                * (math.sqrt(chi1)
+                   - math.sqrt(chi2)) ** 2
+                / denom_en
+            )
+        else:
+            r_en = 0.0
+
+        # Equilibrium bond length (Rappe eq. 2).
+        r_ij = r1 + r2 - r_en
+
+        # Guard against corrupt data producing a
+        # non-positive bond length (should not happen
+        # for valid UFF parameters).
+        if r_ij <= 0.0:
+            sys.exit(
+                f"Non-positive bond length for"
+                f" Z = {z1}, {z2}."
+                f" Check bond_parameters.dat."
+            )
+
+        # Harmonic force constant (Rappe eq. 3,
+        # converted to LAMMPS convention).  The
+        # UFF_K_PREFACTOR = 332.06 = 664.12 / 2
+        # absorbs the 1/2 that converts from the
+        # UFF convention E = (1/2) k (r-r0)^2 to
+        # the LAMMPS convention E = K (r-r0)^2.
+        # The result is in kcal/mol/A^2.
+        k_ij = (
+            UFF_K_PREFACTOR * zs1 * zs2
+            / r_ij ** 3
+        )
+
+        return k_ij, r_ij
 
     @staticmethod
     def _prep_line(f):
-        """Read and split a non-empty line from file handle f.
+        """Read and split a non-blank, non-comment line.
 
-        Skips blank lines and strips leading/trailing whitespace.
+        Skips blank lines and lines starting with #.
+        Strips leading and trailing whitespace before
+        splitting on whitespace.
+
+        Returns
+        -------
+        list of str
+            The whitespace-split tokens from the next
+            non-blank, non-comment line.  Returns an
+            empty list at end-of-file.
         """
         while True:
             line = f.readline()
             if not line:
-                return[]
+                return []
             line = line.strip()
-            if line:
+            if line and not line.startswith('#'):
                 return line.split()
 
 
@@ -410,6 +625,9 @@ class ScriptSettings:
         self.force_collision = default_rc["force_collision"]
         self.cell_size = default_rc["cell_size"]
         self.max_speed = default_rc["max_speed"]
+        self.bond_parameter_scale = (
+            default_rc["bond_parameter_scale"]
+        )
         self.rxn_template_dir = default_rc["rxn_template_dir"]
 
     def parse_command_line(self):
@@ -536,6 +754,9 @@ class Condense:
         # ----- Simulation parameters -----
         self.cell_size = settings.cell_size
         self.max_speed = settings.max_speed
+        self.bond_parameter_scale = (
+            settings.bond_parameter_scale
+        )
         self.rxn_template_dir = settings.rxn_template_dir
 
         # ----- Stage data (populated by parse_input_file) -----
@@ -588,9 +809,9 @@ class Condense:
     def init_env(self):
         """Initialize the element, bond, and angle databases.
 
-        Reads the periodic table data from $OLCAO_DATA/elements.dat, the Hooke
-        bond force constants from $OLCAO_DATA/bonds.dat, and the Hooke angle
-        force constants from $OLCAO_DATA/angles.dat.
+        Reads the periodic table data from $OLCAO_DATA/elements.dat, the UFF
+        bond parameters from $OLCAO_DATA/bond_parameters.dat, and the Hooke
+        angle force constants from $OLCAO_DATA/angles.dat.
         """
 
         # Add the installation bin directory to the Python path so that we can
@@ -663,6 +884,14 @@ class Condense:
                 # ----- Max speed -----
                 elif keyword == "max_speed":
                     self.max_speed = float(values[1])
+
+                # ----- Bond parameter scale -----
+                # Global multiplier for UFF bond force
+                # constants.  Overrides condenserc.py.
+                elif keyword == "bond_parameter_scale":
+                    self.bond_parameter_scale = (
+                        float(values[1])
+                    )
 
                 # ----- Stage -----
                 # Each "stage" line defines one compression/ thermostat stage.
@@ -1221,19 +1450,20 @@ class Condense:
                 ordered_bonded_atoms.append([None, atom, bonded_atom])
                 ordered_bond_type.append(found)
 
-                # Collect the coefficients for each unique bond type.  This
-                # should work if bonds.dat always has the lower Z atom listed
-                # first.  hbc is 1-indexed: slots 1..4 are Z1, Z2, k, r0.
-                # The stored entry is 1-indexed ``[None, k, r0]`` to
-                # match Perl's ``$uniqueBondCoeffs[$bond][1..2]``.
-                for hb in range(1, bd.num_hooke_bonds + 1):
-                    hbc = bd.hooke_bond_coeffs[hb]
-                    if (atom1_z == hbc[1]
-                            and atom2_z == hbc[2]):
-                        # Ensure the unique_bond_coeffs list is large enough.
-                        while len(unique_bond_coeffs) <= (found):
-                            unique_bond_coeffs.append(None)
-                        unique_bond_coeffs[found] = [None, hbc[3], hbc[4]]
+                # Compute UFF bond parameters for this
+                # element pair and apply the global
+                # bond_parameter_scale multiplier.  The
+                # stored entry is 1-indexed [None, k, r0]
+                # to match the Perl layout.
+                k_ij, r_ij = bd.get_bond_params(
+                    atom1_z, atom2_z
+                )
+                k_ij *= self.bond_parameter_scale
+                while len(unique_bond_coeffs) <= found:
+                    unique_bond_coeffs.append(None)
+                unique_bond_coeffs[found] = (
+                    [None, k_ij, r_ij]
+                )
 
             # --- Process angles ---
             atom_num_angles = (
@@ -2102,15 +2332,17 @@ mpirun lmp -in lammps.in
             if atom1_z > atom2_z:
                 atom1_z, atom2_z = atom2_z, atom1_z
 
-            # hbc is 1-indexed: slots 1..4 are Z1, Z2, k, r0.
-            # Store a 1-indexed [None, k, r0] pair.
-            for hb in range(1, bd.num_hooke_bonds + 1):
-                hbc = bd.hooke_bond_coeffs[hb]
-                if (((atom1_z == hbc[1]
-                      and atom2_z == hbc[2])
-                     or (atom2_z == hbc[1]
-                         and atom1_z == hbc[2]))):
-                    unique_bond_coeffs[ub] = [None, hbc[3], hbc[4]]
+            # Compute UFF bond parameters for this
+            # element pair and apply the global
+            # bond_parameter_scale multiplier.  Store
+            # a 1-indexed [None, k, r0] pair.
+            k_ij, r_ij = bd.get_bond_params(
+                atom1_z, atom2_z
+            )
+            k_ij *= self.bond_parameter_scale
+            unique_bond_coeffs[ub] = (
+                [None, k_ij, r_ij]
+            )
 
         # ------------------------------------------------
         # Compute coefficients for each unique angle type
