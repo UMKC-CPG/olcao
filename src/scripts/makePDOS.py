@@ -620,7 +620,7 @@ class PDOSData():
             for part in parts:
                 # Initialize a list of filter terms for
                 # this format position.
-                filter_terms = []
+                filter_terms = [None]
 
                 # Separate the individual terms.
                 term_tokens = part.split()
@@ -733,20 +733,23 @@ class PDOSData():
             if not self.settings.xanes:
                 # Use the sequence number (i) and request
                 # the TOTAL PDOS for this unit.
-                col_def_entry[2] = [str(i)]
-                col_def_entry[3] = ['TOTAL']
+                col_def_entry[2] = [None, str(i)]
+                col_def_entry[3] = [None, 'TOTAL']
             else:
                 # The first num_units columns are for the
                 # s+d orbitals and the next num_units columns
                 # are for the p orbitals.
                 if i <= self.num_units:
-                    col_def_entry[2] = [str(i)]
-                    col_def_entry[3] = ['s', 'd']
+                    col_def_entry[2] = [None, str(i)]
+                    col_def_entry[3] = [
+                        None, 's', 'd'
+                    ]
                 else:
                     col_def_entry[2] = [
+                        None,
                         str(i - self.num_units)
                     ]
-                    col_def_entry[3] = ['p']
+                    col_def_entry[3] = [None, 'p']
 
             self.col_defs.append(col_def_entry)
 
@@ -914,7 +917,7 @@ class PDOSData():
                     # Check if it matches any acceptable
                     # value (or the wildcard "all").
                     matched_term = False
-                    for acc_val in acceptable:
+                    for acc_val in acceptable[1:]:
                         if (current_term_value == acc_val
                                 or acc_val == 'all'):
                             matched_term = True
@@ -939,7 +942,7 @@ class PDOSData():
                 last_fmt = len(self.format_names) - 1
                 requested = self.col_defs[col_idx][last_fmt]
 
-                for req_label in requested:
+                for req_label in requested[1:]:
                     # Compare the requested label to each of
                     # the available columns.
                     for label_idx in range(
@@ -1023,7 +1026,7 @@ class PDOSData():
                 "Stopping."
             )
 
-        self.col_defs[col_idx][1] = [name]
+        self.col_defs[col_idx][1] = [None, name]
 
     # --------------------------------------------------------
     # print_results: write the output file
@@ -1055,7 +1058,7 @@ class PDOSData():
         # Put on the header of column labels.
         out_fh.write(f"{'ENERGY':>12s}")
         for col_idx in range(1, self.num_col_defs + 1):
-            label = self.col_defs[col_idx][1][0]
+            label = self.col_defs[col_idx][1][1]
             out_fh.write(f"{label:>12s}")
         out_fh.write('\n')
 

@@ -131,8 +131,9 @@ def parameters_and_defaults():
         "fwhm": 2.0,
 
         # Number of mesh grid points along the a, b, c
-        #   lattice directions.
-        "num_mesh_points": [10, 10, 10],
+        #   lattice directions.  1-indexed: [None, na, nb, nc]
+        #   to match the Perl @numMeshPoints[1..3] convention.
+        "num_mesh_points": [None, 10, 10, 10],
 
         # Maximum distance (Angstroms) between a bond
         #   midpoint and a mesh point for the bond to

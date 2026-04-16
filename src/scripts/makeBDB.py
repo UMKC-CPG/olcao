@@ -509,9 +509,9 @@ def get_element_data(element):
     #   principal quantum number (QN_n), and the up-spin
     #   and down-spin electron counts for each occupied
     #   orbital.
-    orbital_qn_n = [[] for _ in range(4)]
-    up_charge = [[] for _ in range(4)]
-    dn_charge = [[] for _ in range(4)]
+    orbital_qn_n = [[None] for _ in range(4)]
+    up_charge = [[None] for _ in range(4)]
+    dn_charge = [[None] for _ in range(4)]
 
     for qn_l in range(4):
 
@@ -563,10 +563,10 @@ def get_element_data(element):
 
         # Contraction file data (two variants).
         'contract_core': [
-            core_orbitals_0, core_orbitals_1
+            None, core_orbitals_0, core_orbitals_1
         ],
         'contract_vale': [
-            vale_orbitals_0, vale_orbitals_1
+            None, vale_orbitals_0, vale_orbitals_1
         ],
         'total_orbitals': total_orbitals,
         'orbital_terms': orbital_terms,
@@ -761,7 +761,7 @@ def make_atom_scf(
                 n_orb = (
                     edata['num_vale_orbitals'][qn_l]
                 )
-                for idx in range(n_orb):
+                for idx in range(1, n_orb + 1):
                     qn_n = (
                         edata['orbital_qn_n']
                         [qn_l][idx]
@@ -949,10 +949,11 @@ def make_contracts(
         elem_name = _ed.element_names[element]
         elem_dir = os.path.join(atomic_bdb, elem_name)
 
-        # Define the file names for the two variants:
-        #   [0] = with core orbitals sequestered.
-        #   [1] = no core (all orbitals in valence).
+        # Define the file names for the two variants.
+        #   1-indexed: [1] = with core orbitals sequestered,
+        #   [2] = no core (all orbitals in valence).
         file_names = [
+            None,
             os.path.join(
                 elem_dir,
                 f"contract1_{elem_name}"
@@ -964,8 +965,8 @@ def make_contracts(
         ]
 
         # Clean up if we are forcing a recomputation.
-        if force and os.path.exists(file_names[0]):
-            for fname in file_names:
+        if force and os.path.exists(file_names[1]):
+            for fname in file_names[1:]:
                 if os.path.exists(fname):
                     os.remove(fname)
 
@@ -973,8 +974,8 @@ def make_contracts(
         edata = get_element_data(element)
 
         # Write both contract file variants.
-        #   file_idx 0 = with-core, 1 = nocore.
-        for file_idx in range(2):
+        #   file_idx 1 = with-core, 2 = nocore.
+        for file_idx in range(1, 3):
             core = edata['contract_core'][file_idx]
             vale = edata['contract_vale'][file_idx]
 

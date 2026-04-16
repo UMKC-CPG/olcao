@@ -388,7 +388,7 @@ def read_2cbo(settings):
             for _ in range(num_orb):
                 values = prep_line(f)
                 rec['orbital_charges'].append(
-                    [values[0], values[1]]
+                    [None, values[0], values[1]]
                 )
 
             # NUM_BONDED_ATOMS (integer)
@@ -402,6 +402,7 @@ def read_2cbo(settings):
             for _ in range(num_bonded):
                 values = prep_line(f)
                 rec['bonded_atoms'].append([
+                    None,
                     int(values[0]),
                     float(values[1]),
                     float(values[2]),
@@ -446,7 +447,7 @@ def _remove_bond(atom_rec, target_atom_id):
     for i, bond in enumerate(
         atom_rec['bonded_atoms']
     ):
-        if bond[0] == target_atom_id:
+        if bond[1] == target_atom_id:
             del atom_rec['bonded_atoms'][i]
             atom_rec['num_bonded_atoms'] -= 1
             break
@@ -631,6 +632,7 @@ def read_3cbo(settings, bo_data, num_atoms):
             # the unit cell.
             values = prep_line(f)
             bo3c_positions[bo3c] = [
+                None,
                 float(values[1]),
                 float(values[2]),
                 float(values[3]),
@@ -661,6 +663,7 @@ def read_3cbo(settings, bo_data, num_atoms):
                 bo_data[a_id][
                     'bonded_atoms'
                 ].append([
+                    None,
                     next_3c_atom, bl, current_3cbo
                 ])
                 bo_data[a_id][
@@ -763,7 +766,7 @@ def write_2cbo(settings, bo_data, num_atoms,
 
             for orb in rec['orbital_charges']:
                 f.write(
-                    f"{orb[0]} {orb[1]}\n"
+                    f"{orb[1]} {orb[2]}\n"
                 )
 
             f.write(
@@ -773,9 +776,9 @@ def write_2cbo(settings, bo_data, num_atoms,
 
             for bond in rec['bonded_atoms']:
                 f.write(
-                    f"{bond[0]} "
                     f"{bond[1]} "
-                    f"{bond[2]}\n"
+                    f"{bond[2]} "
+                    f"{bond[3]}\n"
                 )
 
             f.write(
@@ -863,9 +866,9 @@ def add_to_struct(settings, num_atoms, num_3c_bonds,
                 fout.write(
                     f" {atom_number}"
                     f"  {type_number}"
-                    f" {pos[0]}"
                     f" {pos[1]}"
-                    f" {pos[2]} 3c\n"
+                    f" {pos[2]}"
+                    f" {pos[3]} 3c\n"
                 )
 
             # Read and reproduce the potential site
@@ -894,9 +897,9 @@ def add_to_struct(settings, num_atoms, num_3c_bonds,
                 fout.write(
                     f" {atom_number}"
                     f"  {type_number}"
-                    f" {pos[0]}"
                     f" {pos[1]}"
-                    f" {pos[2]} 3c\n"
+                    f" {pos[2]}"
+                    f" {pos[3]} 3c\n"
                 )
 
 

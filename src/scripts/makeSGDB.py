@@ -348,10 +348,15 @@ class SpaceGroupDB():
         self.num_symmetry_ops = 0
 
         # Reset the symmetry data structures for each new
-        #   subgroup.
+        #   subgroup.  The op-axis is 1-indexed with a
+        #   [None] sentinel at slot 0 to match the Perl
+        #   convention where $numSymmetryOps is pre-
+        #   incremented before the first store.
         self.symmetry_ops = [
-                [[], [], []] for _ in range(3)]
-        self.symmetry_shifts = [[] for _ in range(3)]
+                [[None], [None], [None]]
+                for _ in range(3)]
+        self.symmetry_shifts = [
+                [None] for _ in range(3)]
 
         # Read symmetry components and save each one until we
         #   find either the end (signified by a blank line) or
@@ -524,7 +529,7 @@ class SpaceGroupDB():
         # Copy all the symmetry operations recorded so far
         #   and apply the shift_vector to the symmetry_shifts
         #   as they are copied.
-        for sym_op in range(current_num_ops):
+        for sym_op in range(1, current_num_ops + 1):
             self.num_symmetry_ops += 1
             for axis in range(3):
                 for axis2 in range(3):
@@ -572,7 +577,7 @@ class SpaceGroupDB():
         #   third to the c.  The last triplet defines the
         #   amount of fractional shift to apply to each
         #   axis (a,b,c).
-        for op in range(self.num_symmetry_ops):
+        for op in range(1, self.num_symmetry_ops + 1):
             outfile.write("\n")
             for axis in range(3):
                 a = self.symmetry_ops[axis][0][op]

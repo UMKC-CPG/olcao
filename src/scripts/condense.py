@@ -1102,7 +1102,7 @@ class Condense:
         ordered_species_tag = [None] * (num_ordered_species + 1)
         ordered_species_element = [None] * (num_ordered_species + 1)
         ordered_species_masses = [None] * (num_ordered_species + 1)
-        # ordered_species_pair_coeffs[sp] = [eps, sigma]
+        # ordered_species_pair_coeffs[sp] = [None, eps, sigma]
         ordered_species_pair_coeffs = [None] * (num_ordered_species + 1)
 
         bond_count = 0
@@ -1151,8 +1151,9 @@ class Condense:
                 # LJ pair coefficients.  The true LJ interaction is computed
                 # from the combination of coefficients from different elements.
                 ordered_species_pair_coeffs[sp] = [
-                    ed.lj_pair_coeffs[z][0],
+                    None,
                     ed.lj_pair_coeffs[z][1],
+                    ed.lj_pair_coeffs[z][2],
                 ]
 
             # --- Process bonds ---
@@ -1389,7 +1390,7 @@ class Condense:
             for sp in range(1, num_ordered_species + 1):
                 pc = ordered_species_pair_coeffs[sp]
                 lmp.write(
-                    f"{sp} {pc[0]} {pc[1]} "
+                    f"{sp} {pc[1]} {pc[2]} "
                     f"# {ordered_species_tag[sp]}\n"
                 )
 
@@ -2159,7 +2160,7 @@ mpirun lmp -in lammps.in
             vals = unique_atom_types[at].split()
             atom1_z = ed.get_element_z(vals[0])
             lj = ed.lj_pair_coeffs[atom1_z]
-            unique_lj_pair_coeffs[at] = f"{lj[0]} {lj[1]}"
+            unique_lj_pair_coeffs[at] = f"{lj[1]} {lj[2]}"
             unique_masses[at] = ed.atomic_masses[atom1_z]
 
         # ------------------------------------------------

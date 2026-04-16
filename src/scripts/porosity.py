@@ -237,8 +237,8 @@ Defaults are given in ./porosityrc.py or $OLCAO_RC/porosityrc.py.
         if args.num_mesh_points is not None:
             self.do_mesh = True
             self.do_res = False
-            self.num_mesh_points = list(
-                args.num_mesh_points
+            self.num_mesh_points = (
+                [None] + list(args.num_mesh_points)
             )
         elif args.resolution is not None:
             self.do_res = True
@@ -251,9 +251,9 @@ Defaults are given in ./porosityrc.py or $OLCAO_RC/porosityrc.py.
         #   computed after refinement.)
         if self.do_mesh:
             self.num_space_points = (
-                self.num_mesh_points[0]
-                * self.num_mesh_points[1]
+                self.num_mesh_points[1]
                 * self.num_mesh_points[2]
+                * self.num_mesh_points[3]
             )
         else:
             self.num_space_points = 0
@@ -305,7 +305,7 @@ def compute_resolution(settings, sc):
     axis_resolution = [None, 0.0, 0.0, 0.0]
     for axis in range(1, 4):
         axis_resolution[axis] = (
-            sc.mag[axis] / nmp[axis - 1]
+            sc.mag[axis] / nmp[axis]
         )
     return axis_resolution
 
@@ -357,14 +357,14 @@ def compute_mesh_and_refine_res(settings, sc):
 
     # Compute the mesh with the new resolution.
     for axis in range(1, 4):
-        settings.num_mesh_points[axis - 1] = int(
+        settings.num_mesh_points[axis] = int(
             sc.mag[axis] / axis_resolution[axis]
         )
 
     settings.num_space_points = (
-        settings.num_mesh_points[0]
-        * settings.num_mesh_points[1]
+        settings.num_mesh_points[1]
         * settings.num_mesh_points[2]
+        * settings.num_mesh_points[3]
     )
 
     return axis_resolution
@@ -406,9 +406,9 @@ def calc_void_points(settings, sc):
     #   pore.  ext_pore_map[a][b][c] == 0 means pore (void),
     #   non-zero means solid (within an atom's radius).
     pore_point_count = 0
-    for a_pt in range(1, nmp[0] + 1):
-        for b_pt in range(1, nmp[1] + 1):
-            for c_pt in range(1, nmp[2] + 1):
+    for a_pt in range(1, nmp[1] + 1):
+        for b_pt in range(1, nmp[2] + 1):
+            for c_pt in range(1, nmp[3] + 1):
                 if sc.ext_pore_map[a_pt][b_pt][c_pt] \
                         == 0:
                     pore_point_count += 1
@@ -522,15 +522,12 @@ def main():
 
     # ---- Step 7: Set up the sampling points ----
     nmp = settings.num_mesh_points
-    sc.set_xyz_mesh_points(nmp[0], nmp[1], nmp[2])
+    sc.set_xyz_mesh_points(nmp[1], nmp[2], nmp[3])
 
     # ---- Step 8: Compute the pore map ----
     #   Visit every atom and mark all mesh points near each
     #   atom as not void space.
-    #   compute_pore_map expects 1-indexed lists:
-    #   [None, val_a, val_b, val_c].
-    nmp_1idx = [None, nmp[0], nmp[1], nmp[2]]
-    sc.compute_pore_map(axis_resolution, nmp_1idx)
+    sc.compute_pore_map(axis_resolution, nmp)
 
     # ---- Step 9: Count void points ----
     pore_point_count = calc_void_points(settings, sc)

@@ -390,8 +390,8 @@ def in_bounds(atom_coords, box_bounds, tot_atoms):
     Parameters
     ----------
     atom_coords : list of list of float
-        atom_coords[i] = [x, y, z] for atom i (0-indexed).
-        Modified in place.
+        atom_coords[i] = [x, y, z] for atom i (1-indexed
+        with [None] at slot 0).  Modified in place.
     box_bounds : list of list of float
         box_bounds[axis] = [lo, hi] for axis 0=x, 1=y, 2=z.
     tot_atoms : int
@@ -402,7 +402,7 @@ def in_bounds(atom_coords, box_bounds, tot_atoms):
         box_length = (box_bounds[axis][1]
                       - box_bounds[axis][0])
 
-        for i in range(tot_atoms):
+        for i in range(1, tot_atoms + 1):
             # If the atom is beyond the box for this axis
             # in the positive direction, then we need to
             # shift the atom back by the length of the box
@@ -433,7 +433,8 @@ def max_coord(atom_coords, tot_atoms, axis):
     Parameters
     ----------
     atom_coords : list of list of float
-        atom_coords[i] = [x, y, z] for atom i (0-indexed).
+        atom_coords[i] = [x, y, z] for atom i (1-indexed
+        with [None] at slot 0).
     tot_atoms : int
         Total number of atoms.
     axis : int
@@ -445,8 +446,8 @@ def max_coord(atom_coords, tot_atoms, axis):
         The maximum coordinate value for the specified axis.
     """
 
-    max_so_far = atom_coords[0][axis]
-    for i in range(1, tot_atoms):
+    max_so_far = atom_coords[1][axis]
+    for i in range(2, tot_atoms + 1):
         if atom_coords[i][axis] > max_so_far:
             max_so_far = atom_coords[i][axis]
     return max_so_far
@@ -467,7 +468,8 @@ def min_coord(atom_coords, tot_atoms, axis):
     Parameters
     ----------
     atom_coords : list of list of float
-        atom_coords[i] = [x, y, z] for atom i (0-indexed).
+        atom_coords[i] = [x, y, z] for atom i (1-indexed
+        with [None] at slot 0).
     tot_atoms : int
         Total number of atoms.
     axis : int
@@ -479,8 +481,8 @@ def min_coord(atom_coords, tot_atoms, axis):
         The minimum coordinate value for the specified axis.
     """
 
-    min_so_far = atom_coords[0][axis]
-    for i in range(1, tot_atoms):
+    min_so_far = atom_coords[1][axis]
+    for i in range(2, tot_atoms + 1):
         if atom_coords[i][axis] < min_so_far:
             min_so_far = atom_coords[i][axis]
     return min_so_far
@@ -809,12 +811,13 @@ def read_frame(dump_file, target_timestep):
 
     f.close()
 
-    # Compact the atom data into contiguous 0-indexed
-    # lists, preserving the natural order of atom IDs.
-    # This handles any gaps in the ID sequence.
+    # Compact the atom data into contiguous 1-indexed
+    # lists with [None] at slot 0, preserving the natural
+    # order of atom IDs.  This matches the Perl convention
+    # where @atomCoords and @atomTypes walk 1..$totAtoms.
     sorted_ids = sorted(raw_types.keys())
-    atom_types = []
-    atom_coords = []
+    atom_types = [None]
+    atom_coords = [None]
     for aid in sorted_ids:
         atom_types.append(raw_types[aid])
         atom_coords.append(raw_coords[aid])
@@ -892,7 +895,7 @@ def process_coordinates(atom_coords, box_bounds,
     # Step 5: Shift coordinates so that all box boundaries
     # go from 0 to some positive number.
     shift = [-lo[ax] for ax in range(3)]
-    for i in range(tot_atoms):
+    for i in range(1, tot_atoms + 1):
         atom_coords[i][0] += shift[0]
         atom_coords[i][1] += shift[1]
         atom_coords[i][2] += shift[2]
@@ -905,7 +908,7 @@ def process_coordinates(atom_coords, box_bounds,
     # Step 6: Rewrite atom coordinates in fractional form
     # by dividing each coordinate by the corresponding
     # box dimension.
-    for i in range(tot_atoms):
+    for i in range(1, tot_atoms + 1):
         atom_coords[i][0] /= hi[0]
         atom_coords[i][1] /= hi[1]
         atom_coords[i][2] /= hi[2]
@@ -976,7 +979,7 @@ def write_skl(name, timestep, cell_dims, angles,
         # Write atom information in fractional coordinates.
         skl.write(f"fractional {tot_atoms}\n")
 
-        for i in range(tot_atoms):
+        for i in range(1, tot_atoms + 1):
             elem = elements[atom_types[i]]
             skl.write(
                 f"{elem:<10s}"

@@ -465,10 +465,10 @@ Defaults are given in ./makeBONDrc.py or $OLCAO_RC/makeBONDrc.py.
         parser.add_argument(
             '-steps', dest='num_mesh_points',
             nargs=3, type=int,
-            default=self.num_mesh_points,
+            default=self.num_mesh_points[1:],
             help=(
-                'Number of mesh points along a, b, c. '
-                f'Default: {self.num_mesh_points}'
+                'Mesh points along a, b, c. '
+                f'Default: {self.num_mesh_points[1:]}'
             ),
         )
         parser.add_argument(
@@ -523,7 +523,9 @@ Defaults are given in ./makeBONDrc.py or $OLCAO_RC/makeBONDrc.py.
 
         self.comp_atom = args.comp_atom
         self.fwhm = args.fwhm
-        self.num_mesh_points = list(args.num_mesh_points)
+        self.num_mesh_points = (
+            [None] + list(args.num_mesh_points)
+        )
         self.limit_dist = args.limit_dist
 
         # Handle -profile: if a value was given, enable the
@@ -1147,6 +1149,7 @@ def read_data(bd):
             #   the database.
             if bd.element_name[i].lower() == "3c":
                 # Fake atom for a 3-centre bond.
+                bd.element_z.append(None)
                 bd.atom_radius.append(
                     0.25 * s.radius_factor
                 )
@@ -2428,22 +2431,22 @@ def make_dx_mesh(bd):
     nmp = s.num_mesh_points
 
     # Compute the total number of points in this scan.
-    bd.num_scan_points = nmp[0] * nmp[1] * nmp[2]
+    bd.num_scan_points = nmp[1] * nmp[2] * nmp[3]
 
     # Compute the x, y, z delta necessary along each a, b, c
     #   axis.  delta[a,b,c][x,y,z]
     for axis in range(1, 4):  # Loop over x, y, z
         # a axis contribution to x, y, z delta.
         bd.delta[1][axis] = (
-            bd.real_lattice[1][axis] / (nmp[0] - 1)
+            bd.real_lattice[1][axis] / (nmp[1] - 1)
         )
         # b axis contribution to x, y, z delta.
         bd.delta[2][axis] = (
-            bd.real_lattice[2][axis] / (nmp[1] - 1)
+            bd.real_lattice[2][axis] / (nmp[2] - 1)
         )
         # c axis contribution to x, y, z delta.
         bd.delta[3][axis] = (
-            bd.real_lattice[3][axis] / (nmp[2] - 1)
+            bd.real_lattice[3][axis] / (nmp[3] - 1)
         )
 
     # Compute the position of each point along the path.
@@ -2451,9 +2454,9 @@ def make_dx_mesh(bd):
     bd.scan_points = [None, [None], [None], [None]]
     point = 0
 
-    for a_pt in range(nmp[0]):
-        for b_pt in range(nmp[1]):
-            for c_pt in range(nmp[2]):
+    for a_pt in range(nmp[1]):
+        for b_pt in range(nmp[2]):
+            for c_pt in range(nmp[3]):
                 point += 1
                 for axis in range(1, 4):
                     bd.scan_points[axis].append(
@@ -2554,7 +2557,7 @@ def print_dx_mesh(bd, unique_tag):
     with open(out_file, "w") as f:
         f.write(
             f"object 1 class gridpositions counts "
-            f"{nmp[0]} {nmp[1]} {nmp[2]}\n"
+            f"{nmp[1]} {nmp[2]} {nmp[3]}\n"
         )
         f.write("origin 0 0 0\n")
         f.write(
@@ -2572,7 +2575,7 @@ def print_dx_mesh(bd, unique_tag):
 
         f.write(
             f"object 2 class gridconnections counts "
-            f"{nmp[0]} {nmp[1]} {nmp[2]}\n"
+            f"{nmp[1]} {nmp[2]} {nmp[3]}\n"
         )
         f.write(
             f"object 3 class array type float rank 0 "
@@ -2580,9 +2583,9 @@ def print_dx_mesh(bd, unique_tag):
         )
 
         point_count = 0
-        for _ in range(nmp[0]):
-            for _ in range(nmp[1]):
-                for _ in range(nmp[2]):
+        for _ in range(nmp[1]):
+            for _ in range(nmp[2]):
+                for _ in range(nmp[3]):
                     point_count += 1
                     val = bd.mesh_bo_dx[point_count]
                     f.write(f"{val:12.8f} ")

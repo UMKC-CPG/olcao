@@ -227,9 +227,108 @@ scalars only or assemble their list-valued settings into
   `structure_control` suite that covers the shared call
   boundaries.
 
+### Priority-8 wave (remaining Perl → Python ports)
+
+A sweep of all remaining Python ports was completed as a single
+coordinated pass. Each file was audited against the 1-indexing rule
+with an accompanying `*_pass1.md` finding file.
+
+#### Clean (zero findings)
+
+- `collectSYBD.py` — not actually a Perl port (greenfield stub).
+  Noted for separate follow-up on unrelated syntax error.
+- `makeFittedRhoV.py` — cleanest port so far. `num_mesh_points` is
+  genuinely 0-indexed on both Perl and Python sides (a legitimate
+  match like `absoluteSysQn`), not drift.
+- `makePotDB.py` — element loop walks `range(1, N+1)`; element
+  serves as both 1-indexed key and literal nuclear Z.
+- `makeSYBD.py` — no `sc.*` intersection; `@KNames`/`@KValues`
+  genuinely 0-indexed in both languages.
+- `plotgraph.py` — pure plotting utility, no `sc.*` intersection.
+  `y_col`/`x_col` user-facing gnuplot column numbers legitimately
+  decremented at four crossing points.
+- `processPOPTC.py` — thin orchestrator around `makePDOS` +
+  `OLCAOkkc`. Five bookkeeping lists have explicit slot-0
+  sentinels.
+- `runIsoAtoms.py` — imports only `element_data.ElementData`
+  (already 1-indexed). Joins the zero-findings tier.
+- `skl2isaacs.py` — thin wrapper with only two scalar-arg `sc.*`
+  calls.
+- `skl2pdb.py` — same thin-wrapper pattern as `pdb2skl.py`.
+- `skl2vasp.py` — thin CLI+pre-sort wrapper; two scalar-arg
+  `sc.*` calls plus a 0-indexed line-buffer scratch matching Perl
+  `0..$numAtoms-1`.
+- `struct2skl.py` — three scalar-arg `sc.*` calls only.
+- `unpackOLCAODB.py` — filesystem utility, no scientific data.
+- `uolcao.py` — 2385-line orchestration driver for the Fortran
+  executables; no `sc.*` intersection.
+- `vasp2skl.py` — all per-atom and per-element lists use `[None]`
+  sentinels; `atom_counts` is a legitimate 0-indexed parse buffer.
+- `xyz2skl.py` — thin wrapper; one non-indexing data-flow bug
+  flagged for separate follow-up (`read_xyz` populates `title`
+  scalar but caller reads `system_title[1]`).
+
+#### Findings
+
+| File | Findings |
+|---|---|
+| [element_data.py](element_data_pass1.md) | **1 DRIFT (ED-A)** — `lj_pair_coeffs` inner pair stored as 0-indexed tuple; **root of deferred CD-E** |
+| [makeBOND.py](makeBOND_pass1.md) | 2 DRIFT — MBND-A (`num_mesh_points` inner axis), MBND-B (latent, `bd.element_z` append skew) |
+| [makeBDB.py](makeBDB_pass1.md) | 3 DRIFT — MBDB-A (per-orbital axis), MBDB-B/C (file-variant axis, must fix together) |
+| [makePDOS.py](makePDOS_pass1.md) | 3 DRIFT — MPD-A/B/C (`col_def` innermost axes) |
+| [insert3cbo.py](insert3cbo_pass1.md) | 3 DRIFT — IC-A (orbital charges), IC-B (bonded atoms), IC-C (centroid positions) |
+| [porosity.py](porosity_pass1.md) | 1 DRIFT (PO-A) — `num_mesh_points` 0-indexed with explicit `compute_pore_map` bridge |
+| [dump2skl.py](dump2skl_pass1.md) | 1 DRIFT (DS-A) — `atom_coords`/`atom_types` outer atom axis |
+| [makeSGDB.py](makeSGDB_pass1.md) | 1 DRIFT (MSG-A) — `symmetry_ops`/`symmetry_shifts` op-axis |
+
+#### Secondary sweep
+
+- [secondary_sweep_pass1.md](secondary_sweep_pass1.md) — 23 non-port
+  Python files checked for `structure_control` intersections. **Zero
+  hits**: none of the files touch `sc.*` directly or indirectly via
+  a wrapper module. One housekeeping note: `olcao.py` is a Python 2
+  leftover that fails to parse under Python 3, flagged for separate
+  delete-or-port decision (not an indexing issue).
+
+#### Priority-8 running tally
+
+- **BUG**: 0
+- **DRIFT**: 15 total (1 element_data, 2 makeBOND, 3 makeBDB,
+  3 makePDOS, 3 insert3cbo, 1 porosity, 1 dump2skl, 1 makeSGDB)
+- **REVERSE DRIFT**: 0
+- **MIXED**: 0
+
+No runtime bugs found in any priority-8 file. Every drift is
+locally self-consistent between producer and consumer, so the
+scripts function correctly today; fixes are pure rule compliance.
+
+#### Priority-8 fix-order recommendation
+
+1. **ED-A + CD-E (coordinated)** — HIGHEST priority. Unblocks the
+   deferred `condense_pass1.md` CD-E cluster. Must land in a single
+   commit across `element_data.py` and `condense.py` (5 touch
+   points total). See `element_data_pass1.md` for the exact sweep.
+2. **MBDB-A / MBDB-B+C** — `makeBDB.py` basis database generator.
+   MBDB-A standalone; MBDB-B and MBDB-C must be fixed together
+   (share the file-variant axis).
+3. **MPD-A/B/C** — `makePDOS.py` col_def innermost axes. Single
+   cluster, three touch points across `read_control`,
+   `default_control`, `_assign_default_name`/`print_results`.
+4. **IC-A/B/C** — `insert3cbo.py`. Script is already FIX-flagged as
+   pipeline-broken, so urgency is low; can be fixed alongside the
+   re-merge with the current `makeBOND` pipeline.
+5. **PO-A** — `porosity.py` mesh-point layout. 10 touch points in
+   2 files; straightforward sweep.
+6. **DS-A** — `dump2skl.py` atom arrays. Single-file sweep.
+7. **MSG-A** — `makeSGDB.py` symmetry op-axis. Single file, four
+   touch points.
+8. **MBND-A/B** — `makeBOND.py`. MBND-B is dead-storage drift (one-
+   line fix). MBND-A analogous to makeinput MI-B.
+
 ### Other files
 
-- *pending (bond_analysis.py, make_reactions.py, mod_struct.py, remaining scripts)*
+- *(earlier "pending" note — now superseded by Priority-8 wave
+  above; all remaining Perl → Python ports have been audited.)*
 
 ## Pass 1 gap verification (all unaudited methods spot-checked)
 

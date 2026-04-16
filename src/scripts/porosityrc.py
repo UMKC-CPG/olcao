@@ -41,9 +41,11 @@ def parameters_and_defaults():
 
         # Number of sampling points along each a, b, c
         #   direction.  If given on the command line with
-        #   -m, the resolution is computed from these.  A
-        #   value of [0, 0, 0] means "not yet specified".
-        "num_mesh_points": [0, 0, 0],
+        #   -m, the resolution is computed from these.
+        #   1-indexed: [None, na, nb, nc] to match the Perl
+        #   @numMeshPoints[1..3] convention.  [None, 0, 0, 0]
+        #   means "not yet specified".
+        "num_mesh_points": [None, 0, 0, 0],
 
         # Target resolution (Angstroms) for the sampling
         #   mesh.  If given with -r, the mesh point counts

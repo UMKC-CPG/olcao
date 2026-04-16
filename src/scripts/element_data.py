@@ -35,7 +35,7 @@ MULTI-DIMENSIONAL ARRAY LAYOUTS:
     vale_orbitals[basis][element]   -> list [s, p, d, f] of ints
                                        basis: 1=MB, 2=FB, 3=EB
     orbital_terms[qn_l][element]    -> str (Gaussian selection mask)
-    lj_pair_coeffs[element]         -> tuple (epsilon, sigma)
+    lj_pair_coeffs[element]         -> list [None, epsilon, sigma]
     color_vtk[element]              -> list [r, g, b, alpha]
 """
 
@@ -78,9 +78,10 @@ class ElementData:
     num_uj_electrons : list of int
         Number of electrons in the highest d or f orbital in the ground
         state.  Used for DFT+U/J calculations.  1-indexed.
-    lj_pair_coeffs : list of tuple
-        Lennard-Jones pair coefficients (epsilon, sigma) for LAMMPS.
-        1-indexed; lj_pair_coeffs[element] = (epsilon, sigma).
+    lj_pair_coeffs : list of list
+        Lennard-Jones pair coefficients for LAMMPS.  1-indexed on element;
+        inner layout is [None, epsilon, sigma] (1-indexed with slot 0
+        unused), matching the Perl ElementData.pm convention.
     core_orbitals : list of list
         core_orbitals[element] = [n_s, n_p, n_d, n_f] counts of core
         orbitals.  1-indexed on element; qn_l is 0-indexed.
@@ -144,7 +145,7 @@ class ElementData:
         self.atomic_radii = [None]
         self.neut_scatt = [None]
         self.num_uj_electrons = [None]
-        self.lj_pair_coeffs = [None]    # entries: (epsilon, sigma)
+        self.lj_pair_coeffs = [None]    # [None, epsilon, sigma]
         self.core_orbitals = [None]     # entries: [s, p, d, f]
         self.core_charge = [None]       # entries: [s, p, d, f]
         self.vale_charge = [None]       # entries: [s, p, d, f]
@@ -316,13 +317,17 @@ class ElementData:
             for _ in range(1, n + 1):
                 self.num_uj_electrons.append(int(self._prep_line(f)[0]))
 
-            # Lennard-Jones pair coefficients for LAMMPS MD simulations.
-            #   Each entry is stored as a tuple (epsilon, sigma).
-            self._expect_tag(self._prep_line(f), 'LJ_PAIR_COEFFS', fn)
+            # Lennard-Jones pair coefficients for LAMMPS MD
+            #   simulations.  Each entry is stored as a 1-indexed
+            #   list [None, epsilon, sigma] to match the Perl
+            #   ElementData.pm convention.
+            self._expect_tag(
+                self._prep_line(f), 'LJ_PAIR_COEFFS', fn
+            )
             for _ in range(1, n + 1):
                 vals = self._prep_line(f)
                 self.lj_pair_coeffs.append(
-                    (float(vals[0]), float(vals[1]))
+                    [None, float(vals[0]), float(vals[1])]
                 )
 
             # ----------------------------------------------------------

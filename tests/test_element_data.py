@@ -200,17 +200,20 @@ class TestLJPairCoeffs:
     def test_index_zero_is_none(self, ed):
         assert ed.lj_pair_coeffs[0] is None
 
-    def test_entries_are_two_tuples(self, ed):
+    def test_entries_are_1indexed_lists(self, ed):
         for z in range(1, ed.num_elements + 1):
             entry = ed.lj_pair_coeffs[z]
-            assert len(entry) == 2, (
-                f'lj_pair_coeffs[{z}] should have 2 values, got {len(entry)}'
+            assert len(entry) == 3, (
+                f'lj_pair_coeffs[{z}] should have '
+                f'3 values [None, eps, sig], '
+                f'got {len(entry)}'
             )
+            assert entry[0] is None
 
     def test_silicon_coeffs(self, ed):
-        eps, sig = ed.lj_pair_coeffs[14]
-        assert eps == pytest.approx(0.03, rel=1e-4)
-        assert sig == pytest.approx(2.5, rel=1e-4)
+        entry = ed.lj_pair_coeffs[14]
+        assert entry[1] == pytest.approx(0.03, rel=1e-4)
+        assert entry[2] == pytest.approx(2.5, rel=1e-4)
 
 
 # ---------------------------------------------------------------------------
