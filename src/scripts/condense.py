@@ -164,6 +164,8 @@ import subprocess
 import sys
 from datetime import datetime
 
+from angle_utils import cluster_angles, get_angle_k
+
 
 # ================================================================
 # BondData: UFF bond parameters from bond_parameters.dat
@@ -291,17 +293,17 @@ class BondData:
         olcao_data = os.environ.get('OLCAO_DATA')
         if not olcao_data:
             sys.exit("Error: $OLCAO_DATA is not set.")
-        fn = os.path.join(
+        file_path = os.path.join(
             olcao_data, "bond_parameters.dat"
         )
 
-        with open(fn, 'r') as f:
+        with open(file_path, 'r') as f:
             # Read the element count tag.
             values = self._prep_line(f)
             if values[0] != "NUM_UFF_ELEMENTS":
                 sys.exit(
                     "Expecting NUM_UFF_ELEMENTS tag"
-                    f" in {fn}"
+                    f" in {file_path}"
                 )
             values = self._prep_line(f)
             self.num_uff_elements = int(values[0])
@@ -323,7 +325,7 @@ class BondData:
             if values[0] != "UFF_BOND_PARAMS":
                 sys.exit(
                     "Expecting UFF_BOND_PARAMS tag"
-                    f" in {fn}"
+                    f" in {file_path}"
                 )
 
             # Read one line per element.  The Z column
@@ -336,7 +338,7 @@ class BondData:
                     sys.exit(
                         f"Z = {z} out of range"
                         f" 1..{self.num_uff_elements}"
-                        f" in {fn}"
+                        f" in {file_path}"
                     )
                 self.uff_r[z] = float(values[1])
                 self.uff_zstar[z] = float(values[2])
@@ -529,20 +531,20 @@ class AngleData:
         olcao_data = os.environ.get('OLCAO_DATA')
         if not olcao_data:
             sys.exit("Error: $OLCAO_DATA is not set.")
-        fn = os.path.join(olcao_data, "angles.dat")
+        file_path = os.path.join(olcao_data, "angles.dat")
 
-        with open(fn, 'r') as f:
+        with open(file_path, 'r') as f:
             # Read the number of angles.
             values = self._prep_line(f)
             if values[0] != "NUM_HOOKE_ANGLES":
-                sys.exit(f"Expecting NUM_HOOKE_ANGLES tag in {fn}")
+                sys.exit(f"Expecting NUM_HOOKE_ANGLES tag in {file_path}")
             values = self._prep_line(f)
             self.num_hooke_angles = int(values[0])
 
             # Read the Hooke angle coefficients.
             values = self._prep_line(f)
             if values[0] != "HOOKE_ANGLE_COEFFS":
-                sys.exit(f"Expecting HOOKE_ANGLE_COEFFS tag in {fn}")
+                sys.exit(f"Expecting HOOKE_ANGLE_COEFFS tag in {file_path}")
             for angle in range(1, self.num_hooke_angles + 1):
                 values = self._prep_line(f)
                 # 1-indexed inner: slot 0 is the None sentinel, slots
@@ -1016,7 +1018,6 @@ class Condense:
         # 1-indexed map from molecule instance number to molecule type index so
         # that later code (e.g., velocity re-assignment after minimization) can
         # look up the atom count per molecule.
-        atom_count = 0
         mol_count = 0
         self.molecule_type_of_mol = [None]
         for mol in range(1, self.num_molecule_types + 1):
@@ -1024,7 +1025,6 @@ class Condense:
                 mol_count += 1
                 self.molecule_type_of_mol.append(mol)
                 for atom in range(1, self.num_mol_atoms[mol] + 1):
-                    atom_count += 1
                     self.atom_molecule_id.append(mol_count)
                     # Use the family name rather than the molecule name so that
                     # species types are shared within a family.
@@ -1216,10 +1216,12 @@ class Condense:
             # explicit_abc branch and skip both the fake lattice and the
             # recentering shift.  The CRYST1 fixed-column layout that we
             # emit here is documented in structure_control.py read_pdb().
-            cs = self.cell_size
+            cell_size = self.cell_size
             fixed.write(
-                f"CRYST1{cs:9.3f}{cs:9.3f}{cs:9.3f}"
-                f"{90.0:7.2f}{90.0:7.2f}{90.0:7.2f} P 1           1\n"
+                f"CRYST1"
+                f"{cell_size:9.3f}{cell_size:9.3f}{cell_size:9.3f}"
+                f"{90.0:7.2f}{90.0:7.2f}{90.0:7.2f}"
+                f" P 1           1\n"
             )
             for line in raw:
                 values = line.strip().split()
@@ -1320,22 +1322,17 @@ class Condense:
 
         # Convenient aliases for the structure data.
         bonded = self.struct.bonded
-        bond_length_ext = self.struct.bond_length_ext
-        bond_tag_id_struct = self.struct.bond_tag_id
         num_bonds = self.struct.num_bonds
-        num_bonds_total = self.struct.num_bonds_total
         num_bond_angles = self.struct.num_bond_angles
         angle_bonded = self.struct.angle_bonded
         bond_angles_ext = self.struct.bond_angles_ext
-        num_angles_total = self.struct.num_angles_total
         atom_element_name = self.struct.atom_element_name
         atom_species_id = self.struct.atom_species_id
         atomic_z = self.struct.atomic_z
         direct_xyz = self.struct.direct_xyz
 
-        ed = self.element_data
-        bd = self.bond_data
-        ad = self.angle_data
+        element_data = self.element_data
+        bond_data = self.bond_data
 
         # ------------------------------------------------
         # Assign an *ordered* species number to each atom
@@ -1384,58 +1381,67 @@ class Condense:
         ordered_species_tag = [None] * (num_ordered_species + 1)
         ordered_species_element = [None] * (num_ordered_species + 1)
         ordered_species_masses = [None] * (num_ordered_species + 1)
-        # ordered_species_pair_coeffs[sp] = [None, eps, sigma]
-        ordered_species_pair_coeffs = [None] * (num_ordered_species + 1)
+        # ordered_species_pair_coeffs[species_idx] is itself a
+        # 1-indexed [None, eps, sigma] triple so the LAMMPS Pair
+        # Coeffs writer can pull eps and sigma by their natural
+        # 1-based slot numbers.
+        ordered_species_pair_coeffs = (
+            [None] * (num_ordered_species + 1))
 
         bond_count = 0
         angle_count = 0
         num_unique_bond_tags = 0
-        num_unique_angle_tags = 0
         unique_bond_tags_local = [None]
-        unique_angle_tags_local = [None]
         # bond_tag_id_local[atom][bond_idx] = tag id
         bond_tag_id_local = [None] * (num_atoms + 1)
-        # angle_tag_id_local[atom][angle_idx] = tag id
-        angle_tag_id_local = [None] * (num_atoms + 1)
         ordered_bond_type = [None]
         ordered_bonded_atoms = [None]
         ordered_angle_type = [None]
         angle_bonded_atoms = [None]
         unique_bond_coeffs = [None]
-        unique_angle_coeffs = [None]
+        # angle_observations: PSEUDOCODE 10c Phase 1 buffer.  The
+        # per-atom loop below appends one entry per observed angle
+        # as the 8-tuple (z1, zv, z2, theta_obs, base_tag, a1,
+        # vertex_atom, a2).  After the loop completes, the
+        # cluster_angles helper bins these by (z1, zv, z2) triplet
+        # and merges sorted neighbors into angle types; only then
+        # are unique_angle_tags_local, unique_angle_coeffs,
+        # angle_bonded_atoms (1-indexed entries past the [None]
+        # sentinel), and ordered_angle_type populated.
+        angle_observations = []
 
         for atom in range(1, num_atoms + 1):
-            # Initialize per-atom bond/angle tag arrays.
+            # Initialize per-atom bond tag array.
             if bond_tag_id_local[atom] is None:
                 bond_tag_id_local[atom] = [None]
-            if angle_tag_id_local[atom] is None:
-                angle_tag_id_local[atom] = [None]
 
             # --- Populate species info on first encounter
-            sp = ordered_species_id[atom]
-            if ordered_species_tag[sp] is None:
+            species_idx = ordered_species_id[atom]
+            if ordered_species_tag[species_idx] is None:
                 # Element-species-molecule tag.
-                ordered_species_tag[sp] = (
+                ordered_species_tag[species_idx] = (
                     f"{atom_element_name[atom]} "
                     f"{atom_species_id[atom]} "
                     f"{self.atom_molecule_name[atom]}"
                 )
 
                 # Element name for OVITO visualization.
-                ordered_species_element[sp] = (
+                ordered_species_element[species_idx] = (
                     atom_element_name[atom].capitalize()
                 )
 
                 # Atomic mass.
                 z = atomic_z[atom]
-                ordered_species_masses[sp] = ed.atomic_masses[z]
+                ordered_species_masses[species_idx] = (
+                    element_data.atomic_masses[z])
 
-                # LJ pair coefficients.  The true LJ interaction is computed
-                # from the combination of coefficients from different elements.
-                ordered_species_pair_coeffs[sp] = [
+                # LJ pair coefficients.  The true LJ interaction is
+                # computed from the combination of coefficients from
+                # different elements.
+                ordered_species_pair_coeffs[species_idx] = [
                     None,
-                    ed.lj_pair_coeffs[z][1],
-                    ed.lj_pair_coeffs[z][2],
+                    element_data.lj_pair_coeffs[z][1],
+                    element_data.lj_pair_coeffs[z][2],
                 ]
 
             # --- Process bonds ---
@@ -1472,10 +1478,10 @@ class Condense:
 
                 # Determine if this tag is unique.
                 found = 0
-                for t in range(1, num_unique_bond_tags + 1):
+                for type_id in range(1, num_unique_bond_tags + 1):
                     if (current_tag
-                            == unique_bond_tags_local[t]):
-                        found = t
+                            == unique_bond_tags_local[type_id]):
+                        found = type_id
                         break
 
                 if found == 0:
@@ -1485,12 +1491,12 @@ class Condense:
 
                 bond_tag_id_local[atom].append(found)
 
-                # Extract the Z numbers by search because the tag was
-                # alphabetized so there is no guarantee that the first part of
-                # the tag corresponds to atom.
+                # Extract the Z numbers by search because the tag
+                # was alphabetized, so there is no guarantee that
+                # the first part of the tag corresponds to atom.
                 parts = current_tag.split()
-                atom1_z = ed.get_element_z(parts[0])
-                atom2_z = ed.get_element_z(parts[3])
+                atom1_z = element_data.get_element_z(parts[0])
+                atom2_z = element_data.get_element_z(parts[3])
 
                 # Make sure atom1_z <= atom2_z.
                 if atom1_z > atom2_z:
@@ -1508,7 +1514,7 @@ class Condense:
                 # bond_parameter_scale multiplier.  The
                 # stored entry is 1-indexed [None, k, r0]
                 # to match the Perl layout.
-                k_ij, r_ij = bd.get_bond_params(
+                k_ij, r_ij = bond_data.get_bond_params(
                     atom1_z, atom2_z
                 )
                 k_ij *= self.bond_parameter_scale
@@ -1518,7 +1524,15 @@ class Condense:
                     [None, k_ij, r_ij]
                 )
 
-            # --- Process angles ---
+            # --- Collect angle observations (PSEUDOCODE 10c Phase 1)
+            # Note that bond angles were not double listed in the
+            # bondAnalysis.ba file (unlike the double listed bonds
+            # in bondAnalysis.bl), so we do not need to check for
+            # double-counted bond angles here.  Each iteration of
+            # the loop below records ONE angle observation; the
+            # angle types themselves are discovered after the loop
+            # by clustering the (Z1, Zv, Z2, theta) triplets via
+            # the cluster_angles helper from angle_utils.py.
             atom_num_angles = (
                 num_bond_angles[atom]
                 if (atom < len(num_bond_angles)
@@ -1526,115 +1540,106 @@ class Condense:
                 else 0
             )
             for angle_idx in range(1, atom_num_angles + 1):
-                # Note that bond angles were not double listed in the
-                # bondAnalysis.ba file (unlike the double listed bonds in
-                # bondAnalysis.bl).  Thus, we don't need to check for double
-                # counted bond angles here.
-
                 angle_count += 1
 
-                # Get the current tag for this bond angle and then extract the
-                # atomic Z numbers for the vertex atom and the non-vertex atoms.
-                # The vertex atom is $atom.
-                ab = angle_bonded[atom]
-                tag_part2 = (
-                    f"{atom_element_name[atom]} "
-                    f"{atom_species_id[atom]} "
-                    f"{self.atom_molecule_name[atom]}"
-                )
-                a1 = ab[angle_idx][1]
-                a2 = ab[angle_idx][2]
-                tag_part1 = (
+                # Identify the two end atoms (a1, a2) and their Z
+                # numbers; the vertex atom is `atom`.  z1, zv, z2
+                # use the established Z1/Zv/Z2 notation that
+                # PSEUDOCODE 10a/10b/10c carry through the
+                # angle-handling pipeline, so the short names
+                # remain self-documenting in this domain context.
+                bonded_pairs_for_atom = angle_bonded[atom]
+                a1 = bonded_pairs_for_atom[angle_idx][1]
+                a2 = bonded_pairs_for_atom[angle_idx][2]
+                z1 = atomic_z[a1]
+                zv = atomic_z[atom]
+                z2 = atomic_z[a2]
+
+                # Canonicalize so z1 <= z2; swap atom indices in
+                # lockstep so the recorded triple stays aligned
+                # with the Z ordering.  cluster_angles requires
+                # that producers canonicalize, since it bins by
+                # (z1, zv, z2) triplet and a non-canonical input
+                # would split chemically-equivalent angles.
+                if z1 > z2:
+                    z1, z2 = z2, z1
+                    a1, a2 = a2, a1
+
+                # Build the element/species/molecule prefix tag in
+                # the canonicalized order.  The clustering helper
+                # consumes only (z1, zv, z2) plus theta_obs; the
+                # prefix is preserved here for later display in
+                # the LAMMPS Angle Coeffs comments.  The cluster
+                # mean theta_0 and the type id are appended to
+                # this prefix in Phase 3 below, NOT here.
+                base_tag = (
                     f"{atom_element_name[a1]} "
                     f"{atom_species_id[a1]} "
-                    f"{self.atom_molecule_name[a1]}"
-                )
-                tag_part3 = (
+                    f"{self.atom_molecule_name[a1]} "
+                    f"{atom_element_name[atom]} "
+                    f"{atom_species_id[atom]} "
+                    f"{self.atom_molecule_name[atom]} "
                     f"{atom_element_name[a2]} "
                     f"{atom_species_id[a2]} "
                     f"{self.atom_molecule_name[a2]}"
                 )
-                if tag_part1 < tag_part3:
-                    current_tag = f"{tag_part1} {tag_part2} {tag_part3}"
-                else:
-                    current_tag = f"{tag_part3} {tag_part2} {tag_part1}"
 
-                # Extract the Z numbers.
-                parts = current_tag.split()
-                atom1_z = ed.get_element_z(parts[0])
-                atom2_z = ed.get_element_z(parts[3])
-                atom3_z = ed.get_element_z(parts[6])
+                theta_obs = bond_angles_ext[atom][angle_idx]
+                angle_observations.append(
+                    (z1, zv, z2, theta_obs, base_tag,
+                     a1, atom, a2))
 
-                # Make sure atom1_z <= atom3_z.
-                if atom1_z > atom3_z:
-                    atom1_z, atom3_z = atom3_z, atom1_z
+        # ----------------------------------------------------
+        # PSEUDOCODE 10c Phases 2-4 -- cluster the collected
+        # angle observations and emit the per-type and per-
+        # angle records the LAMMPS writer expects.  This
+        # block replaces the prior angles.dat lookup that
+        # required a hard-coded entry for every observed
+        # (Z1, Zv, Z2) triplet; the geometry-derived theta_0
+        # and the UFF-derived K_theta now come straight from
+        # the helpers in angle_utils.py.
+        # ----------------------------------------------------
 
-                # Find the angle in the database.  hac is 1-indexed:
-                # slots 1..6 are Z1, Zv, Z2, k, angle_deg, tolerance.
-                found_angle = 0
-                for ha in range(1, ad.num_hooke_angles + 1):
-                    hac = ad.hooke_angle_coeffs[ha]
-                    if (atom1_z == hac[1]
-                            and atom2_z == hac[2]
-                            and atom3_z == hac[3]):
-                        angle_val = bond_angles_ext[atom][angle_idx]
-                        if (abs(angle_val - hac[5])
-                                <= hac[6]):
-                            found_angle = ha
-                            break
+        # Phase 2 -- greedy single-pass clustering inside each
+        # element triplet bin (PSEUDOCODE 10a).
+        angle_types, angle_type_map = cluster_angles(
+            angle_observations,
+            self.angle_cluster_tolerance)
 
-                if found_angle == 0:
-                    angle_val = bond_angles_ext[atom][angle_idx]
-                    print(f"Angle number = {angle_idx} Angle = {angle_val}")
-                    print(f"atomZSet = {atom1_z} {atom2_z} {atom3_z}")
-                    sys.exit("Cannot find angle in the " "database")
-                else:
-                    hac = ad.hooke_angle_coeffs[found_angle]
-                    # Append the rest angle (slot 5) and the Hooke ID.
-                    current_tag = f"{current_tag} {hac[5]} {found_angle}"
+        # Phase 3 -- per-type tag and coefficient tables.  The
+        # 1-based layout matches what the LAMMPS writer (the
+        # Angle Coeffs section just below) reads: slot 0 is the
+        # [None] sentinel, slots 1..N hold the actual records.
+        # The tag tail "{theta_0:.4f} {t}" appended here is the
+        # documented format consumed by normalize_types in 10e.
+        num_unique_angle_tags = len(angle_types)
+        unique_angle_tags_local = (
+            [None] * (num_unique_angle_tags + 1))
+        unique_angle_coeffs = (
+            [None] * (num_unique_angle_tags + 1))
+        for type_id in range(1, num_unique_angle_tags + 1):
+            angle_type = angle_types[type_id - 1]
+            k_theta = get_angle_k(
+                angle_type.Z1, angle_type.Zv, angle_type.Z2,
+                self.angle_stiffness_coeff,
+                self.angle_parameter_scale,
+                bond_data.get_bond_params)
+            unique_angle_coeffs[type_id] = (
+                [None, k_theta, angle_type.theta_0])
+            unique_angle_tags_local[type_id] = (
+                f"{angle_type.base_tag} "
+                f"{angle_type.theta_0:.4f} {type_id}")
 
-                # Determine if this tag is unique.
-                found = 0
-                for t in range(1, num_unique_angle_tags + 1):
-                    if current_tag == unique_angle_tags_local[ t]:
-                        found = t
-                        break
-
-                if found == 0:
-                    num_unique_angle_tags += 1
-                    unique_angle_tags_local.append(current_tag)
-                    found = num_unique_angle_tags
-
-                # Initialize per-atom angle tag if needed.
-                if angle_tag_id_local[atom] is None:
-                    angle_tag_id_local[atom] = [None]
-                angle_tag_id_local[atom].append(found)
-
-                # Collect the coefficients for each unique bond angle type.
-                # hac is 1-indexed: slots 1..6 are Z1, Zv, Z2, k,
-                # angle_deg, tolerance.  The stored entry is 1-indexed
-                # ``[None, k, angle_deg]`` to match Perl's
-                # ``$uniqueAngleCoeffs[$angle][1..2]``.
-                for ha in range(1, ad.num_hooke_angles + 1):
-                    hac = ad.hooke_angle_coeffs[ha]
-                    if (((atom1_z == hac[1]
-                          and atom2_z == hac[2]
-                          and atom3_z == hac[3])
-                         or (atom3_z == hac[1]
-                             and atom2_z == hac[2]
-                             and atom1_z == hac[3]))):
-                        while len(unique_angle_coeffs) <= (found):
-                            unique_angle_coeffs.append(None)
-                        unique_angle_coeffs[found] = [None, hac[4], hac[5]]
-
-                # The inner triple is 1-indexed
-                # ``[None, a1, atom, a2]`` to match Perl's
-                # ``$angleBondedAtoms[$angleCount][1..3]`` layout.
-                # Slot 1 is the first end atom, slot 2 is the
-                # *vertex* atom, slot 3 is the second end atom —
-                # same role ordering as Perl.
-                angle_bonded_atoms.append([None, a1, atom, a2])
-                ordered_angle_type.append(found)
+        # Phase 4 -- per-angle records in collection order.
+        # The inner triple is 1-indexed [None, a1, vertex,
+        # a2] to match the existing layout that the LAMMPS
+        # Angles section writer reads.  Slot 6 = vertex atom,
+        # slot 5 = first end, slot 7 = second end (per the
+        # 8-tuple PSEUDOCODE 10c Phase 1 emits above).
+        for i, obs in enumerate(angle_observations):
+            angle_bonded_atoms.append(
+                [None, obs[5], obs[6], obs[7]])
+            ordered_angle_type.append(angle_type_map[i])
 
         # ------------------------------------------------
         # Write the LAMMPS data file (lammps.dat)
@@ -1653,49 +1658,57 @@ class Condense:
             lmp.write(f"{num_ordered_species} atom types\n")
             lmp.write(f"{num_unique_bond_tags} bond types\n")
             lmp.write(f"{num_unique_angle_tags} angle types\n\n")
-            cs = self.cell_size
-            lmp.write(f"0.000 {cs} xlo xhi\n")
-            lmp.write(f"0.000 {cs} ylo yhi\n")
-            lmp.write(f"0.000 {cs} zlo zhi\n\n")
+            cell_size = self.cell_size
+            lmp.write(f"0.000 {cell_size} xlo xhi\n")
+            lmp.write(f"0.000 {cell_size} ylo yhi\n")
+            lmp.write(f"0.000 {cell_size} zlo zhi\n\n")
 
             # Print the Mass information for each atom type.
             lmp.write("Masses\n\n")
-            for sp in range(1, num_ordered_species + 1):
+            for species_id in range(1, num_ordered_species + 1):
                 lmp.write(
-                    f"{sp} "
-                    f"{ordered_species_masses[sp]} "
-                    f"# {ordered_species_tag[sp]}\n"
+                    f"{species_id} "
+                    f"{ordered_species_masses[species_id]} "
+                    f"# {ordered_species_tag[species_id]}\n"
                 )
 
-            # Print the pair coefficients for the LJ interaction of each atom
-            # type.
+            # Print the pair coefficients for the LJ interaction of
+            # each atom type.
             lmp.write("\nPair Coeffs\n\n")
-            for sp in range(1, num_ordered_species + 1):
-                pc = ordered_species_pair_coeffs[sp]
+            for species_id in range(1, num_ordered_species + 1):
+                pair_coeff = (
+                    ordered_species_pair_coeffs[species_id])
                 lmp.write(
-                    f"{sp} {pc[1]} {pc[2]} "
-                    f"# {ordered_species_tag[sp]}\n"
+                    f"{species_id} "
+                    f"{pair_coeff[1]} {pair_coeff[2]} "
+                    f"# {ordered_species_tag[species_id]}\n"
                 )
 
-            # Print the bond coefficients for the spring-like interaction of
-            # each bond type.  bc is 1-indexed: slot 1 is k, slot 2 is r0.
+            # Print the bond coefficients for the spring-like
+            # interaction of each bond type.  Each
+            # unique_bond_coeffs entry is 1-indexed: slot 1 is k,
+            # slot 2 is r0.
             lmp.write("\nBond Coeffs\n\n")
-            for b in range(1, num_unique_bond_tags + 1):
-                bc = unique_bond_coeffs[b]
+            for bond_type_id in range(1, num_unique_bond_tags + 1):
+                bond_coeff = unique_bond_coeffs[bond_type_id]
                 lmp.write(
-                    f"{b} {bc[1]} {bc[2]} "
-                    f"# {unique_bond_tags_local[b]}\n"
+                    f"{bond_type_id} "
+                    f"{bond_coeff[1]} {bond_coeff[2]} "
+                    f"# {unique_bond_tags_local[bond_type_id]}\n"
                 )
 
             # Print the bond angle coefficients for the spring-like
-            # interaction.  ac is 1-indexed: slot 1 is k, slot 2 is
-            # the rest angle in degrees.
+            # interaction.  Each unique_angle_coeffs entry is
+            # 1-indexed: slot 1 is k, slot 2 is the rest angle in
+            # degrees.
             lmp.write("\nAngle Coeffs\n\n")
-            for a in range(1, num_unique_angle_tags + 1):
-                ac = unique_angle_coeffs[a]
+            for angle_type_id in range(
+                    1, num_unique_angle_tags + 1):
+                angle_coeff = unique_angle_coeffs[angle_type_id]
                 lmp.write(
-                    f"{a} {ac[1]} {ac[2]} "
-                    f"# {unique_angle_tags_local[a]}\n"
+                    f"{angle_type_id} "
+                    f"{angle_coeff[1]} {angle_coeff[2]} "
+                    f"# {unique_angle_tags_local[angle_type_id]}\n"
                 )
 
             # If we are going to force a collision, we first translate the
@@ -1707,14 +1720,15 @@ class Condense:
                             != current_mol):
                         current_mol = self.atom_molecule_id[atom]
 
-                        # Find the atom that starts the next molecule after this
-                        # one.
+                        # Find the atom that starts the next molecule
+                        # after this one.
                         next_mol_atom = atom
-                        for na in range(atom + 1, num_atoms + 1):
-                            next_mol_atom = na
-                            if (self.atom_molecule_id[na]
+                        for next_atom in range(
+                                atom + 1, num_atoms + 1):
+                            next_mol_atom = next_atom
+                            if (self.atom_molecule_id[next_atom]
                                     != current_mol):
-                                next_mol_atom = na - 1
+                                next_mol_atom = next_atom - 1
                                 break
 
                         # Shift the molecule into the center.
@@ -1725,9 +1739,11 @@ class Condense:
                         if current_mol == 1:
                             trans_dist = [None, 0.0, 0.0, 0.0]
                         elif current_mol == 2:
-                            trans_dist = [None, cs * -0.25, 0.0, 0.0,]
+                            trans_dist = [
+                                None, cell_size * -0.25, 0.0, 0.0]
                         elif current_mol == 3:
-                            trans_dist = [None, cs * 0.25, 0.0, 0.0,]
+                            trans_dist = [
+                                None, cell_size * 0.25, 0.0, 0.0]
                         else:
                             print(
                                 "Force doesn't work for "
@@ -1764,29 +1780,32 @@ class Condense:
                     f"{self.atom_molecule_name[atom]}\n"
                 )
 
-            # Print the bond information.  ba is 1-indexed:
-            # slot 1 is the atom, slot 2 is the bonded atom.
+            # Print the bond information.  Each ordered_bonded_atoms
+            # entry is 1-indexed: slot 1 is the first atom, slot 2
+            # is the bonded atom.
             lmp.write("\nBonds\n\n")
             for bond in range(1, bond_count + 1):
-                bt = ordered_bond_type[bond]
-                ba = ordered_bonded_atoms[bond]
+                bond_type_id = ordered_bond_type[bond]
+                bond_atoms = ordered_bonded_atoms[bond]
                 lmp.write(
-                    f"{bond} {bt} "
-                    f"{ba[1]} {ba[2]} # "
-                    f"{unique_bond_tags_local[bt]}\n"
+                    f"{bond} {bond_type_id} "
+                    f"{bond_atoms[1]} {bond_atoms[2]} # "
+                    f"{unique_bond_tags_local[bond_type_id]}\n"
                 )
 
-            # Print the bond angle information.  aa is 1-indexed:
-            # slot 1 is the first end atom, slot 2 is the vertex,
-            # slot 3 is the second end atom (matching Perl).
+            # Print the bond angle information.  Each
+            # angle_bonded_atoms entry is 1-indexed: slot 1 is the
+            # first end atom, slot 2 is the vertex, slot 3 is the
+            # second end atom (matching the Perl-port layout).
             lmp.write("\nAngles\n\n")
             for angle in range(1, angle_count + 1):
-                at = ordered_angle_type[angle]
-                aa = angle_bonded_atoms[angle]
+                angle_type_id = ordered_angle_type[angle]
+                angle_atoms = angle_bonded_atoms[angle]
                 lmp.write(
-                    f"{angle} {at} "
-                    f"{aa[1]} {aa[2]} {aa[3]} # "
-                    f"{unique_angle_tags_local[at]}\n"
+                    f"{angle} {angle_type_id} "
+                    f"{angle_atoms[1]} {angle_atoms[2]} "
+                    f"{angle_atoms[3]} # "
+                    f"{unique_angle_tags_local[angle_type_id]}\n"
                 )
 
         # ------------------------------------------------
@@ -1832,8 +1851,9 @@ dump coord_dump all custom 500 dump.coarse id type element x y z
 
             # dump_modify element list.
             lmpin.write("dump_modify coord_dump element ")
-            for sp in range(1, num_ordered_species + 1):
-                lmpin.write(f" {ordered_species_element[sp]}")
+            for species_id in range(1, num_ordered_species + 1):
+                lmpin.write(
+                    f" {ordered_species_element[species_id]}")
             lmpin.write("\n")
 
             lmpin.write("""
@@ -1938,46 +1958,54 @@ region simcell block EDGE EDGE EDGE EDGE EDGE EDGE units box
             # velocity with components drawn from [-max_speed, +max_speed].  In
             # force_collision mode (-f flag), hardcoded velocities aim the
             # molecules toward each other (max 3 molecules).
-            lmpin.write("# Per-molecule translational " "velocities\n")
-            ms = self.max_speed
+            lmpin.write(
+                "# Per-molecule translational velocities\n")
+            max_speed = self.max_speed
             current_atom = 1
             for mol in range(1, self.total_num_molecules + 1):
                 mol_type_idx = self.molecule_type_of_mol[mol]
                 n_atoms = self.num_mol_atoms[mol_type_idx]
 
                 if not self.settings.force_collision:
-                    # Normal mode: random velocity for each molecule.
-                    vx = random.uniform(-ms, ms)
-                    vy = random.uniform(-ms, ms)
-                    vz = random.uniform(-ms, ms)
+                    # Normal mode: random velocity for each
+                    # molecule.
+                    vel_x = random.uniform(-max_speed, max_speed)
+                    vel_y = random.uniform(-max_speed, max_speed)
+                    vel_z = random.uniform(-max_speed, max_speed)
                 else:
-                    # Force collision mode: aim molecules toward each other
-                    # along the x-axis.  The magnitudes are derived from
-                    # max_speed rather than hardcoded hypersonic values, so
-                    # a user-tunable, finite speed is used and the NVT
-                    # thermostat can absorb the excess kinetic energy over
-                    # a reasonable relaxation window instead of slamming
-                    # the molecules to a halt.  Molecule 2 gets the full
-                    # max_speed along +x; molecule 3 gets 0.7*max_speed
-                    # along -x, preserving the asymmetric sequential-
-                    # collision geometry (mol 2 reaches the central mol 1
-                    # first, then mol 3 arrives into the aggregate).
+                    # Force collision mode: aim molecules toward
+                    # each other along the x-axis.  The magnitudes
+                    # are derived from max_speed rather than
+                    # hardcoded hypersonic values, so a user-
+                    # tunable, finite speed is used and the NVT
+                    # thermostat can absorb the excess kinetic
+                    # energy over a reasonable relaxation window
+                    # instead of slamming the molecules to a halt.
+                    # Molecule 2 gets the full max_speed along +x;
+                    # molecule 3 gets 0.7*max_speed along -x,
+                    # preserving the asymmetric sequential-
+                    # collision geometry (mol 2 reaches the central
+                    # mol 1 first, then mol 3 arrives into the
+                    # aggregate).
                     if mol == 1:
-                        vx, vy, vz = 0.0, 0.0, 0.0
+                        vel_x, vel_y, vel_z = 0.0, 0.0, 0.0
                     elif mol == 2:
-                        vx, vy, vz = ms, 0.0, 0.0
+                        vel_x, vel_y, vel_z = max_speed, 0.0, 0.0
                     elif mol == 3:
-                        vx, vy, vz = -0.7 * ms, 0.0, 0.0
+                        vel_x, vel_y, vel_z = (
+                            -0.7 * max_speed, 0.0, 0.0)
                     else:
-                        print("Force collision mode does not work for more "
-                            "than three molecules.")
+                        print(
+                            "Force collision mode does not work "
+                            "for more than three molecules.")
                         sys.exit(1)
 
-                lo = current_atom
-                hi = current_atom + n_atoms - 1
+                first_atom = current_atom
+                last_atom = current_atom + n_atoms - 1
                 lmpin.write(
-                    f"group mol_tmp id {lo}:{hi}\n"
-                    f"velocity mol_tmp set {vx} {vy} {vz} units box\n"
+                    f"group mol_tmp id {first_atom}:{last_atom}\n"
+                    f"velocity mol_tmp set"
+                    f" {vel_x} {vel_y} {vel_z} units box\n"
                     f"group mol_tmp delete\n"
                 )
                 current_atom += n_atoms
@@ -2000,30 +2028,30 @@ region simcell block EDGE EDGE EDGE EDGE EDGE EDGE units box
                 lmpin.write(f"# Stage {stage}\n")
 
                 # Turn on deformation if requested.
-                sf = self.squish_factor[stage]
-                if sf > 0:
-                    ss = self.squish_step_size[stage]
+                squish_factor = self.squish_factor[stage]
+                if squish_factor > 0:
+                    squish_step = self.squish_step_size[stage]
                     lmpin.write(
-                        f"fix squish all deform {ss}"
-                        f" x scale {sf}"
-                        f" y scale {sf}"
-                        f" z scale {sf} remap x\n"
+                        f"fix squish all deform {squish_step}"
+                        f" x scale {squish_factor}"
+                        f" y scale {squish_factor}"
+                        f" z scale {squish_factor} remap x\n"
                     )
 
                 # Write the ensemble fix.  The integrator group is
                 # statted_grp_REACT (auto-created by the bond/react
-                # stabilization machinery above) rather than 'all', so
-                # atoms recently involved in a reaction are integrated
-                # only by bond/react's internal nve/limit and not also
-                # by this fix.  Before any reaction fires, the group
-                # contains every atom and the behavior is identical to
-                # using 'all'.
-                ens = self.ensemble_type[stage].lower()
-                if ens == "nve":
+                # stabilization machinery above) rather than 'all',
+                # so atoms recently involved in a reaction are
+                # integrated only by bond/react's internal
+                # nve/limit and not also by this fix.  Before any
+                # reaction fires, the group contains every atom
+                # and the behavior is identical to using 'all'.
+                ensemble = self.ensemble_type[stage].lower()
+                if ensemble == "nve":
                     lmpin.write(
                         "fix ensemble statted_grp_REACT nve\n"
                     )
-                elif ens == "nvt":
+                elif ensemble == "nvt":
                     t_start = self.ensemble_temp_start[stage]
                     t_end = self.ensemble_temp_end[stage]
                     t_damp = self.ensemble_temp_damp[stage]
@@ -2035,16 +2063,16 @@ region simcell block EDGE EDGE EDGE EDGE EDGE EDGE units box
                 else:
                     print(
                         f"Unknown ensemble type "
-                        f"'{ens}' in stage {stage}."
+                        f"'{ensemble}' in stage {stage}."
                     )
                     sys.exit(1)
 
                 # Run the simulation stage.
-                rs = self.run_steps[stage]
-                lmpin.write(f"run {rs}\n")
+                run_steps = self.run_steps[stage]
+                lmpin.write(f"run {run_steps}\n")
 
                 # Turn off the fixes.
-                if sf > 0:
+                if squish_factor > 0:
                     lmpin.write("unfix squish\n")
                 lmpin.write("unfix ensemble\n\n")
 
@@ -2133,9 +2161,9 @@ mpirun lmp -in lammps.in
         reaction template files.
         """
 
-        ed = self.element_data
-        bd = self.bond_data
-        ad = self.angle_data
+        element_data = self.element_data
+        bond_data = self.bond_data
+        angle_data = self.angle_data
 
         # Initialize unique type trackers.  ``unique_bond_types`` and
         # ``unique_angle_types`` are doubly 1-indexed: the outer
@@ -2143,9 +2171,9 @@ mpirun lmp -in lammps.in
         # the None sentinel), and every stored entry is itself a
         # 1-indexed ``[None, bt1, bt2]`` / ``[None, at1, at2, at3,
         # at4]`` list mirroring Perl's
-        # ``@uniqueBondTypes[$ub][1..2]`` /
-        # ``@uniqueAngleTypes[$ua][1..4]`` layout.
-        # ``unique_atom_types[ua]`` is a flat string token, so its
+        # ``@uniqueBondTypes[$bond_unique_id][1..2]`` /
+        # ``@uniqueAngleTypes[$unique_id][1..4]`` layout.
+        # ``unique_atom_types[unique_id]`` is a flat string token, so its
         # inner axis has no indexing to choose.
         num_unique_bonds = 0
         num_unique_angles = 0
@@ -2191,10 +2219,10 @@ mpirun lmp -in lammps.in
                     atom_type = f"{vals[3]} {vals[4]} {vals[5]}"
 
                     found = 0
-                    for ua in range(1, num_unique_atom_types + 1):
-                        if (unique_atom_types[ua]
+                    for unique_id in range(1, num_unique_atom_types + 1):
+                        if (unique_atom_types[unique_id]
                                 == atom_type):
-                            found = ua
+                            found = unique_id
                             break
                     if found == 0:
                         num_unique_atom_types += 1
@@ -2212,12 +2240,12 @@ mpirun lmp -in lammps.in
                     # Each unique_bond_types entry is [None, bt1, bt2]
                     # so slots 1..2 carry the two end-atom tags.
                     found = 0
-                    for ub in range(1, num_unique_bonds + 1):
-                        if (unique_bond_types[ub][1]
+                    for bond_unique_id in range(1, num_unique_bonds + 1):
+                        if (unique_bond_types[bond_unique_id][1]
                                 == bt1
                                 and unique_bond_types[
-                                    ub][2] == bt2):
-                            found = ub
+                                    bond_unique_id][2] == bt2):
+                            found = bond_unique_id
                             break
                     if found == 0:
                         num_unique_bonds += 1
@@ -2239,16 +2267,16 @@ mpirun lmp -in lammps.in
                     # [None, at1, at2, at3, at4] so slots 1..4 carry
                     # the two end-atom, vertex, and rest-angle tags.
                     found = 0
-                    for ua in range(1, num_unique_angles + 1):
-                        if (unique_angle_types[ua][1]
+                    for unique_id in range(1, num_unique_angles + 1):
+                        if (unique_angle_types[unique_id][1]
                                 == at1
                                 and unique_angle_types[
-                                    ua][2] == at2
+                                    unique_id][2] == at2
                                 and unique_angle_types[
-                                    ua][3] == at3
+                                    unique_id][3] == at3
                                 and unique_angle_types[
-                                    ua][4] == at4):
-                            found = ua
+                                    unique_id][4] == at4):
+                            found = unique_id
                             break
                     if found == 0:
                         num_unique_angles += 1
@@ -2300,10 +2328,10 @@ mpirun lmp -in lammps.in
 
                             atom_type = f"{vals[3]} {vals[4]} {vals[5]}"
                             found = 0
-                            for ua in range(1, num_unique_atom_types + 1):
-                                if (unique_atom_types[ua]
+                            for unique_id in range(1, num_unique_atom_types + 1):
+                                if (unique_atom_types[unique_id]
                                         == atom_type):
-                                    found = ua
+                                    found = unique_id
                                     break
                             if found == 0:
                                 num_unique_atom_types += 1
@@ -2323,13 +2351,13 @@ mpirun lmp -in lammps.in
                             # Slots 1..2 of each entry carry the two
                             # end-atom tags.
                             found = 0
-                            for ub in range(1, num_unique_bonds + 1):
+                            for bond_unique_id in range(1, num_unique_bonds + 1):
                                 if (unique_bond_types
-                                        [ub][1] == bt1
+                                        [bond_unique_id][1] == bt1
                                         and
                                         unique_bond_types
-                                        [ub][2] == bt2):
-                                    found = ub
+                                        [bond_unique_id][2] == bt2):
+                                    found = bond_unique_id
                                     break
                             if found == 0:
                                 num_unique_bonds += 1
@@ -2351,19 +2379,19 @@ mpirun lmp -in lammps.in
                             # Slots 1..4 carry the two end-atom, vertex,
                             # and rest-angle tags (1-indexed layout).
                             found = 0
-                            for ua in range(1, num_unique_angles + 1):
+                            for unique_id in range(1, num_unique_angles + 1):
                                 if (unique_angle_types
-                                        [ua][1] == at1
+                                        [unique_id][1] == at1
                                         and
                                         unique_angle_types
-                                        [ua][2] == at2
+                                        [unique_id][2] == at2
                                         and
                                         unique_angle_types
-                                        [ua][3] == at3
+                                        [unique_id][3] == at3
                                         and
                                         unique_angle_types
-                                        [ua][4] == at4):
-                                    found = ua
+                                        [unique_id][4] == at4):
+                                    found = unique_id
                                     break
                             if found == 0:
                                 num_unique_angles += 1
@@ -2374,12 +2402,12 @@ mpirun lmp -in lammps.in
         # Compute coefficients for each unique bond type
         # ------------------------------------------------
         unique_bond_coeffs = [None] * (num_unique_bonds + 1)
-        for ub in range(1, num_unique_bonds + 1):
-            # unique_bond_types[ub] is 1-indexed [None, bt1, bt2].
-            vals1 = unique_bond_types[ub][1].split()
-            atom1_z = ed.get_element_z(vals1[0])
-            vals2 = unique_bond_types[ub][2].split()
-            atom2_z = ed.get_element_z(vals2[0])
+        for bond_unique_id in range(1, num_unique_bonds + 1):
+            # unique_bond_types[bond_unique_id] is 1-indexed [None, bt1, bt2].
+            vals1 = unique_bond_types[bond_unique_id][1].split()
+            atom1_z = element_data.get_element_z(vals1[0])
+            vals2 = unique_bond_types[bond_unique_id][2].split()
+            atom2_z = element_data.get_element_z(vals2[0])
 
             # Make sure atom1_z <= atom2_z.
             if atom1_z > atom2_z:
@@ -2389,11 +2417,11 @@ mpirun lmp -in lammps.in
             # element pair and apply the global
             # bond_parameter_scale multiplier.  Store
             # a 1-indexed [None, k, r0] pair.
-            k_ij, r_ij = bd.get_bond_params(
+            k_ij, r_ij = bond_data.get_bond_params(
                 atom1_z, atom2_z
             )
             k_ij *= self.bond_parameter_scale
-            unique_bond_coeffs[ub] = (
+            unique_bond_coeffs[bond_unique_id] = (
                 [None, k_ij, r_ij]
             )
 
@@ -2401,52 +2429,60 @@ mpirun lmp -in lammps.in
         # Compute coefficients for each unique angle type
         # ------------------------------------------------
         unique_angle_coeffs = [None] * (num_unique_angles + 1)
-        for ua in range(1, num_unique_angles + 1):
-            # unique_angle_types[ua] is 1-indexed
+        for unique_id in range(1, num_unique_angles + 1):
+            # unique_angle_types[unique_id] is 1-indexed
             # [None, at1, at2, at3, at4].
-            vals1 = unique_angle_types[ua][1].split()
-            atom1_z = ed.get_element_z(vals1[0])
+            vals1 = unique_angle_types[unique_id][1].split()
+            atom1_z = element_data.get_element_z(vals1[0])
 
-            vals2 = unique_angle_types[ua][2].split()
-            atom2_z = ed.get_element_z(vals2[0])
+            vals2 = unique_angle_types[unique_id][2].split()
+            atom2_z = element_data.get_element_z(vals2[0])
 
-            vals3 = unique_angle_types[ua][3].split()
-            atom3_z = ed.get_element_z(vals3[0])
+            vals3 = unique_angle_types[unique_id][3].split()
+            atom3_z = element_data.get_element_z(vals3[0])
 
             # Make sure atom1_z <= atom3_z.
             if atom1_z > atom3_z:
                 atom1_z, atom3_z = atom3_z, atom1_z
 
-            vals4 = unique_angle_types[ua][4].split()
+            vals4 = unique_angle_types[unique_id][4].split()
             curr_bond_angle = float(vals4[0])
 
-            # hac is 1-indexed: slots 1..6 are Z1, Zv, Z2, k,
-            # angle_deg, tolerance.  Store a 1-indexed
-            # [None, k, angle_deg] pair — same shape as the
+            # Each hooke_record is 1-indexed: slots 1..6 are Z1,
+            # Zv, Z2, k, angle_deg, tolerance.  Store a 1-indexed
+            # [None, k, angle_deg] pair -- same shape as the
             # create_lammps_files producer.  The historical Perl
             # port carried an extra hooke-angle-id tail here, but
             # it was never read downstream; dropping it keeps both
             # producers structurally identical.
-            for ha in range(1, ad.num_hooke_angles + 1):
-                hac = ad.hooke_angle_coeffs[ha]
-                if (atom1_z == hac[1]
-                        and atom2_z == hac[2]
-                        and atom3_z == hac[3]
-                        and abs(curr_bond_angle - hac[5])
-                        <= hac[6]):
-                    unique_angle_coeffs[ua] = [None, hac[4], hac[5]]
+            for hooke_idx in range(
+                    1, angle_data.num_hooke_angles + 1):
+                hooke_record = (
+                    angle_data.hooke_angle_coeffs[hooke_idx])
+                if (atom1_z == hooke_record[1]
+                        and atom2_z == hooke_record[2]
+                        and atom3_z == hooke_record[3]
+                        and abs(curr_bond_angle
+                                - hooke_record[5])
+                        <= hooke_record[6]):
+                    unique_angle_coeffs[unique_id] = (
+                        [None, hooke_record[4], hooke_record[5]])
 
-        # ------------------------------------------------
-        # Compute pair coefficients and masses for each unique atom type
-        # ------------------------------------------------
-        unique_lj_pair_coeffs = [None] * (num_unique_atom_types + 1)
+        # --------------------------------------------------------
+        # Compute pair coefficients and masses for each unique
+        # atom type.
+        # --------------------------------------------------------
+        unique_lj_pair_coeffs = (
+            [None] * (num_unique_atom_types + 1))
         unique_masses = [None] * (num_unique_atom_types + 1)
-        for at in range(1, num_unique_atom_types + 1):
-            vals = unique_atom_types[at].split()
-            atom1_z = ed.get_element_z(vals[0])
-            lj = ed.lj_pair_coeffs[atom1_z]
-            unique_lj_pair_coeffs[at] = f"{lj[1]} {lj[2]}"
-            unique_masses[at] = ed.atomic_masses[atom1_z]
+        for atom_type_id in range(1, num_unique_atom_types + 1):
+            vals = unique_atom_types[atom_type_id].split()
+            atom1_z = element_data.get_element_z(vals[0])
+            lj_pair = element_data.lj_pair_coeffs[atom1_z]
+            unique_lj_pair_coeffs[atom_type_id] = (
+                f"{lj_pair[1]} {lj_pair[2]}")
+            unique_masses[atom_type_id] = (
+                element_data.atomic_masses[atom1_z])
 
         # ------------------------------------------------
         # Rewrite the lammps.dat file with unified types
@@ -2470,11 +2506,11 @@ mpirun lmp -in lammps.in
 
                 elif line.strip() == "Masses":
                     lmp.write("Masses\n\n")
-                    for ua in range(1, num_unique_atom_types + 1):
+                    for unique_id in range(1, num_unique_atom_types + 1):
                         lmp.write(
-                            f"{ua} "
-                            f"{unique_masses[ua]} "
-                            f"# {unique_atom_types[ua]}"
+                            f"{unique_id} "
+                            f"{unique_masses[unique_id]} "
+                            f"# {unique_atom_types[unique_id]}"
                             f"\n"
                         )
                     # Skip original mass lines.
@@ -2482,12 +2518,12 @@ mpirun lmp -in lammps.in
 
                 elif line.strip() == "Pair Coeffs":
                     lmp.write("Pair Coeffs\n\n")
-                    for ua in range(1, num_unique_atom_types + 1):
+                    for unique_id in range(1, num_unique_atom_types + 1):
                         lmp.write(
-                            f"{ua} "
-                            f"{unique_lj_pair_coeffs[ua]}"
+                            f"{unique_id} "
+                            f"{unique_lj_pair_coeffs[unique_id]}"
                             f" # "
-                            f"{unique_atom_types[ua]}\n"
+                            f"{unique_atom_types[unique_id]}\n"
                         )
                     # Skip original pair coeff lines.
                     line_num += num_atom_types + 1
@@ -2501,17 +2537,17 @@ mpirun lmp -in lammps.in
                     lmp.write(f"{num_bonds_lmp} bonds\n")
 
                 elif line.strip() == "Bond Coeffs":
-                    # bc is 1-indexed: slot 1 is k, slot 2 is r0.
-                    # unique_bond_types[ub] is 1-indexed [None, bt1, bt2].
+                    # bond_coeff is 1-indexed: slot 1 is k, slot 2 is r0.
+                    # unique_bond_types[bond_unique_id] is 1-indexed [None, bt1, bt2].
                     lmp.write("Bond Coeffs\n\n")
-                    for ub in range(1, num_unique_bonds + 1):
-                        bc = unique_bond_coeffs[ub]
+                    for bond_unique_id in range(1, num_unique_bonds + 1):
+                        bond_coeff = unique_bond_coeffs[bond_unique_id]
                         lmp.write(
-                            f"{ub} {bc[1]} {bc[2]} "
+                            f"{bond_unique_id} {bond_coeff[1]} {bond_coeff[2]} "
                             f"# "
-                            f"{unique_bond_types[ub][1]}"
+                            f"{unique_bond_types[bond_unique_id][1]}"
                             f" "
-                            f"{unique_bond_types[ub][2]}"
+                            f"{unique_bond_types[bond_unique_id][2]}"
                             f"\n"
                         )
                     # Skip original bond coeff lines.
@@ -2535,22 +2571,22 @@ mpirun lmp -in lammps.in
                         # Find the matching unique bond.  Each entry
                         # is 1-indexed [None, bt1, bt2] so the two
                         # end-atom tags live at slots 1 and 2.
-                        for ub in range(1, num_unique_bonds + 1):
+                        for bond_unique_id in range(1, num_unique_bonds + 1):
                             if (((bt1 ==
                                   unique_bond_types
-                                  [ub][1]
+                                  [bond_unique_id][1]
                                   and bt2 ==
                                   unique_bond_types
-                                  [ub][2])
+                                  [bond_unique_id][2])
                                  or (bt1 ==
                                      unique_bond_types
-                                     [ub][2]
+                                     [bond_unique_id][2]
                                      and bt2 ==
                                      unique_bond_types
-                                     [ub][1]))):
+                                     [bond_unique_id][1]))):
                                 bond_num = int(vals[0])
                                 lmp.write(
-                                    f"{bond_num} {ub} "
+                                    f"{bond_num} {bond_unique_id} "
                                     f"{vals[2]} "
                                     f"{vals[3]} "
                                     f"{vals[4]} "
@@ -2568,22 +2604,22 @@ mpirun lmp -in lammps.in
                     lmp.write(f"{num_angles_lmp} angles\n")
 
                 elif line.strip() == "Angle Coeffs":
-                    # ac is 1-indexed: slot 1 is k, slot 2 is the
-                    # rest angle in degrees.  unique_angle_types[ua]
+                    # angle_coeff is 1-indexed: slot 1 is k, slot 2 is the
+                    # rest angle in degrees.  unique_angle_types[unique_id]
                     # is 1-indexed [None, at1, at2, at3, at4].
                     lmp.write("Angle Coeffs\n\n")
-                    for ua in range(1, num_unique_angles + 1):
-                        ac = unique_angle_coeffs[ua]
+                    for unique_id in range(1, num_unique_angles + 1):
+                        angle_coeff = unique_angle_coeffs[unique_id]
                         lmp.write(
-                            f"{ua} {ac[1]} {ac[2]} "
+                            f"{unique_id} {angle_coeff[1]} {angle_coeff[2]} "
                             f"# "
-                            f"{unique_angle_types[ua][1]}"
+                            f"{unique_angle_types[unique_id][1]}"
                             f" "
-                            f"{unique_angle_types[ua][2]}"
+                            f"{unique_angle_types[unique_id][2]}"
                             f" "
-                            f"{unique_angle_types[ua][3]}"
+                            f"{unique_angle_types[unique_id][3]}"
                             f" "
-                            f"{unique_angle_types[ua][4]}"
+                            f"{unique_angle_types[unique_id][4]}"
                             f"\n"
                         )
                     # Skip original angle coeff lines.
@@ -2606,22 +2642,22 @@ mpirun lmp -in lammps.in
                         else:
                             angle_tag = f"{at1} {at2} {at3} {at4}"
 
-                        # Find the matching unique angle.  uat is
+                        # Find the matching unique angle.  angle_record is
                         # 1-indexed [None, at1, at2, at3, at4].
-                        for ua in range(1, num_unique_angles + 1):
-                            uat = unique_angle_types[ua]
-                            if (((at1 == uat[1]
-                                  and at2 == uat[2]
-                                  and at3 == uat[3]
-                                  and at4 == uat[4])
-                                 or (at3 == uat[1]
-                                     and at2 == uat[2]
-                                     and at1 == uat[3]
-                                     and at4 == uat[4]))):
+                        for unique_id in range(1, num_unique_angles + 1):
+                            angle_record = unique_angle_types[unique_id]
+                            if (((at1 == angle_record[1]
+                                  and at2 == angle_record[2]
+                                  and at3 == angle_record[3]
+                                  and at4 == angle_record[4])
+                                 or (at3 == angle_record[1]
+                                     and at2 == angle_record[2]
+                                     and at1 == angle_record[3]
+                                     and at4 == angle_record[4]))):
                                 angle_num = int(vals[0])
                                 lmp.write(
                                     f"{angle_num} "
-                                    f"{ua} "
+                                    f"{unique_id} "
                                     f"{vals[2]} "
                                     f"{vals[3]} "
                                     f"{vals[4]} # "
@@ -2681,13 +2717,13 @@ mpirun lmp -in lammps.in
                             atom_type = f"{vals[3]} {vals[4]} {vals[5]}"
 
                             # Find the matching unique atom type.
-                            for ua in range(1, num_unique_atom_types + 1):
-                                if (unique_atom_types[ua]
+                            for unique_id in range(1, num_unique_atom_types + 1):
+                                if (unique_atom_types[unique_id]
                                         == atom_type):
                                     atom_num = int(vals[0])
                                     mf.write(
                                         f"{atom_num} "
-                                        f"{ua} # "
+                                        f"{unique_id} # "
                                         f"{atom_type}\n"
                                     )
                                     break
@@ -2716,22 +2752,22 @@ mpirun lmp -in lammps.in
 
                             # Find the matching bond.  Each entry is
                             # 1-indexed [None, bt1, bt2].
-                            for ub in range(1, num_unique_bonds + 1):
+                            for bond_unique_id in range(1, num_unique_bonds + 1):
                                 if (((unique_bond_types
-                                      [ub][1] == bt1
+                                      [bond_unique_id][1] == bt1
                                       and
                                       unique_bond_types
-                                      [ub][2] == bt2)
+                                      [bond_unique_id][2] == bt2)
                                      or
                                      (unique_bond_types
-                                      [ub][2] == bt1
+                                      [bond_unique_id][2] == bt1
                                       and
                                       unique_bond_types
-                                      [ub][1] == bt2))):
+                                      [bond_unique_id][1] == bt2))):
                                     bond_num = int(vals[0])
                                     mf.write(
                                         f"{bond_num} "
-                                        f"{ub} "
+                                        f"{bond_unique_id} "
                                         f"{vals[2]} "
                                         f"{vals[3]} "
                                         f"{vals[4]} "
@@ -2763,23 +2799,23 @@ mpirun lmp -in lammps.in
                             else:
                                 angle_tag = f"{at1} {at2} {at3} {at4}"
 
-                            # Find matching angle.  uat is 1-indexed
+                            # Find matching angle.  angle_record is 1-indexed
                             # [None, at1, at2, at3, at4].
-                            for ua in range(1, num_unique_angles + 1):
-                                uat = unique_angle_types[ua]
-                                if (((at1 == uat[1]
-                                      and at2 == uat[2]
-                                      and at3 == uat[3]
-                                      and at4 == uat[4])
+                            for unique_id in range(1, num_unique_angles + 1):
+                                angle_record = unique_angle_types[unique_id]
+                                if (((at1 == angle_record[1]
+                                      and at2 == angle_record[2]
+                                      and at3 == angle_record[3]
+                                      and at4 == angle_record[4])
                                      or
-                                     (at3 == uat[1]
-                                      and at2 == uat[2]
-                                      and at1 == uat[3]
-                                      and at4 == uat[4]))):
+                                     (at3 == angle_record[1]
+                                      and at2 == angle_record[2]
+                                      and at1 == angle_record[3]
+                                      and at4 == angle_record[4]))):
                                     angle_num = int(vals[0])
                                     mf.write(
                                         f"{angle_num} "
-                                        f"{ua} "
+                                        f"{unique_id} "
                                         f"{vals[2]} "
                                         f"{vals[3]} "
                                         f"{vals[4]} # "
