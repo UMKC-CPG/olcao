@@ -5,6 +5,7 @@ message("At the test suite.")
 
 set (TEST_SCRIPTS
 conftest.py
+test_angle_utils.py
 test_dirac_helpers.py
 test_element_data.py
 test_interfit_output.py

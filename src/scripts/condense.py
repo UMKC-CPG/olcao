@@ -625,9 +625,6 @@ class ScriptSettings:
         self.force_collision = default_rc["force_collision"]
         self.cell_size = default_rc["cell_size"]
         self.max_speed = default_rc["max_speed"]
-        self.bond_parameter_scale = (
-            default_rc["bond_parameter_scale"]
-        )
         self.rxn_template_dir = default_rc["rxn_template_dir"]
 
     def parse_command_line(self):
@@ -754,10 +751,33 @@ class Condense:
         # ----- Simulation parameters -----
         self.cell_size = settings.cell_size
         self.max_speed = settings.max_speed
-        self.bond_parameter_scale = (
-            settings.bond_parameter_scale
-        )
         self.rxn_template_dir = settings.rxn_template_dir
+
+        # ----- Force-field parameters (input-file only) -----
+        # The four parameters below are deliberately not exposed as
+        #   command-line flags or rc-file entries in order to keep the
+        #   CLI uncluttered.  Each carries a hardcoded default here
+        #   that may be overridden by the matching keyword in
+        #   condense.in (see parse_input_file below).
+        #
+        # bond_parameter_scale: global dimensionless multiplier on every
+        #   UFF-derived bond force constant K_ij before writing LAMMPS
+        #   Bond Coeffs.  See DESIGN 4.5.
+        self.bond_parameter_scale = 1.0
+        # angle_stiffness_coeff: dimensionless calibration that converts
+        #   the geometric mean of the two arm bond stiffnesses
+        #   (kcal/mol/A^2) into an angular stiffness (kcal/mol/rad^2).
+        #   See DESIGN 4.8.4.
+        self.angle_stiffness_coeff = 0.15
+        # angle_parameter_scale: global dimensionless multiplier on every
+        #   geometry-derived angle force constant K_angle before writing
+        #   LAMMPS Angle Coeffs.  See DESIGN 4.8.5.
+        self.angle_parameter_scale = 1.0
+        # angle_cluster_tolerance: maximum deviation (degrees) between
+        #   an observed bond angle and a cluster's running mean for the
+        #   angle to merge into that cluster during angle-type discovery.
+        #   See DESIGN 4.8.6.
+        self.angle_cluster_tolerance = 5.0
 
         # ----- Stage data (populated by parse_input_file) -----
         self.num_stages = 0
@@ -886,10 +906,43 @@ class Condense:
                     self.max_speed = float(values[1])
 
                 # ----- Bond parameter scale -----
-                # Global multiplier for UFF bond force
-                # constants.  Overrides condenserc.py.
+                # Global multiplier for every UFF-derived bond force
+                # constant K_ij.  Overrides the hardcoded default
+                # (1.0) set in Condense.__init__.  See DESIGN 4.5.
                 elif keyword == "bond_parameter_scale":
                     self.bond_parameter_scale = (
+                        float(values[1])
+                    )
+
+                # ----- Angle stiffness coefficient -----
+                # Dimensionless calibration that converts the geometric
+                # mean of the two arm bond stiffnesses (kcal/mol/A^2)
+                # into an angular stiffness (kcal/mol/rad^2).  Overrides
+                # the hardcoded default (0.15) set in Condense.__init__.
+                # See DESIGN 4.8.4.
+                elif keyword == "angle_stiffness_coeff":
+                    self.angle_stiffness_coeff = (
+                        float(values[1])
+                    )
+
+                # ----- Angle parameter scale -----
+                # Global multiplier for every geometry-derived angle
+                # force constant K_angle.  Overrides the hardcoded
+                # default (1.0) set in Condense.__init__.  See
+                # DESIGN 4.8.5.
+                elif keyword == "angle_parameter_scale":
+                    self.angle_parameter_scale = (
+                        float(values[1])
+                    )
+
+                # ----- Angle cluster tolerance -----
+                # Maximum deviation (degrees) between an observed bond
+                # angle and a cluster's running mean for the angle to
+                # merge into that cluster during angle-type discovery.
+                # Overrides the hardcoded default (5.0) set in
+                # Condense.__init__.  See DESIGN 4.8.6.
+                elif keyword == "angle_cluster_tolerance":
+                    self.angle_cluster_tolerance = (
                         float(values[1])
                     )
 

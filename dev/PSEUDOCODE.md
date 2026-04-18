@@ -1266,3 +1266,631 @@ The `bond_parameter_scale` multiplier (default 1.0,
 defined in `condenserc.py`, overridable in condense.in)
 is applied after the UFF computation in **both**
 output paths.  It scales only K_ij, not r_ij.
+
+---
+
+## 10. Angle Clustering and Force Constants (DESIGN 4.8)
+
+Replace the `angles.dat` database lookup with a two-phase
+procedure: (a) cluster observed bond angles by element
+triplet to discover angle types, then (b) compute a force
+constant for each type from UFF bond stiffnesses.
+
+### 10a. Cluster Observed Angles by Triplet (DESIGN 4.8.3)
+
+For each molecule, the bond analysis produces a list of
+angles with atom indices and observed angle values.  The
+`create_lammps_files` method already iterates over these
+and extracts the element triplet (Z1, Zv, Z2).  The new
+clustering step replaces the `angles.dat` lookup.
+
+```
+# -------------------------------------------------
+# Data structures:
+#
+#   angle_cluster_tolerance : float
+#       Maximum deviation (degrees) between an
+#       observed angle and a cluster's running mean
+#       for the angle to join that cluster.
+#       Default: 5.0.  Read from condense.in.
+#
+#   spread_cap : float
+#       Maximum allowed total span (max - min) of
+#       theta values within any one cluster.  Set
+#       to 2.0 * angle_cluster_tolerance.  Prevents
+#       a long chain of closely-spaced observations
+#       from silently sweeping values from opposite
+#       ends of a wide distribution into a single
+#       cluster.  The same cap is applied in 10e
+#       for cross-source clustering.
+#
+#   Input: a list of angle observations, each
+#       being (Z1, Zv, Z2, theta_obs, base_tag)
+#       where Z1 <= Z2 (canonicalized).  The
+#       base_tag is the producer's tag prefix
+#       (element names, species ids, molecule
+#       ids) for this specific atom triple.
+#
+#   Output:
+#       angle_types : list of
+#           (Z1, Zv, Z2, theta_0, obs_count,
+#            base_tag)
+#       angle_type_map : maps each observation
+#           index to its angle_type index
+#
+#       obs_count is the number of observations
+#       merged into the cluster.  The
+#       representative base_tag is taken from
+#       the first observation in the cluster.
+#       The slot ordering (obs_count at slot 5,
+#       base_tag at slot 6) matches 10e's
+#       local_records and final_types tuples,
+#       so 10c/10d/10e/10f use consistent slot
+#       indices throughout.
+# -------------------------------------------------
+
+function cluster_angles(observations, tolerance):
+    # Group observations by element triplet.
+    # Each entry carries the observed theta, the
+    # original observation index (for the
+    # angle_type_map), and the producer's
+    # representative base_tag for that observation.
+    groups = {}
+    for each (idx, obs) in enumerate(observations):
+        key = (obs.Z1, obs.Zv, obs.Z2)
+        groups[key].append(
+            (obs.theta, idx, obs.base_tag))
+
+    angle_types = []
+    angle_type_map = array(len(observations))
+    spread_cap = 2.0 * tolerance
+
+    for each key in groups:
+        # Sort angles within this triplet group.
+        entries = groups[key]
+        sort entries by theta ascending
+
+        # Greedy clustering: walk the sorted list
+        # and merge the candidate into the current
+        # cluster while BOTH of these hold:
+        #   (a) |theta - running_mean| <= tolerance
+        #   (b) resulting (max - min) <= spread_cap
+        # If either fails, finalize the current
+        # cluster as a type and start a new cluster
+        # at the candidate.  cluster_rep_base_tag is
+        # captured from the first observation in
+        # the cluster and propagated to the emitted
+        # angle_type record so 10c/10d can build
+        # tag tails and 10e can carry it across
+        # sources.
+        cluster_rep_base_tag = entries[0].base_tag
+        cluster_sum   = entries[0].theta
+        cluster_count = 1
+        cluster_min   = entries[0].theta
+        cluster_max   = entries[0].theta
+        cluster_members = [entries[0].idx]
+
+        for i = 1 to len(entries) - 1:
+            cluster_mean = cluster_sum / cluster_count
+            candidate_theta = entries[i].theta
+            new_max = max(cluster_max, candidate_theta)
+            new_min = min(cluster_min, candidate_theta)
+
+            within_tol =
+                |candidate_theta - cluster_mean|
+                    <= tolerance
+            within_cap =
+                (new_max - new_min) <= spread_cap
+
+            if within_tol and within_cap:
+                # Merge into current cluster.
+                cluster_sum += candidate_theta
+                cluster_count += 1
+                cluster_min = new_min
+                cluster_max = new_max
+                cluster_members.append(entries[i].idx)
+            else:
+                # Finalize current cluster as a type.
+                # cluster_count is the number of raw
+                # observations that fed this local
+                # cluster (slot 5 = obs_count); the
+                # first member's base_tag is the
+                # representative prefix (slot 6).
+                theta_0 = cluster_sum / cluster_count
+                type_id = len(angle_types) + 1
+                angle_types.append(
+                    (key.Z1, key.Zv, key.Z2, theta_0,
+                     cluster_count,
+                     cluster_rep_base_tag))
+                for m in cluster_members:
+                    angle_type_map[m] = type_id
+
+                # Start a new cluster at entry i.
+                cluster_rep_base_tag =
+                    entries[i].base_tag
+                cluster_sum = candidate_theta
+                cluster_count = 1
+                cluster_min = candidate_theta
+                cluster_max = candidate_theta
+                cluster_members = [entries[i].idx]
+
+        # Finalize the last cluster.  Slot
+        # ordering matches the finalize above:
+        # slot 5 = obs_count, slot 6 = base_tag.
+        theta_0 = cluster_sum / cluster_count
+        type_id = len(angle_types) + 1
+        angle_types.append(
+            (key.Z1, key.Zv, key.Z2, theta_0,
+             cluster_count,
+             cluster_rep_base_tag))
+        for m in cluster_members:
+            angle_type_map[m] = type_id
+
+    return angle_types, angle_type_map
+```
+
+### 10b. Angle Force Constant (DESIGN 4.8.4)
+
+Compute the harmonic angular spring constant for a
+given angle type from the UFF bond stiffnesses of its
+two arms.  This reuses `get_bond_params()` (section 9).
+
+```
+# -------------------------------------------------
+# Data structures:
+#
+#   angle_stiffness_coeff : float
+#       Dimensionless calibration constant that
+#       converts the geometric mean of bond
+#       stiffnesses into an angular stiffness.
+#       Default: 0.15.  Read from condense.in.
+#
+#   angle_parameter_scale : float
+#       Global multiplier on all angle force
+#       constants.  Default: 1.0.
+#       Read from condense.in.
+# -------------------------------------------------
+
+function get_angle_k(z1, zv, z2,
+                     angle_stiffness_coeff,
+                     angle_parameter_scale):
+    # Compute the bond force constants for the
+    # two arms of the angle: (z1, zv) and (zv, z2).
+    K_arm1, _ = get_bond_params(z1, zv)
+    K_arm2, _ = get_bond_params(zv, z2)
+
+    # Geometric mean of arm stiffnesses, scaled
+    # by the calibration constant and the global
+    # user scale factor.
+    K_angle = angle_stiffness_coeff
+              * sqrt(K_arm1 * K_arm2)
+              * angle_parameter_scale
+
+    return K_angle
+```
+
+### 10c. Integration into create_lammps_files (DESIGN 4.8.8)
+
+The existing angle loop in `create_lammps_files` extracts
+(Z1, Zv, Z2) triplets and observed angles, then searches
+`angles.dat` for a match.  The replacement runs the same
+collect-cluster-emit structure as 10d, scoped to the
+single lammps.dat file produced by `create_lammps_files`.
+Both producers (10c and 10d) invoke the identical
+`cluster_angles` helper from 10a, so local clustering
+semantics are byte-identical.  Any residual theta_0
+differences between 10c and 10d outputs are resolved by
+10e during cross-source clustering inside
+`normalize_types`.
+
+```
+# Phase 1: Collect all angle observations.  Replaces
+# the angles.dat lookup loop.  The base_tag is built
+# exactly as the current code builds it -- element
+# names, species ids, and molecule ids -- with no
+# rest-angle or type-id suffix appended yet (Phase 3
+# adds those).
+observations = []
+for each atom with bond angles:
+    for each angle_idx of atom:
+        # Extract end atoms a1, a2 and vertex atom.
+        z1 = element_z(a1)
+        zv = element_z(atom)
+        z2 = element_z(a2)
+        if z1 > z2:
+            swap z1, z2
+            swap a1, a2
+        theta_obs = bond_angles_ext[atom][angle_idx]
+        base_tag = tag_string_for(a1, atom, a2)
+        observations.append(
+            (z1, zv, z2, theta_obs, base_tag,
+             a1, atom, a2))
+
+# Phase 2: Cluster locally using the shared helper
+# from 10a.  Identical call signature and tolerance
+# value as 10d.
+angle_types, angle_type_map =
+    cluster_angles(observations,
+                   self.angle_cluster_tolerance)
+
+# Phase 3: Build local type records with the
+# cluster-mean theta_0 carried in the tag tail.
+# These tables are local to this lammps.dat;
+# normalize_types may merge them with types from
+# reaction templates via 10e and rewrite both the
+# tags and the per-angle ids in 10f.
+num_local_angle_types = len(angle_types)
+local_angle_tags   =
+    [None] * (num_local_angle_types + 1)
+local_angle_coeffs =
+    [None] * (num_local_angle_types + 1)
+
+for t = 1 to num_local_angle_types:
+    atype = angle_types[t - 1]
+    K = get_angle_k(
+        atype.Z1, atype.Zv, atype.Z2,
+        self.angle_stiffness_coeff,
+        self.angle_parameter_scale)
+    local_angle_coeffs[t] =
+        [None, K, atype.theta_0]
+    local_angle_tags[t] = (
+        f"{atype.base_tag} "
+        f"{atype.theta_0:.4f} {t}")
+
+# Phase 4: Record per-atom angle entries with the
+# local type ids.  normalize_types walks these and
+# remaps the ids in 10f.  angle_bonded_atoms and
+# ordered_angle_type follow the existing flat
+# per-angle layout that the LAMMPS writer expects.
+for i, obs in enumerate(observations):
+    local_type_id = angle_type_map[i]
+    angle_bonded_atoms.append(
+        [None, obs.a1, obs.atom, obs.a2])
+    ordered_angle_type.append(local_type_id)
+
+# Export to normalize_types:
+#   source tag = "lammps.dat"
+#   local_angle_tags, local_angle_coeffs
+#   angle_bonded_atoms, ordered_angle_type
+#   per-local-type obs_count (slot 5 of each
+#       entry in angle_types)
+```
+
+### 10d. Integration into make_reactions.py (DESIGN 4.8.8)
+
+Mirrors 10c for the template-emission side of the
+pipeline.  The existing Python port's angle construction
+loop (around line 2518) iterates over angles in a
+reaction template and searches `hooke_angle_coeffs` for a
+matching row to build the tag tail.  The replacement runs
+the same collect-cluster-emit structure as 10c, scoped to
+one reaction template at a time.  Both producers invoke
+the identical `cluster_angles` helper from 10a, so local
+clustering semantics are byte-identical across sources
+and any residual theta_0 differences between producers
+are resolved by 10e downstream.
+
+```
+# Phase 1: Collect all angle observations for this
+# reaction template.  Replaces the hooke_angle_coeffs
+# scan near line 2518.  The base_tag is built exactly
+# as today -- element names, species ids, and
+# molecule ids, with no rest-angle or type-id suffix
+# appended yet (Phase 3 adds those).
+observations = []
+for each vertex atom v in the template:
+    for each (a1, a2) angle arm pair through v:
+        z1 = element_z(a1)
+        zv = element_z(v)
+        z2 = element_z(a2)
+        if z1 > z2:
+            swap z1, z2
+            swap a1, a2
+        theta_obs = bond_angle(a1, v, a2)
+        base_tag = tag_string_for(a1, v, a2)
+        observations.append(
+            (z1, zv, z2, theta_obs, base_tag,
+             a1, v, a2))
+
+# Phase 2: Cluster locally using the shared helper
+# from 10a.  Same call signature as 10c, same
+# angle_cluster_tolerance value.
+angle_types, angle_type_map =
+    cluster_angles(observations,
+                   self.angle_cluster_tolerance)
+
+# Phase 3: Build local type records with the
+# cluster-mean theta_0 carried in the tag tail.
+# These values are local to this template; the
+# cross-source step in 10e may merge them with
+# types from lammps.dat or from other templates.
+num_local_angle_types = len(angle_types)
+local_angle_tags   =
+    [None] * (num_local_angle_types + 1)
+local_angle_coeffs =
+    [None] * (num_local_angle_types + 1)
+
+for t = 1 to num_local_angle_types:
+    atype = angle_types[t - 1]
+    K = get_angle_k(
+        atype.Z1, atype.Zv, atype.Z2,
+        self.angle_stiffness_coeff,
+        self.angle_parameter_scale)
+    local_angle_coeffs[t] =
+        [None, K, atype.theta_0]
+    local_angle_tags[t] = (
+        f"{atype.base_tag} "
+        f"{atype.theta_0:.4f} {t}")
+
+# Phase 4: Record per-atom angle entries with the
+# local type ids.  normalize_types walks these
+# and remaps the ids in 10f.
+for i, obs in enumerate(observations):
+    local_type_id = angle_type_map[i]
+    angle_bonded[obs.v].append(
+        [None, obs.a1, obs.a2])
+    angle_tag_id[obs.v].append(local_type_id)
+
+# Export to normalize_types:
+#   source tag = "template:{name}"
+#   local_angle_tags, local_angle_coeffs
+#   angle_bonded, angle_tag_id
+#   per-local-type obs_count (slot 5 of each
+#       entry in angle_types)
+```
+
+### 10e. Cross-Source Angle Clustering (DESIGN 4.8.8 item 4a)
+
+The first phase of angle handling inside
+`normalize_types`.  Takes the per-source local cluster
+centers emitted by 10c (lammps.dat) and 10d (each
+reaction template) and merges any whose theta_0 values
+represent the same physical angle.  This is what makes
+bond/react type IDs consistent across sources.  The
+algorithm is greedy merge with the same
+`2 * tolerance` spread cap that 10a applies locally --
+so local and cross-source clustering are semantically
+consistent -- and adds observation-count weighting on
+top, so a cluster anchored by many observations pulls
+the final mean more strongly than a sparse one.
+
+```
+# -------------------------------------------------
+# Data structures:
+#
+#   local_records : list, one entry per
+#       (source, local_type_id) pair:
+#           (z1, zv, z2,
+#            theta_0_local,
+#            obs_count,          # raw observations
+#                                # feeding this
+#                                # local cluster
+#            base_tag,           # representative
+#                                # tag prefix
+#            source,             # "lammps.dat" or
+#                                # "template:<name>"
+#            local_type_id)
+#
+#   tolerance : float
+#       angle_cluster_tolerance (default 5.0).
+#
+#   spread_cap : float
+#       Max allowed total span (max-min) of
+#       theta_0_local values within one final
+#       cluster.  Default: 2.0 * tolerance.
+#       Prevents greedy chaining from sweeping a
+#       broad distribution into a single cluster.
+#
+#   Output:
+#       final_types : list of
+#           (z1, zv, z2,
+#            theta_0_final,
+#            obs_count_total,
+#            representative_base_tag)
+#       remap : dict
+#           (source, local_type_id)
+#               -> final_type_id
+# -------------------------------------------------
+
+function cross_source_cluster(local_records,
+                              tolerance):
+    # Group local records by canonical triplet.
+    groups = {}
+    for each rec in local_records:
+        key = (rec.z1, rec.zv, rec.z2)
+        groups[key].append(rec)
+
+    final_types = []
+    remap = {}
+    spread_cap = 2.0 * tolerance
+
+    for each key in groups:
+        entries = groups[key]
+        sort entries by theta_0_local ascending
+
+        # Greedy merge, weighted by obs_count.
+        cluster_w_sum = (entries[0].theta_0_local
+                         * entries[0].obs_count)
+        cluster_w     = entries[0].obs_count
+        cluster_min   = entries[0].theta_0_local
+        cluster_max   = entries[0].theta_0_local
+        members       = [entries[0]]
+
+        for i = 1 to len(entries) - 1:
+            running_mean = cluster_w_sum / cluster_w
+            candidate_theta = entries[i].theta_0_local
+            new_max = max(cluster_max, candidate_theta)
+            new_min = min(cluster_min, candidate_theta)
+
+            within_tol =
+                |candidate_theta - running_mean|
+                    <= tolerance
+            within_cap =
+                (new_max - new_min) <= spread_cap
+
+            if within_tol and within_cap:
+                cluster_w_sum +=
+                    candidate_theta * entries[i].obs_count
+                cluster_w += entries[i].obs_count
+                cluster_min = new_min
+                cluster_max = new_max
+                members.append(entries[i])
+            else:
+                finalize(key, members,
+                         cluster_w_sum,
+                         cluster_w,
+                         final_types, remap)
+                # Start a new cluster at entry i.
+                cluster_w_sum = (candidate_theta
+                    * entries[i].obs_count)
+                cluster_w = entries[i].obs_count
+                cluster_min = candidate_theta
+                cluster_max = candidate_theta
+                members = [entries[i]]
+
+        finalize(key, members,
+                 cluster_w_sum, cluster_w,
+                 final_types, remap)
+
+    return final_types, remap
+
+function finalize(key, members,
+                  cluster_w_sum, cluster_w,
+                  final_types, remap):
+    theta_0_final   = cluster_w_sum / cluster_w
+    obs_count_total = cluster_w
+    final_id = len(final_types) + 1
+    # Take the first member's base_tag as the
+    # representative prefix for the final type.
+    # base_tag carries species_id / molecule_id
+    # metadata that Z alone cannot reconstruct.
+    representative_base_tag = members[0].base_tag
+    final_types.append(
+        (key.z1, key.zv, key.z2,
+         theta_0_final, obs_count_total,
+         representative_base_tag))
+    for m in members:
+        remap[(m.source, m.local_type_id)] =
+            final_id
+```
+
+Decision notes embedded in the algorithm above:
+- **Weighting.**  The running mean is `obs_count`-
+  weighted, so a local cluster built from 200
+  observations anchors the final theta_0 more
+  strongly than one from 3.  This matches the
+  physical intuition that the larger sample is a
+  better estimator.
+- **Spread cap.**  Greedy merge alone can chain
+  across a wide distribution (e.g., observations at
+  105, 107, 109, 111, 113 with tolerance 2.5 all
+  collapse into one cluster spanning 8 degrees).
+  The `spread_cap = 2 * tolerance` rule forces a
+  split once the total span would exceed that
+  bound, producing tighter clusters at distribution
+  boundaries.
+- **Canonical base_tag.**  Representative tag is
+  taken from the first-encountered member rather
+  than reconstructed from Z values, because the
+  tag prefix carries species_id and molecule_id
+  fields that Z alone does not encode.
+
+### 10f. Tag Rewrite and Type-ID Remap (DESIGN 4.8.8 item 4c)
+
+The second phase of angle handling inside
+`normalize_types`, executed once 10e has produced
+`(final_types, remap)`.  Every angle reference in every
+source file is rewritten: the per-angle type id is
+remapped to the global id, and the tag tail is replaced
+with the final canonical theta_0 so any downstream tool
+that inspects the tag sees a consistent value.  The
+rewrite is deterministic given the cluster map, so
+repeated runs on identical inputs produce byte-identical
+output.
+
+```
+function rewrite_angles(sources, remap,
+                        final_types,
+                        angle_stiffness_coeff,
+                        angle_parameter_scale):
+    # Phase A: rewrite per-angle type ids in every
+    # source.  lammps.dat carries an Angles section
+    # with explicit type ids; each reaction
+    # template carries a per-atom angle_tag_id
+    # array.
+    for each src in sources:
+        if src is lammps.dat:
+            for each angle entry in src.Angles:
+                old_id = entry.type_id
+                entry.type_id =
+                    remap[(src.source_tag, old_id)]
+        else:  # reaction template
+            for each vertex atom v in src:
+                for i in range(
+                        len(src.angle_tag_id[v])):
+                    old_id = src.angle_tag_id[v][i]
+                    src.angle_tag_id[v][i] =
+                        remap[(src.source_tag,
+                               old_id)]
+
+    # Phase B: build the unified global
+    # unique_angle_tags table from final_types.
+    # Each entry is
+    #   "{representative_base_tag} {theta_0} {t}"
+    # carrying the final canonical theta_0 and the
+    # global type id.
+    unique_angle_tags =
+        [None] * (len(final_types) + 1)
+    for t = 1 to len(final_types):
+        ft = final_types[t - 1]
+        unique_angle_tags[t] = (
+            f"{ft.representative_base_tag} "
+            f"{ft.theta_0_final:.4f} {t}")
+
+    # Phase C: build the unified global
+    # unique_angle_coeffs table via get_angle_k.
+    # K_angle depends only on the triplet, so
+    # recomputation here yields the same value
+    # that any producer's local 10c/10d phase
+    # computed -- cross-source merging does not
+    # alter K_angle, only theta_0.
+    unique_angle_coeffs =
+        [None] * (len(final_types) + 1)
+    for t = 1 to len(final_types):
+        ft = final_types[t - 1]
+        K = get_angle_k(
+            ft.z1, ft.zv, ft.z2,
+            angle_stiffness_coeff,
+            angle_parameter_scale)
+        unique_angle_coeffs[t] =
+            [None, K, ft.theta_0_final]
+
+    # Phase D: emit the cluster-map diagnostic.
+    # For each final cluster, write:
+    #   - global id
+    #   - canonical theta_0_final
+    #   - (z1, zv, z2)
+    #   - every contributing
+    #       (source, local_type_id,
+    #        theta_0_local, obs_count) tuple
+    # See DESIGN 4.8.8 item 4d.  This file is the
+    # primary debuggability payback for routing
+    # all clustering through normalize_types.
+    write_cluster_map(final_types, remap,
+                      local_records)
+
+    return unique_angle_tags, unique_angle_coeffs
+```
+
+`normalize_types()`'s angle handling is therefore:
+1. Gather `local_records` from every source.
+2. `cross_source_cluster(local_records, tolerance)`
+   -> `(final_types, remap)`.  (10e)
+3. `rewrite_angles(sources, remap, final_types,
+   angle_stiffness_coeff, angle_parameter_scale)`
+   -> `(unique_angle_tags, unique_angle_coeffs)`.
+   (10f)
+
+No other changes are required inside
+`normalize_types()`.  Bond handling (section 9) and
+other type tables are unchanged.

@@ -1273,13 +1273,38 @@ to install `bond_parameters.dat` instead of `bonds.dat` in
 the DATABASES list.  The old `bonds.dat` is removed from the
 install set.
 
-### 4.8 Future Work: Angle Parameters
+### 4.8 Geometry-Derived Angle Parameters
 
-The `angles.dat` file is not changed by this work.  An
-analysis of whether the per-element UFF strategy used for
-bonds (section 4.2) can be applied to angles reveals that
-the angle case is fundamentally different.  The following
-considerations should be revisited in a future session.
+#### 4.8.1 Motivation
+
+The old `angles.dat` file listed 56 explicit triplet entries
+covering only seven elements (H, B, C, N, O, Si).  Every
+entry used a uniform spring constant k = 500.0 kcal/mol/rad^2
+regardless of the element triplet.  Adding a new element
+required manually enumerating every triplet and rest angle
+it participates in -- an unsustainable maintenance burden and
+a frequent source of "Cannot find angle in the database"
+failures when the system contains elements outside the seven.
+
+Section 4.8 of the previous design (preserved below in
+section 4.8.2) analyzed why the per-element UFF strategy
+that worked for bonds does not transfer directly to angles:
+the same element triplet can have multiple physically
+distinct rest angles (e.g., C-C-C at 60, 109.5, 120, and
+180 degrees), and the UFF angle potential is a cosine
+Fourier series rather than a simple harmonic.
+
+The key insight is that the OLCAO bond analysis already
+computes the actual bond angles for every atom in every
+molecule.  These observed angles encode the real electronic
+structure -- hybridization, strain, ring membership, and
+neighbor effects -- for the specific system at hand.  They
+are more accurate than any generic lookup table, and they
+are already available at runtime.  The design below uses
+these angles directly as equilibrium values, eliminating
+the need for an external angle database entirely.
+
+#### 4.8.2 Prior Analysis (retained for reference)
 
 **Why per-element UFF does not transfer directly to angles.**
 
@@ -1287,10 +1312,8 @@ considerations should be revisited in a future session.
    triplet (e.g., C-C-C) appears in angles.dat with several
    distinct equilibrium angles (60 deg for cyclopropane,
    108 deg for cyclopentane, 180 deg for linear chains).
-   The tolerance column exists to match the *observed* angle
-   from the bond analysis to the correct database entry.  A
-   per-element UFF lookup gives one natural angle per vertex
-   atom type (e.g., C_3 = 109.47 deg), which cannot
+   A per-element UFF lookup gives one natural angle per
+   vertex atom type (e.g., C_3 = 109.47 deg), which cannot
    distinguish these chemical environments.
 
 2. **UFF angle potential form mismatch.**  The UFF angle
@@ -1309,26 +1332,460 @@ considerations should be revisited in a future session.
    more involved than the clean two-element bond formula
    K_ij = 332.06 * Zstar_i * Zstar_j / r_ij^3.
 
-**What CAN be improved within the existing format.**
+The geometry-derived approach (sections 4.8.3-4.8.9) resolves
+all three issues: it uses observed angles (solving 1), feeds
+them into a LAMMPS harmonic potential (avoiding 2), and uses
+a simplified force constant formula based on bond stiffnesses
+already computed by `get_bond_params()` (simplifying 3).
 
-The triplet-enumeration + tolerance structure is well-suited
-to the underlying physics (multiple angles per triplet is
-physically real).  The improvements are in coverage and
-parameter quality, not format:
+#### 4.8.3 Approach: Cluster Observed Angles by Triplet
 
-1. Expand element coverage beyond H, B, C, N, O, Si by
-   adding triplet entries for common bonding environments
-   of additional elements, using UFF natural angles
-   (theta_0 from Table 1) as rest angles for the most
-   common hybridizations.
+For each molecule in the system, the OLCAO bond analysis
+(via `bond_analysis.py`) already computes every bond angle.
+The `create_lammps_files` method already iterates over these
+angles and constructs triplet tags of the form
+(Z_end1, Z_vertex, Z_end2).  Currently it searches
+`angles.dat` for a matching entry.  The new approach replaces
+that database lookup with the following procedure:
 
-2. Replace the uniform k = 500.0 with more realistic,
-   triplet-dependent force constants derived from UFF or
-   from the literature.
+1. **Collect.**  For each angle instance, extract the
+   full triplet (Z1, Zv, Z2) with Z1 <= Z2, and the
+   observed angle theta_obs.
 
-3. Add an `angle_parameter_scale` keyword in condense.in,
-   following the same pattern as `bond_parameter_scale`
-   (section 4.5).
+2. **Cluster by triplet.**  Group all angle instances
+   that share the same (Z1, Zv, Z2) triplet.  Within
+   each triplet group, sort the observed angles and
+   greedy-merge values into a cluster while two
+   conditions hold: (a) the candidate is within +/-
+   `angle_cluster_tolerance` degrees of the running
+   mean, and (b) the resulting cluster span (max - min)
+   remains within `2 * angle_cluster_tolerance`.  The
+   spread cap prevents a long chain of closely-spaced
+   observations from silently sweeping values from
+   opposite ends of a wide distribution into a single
+   cluster.  When either condition fails, the current
+   cluster is finalized and a new one begins at the
+   candidate.  The cluster's rest angle theta_0 is the
+   mean of its members.  The same spread cap is applied
+   when `normalize_types()` re-clusters across sources
+   (see 4.8.8 item 4a), so local and cross-source
+   clustering use consistent semantics.
+
+3. **Assign types.**  Each cluster becomes one LAMMPS
+   angle type.  Every angle instance is assigned to the
+   cluster whose mean it contributed to.
+
+**Example.**  Suppose carbon vertex atoms yield observed
+angles of 108.3, 109.1, 109.8, 120.2, 119.7, and 60.1
+degrees, all for the C-C-C triplet, with
+`angle_cluster_tolerance = 5.0`:
+
+- Cluster 1: {60.1} -> theta_0 = 60.1 (ring)
+- Cluster 2: {108.3, 109.1, 109.8} -> theta_0 = 109.1 (sp3)
+- Cluster 3: {119.7, 120.2} -> theta_0 = 120.0 (sp2)
+
+This produces three angle types instead of six individual
+entries.
+
+#### 4.8.4 Force Constant Formula
+
+The angular spring constant K is computed from the UFF
+per-element parameters already stored in
+`bond_parameters.dat` (section 4.4).  The formula uses
+the bond stiffnesses of the two arms:
+
+  K_angle = C_angle * sqrt(K_bond_IJ * K_bond_JK)
+
+where K_bond_IJ is the UFF harmonic bond force constant
+for the (Z1, Zv) pair and K_bond_JK is for the (Zv, Z2)
+pair, both obtained from `get_bond_params()`.  The
+geometric mean captures the essential physics: stiffer
+bonds produce stiffer angles.  The calibration constant
+C_angle is dimensionless and converts bond stiffness
+(kcal/mol/A^2) into an angular stiffness scale
+(kcal/mol/rad^2).
+
+Unlike the UFF bond constant (332.06, well-established
+from the Rappe paper), C_angle is a project-specific
+heuristic with no published source (see Provenance below).
+It is therefore exposed as a user-tunable keyword in
+condense.in:
+
+  angle_stiffness_coeff 0.15
+
+The default value (0.15) is defined in `condenserc.py`.
+Together with `angle_parameter_scale` (section 4.8.5),
+the user has two complementary controls:
+`angle_stiffness_coeff` sets the base conversion from
+bond stiffness to angle stiffness, while
+`angle_parameter_scale` applies a uniform global
+multiplier on top.  The final force constant written to
+LAMMPS is:
+
+  K_final = angle_stiffness_coeff
+            * sqrt(K_bond_IJ * K_bond_JK)
+            * angle_parameter_scale
+
+**Provenance.**  This formula is a project-specific
+heuristic, not drawn from a published force field.  The
+full UFF angle bending force constant K_IJK (Rappe et al.
+eq. 13) depends on the bond lengths of both arms, all
+three effective charges, the equilibrium angle, and uses
+a cosine Fourier expansion rather than a harmonic
+potential.  Adopting the full UFF angle treatment would
+require either switching LAMMPS to a cosine angle style
+or performing a non-trivial harmonic approximation of the
+Fourier series near each equilibrium angle.  The geometric
+mean heuristic sidesteps both issues by staying within
+the LAMMPS `angle_style harmonic` framework (Thompson et
+al. 2022; E = K (theta - theta_0)^2) while still
+producing element-dependent K values that track the
+underlying bond stiffnesses.
+
+**Calibration.**  Published harmonic angle force constants
+for small organic molecules typically fall in the range
+30-100 kcal/mol/rad^2.  For reference, the AMBER ff94
+force field (Cornell et al. 1995) assigns C-C-C angles
+K ~ 40 kcal/mol/rad^2 and H-C-H angles K ~ 35
+kcal/mol/rad^2; the OPLS-AA force field (Jorgensen et al.
+1996) gives similar values.  These are considerably softer
+than the uniform k = 500 used in the old `angles.dat`.
+
+Typical UFF bond force constants from `get_bond_params()`
+are 200-700 kcal/mol/A^2.  For a C-C-C angle, both arms
+give K_bond ~ 470 kcal/mol/A^2, so sqrt(470 * 470) = 470.
+The default `angle_stiffness_coeff` of 0.15 yields
+K_angle ~ 70 kcal/mol/rad^2, which is within the range
+of published values.  Users should calibrate this value
+against a known system (e.g., a small organic molecule
+with published force field parameters).
+
+**Note on the uniform k = 500 in the old database.**  The
+old `angles.dat` used k = 500 for every entry.  This is
+extremely stiff -- roughly 5-10x typical literature values.
+It is not physically motivated; it appears to have been
+chosen as a "rigid enough" default.  The computed K values
+from the formula above will be significantly softer and
+more physically realistic.  If the user needs the old
+stiff behavior, `angle_parameter_scale` can be set to a
+large value (e.g., 5.0-7.0).
+
+#### 4.8.5 Angle Scale Factor
+
+A new parameter `angle_parameter_scale` provides a global
+multiplier for all computed angle force constants, following
+the same pattern as `bond_parameter_scale` (section 4.5).
+Its default value (1.0) is defined in `condenserc.py`,
+loaded into the `Condense` object by `assign_rc_defaults()`,
+and can be overridden by a keyword in condense.in:
+
+  angle_parameter_scale 0.8
+
+The value is dimensionless and multiplies every computed
+K_angle before writing the LAMMPS Angle Coeffs section.
+Values below 1.0 loosen all angular springs; values above
+1.0 stiffen them.  Only K_angle is scaled -- the rest angle
+theta_0 is left unchanged.
+
+#### 4.8.6 Angle Cluster Tolerance
+
+A new parameter `angle_cluster_tolerance` controls how
+aggressively observed angles are merged into shared types.
+Its default value (5.0 degrees) is defined in
+`condenserc.py` and can be overridden in condense.in:
+
+  angle_cluster_tolerance 3.0
+
+**Clustering algorithm.**  Within each (Z1, Zv, Z2)
+triplet group, the observed angles are sorted in
+ascending order and then merged greedily: the first angle
+starts a new cluster; each subsequent angle is added to
+the current cluster if it falls within
+`angle_cluster_tolerance` of the cluster's running mean,
+otherwise it starts a new cluster.  This greedy approach
+is simple, deterministic, and keeps the type count low.
+
+Note that a chain of angles spaced just under the
+tolerance apart (e.g., 105, 108, 111, 114 with a 5-degree
+tolerance) will merge into one cluster because each new
+member is compared to the running mean, not to the first
+member.  This is the intended behavior: it favors fewer,
+broader clusters, which reduces the angle type count and
+lowers the risk of bond/react type-mismatch failures.
+
+**Interaction with bond/react type count.**  LAMMPS
+bond/react requires that the atom, bond, and angle types
+in the pre- and post-reaction templates match the types
+in the main data file.  Every distinct angle type in the
+system increases the combinatorial space that must be
+consistent across all files.  A larger tolerance produces
+fewer, coarser angle types, which reduces the risk of
+type-mismatch failures in bond/react.  A smaller tolerance
+preserves finer geometric detail but creates more types.
+
+The default of 5.0 degrees is a practical compromise.
+For systems with many distinct molecular species or
+complex reaction networks, increasing the tolerance to
+8-10 degrees may be necessary to keep the type count
+manageable.
+
+#### 4.8.7 Look-Ahead Angles for Bond/React Products (deferred)
+
+**The problem.**  The clustering procedure in section 4.8.3
+discovers angle types from the initial molecular geometries.
+But LAMMPS bond/react creates new bonds between molecules,
+and those new bonds produce new angles that did not exist
+in any isolated molecule.
+
+Consider B12H12 and CH4.  In the isolated molecules, no
+C-B bond exists, so no C-B-H or C-B-B angle is ever
+observed.  After bond/react fires and creates a C-B bond,
+the post-reaction template would need angle types for
+every triplet that includes the new bond.  If those types
+are not present in the LAMMPS data file's Angle Coeffs
+section, bond/react would fail.
+
+**Current state of the code.**  The Perl `makeReactions`
+script (and its Python port `make_reactions.py`) adds one
+new *bond* between the trigger atoms in the post-reaction
+template but does **not** add any new *angles*.  The Perl
+source (lines 2508-2513) states this explicitly:
+
+  "In the future it might be necessary to *add* bond
+   angles through the bonding atoms (after the S are
+   removed), but presently we do not do that.  (Hence
+   the bonded molecules may be too floppy.)"
+
+A commented-out `addBondAngle` subroutine (Perl lines
+2990-3141) shows that an attempt was started: it computes
+angles via the law of cosines from post-reaction
+coordinates, builds angle tags, and registers new angle
+types.  But the subroutine was never activated.
+
+Because the post-reaction templates do not currently
+contain any new angles, there are no novel angle types
+for condense.py to "look ahead" to.  The look-ahead
+mechanism in condense.py and the angle-creation logic
+in makeReactions are two halves of the same problem.
+
+**Phased approach.**  This work is split into two steps
+to keep each change testable:
+
+1. **Step 1 (this design, sections 4.8.3-4.8.6 and
+   4.8.8):**  Replace the angles.dat database with
+   geometry-derived clustering and computed force
+   constants.  The system works for all intra-molecular
+   angles that already exist in the pre- and post-
+   reaction templates.  Post-reaction bonding sites
+   remain "floppy" (same as today) because no new
+   angles are created by makeReactions.
+
+2. **Step 2 (future work):**  Activate angle creation in
+   `make_reactions.py` (porting and completing the
+   commented-out Perl subroutine).  Once post-reaction
+   templates carry the new angles, condense.py's
+   `normalize_types()` will automatically pick them up
+   during its template-scanning pass.  The rest angle
+   theta_0 can be computed from the post-reaction atom
+   coordinates (law of cosines, as the Perl prototype
+   does), and K_angle can be computed from the same
+   formula (section 4.8.4).  The clustering tolerance
+   should be applied when deciding whether a novel
+   post-reaction angle merges with an existing type or
+   creates a new one.
+
+Step 2 will also need to address whether new *bond* types
+(not just angles) can appear in post-reaction templates.
+The bond case is simpler because `get_bond_params()` can
+always compute K and r0 for any element pair, but the
+type must still be registered in the unified type list.
+
+  >> DESIGN QUESTION D5a (deferred to step 2): When
+  >> post-reaction angles are added to the templates,
+  >> should novel angles always be added as distinct
+  >> types to ensure the post-reaction geometry is
+  >> exactly preserved, or should they be merged into
+  >> the existing cluster list if they fall within
+  >> `angle_cluster_tolerance` of an existing type?
+  >> Merging keeps the type count down (reducing
+  >> bond/react fragility), but exact preservation may
+  >> matter for the product geometry.
+
+#### 4.8.8 Impact on condense.py (step 1)
+
+The `AngleData` class is eliminated.  No external data
+file is read for angles.  The changes are:
+
+1. **AngleData class: remove.**  The class and its
+   `init_angle_data()` method are deleted from every
+   source file that currently carries them -- both the
+   copy in `condense.py` and the duplicated copy in
+   `make_reactions.py` (lines ~113-193) along with its
+   `self.angle_data` instantiation (line ~568).  All
+   references to `self.angle_data` and
+   `ad.hooke_angle_coeffs` are removed from
+   `create_lammps_files()`, `normalize_types()`, and
+   `make_reactions.py`'s template-emission path (the
+   hooke_angle_coeffs scan near line 2518).
+
+2. **Clustering step: add (shared helper).**  A new
+   helper routine implements the cluster-by-triplet
+   algorithm from section 4.8.3.  Input: the list of
+   all angle instances with their (Z1, Zv, Z2,
+   theta_obs) tuples from one producer's scope.
+   Output: a list of local angle types, each with
+   (Z1, Zv, Z2, theta_0) and an observation count,
+   plus a mapping from each instance to its local
+   type index.  This helper is shared by both
+   producers -- `create_lammps_files()` in
+   condense.py and the template-emission path in
+   `make_reactions.py` -- so that local clustering
+   semantics are byte-identical across sources.  The
+   cross-source unification described in item 4 then
+   operates on the per-source outputs.
+
+3. **Force constant computation: add.**  For each
+   angle type, compute K_angle using the formula from
+   section 4.8.4, calling `get_bond_params()` for the
+   two arm bond stiffnesses.  Apply
+   `angle_stiffness_coeff` and `angle_parameter_scale`
+   (both factor into the K_angle formula).  This runs
+   locally in every producer; `normalize_types()`
+   recomputes the same K values in item 4b, which is
+   safe because K_angle depends only on the triplet
+   and not on theta_0.
+
+4. **normalize_types(): cross-source unification.**
+   `normalize_types()` is the authoritative
+   cross-source clusterer for angle types, not a
+   passive consumer of producer-emitted theta_0
+   values.  Each producer (`create_lammps_files()`
+   and `make_reactions.py`) locally clusters its
+   own observations and emits one type per local
+   cluster, with the cluster-mean theta_0 carried
+   in the tag tail "{theta_0_local} {t}".  Because
+   the two producers see different observation
+   populations of the same physical angle, their
+   local theta_0 for a chemically identical triplet
+   can differ by a few tenths of a degree.  A plain
+   string comparison on the tag tail would split
+   such cases into distinct types and break
+   bond/react type-ID matching across lammps.dat
+   and the reaction templates.  `normalize_types()`
+   absorbs this drift in four steps:
+
+   a. **Cross-source clustering.**  Collect every
+      angle type emitted by every source -- the
+      lammps.dat produced by `create_lammps_files()`
+      and every reaction template produced by
+      `make_reactions.py` -- each carrying
+      (z1, zv, z2, theta_0_local, obs_count,
+      source, local_type_id).  Group by canonical
+      triplet (z1 <= z2).  Within each group, sort
+      by theta_0_local and greedy-merge while the
+      candidate is within `angle_cluster_tolerance`
+      of the running cluster mean.  Apply a spread
+      cap (max cluster span <= 2 *
+      `angle_cluster_tolerance`) to prevent greedy
+      chaining across a wide distribution.  The
+      running mean, weighted by obs_count, is the
+      final canonical theta_0 for the merged
+      cluster.
+
+   b. **Force constant computation.**  For each
+      final cluster, compute K_angle via
+      `get_bond_params()` using the formula from
+      section 4.8.4, with `angle_stiffness_coeff`
+      and `angle_parameter_scale` applied (same
+      formula as item 3).  Because K_angle depends
+      only on the arm bond stiffnesses, which are a
+      function of the triplet (z1, zv, z2) alone
+      and not of theta_0, the K_angle computed here
+      matches whatever any producer locally
+      computed for a member cluster -- cross-source
+      merging does not alter K_angle, only theta_0.
+
+   c. **Tag rewrite and type-ID remap.**  Each
+      (source, local_type_id) pair maps to exactly
+      one final cluster id.  Walk the Angles
+      section of lammps.dat and every angle
+      reference in every reaction template, and
+      rewrite the per-angle type id to the global
+      cluster id.  Rewrite the tag tail
+      "{theta_0_local} {t}" to
+      "{theta_0_final} {global_t}" so any tool that
+      later inspects the tag sees a consistent
+      value.  The rewrite is deterministic given
+      the cluster map, so repeated runs on
+      identical inputs produce byte-identical
+      output.
+
+   d. **Cluster-map diagnostic.**  Emit a log file
+      or log section listing, for every final
+      cluster: global id, canonical theta_0,
+      (z1, zv, z2), and every contributing
+      (source, local_theta_0, obs_count) tuple.
+      Students debugging a bond/react type mismatch
+      should be able to open this file and see at a
+      glance which observations were merged, which
+      were split, and why.  This diagnostic is the
+      main debuggability payback for routing all
+      clustering through `normalize_types()` rather
+      than accepting per-producer string tags.
+
+5. **Parameter plumbing: add.**  Introduce three new
+   force-field parameters on the `Condense` class with
+   hardcoded defaults in `Condense.__init__`:
+   `angle_stiffness_coeff` (default 0.15),
+   `angle_parameter_scale` (default 1.0), and
+   `angle_cluster_tolerance` (default 5.0).  These
+   follow the `bond_parameter_scale` precedent:
+   force-field parameters are deliberately kept out of
+   `condenserc.py` and `ScriptSettings` to avoid
+   cluttering the CLI with rarely-touched knobs.  User
+   overrides are accepted through matching keywords in
+   `condense.in`, parsed by `parse_input_file()`.  The
+   values are applied wherever K_angle is computed --
+   in `create_lammps_files()`, in the template-
+   emission path of `make_reactions.py`, and in
+   `normalize_types()`.  `angle_cluster_tolerance`
+   additionally governs wherever local or cross-
+   source clustering happens (the same three sites,
+   plus the spread-cap policy `2 * tolerance`).
+
+6. **angles.dat: retire.**  Remove from
+   `src/data/CMakeLists.txt` DATABASES list.  Remove
+   from `share/` install target.  The file may be kept
+   in the repository for historical reference but is no
+   longer read by any code path.
+
+Note: the look-ahead pass described in section 4.8.7 is
+deferred to step 2.  Step 1 handles all angles that
+already exist in the pre- and post-reaction templates
+(which is the same set that the old angles.dat handled).
+The bonding-site "floppiness" is unchanged from the
+current behavior.
+
+#### 4.8.9 Backward Compatibility
+
+The new approach is not backward-compatible with the old
+`angles.dat` format.  Since `condense.py` is the active
+development path and the Perl toolchain is deprecated,
+this is accepted (same reasoning as section 4.7 for bonds).
+
+The behavioral difference is that angle rest values will
+now come from the system's own geometry rather than a
+curated database.  For well-prepared input structures
+(which is the expected use case), this produces identical
+or better rest angles.  For poorly prepared structures,
+the rest angles will reflect the input geometry -- which
+is arguably more honest than imposing idealized angles
+that the structure does not actually have.
+
+Users who relied on the old uniform k = 500 behavior can
+approximate it by setting `angle_parameter_scale` to a
+large value, though the per-triplet variation in K will
+still be present.
 
 ---
 
@@ -1352,7 +1809,41 @@ Force Field for Molecular Mechanics and Molecular
 Dynamics Simulations," J. Am. Chem. Soc. 1992, 114,
 10024-10035.  DOI: 10.1021/ja00051a040
 - Table 1: per-element parameters (r_i, Zstar_i,
-  chi_i) used for bond stretching (section 4)
-- Eq. 3: bond stretching force constant formula
+  chi_i) used for bond stretching (section 4) and
+  as inputs to the angle K heuristic (section 4.8.4)
 - Eq. 2: natural bond length with electronegativity
   correction
+- Eq. 3: bond stretching force constant formula
+- Eq. 8: angle bending potential (cosine Fourier
+  expansion -- not used directly; section 4.8.2
+  explains why the harmonic approximation is preferred)
+- Eq. 13: full UFF angle bending force constant K_IJK
+  (not adopted; the geometric-mean heuristic in
+  section 4.8.4 is used instead)
+
+W. D. Cornell, P. Cieplak, C. I. Bayly, I. R. Gould,
+K. M. Merz Jr., D. M. Ferguson, D. C. Spellmeyer,
+T. Fox, J. W. Caldwell, P. A. Kollman, "A Second
+Generation Force Field for the Simulation of Proteins,
+Nucleic Acids, and Organic Molecules," J. Am. Chem.
+Soc. 1995, 117, 5179-5197.  DOI: 10.1021/ja00124a002
+- Referenced in section 4.8.4 for calibration context:
+  typical harmonic angle force constants for organic
+  molecules (C-C-C ~ 40, H-C-H ~ 35 kcal/mol/rad^2)
+
+W. L. Jorgensen, D. S. Maxwell, J. Tirado-Rives,
+"Development and Testing of the OPLS All-Atom Force
+Field on Conformational Energetics and Properties of
+Organic Liquids," J. Am. Chem. Soc. 1996, 118,
+11225-11236.  DOI: 10.1021/ja9621760
+- Referenced in section 4.8.4 for calibration context:
+  independent confirmation that organic angle force
+  constants fall in the 30-100 kcal/mol/rad^2 range
+
+A. P. Thompson, H. M. Aktulga, R. Berger, et al.,
+"LAMMPS - a flexible simulation tool for particle-based
+materials modeling at the atomic, meso, and continuum
+scales," Comp. Phys. Comm. 2022, 271, 108171.
+DOI: 10.1016/j.cpc.2021.108171
+- `angle_style harmonic`: E = K (theta - theta_0)^2
+  convention used throughout section 4.8

@@ -90,6 +90,61 @@ The goal is a middle ground: short enough to keep expressions tidy,
 long enough that any student can read the code cold and follow the
 logic without guessing what a variable holds.
 
+### Structured Comment Blocks
+
+Some comments contain *structured* content whose visual layout is
+itself meaningful: equations with aligned `=` signs, ASCII tables,
+multi-line derivations, sub-lists keyed by hand-aligned labels, or
+commented-out code that you may re-enable later.  These blocks must
+be marked so the reflow tools (`rewrap_prose.py`) leave them alone.
+Without the marker the tool will treat them as flowing prose and
+mash the lines into a paragraph, destroying the layout.
+
+The marker convention is per-language but is conceptually identical:
+the comment opener gets *doubled* to signal "structured content, do
+not reflow."
+
+**Python** -- prefix the comment lines with `##` (double hash)
+instead of `#`.  Any line that begins with `##` is treated as
+protected and is never reflowed.  Use this for:
+  - Commented-out code blocks
+  - Structured equation blocks (multi-line derivations, aligned `=`)
+  - ASCII tables and aligned sub-lists
+  - Any block where the visual layout carries meaning
+
+Example:
+```python
+# This prose comment may be reflowed by rewrap_prose.py.
+
+## K_theta = 0.15 * sqrt(K_arm1 * K_arm2) * scale
+##         = 0.15 * sqrt(400 * 900) * 1.0
+##         = 90.0
+```
+
+**Fortran** -- prefix the comment lines with `!!` (double
+exclamation, with content after) for structured prose, OR use `!`
+immediately followed by content (no space) for commented-out code.
+Both forms are recognised by the reflow engine as "do not touch."
+
+Example:
+```fortran
+! This prose comment may be reflowed by rewrap_prose.py.
+
+!! K_theta = 0.15 * sqrt(K_arm1 * K_arm2) * scale
+!!         = 0.15 * sqrt(400 * 900) * 1.0
+!!         = 90.0
+
+!do i = 1, n           ! commented-out code: no space after !
+!  call compute(i)
+!end do
+```
+
+When writing a comment, ask: "if a reflow tool joined these lines
+into one paragraph, would I lose meaningful structure?"  If yes,
+use the doubled form (`##` for Python, `!!` for Fortran).  Plain
+`#`/`! ` (single, with space) is the right choice only for genuine
+free-flowing prose paragraphs that have no internal structure.
+
 ## What This Is
 
 OLCAO (Orthogonalized Linear Combination of Atomic Orbitals) is an academic

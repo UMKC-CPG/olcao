@@ -295,3 +295,109 @@ A single batched call (`overlap2CIntgVec`) then
 processes all pairs, enabling SIMD over the contiguous
 segments. This pattern is the starting point for the
 restructure in A4.
+
+---
+
+## 7. Python Scripts Refactoring Direction
+
+The Python side of the toolchain is currently anchored
+by `src/scripts/structure_control.py`, a single module
+holding the `StructureControl` class plus a large set
+of related utility routines (9,335 lines, 171 tests).
+It was produced by the Perl-to-Python port of
+`StructureControl.pm` and inherits that file's
+monolithic shape: everything related to an atomic
+structure -- coordinate manipulation, fractional-to-
+Cartesian conversion, neighbor finding, bond analysis,
+PDB/skeleton I/O, symmetry operations, supercell
+construction, reaction-template surgery, and more --
+lives in one class and one file.
+
+This shape has carried the codebase well enough to
+reach feature completeness on the port, but it is
+approaching the limits of what a single file should
+be asked to hold:
+
+- **Navigation cost.**  A file of 9,000+ lines is
+  hard to search, hard to diff meaningfully in code
+  review, and hard for students to study as an
+  example.  The "Prefer concise, self-documenting
+  names" rule in `CLAUDE.md` aims at readability;
+  file size is the same problem at a higher scope.
+- **Domain bleeding.**  New force-field concerns
+  (UFF bond parameters, geometry-derived angle
+  clustering, LAMMPS type-ID unification) that
+  arise in `condense.py` and `make_reactions.py`
+  want a natural home.  Adding them to
+  `structure_control.py` would couple its
+  atomic-structure responsibility to force-field
+  data prep -- a domain mismatch.  Forcing
+  everything that *touches* a structure into
+  `structure_control.py` turns it into a
+  miscellaneous bin.
+- **Test concentration.**  171 tests in one suite
+  already means slow runs and noisy coverage
+  reports; adding more erodes the value of running
+  the full suite on small changes.
+- **Change risk.**  Every edit to
+  `structure_control.py` now touches a file
+  imported by almost every script.  Small
+  localized changes carry outsized blast radius
+  on import-time errors and accidental namespace
+  collisions.
+
+**Proposed direction (future work; no timeline).**
+Split `structure_control.py` along natural domain
+seams, with the `StructureControl` class kept as
+the main public entry point but its implementation
+distributed across focused modules.  Candidate
+seams, in rough order of lowest churn first:
+
+1. **`element_data.py`** already exists; the
+   element-lookup code that currently lives in
+   `structure_control.py` should migrate there.
+2. **`geometry.py`** -- coordinate math,
+   fractional/Cartesian conversion, distance and
+   angle kernels, minimum-image wrapping.  Pure
+   functions, heavily reused, no state.
+3. **`symmetry.py`** -- space group operations,
+   supercell construction, atom permutation
+   tables.
+4. **`neighbors.py`** -- neighbor search, bond
+   analysis, coordination shells.
+5. **`io_skeleton.py`**, **`io_pdb.py`**,
+   **`io_lammps.py`** -- format-specific I/O,
+   each file small and focused on one external
+   schema.
+6. **`structure_control.py`** (remaining) -- the
+   `StructureControl` class itself, delegating
+   concrete operations to the modules above.
+   Imports stay stable from external callers'
+   perspective; internal implementation becomes
+   discoverable.
+
+Force-field concerns (UFF bond parameters, angle
+clustering) live in their own separate modules
+(`bond_utils.py`, `angle_utils.py`, or a shared
+`ff_utils.py`) and never mix into
+`structure_control.py`'s domain.
+
+**Criteria for starting the split.**  This is a
+refactor, not a bug fix, so it should be scheduled
+deliberately rather than bolted onto feature work.
+Reasonable triggers:
+- The file crosses 12,000 lines or the test suite
+  crosses 250 tests.
+- Two independent pieces of feature work stall on
+  each other due to merge conflicts inside
+  `structure_control.py`.
+- A new concern (e.g., machine-learning potential
+  support, a new I/O format) wants to live near
+  the structure code but clearly does not belong
+  in the monolith.
+
+Until one of those triggers hits, the conservative
+choice is to keep `structure_control.py` as-is and
+route new force-field-adjacent logic into small
+dedicated modules (the path taken for
+`angle_utils.py` in the angle-handling rework).
