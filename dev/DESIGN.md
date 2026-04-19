@@ -1195,13 +1195,18 @@ error.
 ### 4.5 Bond Scale Factor
 
 A new parameter `bond_parameter_scale` provides a global
-multiplier for all bond force constants.  Its default value
-(1.0) is defined in `condenserc.py`, loaded into the
-`Condense` object by `assign_rc_defaults()`, and can be
+multiplier for all bond force constants.  The default value
+(1.0) is hardcoded in `Condense.__init__` and can be
 overridden by a `bond_parameter_scale` keyword in the
 condense.in input file (read by `parse_input_file()`):
 
   bond_parameter_scale 0.9
+
+Force-field parameters are deliberately kept out of
+`condenserc.py` and `ScriptSettings` to avoid cluttering
+the CLI with rarely-touched calibration knobs.  See 4.8.8
+item 5 for the broader rationale and for the parallel
+treatment of the angle parameters.
 
 The value is dimensionless and multiplies every computed K_ij
 before writing the LAMMPS Bond Coeffs section.  Values below
@@ -1475,9 +1480,9 @@ large value (e.g., 5.0-7.0).
 A new parameter `angle_parameter_scale` provides a global
 multiplier for all computed angle force constants, following
 the same pattern as `bond_parameter_scale` (section 4.5).
-Its default value (1.0) is defined in `condenserc.py`,
-loaded into the `Condense` object by `assign_rc_defaults()`,
-and can be overridden by a keyword in condense.in:
+The default value (1.0) is hardcoded in `Condense.__init__`
+and can be overridden by a keyword in condense.in (read by
+`parse_input_file()`):
 
   angle_parameter_scale 0.8
 
@@ -1491,10 +1496,21 @@ theta_0 is left unchanged.
 
 A new parameter `angle_cluster_tolerance` controls how
 aggressively observed angles are merged into shared types.
-Its default value (5.0 degrees) is defined in
-`condenserc.py` and can be overridden in condense.in:
+The default value (5.0 degrees) is hardcoded in
+`Condense.__init__` and can be overridden in condense.in
+(read by `parse_input_file()`):
 
   angle_cluster_tolerance 3.0
+
+**Scope.**  This parameter and the clustering algorithm
+described below apply only to condense.py's two call
+sites -- local clustering in `create_lammps_files()` and
+cross-source re-clustering in `normalize_types()`.  The
+template producer `make_reactions.py` uses a fixed
+tolerance of 0.0 (identity-only merge) regardless of
+this parameter's value, which is what makes reaction
+templates reusable across any condense.py simulation;
+see section 4.8.10 for the full rationale.
 
 **Clustering algorithm.**  Within each (Z1, Zv, Z2)
 triplet group, the observed angles are sorted in
@@ -1644,16 +1660,34 @@ file is read for angles.  The changes are:
    cross-source unification described in item 4 then
    operates on the per-source outputs.
 
-3. **Force constant computation: add.**  For each
-   angle type, compute K_angle using the formula from
-   section 4.8.4, calling `get_bond_params()` for the
-   two arm bond stiffnesses.  Apply
+3. **Force constant computation: add (condense.py
+   only).**  For each angle type in the lammps.dat
+   produced by `create_lammps_files()`, compute K_angle
+   using the formula from section 4.8.4, calling
+   `get_bond_params()` for the two arm bond stiffnesses.
+   Apply `angle_stiffness_coeff` and
+   `angle_parameter_scale` (both factor into the
+   K_angle formula).  `normalize_types()` recomputes the
+   same K values in item 4b, which is safe because
+   K_angle depends only on the triplet and not on
+   theta_0.
+
+   The template producer `make_reactions.py` does **not**
+   compute K_angle locally.  Reaction template files
+   (pre-, post-, and map-) carry only connectivity,
+   per-atom angle entries, and the tag tail
+   "{theta_0_local} {t}" -- no K value is ever written
+   into a template.  Since `normalize_types()` in item
+   4b recomputes K authoritatively from the triplet
+   for every final cluster, a redundant producer-side K
+   in `make_reactions.py` would be neither written nor
+   consumed.  Skipping it keeps `make_reactions.py`
+   independent of `BondData` and avoids plumbing
    `angle_stiffness_coeff` and `angle_parameter_scale`
-   (both factor into the K_angle formula).  This runs
-   locally in every producer; `normalize_types()`
-   recomputes the same K values in item 4b, which is
-   safe because K_angle depends only on the triplet
-   and not on theta_0.
+   into a script that never writes their effect to disk.
+   See section 4.8.10 for the full rationale -- the
+   same decision is what makes reaction templates
+   reusable across any condense.py simulation.
 
 4. **normalize_types(): cross-source unification.**
    `normalize_types()` is the authoritative
@@ -1691,6 +1725,26 @@ file is read for angles.  The changes are:
       running mean, weighted by obs_count, is the
       final canonical theta_0 for the merged
       cluster.
+
+      **Associativity of obs_count weighting.**  The
+      weighted-mean formula used here is associative
+      under pre-merging: clustering identical
+      observations into one local record with
+      obs_count > 1 before cross-source merging
+      produces the same final theta_0 as passing
+      each observation through as a separate
+      weight-1 record.  This property is what makes
+      `make_reactions.py`'s local clustering step
+      safe at any tolerance that only merges
+      bit-identical theta values (see section 4.8.10
+      and PSEUDOCODE 10d): the template producer can
+      collapse duplicate observations to keep the
+      template file compact without perturbing what
+      `normalize_types()` computes.  Merging
+      non-identical observations at the producer
+      would not preserve associativity and would
+      create the T_m > T_c hazard described in
+      section 4.8.10.
 
    b. **Force constant computation.**  For each
       final cluster, compute K_angle via
@@ -1744,14 +1798,30 @@ file is read for angles.  The changes are:
    `condenserc.py` and `ScriptSettings` to avoid
    cluttering the CLI with rarely-touched knobs.  User
    overrides are accepted through matching keywords in
-   `condense.in`, parsed by `parse_input_file()`.  The
-   values are applied wherever K_angle is computed --
-   in `create_lammps_files()`, in the template-
-   emission path of `make_reactions.py`, and in
-   `normalize_types()`.  `angle_cluster_tolerance`
-   additionally governs wherever local or cross-
-   source clustering happens (the same three sites,
-   plus the spread-cap policy `2 * tolerance`).
+   `condense.in`, parsed by `parse_input_file()`.
+
+   All three parameters are **condense.py-scoped**:
+   they govern the clustering and K computation done
+   inside `create_lammps_files()` and
+   `normalize_types()`, not anywhere in
+   `make_reactions.py`.  `angle_stiffness_coeff` and
+   `angle_parameter_scale` appear only where K_angle is
+   computed, which per item 3 is condense.py only.
+   `angle_cluster_tolerance` governs the two clustering
+   sites that live inside condense.py -- local
+   clustering in `create_lammps_files()` and the
+   cross-source re-clustering in `normalize_types()` --
+   along with the matching spread-cap policy
+   `2 * tolerance` at each.  The template producer
+   `make_reactions.py` uses a fixed tolerance of 0.0 at
+   its local clustering site (identity-only merge over
+   the 0.5-degree-quantized observed angles from
+   `bondAnalysis.ba`), so no user-tunable tolerance is
+   exposed there and no parameter coordination is
+   required between the two scripts.  Section 4.8.10
+   explains why this asymmetry is what makes reaction
+   templates reusable across any condense.py simulation
+   regardless of its `angle_cluster_tolerance` value.
 
 6. **angles.dat: retire.**  Remove from
    `src/data/CMakeLists.txt` DATABASES list.  Remove
@@ -1786,6 +1856,117 @@ Users who relied on the old uniform k = 500 behavior can
 approximate it by setting `angle_parameter_scale` to a
 large value, though the per-triplet variation in K will
 still be present.
+
+#### 4.8.10 Template Reusability (make_reactions.py tolerance = 0)
+
+The reaction template files produced by
+`make_reactions.py` (pre-, post-, and map-files) are
+intended to be reusable across any `condense.py`
+simulation, regardless of the `angle_cluster_tolerance`
+value that the downstream simulation happens to use.
+This reusability is not automatic -- it depends on the
+template producer being careful about what it does with
+its own local clustering step.  This section explains
+the constraint, the failure mode if it is violated, and
+why the chosen design (tolerance = 0 at
+`make_reactions.py`) makes the guarantee hold.
+
+**Producer and consumer tolerances.**  Let T_m be the
+tolerance `make_reactions.py` uses for its local
+clustering and T_c be the tolerance `condense.py` uses
+inside `normalize_types()` for cross-source clustering.
+The two scripts are independent: a given template is
+generated once and may later be fed to many different
+`condense.py` runs that each set T_c however the user
+pleases.
+
+**The asymmetric hazard: T_m > T_c is dangerous, T_m <=
+T_c is safe.**  Local clustering in either producer is
+in principle an optimization: it compresses the record
+stream that `normalize_types()` consumes.  But that
+optimization is only semantically neutral while it
+merges bit-identical observations.  Once T_m is large
+enough to merge non-identical observations, the
+producer has collapsed information that the consumer
+cannot recover.
+
+- **T_m < T_c (stricter local, looser global).**  The
+  producer emits finer local types.  The consumer's
+  looser cross-source merge can still fold those finer
+  splits together correctly, because the weighted-mean
+  formula in item 4a is associative (see the
+  associativity note there).  No physics error; at
+  worst, slightly more records pass through the cross-
+  source step.
+- **T_m > T_c (looser local, stricter global).**  The
+  producer has already fused physically distinct angles
+  into a single local type with a single theta_0 and a
+  single local_type_id.  The consumer sees one record
+  for what the user wanted to treat as two types.  All
+  occurrences in the template share one global type
+  after the cross-source step, so LAMMPS applies the
+  wrong equilibrium angle and wrong force constant to
+  some fraction of the angles, off by up to 2 * T_m
+  degrees.  This is not a crash -- the simulation runs
+  -- but the results are wrong, and debugging the
+  discrepancy requires tracing local_type_id lineage
+  through both producers.
+
+**The chosen design: T_m = 0 at `make_reactions.py`.**
+Fixing T_m to 0 makes the guarantee symmetric and
+absolute: any T_c >= 0 is safe, and T_c >= 0 covers
+every valid configuration of `condense.py`.  At
+T_m = 0, `cluster_angles()` (PSEUDOCODE 10a) merges
+only bit-identical theta_obs values.  Observed angles
+in `bondAnalysis.ba` are already quantized to 0.5
+degrees by the reader (see `make_reactions.py
+_read_angle_data`), so bit-identity is a well-defined
+operation and collapses duplicates cleanly -- e.g. a
+benzene ring's six geometrically identical C-C-C angles
+at 120.0 degrees become a single local record with
+`obs_count = 6` rather than six separate records.
+
+**What does not happen under T_m = 0.**  Because no
+non-identical angles are ever fused at the producer,
+no interpretive merging is performed before the
+consumer sees the data.  `normalize_types()` is
+therefore free to apply any T_c it likes -- the raw
+0.5-degree-quantized local_theta_0 values are still
+present in every record, and the weighted-mean cross-
+source cluster in item 4a produces the same final
+theta_0 for any T_c that it would have produced if the
+template had listed each observation separately.  The
+associativity property in item 4a is what formally
+guarantees this.
+
+**Why not enforce T_m via a manifest instead.**  An
+earlier design sketch considered having
+`make_reactions.py` write a manifest recording the T_m
+it used, and having `condense.py` verify on read.  Two
+reasons that approach was rejected:
+
+1. **Needless coordination.**  The manifest introduces
+   a hand-off protocol between two independent scripts
+   that otherwise share nothing but the template file
+   format.  Fixing T_m = 0 removes the coordination
+   entirely -- there is no parameter to record, check,
+   or propagate.
+
+2. **User experience under mismatch.**  A manifest
+   check would force users to regenerate templates any
+   time they tuned `angle_cluster_tolerance` in
+   `condense.in`.  Since templates are often produced
+   by one researcher and consumed by many, regenerating
+   them is not cheap.  Fixed T_m = 0 means the
+   condense.in tolerance can be re-tuned freely
+   without touching the template files.
+
+The cost of T_m = 0 is modestly larger template files
+(one local record per distinct 0.5-degree-quantized
+observed angle rather than one per coarse cluster),
+but the observation data per template is small in
+absolute terms and the reusability guarantee is worth
+the trade.
 
 ---
 

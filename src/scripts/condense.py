@@ -164,7 +164,9 @@ import subprocess
 import sys
 from datetime import datetime
 
-from angle_utils import cluster_angles, get_angle_k
+from angle_utils import (
+    cluster_angles, get_angle_k,
+    LocalRecord, cross_source_cluster)
 
 
 # ================================================================
@@ -2131,13 +2133,18 @@ cd $SLURM_SUBMIT_DIR
 mpirun lmp -in lammps.in
 """)
 
-        # Store data needed by normalize_types.
+        # Store data needed by normalize_types.  The bond-side
+        # fields remain because they are consumed by follow-up
+        # steps that read them back.  The matching angle-side
+        # fields (num_unique_angle_tags / unique_angle_tags_local)
+        # were removed in C40: normalize_types now reads Angle
+        # Coeffs from lammps.dat on disk and runs its own cross-
+        # source clustering pass, so the in-memory stash is
+        # dead.  See DESIGN 4.8.8 items 4a-4c and PSEUDOCODE 10e.
         self._bond_count = bond_count
         self._angle_count = angle_count
         self._num_unique_bond_tags = num_unique_bond_tags
-        self._num_unique_angle_tags = num_unique_angle_tags
         self._unique_bond_tags_local = unique_bond_tags_local
-        self._unique_angle_tags_local = unique_angle_tags_local
         self._num_ordered_species = num_ordered_species
 
         # Return to the original working directory.
@@ -2163,24 +2170,30 @@ mpirun lmp -in lammps.in
 
         element_data = self.element_data
         bond_data = self.bond_data
-        angle_data = self.angle_data
+        # AngleData / self.angle_data are no longer referenced here;
+        # the legacy hooke-angle lookup was removed in C40.  The class
+        # itself remains in condense.py until C41, which retires
+        # angles.dat from the build entirely.
 
-        # Initialize unique type trackers.  ``unique_bond_types`` and
-        # ``unique_angle_types`` are doubly 1-indexed: the outer
-        # dimension iterates over bond/angle type indices (slot 0 is
-        # the None sentinel), and every stored entry is itself a
-        # 1-indexed ``[None, bt1, bt2]`` / ``[None, at1, at2, at3,
-        # at4]`` list mirroring Perl's
-        # ``@uniqueBondTypes[$bond_unique_id][1..2]`` /
-        # ``@uniqueAngleTypes[$unique_id][1..4]`` layout.
-        # ``unique_atom_types[unique_id]`` is a flat string token, so its
-        # inner axis has no indexing to choose.
+        # Initialize unique type trackers.  ``unique_bond_types`` is
+        # doubly 1-indexed: the outer dimension iterates over bond
+        # type indices (slot 0 is the None sentinel), and every stored
+        # entry is itself a 1-indexed ``[None, bt1, bt2]`` list
+        # mirroring Perl's ``@uniqueBondTypes[$id][1..2]`` layout.
+        # ``unique_atom_types[unique_id]`` is a flat string token, so
+        # its inner axis has no indexing to choose.
+        #
+        # Angle-type unification no longer uses a string-match dedup
+        # list here.  Instead, every source contributes ``LocalRecord``
+        # entries to ``angle_local_records``; after all atom/bond
+        # collection is done, ``cross_source_cluster`` (PSEUDOCODE 10e)
+        # unifies those records into the authoritative final type list.
+        # See the ``Angle handling`` block farther down.
         num_unique_bonds = 0
-        num_unique_angles = 0
         num_unique_atom_types = 0
         unique_bond_types = [None]   # 1-indexed
-        unique_angle_types = [None]  # 1-indexed
         unique_atom_types = [None]   # 1-indexed
+        angle_local_records = []     # list of LocalRecord (10e input)
 
         # ------------------------------------------------
         # Read and parse the lammps.dat file into memory
@@ -2251,36 +2264,13 @@ mpirun lmp -in lammps.in
                         num_unique_bonds += 1
                         unique_bond_types.append([None, bt1, bt2])
 
-            elif line.strip() == "Angle Coeffs":
-                line_num += 1  # skip blank line
-                for _a in range(num_angle_types_lmp):
-                    line_num += 1
-                    vals = lammps_lines[line_num].split()
-                    # Format: "idx k angle # e1 s1 m1 e2 s2 m2 e3 s3 m3 angle
-                    #   hookeid"
-                    at1 = f"{vals[4]} {vals[5]} {vals[6]}"
-                    at2 = f"{vals[7]} {vals[8]} {vals[9]}"
-                    at3 = f"{vals[10]} {vals[11]} {vals[12]}"
-                    at4 = f"{vals[13]} {vals[14]}"
-
-                    # Each unique_angle_types entry is 1-indexed
-                    # [None, at1, at2, at3, at4] so slots 1..4 carry
-                    # the two end-atom, vertex, and rest-angle tags.
-                    found = 0
-                    for unique_id in range(1, num_unique_angles + 1):
-                        if (unique_angle_types[unique_id][1]
-                                == at1
-                                and unique_angle_types[
-                                    unique_id][2] == at2
-                                and unique_angle_types[
-                                    unique_id][3] == at3
-                                and unique_angle_types[
-                                    unique_id][4] == at4):
-                            found = unique_id
-                            break
-                    if found == 0:
-                        num_unique_angles += 1
-                        unique_angle_types.append([None, at1, at2, at3, at4])
+            # The "Angle Coeffs" section of lammps.dat is no longer
+            # scanned here; angle-type discovery is now driven by the
+            # dedicated cross-source clustering pass in 10e (see the
+            # ``Angle handling`` block farther down).  Atom and bond
+            # handling still uses the in-loop string-match dedup
+            # because those producers write consistent tag strings
+            # across every source.
 
             line_num += 1
 
@@ -2364,39 +2354,69 @@ mpirun lmp -in lammps.in
                                 unique_bond_types.append([None, bt1, bt2])
 
                     elif "Angles" in mline_s:
+                        # Collect per-template LocalRecord entries
+                        # (PSEUDOCODE 10e input).  The first occurrence
+                        # of each local_type_id carries the template's
+                        # theta_0_local and the canonical base_tag in
+                        # its trailing comment; subsequent occurrences
+                        # of that local_type_id just bump obs_count.
+                        # The producer already canonicalized the tag
+                        # so vals[6] / vals[9] / vals[12] hold z1, zv,
+                        # and z2 elements respectively, with z1 <= z2.
                         mf.readline()  # skip blank
+                        tpl_angle_info = {}
+                        tpl_angle_obs = {}
                         for _a in range(num_mol_angles):
                             vals = mf.readline().split()
-                            # Adjust molecule names.
+                            # Adjust molecule names to family names
+                            # in the comment tokens (same remap the
+                            # rewrite pass below applies, so the
+                            # representative base_tag stored in the
+                            # LocalRecord stays consistent with what
+                            # normalize_types will eventually write).
                             for idx in[8, 11, 14]:
                                 mn = vals[idx]
                                 if mn in (self.molecule_to_family_map):
-                                    vals[idx] = self.molecule_to_family_map[mn]
-                            at1 = f"{vals[6]} {vals[7]} {vals[8]}"
-                            at2 = f"{vals[9]} {vals[10]} {vals[11]}"
-                            at3 = f"{vals[12]} {vals[13]} {vals[14]}"
-                            at4 = f"{vals[15]} {vals[16]}"
-                            # Slots 1..4 carry the two end-atom, vertex,
-                            # and rest-angle tags (1-indexed layout).
-                            found = 0
-                            for unique_id in range(1, num_unique_angles + 1):
-                                if (unique_angle_types
-                                        [unique_id][1] == at1
-                                        and
-                                        unique_angle_types
-                                        [unique_id][2] == at2
-                                        and
-                                        unique_angle_types
-                                        [unique_id][3] == at3
-                                        and
-                                        unique_angle_types
-                                        [unique_id][4] == at4):
-                                    found = unique_id
-                                    break
-                            if found == 0:
-                                num_unique_angles += 1
-                                unique_angle_types.append(
-                                    [None, at1, at2, at3, at4])
+                                    vals[idx] = (
+                                        self.molecule_to_family_map[mn])
+                            local_id = int(vals[1])
+                            if local_id not in tpl_angle_info:
+                                theta_0_local = float(vals[15])
+                                base_tag = (
+                                    f"{vals[6]} {vals[7]} "
+                                    f"{vals[8]} {vals[9]} "
+                                    f"{vals[10]} {vals[11]} "
+                                    f"{vals[12]} {vals[13]} "
+                                    f"{vals[14]}"
+                                )
+                                z1 = element_data.get_element_z(
+                                    vals[6])
+                                zv = element_data.get_element_z(
+                                    vals[9])
+                                z2 = element_data.get_element_z(
+                                    vals[12])
+                                tpl_angle_info[local_id] = (
+                                    theta_0_local, base_tag,
+                                    z1, zv, z2)
+                            tpl_angle_obs[local_id] = (
+                                tpl_angle_obs.get(local_id, 0) + 1)
+
+                        # Emit one LocalRecord per distinct local
+                        # type found in this template.  The source
+                        # tag is the template file's basename so
+                        # the remap returned by cross_source_cluster
+                        # can route per-angle type ids in the
+                        # rewrite pass below.
+                        source_tag = os.path.basename(mol_path)
+                        for local_id, info in tpl_angle_info.items():
+                            theta_0_local, base_tag, z1, zv, z2 = info
+                            angle_local_records.append(LocalRecord(
+                                z1=z1, zv=zv, z2=z2,
+                                theta_0_local=theta_0_local,
+                                obs_count=tpl_angle_obs[local_id],
+                                base_tag=base_tag,
+                                source=source_tag,
+                                local_type_id=local_id))
 
         # ------------------------------------------------
         # Compute coefficients for each unique bond type
@@ -2426,47 +2446,130 @@ mpirun lmp -in lammps.in
             )
 
         # ------------------------------------------------
-        # Compute coefficients for each unique angle type
+        # Angle handling (PSEUDOCODE 10e, 10f; DESIGN 4.8.8
+        # item 4)
         # ------------------------------------------------
+        #
+        # Every producer (create_lammps_files for lammps.dat,
+        # make_reactions.py for each reaction template) has
+        # already emitted local angle types with the cluster-mean
+        # theta_0 carried in the tag tail
+        # ``{theta_0_local:.4f} {local_type_id}``.  normalize_types
+        # now unifies those local types across every source via
+        # cross_source_cluster, recomputes K_angle
+        # authoritatively from the final canonical triplet using
+        # get_angle_k, and rewrites every source's Angle Coeffs /
+        # Angles section with the global type ids and the
+        # canonical theta_0_final.  The cluster-map diagnostic
+        # written below preserves the audit trail: students
+        # chasing a bond/react type-ID mismatch can open the map
+        # and see exactly which local clusters were merged into
+        # which final cluster.
+
+        # Pass A -- collect LocalRecord entries for lammps.dat.
+        # Template records were already appended to
+        # angle_local_records in the per-template first-pass loop
+        # above.  For lammps.dat we need a dedicated walk because
+        # its first-pass loop skipped the Angle Coeffs section.
+        lammps_angle_info = {}   # local_id -> (theta_0, tag, z1, zv, z2)
+        lammps_angle_obs = {}    # local_id -> obs_count
+
+        # The ``N angles`` header tells us how many rows to read
+        # from the Angles section once we reach it; the first-pass
+        # loop above captured ``num_angle_types_lmp`` but not this
+        # count, so we parse it here first.
+        num_angles_lmp_header = 0
+        for ln in lammps_lines:
+            if re.match(r'^\d+\s+angles\s*$', ln.strip()):
+                num_angles_lmp_header = int(ln.split()[0])
+                break
+
+        line_num = 0
+        while line_num < len(lammps_lines):
+            section_header = lammps_lines[line_num].strip()
+            if section_header == "Angle Coeffs":
+                # Format per line:
+                #   "{id} {k} {theta_0} # {e1 s1 m1} {e2 s2 m2}
+                #    {e3 s3 m3} {theta_0:.4f} {id}"
+                # vals[0]=id, vals[2]=theta_0, vals[4..12]=base_tag
+                # (nine tokens), vals[13]=theta_0 repeated,
+                # vals[14]=id repeated.  The producer already
+                # canonicalized so vals[4] / vals[7] / vals[10]
+                # hold z1, zv, z2 elements with z1 <= z2.
+                line_num += 1  # skip blank
+                for _a in range(num_angle_types_lmp):
+                    line_num += 1
+                    vals = lammps_lines[line_num].split()
+                    local_id = int(vals[0])
+                    theta_0_local = float(vals[2])
+                    base_tag = (
+                        f"{vals[4]} {vals[5]} {vals[6]} "
+                        f"{vals[7]} {vals[8]} {vals[9]} "
+                        f"{vals[10]} {vals[11]} {vals[12]}"
+                    )
+                    z1 = element_data.get_element_z(vals[4])
+                    zv = element_data.get_element_z(vals[7])
+                    z2 = element_data.get_element_z(vals[10])
+                    lammps_angle_info[local_id] = (
+                        theta_0_local, base_tag, z1, zv, z2)
+            elif section_header == "Angles":
+                # Count obs_count per local_id.  vals[1] is the
+                # local type id written by create_lammps_files in
+                # Phase 4 of PSEUDOCODE 10c; each Angles entry
+                # contributes one observation to its type.
+                line_num += 1  # skip blank
+                for _a in range(num_angles_lmp_header):
+                    line_num += 1
+                    vals = lammps_lines[line_num].split()
+                    local_id = int(vals[1])
+                    lammps_angle_obs[local_id] = (
+                        lammps_angle_obs.get(local_id, 0) + 1)
+            line_num += 1
+
+        for local_id, info in lammps_angle_info.items():
+            theta_0_local, base_tag, z1, zv, z2 = info
+            angle_local_records.append(LocalRecord(
+                z1=z1, zv=zv, z2=z2,
+                theta_0_local=theta_0_local,
+                obs_count=lammps_angle_obs.get(local_id, 0),
+                base_tag=base_tag,
+                source="lammps.dat",
+                local_type_id=local_id))
+
+        # Pass B -- unify local records across sources via the
+        # obs_count-weighted greedy merge of PSEUDOCODE 10e.
+        final_angle_types, angle_remap = cross_source_cluster(
+            angle_local_records, self.angle_cluster_tolerance)
+        num_unique_angles = len(final_angle_types)
+
+        # Pass C -- compute K_angle per final type.  K depends
+        # only on the (z1, zv, z2) triplet, so recomputation here
+        # yields the same value any producer would have computed
+        # from the same triplet (DESIGN 4.8.8 item 4b).  We store
+        # a 1-indexed ``[None, k, theta_0_final]`` list to keep
+        # the downstream Angle Coeffs writer structurally
+        # identical to the bond-coeff writer.
         unique_angle_coeffs = [None] * (num_unique_angles + 1)
-        for unique_id in range(1, num_unique_angles + 1):
-            # unique_angle_types[unique_id] is 1-indexed
-            # [None, at1, at2, at3, at4].
-            vals1 = unique_angle_types[unique_id][1].split()
-            atom1_z = element_data.get_element_z(vals1[0])
+        for final_id in range(1, num_unique_angles + 1):
+            ft = final_angle_types[final_id - 1]
+            k_theta = get_angle_k(
+                ft.z1, ft.zv, ft.z2,
+                self.angle_stiffness_coeff,
+                self.angle_parameter_scale,
+                bond_data.get_bond_params)
+            unique_angle_coeffs[final_id] = (
+                [None, k_theta, ft.theta_0_final])
 
-            vals2 = unique_angle_types[unique_id][2].split()
-            atom2_z = element_data.get_element_z(vals2[0])
-
-            vals3 = unique_angle_types[unique_id][3].split()
-            atom3_z = element_data.get_element_z(vals3[0])
-
-            # Make sure atom1_z <= atom3_z.
-            if atom1_z > atom3_z:
-                atom1_z, atom3_z = atom3_z, atom1_z
-
-            vals4 = unique_angle_types[unique_id][4].split()
-            curr_bond_angle = float(vals4[0])
-
-            # Each hooke_record is 1-indexed: slots 1..6 are Z1,
-            # Zv, Z2, k, angle_deg, tolerance.  Store a 1-indexed
-            # [None, k, angle_deg] pair -- same shape as the
-            # create_lammps_files producer.  The historical Perl
-            # port carried an extra hooke-angle-id tail here, but
-            # it was never read downstream; dropping it keeps both
-            # producers structurally identical.
-            for hooke_idx in range(
-                    1, angle_data.num_hooke_angles + 1):
-                hooke_record = (
-                    angle_data.hooke_angle_coeffs[hooke_idx])
-                if (atom1_z == hooke_record[1]
-                        and atom2_z == hooke_record[2]
-                        and atom3_z == hooke_record[3]
-                        and abs(curr_bond_angle
-                                - hooke_record[5])
-                        <= hooke_record[6]):
-                    unique_angle_coeffs[unique_id] = (
-                        [None, hooke_record[4], hooke_record[5]])
+        # Pass D -- cluster-map diagnostic (DESIGN 4.8.8 item 4d,
+        # PSEUDOCODE 10f Phase D).  The file lists, for every
+        # final cluster, the canonical (z1, zv, z2, theta_0_final)
+        # record followed by every contributing (source,
+        # local_type_id, theta_0_local, obs_count) tuple, which
+        # is the primary debuggability payback for routing angle
+        # unification through normalize_types.
+        self._write_angle_cluster_map(
+            final_angle_types, angle_remap,
+            angle_local_records, unique_angle_coeffs)
 
         # --------------------------------------------------------
         # Compute pair coefficients and masses for each unique
@@ -2604,66 +2707,54 @@ mpirun lmp -in lammps.in
                     lmp.write(f"{num_angles_lmp} angles\n")
 
                 elif line.strip() == "Angle Coeffs":
-                    # angle_coeff is 1-indexed: slot 1 is k, slot 2 is the
-                    # rest angle in degrees.  unique_angle_types[unique_id]
-                    # is 1-indexed [None, at1, at2, at3, at4].
+                    # Emit one entry per final cluster produced by
+                    # cross_source_cluster.  Format mirrors the one
+                    # create_lammps_files writes initially: "{id}
+                    # {k} {theta_0} # {base_tag} {theta_0:.4f} {id}"
+                    # where base_tag is the representative 9-token
+                    # element/species/molecule prefix and the
+                    # repeated {theta_0 id} tail is the contract
+                    # the Angles section reader here relies on.
                     lmp.write("Angle Coeffs\n\n")
-                    for unique_id in range(1, num_unique_angles + 1):
-                        angle_coeff = unique_angle_coeffs[unique_id]
+                    for final_id in range(1, num_unique_angles + 1):
+                        ft = final_angle_types[final_id - 1]
+                        angle_coeff = unique_angle_coeffs[final_id]
                         lmp.write(
-                            f"{unique_id} {angle_coeff[1]} {angle_coeff[2]} "
-                            f"# "
-                            f"{unique_angle_types[unique_id][1]}"
-                            f" "
-                            f"{unique_angle_types[unique_id][2]}"
-                            f" "
-                            f"{unique_angle_types[unique_id][3]}"
-                            f" "
-                            f"{unique_angle_types[unique_id][4]}"
-                            f"\n"
+                            f"{final_id} {angle_coeff[1]} "
+                            f"{angle_coeff[2]} "
+                            f"# {ft.base_tag} "
+                            f"{ft.theta_0_final:.4f} "
+                            f"{final_id}\n"
                         )
                     # Skip original angle coeff lines.
                     line_num += num_angle_types_lmp + 1
 
                 elif line.strip() == "Angles":
+                    # Rewrite per-angle type ids via angle_remap.
+                    # Each Angles line already carries the OLD local
+                    # type id at vals[1]; remap routes it to the
+                    # unified final_id.  The comment tag is
+                    # reconstructed from the final type's base_tag
+                    # so every Angles comment agrees with the
+                    # canonical theta_0_final written in Angle
+                    # Coeffs above.
                     lmp.write("Angles\n\n")
                     line_num += 1  # skip blank line
                     for _a in range(num_angles_lmp):
                         line_num += 1
                         vals = lammps_lines[line_num].split()
-                        at1 = f"{vals[6]} {vals[7]} {vals[8]}"
-                        at2 = f"{vals[9]} {vals[10]} {vals[11]}"
-                        at3 = f"{vals[12]} {vals[13]} {vals[14]}"
-                        at4 = f"{vals[15]} {vals[16]}"
-
-                        # Alphabetize the angle tag.
-                        if at1 > at3:
-                            angle_tag = f"{at3} {at2} {at1} {at4}"
-                        else:
-                            angle_tag = f"{at1} {at2} {at3} {at4}"
-
-                        # Find the matching unique angle.  angle_record is
-                        # 1-indexed [None, at1, at2, at3, at4].
-                        for unique_id in range(1, num_unique_angles + 1):
-                            angle_record = unique_angle_types[unique_id]
-                            if (((at1 == angle_record[1]
-                                  and at2 == angle_record[2]
-                                  and at3 == angle_record[3]
-                                  and at4 == angle_record[4])
-                                 or (at3 == angle_record[1]
-                                     and at2 == angle_record[2]
-                                     and at1 == angle_record[3]
-                                     and at4 == angle_record[4]))):
-                                angle_num = int(vals[0])
-                                lmp.write(
-                                    f"{angle_num} "
-                                    f"{unique_id} "
-                                    f"{vals[2]} "
-                                    f"{vals[3]} "
-                                    f"{vals[4]} # "
-                                    f"{angle_tag}\n"
-                                )
-                                break
+                        angle_num = int(vals[0])
+                        old_local_id = int(vals[1])
+                        final_id = angle_remap[
+                            ("lammps.dat", old_local_id)]
+                        ft = final_angle_types[final_id - 1]
+                        lmp.write(
+                            f"{angle_num} {final_id} "
+                            f"{vals[2]} {vals[3]} {vals[4]} "
+                            f"# {ft.base_tag} "
+                            f"{ft.theta_0_final:.4f} "
+                            f"{final_id}\n"
+                        )
                     line_num += 1  # skip trailing blank
 
                 else:
@@ -2776,58 +2867,135 @@ mpirun lmp -in lammps.in
                                     break
 
                     elif "Angles" in line:
+                        # Rewrite this template's per-angle type ids
+                        # via angle_remap.  The source key is the
+                        # template's file basename, matching the
+                        # source tag used when building
+                        # angle_local_records in the first-pass
+                        # loop.  Each new comment carries the final
+                        # cluster's base_tag and canonical
+                        # theta_0_final so the tag stays consistent
+                        # with lammps.dat's rewritten Angle Coeffs.
                         mf.write(f"{line}\n\n")
                         line_num += 1  # skip blank
+                        source_tag = os.path.basename(mol_path)
                         for _a in range(num_mol_angles):
                             line_num += 1
                             vals = mol_lines[line_num].split()
-
-                            # Adjust molecule names.
-                            for idx in[8, 11, 14]:
-                                mn = vals[idx]
-                                if mn in (self.molecule_to_family_map):
-                                    vals[idx] = self.molecule_to_family_map[mn]
-
-                            at1 = f"{vals[6]} {vals[7]} {vals[8]}"
-                            at2 = f"{vals[9]} {vals[10]} {vals[11]}"
-                            at3 = f"{vals[12]} {vals[13]} {vals[14]}"
-                            at4 = f"{vals[15]} {vals[16]}"
-
-                            # Alphabetize.
-                            if at1 > at3:
-                                angle_tag = f"{at3} {at2} {at1} {at4}"
-                            else:
-                                angle_tag = f"{at1} {at2} {at3} {at4}"
-
-                            # Find matching angle.  angle_record is 1-indexed
-                            # [None, at1, at2, at3, at4].
-                            for unique_id in range(1, num_unique_angles + 1):
-                                angle_record = unique_angle_types[unique_id]
-                                if (((at1 == angle_record[1]
-                                      and at2 == angle_record[2]
-                                      and at3 == angle_record[3]
-                                      and at4 == angle_record[4])
-                                     or
-                                     (at3 == angle_record[1]
-                                      and at2 == angle_record[2]
-                                      and at1 == angle_record[3]
-                                      and at4 == angle_record[4]))):
-                                    angle_num = int(vals[0])
-                                    mf.write(
-                                        f"{angle_num} "
-                                        f"{unique_id} "
-                                        f"{vals[2]} "
-                                        f"{vals[3]} "
-                                        f"{vals[4]} # "
-                                        f"{angle_tag}"
-                                        f"\n"
-                                    )
-                                    break
+                            angle_num = int(vals[0])
+                            old_local_id = int(vals[1])
+                            final_id = angle_remap[
+                                (source_tag, old_local_id)]
+                            ft = final_angle_types[final_id - 1]
+                            mf.write(
+                                f"{angle_num} {final_id} "
+                                f"{vals[2]} {vals[3]} {vals[4]} "
+                                f"# {ft.base_tag} "
+                                f"{ft.theta_0_final:.4f} "
+                                f"{final_id}\n"
+                            )
 
                     else:
                         mf.write(f"{line}\n")
 
                     line_num += 1
+
+    # ============================================================
+    # Cluster-map diagnostic (DESIGN 4.8.8 item 4d;
+    # PSEUDOCODE 10f Phase D)
+    # ============================================================
+
+    def _write_angle_cluster_map(
+            self, final_angle_types, angle_remap,
+            angle_local_records, unique_angle_coeffs):
+        """Write an audit file listing, for every final angle
+        cluster, every local cluster that merged into it.
+
+        This file is the debuggability payback for routing all
+        angle unification through normalize_types.  A student
+        investigating a bond/react type-ID mismatch can open
+        ``lammps/angle_cluster_map.txt`` and see at a glance
+        which observations were merged together, which were
+        split, and at what theta_0 each contributed.
+
+        The file has one block per final cluster.  Each block
+        starts with a header line summarizing the final
+        canonical fields (global id, z1/zv/z2 triplet, canonical
+        theta_0, recomputed K_theta, and the summed obs_count),
+        then one indented line per contributing local record
+        naming its source, local_type_id, theta_0_local, and
+        obs_count.
+
+        Parameters
+        ----------
+        final_angle_types : list of FinalAngleType
+            Cross-source-unified angle types returned by
+            cross_source_cluster (PSEUDOCODE 10e).
+
+        angle_remap : dict
+            ``(source, local_type_id) -> final_type_id`` map
+            also returned by cross_source_cluster.  Used here to
+            group local records under their assigned final id
+            for the per-cluster listing.
+
+        angle_local_records : list of LocalRecord
+            Every per-source local record that fed into the
+            cross-source clustering step.
+
+        unique_angle_coeffs : list
+            1-indexed list of ``[None, k_theta, theta_0_final]``
+            entries, one per final type id.  Slot 0 is the None
+            sentinel.  The k_theta value is the recomputed UFF-
+            derived force constant that the Angle Coeffs section
+            of lammps.dat writes.
+        """
+        cluster_map_path = os.path.join(
+            "lammps", "angle_cluster_map.txt")
+        with open(cluster_map_path, 'w') as f:
+            f.write(
+                "# Angle cluster map --\n"
+                "# normalize_types cross-source angle unification\n"
+                "# One block per final angle type.\n"
+                "# See DESIGN 4.8.8 item 4d and PSEUDOCODE 10f\n"
+                "# Phase D for the algorithm behind this file.\n"
+                "\n")
+
+            # Bucket local records under their assigned final id
+            # so every block lists its own contributors without
+            # scanning the full remap for every cluster.
+            contributors_by_final_id = {}
+            for record in angle_local_records:
+                final_id = angle_remap[
+                    (record.source, record.local_type_id)]
+                contributors_by_final_id.setdefault(
+                    final_id, []).append(record)
+
+            for final_id in range(1, len(final_angle_types) + 1):
+                final_type = final_angle_types[final_id - 1]
+                k_theta = unique_angle_coeffs[final_id][1]
+                f.write(
+                    f"Final type {final_id}: "
+                    f"Z=({final_type.z1}, {final_type.zv}, "
+                    f"{final_type.z2}) "
+                    f"theta_0_final={final_type.theta_0_final:.4f} deg "
+                    f"K_theta={k_theta:.4f} "
+                    f"obs_count_total="
+                    f"{final_type.obs_count_total}\n")
+
+                # List contributors sorted by source name then by
+                # local_type_id so repeated runs on identical
+                # inputs produce byte-identical map files.
+                contributors = sorted(
+                    contributors_by_final_id.get(final_id, []),
+                    key=lambda rec: (rec.source,
+                                     rec.local_type_id))
+                for rec in contributors:
+                    f.write(
+                        f"  {rec.source:<24} "
+                        f"local_id={rec.local_type_id:<3} "
+                        f"theta_0_local={rec.theta_0_local:.4f} "
+                        f"obs_count={rec.obs_count}\n")
+                f.write("\n")
 
 
 # ================================================================

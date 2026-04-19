@@ -250,35 +250,44 @@
   not in condenserc.py or ScriptSettings.  Landed in a
   prior session; verified present at lines 767-780
   (defaults) and 917-947 (parse_input_file).
-- [ ] C39. Implement angle clustering in
+- [x] C39. Implement angle clustering in
   create_lammps_files: collect (Z1, Zv, Z2, theta_obs)
   tuples, cluster within tolerance, compute K_angle from
   get_bond_params(), replace angles.dat lookup
-  (DESIGN 4.8.3, 4.8.4, 4.8.8 items 1-3)
+  (DESIGN 4.8.3, 4.8.4, 4.8.8 items 1-3).  Landed in
+  commit d51da45 along with a condense.py-wide cleanup
+  of cryptic 1-2 letter locals and removal of 6 dead
+  variables.  Subtasks C39.1-C39.5 all resolved by the
+  same commit (see checkboxes below).
 
-  Plan (captured 2026-04-16 — pending before writing code):
+  Plan (captured 2026-04-16 — resolved in commit
+  d51da45):
 
-  - [ ] C39.1. Add two helper methods on Condense, inserted
-    just before create_lammps_files:
-    - _cluster_angles(observations): PSEUDOCODE 10a.  Group
-      observations by canonical (z1, zv, z2) triplet (with
-      z1 <= z2), sort each group by observed theta, greedy-
-      merge while BOTH |theta - running_mean| <=
-      self.angle_cluster_tolerance AND the resulting cluster
-      span stays within 2 * self.angle_cluster_tolerance
-      (spread cap, consistent with 10e's cross-source step).
-      Return (angle_types, angle_type_map), where each
-      angle_type carries z1, zv, z2, theta_0, and a
-      representative base_tag copied from the first
-      observation in the cluster.
-    - _compute_angle_k(z1, zv, z2): PSEUDOCODE 10b.  Return
-      self.angle_stiffness_coeff
-      * sqrt(K_arm1 * K_arm2)
-      * self.angle_parameter_scale,
-      pulling K_arm1/K_arm2 from
-      self.bond_data.get_bond_params().
+  - [x] C39.1. Add two shared helper functions.  Original
+    plan proposed `_cluster_angles` and `_compute_angle_k`
+    as methods on Condense; the actually-shipped form (commit
+    74805ed) promoted them to module-level functions in
+    src/scripts/angle_utils.py to avoid forcing
+    make_reactions.py to import the larger condense module:
+    - cluster_angles(observations, tolerance): PSEUDOCODE 10a.
+      Group observations by canonical (z1, zv, z2) triplet
+      (with z1 <= z2), sort each group by observed theta,
+      greedy-merge while BOTH |theta - running_mean| <=
+      tolerance AND the resulting cluster span stays within
+      2 * tolerance (spread cap, consistent with 10e's
+      cross-source step).  Return (angle_types,
+      angle_type_map), where each angle_type carries z1,
+      zv, z2, theta_0, obs_count, and a representative
+      base_tag copied from the first observation in the
+      cluster.
+    - get_angle_k(z1, zv, z2, stiffness, scale,
+      get_bond_params): PSEUDOCODE 10b.  Return
+      stiffness * sqrt(K_arm1 * K_arm2) * scale, pulling
+      K_arm1/K_arm2 from the injected get_bond_params
+      callable (bound to Condense.bond_data.get_bond_params
+      at the condense.py call site).
 
-  - [ ] C39.2. Refactor the angle section of the atom loop
+  - [x] C39.2. Refactor the angle section of the atom loop
     in create_lammps_files (current lines ~1521-1637) into
     a collect-only pass.  Build each observation dict
     {'z_trip', 'theta_obs', 'base_tag', 'vertex_atom',
@@ -288,9 +297,10 @@
     angles.dat lookup, the tag-uniqueness dedup, and the
     in-loop type_id assignment.
 
-  - [ ] C39.3. After the atom loop completes, add a
+  - [x] C39.3. After the atom loop completes, add a
     clustering block that:
-    - Calls self._cluster_angles(angle_observations).
+    - Calls cluster_angles(angle_observations,
+      self.angle_cluster_tolerance) from angle_utils.
     - Sets angle_count = len(angle_observations) and
       num_local_angle_types = len(angle_types).
     - Builds local_angle_tags[t] as the string
@@ -299,7 +309,8 @@
       that normalize_types expects (10c Phase 3, 10d
       Phase 3, 10f Phase B all share this format).
     - Builds local_angle_coeffs[t] = [None, K_angle,
-      theta_0] via _compute_angle_k.
+      theta_0] via get_angle_k(...,
+      self.bond_data.get_bond_params).
     - Walks angle_observations in collection order and
       populates angle_bonded_atoms and
       ordered_angle_type with local type ids (which
@@ -311,13 +322,13 @@
       weight cross-source clustering by observation
       population.
 
-  - [ ] C39.4. Delete the now-unused local alias
+  - [x] C39.4. Delete the now-unused local alias
     ``ad = self.angle_data`` inside create_lammps_files
     (around line 1338).  The AngleData class itself, and
     the identical alias in normalize_types, stay until
     C41 — normalize_types is updated in C40.
 
-  - [ ] C39.5. Sequencing constraint (not a side effect
+  - [x] C39.5. Sequencing constraint (not a side effect
     to live with): C39 and C39a must land together, and
     the precursor reaction-template DB must be rebuilt
     before any end-to-end test.  Until both producers
@@ -330,102 +341,168 @@
     already applied.  The fix is to migrate both
     producers, not to paper over it with a hooke-id
     shim in create_lammps_files.
-- [ ] C39a. Port make_reactions.py's existing angle
-  handling off angles.dat, in lockstep with C39.
-  Remove the duplicated AngleData class (lines ~113-
-  193) and the self.angle_data instantiation (line
-  ~568).  In the angle tag construction (around line
-  2518), replace the hooke_angle_coeffs scan with the
-  new approach so the emitted tag tail matches
-  "{theta_0} {t}" exactly as C39 writes it in
-  create_lammps_files.  Cross-source unification of
-  equivalent angle types is done centrally in
+- [x] C39a. Port make_reactions.py's existing angle
+  handling off angles.dat.  Remove the duplicated
+  AngleData class (lines ~113-193) and the
+  self.angle_data instantiation (line ~568).  In the
+  _read_angle_data method (around line 2518), replace
+  the hooke_angle_coeffs scan with the new collect /
+  cluster(tolerance=0) / emit structure from
+  PSEUDOCODE 10d so the emitted tag tail matches
+  "{theta_0:.4f} {t}" in the same format C39 writes
+  in create_lammps_files.  Cross-source unification
+  of equivalent angle types is done centrally in
   normalize_types (C40), not by string comparison on
   the producer-emitted tag tail.
 
-  Decision resolved (2026-04-17): hybrid approach.
-  Each producer (make_reactions.py and
-  create_lammps_files) locally clusters its own
-  observations within angle_cluster_tolerance and
-  emits one type per local cluster with the cluster-
-  mean theta_0 in the tag.  This keeps template files
-  compact and human-readable -- one type per
-  chemically distinct angle environment, not one per
-  floating-point observation.  normalize_types (C40)
-  then re-clusters across all sources using the same
-  tolerance, picks a final canonical theta_0, and
-  rewrites tag tails plus remaps type IDs uniformly.
-  The cross-source step compares theta_0 as a float
-  within tolerance, not as a string, so small local-
-  cluster drift between producers is absorbed
-  instead of splitting a physical angle in two.
+  Decision refined (2026-04-18): fixed tolerance = 0
+  at the template producer; no K computation at the
+  template producer.  The original 2026-04-17
+  "hybrid with matching tolerance on both producers"
+  plan was revisited once we traced the cross-source
+  data flow in detail and realized:
 
-  Plan (captured 2026-04-17 -- pending before
-  writing code):
+  1. Local clustering at make_reactions.py is an
+     optimization, not a correctness step.  Any
+     tolerance T_m > condense.py's T_c causes silent
+     wrong physics (distinct angles fused at the
+     producer cannot be un-fused downstream).  Fixing
+     T_m = 0 eliminates the hazard and makes
+     reaction templates reusable across any
+     condense.py run regardless of its T_c.  See
+     DESIGN 4.8.10 for the full hazard analysis and
+     rejection of the parameter-manifest alternative.
 
-  - [ ] C39a.1. Promote the _cluster_angles helper
-    from C39.1 to a shared call site both producers
-    use.  Options: (a) keep it on Condense and have
-    make_reactions.py import and call it, (b) move
-    it to a standalone module-level utility.  Either
-    way, both producers must invoke the identical
-    routine so local clustering semantics are byte-
-    identical.  No new algorithm, just a shared
-    entry point.
+  2. Reaction template files carry no K values --
+     only connectivity, per-atom angle entries, and
+     the "{theta_0_local:.4f} {t}" tag tail.
+     normalize_types recomputes K authoritatively
+     from the triplet in 10f Phase C regardless of
+     what any producer computed, so a producer-side
+     K in make_reactions.py would be neither written
+     nor consumed.  Skipping it keeps
+     make_reactions.py independent of BondData and
+     avoids plumbing angle_stiffness_coeff and
+     angle_parameter_scale into a script that never
+     writes their effect to disk.  DESIGN 4.8.8
+     item 3 was amended to record this split:
+     condense.py computes K, make_reactions.py does
+     not.
 
-  - [ ] C39a.2. In make_reactions.py, refactor the
-    angle construction loop around line 2518 into a
-    collect-only pass.  Build observation dicts
-    {'z_trip', 'theta_obs', 'base_tag',
-    'vertex_atom', 'end_atom_1', 'end_atom_2'} per
-    triplet encountered during template
-    construction.  Remove the inline
-    hooke_angle_coeffs scan and the in-loop tag-
-    tail construction.
+  Net consequence: the C39a scope is smaller than
+  the 2026-04-17 plan called for.  No parameter
+  plumbing, no BondData wiring, no shared
+  angle_cluster_tolerance handshake.  Just collect,
+  cluster at tolerance=0, emit tags.
 
-  - [ ] C39a.3. After the template's angle loop
-    completes, call the shared _cluster_angles on
-    the collected observations.  For each returned
-    local cluster, build the tag tail
-    "{theta_0_local_mean} {t}" where t is the type
-    id within the template's local numbering.  Walk
-    the observations in collection order and
-    populate the per-atom angle_bonded[] and
-    angle_tag_id[] structures so downstream template
-    writes see the ordering they expect.
+  Plan (captured 2026-04-17, refined 2026-04-18 --
+  pending before writing code):
 
-  - [ ] C39a.4. Delete the self.angle_data
+  - [x] C39a.1. Shared cluster_angles helper.
+    Resolved in commit 74805ed: src/scripts/
+    angle_utils.py provides AngleType NamedTuple +
+    cluster_angles (PSEUDOCODE 10a) + get_angle_k
+    (10b), with 10 unit tests in
+    src/tests/test_angle_utils.py.  Both producers
+    call cluster_angles from there.  make_reactions.py
+    will call cluster_angles but NOT get_angle_k --
+    get_angle_k is condense.py-only under the
+    refined decision.
+
+  - [x] C39a.2. In make_reactions.py, refactor the
+    angle loop inside _read_angle_data (around line
+    2518) into a collect-only pass per PSEUDOCODE 10d
+    Phase 1.  Build each observation as the 8-tuple
+    (z1, zv, z2, theta_obs, base_tag, a1, v, a2)
+    with z1 <= z2 canonicalization -- same shape as
+    condense.py create_lammps_files uses.  Remove
+    the inline hooke_angle_coeffs scan, the in-loop
+    tag-tail construction, and the existing
+    angle_tag uniqueness dedup (cluster_angles does
+    the dedup instead).
+
+  - [x] C39a.3. After the template's angle loop
+    completes, call cluster_angles(observations, 0.0)
+    per PSEUDOCODE 10d Phase 2.  Tolerance = 0 means
+    identity-only merge: observations with
+    bit-identical theta values (possible because
+    _read_angle_data rounds raw angles to 0.5-degree
+    resolution before this point) collapse into one
+    local type with obs_count > 1; non-identical
+    observations each become their own local type.
+    For each returned local cluster, build the tag
+    tail "{theta_0:.4f} {t}" matching C39.3's
+    format.  Do NOT compute or store K -- templates
+    carry no angle coefficients (see PSEUDOCODE 10d
+    Phase 3 and DESIGN 4.8.8 item 3).  Walk
+    observations in collection order to populate
+    the per-atom angle_bonded[] and angle_tag_id[]
+    structures so downstream template writes see
+    the ordering they expect.
+
+  - [x] C39a.4. Delete the self.angle_data
     instantiation at line ~568 and the duplicated
     AngleData class at lines ~113-193.  The
     AngleData class itself lives on in condense.py
     until C41, which removes both copies and
     retires angles.dat.
 
-  - [ ] C39a.5. Sequencing: C39 and C39a land
-    together (same commit or back-to-back).  Until
-    both producers emit the new "{theta_0} {t}" tag
-    tail AND C40's cross-source re-clustering is
-    live in normalize_types, the pipeline is
-    inconsistent.  Ordering is C39 + C39a, then
-    C40, then C41 (teardown), then C42 (validate).
-- [ ] C40. Update normalize_types to own cross-
+  - [x] C39a.5. Caller update.  _read_angle_data's
+    current return tuple includes unique_angle_tags
+    and num_unique_angle_tags, which are no longer
+    part of the new export (see PSEUDOCODE 10d
+    export list).  Update the caller at
+    make_reactions.py:~2171 to unpack only the
+    fields normalize_types actually consumes:
+    num_bond_angles, angle_bonded, angle_tag_id,
+    local_angle_tags, per-local-type obs_count,
+    num_angles_total, bond_angles_ext.  Any
+    downstream code paths in make_reactions.py that
+    read the old unique_angle_tags slot must be
+    traced and either removed or updated to read
+    local_angle_tags instead.
+
+  - [x] C39a.6. Sequencing note (eased).  Under the
+    refined decision, C39a does NOT have to land
+    in lockstep with C40 -- the emitted tag-tail
+    format already matches what C39 writes and
+    what C40 will parse.  The pipeline is still
+    inconsistent until C40 is live in
+    normalize_types (cross-source clustering still
+    uses the old hooke-id-suffix lookup that
+    normalize_types currently does), but the C39a
+    landing moment is flexible.  Strict ordering:
+    C39a then C40 then C41 (teardown) then C42
+    (validate) -- C39a in any ordering before C41
+    is fine.
+- [x] C40. Update normalize_types to own cross-
   source angle unification (DESIGN 4.8.8 item 4).
   Expands beyond the original "replace
   hooke_angle_coeffs scan with get_bond_params()"
   into the authoritative cross-file clustering step
-  the hybrid approach requires.
+  the hybrid approach requires.  Landed 2026-04-19
+  alongside C39a: angle_utils.py gained
+  cross_source_cluster + LocalRecord + FinalAngleType
+  (with 9 new unit tests), and normalize_types now
+  routes every angle through the collect-and-unify
+  pipeline rather than the legacy hooke-id lookup.
 
-  Plan (captured 2026-04-17 -- pending before
-  writing code):
+  Plan (captured 2026-04-17 -- resolved 2026-04-19):
 
-  - [ ] C40.1. Collect all angle types emitted by
+  - [x] C40.1. Collect all angle types emitted by
     every source: the lammps.dat produced by
     create_lammps_files and every reaction template
     produced by make_reactions.py.  Each incoming
-    type carries (z1, zv, z2, theta_0_local, source,
-    source_type_id).
+    local_record carries (z1, zv, z2, theta_0_local,
+    obs_count, base_tag, source, local_type_id) per
+    PSEUDOCODE 10e's input layout.  obs_count is the
+    observation-population weight used by the
+    weighted running-mean merge; base_tag is the
+    producer's representative tag prefix
+    (element/species/molecule) that 10e carries
+    through to the final type's canonical tag.
 
-  - [ ] C40.2. Group by canonical triplet (z1, zv,
+  - [x] C40.2. Group by canonical triplet (z1, zv,
     z2 with z1 <= z2).  Within each group, sort by
     theta_0_local and greedy-merge any pair within
     angle_cluster_tolerance of the running cluster
@@ -435,13 +512,13 @@
     2 * tolerance) to avoid greedy chaining across
     a wide distribution.
 
-  - [ ] C40.3. For each final cluster, compute
-    K_angle using get_bond_params() for the two arm
-    bonds (same formula as _compute_angle_k from
-    C39.1).  Apply angle_stiffness_coeff and
-    angle_parameter_scale.
+  - [x] C40.3. For each final cluster, compute
+    K_angle via get_angle_k() from angle_utils.py
+    (PSEUDOCODE 10b; same helper create_lammps_files
+    calls for its local step).  Apply
+    angle_stiffness_coeff and angle_parameter_scale.
 
-  - [ ] C40.4. Rewrite tag tails and remap type IDs
+  - [x] C40.4. Rewrite tag tails and remap type IDs
     across every source file.  Each (source,
     source_type_id) pair maps to one final cluster
     id; the lammps.dat Angles section and every
@@ -450,7 +527,7 @@
     canonical theta_0 so any downstream tool that
     inspects the tag sees a consistent value.
 
-  - [ ] C40.5. Diagnostic (recommended): write a
+  - [x] C40.5. Diagnostic (recommended): write a
     cluster-map file or log section listing, for
     every final cluster: final id, canonical
     theta_0, (z1, zv, z2), and the contributing

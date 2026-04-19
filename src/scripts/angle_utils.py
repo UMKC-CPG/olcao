@@ -26,22 +26,35 @@ Why this module lives here (and not inside `condense.py` or
 Public surface
 --------------
 AngleType
-    NamedTuple holding the per-cluster output record:
-    `(Z1, Zv, Z2, theta_0, obs_count, base_tag)`.  The slot ordering (obs_count
-    at slot 5, base_tag at slot 6) is shared with PSEUDOCODE 10e's
-    `local_records` and `final_types` tuples so 10c, 10d, 10e, and 10f can use
-    consistent slot indices throughout the cross-source pipeline.
+    NamedTuple holding the per-cluster output record produced by
+    `cluster_angles`: `(Z1, Zv, Z2, theta_0, obs_count, base_tag)`.
+
+LocalRecord
+    NamedTuple holding one (source, local_type_id) entry that a producer feeds
+    into `cross_source_cluster`: `(z1, zv, z2, theta_0_local, obs_count,
+    base_tag, source, local_type_id)`.  See PSEUDOCODE 10e.
+
+FinalAngleType
+    NamedTuple holding one global cluster produced by `cross_source_cluster`:
+    `(z1, zv, z2, theta_0_final, obs_count_total, base_tag)`.
 
 cluster_angles(observations, tolerance)
-    Greedy single-pass clustering of observed bond angles grouped by element
-    triplet.  Returns the discovered angle types and a per-observation type-id
-    map.  Used by PSEUDOCODE 10c (create_lammps_files) and 10d
-    (make_reactions.py).
+    Greedy single-pass local clustering of observed bond angles grouped by
+    element triplet (PSEUDOCODE 10a).  Returns the discovered angle types and
+    a per-observation type-id map.  Used by PSEUDOCODE 10c
+    (`create_lammps_files`) and 10d (`make_reactions.py`).
 
 get_angle_k(z1, zv, z2, stiffness, scale, get_bond_params)
     Harmonic angular spring constant for one angle type, derived from the UFF
-    bond stiffnesses of its two arms. The bond-stiffness lookup is supplied by
-    the caller.
+    bond stiffnesses of its two arms (PSEUDOCODE 10b).
+
+cross_source_cluster(local_records, tolerance)
+    Cross-source unification of the local types emitted by every producer
+    (PSEUDOCODE 10e).  Same greedy-merge structure as `cluster_angles`, but
+    the running mean is obs_count-weighted so a densely-observed local cluster
+    anchors the final theta_0 more strongly than a sparse one.  Returns the
+    global final types and a remap from (source, local_type_id) to global id.
+    Used by `normalize_types` in `condense.py`.
 """
 
 import math
@@ -69,6 +82,57 @@ from collections import namedtuple
 ##                carry it across sources unchanged.
 AngleType = namedtuple('AngleType',
     ['Z1', 'Zv', 'Z2', 'theta_0', 'obs_count', 'base_tag'])
+
+
+# LocalRecord is the per-source input consumed by
+# `cross_source_cluster` (PSEUDOCODE 10e).  One LocalRecord is
+# emitted per (source, local_type_id) pair after a producer
+# finishes its own local clustering pass (PSEUDOCODE 10c for
+# `create_lammps_files`, PSEUDOCODE 10d for `make_reactions.py`):
+##
+##   z1, zv, z2      : canonical atomic numbers (z1 <= z2).
+##   theta_0_local   : rest angle of this local cluster in
+##                     degrees, as written to disk by the
+##                     producer.
+##   obs_count       : number of raw observations feeding this
+##                     local cluster.  For reaction templates
+##                     the producer uses tolerance=0, so this
+##                     counts bit-identical duplicates only;
+##                     for lammps.dat the producer uses
+##                     angle_cluster_tolerance, so this can be
+##                     larger.  See DESIGN 4.8.10.
+##   base_tag        : representative element/species/molecule
+##                     tag prefix captured by `cluster_angles`.
+##   source          : stable source identifier -- "lammps.dat"
+##                     or the template file's basename.
+##   local_type_id   : 1-indexed id of this local cluster within
+##                     its source.  (source, local_type_id) is
+##                     the key used in the remap returned by
+##                     `cross_source_cluster`.
+LocalRecord = namedtuple('LocalRecord',
+    ['z1', 'zv', 'z2', 'theta_0_local', 'obs_count',
+     'base_tag', 'source', 'local_type_id'])
+
+
+# FinalAngleType is one entry in the output list of
+# `cross_source_cluster`.  Each final type represents one
+# chemically-distinct angle environment unified across every
+# source:
+##
+##   z1, zv, z2       : canonical atomic numbers.
+##   theta_0_final    : cross-source obs_count-weighted running
+##                      mean of all contributing
+##                      theta_0_local values.
+##   obs_count_total  : sum of obs_count across every
+##                      contributing record.
+##   base_tag         : base_tag from the first contributing
+##                      record, carried verbatim so that
+##                      species_id and molecule_id metadata
+##                      (which Z alone cannot reconstruct) stay
+##                      attached to the final unified type.
+FinalAngleType = namedtuple('FinalAngleType',
+    ['z1', 'zv', 'z2', 'theta_0_final', 'obs_count_total',
+     'base_tag'])
 
 
 # ---------------------------------------------------------
@@ -280,3 +344,196 @@ def get_angle_k(z1, zv, z2, stiffness, scale,
     K_arm1, _ = get_bond_params(z1, zv)
     K_arm2, _ = get_bond_params(zv, z2)
     return stiffness * math.sqrt(K_arm1 * K_arm2) * scale
+
+
+# ---------------------------------------------------------
+# Cross-source clustering -- PSEUDOCODE 10e
+# ---------------------------------------------------------
+
+def cross_source_cluster(local_records, tolerance):
+    """Unify local angle types across every source into one
+    global cluster list.
+
+    Implements PSEUDOCODE 10e.  Collects the local types emitted
+    by each producer (PSEUDOCODE 10c for lammps.dat, 10d for
+    every reaction template), groups them by canonical (z1, zv,
+    z2) triplet, and greedy-merges within each triplet group
+    using an obs_count-weighted running mean.  A spread cap of
+    ``2 * tolerance`` is applied on top of the running-mean
+    tolerance check to stop a long chain of closely-spaced
+    records from silently sweeping a wide distribution into one
+    final cluster -- the same cap `cluster_angles` applies at
+    the local step (PSEUDOCODE 10a), so local and cross-source
+    clustering are semantically consistent.
+
+    The obs_count weighting reflects the physical intuition that
+    a cluster anchored by 200 observations is a better estimator
+    of the underlying angle than one anchored by 3.  It is also
+    associative with respect to the identity-only pre-merge
+    performed by `make_reactions.py` at tolerance=0: collapsing
+    duplicate observations at the producer does not change what
+    `cross_source_cluster` computes here (see DESIGN 4.8.8
+    item 4a for the proof).
+
+    Parameters
+    ----------
+    local_records : iterable of LocalRecord (or compatible)
+        One entry per (source, local_type_id) pair from every
+        source.  Each entry must expose the slots listed in the
+        LocalRecord NamedTuple docstring above.
+
+    tolerance : float
+        The user's `angle_cluster_tolerance` (default 5.0
+        degrees).  Candidates merge when both
+        |theta - running_mean| <= tolerance and the resulting
+        cluster span (max - min) stays within ``2 * tolerance``.
+
+    Returns
+    -------
+    final_types : list of FinalAngleType
+        Discovered global angle types in finalization order.
+        Each final type carries the cross-source canonical
+        theta_0 and the contributing obs_count total.
+
+    remap : dict
+        ``{(source, local_type_id): final_type_id}`` covering
+        every input LocalRecord.  `final_type_id` is 1-indexed
+        and matches the (index + 1) position of the entry in
+        `final_types`.  Downstream callers use this dict to
+        rewrite per-angle type ids in every source file and to
+        build the unified Angle Coeffs section of lammps.dat.
+    """
+    # Phase 1 -- bin local records by canonical triplet.  The
+    # triplet is an (int, int, int) tuple suitable for dict keys
+    # and mirrors the binning pattern cluster_angles uses at the
+    # local step.
+    groups = {}
+    for rec in local_records:
+        key = (rec.z1, rec.zv, rec.z2)
+        groups.setdefault(key, []).append(rec)
+
+    final_types = []
+    remap = {}
+    spread_cap = 2.0 * tolerance
+
+    # Phase 2 -- greedy merge within each triplet group, sorted
+    # by theta_0_local.  The running mean is obs_count-weighted;
+    # finalize the current cluster whenever either the tolerance
+    # or the spread cap would be violated by the next record.
+    for key, entries in groups.items():
+        entries.sort(key=lambda rec: rec.theta_0_local)
+
+        first = entries[0]
+        cluster_weighted_sum = (
+            first.theta_0_local * first.obs_count)
+        cluster_weight = first.obs_count
+        cluster_min = first.theta_0_local
+        cluster_max = first.theta_0_local
+        members = [first]
+
+        for i in range(1, len(entries)):
+            candidate = entries[i]
+            candidate_theta = candidate.theta_0_local
+            candidate_weight = candidate.obs_count
+            running_mean = cluster_weighted_sum / cluster_weight
+            new_min = min(cluster_min, candidate_theta)
+            new_max = max(cluster_max, candidate_theta)
+
+            within_tolerance = (
+                abs(candidate_theta - running_mean) <= tolerance)
+            within_spread_cap = (
+                (new_max - new_min) <= spread_cap)
+
+            if within_tolerance and within_spread_cap:
+                # Merge the candidate into the running cluster.
+                # The weighted sum grows by theta * obs_count and
+                # the weight grows by obs_count, so the updated
+                # running_mean is the obs_count-weighted mean of
+                # every theta_0_local added so far.
+                cluster_weighted_sum += (
+                    candidate_theta * candidate_weight)
+                cluster_weight += candidate_weight
+                cluster_min = new_min
+                cluster_max = new_max
+                members.append(candidate)
+            else:
+                _finalize_cross_source_cluster(
+                    key, members,
+                    cluster_weighted_sum, cluster_weight,
+                    final_types, remap)
+                # Reset the running totals to start a fresh
+                # cluster anchored at the candidate.
+                cluster_weighted_sum = (
+                    candidate_theta * candidate_weight)
+                cluster_weight = candidate_weight
+                cluster_min = candidate_theta
+                cluster_max = candidate_theta
+                members = [candidate]
+
+        _finalize_cross_source_cluster(
+            key, members,
+            cluster_weighted_sum, cluster_weight,
+            final_types, remap)
+
+    return final_types, remap
+
+
+def _finalize_cross_source_cluster(
+        key, members,
+        cluster_weighted_sum, cluster_weight,
+        final_types, remap):
+    """Append one finalized cluster to final_types and register
+    its (source, local_type_id) -> final_type_id entries in the
+    remap dictionary.
+
+    The function is the "finalize" helper referenced by
+    PSEUDOCODE 10e.  It is deliberately local-scope (leading
+    underscore) because its callers are closely bound to the
+    running-cluster loop in `cross_source_cluster`; no other
+    module should need it.
+
+    Parameters
+    ----------
+    key : tuple of (int, int, int)
+        The (z1, zv, zv, z2) triplet shared by every member of
+        this cluster.  Carried through to the FinalAngleType
+        record so the downstream K recomputation in PSEUDOCODE
+        10f Phase C can look up arm bond stiffnesses.
+
+    members : list of LocalRecord
+        Every record that merged into this cluster, in the
+        order they were added (sorted-by-theta order within
+        the triplet group).
+
+    cluster_weighted_sum, cluster_weight : float
+        Running totals of ``theta * obs_count`` and
+        ``obs_count`` accumulated by the outer loop.  Their
+        ratio is the cross-source canonical theta_0.
+
+    final_types : list of FinalAngleType
+        Accumulator appended to in place.
+
+    remap : dict
+        Accumulator written to in place.  Each member's
+        (source, local_type_id) maps to the new final_type_id.
+    """
+    theta_0_final = cluster_weighted_sum / cluster_weight
+    obs_count_total = cluster_weight
+    final_type_id = len(final_types) + 1
+
+    # Take the first member's base_tag as the representative
+    # prefix for the final type.  The base_tag carries
+    # species_id and molecule_id metadata that the (z1, zv, z2)
+    # triplet alone cannot reconstruct, so the representative
+    # prefix is propagated verbatim rather than rebuilt.
+    representative_base_tag = members[0].base_tag
+
+    final_types.append(FinalAngleType(
+        z1=key[0], zv=key[1], z2=key[2],
+        theta_0_final=theta_0_final,
+        obs_count_total=obs_count_total,
+        base_tag=representative_base_tag))
+
+    for member in members:
+        remap[(member.source, member.local_type_id)] = (
+            final_type_id)

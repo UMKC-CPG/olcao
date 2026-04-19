@@ -20,7 +20,8 @@ import math
 import pytest
 
 from angle_utils import (
-    AngleType, cluster_angles, get_angle_k)
+    AngleType, cluster_angles, get_angle_k,
+    LocalRecord, FinalAngleType, cross_source_cluster)
 
 
 # All tests in this file are pure-computation unit tests -- no file I/O, no
@@ -228,3 +229,202 @@ def test_get_angle_k_stiffness_rescales_uniformly():
     K_low  = get_angle_k(6, 8, 1, 0.10, 1.0, stub_bonds)
     K_high = get_angle_k(6, 8, 1, 0.40, 1.0, stub_bonds)
     assert K_high == pytest.approx(4.0 * K_low)
+
+
+# ---------------------------------------------------------
+# cross_source_cluster -- PSEUDOCODE 10e
+# ---------------------------------------------------------
+
+def _record(source, local_id, z1, zv, z2, theta, obs_count,
+            base_tag="tag"):
+    """Construct one LocalRecord with sensible defaults.
+
+    Most cross_source_cluster tests only vary the fields that
+    matter for the scenario under test (theta, obs_count, source,
+    local_id), so this factory keeps each test case tight and
+    readable instead of re-specifying every slot at the call
+    site.
+    """
+    return LocalRecord(
+        z1=z1, zv=zv, z2=z2,
+        theta_0_local=theta, obs_count=obs_count,
+        base_tag=base_tag,
+        source=source, local_type_id=local_id)
+
+
+def test_cross_source_single_record():
+    """One LocalRecord produces one FinalAngleType whose
+    canonical theta_0 and obs_count total are forwarded
+    verbatim, and a remap with exactly one entry."""
+    rec = _record("lammps.dat", 1, 6, 8, 1, 109.5, 4,
+                  base_tag="C 1 m O 1 m H 1 m")
+    final_types, remap = cross_source_cluster(
+        [rec], tolerance=5.0)
+
+    assert len(final_types) == 1
+    ft = final_types[0]
+    assert ft.z1 == 6 and ft.zv == 8 and ft.z2 == 1
+    assert ft.theta_0_final == pytest.approx(109.5)
+    assert ft.obs_count_total == 4
+    assert ft.base_tag == "C 1 m O 1 m H 1 m"
+    assert remap == {("lammps.dat", 1): 1}
+
+
+def test_cross_source_identical_theta_across_sources():
+    """Two records from different sources with the same
+    (triplet, theta) merge into one final type.  Their
+    obs_count totals add; their (source, local_type_id) keys
+    both map to the same final id."""
+    recs = [
+        _record("lammps.dat", 1, 6, 8, 1, 109.5, 3),
+        _record("preRxn.data", 1, 6, 8, 1, 109.5, 2),
+    ]
+    final_types, remap = cross_source_cluster(recs, tolerance=5.0)
+
+    assert len(final_types) == 1
+    assert final_types[0].theta_0_final == pytest.approx(109.5)
+    assert final_types[0].obs_count_total == 5
+    assert remap[("lammps.dat", 1)] == 1
+    assert remap[("preRxn.data", 1)] == 1
+
+
+def test_cross_source_far_apart_stay_split():
+    """Two records beyond tolerance remain as separate
+    final types and remap to distinct ids."""
+    recs = [
+        _record("lammps.dat", 1, 6, 8, 1, 109.5, 3),
+        _record("preRxn.data", 1, 6, 8, 1, 120.0, 3),
+    ]
+    final_types, remap = cross_source_cluster(recs, tolerance=5.0)
+
+    assert len(final_types) == 2
+    # 109.5 finalizes first (sorted-ascending), so it gets id 1.
+    assert final_types[0].theta_0_final == pytest.approx(109.5)
+    assert final_types[1].theta_0_final == pytest.approx(120.0)
+    assert remap[("lammps.dat", 1)] == 1
+    assert remap[("preRxn.data", 1)] == 2
+
+
+def test_cross_source_obs_count_weighted_mean():
+    """A cluster anchored by many observations pulls the
+    final theta_0 more strongly than a sparse one.
+
+    Uses theta_a=108.0 with obs_count=9 and theta_b=112.0 with
+    obs_count=1.  The unweighted mean would be 110.0, but the
+    obs_count-weighted mean is (9*108 + 1*112) / 10 = 108.4, so
+    the sparse record pulls the final theta_0 less than one
+    degree despite being 4 degrees from the dense anchor.
+    """
+    recs = [
+        _record("lammps.dat", 1, 6, 8, 1, 108.0, 9),
+        _record("preRxn.data", 1, 6, 8, 1, 112.0, 1),
+    ]
+    final_types, remap = cross_source_cluster(recs, tolerance=5.0)
+
+    assert len(final_types) == 1
+    assert final_types[0].theta_0_final == pytest.approx(108.4)
+    assert final_types[0].obs_count_total == 10
+    assert remap[("lammps.dat", 1)] == 1
+    assert remap[("preRxn.data", 1)] == 1
+
+
+def test_cross_source_spread_cap_breaks_drift_chain():
+    """A chain of closely-spaced records cannot silently
+    merge across a wide span.  With tolerance=2.5 and a
+    spread_cap of 5.0, a 105..113 chain must break somewhere."""
+    recs = [
+        _record("s1", i + 1, 6, 8, 1, theta, 1)
+        for i, theta in enumerate([105.0, 107.0, 109.0,
+                                    111.0, 113.0])
+    ]
+    final_types, remap = cross_source_cluster(recs, tolerance=2.5)
+
+    # The chain MUST break -- 8 degrees of span cannot sit in
+    # one 5-degree spread cap.
+    assert len(final_types) > 1
+    # Every record must receive a remap entry.
+    assert len(remap) == 5
+    # Final type ids are 1-indexed and cover the len(final_types)
+    # range without gaps.
+    assert set(remap.values()) == set(
+        range(1, len(final_types) + 1))
+
+
+def test_cross_source_multi_triplet_independence():
+    """Records from different (z1, zv, z2) triplets are
+    binned independently, so triplets cannot influence one
+    another's final-type membership."""
+    recs = [
+        _record("s1", 1, 6, 8, 1, 109.5, 1),   # triplet A
+        _record("s1", 2, 6, 6, 6, 120.0, 1),   # triplet B
+        _record("s2", 1, 6, 8, 1, 109.7, 1),   # triplet A
+        _record("s2", 2, 6, 6, 6, 119.8, 1),   # triplet B
+        _record("s3", 1, 1, 6, 1, 104.5, 1),   # triplet C
+    ]
+    final_types, remap = cross_source_cluster(recs, tolerance=5.0)
+
+    # Three distinct triplets, each producing one final type.
+    assert len(final_types) == 3
+    # Same-triplet pairs from different sources map to the same
+    # final id.
+    assert remap[("s1", 1)] == remap[("s2", 1)]   # C-O-H pair
+    assert remap[("s1", 2)] == remap[("s2", 2)]   # C-C-C pair
+    # Different triplets never share a final id.
+    assert remap[("s3", 1)] != remap[("s1", 1)]
+    assert remap[("s3", 1)] != remap[("s1", 2)]
+
+
+def test_cross_source_base_tag_from_first_sorted_member():
+    """The representative base_tag of each final cluster is
+    taken from the member with the smallest theta_0_local
+    (the first after sort), not from input order."""
+    recs = [
+        _record("s1", 1, 6, 8, 1, 110.0, 1, base_tag="second"),
+        _record("s2", 1, 6, 8, 1, 109.0, 1, base_tag="first"),
+        _record("s3", 1, 6, 8, 1, 109.5, 1, base_tag="middle"),
+    ]
+    final_types, _ = cross_source_cluster(recs, tolerance=5.0)
+
+    assert len(final_types) == 1
+    assert final_types[0].base_tag == "first"
+
+
+def test_cross_source_empty_input_returns_empty_results():
+    """An empty local_records list produces empty outputs,
+    not a crash and not a placeholder type."""
+    final_types, remap = cross_source_cluster([], tolerance=5.0)
+    assert final_types == []
+    assert remap == {}
+
+
+def test_cross_source_associativity_with_local_premerge():
+    """Collapsing duplicate observations at the producer does
+    not change what cross_source_cluster computes.
+
+    Path A: three separate records with obs_count=1 each, all
+    at theta=109.5 from one source.
+    Path B: one record with obs_count=3 at theta=109.5 from
+    that source.
+
+    Both paths must produce the same final theta_0 and the same
+    obs_count_total.  This is the associativity property that
+    underpins make_reactions.py's tolerance=0 policy (DESIGN
+    4.8.8 item 4a).
+    """
+    # Path A: three separate records.
+    recs_a = [
+        _record("s1", 1, 6, 8, 1, 109.5, 1),
+        _record("s1", 2, 6, 8, 1, 109.5, 1),
+        _record("s1", 3, 6, 8, 1, 109.5, 1),
+    ]
+    final_a, _ = cross_source_cluster(recs_a, tolerance=5.0)
+
+    # Path B: one merged record.
+    recs_b = [_record("s1", 1, 6, 8, 1, 109.5, 3)]
+    final_b, _ = cross_source_cluster(recs_b, tolerance=5.0)
+
+    assert len(final_a) == len(final_b) == 1
+    assert final_a[0].theta_0_final == pytest.approx(
+        final_b[0].theta_0_final)
+    assert final_a[0].obs_count_total == (
+        final_b[0].obs_count_total)

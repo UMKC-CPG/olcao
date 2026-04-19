@@ -1559,16 +1559,39 @@ for i, obs in enumerate(observations):
 ### 10d. Integration into make_reactions.py (DESIGN 4.8.8)
 
 Mirrors 10c for the template-emission side of the
-pipeline.  The existing Python port's angle construction
-loop (around line 2518) iterates over angles in a
-reaction template and searches `hooke_angle_coeffs` for a
-matching row to build the tag tail.  The replacement runs
-the same collect-cluster-emit structure as 10c, scoped to
-one reaction template at a time.  Both producers invoke
-the identical `cluster_angles` helper from 10a, so local
-clustering semantics are byte-identical across sources
-and any residual theta_0 differences between producers
-are resolved by 10e downstream.
+pipeline, but with two deliberate differences that follow
+from DESIGN 4.8.8 item 3 and DESIGN 4.8.10:
+
+1. **Local clustering tolerance is fixed at 0.**  The
+   `cluster_angles` call here uses tolerance = 0.0 so
+   only bit-identical observations (after the 0.5-degree
+   rounding that `_read_angle_data` already applies to
+   entries from `bondAnalysis.ba`) are collapsed into the
+   same local type.  This preserves the template
+   reusability property (DESIGN 4.8.10): any downstream
+   `condense.py` run can apply any
+   `angle_cluster_tolerance` value to the records
+   emitted here, because no non-identical observations
+   have been fused at the producer.  The obs_count weighting in 10e is
+   associative under this pre-merge (DESIGN 4.8.8 item
+   4a), so collapsing identical duplicates does not
+   change the final cross-source theta_0.
+
+2. **No K_angle computation.**  Reaction template files
+   carry only connectivity, per-atom angle entries, and
+   the tag tail "{theta_0_local} {t}" -- no K value is
+   ever written to a template.  `normalize_types()`
+   recomputes K authoritatively from the triplet in 10e
+   / DESIGN 4.8.8 item 4b, which does not depend on any
+   producer-side K.  `make_reactions.py` therefore does
+   not call `get_angle_k` and does not need `BondData`.
+
+The existing Python port's angle construction loop
+(around line 2518) iterates over angles in a reaction
+template and searches `hooke_angle_coeffs` for a matching
+row to build the tag tail.  The replacement runs the
+collect-cluster-emit structure below, scoped to one
+reaction template at a time.
 
 ```
 # Phase 1: Collect all angle observations for this
@@ -1593,31 +1616,39 @@ for each vertex atom v in the template:
              a1, v, a2))
 
 # Phase 2: Cluster locally using the shared helper
-# from 10a.  Same call signature as 10c, same
-# angle_cluster_tolerance value.
+# from 10a with tolerance = 0.0 (identity-only merge).
+# This collapses bit-identical theta_obs values for the
+# same (Z1, Zv, Z2) triplet into a single local record
+# with obs_count > 1, keeping the template file compact
+# without performing any interpretive merging.
+# Non-identical observations -- even those differing by
+# just 0.5 degrees -- remain as separate local types, so
+# `normalize_types` in 10e sees the full raw resolution
+# and can apply any angle_cluster_tolerance value the
+# downstream condense.py simulation chooses.  DESIGN
+# 4.8.10 explains why the tolerance is not a tunable
+# parameter on the make_reactions.py side.
 angle_types, angle_type_map =
-    cluster_angles(observations,
-                   self.angle_cluster_tolerance)
+    cluster_angles(observations, 0.0)
 
-# Phase 3: Build local type records with the
-# cluster-mean theta_0 carried in the tag tail.
-# These values are local to this template; the
-# cross-source step in 10e may merge them with
-# types from lammps.dat or from other templates.
+# Phase 3: Build local type tags with the cluster-mean
+# theta_0 carried in the tag tail.  No K_angle is
+# computed or stored and no local_angle_coeffs table is
+# built here -- reaction templates do not carry angle
+# coefficients, and normalize_types recomputes K
+# authoritatively in 10e / DESIGN 4.8.8 item 4b from
+# the triplet alone.  This is the only place where the
+# template producer's output shape differs from 10c's:
+# the lammps.dat producer builds local_angle_coeffs as
+# intermediate storage for the Angle Coeffs section
+# (consumed by the LAMMPS writer just below it), but
+# the template producer has no analogous consumer.
 num_local_angle_types = len(angle_types)
 local_angle_tags   =
-    [None] * (num_local_angle_types + 1)
-local_angle_coeffs =
     [None] * (num_local_angle_types + 1)
 
 for t = 1 to num_local_angle_types:
     atype = angle_types[t - 1]
-    K = get_angle_k(
-        atype.Z1, atype.Zv, atype.Z2,
-        self.angle_stiffness_coeff,
-        self.angle_parameter_scale)
-    local_angle_coeffs[t] =
-        [None, K, atype.theta_0]
     local_angle_tags[t] = (
         f"{atype.base_tag} "
         f"{atype.theta_0:.4f} {t}")
@@ -1633,10 +1664,15 @@ for i, obs in enumerate(observations):
 
 # Export to normalize_types:
 #   source tag = "template:{name}"
-#   local_angle_tags, local_angle_coeffs
+#   local_angle_tags (no local_angle_coeffs -- see
+#       Phase 3 rationale)
 #   angle_bonded, angle_tag_id
-#   per-local-type obs_count (slot 5 of each
-#       entry in angle_types)
+#   per-local-type obs_count (slot 5 of each entry in
+#       angle_types -- at tolerance=0 this counts only
+#       bit-identical observations, typically small for
+#       a single template but >1 wherever the template
+#       has geometric duplicates such as a benzene
+#       ring's six identical C-C-C angles)
 ```
 
 ### 10e. Cross-Source Angle Clustering (DESIGN 4.8.8 item 4a)

@@ -77,7 +77,10 @@ REQUIREMENTS:
    - element_data.py (ElementData class)
    - bond_analysis.py (BondAnalysis class)
    - mod_struct.py (for molecular transformations)
-   - $OLCAO_DATA/angles.dat (Hooke angle database)
+   - angle_utils.py (cluster_angles helper for angle-type
+     discovery; replaces the legacy $OLCAO_DATA/angles.dat
+     lookup -- see DESIGN 4.8 for the geometry-derived
+     clustering approach)
    - $OLCAO_RC/make_reactionsrc.py (default parameters)
 
 USAGE:
@@ -101,108 +104,7 @@ import sys
 from collections import deque
 from datetime import datetime
 
-
-# ================================================================
-# AngleData: reads the Hooke angle database from angles.dat.
-#
-# This is a Python port of the Perl AngleData.pm module. It reads
-# the file $OLCAO_DATA/angles.dat and stores the Hooke angle
-# coefficients used for matching computed bond angles to known
-# angle types.
-# ================================================================
-class AngleData:
-    """Read and provide access to the Hooke angle coefficient
-    database.
-
-    The angles.dat file contains entries of the form:
-        Z1  Z_vertex  Z2  k_spring  rest_angle  tolerance
-    where Z values are atomic numbers, k_spring is the spring
-    constant, rest_angle is the equilibrium angle in degrees, and
-    tolerance is the allowed deviation in degrees for matching.
-
-    After init_angle_data() is called, the data is available
-    through the hooke_angle_coeffs list (1-indexed) and
-    num_hooke_angles.
-    """
-
-    def __init__(self):
-        """Initialize the AngleData object."""
-        self.num_hooke_angles = 0
-        # 1-indexed: hooke_angle_coeffs[i] is a list of 7 entries:
-        #   [None, Z1, Z_vertex, Z2, k_spring, rest_angle, tol]
-        self.hooke_angle_coeffs = [None]
-        self._init_done = False
-
-    def init_angle_data(self):
-        """Read the angle data file and populate the
-        hooke_angle_coeffs array.
-
-        The data file is located at $OLCAO_DATA/angles.dat and
-        has the following format:
-
-            NUM_HOOKE_ANGLES
-            <count>
-            HOOKE_ANGLE_COEFFS
-            Z1  Z_vertex  Z2  k  rest_angle  tolerance
-            ...
-
-        Each entry describes one type of bond angle:
-        - Z1, Z_vertex, Z2: atomic numbers of the three atoms
-          forming the angle (Z1 <= Z2 by convention).
-        - k: Hooke spring constant for this angle type.
-        - rest_angle: equilibrium angle in degrees.
-        - tolerance: allowed deviation (degrees) for matching
-          a computed angle to this type.
-        """
-        if self._init_done:
-            return
-        self._init_done = True
-
-        data_dir = os.environ.get('OLCAO_DATA', '')
-        angle_file = os.path.join(data_dir, 'angles.dat')
-
-        with open(angle_file) as f:
-            # Read the NUM_HOOKE_ANGLES tag and count.
-            line = self._read_next(f)
-            if line[0] != 'NUM_HOOKE_ANGLES':
-                sys.exit("Expecting NUM_HOOKE_ANGLES tag "
-                         f"in {angle_file}")
-            line = self._read_next(f)
-            self.num_hooke_angles = int(line[0])
-
-            # Read the HOOKE_ANGLE_COEFFS tag.
-            line = self._read_next(f)
-            if line[0] != 'HOOKE_ANGLE_COEFFS':
-                sys.exit("Expecting HOOKE_ANGLE_COEFFS tag "
-                         f"in {angle_file}")
-
-            # Read each angle coefficient entry.
-            for _ in range(self.num_hooke_angles):
-                line = self._read_next(f)
-                # Store as 1-indexed list:
-                #   [None, Z1, Z_vertex, Z2, k, angle, tol]
-                entry = [
-                    None,
-                    int(line[0]),    # Z1
-                    int(line[1]),    # Z_vertex
-                    int(line[2]),    # Z2
-                    float(line[3]),  # k spring constant
-                    float(line[4]),  # rest angle (degrees)
-                    float(line[5]),  # tolerance (degrees)
-                ]
-                self.hooke_angle_coeffs.append(entry)
-
-    @staticmethod
-    def _read_next(fh):
-        """Read and split the next non-empty line from a file
-        handle, stripping whitespace."""
-        while True:
-            raw = fh.readline()
-            if not raw:
-                sys.exit("Unexpected end of angle data file.")
-            parts = raw.strip().split()
-            if parts:
-                return parts
+from angle_utils import cluster_angles
 
 
 # ================================================================
@@ -563,10 +465,6 @@ class MakeReactions:
         from element_data import ElementData
         self.ed = ElementData()
         self.ed.init_element_data()
-
-        # Initialize the angle database.
-        self.angle_data = AngleData()
-        self.angle_data.init_angle_data()
 
         # ---- Molecule-level data ----
         self.in_file1 = ""
@@ -2163,14 +2061,23 @@ class MakeReactions:
                     check=True,
                 )
 
+                # `angle_types` is reserved for the cross-source
+                # normalize_types step that C40 will add to
+                # condense.py (see PSEUDOCODE 10e); no consumer
+                # in make_reactions.py reads it today, but the
+                # identity-only local clustering in
+                # _read_angle_data already carries the per-type
+                # obs_count that C40 will need to weight the
+                # cross-source running mean.
                 (
                     num_bond_angles, angle_bonded,
-                    angle_tag_id, unique_angle_tags,
-                    num_unique_angle_tags, num_angles_total,
+                    angle_tag_id, local_angle_tags,
+                    angle_types, num_angles_total,
                     bond_angles_ext,
                 ) = self._read_angle_data(
                     "bondAnalysis.ba", sc, s1, s2
                 )
+                del angle_types  # not consumed until C40 lands
 
                 # ---- Compute ordered species IDs ----
                 (
@@ -2273,7 +2180,7 @@ class MakeReactions:
                     num_bonds, bonded,
                     bond_tag_id, unique_bond_tags,
                     num_bond_angles, angle_bonded,
-                    angle_tag_id, unique_angle_tags,
+                    angle_tag_id, local_angle_tags,
                     bond_angles_ext,
                 )
 
@@ -2404,14 +2311,65 @@ class MakeReactions:
         )
 
     def _read_angle_data(self, filename, sc, s1, s2):
-        """Read bond angle data from a bondAnalysis.ba file.
+        """Read bond angle data from a bondAnalysis.ba file and
+        discover angle types by identity-only clustering of the
+        observed angles (PSEUDOCODE 10d).
+
+        Replaces the legacy angles.dat lookup with the four-phase
+        collect / cluster(tolerance=0) / emit pipeline from
+        PSEUDOCODE 10d.  Identity-only clustering means each
+        distinct (z1, zv, z2, theta_obs) combination becomes one
+        local angle type, so reaction templates carry the full
+        raw resolution of the observations (quantized to 0.5
+        degrees by the rounding step below).  `normalize_types`
+        (condense.py, C40) applies any non-zero cross-source
+        tolerance centrally, which preserves template reusability
+        across any condense.py simulation regardless of its
+        `angle_cluster_tolerance` setting.  See DESIGN 4.8.10 for
+        the T_m > T_c hazard analysis that motivates fixing the
+        template-producer tolerance at zero.
+
+        No K_angle is computed or stored here; reaction templates
+        carry only connectivity, per-atom angle entries, and the
+        tag tail ``{theta_0:.4f} {t}``.  `normalize_types`
+        recomputes K authoritatively from the triplet in
+        PSEUDOCODE 10f / DESIGN 4.8.8 item 4b.
+
+        Parameters
+        ----------
+        filename : str
+            Path to the bondAnalysis.ba file for one pruned
+            reaction template.
+        sc : StructureControl
+            Structure-control instance with pruned atom data
+            loaded; used for element names and species ids when
+            constructing the per-angle tag prefix.
+        s1, s2 : int
+            Surface-atom pair indices that identify the current
+            reaction template; used only to select the molecule-
+            name prefix inserted into the tag.
 
         Returns
         -------
         tuple
             (num_bond_angles, angle_bonded, angle_tag_id,
-             unique_angle_tags, num_unique_angle_tags,
+             local_angle_tags, angle_types,
              num_angles_total, bond_angles_ext)
+
+        Notes on the new return fields versus the old one:
+
+        * ``local_angle_tags`` replaces ``unique_angle_tags`` --
+          same 1-indexed layout, but each entry now carries the
+          cluster-mean ``theta_0`` and the local type id as its
+          trailing two tokens instead of the legacy rest-angle
+          and Hooke-id.
+        * ``angle_types`` is the list of cluster records from
+          ``cluster_angles`` (0-indexed ``AngleType`` tuples).
+          It is reserved for the cross-source normalize_types
+          pass that C40 will add to condense.py; no consumer in
+          make_reactions.py reads it today.
+        * The old ``num_unique_angle_tags`` counter is dropped
+          because ``len(local_angle_tags) - 1`` suffices.
         """
         num_atoms = sc.num_atoms
         num_bond_angles = [0] * (num_atoms + 1)
@@ -2424,12 +2382,22 @@ class MakeReactions:
         bond_angles_ext = [
             [None] for _ in range(num_atoms + 1)
         ]
-
-        num_unique_angle_tags = 0
-        unique_angle_tags = [None]
         num_angles_total = 0
 
         pn1 = self.pruned_num_atoms1[(s1, s2)]
+
+        # ------------------------------------------------------
+        # Phase 1 -- collect angle observations as 8-tuples.
+        # Each tuple's first five slots match the contract that
+        # `cluster_angles` (angle_utils.py, PSEUDOCODE 10a)
+        # reads: (z1, zv, z2, theta_obs, base_tag).  The trailing
+        # (curr_atom, angle_idx) slots are make_reactions.py-
+        # specific and let Phase 4 route each cluster-mapped
+        # observation back into the per-vertex angle_tag_id array
+        # that the template writer indexes by (vertex_atom,
+        # per-vertex angle number).
+        # ------------------------------------------------------
+        observations = []
 
         with open(filename) as f:
             while True:
@@ -2453,7 +2421,16 @@ class MakeReactions:
                 for angle in range(1, n_angles + 1):
                     vals = f.readline().split()
 
-                    # Round the bond angle.
+                    # Round the observed angle to the nearest
+                    # 0.5-degree bin.  Identity-only clustering
+                    # in Phase 2 relies on this quantization:
+                    # two observations that round to the same
+                    # bin merge into one local type with
+                    # obs_count > 1.  The rounding thresholds
+                    # (>0.75 rounds up, >0.25 rounds to the
+                    # half-bin, else rounds down) exactly match
+                    # the legacy code's policy so the observed
+                    # angles seen by clustering are unchanged.
                     raw_angle = float(vals[-1])
                     decimal = raw_angle - int(raw_angle)
                     if decimal > 0.75:
@@ -2470,115 +2447,137 @@ class MakeReactions:
                         curr_bond_angle
                     )
 
-                    # Create a tag for this angle.
-                    # vals contains:
+                    # Extract end atoms (a1, a2) and the vertex
+                    # from the bondAnalysis.ba angle line.  The
+                    # field layout is:
                     #   0=tag1, 1=vertex_tag, 2=tag2,
                     #   3=atom1, 4=vertex, 5=atom2, last=angle
                     a1 = int(vals[3])
                     v = int(vals[4])
                     a2 = int(vals[5])
 
+                    # Canonicalize by atomic number so that
+                    # z1 <= z2 and the end-atom indices swap in
+                    # lockstep.  `cluster_angles` requires this
+                    # ordering because it bins by (z1, zv, z2)
+                    # triplet, and a non-canonical input would
+                    # split chemically-equivalent angles.  The
+                    # same convention is used by
+                    # condense.create_lammps_files (see
+                    # condense.py Phase 1 near line 1564), so
+                    # lammps.dat and reaction-template tag
+                    # prefixes share a consistent atom ordering
+                    # inside every triplet.
+                    z1 = self.ed.get_element_z(
+                        sc.atom_element_name[a1])
+                    zv = self.ed.get_element_z(
+                        sc.atom_element_name[v])
+                    z2 = self.ed.get_element_z(
+                        sc.atom_element_name[a2])
+                    if z1 > z2:
+                        z1, z2 = z2, z1
+                        a1, a2 = a2, a1
+
+                    # Pre-size angle_bonded for this vertex and
+                    # record the end-atom pair in canonical
+                    # order.  The template writer
+                    # (_write_template, Angles section) reads
+                    # this per-vertex table to emit each angle
+                    # entry's two end-atom columns, so the
+                    # canonical order here becomes the order in
+                    # the emitted template file.
                     while (len(angle_bonded[curr_atom])
                            <= angle):
                         angle_bonded[curr_atom].append(
                             [None, None, None]
                         )
-
-                    if vals[0] <= vals[2]:
-                        angle_tag = (
-                            f"{sc.atom_element_name[a1]} "
-                            f"{sc.atom_species_id[a1]} "
-                            f"{curr_mol} "
-                            f"{sc.atom_element_name[v]} "
-                            f"{sc.atom_species_id[v]} "
-                            f"{curr_mol} "
-                            f"{sc.atom_element_name[a2]} "
-                            f"{sc.atom_species_id[a2]} "
-                            f"{curr_mol}"
-                        )
-                        angle_bonded[curr_atom][angle] = (
-                            [None, a1, a2]
-                        )
-                    else:
-                        angle_tag = (
-                            f"{sc.atom_element_name[a2]} "
-                            f"{sc.atom_species_id[a2]} "
-                            f"{curr_mol} "
-                            f"{sc.atom_element_name[v]} "
-                            f"{sc.atom_species_id[v]} "
-                            f"{curr_mol} "
-                            f"{sc.atom_element_name[a1]} "
-                            f"{sc.atom_species_id[a1]} "
-                            f"{curr_mol}"
-                        )
-                        angle_bonded[curr_atom][angle] = (
-                            [None, a2, a1]
-                        )
-
-                    # Match to the Hooke angle database.
-                    z1 = self.ed.get_element_z(
-                        angle_tag.split()[0]
-                    )
-                    z2 = self.ed.get_element_z(
-                        angle_tag.split()[3]
-                    )
-                    z3 = self.ed.get_element_z(
-                        angle_tag.split()[6]
-                    )
-                    if z1 > z3:
-                        z1, z3 = z3, z1
-
-                    found_hooke = 0
-                    ad = self.angle_data
-                    for h in range(
-                        1, ad.num_hooke_angles + 1
-                    ):
-                        hc = ad.hooke_angle_coeffs[h]
-                        if (z1 == hc[1] and z2 == hc[2]
-                                and z3 == hc[3]):
-                            if (abs(curr_bond_angle - hc[5])
-                                    <= hc[6]):
-                                found_hooke = h
-                                break
-
-                    if found_hooke == 0:
-                        print(
-                            f"Angle number = {angle} "
-                            f"Angle = {curr_bond_angle}"
-                        )
-                        print(f"atomZSet = {z1} {z2} {z3}")
-                        sys.exit(
-                            "Cannot find angle in the "
-                            "database"
-                        )
-
-                    angle_tag += (
-                        f" {ad.hooke_angle_coeffs[found_hooke][5]}"
-                        f" {found_hooke}"
+                    angle_bonded[curr_atom][angle] = (
+                        [None, a1, a2]
                     )
 
-                    # Check if this angle tag is unique.
-                    found = 0
-                    for t in range(
-                        1, num_unique_angle_tags + 1
-                    ):
-                        if angle_tag == unique_angle_tags[t]:
-                            found = t
-                            break
-                    if found == 0:
-                        num_unique_angle_tags += 1
-                        found = num_unique_angle_tags
-                        unique_angle_tags.append(angle_tag)
+                    # Build the element / species / molecule
+                    # tag prefix in the canonicalized order.
+                    # The cluster-mean theta_0 and the local
+                    # type id are appended in Phase 3 to
+                    # produce the final tag tail
+                    # ``{theta_0:.4f} {t}`` that matches the
+                    # format emitted by
+                    # condense.create_lammps_files.
+                    base_tag = (
+                        f"{sc.atom_element_name[a1]} "
+                        f"{sc.atom_species_id[a1]} "
+                        f"{curr_mol} "
+                        f"{sc.atom_element_name[v]} "
+                        f"{sc.atom_species_id[v]} "
+                        f"{curr_mol} "
+                        f"{sc.atom_element_name[a2]} "
+                        f"{sc.atom_species_id[a2]} "
+                        f"{curr_mol}"
+                    )
 
-                    while (len(angle_tag_id[curr_atom])
-                           <= angle):
-                        angle_tag_id[curr_atom].append(None)
-                    angle_tag_id[curr_atom][angle] = found
+                    observations.append(
+                        (z1, zv, z2, curr_bond_angle, base_tag,
+                         curr_atom, angle)
+                    )
+
+        # ------------------------------------------------------
+        # Phase 2 -- local clustering at tolerance=0
+        # (PSEUDOCODE 10d Phase 2).  Tolerance 0.0 collapses
+        # only bit-identical theta values within each triplet,
+        # so two observations at 109.5 degrees merge into one
+        # local type with obs_count=2 while 108.5 and 109.0
+        # stay as two separate types.  Any user-selected
+        # `angle_cluster_tolerance` is applied later, centrally,
+        # by `normalize_types` in condense.py's C40 step; see
+        # DESIGN 4.8.10 for the full rationale.
+        # ------------------------------------------------------
+        angle_types, angle_type_map = cluster_angles(
+            observations, 0.0
+        )
+
+        # ------------------------------------------------------
+        # Phase 3 -- build the 1-indexed per-type tag table.
+        # No K_angle is computed or stored: reaction templates
+        # do not carry angle coefficients, and normalize_types
+        # recomputes K authoritatively from the triplet alone
+        # (DESIGN 4.8.8 item 4b).  The tag tail format
+        # ``{theta_0:.4f} {t}`` is shared with
+        # condense.create_lammps_files Phase 3 so both producers
+        # emit byte-compatible tag strings for normalize_types.
+        # ------------------------------------------------------
+        num_local_angle_types = len(angle_types)
+        local_angle_tags = (
+            [None] * (num_local_angle_types + 1)
+        )
+        for type_id in range(1, num_local_angle_types + 1):
+            angle_type = angle_types[type_id - 1]
+            local_angle_tags[type_id] = (
+                f"{angle_type.base_tag} "
+                f"{angle_type.theta_0:.4f} {type_id}"
+            )
+
+        # ------------------------------------------------------
+        # Phase 4 -- populate angle_tag_id in the per-vertex,
+        # per-angle layout that _write_template reads.  The map
+        # returned by cluster_angles is indexed by the original
+        # observation order; each observation stashed its own
+        # (curr_atom, angle_idx) in slots 5 and 6 of its tuple,
+        # so we can route each cluster-mapped entry back into
+        # the right per-vertex slot without maintaining a
+        # separate index table.
+        # ------------------------------------------------------
+        for obs_idx, obs in enumerate(observations):
+            vertex_atom = obs[5]
+            angle_idx = obs[6]
+            local_type_id = angle_type_map[obs_idx]
+            while len(angle_tag_id[vertex_atom]) <= angle_idx:
+                angle_tag_id[vertex_atom].append(None)
+            angle_tag_id[vertex_atom][angle_idx] = local_type_id
 
         return (
             num_bond_angles, angle_bonded,
-            angle_tag_id, unique_angle_tags,
-            num_unique_angle_tags, num_angles_total,
+            angle_tag_id, local_angle_tags,
+            angle_types, num_angles_total,
             bond_angles_ext,
         )
 
@@ -2930,7 +2929,7 @@ class MakeReactions:
         num_bonds, bonded,
         bond_tag_id, unique_bond_tags,
         num_bond_angles, angle_bonded,
-        angle_tag_id, unique_angle_tags,
+        angle_tag_id, local_angle_tags,
         bond_angles_ext,
     ):
         """Write a pre- or post-reaction LAMMPS template file.
@@ -2963,8 +2962,13 @@ class MakeReactions:
             Bond type data.
         num_bond_angles, angle_bonded : lists
             Angle data arrays.
-        angle_tag_id, unique_angle_tags : lists
-            Angle type data.
+        angle_tag_id, local_angle_tags : lists
+            Angle type data.  Each ``local_angle_tags`` entry
+            carries the element / species / molecule prefix
+            followed by the cluster-mean ``theta_0`` and the
+            local type id as its trailing two tokens -- the
+            tag tail ``{theta_0:.4f} {t}`` that
+            ``normalize_types`` parses centrally when C40 lands.
         bond_angles_ext : list
             Computed bond angles.
         """
@@ -3036,7 +3040,7 @@ class MakeReactions:
                 a2 = angle_bonded[ca][cang][2]
                 out.write(
                     f"{a} {at} {a1} {ca} {a2} "
-                    f" # {unique_angle_tags[at]}\n"
+                    f" # {local_angle_tags[at]}\n"
                 )
 
     def _write_map_file(
