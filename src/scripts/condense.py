@@ -478,104 +478,6 @@ class BondData:
 
 
 # ================================================================
-# AngleData: Read Hooke angle force constants from angles.dat
-# ================================================================
-
-class AngleData:
-    """Stores Hooke angle force constants from
-    $OLCAO_DATA/angles.dat.
-
-    This class reads the angle data file which contains spring constant, rest
-    angle, and tolerance information for triplets of elements identified by
-    their atomic Z numbers.
-
-    Attributes
-    ----------
-    num_hooke_angles : int
-        The number of Hooke angle entries in the database.
-    hooke_angle_coeffs : list of list
-        Doubly 1-indexed.  ``hooke_angle_coeffs[angle]`` is itself a
-        1-indexed list ``[None, Z1, Z_vertex, Z2, k, angle_deg,
-        tolerance]``.  Slot 1 is Z of the first end atom, slot 2 is
-        Z of the vertex atom, slot 3 is Z of the second end atom,
-        slot 4 is the angular spring constant, slot 5 is the rest
-        angle in degrees, and slot 6 is the allowed relaxation in
-        degrees.  Slot 0 on every level is the unused sentinel
-        matching Perl's ``$hookeAngleCoeffs[$angle][1..6]`` layout.
-    """
-
-    def __init__(self):
-        self.num_hooke_angles = 0
-        # 1-indexed: hooke_angle_coeffs[angle] =
-        #   [None, Z1, Zv, Z2, k, angle_deg, tolerance]
-        self.hooke_angle_coeffs = [None]
-        self._init_data = False
-
-    def init_angle_data(self):
-        """Read the angle data file.
-
-        The file is located at $OLCAO_DATA/angles.dat and is
-        structured with tagged sections:
-          NUM_HOOKE_ANGLES
-          <count>
-          HOOKE_ANGLE_COEFFS
-          <Z1> <Zv> <Z2> <k> <angle> <tol>  (one per angle)
-
-        This method is safe to call multiple times; subsequent calls return
-        immediately.
-        """
-
-        # Skip if already initialized.
-        if self._init_data:
-            return
-        self._init_data = True
-
-        olcao_data = os.environ.get('OLCAO_DATA')
-        if not olcao_data:
-            sys.exit("Error: $OLCAO_DATA is not set.")
-        file_path = os.path.join(olcao_data, "angles.dat")
-
-        with open(file_path, 'r') as f:
-            # Read the number of angles.
-            values = self._prep_line(f)
-            if values[0] != "NUM_HOOKE_ANGLES":
-                sys.exit(f"Expecting NUM_HOOKE_ANGLES tag in {file_path}")
-            values = self._prep_line(f)
-            self.num_hooke_angles = int(values[0])
-
-            # Read the Hooke angle coefficients.
-            values = self._prep_line(f)
-            if values[0] != "HOOKE_ANGLE_COEFFS":
-                sys.exit(f"Expecting HOOKE_ANGLE_COEFFS tag in {file_path}")
-            for angle in range(1, self.num_hooke_angles + 1):
-                values = self._prep_line(f)
-                # 1-indexed inner: slot 0 is the None sentinel, slots
-                # 1..6 carry [Z1, Zv, Z2, k, angle_deg, tolerance] to
-                # match Perl's ``$hookeAngleCoeffs[$angle][1..6]``
-                # convention.
-                self.hooke_angle_coeffs.append([
-                    None,
-                    int(values[0]),    # Z first element (slot 1)
-                    int(values[1]),    # Z vertex element (slot 2)
-                    int(values[2]),    # Z second element (slot 3)
-                    float(values[3]),  # k angle spring const (slot 4)
-                    float(values[4]),  # Rest angle, degrees (slot 5)
-                    float(values[5]),  # Tolerance, degrees (slot 6)
-                ])
-
-    @staticmethod
-    def _prep_line(f):
-        """Read and split a non-empty line from file handle f."""
-        while True:
-            line = f.readline()
-            if not line:
-                return[]
-            line = line.strip()
-            if line:
-                return line.split()
-
-
-# ================================================================
 # ScriptSettings: Parse rc defaults and command-line arguments
 # ================================================================
 
@@ -819,7 +721,6 @@ class Condense:
         # ----- Database objects -----
         self.element_data = None
         self.bond_data = None
-        self.angle_data = None
         self.struct = None
 
         # ----- Precursor database path -----
@@ -831,15 +732,20 @@ class Condense:
     # ============================================================
 
     def init_env(self):
-        """Initialize the element, bond, and angle databases.
+        """Initialize the element and bond databases.
 
-        Reads the periodic table data from $OLCAO_DATA/elements.dat, the UFF
-        bond parameters from $OLCAO_DATA/bond_parameters.dat, and the Hooke
-        angle force constants from $OLCAO_DATA/angles.dat.
+        Reads the periodic table data from $OLCAO_DATA/elements.dat
+        and the UFF bond parameters from
+        $OLCAO_DATA/bond_parameters.dat.  Angle-type data is no
+        longer loaded from a database file; geometry-derived
+        clustering in create_lammps_files (PSEUDOCODE 10c) and
+        normalize_types (PSEUDOCODE 10e) discovers angle types at
+        run time, so the legacy AngleData / angles.dat path was
+        retired in TODO C41 (DESIGN 4.8.8 items 1 and 6).
         """
 
-        # Add the installation bin directory to the Python path so that we can
-        # import structure_control and element_data.
+        # Add the installation bin directory to the Python path
+        # so that we can import structure_control and element_data.
         olcao_bin = os.environ.get('OLCAO_BIN', '')
         if olcao_bin and olcao_bin not in sys.path:
             sys.path.insert(0, olcao_bin)
@@ -854,10 +760,6 @@ class Condense:
         # Initialize the bond database.
         self.bond_data = BondData()
         self.bond_data.init_bond_data()
-
-        # Initialize the angle database.
-        self.angle_data = AngleData()
-        self.angle_data.init_angle_data()
 
         # Store a reference to the StructureControl class for later
         # instantiation.
@@ -2170,10 +2072,6 @@ mpirun lmp -in lammps.in
 
         element_data = self.element_data
         bond_data = self.bond_data
-        # AngleData / self.angle_data are no longer referenced here;
-        # the legacy hooke-angle lookup was removed in C40.  The class
-        # itself remains in condense.py until C41, which retires
-        # angles.dat from the build entirely.
 
         # Initialize unique type trackers.  ``unique_bond_types`` is
         # doubly 1-indexed: the outer dimension iterates over bond
