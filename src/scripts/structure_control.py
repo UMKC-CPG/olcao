@@ -5965,44 +5965,91 @@ class StructureControl:
         # Origin is (0,0,0), so translate-back step is also a no-op.
         return result
 
-    def rotate_all_atoms(self):
+    def rotate_all_atoms(self, origin=None):
         """Apply rot_matrix to the Cartesian coordinates of every atom.
 
-        Implements the two-pass PBC-safe algorithm from Perl
-        ``rotateAllAtoms``.  After any rotation it is almost certain that
-        some atoms will lie outside the simulation box.  These cannot simply
-        be wrapped to the other side (naive PBC) because that would change
-        their physical position relative to the rotated structure.  The
-        Perl comment calls the correct algorithm "ugly":
+        Two operating modes, selected by the ``origin`` parameter.
 
-          Save a copy of the original direct_xyz positions (done before
-          pass 1).  Apply the rotation to all representations — direct_abc,
-          fract_abc, direct_xyz, but not the saved copy.  Then restore
-          *only* direct_xyz to its pre-rotation value.  Check which atoms
-          are outside the box ***according to the now-rotated fract_abc***.
-          For any offending atom, use the restored direct_xyz to recover the
-          original fract_abc and shift it by ±1 along the offending axis so
-          that when the rotation is re-applied the atom stays in the box.
-          Finally re-apply the rotation to all atoms.
+        ``origin=None`` (default) -- rotate about the cell origin
+        (0, 0, 0) using the two-pass PBC-safe algorithm from Perl
+        ``rotateAllAtoms``.  This is the right behaviour for a
+        crystalline system where the rotation axis passes through the
+        unit-cell origin: any atom that rotates outside the cell must
+        appear at its periodic image, which a naive single-pass wrap
+        cannot do correctly because the wrap shift would change the
+        atom's physical position relative to the rest of the rotated
+        structure.  The "ugly" two-pass algorithm sidesteps that:
+
+          Save a copy of direct_xyz before pass 1.  Apply the rotation
+          to all representations -- direct_abc, fract_abc, direct_xyz,
+          but not the saved copy.  Restore *only* direct_xyz to its
+          pre-rotation value.  Check which atoms are outside the box
+          ***according to the now-rotated fract_abc***.  For any
+          offending atom, use the restored direct_xyz to recover the
+          original fract_abc and shift it by +/-1 along the offending
+          axis so that when the rotation is re-applied the atom stays
+          in the box.  Finally re-apply the rotation to all atoms.
+
+        Post-condition for ``origin=None``: "At this point there
+        should be no atoms outside the simulation box at all."
+
+        ``origin=[None, ox, oy, oz]`` -- rotate about an arbitrary
+        point in space using a single-pass rigid-body algorithm with
+        no PBC wrap.  For every atom we evaluate
+
+          direct_xyz' = R * (direct_xyz - origin) + origin
+
+        directly in Cartesian Angstroms.  The shift-and-unshift bridge
+        is done inline rather than via :meth:`translate_atoms`, which
+        would invoke ``check_bounding_box`` per atom and silently move
+        any atom whose shifted fractional coordinate went slightly
+        negative to the opposite corner of the cell -- shredding the
+        rigid-body relationship between the molecule's atoms before
+        the rotation is even applied.  This mode is the right
+        behaviour for a non-crystalline system (a molecule sitting in
+        a bounding box) and for any rotation about a non-cell-centre
+        point where periodic-image wrapping is not meaningful.
+
+        After each atom's direct_xyz is updated, ``get_direct_abc``
+        and ``get_fract_abc`` re-derive the abc/fractional
+        representations.  Atoms whose rotation carried them outside
+        the box keep ``fract_abc`` values < 0 or >= 1 -- the caller
+        is responsible for any subsequent wrap if a wrap is desired.
 
         Each pass propagates in the order:
-          direct_xyz  →  get_direct_abc  →  get_fract_abc
-        (matching Perl's "Propogate [sic] to other representations" calls).
+          direct_xyz  ->  get_direct_abc  ->  get_fract_abc
+        (matching Perl's "Propogate [sic] to other representations".)
 
-        In Perl, step (1)+(2) — restore and shift — are handled by a call to
-        ``checkBoundingBox(1, numAtoms, 1)`` where the third argument is a
-        flag meaning "do the shift".  Python inlines that logic directly
-        rather than delegating to a separate method.
-
-        Note: Perl's ``defineRotMatrix`` takes ``($rotAngle, $rot_ref)``
-        — angle first, then axis ref — the opposite of Python's
-        ``define_rot_matrix(axis, angle_deg)``.  Both ultimately build the
-        same rotation matrix; only the call-site argument order differs.
+        Note: Perl's ``defineRotMatrix`` takes
+        ``($rotAngle, $rot_ref)`` -- angle first, then axis ref -- the
+        opposite of Python's ``define_rot_matrix(axis, angle_deg)``.
+        Both ultimately build the same rotation matrix; only the
+        call-site argument order differs.
 
         Requires :meth:`define_rot_matrix` to have been called first.
 
-        Post-condition (from Perl): "At this point there should be no atoms
-        outside the simulation box at all."
+        Parameters
+        ----------
+        origin : sequence of float or None, optional
+            1-indexed ``[None, ox, oy, oz]`` rotation centre in
+            direct-Cartesian Angstroms.  ``None`` selects the
+            cell-origin / PBC-safe two-pass mode (default).
+        """
+        if origin is None:
+            self._rotate_all_atoms_pbc()
+        else:
+            self._rotate_all_atoms_rigid(origin)
+
+    def _rotate_all_atoms_pbc(self):
+        """Two-pass PBC-safe rotation about the cell origin (0, 0, 0).
+
+        See :meth:`rotate_all_atoms` for the full algorithm narrative.
+        This helper carries the original Perl ``rotateAllAtoms``
+        behaviour exactly: it preserves periodicity for atoms that
+        would otherwise leave the simulation box, by wrapping their
+        pre-rotation fractional coordinate by +/-1 along each
+        offending axis and then re-applying the rotation so the atom
+        lands inside the box.
         """
         # --- Pass 1: rotate, collect direct_xyz_copy and do_move ----------
         direct_xyz_copy = [[None, 0.0, 0.0, 0.0]
@@ -6057,6 +6104,41 @@ class StructureControl:
             rpt = self.rotate_one_point(self.direct_xyz[atom])
             for ax in range(1, 4):
                 self.direct_xyz[atom][ax] = rpt[ax]
+            self.get_direct_abc(atom)
+            self.get_fract_abc(atom)
+
+    def _rotate_all_atoms_rigid(self, origin):
+        """Single-pass rigid-body rotation about an arbitrary point.
+
+        See :meth:`rotate_all_atoms` for the full algorithm narrative.
+        This helper rotates every atom about ``origin`` purely in
+        Cartesian Angstroms and re-derives the abc / fractional
+        representations from the updated direct_xyz.  No PBC wrap is
+        applied -- atoms that rotate outside the cell are stored
+        outside the cell.
+
+        The shift-and-unshift bridge (subtract origin, rotate about
+        (0, 0, 0), add origin back) is performed inline rather than
+        through :meth:`translate_atoms`, deliberately bypassing
+        ``check_bounding_box`` so the rigid-body relationship between
+        atoms is preserved during the coordinate-frame change.
+
+        Parameters
+        ----------
+        origin : sequence of float
+            1-indexed ``[None, ox, oy, oz]`` rotation centre in
+            direct-Cartesian Angstroms.
+        """
+        for atom in range(1, self.num_atoms + 1):
+            shifted = [
+                None,
+                self.direct_xyz[atom][1] - origin[1],
+                self.direct_xyz[atom][2] - origin[2],
+                self.direct_xyz[atom][3] - origin[3],
+            ]
+            rotated = self.rotate_one_point(shifted)
+            for ax in range(1, 4):
+                self.direct_xyz[atom][ax] = rotated[ax] + origin[ax]
             self.get_direct_abc(atom)
             self.get_fract_abc(atom)
 

@@ -245,6 +245,16 @@ class ScriptSettings:
         sys.argv to build the ordered operations list, while still
         using argparse for the simple scalar flags (-i, -o, -t,
         -abcxyz).
+
+        Argparse treats short options greedily: a token like
+        ``-orig`` (a valid operation sub-flag of ``-rotA``/``-rotP``)
+        would otherwise be parsed by argparse as the short option
+        ``-o`` followed by the value ``rig``, silently clobbering
+        ``out_file``.  To keep argparse and the manual scanner from
+        stepping on each other's flags, we pre-filter sys.argv into
+        two disjoint lists: one that contains only the scalar-flag
+        tokens argparse owns, and one (the full argv, scanned later)
+        that contains the operation flags.
         """
 
         # --- simple flags via argparse ---
@@ -273,9 +283,32 @@ Defaults are given in ./mod_structrc.py or $OLCAO_RC/mod_structrc.py.
         )
         self.add_parser_arguments(parser)
 
-        # We parse *known* args only because the repeatable
-        # operation flags are handled manually below.
-        args, _ = parser.parse_known_args()
+        # Build the filtered argv that argparse will see.  Only the
+        # four argparse-owned flags (-i, -o, -t, -abcxyz) plus their
+        # values survive; every other token is ignored here and
+        # handled by scan_operations below.  This prevents argparse
+        # from greedily matching tokens like ``-orig`` as the short
+        # option ``-o`` with the remainder treated as an attached
+        # value.  Help flags are forwarded through to argparse so
+        # ``mod_struct.py -h`` still prints usage and exits.
+        filtered_argv = [sys.argv[0]]
+        argv_iter = iter(sys.argv[1:])
+        for token in argv_iter:
+            if token in ("-i", "-o", "-t"):
+                filtered_argv.append(token)
+                filtered_argv.append(next(argv_iter))
+            elif token == "-abcxyz":
+                filtered_argv.append(token)
+                for _ in range(4):
+                    filtered_argv.append(next(argv_iter))
+            elif token in ("-h", "--help"):
+                filtered_argv.append(token)
+        saved_argv = sys.argv
+        try:
+            sys.argv = filtered_argv
+            args = parser.parse_args()
+        finally:
+            sys.argv = saved_argv
 
         # --- repeatable operations via manual argv scan ---
         self.scan_operations()
@@ -366,8 +399,7 @@ Defaults are given in ./mod_structrc.py or $OLCAO_RC/mod_structrc.py.
                 })
 
             elif flag == "-trans":
-                # -trans TX TY TZ (1-indexed for
-                #   translate_atoms)
+                # -trans TX TY TZ (1-indexed for translate_atoms)
                 trans = [
                     None,
                     float(argv[n + 1]),
@@ -857,14 +889,25 @@ def do_translate(op, sc):
 def do_rotate(op, sc):
     """Rotate all atoms about an axis by a given angle.
 
-    The rotation is performed about an arbitrary origin by first
-    translating all atoms so the origin becomes (0,0,0), applying
-    the rotation, and then translating back.  This matches the
-    Perl behavior where rotateOnePoint subtracts and re-adds the
-    origin for each point.
+    The rotation centre is selected by ``op["origin"]``.  When the
+    origin is (0, 0, 0) we use the default mode of
+    ``rotate_all_atoms`` -- the two-pass PBC-safe algorithm that
+    keeps a crystalline structure inside its simulation cell after
+    rotation.  When the origin is anywhere else, we hand it to
+    ``rotate_all_atoms`` as the explicit ``origin`` argument, which
+    triggers the single-pass rigid-body mode that rotates each atom
+    about the supplied point in pure Cartesian Angstroms with no
+    PBC wrap.
 
-    Periodic boundary conditions are retained by the two-pass
-    algorithm inside rotate_all_atoms().
+    The two-mode dispatch lives entirely inside
+    ``rotate_all_atoms``; do_rotate just chooses which mode is
+    appropriate for the current operation.  We never go through
+    ``translate_atoms`` to bridge the rotation to (0, 0, 0): that
+    path invokes ``check_bounding_box`` per atom and silently moves
+    any atom whose shifted fractional coordinate goes negative to
+    the opposite corner of the cell, which severs the rigid-body
+    relationship between a molecule's atoms before the rotation is
+    even applied.
 
     Args:
         op: Operation dict with keys 'rot' ([rx,ry,rz]),
@@ -876,35 +919,20 @@ def do_rotate(op, sc):
     axis = op["rot"]
     angle_rad = op["angle"]
 
-    # Convert radians to degrees for define_rot_matrix
-    # which expects degrees.
+    # define_rot_matrix expects degrees; rotate_all_atoms then
+    # applies the matrix using either the PBC-safe two-pass mode
+    # (origin == (0,0,0)) or the rigid-body single-pass mode (any
+    # other origin).
     angle_deg = angle_rad * 180.0 / math.pi
+    sc.define_rot_matrix(axis, angle_deg)
 
-    # If the origin is not (0,0,0), translate all atoms
-    # so the rotation origin becomes the coordinate
-    # origin.  Check axes 1..3 (origin is 1-indexed).
     has_origin = any(
         abs(origin[ax]) > 1e-12 for ax in range(1, 4)
     )
     if has_origin:
-        neg_origin = [
-            None,
-            -origin[1], -origin[2], -origin[3],
-        ]
-        sc.translate_atoms(
-            1, sc.num_atoms, neg_origin
-        )
-
-    # Build the rotation matrix and apply it to all
-    # atoms.
-    sc.define_rot_matrix(axis, angle_deg)
-    sc.rotate_all_atoms()
-
-    # Translate back if we shifted the origin.
-    if has_origin:
-        sc.translate_atoms(
-            1, sc.num_atoms, origin
-        )
+        sc.rotate_all_atoms(origin=origin)
+    else:
+        sc.rotate_all_atoms()
 
 
 def do_filter(op, sc):

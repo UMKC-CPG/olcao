@@ -1294,23 +1294,46 @@ class MakeReactions:
                         not_colinear = True
 
                 if not not_colinear:
-                    # Make an arbitrary non-colinear coordinate.
-                    # Create a vector not parallel to diff2 by
-                    #   scaling components differently.
+                    # The two alignment vectors lie along the same
+                    # line, so there is no unique plane through S1,
+                    # trigger1, and the translated trigger2.  Any
+                    # plane whose normal is perpendicular to that
+                    # shared line is a valid rotation plane, so we
+                    # synthesise a third point by offsetting S1
+                    # along a direction perpendicular to the shared
+                    # alignment axis.
+                    #
+                    # Step 1: build a helper vector guaranteed not
+                    # parallel to diff_vector2 (by scaling each
+                    # component differently).  The normalised cross
+                    # product of diff_vector2 with this helper is a
+                    # unit vector perpendicular to diff_vector2.
                     temp_vector = [
                         None,
                         diff_vector2[1] * 2.0,
                         diff_vector2[2] * 3.0,
                         diff_vector2[3] * 4.0,
                     ]
-                    # Use a temporary SC for the cross product; it
-                    # returns a 1-indexed vector directly.
                     sc_tmp = self.StructureControl()
-                    final_coord = (
+                    perp_unit = (
                         sc_tmp.normalized_cross_product(
                             diff_vector2, temp_vector
                         )
                     )
+                    # Step 2: promote that perpendicular direction
+                    # into a point by offsetting S1.  final_coord
+                    # is later packed into plane_coords[6..8] and
+                    # handed to mod_struct.py's -rotP as the xyz
+                    # of the third plane-defining point, so the
+                    # three components must genuinely locate a
+                    # point near the molecules -- not a stray unit
+                    # vector sitting near the coordinate origin.
+                    final_coord = [
+                        None,
+                        self.s_atom_coords1[s1][1] + perp_unit[1],
+                        self.s_atom_coords1[s1][2] + perp_unit[2],
+                        self.s_atom_coords1[s1][3] + perp_unit[3],
+                    ]
 
                 # Build the plane coords for the -rotP option
                 #   of mod_struct.py.
