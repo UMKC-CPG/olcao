@@ -561,7 +561,44 @@
   post-reaction templates: port commented-out Perl
   addBondAngle, compute theta_0 from post-reaction
   coordinates, register new angle types
-  (DESIGN 4.8.7)
+  (DESIGN 4.8.7, see "Empirical confirmation"
+  paragraph for the 10-missing-angle decomposition).
+  Concrete evidence first observed 2026-04-19 in
+  jobs/molecules/b12/3_mol and re-confirmed
+  2026-04-25 in jobs/molecules/b12/60_mol: the
+  postRxn template has 230 angles (preRxn 240 minus
+  the 10 that touched the deleted H's) but contains
+  zero angles involving both new-bond endpoints
+  (atoms 1 and 18 in the b12h12-b12h12 case).  Ten
+  B-B-B angles are expected -- five at each vertex
+  (e.g. 2-1-18, 3-1-18, ..., and the symmetric five
+  around atom 18).  Without those angles the new
+  inter-cage B-B bond is held only by its harmonic
+  stretch -- the two cages can rotate freely about
+  the bond axis with no restoring torque, and the
+  bond axis itself can swing relative to either
+  cage's local symmetry.  In an N-mer chain the
+  deficit grows as 10N unconstrained angular DoFs
+  at the joints.  The existing docstring on
+  _build_phase_angles (src/scripts/make_reactions.py
+  ~line 2675) already warns "the bonded molecules
+  may be too floppy" because of this gap.  Not the
+  cause of any reaction-trigger failure observed so
+  far; deferred cleanly.
+
+- [ ] C43. In make_reactions.py, the new B-B (or
+  more generally new s1-s2) bond written into the
+  postRxn template reuses the existing bond type
+  for the element pair.  Confirmed by inspection
+  for b12h12_1_b-1_b12h12_1_b-1: postRxn bond 61 is
+  type 1 (the same B-B harmonic as every other B-B
+  bond in the molecule).  That is correct for UFF-
+  derived parameters where a new B-B is physically
+  the same spring as any other B-B, but the choice
+  should be revisited if/when a reaction wants to
+  distinguish a "new" bond from a native one (e.g.
+  for a different K value or equilibrium length at
+  the reaction site).  Revisit alongside D6.
 
 ---
 

@@ -1840,7 +1840,7 @@ region simcell block EDGE EDGE EDGE EDGE EDGE EDGE units box
                     f"  react RXN{rxn} all 100 0.0 "
                     f"5.0 MOLpre{rxn} MOLpost{rxn} "
                     f"{map_file} prob {prob} "
-                    f"{rand_seed}"
+                    f"{rand_seed} molecule inter"
                 )
                 if rxn < self.num_reaction_types:
                     lmpin.write(f"{line} &\n")

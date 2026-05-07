@@ -4,7 +4,7 @@
 message("At the set of scripts.")
 
 set (SCRIPTS
-   ab2pf.py addAtoms appendCol atomPosDX
+   ab2pf.py addAtoms angle_utils.py appendCol atomPosDX
    batchChange batchClean batchSub bondAnalysis bond_analysis.py
    cif2skl collectSpectra condense condense.py
    dead-md.py dump2skl dump2skl.py

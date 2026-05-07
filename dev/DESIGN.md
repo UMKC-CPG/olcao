@@ -1584,6 +1584,46 @@ for condense.py to "look ahead" to.  The look-ahead
 mechanism in condense.py and the angle-creation logic
 in makeReactions are two halves of the same problem.
 
+**Empirical confirmation (2026-04-25, 60-mol B12H12 run).**
+Inspection of a representative `make_reactions.py`-generated
+postRxn template (`postRxn.b12h12_1_b-1_b12h12_1_b-1.data`)
+makes the floppy-joint behavior precise.  preRxn carries 240
+angles, postRxn carries 230 -- a net deficit of exactly ten.
+The bond count changes correctly (62 -> 61: minus two B-H
+bonds for the deleted hydrogens, plus one new B-B bond), but
+the angle count is wrong by ten.
+
+The ten missing angles decompose symmetrically.  Around the
+side-1 initiator (template atom 1), preRxn has 15 angles
+centred on it: ten B-B-B angles among the five B neighbours
+{2,3,4,5,6} and five H-B-B angles using the H atom (atom 12)
+to be deleted.  postRxn keeps the ten B-B-B angles and drops
+the five H-B-B angles -- correct as far as it goes, since
+atom 12 no longer exists.  But the five new B-B-B angles
+that the new bond 1-18 should produce (`18-1-2`, `18-1-3`,
+`18-1-4`, `18-1-5`, `18-1-6`) are simply absent.  The
+identical pattern holds on side 2: five missing angles
+`1-18-19` through `1-18-23` involving the new bond on the
+atom-18 end.  Five plus five equals the observed deficit.
+
+**Physical consequence.**  The new B-B bond carries only a
+bond-stretch potential; the angle term contributes nothing
+along the new bond axis.  As a result the two cages can
+rotate freely about the new B-B bond axis with no restoring
+torque, and the bond axis itself can swing relative to the
+local cage symmetry without any angular penalty.  In a single
+isolated dimer this is already a structural inaccuracy, but
+in a chain of N inter-cage reactions the deficit grows
+linearly: each joint contributes ten missing angle terms, so
+an N-mer chain has 10N unconstrained angular degrees of
+freedom at its joints.  This becomes more serious than the
+isolated-dimer case once chains are long enough to coil back
+on themselves, because unrestricted joint rotation lets
+chains reach geometries that the bond/angle topology would
+otherwise forbid -- and once the bond/react fix accepts a
+reaction, the resulting topology persists for the rest of
+the run.
+
 **Phased approach.**  This work is split into two steps
 to keep each change testable:
 

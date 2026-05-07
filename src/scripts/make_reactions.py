@@ -3006,23 +3006,58 @@ class MakeReactions:
             out.write("0 impropers\n")
 
             # Masses section.
-            out.write("\nMasses\n\n")
-            for atom in range(1, num_atoms + 1):
-                z = sc.atom_element_id[atom]
-                mass = self.ed.atomic_masses[z]
-                en = self.pruned_atom_elem_name[
-                    (s1, s2, atom)
-                ]
-                sp = self.pruned_atom_species_id[
-                    (s1, s2, atom, rxn_phase)
-                ]
-                mn = self.pruned_atom_mol_name[
-                    (s1, s2, atom)
-                ]
-                out.write(
-                    f"{atom} {mass} "
-                    f"# {en} {sp} {mn}\n"
-                )
+            #
+            # Deliberately omitted.  LAMMPS treats a per-atom
+            # Masses block in a molecule file as a request for
+            # the per-atom rmass attribute (rmassflag=1 on the
+            # molecule object).  ``atom_style full`` -- which
+            # condense.py emits in lammps.dat -- uses per-type
+            # masses (rmassflag=0 on the system), so writing the
+            # per-atom block here triggers the LAMMPS
+            # "Molecule attributes do not match system
+            # attributes" warning from fix bond/react AND causes
+            # the REACTER topology search to reject every match,
+            # so no reaction ever fires (confirmed against the
+            # b12h12_1__b12h12_1 template on 2026-04-19: the
+            # warning disappears as soon as this section is
+            # omitted).  The system's per-type masses in
+            # lammps.dat are authoritative; the molecule
+            # template does not need to restate them, and the
+            # LAMMPS molecule-file format lists Masses as an
+            # optional section.
+            #
+            # Note: switching the block to per-type (ntypes
+            # lines, "1 10.81\n2 1.0079\n" for B/H) does NOT
+            # work -- LAMMPS reads molecule Masses in strict
+            # per-atom form and aborts with "Unexpected line in
+            # molecule file while skipping Masses section" when
+            # fewer than num_atoms lines are present.  The only
+            # supported options are "per-atom" (triggers the
+            # mismatch) or "omitted" (matches atom_style full).
+            # We choose "omitted".
+            #
+            # The block below is preserved as commented-out
+            # reference code in case we need to resurrect it for
+            # a future atom_style that genuinely uses per-atom
+            # rmass.  Remove once the omission has been verified
+            # end-to-end across more molecules.
+            #out.write("\nMasses\n\n")
+            #for atom in range(1, num_atoms + 1):
+            #    en = self.pruned_atom_elem_name[
+            #        (s1, s2, atom)
+            #    ]
+            #    sp = self.pruned_atom_species_id[
+            #        (s1, s2, atom, rxn_phase)
+            #    ]
+            #    mn = self.pruned_atom_mol_name[
+            #        (s1, s2, atom)
+            #    ]
+            #    z = self.ed.get_element_z(en)
+            #    mass = self.ed.atomic_masses[z]
+            #    out.write(
+            #        f"{atom} {mass} "
+            #        f"# {en} {sp} {mn}\n"
+            #    )
 
             # Types section.
             out.write("\nTypes\n\n")
