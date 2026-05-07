@@ -430,9 +430,9 @@ def run_lammps_simulations(population, population_size, num_cores, target_elemen
             subprocess.run("condense", shell=True, check=True)
             os.chdir("lammps")
             in_lammps = True
-            #subprocess.run(f"srun -N 1 -c {num_cores} lmp < lammps.in", shell=True, check=True)
-            subprocess.run(f"lmp < lammps.in", shell=True, check=True)
-            #subprocess.run("mpirun -np 2 lmp < lammps.in", shell=True, check=True)
+            subprocess.run(f"srun -N 1 -c {num_cores} lmp -in lammps.in", shell=True, check=True)
+            #subprocess.run(f"lmp < lammps.in", shell=True, check=True)
+            #subprocess.run("mpirun -np 2 lmp -in lammps.in", shell=True, check=True)
 
             print(f" I am in directory {member}\n")
             subprocess.run(

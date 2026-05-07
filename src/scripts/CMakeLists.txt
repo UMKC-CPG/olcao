@@ -7,7 +7,7 @@ set (SCRIPTS
    ab2pf.py addAtoms angle_utils.py appendCol atomPosDX
    batchChange batchClean batchSub bondAnalysis bond_analysis.py
    cif2skl collectSpectra condense condense.py
-   dead-md.py dump2skl dump2skl.py
+   deadmd.py dump2skl dump2skl.py
    element_data.py element_pct.py
    gaussOverlapRT getPlane graspElems.py
    hdf5Comp.py
@@ -21,8 +21,8 @@ set (SCRIPTS
    olcao olcaoCompare olcaoObject.py olcao.py olcaoStructures.py
    org_radwavefn.py osrecurintg.py osrecurintgana.py osrecurintgnum.py
    osrecurintglib.py osrecurintg_makenum.py
-   pdb2skl pdb2skl.py plotgraph plotgraph.py polcao pot2plot.py processPOPTC
-   processPOPTC.py
+   pdb2skl pdb2skl.py plot_deadmd.py plotgraph plotgraph.py polcao pot2plot.py
+   processPOPTC processPOPTC.py
    rpdf runCheck runIsoAtoms runIsoAtoms.py
    scanSpectra selectSYBD skl2isaacs skl2isaacs.py skl2lmp skl2pdb skl2pdb.py
    skl2vasp skl2vasp.py spectra2ODX struct2skl.py structure_control.py
