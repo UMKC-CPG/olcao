@@ -558,7 +558,20 @@ sub runPackmol
 
       print PACK "structure $moleculeName[$mol].pdb\n";
       print PACK "  number $numMolecules[$mol]\n";
-      print PACK "  inside cube 0.0 0.0 0.0 $cellSize\n";
+      # Inset the packing region 3 Angstroms from each face of the simulation
+      # box. Without this, packmol can place atoms within ~1 Angstrom of a
+      # box face. bondAnalysis then runs with periodic boundary conditions, so
+      # an atom near one face and an atom near the opposite face can appear
+      # bonded through the periodic image even though their real-space distance
+      # satisfies the packmol tolerance. That spurious inter-molecular bond
+      # then generates angle types (e.g. C-C-Si in an HMDS system) that have
+      # no entry in angles.dat, causing condense to die. The 3 A inset
+      # guarantees the minimum periodic-image distance between any two
+      # inter-molecular atoms is at least 6 A, safely above any bond-detection
+      # threshold used by bondAnalysis -bf 1.1.
+      #print PACK "  inside cube 0.0 0.0 0.0 $cellSize\n";
+      my $inset = 3.0;
+      print PACK "  inside cube $inset $inset $inset " . ($cellSize - 2*$inset) . "\n";
       print PACK "end structure\n\n";
    }
 
@@ -728,6 +741,17 @@ sub createLAMMPSFiles
    $atomicZ_ref = StructureControl::getAtomicZRef;
    $numElements = StructureControl::getNumElements;
    $numSpecies_ref = StructureControl::getNumSpeciesRef;
+
+   # pdb2skl has no CRYST1 record to read, so it sets the SKL cell to the
+   # bounding box of the packed atoms rather than the true simulation cell.
+   # bondAnalysis then uses this wrong tight cell with PBC, which makes atoms
+   # near opposite faces of the bounding box appear bonded through periodic
+   # images (e.g. H-H-C, C-C-Si). setLatticeFromMagAngle above already
+   # corrected the cell in memory; now rewrite packmol.skl to disk so that
+   # bondAnalysis reads the correct simulation cell size.
+   open (CORRSKL, ">packmol.skl") || die "Cannot rewrite packmol.skl.\n";
+   StructureControl::printOLCAO(\*CORRSKL, "Corrected cell for bondAnalysis",
+         "cartesian");
 
    # Perform a bond analysis to get bond length and bond angle information.
    system("bondAnalysis -bl -bf 1.1 -i packmol.skl");
@@ -1231,7 +1255,10 @@ atom_style full
 pair_style lj/cut 10.0
 bond_style harmonic
 angle_style harmonic
-neigh_modify delay 100 every 50 check yes
+# Old: neigh_modify delay 100 every 50 check yes
+# Increased "one" from default 2000 to 5000: the EA randomly generates compression
+# ratios that can pack atoms densely enough to overflow the per-atom neighbor buffer.
+neigh_modify one 5000 delay 100 every 50 check yes
 #comm_modify mode single cutoff 20.0
 pair_modify shift yes mix sixthpower
 newton on
