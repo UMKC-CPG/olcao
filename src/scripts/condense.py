@@ -1730,7 +1730,9 @@ atom_style full
 pair_style lj/cut 10.0
 bond_style harmonic
 angle_style harmonic
-neigh_modify delay 100 every 50 check yes
+# Bump per-atom neighbor buffer from default 2000 to 5000: the EA in deadmd.py
+# can generate compression ratios dense enough to overflow the default buffer.
+neigh_modify one 5000 delay 100 every 50 check yes
 #comm_modify mode single cutoff 20.0
 pair_modify shift yes mix sixthpower
 newton on
